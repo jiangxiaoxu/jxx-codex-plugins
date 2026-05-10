@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -12,13 +11,10 @@ const requiredFiles = [
   "plugins/node-repl/skills/node-repl/SKILL.md",
   "plugins/node-repl/runtime/node_repl_mcp.mjs",
   "plugins/node-repl/runtime/node-repl-mcp.cmd",
-  "plugins/node-repl/runtime/bootstrap.mjs",
+  "plugins/node-repl/runtime/bin/node_repl.exe",
   "plugins/node-repl/runtime/README.md",
-  "plugins/node-repl/runtime/latest.json",
   "scripts/fetch-msstore.js",
   "scripts/package-runtime.js",
-  "scripts/check-runtime-update.js",
-  "scripts/update-runtime-metadata.js",
 ];
 
 function fail(message) {
@@ -78,43 +74,6 @@ if (!server) {
   if (/^[A-Za-z]:\\/.test(server.command) || serialized.includes("\\Users\\")) {
     fail(".mcp.json must not hard-code user paths.");
   }
-}
-
-const latest = readJson("plugins/node-repl/runtime/latest.json");
-for (const key of ["schemaVersion", "platform", "arch", "status", "repo", "assetName", "manifestAssetName", "source"]) {
-  if (!(key in (latest ?? {}))) {
-    fail(`latest.json missing stable key: ${key}`);
-  }
-}
-if (latest?.status === "published") {
-  for (const relativePath of ["bin/node_repl.exe"]) {
-    const file = latest?.files?.[relativePath];
-    if (!/^[a-f0-9]{64}$/.test(file?.sha256 || "")) {
-      fail(`latest.json files.${relativePath}.sha256 is required when status is published.`);
-    }
-    if (!Number.isSafeInteger(file?.size) || file.size <= 0) {
-      fail(`latest.json files.${relativePath}.size is required when status is published.`);
-    }
-  }
-}
-
-const forbiddenRuntimeDir = path.join(repoRoot, "plugins", "node-repl", "runtime", "bin");
-if (fs.existsSync(forbiddenRuntimeDir)) {
-  const exeFiles = fs
-    .readdirSync(forbiddenRuntimeDir)
-    .filter((name) => name.toLowerCase().endsWith(".exe"));
-  if (exeFiles.length > 0) {
-    fail(`Runtime exe files must not be present in repo: ${exeFiles.join(", ")}`);
-  }
-}
-
-const gitResult = spawnSync("git", ["ls-files", "plugins/node-repl/runtime/bin/*.exe"], {
-  cwd: repoRoot,
-  encoding: "utf8",
-  windowsHide: true,
-});
-if (gitResult.status === 0 && gitResult.stdout.trim()) {
-  fail(`Runtime exe files are tracked by git:\n${gitResult.stdout.trim()}`);
 }
 
 if (process.exitCode) {

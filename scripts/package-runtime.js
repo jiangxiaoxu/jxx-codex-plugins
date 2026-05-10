@@ -8,16 +8,14 @@ const sevenZip = require("7zip-bin");
 const { downloadLatestMsstorePackage } = require("./fetch-msstore");
 
 const repoRoot = path.resolve(__dirname, "..");
-const distDir = path.join(repoRoot, "dist");
-const assetName = "node-repl-runtime-win32-x64.tar.gz";
-const manifestName = "node-repl-runtime-win32-x64.manifest.json";
+const runtimeBinDir = path.join(repoRoot, "plugins", "node-repl", "runtime", "bin");
+const runtimeExePath = path.join(runtimeBinDir, "node_repl.exe");
 const productId = "9plm9xgg6vks";
 
 function parseArgs(argv) {
   const options = {
     msix: "",
     latestMsstore: false,
-    outDir: distDir,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -26,8 +24,6 @@ function parseArgs(argv) {
       options.msix = path.resolve(argv[++index]);
     } else if (arg === "--latest-msstore") {
       options.latestMsstore = true;
-    } else if (arg === "--out") {
-      options.outDir = path.resolve(argv[++index]);
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -42,10 +38,7 @@ function parseArgs(argv) {
 function printHelp() {
   console.log(`Usage:
   node scripts/package-runtime.js --msix <path>
-  node scripts/package-runtime.js --latest-msstore
-
-Options:
-  --out <dir>   Output directory. Defaults to ./dist.`);
+  node scripts/package-runtime.js --latest-msstore`);
 }
 
 function run(command, args, options = {}) {
@@ -113,16 +106,6 @@ function extractMsix(msixPath, extractDir) {
   run(sevenZip.path7za, ["x", "-y", `-o${extractDir}`, msixPath]);
 }
 
-function createRuntimeArchive(stagingDir, outDir) {
-  fs.mkdirSync(outDir, { recursive: true });
-  const assetPath = path.join(outDir, assetName);
-  if (fs.existsSync(assetPath)) {
-    fs.rmSync(assetPath, { force: true });
-  }
-  run("tar", ["-czf", assetPath, "-C", stagingDir, "bin"]);
-  return assetPath;
-}
-
 async function resolveMsix(options) {
   if (options.msix) {
     return {
@@ -158,36 +141,27 @@ async function resolveMsix(options) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const msix = await resolveMsix(options);
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "node-repl-package-"));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "node-repl-runtime-"));
 
   try {
     const extractDir = path.join(tmpDir, "msix");
-    const stagingDir = path.join(tmpDir, "staging");
-    const binDir = path.join(stagingDir, "bin");
     extractMsix(msix.path, extractDir);
 
     const nodeReplExe = findFile(extractDir, "app/resources/node_repl.exe");
     ensureFile(nodeReplExe, "node_repl.exe");
 
-    fs.mkdirSync(binDir, { recursive: true });
-    fs.copyFileSync(nodeReplExe, path.join(binDir, "node_repl.exe"));
+    fs.mkdirSync(runtimeBinDir, { recursive: true });
+    fs.copyFileSync(nodeReplExe, runtimeExePath);
 
-    const assetPath = createRuntimeArchive(stagingDir, options.outDir);
-    const createdAt = new Date().toISOString();
-    const releaseTag = `runtime-win32-x64-${msix.sourcePackage.version || createdAt.slice(0, 10)}`;
-    const manifest = {
+    const metadata = {
       schemaVersion: 1,
       platform: "win32",
       arch: "x64",
-      releaseTag,
-      assetName,
-      manifestAssetName: manifestName,
-      sha256: sha256(assetPath),
-      size: fs.statSync(assetPath).size,
+      file: "plugins/node-repl/runtime/bin/node_repl.exe",
       files: {
         "bin/node_repl.exe": {
-          sha256: sha256(path.join(binDir, "node_repl.exe")),
-          size: fs.statSync(path.join(binDir, "node_repl.exe")).size,
+          sha256: sha256(runtimeExePath),
+          size: fs.statSync(runtimeExePath).size,
         },
       },
       source: {
@@ -198,14 +172,11 @@ async function main() {
         packageSize: msix.sourcePackage.size ?? fs.statSync(msix.path).size,
         packageUrl: msix.sourcePackage.url ?? null,
       },
-      createdAt,
+      createdAt: new Date().toISOString(),
     };
 
-    const manifestPath = path.join(options.outDir, manifestName);
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-
-    console.log(`Wrote ${assetPath}`);
-    console.log(`Wrote ${manifestPath}`);
+    console.log(`Wrote ${path.relative(repoRoot, runtimeExePath)}`);
+    console.log(JSON.stringify(metadata, null, 2));
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

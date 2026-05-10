@@ -5,14 +5,11 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
-import { ensureRuntime } from "./bootstrap.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const binDir = join(scriptDir, "bin");
 const isWindows = process.platform === "win32";
 const exeSuffix = isWindows ? ".exe" : "";
-
-await ensureRuntime();
 
 function isFile(path) {
   try {
@@ -109,7 +106,6 @@ const nodeReplPath = requireFile("node_repl executable", [
 const nodePath = requireFile("Node executable", [
   process.env.NODE_REPL_NODE_PATH,
   process.env.CODEX_BROWSER_USE_NODE_PATH,
-  join(binDir, `node${exeSuffix}`),
   findOnPath(`node${exeSuffix}`),
   findOnPath("node"),
 ]);
