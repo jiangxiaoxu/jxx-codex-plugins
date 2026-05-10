@@ -6,7 +6,7 @@ The runtime binary is vendored here:
 
 - `bin/node_repl.exe`
 
-Codex starts the MCP server through `node-repl-mcp.ps1`, which locates `NODE_REPL_NODE_PATH` or `node` on `PATH` and runs `node_repl_mcp.mjs`.
+Codex starts the MCP server through `node-repl-mcp.ps1`, which runs `node.exe` from `PATH` with `node_repl_mcp.mjs`.
 
 Refresh it manually from a provided MSIX or the latest Microsoft Store package:
 
@@ -15,9 +15,4 @@ node scripts/package-runtime.js --msix <path-to-codex.msix>
 node scripts/package-runtime.js --latest-msstore
 ```
 
-## Environment overrides
-
-- `CODEX_NODE_REPL_PATH`: absolute path to a `node_repl` executable.
-- `NODE_REPL_NODE_PATH`: absolute path to a Node executable.
-
-The default startup path requires `node` to be available on `PATH`.
+The startup path requires `node.exe` to be available on `PATH`.
