@@ -7,7 +7,7 @@ The runtime binaries are not committed:
 - `bin/node.exe`
 - `bin/node_repl.exe`
 
-On first launch, `node-repl-mcp.cmd` runs `bootstrap.mjs` with a system `node` executable. The bootstrapper downloads the private GitHub Release asset, verifies its SHA-256 hash, and extracts it into this directory.
+On first launch, `node-repl-mcp.cmd` runs `bootstrap.mjs` with a system `node` executable. The bootstrapper downloads the public GitHub Release asset, verifies its SHA-256 hash, and extracts it into this directory.
 
 ## Environment overrides
 
@@ -16,4 +16,4 @@ On first launch, `node-repl-mcp.cmd` runs `bootstrap.mjs` with a system `node` e
 - `NODE_REPL_RUNTIME_REFRESH=1`: force runtime refresh before launch.
 - `NODE_REPL_RUNTIME_REPO`: GitHub repository for runtime releases. Defaults to `jiangxiaoxu/jxx-codex-plugins`.
 
-The default bootstrap path requires `gh`, `node`, and `tar` to be available on `PATH`.
+The default bootstrap path requires `node` and `tar` to be available on `PATH`.

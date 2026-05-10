@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  createWriteStream,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -9,6 +10,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import https from "node:https";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
@@ -43,6 +45,55 @@ function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+function encodePathSegment(value) {
+  return encodeURIComponent(value).replace(/%2F/gi, "/");
+}
+
+function releaseAssetUrl(repo, releaseTag, assetName) {
+  if (!releaseTag) {
+    return `https://github.com/${repo}/releases/latest/download/${encodePathSegment(assetName)}`;
+  }
+  return `https://github.com/${repo}/releases/download/${encodePathSegment(releaseTag)}/${encodePathSegment(assetName)}`;
+}
+
+function downloadFile(url, destination, redirectCount = 0) {
+  if (redirectCount > 10) {
+    return Promise.reject(new Error(`Too many redirects while downloading ${url}`));
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      url,
+      {
+        headers: {
+          "User-Agent": "jxx-codex-plugins-node-repl-bootstrap",
+        },
+      },
+      (response) => {
+        const statusCode = response.statusCode ?? 0;
+        if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
+          response.resume();
+          const redirectUrl = new URL(response.headers.location, url).toString();
+          downloadFile(redirectUrl, destination, redirectCount + 1).then(resolve, reject);
+          return;
+        }
+
+        if (statusCode !== 200) {
+          response.resume();
+          reject(new Error(`Download failed: HTTP ${statusCode} for ${url}`));
+          return;
+        }
+
+        const file = createWriteStream(destination);
+        response.pipe(file);
+        file.on("finish", () => file.close(resolve));
+        file.on("error", reject);
+      },
+    );
+    request.on("error", reject);
+  });
+}
+
 function readLatest() {
   if (!isFile(latestPath)) {
     return {};
@@ -74,15 +125,11 @@ const manifestAssetName =
 const tmpDir = mkdtempSync(join(os.tmpdir(), "node-repl-runtime-"));
 
 try {
-  const releaseArgs = ["release", "download", "--repo", repo, "--clobber", "-D", tmpDir];
-  if (latest.releaseTag) {
-    releaseArgs.splice(2, 0, latest.releaseTag);
-  }
-  releaseArgs.push("-p", assetName, "-p", manifestAssetName);
-  run("gh", releaseArgs);
-
   const assetPath = join(tmpDir, assetName);
   const manifestPath = join(tmpDir, manifestAssetName);
+  await downloadFile(releaseAssetUrl(repo, latest.releaseTag, assetName), assetPath);
+  await downloadFile(releaseAssetUrl(repo, latest.releaseTag, manifestAssetName), manifestPath);
+
   if (!isFile(assetPath)) {
     throw new Error(`Runtime asset not downloaded: ${assetName}`);
   }

@@ -1,14 +1,14 @@
 # jxx-codex-plugins
 
-Private Codex plugin marketplace repository.
+Codex plugin marketplace repository.
 
-The first bundled plugin is `node-repl`. The repository does not commit the Windows runtime binaries. The runtime is built from the latest Microsoft Store Codex x64 MSIX and published as a private GitHub Release asset. The plugin bootstraps the release asset on first use.
+The first bundled plugin is `node-repl`. The repository does not commit the Windows runtime binaries. The runtime is built from the latest Microsoft Store Codex x64 MSIX and published as a public GitHub Release asset. The plugin bootstraps the release asset on first use.
 
 The manual runtime workflow publishes only when the extracted `node.exe` or `node_repl.exe` hash changes. When a runtime update is published, the workflow bumps the plugin patch version independently and records the Codex package version in `runtime/latest.json`.
 
 ## Layout
 
-- `.agents/plugins/marketplace.json`: private marketplace index.
+- `.agents/plugins/marketplace.json`: marketplace index.
 - `plugins/node-repl/.codex-plugin/plugin.json`: Codex plugin manifest.
 - `plugins/node-repl/.mcp.json`: MCP server registration.
 - `plugins/node-repl/runtime/`: launcher, bootstrapper, and runtime metadata.
