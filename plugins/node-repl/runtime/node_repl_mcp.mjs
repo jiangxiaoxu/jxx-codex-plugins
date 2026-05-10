@@ -99,16 +99,9 @@ function requireFile(label, candidates) {
 
 const codexHome = process.env.CODEX_HOME?.trim() || join(os.homedir(), ".codex");
 const nodeReplPath = requireFile("node_repl executable", [
-  process.env.CODEX_NODE_REPL_PATH,
   join(binDir, `node_repl${exeSuffix}`),
-  findOnPath(`node_repl${exeSuffix}`),
 ]);
-const nodePath = requireFile("Node executable", [
-  process.env.NODE_REPL_NODE_PATH,
-  process.env.CODEX_BROWSER_USE_NODE_PATH,
-  findOnPath(`node${exeSuffix}`),
-  findOnPath("node"),
-]);
+const nodePath = process.execPath;
 
 const codexCliPath = firstExistingFile([
   process.env.CODEX_CLI_PATH,
