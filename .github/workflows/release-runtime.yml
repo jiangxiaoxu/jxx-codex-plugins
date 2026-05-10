@@ -2,11 +2,6 @@ name: Release runtime
 
 on:
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: "Runtime release tag. Defaults to manifest releaseTag."
-        required: false
-        type: string
 
 permissions:
   contents: write
@@ -34,57 +29,52 @@ jobs:
       - name: Package latest Microsoft Store runtime
         run: node scripts/package-runtime.js --latest-msstore
 
-      - name: Read manifest
-        id: manifest
-        shell: pwsh
-        run: |
-          $manifest = Get-Content dist/node-repl-runtime-win32-x64.manifest.json -Raw | ConvertFrom-Json
-          $tag = "${{ inputs.release_tag }}"
-          if ([string]::IsNullOrWhiteSpace($tag)) {
-            $tag = $manifest.releaseTag
-          }
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          "asset=dist/node-repl-runtime-win32-x64.tar.gz" >> $env:GITHUB_OUTPUT
-          "manifest=dist/node-repl-runtime-win32-x64.manifest.json" >> $env:GITHUB_OUTPUT
+      - name: Check runtime update
+        id: runtime
+        run: node scripts/check-runtime-update.js --manifest dist/node-repl-runtime-win32-x64.manifest.json
 
       - name: Create or update release
+        if: steps.runtime.outputs.should_release == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ steps.manifest.outputs.tag }}"
+          $tag = "${{ steps.runtime.outputs.release_tag }}"
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes "Node REPL runtime for Windows x64."
           }
-          gh release upload $tag "${{ steps.manifest.outputs.asset }}" "${{ steps.manifest.outputs.manifest }}" --repo $env:GITHUB_REPOSITORY --clobber
+          gh release upload $tag "dist/node-repl-runtime-win32-x64.tar.gz" "dist/node-repl-runtime-win32-x64.manifest.json" --repo $env:GITHUB_REPOSITORY --clobber
 
-      - name: Normalize latest release tag
+      - name: Delete old runtime releases
+        if: steps.runtime.outputs.keep_release_tag != ''
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $latestPath = "plugins/node-repl/runtime/latest.json"
-          $latest = Get-Content $latestPath -Raw | ConvertFrom-Json
-          $manifest = Get-Content "dist/node-repl-runtime-win32-x64.manifest.json" -Raw | ConvertFrom-Json
-          $latest.releaseTag = "${{ steps.manifest.outputs.tag }}"
-          $latest.status = "published"
-          $latest.assetName = $manifest.assetName
-          $latest.manifestAssetName = $manifest.manifestAssetName
-          $latest.sha256 = $manifest.sha256
-          $latest.size = $manifest.size
-          $latest.source = $manifest.source
-          $latest.updatedAt = $manifest.createdAt
-          $latest | ConvertTo-Json -Depth 20 | Set-Content $latestPath -Encoding utf8
+          $currentTag = "${{ steps.runtime.outputs.keep_release_tag }}"
+          $tags = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --json tagName --jq '.[].tagName'
+          foreach ($tag in $tags) {
+            if ($tag -match '^runtime-win32-x64-' -and $tag -ne $currentTag) {
+              gh release delete $tag --repo $env:GITHUB_REPOSITORY --yes --cleanup-tag
+            }
+          }
 
-      - name: Commit latest.json
+      - name: Update runtime metadata
+        if: steps.runtime.outputs.should_release == 'true'
+        run: node scripts/update-runtime-metadata.js --manifest dist/node-repl-runtime-win32-x64.manifest.json
+
+      - name: Commit runtime metadata
+        if: steps.runtime.outputs.should_release == 'true'
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add plugins/node-repl/runtime/latest.json
+          git add plugins/node-repl/.codex-plugin/plugin.json plugins/node-repl/runtime/latest.json
           git diff --cached --quiet
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "latest.json is unchanged."
+            Write-Host "Runtime metadata is unchanged."
             exit 0
           }
-          git commit -m "Record latest node-repl runtime release" -m "Update runtime/latest.json after packaging the latest Microsoft Store Codex x64 runtime. The binary runtime remains published as GitHub Release assets and is not committed to git."
+          git commit -m "Record node-repl runtime ${{ steps.runtime.outputs.package_version }}" -m "Update node-repl plugin metadata after publishing changed runtime assets from Codex package ${{ steps.runtime.outputs.package_version }}. The plugin version is bumped independently from the Codex app version. Runtime change reason: ${{ steps.runtime.outputs.reason }}."
           git push

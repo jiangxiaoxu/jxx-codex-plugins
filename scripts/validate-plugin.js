@@ -17,6 +17,8 @@ const requiredFiles = [
   "plugins/node-repl/runtime/latest.json",
   "scripts/fetch-msstore.js",
   "scripts/package-runtime.js",
+  "scripts/check-runtime-update.js",
+  "scripts/update-runtime-metadata.js",
 ];
 
 function fail(message) {
@@ -53,6 +55,9 @@ if (plugin?.mcpServers !== "./.mcp.json") {
 if (plugin?.skills !== "./skills/") {
   fail("plugin.json skills must be ./skills/.");
 }
+if (!/^\d+\.\d+\.\d+$/.test(plugin?.version || "")) {
+  fail("plugin.json version must be an independent SemVer patch version, for example 0.1.0.");
+}
 
 const mcp = readJson("plugins/node-repl/.mcp.json");
 const server = mcp?.mcpServers?.node_repl;
@@ -79,6 +84,17 @@ const latest = readJson("plugins/node-repl/runtime/latest.json");
 for (const key of ["schemaVersion", "platform", "arch", "status", "repo", "assetName", "manifestAssetName", "source"]) {
   if (!(key in (latest ?? {}))) {
     fail(`latest.json missing stable key: ${key}`);
+  }
+}
+if (latest?.status === "published") {
+  for (const relativePath of ["bin/node.exe", "bin/node_repl.exe"]) {
+    const file = latest?.files?.[relativePath];
+    if (!/^[a-f0-9]{64}$/.test(file?.sha256 || "")) {
+      fail(`latest.json files.${relativePath}.sha256 is required when status is published.`);
+    }
+    if (!Number.isSafeInteger(file?.size) || file.size <= 0) {
+      fail(`latest.json files.${relativePath}.size is required when status is published.`);
+    }
   }
 }
 
