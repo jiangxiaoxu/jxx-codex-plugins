@@ -6,6 +6,8 @@ The runtime binary is vendored here:
 
 - `bin/node_repl.exe`
 
+Codex starts the MCP server through `node-repl-mcp.ps1`, which locates `NODE_REPL_NODE_PATH` or `node` on `PATH` and runs `node_repl_mcp.mjs`.
+
 Refresh it manually from a provided MSIX or the latest Microsoft Store package:
 
 ```powershell
