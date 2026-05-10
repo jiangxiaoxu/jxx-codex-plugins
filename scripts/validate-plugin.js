@@ -10,7 +10,7 @@ const requiredFiles = [
   "plugins/node-repl/.mcp.json",
   "plugins/node-repl/skills/node-repl/SKILL.md",
   "plugins/node-repl/runtime/node_repl_mcp.mjs",
-  "plugins/node-repl/runtime/node-repl-mcp.cmd",
+  "plugins/node-repl/runtime/node-repl-mcp.ps1",
   "plugins/node-repl/runtime/bin/node_repl.exe",
   "plugins/node-repl/runtime/README.md",
   "scripts/fetch-msstore.js",
@@ -60,12 +60,19 @@ const server = mcp?.mcpServers?.node_repl;
 if (!server) {
   fail(".mcp.json must register mcpServers.node_repl.");
 } else {
-  if (server.command !== "cmd.exe") {
-    fail(".mcp.json node_repl.command must be cmd.exe.");
+  if (server.command !== "powershell.exe") {
+    fail(".mcp.json node_repl.command must be powershell.exe.");
   }
-  const expectedArgs = ["/d", "/s", "/c", "runtime\\node-repl-mcp.cmd"];
+  const expectedArgs = [
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    "runtime\\node-repl-mcp.ps1",
+  ];
   if (JSON.stringify(server.args) !== JSON.stringify(expectedArgs)) {
-    fail(".mcp.json node_repl.args must launch runtime\\node-repl-mcp.cmd.");
+    fail(".mcp.json node_repl.args must launch runtime\\node-repl-mcp.ps1.");
   }
   if (server.cwd !== ".") {
     fail(".mcp.json node_repl.cwd must be plugin root.");

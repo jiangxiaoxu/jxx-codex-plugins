@@ -2,8 +2,15 @@
   "mcpServers": {
     "node_repl": {
       "type": "stdio",
-      "command": "cmd.exe",
-      "args": ["/d", "/s", "/c", "runtime\\node-repl-mcp.cmd"],
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "runtime\\node-repl-mcp.ps1"
+      ],
       "cwd": ".",
       "startup_timeout_sec": 120
     }
