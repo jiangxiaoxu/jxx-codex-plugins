@@ -3,14 +3,10 @@ setlocal
 
 set "RUNTIME_DIR=%~dp0"
 set "MCP_NODE=%NODE_REPL_NODE_PATH%"
-set "NODE_EXE=%RUNTIME_DIR%bin\node.exe"
 
 if defined MCP_NODE goto run
 where node.exe >nul 2>nul
 if not errorlevel 1 set "MCP_NODE=node"
-if defined MCP_NODE goto run
-
-if exist "%NODE_EXE%" set "MCP_NODE=%NODE_EXE%"
 if defined MCP_NODE goto run
 
 echo Node executable not found. Install node on PATH or set NODE_REPL_NODE_PATH. 1>&2

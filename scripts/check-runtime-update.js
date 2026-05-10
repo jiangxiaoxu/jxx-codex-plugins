@@ -47,7 +47,7 @@ function fileHash(value, relativePath) {
 }
 
 function hasMatchingRuntimeHashes(latest, manifest) {
-  const runtimeFiles = ["bin/node.exe", "bin/node_repl.exe"];
+  const runtimeFiles = ["bin/node_repl.exe"];
   return runtimeFiles.every((relativePath) => {
     const latestHash = fileHash(latest, relativePath);
     const manifestHash = fileHash(manifest, relativePath);

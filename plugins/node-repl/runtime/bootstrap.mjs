@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import https from "node:https";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 
@@ -24,7 +24,7 @@ const latestPath = join(runtimeDir, "latest.json");
 const lockDir = join(runtimeDir, ".runtime-update.lock");
 const lockHeartbeatPath = join(lockDir, "heartbeat");
 const defaultRepo = "jiangxiaoxu/jxx-codex-plugins";
-const runtimeFiles = ["bin/node.exe", "bin/node_repl.exe"];
+const runtimeFiles = ["bin/node_repl.exe"];
 
 function isFile(path) {
   try {
@@ -117,15 +117,11 @@ function readLatest() {
 }
 
 function hasOverrideRuntime() {
-  return isFile(process.env.NODE_REPL_NODE_PATH) && isFile(process.env.CODEX_NODE_REPL_PATH);
+  return isFile(process.env.CODEX_NODE_REPL_PATH);
 }
 
 function hasVendoredRuntime() {
-  return isFile(join(binDir, "node.exe")) && isFile(join(binDir, "node_repl.exe"));
-}
-
-function isRunningVendoredNode() {
-  return resolve(process.execPath).toLowerCase() === resolve(join(binDir, "node.exe")).toLowerCase();
+  return isFile(join(binDir, "node_repl.exe"));
 }
 
 function expectedRuntimeHash(latest, relativePath) {
@@ -256,12 +252,6 @@ export async function ensureRuntime() {
 
   if (!shouldRefresh && hasOverrideRuntime()) {
     return;
-  }
-
-  if (isRunningVendoredNode()) {
-    throw new Error(
-      "Runtime update requires an external Node executable. Install node on PATH or set NODE_REPL_NODE_PATH.",
-    );
   }
 
   let lockHeld = false;

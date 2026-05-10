@@ -166,13 +166,10 @@ async function main() {
     const binDir = path.join(stagingDir, "bin");
     extractMsix(msix.path, extractDir);
 
-    const nodeExe = findFile(extractDir, "app/resources/node.exe");
     const nodeReplExe = findFile(extractDir, "app/resources/node_repl.exe");
-    ensureFile(nodeExe, "node.exe");
     ensureFile(nodeReplExe, "node_repl.exe");
 
     fs.mkdirSync(binDir, { recursive: true });
-    fs.copyFileSync(nodeExe, path.join(binDir, "node.exe"));
     fs.copyFileSync(nodeReplExe, path.join(binDir, "node_repl.exe"));
 
     const assetPath = createRuntimeArchive(stagingDir, options.outDir);
@@ -188,10 +185,6 @@ async function main() {
       sha256: sha256(assetPath),
       size: fs.statSync(assetPath).size,
       files: {
-        "bin/node.exe": {
-          sha256: sha256(path.join(binDir, "node.exe")),
-          size: fs.statSync(path.join(binDir, "node.exe")).size,
-        },
         "bin/node_repl.exe": {
           sha256: sha256(path.join(binDir, "node_repl.exe")),
           size: fs.statSync(path.join(binDir, "node_repl.exe")).size,

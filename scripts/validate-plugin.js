@@ -87,7 +87,7 @@ for (const key of ["schemaVersion", "platform", "arch", "status", "repo", "asset
   }
 }
 if (latest?.status === "published") {
-  for (const relativePath of ["bin/node.exe", "bin/node_repl.exe"]) {
+  for (const relativePath of ["bin/node_repl.exe"]) {
     const file = latest?.files?.[relativePath];
     if (!/^[a-f0-9]{64}$/.test(file?.sha256 || "")) {
       fail(`latest.json files.${relativePath}.sha256 is required when status is published.`);

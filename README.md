@@ -4,7 +4,7 @@ Codex plugin marketplace repository.
 
 The first bundled plugin is `node-repl`. The repository does not commit the Windows runtime binaries. The runtime is built from the latest Microsoft Store Codex x64 MSIX and published as a public GitHub Release asset. The plugin checks and bootstraps the release asset when its MCP server starts.
 
-The manual runtime workflow publishes only when the extracted `node.exe` or `node_repl.exe` hash changes. When a runtime update is published, the workflow bumps the plugin patch version independently and records the Codex package version in `runtime/latest.json`.
+The manual runtime workflow publishes only when the extracted `node_repl.exe` hash changes. When a runtime update is published, the workflow bumps the plugin patch version independently and records the Codex package version in `runtime/latest.json`.
 
 ## Layout
 
@@ -12,7 +12,7 @@ The manual runtime workflow publishes only when the extracted `node.exe` or `nod
 - `plugins/node-repl/.codex-plugin/plugin.json`: Codex plugin manifest.
 - `plugins/node-repl/.mcp.json`: MCP server registration.
 - `plugins/node-repl/runtime/`: MCP launcher, startup bootstrapper, and runtime metadata.
-- `scripts/package-runtime.js`: extracts `app/resources/node.exe` and `node_repl.exe` from an MSIX and packages the runtime tarball.
+- `scripts/package-runtime.js`: extracts `app/resources/node_repl.exe` from an MSIX and packages the runtime tarball.
 - `scripts/fetch-msstore.js`: resolves and optionally downloads Microsoft Store MSIX packages.
 - `.github/workflows/release-runtime.yml`: manual release workflow.
 
