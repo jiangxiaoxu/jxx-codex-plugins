@@ -7,7 +7,6 @@
   "type": "commonjs",
   "scripts": {
     "fetch:msstore": "node scripts/fetch-msstore.js 9plm9xgg6vks --filter x64",
-    "check:runtime": "node scripts/check-runtime-update.js",
     "package:runtime": "node scripts/package-runtime.js",
     "validate:plugin": "node scripts/validate-plugin.js"
   },
