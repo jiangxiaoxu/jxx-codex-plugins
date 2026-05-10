@@ -2,29 +2,20 @@
 setlocal
 
 set "RUNTIME_DIR=%~dp0"
+set "MCP_NODE=%NODE_REPL_NODE_PATH%"
 set "NODE_EXE=%RUNTIME_DIR%bin\node.exe"
-set "NODE_REPL_EXE=%RUNTIME_DIR%bin\node_repl.exe"
 
-if "%NODE_REPL_RUNTIME_REFRESH%"=="1" goto bootstrap
-if not exist "%NODE_EXE%" goto bootstrap
-if not exist "%NODE_REPL_EXE%" goto bootstrap
-goto run_vendored
+if defined MCP_NODE goto run
+where node.exe >nul 2>nul
+if not errorlevel 1 set "MCP_NODE=node"
+if defined MCP_NODE goto run
 
-:bootstrap
-set "BOOTSTRAP_NODE=%NODE_REPL_NODE_PATH%"
-if not defined BOOTSTRAP_NODE set "BOOTSTRAP_NODE=node"
-"%BOOTSTRAP_NODE%" "%RUNTIME_DIR%bootstrap.mjs"
-if errorlevel 1 exit /b %ERRORLEVEL%
+if exist "%NODE_EXE%" set "MCP_NODE=%NODE_EXE%"
+if defined MCP_NODE goto run
 
-if exist "%NODE_EXE%" goto run_vendored
-if defined NODE_REPL_NODE_PATH goto run_override
-echo Vendored node.exe is missing after bootstrap. 1>&2
+echo Node executable not found. Install node on PATH or set NODE_REPL_NODE_PATH. 1>&2
 exit /b 1
 
-:run_vendored
-"%NODE_EXE%" "%RUNTIME_DIR%node_repl_mcp.mjs" %*
-exit /b %ERRORLEVEL%
-
-:run_override
-"%NODE_REPL_NODE_PATH%" "%RUNTIME_DIR%node_repl_mcp.mjs" %*
+:run
+"%MCP_NODE%" "%RUNTIME_DIR%node_repl_mcp.mjs" %*
 exit /b %ERRORLEVEL%
