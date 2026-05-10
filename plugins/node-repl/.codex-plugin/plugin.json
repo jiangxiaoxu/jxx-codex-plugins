@@ -1,0 +1,16 @@
+{
+  "name": "node-repl",
+  "version": "0.1.0",
+  "description": "Local Node REPL MCP server wrapper",
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Node REPL",
+    "shortDescription": "Run JavaScript through the local Node REPL MCP server",
+    "longDescription": "Expose a private-release-backed node_repl MCP runtime as a Codex plugin.",
+    "developerName": "jiangxiaoxu",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "brandColor": "#2563EB"
+  }
+}

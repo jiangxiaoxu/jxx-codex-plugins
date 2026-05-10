@@ -1,0 +1,9 @@
+node_modules/
+dist/
+downloads/
+tmp/
+*.log
+plugins/node-repl/runtime/bin/
+plugins/node-repl/runtime/*.tar.gz
+plugins/node-repl/runtime/*.manifest.json
+!.gitkeep
