@@ -5,11 +5,6 @@
   "description": "Private Codex plugin marketplace repo.",
   "license": "MIT",
   "type": "commonjs",
-  "scripts": {
-    "fetch:msstore": "node scripts/fetch-msstore.js 9plm9xgg6vks --filter x64",
-    "package:runtime": "node scripts/package-runtime.js",
-    "validate:plugin": "node scripts/validate-plugin.js"
-  },
   "devDependencies": {
     "7zip-bin": "^5.2.0",
     "fast-xml-parser": "^5.5.9"
