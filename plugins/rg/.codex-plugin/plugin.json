@@ -1,0 +1,16 @@
+{
+  "name": "rg",
+  "version": "0.1.0",
+  "description": "Node REPL helper for ripgrep searches",
+  "skills": "./skills/",
+  "keywords": ["rg", "ripgrep", "node-repl"],
+  "interface": {
+    "displayName": "rg",
+    "shortDescription": "Use ripgrep from the Node REPL",
+    "longDescription": "Provides a skill and ESM helper script for structured ripgrep search sessions in the Node REPL.",
+    "developerName": "jiangxiaoxu",
+    "category": "Developer Tools",
+    "capabilities": ["Read"],
+    "brandColor": "#111827"
+  }
+}
