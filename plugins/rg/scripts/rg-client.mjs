@@ -5,7 +5,10 @@ import { basename, delimiter, join } from "node:path";
 
 const DEFAULT_READ_TIMEOUT_MS = 60000;
 const DEFAULT_RAW_TIMEOUT_MS = 120000;
-const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
+const DEFAULT_RAW_MAX_BYTES = 16 * 1024;
+const DEFAULT_SEARCH_TEXT_MAX_BYTES = 12 * 1024;
+const DEFAULT_MAX_STDERR_BYTES = 1024;
+const DEFAULT_STDERR_PREVIEW_LINES = 10;
 const DEFAULT_QUEUE_HIGH_WATER = 200;
 const DEFAULT_QUEUE_LOW_WATER = 50;
 const DEFAULT_CANCEL_GRACE_MS = 500;
@@ -22,6 +25,31 @@ const STRUCTURED_FORBIDDEN_LONG = new Set([
   "--only-matching"
 ]);
 const STRUCTURED_FORBIDDEN_SHORT = new Set(["-l", "-L", "-c", "-o"]);
+
+export class RgProcessError extends Error {
+  /**
+   * Creates an rg process failure error.
+   *
+   * @param {{ kind: string, args: string[], cwd?: string, exitCode?: number, signal?: string, stderr: string, stderrBytes: number, stderrTruncated: boolean }} details Process details.
+   * @returns {RgProcessError} Process error instance.
+   */
+  constructor(details) {
+    super(`rg ${details.kind} failed with exit code ${details.exitCode ?? "unknown"}.`);
+    this.name = "RgProcessError";
+    this.kind = details.kind;
+    this.args = [...details.args];
+    this.cwd = details.cwd;
+    this.exitCode = details.exitCode;
+    this.signal = details.signal;
+    this.stderrPreview = formatStderrPreview(details.stderr);
+    this.stderrBytes = details.stderrBytes;
+    this.stderrTruncated = details.stderrTruncated;
+    Object.defineProperty(this, "stderr", {
+      value: details.stderr,
+      enumerable: false
+    });
+  }
+}
 
 /**
  * Creates a ripgrep runtime for Node REPL usage.
@@ -66,13 +94,13 @@ class RgRuntime {
     return new FilesBuilder(this, options).start();
   }
 
-  async raw(args, options = {}) {
+  raw(args, options = {}) {
     const rgArgs = normalizeTokenArray(args, "args");
     const cwd = options.cwd ?? this.defaultCwd;
     const timeoutMs = normalizeOptionalPositiveInteger(options.timeoutMs, "timeoutMs", DEFAULT_RAW_TIMEOUT_MS);
-    const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+    const maxBytes = normalizeOptionalPositiveInteger(options.maxBytes, "maxBytes", DEFAULT_RAW_MAX_BYTES);
     const command = this.rgCommand;
-    return await runRaw(command, rgArgs, { cwd, timeoutMs, maxBytes });
+    return runRaw(command, rgArgs, { cwd, timeoutMs, maxBytes });
   }
 
   sessions() {
@@ -328,6 +356,8 @@ class BaseSession {
       events: 0,
       files: 0,
       bytes: 0,
+      stderrBytes: 0,
+      stderrTruncated: false,
       startedAt: Date.now(),
       endedAt: undefined,
       exitCode: undefined,
@@ -343,9 +373,12 @@ class BaseSession {
     this.child.stderr.setEncoding("utf8");
     this.child.stdout.on("data", (chunk) => this.handleStdout(chunk));
     this.child.stderr.on("data", (chunk) => {
-      this.stderrBytes += Buffer.byteLength(chunk);
-      if (this.stderrBytes <= DEFAULT_MAX_BYTES) {
-        this.stderr += chunk;
+      const size = Buffer.byteLength(chunk);
+      this.stderrBytes += size;
+      this.stats.stderrBytes = this.stderrBytes;
+      this.stderr = keepTailUtf8(this.stderr + chunk, DEFAULT_MAX_STDERR_BYTES);
+      if (this.stderrBytes > DEFAULT_MAX_STDERR_BYTES) {
+        this.stats.stderrTruncated = true;
       }
     });
     this.child.on("error", (error) => {
@@ -402,6 +435,18 @@ class BaseSession {
     this.stats.endedAt = Date.now();
     this.stats.exitCode = exitCode;
     this.stats.signal = signal;
+    if (exitCode > 1 && !this.error && !this.cancelled) {
+      this.error = new RgProcessError({
+        kind: this.kind,
+        args: this.args,
+        cwd: this.cwd,
+        exitCode,
+        signal,
+        stderr: this.stderr,
+        stderrBytes: this.stderrBytes,
+        stderrTruncated: this.stats.stderrTruncated
+      });
+    }
     this.runtime.unregisterSession(this.id);
     this.resolveWaiters();
     this.resolveDoneWaiters();
@@ -487,7 +532,7 @@ class BaseSession {
     while (true) {
       const batch = await this.next(input);
       yield batch;
-      if (batch.done) {
+      if (isBatchDone(batch)) {
         break;
       }
     }
@@ -505,6 +550,9 @@ class BaseSession {
       readTimeoutMs: this.readTimeoutMs,
       queueLength: this.queue.length,
       stdoutPaused: this.stdoutPaused,
+      stderrPreview: formatStderrPreview(this.stderr),
+      stderrBytes: this.stderrBytes,
+      stderrTruncated: this.stats.stderrTruncated,
       stats: snapshotStats(this.stats)
     };
   }
@@ -540,12 +588,27 @@ class SearchSession extends BaseSession {
   }
 
   async next(input) {
-    const { limit: maxResults, timeoutMs } = normalizeNextOptions(input, "maxResults", this.readTimeoutMs);
+    const batch = await this.readStructuredBatch(input, "SearchSession.next()", {
+      maxTextBytes: DEFAULT_SEARCH_TEXT_MAX_BYTES
+    });
+    return {
+      text: formatSearchText(batch.files),
+      info: batch.stopReason
+    };
+  }
+
+  async readStructuredBatch(input, methodName, outputLimits = {}) {
+    const { limit: maxBlocks, timeoutMs } = normalizeSearchNextOptions(input, this.readTimeoutMs, methodName);
     const deadline = Date.now() + timeoutMs;
-    const matches = [];
-    let matchCount = 0;
+    const files = [];
+    const filesByPath = new Map();
+    let blockCount = 0;
     let readTimedOut = false;
-    while (matchCount < maxResults) {
+    let maxBlocksHit = false;
+    let maxTextBytesHit = false;
+    let currentPath;
+    let currentBlock;
+    while (true) {
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) {
         readTimedOut = true;
@@ -563,20 +626,72 @@ class SearchSession extends BaseSession {
         break;
       }
       const event = this.queue.shift();
-      matches.push(event);
-      this.resumeStdoutIfNeeded();
-      if (event.type === "match") {
-        matchCount += 1;
+      const line = eventToSearchLine(event);
+      const startsNewBlock =
+        !currentBlock || currentPath !== line.path || line.lineNumber > currentBlock.endLine + 1;
+      if (startsNewBlock && blockCount >= maxBlocks) {
+        this.queue.unshift(event);
+        maxBlocksHit = true;
+        break;
       }
+      const limitReason = searchOutputLimitReason(files, line, startsNewBlock, outputLimits);
+      if (limitReason) {
+        if (hasSearchLines(files)) {
+          this.queue.unshift(event);
+          if (limitReason === "maxTextBytes") {
+            maxTextBytesHit = true;
+          }
+          break;
+        }
+        const truncatedLine = truncateSearchLineForOutputLimit(
+          files,
+          line,
+          startsNewBlock,
+          outputLimits,
+          limitReason
+        );
+        if (truncatedLine) {
+          line.text = truncatedLine.text;
+          if (limitReason === "maxTextBytes") {
+            maxTextBytesHit = true;
+          }
+        } else {
+          this.queue.unshift(event);
+          if (limitReason === "maxTextBytes") {
+            maxTextBytesHit = true;
+          }
+          break;
+        }
+      }
+      if (startsNewBlock) {
+        currentPath = line.path;
+        currentBlock = { startLine: line.lineNumber, endLine: line.lineNumber, lines: [], matches: [] };
+        let file = filesByPath.get(line.path);
+        if (!file) {
+          file = { path: line.path, blocks: [] };
+          filesByPath.set(line.path, file);
+          files.push(file);
+        }
+        file.blocks.push(currentBlock);
+        blockCount += 1;
+      }
+      appendSearchLine(currentBlock, line);
+      if (maxTextBytesHit) {
+        break;
+      }
+      this.resumeStdoutIfNeeded();
     }
-    const truncated = matchCount >= maxResults && !this.done;
+    if (this.error && this.done && this.queue.length === 0) {
+      throw this.error;
+    }
     return {
-      matches,
+      files,
+      blockCount,
       stats: snapshotStats(this.stats),
       done: this.done && this.queue.length === 0,
-      truncated,
+      truncated: maxBlocksHit || maxTextBytesHit,
       readTimedOut,
-      stopReason: stopReason(this, truncated, readTimedOut)
+      stopReason: stopReason(this, { maxBlocksHit, maxTextBytesHit, readTimedOut })
     };
   }
 }
@@ -619,14 +734,18 @@ class FileSession extends BaseSession {
       files.push(this.queue.shift());
       this.resumeStdoutIfNeeded();
     }
-    const truncated = files.length >= maxFiles && !this.done;
+    if (this.error && this.done && this.queue.length === 0) {
+      throw this.error;
+    }
+    const hasRemaining = !this.done || this.queue.length > 0;
+    const maxFilesHit = files.length >= maxFiles && hasRemaining;
     return {
       files,
       stats: snapshotStats(this.stats),
       done: this.done && this.queue.length === 0,
-      truncated,
+      truncated: maxFilesHit,
       readTimedOut,
-      stopReason: stopReason(this, truncated, readTimedOut)
+      stopReason: stopReason(this, { maxFilesHit, readTimedOut })
     };
   }
 }
@@ -693,6 +812,147 @@ function normalizeNextOptions(input, limitName, defaultReadTimeoutMs) {
   };
 }
 
+function normalizeSearchNextOptions(input, defaultReadTimeoutMs, methodName = "SearchSession.next()") {
+  if (typeof input === "object" && input !== null && Object.hasOwn(input, "maxResults")) {
+    throw new TypeError(`${methodName} uses maxBlocks; maxResults is not supported.`);
+  }
+  return normalizeNextOptions(input, "maxBlocks", defaultReadTimeoutMs);
+}
+
+function eventToSearchLine(event) {
+  const data = event.data ?? {};
+  const submatches = event.type === "match" ? compactSubmatches(data.submatches ?? []) : undefined;
+  return {
+    path: data.path?.text ?? "",
+    lineNumber: data.line_number,
+    type: event.type,
+    text: removeTrailingLineBreaks(data.lines?.text ?? ""),
+    submatches
+  };
+}
+
+function appendSearchLine(block, line) {
+  block.startLine = Math.min(block.startLine, line.lineNumber);
+  block.endLine = Math.max(block.endLine, line.lineNumber);
+  const existingLine = block.lines.find((item) => item.lineNumber === line.lineNumber);
+  if (existingLine) {
+    existingLine.type = existingLine.type === "match" ? existingLine.type : line.type;
+    existingLine.text = line.text;
+  } else {
+    block.lines.push({ lineNumber: line.lineNumber, type: line.type, text: line.text });
+  }
+  if (line.type === "match") {
+    block.matches.push({ lineNumber: line.lineNumber, submatches: line.submatches });
+  }
+}
+
+function searchOutputLimitReason(files, line, startsNewBlock, outputLimits) {
+  const candidateFiles = cloneSearchFiles(files);
+  appendSearchLineToFiles(candidateFiles, { ...line }, startsNewBlock);
+  if (
+    outputLimits.maxTextBytes !== undefined &&
+    utf8ByteLength(formatSearchText(candidateFiles)) > outputLimits.maxTextBytes
+  ) {
+    return "maxTextBytes";
+  }
+  return undefined;
+}
+
+function truncateSearchLineForOutputLimit(files, line, startsNewBlock, outputLimits, limitReason) {
+  const characters = Array.from(line.text);
+  let low = 0;
+  let high = characters.length;
+  let bestText = "";
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidateLine = { ...line, text: characters.slice(0, mid).join("") };
+    const candidateFiles = cloneSearchFiles(files);
+    appendSearchLineToFiles(candidateFiles, candidateLine, startsNewBlock);
+    const fits = utf8ByteLength(formatSearchText(candidateFiles)) <= outputLimits.maxTextBytes;
+    if (fits) {
+      bestText = candidateLine.text;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  const candidateLine = { ...line, text: bestText };
+  const candidateFiles = cloneSearchFiles(files);
+  appendSearchLineToFiles(candidateFiles, candidateLine, startsNewBlock);
+  const fits = utf8ByteLength(formatSearchText(candidateFiles)) <= outputLimits.maxTextBytes;
+  return fits ? candidateLine : undefined;
+}
+
+function appendSearchLineToFiles(files, line, startsNewBlock) {
+  let file = files.find((item) => item.path === line.path);
+  if (!file) {
+    file = { path: line.path, blocks: [] };
+    files.push(file);
+  }
+  let block = startsNewBlock ? undefined : file.blocks[file.blocks.length - 1];
+  if (!block) {
+    block = { startLine: line.lineNumber, endLine: line.lineNumber, lines: [], matches: [] };
+    file.blocks.push(block);
+  }
+  appendSearchLine(block, line);
+}
+
+function cloneSearchFiles(files) {
+  return files.map((file) => ({
+    path: file.path,
+    blocks: file.blocks.map((block) => ({
+      startLine: block.startLine,
+      endLine: block.endLine,
+      lines: block.lines.map((line) => ({ ...line })),
+      matches: block.matches.map((match) => ({
+        lineNumber: match.lineNumber,
+        submatches: match.submatches.map((submatch) => ({ ...submatch }))
+      }))
+    }))
+  }));
+}
+
+function hasSearchLines(files) {
+  return files.some((file) => file.blocks.some((block) => block.lines.length > 0));
+}
+
+function compactSubmatches(submatches) {
+  return submatches.map((submatch) => ({
+    start: submatch.start,
+    end: submatch.end,
+    text: submatch.match?.text ?? ""
+  }));
+}
+
+function removeTrailingLineBreaks(value) {
+  return value.replace(/[\r\n]+$/u, "");
+}
+
+function utf8ByteLength(value) {
+  return Buffer.byteLength(value, "utf8");
+}
+
+function formatSearchText(files) {
+  const hasContextLines = files.some((file) =>
+    file.blocks.some((block) => block.lines.some((line) => line.type === "context"))
+  );
+  return files
+    .map((file) => {
+      const lines = [file.path];
+      for (let blockIndex = 0; blockIndex < file.blocks.length; blockIndex += 1) {
+        if (hasContextLines && blockIndex > 0) {
+          lines.push("--");
+        }
+        for (const line of file.blocks[blockIndex].lines) {
+          const separator = line.type === "context" ? "-" : ":";
+          lines.push(`${line.lineNumber}${separator}${line.text}`);
+        }
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
+
 function normalizeOptionalPositiveInteger(value, name, fallback) {
   if (value === undefined) {
     return fallback;
@@ -706,6 +966,30 @@ function normalizePositiveInteger(value, name) {
     throw new TypeError(`${name} must be a positive integer.`);
   }
   return limit;
+}
+
+function keepTailUtf8(value, maxBytes) {
+  const characters = Array.from(value);
+  let bytes = 0;
+  const output = [];
+  for (let index = characters.length - 1; index >= 0; index -= 1) {
+    const character = characters[index];
+    const size = Buffer.byteLength(character);
+    if (bytes + size > maxBytes) {
+      break;
+    }
+    output.push(character);
+    bytes += size;
+  }
+  return output.reverse().join("");
+}
+
+function formatStderrPreview(value) {
+  const lines = value.split(/\r?\n/u);
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  return lines.slice(-DEFAULT_STDERR_PREVIEW_LINES).join("\n");
 }
 
 function validateStructuredArgs(args) {
@@ -871,11 +1155,27 @@ function snapshotStats(stats) {
   return { ...stats };
 }
 
-function stopReason(session, truncated, readTimedOut) {
-  if (truncated) {
-    return "maxResults";
+function isBatchDone(batch) {
+  if (typeof batch.info === "string") {
+    return batch.info === "done";
   }
-  if (readTimedOut) {
+  if (batch.info && typeof batch.info === "object") {
+    return batch.info.done === true;
+  }
+  return batch.done === true;
+}
+
+function stopReason(session, reasons) {
+  if (reasons.maxTextBytesHit) {
+    return "maxTextBytes";
+  }
+  if (reasons.maxBlocksHit) {
+    return "maxBlocks";
+  }
+  if (reasons.maxFilesHit) {
+    return "maxFiles";
+  }
+  if (reasons.readTimedOut) {
     return "readTimeout";
   }
   if (session.cancelled) {
