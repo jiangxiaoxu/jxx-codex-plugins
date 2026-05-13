@@ -3,81 +3,104 @@ name: rg
 description: "Use when the user mentions rg, ripgrep, or asks to search files through the Node REPL helper."
 ---
 
-在 Node REPL 中通过 `rg-client` 搜索文件时使用本 skill。
+Use `rg-client` from the Node REPL.
 
 ## Bootstrap
 
-首次使用先注册 `globalThis.rg`;重复 bootstrap 前必须检查,避免覆盖已有 runtime 或活跃 session:
+Run once when the skill is activated:
 
 ```js
-if (!globalThis.rg) {
+if (typeof globalThis.rg === "undefined") {
   const { setupRgRuntime } = await import("<plugin root>/scripts/rg-client.mjs");
   setupRgRuntime({ globals: globalThis, defaultCwd: nodeRepl.cwd });
 }
 ```
 
-如果需要指定 `rg.exe` 路径,只在未注册时传入 `rgPath`。跨 Node REPL 调用保存状态时使用 `globalThis` 属性,避免重复声明顶层 `const` / `let`。
+Use `globalThis` for cross-call state. Pass `rgPath` only during first registration when an explicit `rg.exe` is needed.
 
 ## API
 
-只使用本节列出的方法,不要猜测或发明新的 chain method。
+Use only these methods. Do not invent chain methods.
 
-- `rg`: `search(pattern)`, `createSearch(options)`, `files()`, `createFiles(options)`, `raw(args, options?)`, `sessions()`, `cancelAll()`
-- `SearchBuilder`: `cwd(path)`, `path(path)`, `glob(pattern)`, `globs(patterns)`, `type(name)`, `typeNot(name)`, `fixedStrings()`, `word()`, `ignoreCase()`, `caseSensitive()`, `smartCase()`, `hidden()`, `noIgnore()`, `follow()`, `multiline()`, `context(n)`, `beforeContext(n)`, `afterContext(n)`, `maxColumns(n)`, `encoding(name)`, `readTimeout(ms)`, `arg(tokenOrTokens)`, `args(tokens)`, `start()`
-- `FilesBuilder`: `cwd(path)`, `glob(pattern)`, `globs(patterns)`, `type(name)`, `hidden()`, `noIgnore()`, `follow()`, `readTimeout(ms)`, `arg(tokenOrTokens)`, `args(tokens)`, `start()`
-- `SearchSession`: `next(n | { maxBlocks, timeoutMs })`, `cancel()`, `batches(n | { maxBlocks, timeoutMs })`
-- `FileSession`: `next(n | { maxFiles, timeoutMs })`, `cancel()`, `batches(n | { maxFiles, timeoutMs })`
+- `rg`: `search(pattern)`, `files()`, `raw(args, options?)`, `show(value)`, `sessions()`, `cancelAll()`
+- `SearchBuilder`: `cwd(path)`, `path(path)`, `glob(pattern)`, `type(name)`, `fixedStrings()`, `ignoreCase()`, `smartCase()`, `hidden()`, `noIgnore()`, `beforeContext(n)`, `afterContext(n)`, `next(n)`, `drain()`, `show()`, `start()`
+- `FilesBuilder`: `cwd(path)`, `glob(pattern)`, `type(name)`, `hidden()`, `noIgnore()`, `next(n)`, `drain()`, `show()`, `start()`
+- `SearchSession` / `FileSession`: `next(n)`, `drain()`, `show()`, `cancel()`
 
-## Search
+`rg.search(pattern)` builds a text search. `rg.files()` builds a file listing. `rg.raw(args, options?)` runs low-level ripgrep arguments. `rg.show(value)` prints an existing result.
 
-默认用 `next()` 获取省 token 的 heading-style 文本。`info` 是 stop reason,继续读取还是取消由它决定:
+Builders collect filters before a command starts. Use `next(n)` for one batch, `drain()` for remaining output with the built-in cap, `show()` to drain and print, and `start()` when the session must continue across calls.
+
+Sessions represent running rg processes. Use `next(n)` to read more, `drain()` to read the remaining capped output, `show()` to display the remaining capped output, and `cancel()` when the session is no longer needed.
+
+## Examples
+
+Search:
+
+```js
+await rg.search("TODO").show();
+await rg.search("TODO").cwd("src").glob("**/*.ts").show();
+await rg.search("TODO").path("src/index.ts").show();
+```
+
+Match options:
+
+```js
+await rg.search("foo.bar(").fixedStrings().show();
+await rg.search("todo").smartCase().show();
+await rg.search("TODO").beforeContext(2).afterContext(2).show();
+```
+
+Files:
+
+```js
+await rg.files().glob("*.md").show();
+await rg.files().type("ts").hidden().show();
+```
+
+Batch control:
 
 ```js
 const session = rg.search("TODO").glob("*.js").start();
-const batch = await session.next(20);
-nodeRepl.write(batch.text);
-
-if (batch.info !== "done") {
-  await session.cancel();
-}
+await rg.show(await session.next(20));
+await session.show();
 ```
 
-跨调用分批读取:
+Cross-call session:
 
 ```js
 if (globalThis.rgSession) {
   await globalThis.rgSession.cancel();
-  delete globalThis.rgSession;
 }
 
 globalThis.rgSession = rg.search("TODO").glob("*.js").start();
 const batch = await globalThis.rgSession.next(20);
-nodeRepl.write(batch.text);
+await rg.show(batch);
 
 if (batch.info === "done") {
   delete globalThis.rgSession;
 }
 ```
 
-## Files And Raw
+Raw and cleanup:
 
 ```js
-const files = await rg.files().glob("*.md").start().next(100);
-nodeRepl.write(JSON.stringify(files));
-
-const version = await rg.raw(["--version"]);
-nodeRepl.write(version.stdout);
+await rg.show(await rg.raw(["--version"]));
+await rg.show(await rg.raw(["TODO", "src"], { maxBytes: 32 * 1024 }));
+await rg.show(rg.sessions());
+await rg.cancelAll();
 ```
 
-## Usage Notes
+## Rules
 
-- `search` 默认使用 regex;只有调用 `fixedStrings()` 才会加 `-F`。
-- bootstrap 已设置 `defaultCwd: nodeRepl.cwd`;只有搜索其它目录时才显式 `.cwd(...)`。
-- `search` 内部强制使用 `--json`;不要通过 `arg()` / `args()` 传入会破坏结构化解析的 flags,如 `--json`,`--files`,`-l`,`-L`,`-c`,`-o`。
-- `next()` 返回 `{ text, info }`;`text` 最多 12KB,超限时 `info === "maxTextBytes"`。
-- `next()` 用 `maxBlocks`;`FileSession.next()` 使用 `maxFiles`。
-- 单次读取默认最多等待 60s;传 `timeoutMs` 只影响本次读取,不会杀掉 `rg` 或销毁 session。
-- `raw()` 默认最多保留 16KB 输出;需要更多时传 `raw(args, { maxBytes })`。
-- `raw()` 不限制 flags,适合查看版本或执行非结构化命令。
-- session stderr 内部保留最近 1KB,`stderrPreview` 为最近 10 行;`rg` exit code 大于 1 时会抛 `RgProcessError`。
-- 搜索结束或不需要继续时调用 `cancel()` 并删除保存的 session;不确定残留时先看 `rg.sessions()`,再用 `rg.cancelAll()` 清理。
+- `search` uses regex by default;use `fixedStrings()` for literal text.
+- Use repeated `.glob(...)` calls for multiple `-g` filters.
+- `next(n)` accepts only a positive integer;do not pass object arguments or `next(-1)`.
+- `drain()` / `show()` do not accept arguments;`drain()` reads up to about 16KB, and search `next()` text is capped at 12KB.
+- Builder `next/drain/show` uses a temporary session and auto-`cancel()`s when the result is not fully read.
+- Session `next/drain/show` continues from the current cursor and does not auto-`cancel()`;when not fully read, continue with `next/drain` or call `cancel()`.
+- `rg.show(value)` displays an existing value only and does not continue reading a session;search batches display `text`, file batches display one file per line, and raw results display `stdout`.
+- Check stop reasons: search uses `info`, files use `stopReason`;only `done` means fully read, while `maxTextBytes/maxFiles/maxFilesBytes/readTimeout` means incomplete.
+- Use `raw()` for unstructured flags or version checks;`raw()` keeps 16KB by default, pass `{ maxBytes }` for more.
+- Explicit `.cwd(...)` is needed only when searching outside the bootstrap cwd.
+- Check `rg.sessions()` for leftovers. Use `cancel()` or `rg.cancelAll()` when sessions are no longer needed.

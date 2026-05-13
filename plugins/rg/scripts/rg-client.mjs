@@ -7,12 +7,13 @@ const DEFAULT_READ_TIMEOUT_MS = 60000;
 const DEFAULT_RAW_TIMEOUT_MS = 120000;
 const DEFAULT_RAW_MAX_BYTES = 16 * 1024;
 const DEFAULT_SEARCH_TEXT_MAX_BYTES = 12 * 1024;
+const DEFAULT_DRAIN_TEXT_MAX_BYTES = 16 * 1024;
 const DEFAULT_MAX_STDERR_BYTES = 1024;
 const DEFAULT_STDERR_PREVIEW_LINES = 10;
 const DEFAULT_QUEUE_HIGH_WATER = 200;
 const DEFAULT_QUEUE_LOW_WATER = 50;
-const DEFAULT_CANCEL_GRACE_MS = 500;
-const DEFAULT_CANCEL_FORCE_MS = 500;
+const DEFAULT_CANCEL_GRACE_MS = 50;
+const DEFAULT_CANCEL_FORCE_MS = 50;
 const STRUCTURED_FORBIDDEN_LONG = new Set([
   "--json",
   "--vimgrep",
@@ -54,7 +55,7 @@ export class RgProcessError extends Error {
 /**
  * Creates a ripgrep runtime for Node REPL usage.
  *
- * @param {{ globals?: object, rgPath?: string, defaultCwd?: string, readTimeoutMs?: number }} [options] Runtime options.
+ * @param {{ globals?: object, rgPath?: string, defaultCwd?: string, readTimeoutMs?: number, write?: (text: string) => void }} [options] Runtime options.
  * @returns {{ rg: RgRuntime }} Runtime API.
  */
 export function setupRgRuntime(options = {}) {
@@ -74,6 +75,7 @@ class RgRuntime {
       "readTimeoutMs",
       DEFAULT_READ_TIMEOUT_MS
     );
+    this.write = resolveWrite(options);
     this.nextSessionId = 1;
     this.activeSessions = new Map();
   }
@@ -82,16 +84,8 @@ class RgRuntime {
     return new SearchBuilder(this, { pattern });
   }
 
-  createSearch(options) {
-    return new SearchBuilder(this, options).start();
-  }
-
   files() {
     return new FilesBuilder(this, {});
-  }
-
-  createFiles(options = {}) {
-    return new FilesBuilder(this, options).start();
   }
 
   raw(args, options = {}) {
@@ -101,6 +95,16 @@ class RgRuntime {
     const maxBytes = normalizeOptionalPositiveInteger(options.maxBytes, "maxBytes", DEFAULT_RAW_MAX_BYTES);
     const command = this.rgCommand;
     return runRaw(command, rgArgs, { cwd, timeoutMs, maxBytes });
+  }
+
+  async show(value) {
+    if (arguments.length !== 1) {
+      throw new TypeError("rg.show(value) expects exactly one argument.");
+    }
+    assertRuntimeWrite(this);
+    const resolved = await value;
+    writeRuntimeOutput(this, formatShowValue(resolved));
+    return resolved;
   }
 
   sessions() {
@@ -139,11 +143,6 @@ class BaseBuilder {
   constructor(runtime, options) {
     this.runtime = runtime;
     this.options = { ...options };
-    this.readTimeoutMs = normalizeOptionalPositiveInteger(
-      options.readTimeoutMs,
-      "readTimeoutMs",
-      runtime.readTimeoutMs
-    );
     this.extraArgs = [];
   }
 
@@ -154,13 +153,6 @@ class BaseBuilder {
 
   glob(pattern) {
     this.extraArgs.push("--glob", pattern);
-    return this;
-  }
-
-  globs(patterns) {
-    for (const pattern of normalizeTokenArray(patterns, "patterns")) {
-      this.glob(pattern);
-    }
     return this;
   }
 
@@ -179,33 +171,13 @@ class BaseBuilder {
     return this;
   }
 
-  follow() {
-    this.extraArgs.push("--follow");
-    return this;
-  }
-
-  readTimeout(ms) {
-    this.readTimeoutMs = normalizePositiveInteger(ms, "readTimeoutMs");
-    return this;
-  }
-
-  arg(tokenOrTokens) {
-    this.extraArgs.push(...normalizeTokenArray(tokenOrTokens, "tokenOrTokens"));
-    return this;
-  }
-
-  args(tokens) {
-    this.extraArgs.push(...normalizeTokenArray(tokens, "tokens"));
-    return this;
-  }
-
   buildCommonArgs() {
     validateStructuredArgs(this.extraArgs);
     return [...this.extraArgs];
   }
 
   buildSessionOptions() {
-    return { readTimeoutMs: this.readTimeoutMs };
+    return {};
   }
 }
 
@@ -216,40 +188,10 @@ class SearchBuilder extends BaseBuilder {
       throw new Error("rg.search requires a pattern.");
     }
     this.paths = [];
-    this.applyObjectOptions(options);
-  }
-
-  applyObjectOptions(options) {
-    if (options.path !== undefined) {
-      this.path(options.path);
-    }
-    if (options.paths !== undefined) {
-      for (const path of normalizeTokenArray(options.paths, "paths")) {
-        this.path(path);
-      }
-    }
-    applySharedObjectOptions(this, options);
-    applyTokenOption(this.extraArgs, "--type-not", options.typeNot);
-    applyBoolean(this.extraArgs, "-F", options.fixedStrings);
-    applyBoolean(this.extraArgs, "--word-regexp", options.word);
-    applyBoolean(this.extraArgs, "--ignore-case", options.ignoreCase);
-    applyBoolean(this.extraArgs, "--case-sensitive", options.caseSensitive);
-    applyBoolean(this.extraArgs, "--smart-case", options.smartCase);
-    applyBoolean(this.extraArgs, "--multiline", options.multiline);
-    applyNumberOption(this.extraArgs, "--context", options.context);
-    applyNumberOption(this.extraArgs, "--before-context", options.beforeContext);
-    applyNumberOption(this.extraArgs, "--after-context", options.afterContext);
-    applyNumberOption(this.extraArgs, "--max-columns", options.maxColumns);
-    applyTokenOption(this.extraArgs, "--encoding", options.encoding);
   }
 
   path(path) {
     this.paths.push(path);
-    return this;
-  }
-
-  typeNot(name) {
-    this.extraArgs.push("--type-not", name);
     return this;
   }
 
@@ -258,33 +200,13 @@ class SearchBuilder extends BaseBuilder {
     return this;
   }
 
-  word() {
-    this.extraArgs.push("--word-regexp");
-    return this;
-  }
-
   ignoreCase() {
     this.extraArgs.push("--ignore-case");
     return this;
   }
 
-  caseSensitive() {
-    this.extraArgs.push("--case-sensitive");
-    return this;
-  }
-
   smartCase() {
     this.extraArgs.push("--smart-case");
-    return this;
-  }
-
-  multiline() {
-    this.extraArgs.push("--multiline");
-    return this;
-  }
-
-  context(n) {
-    this.extraArgs.push("--context", String(n));
     return this;
   }
 
@@ -298,35 +220,46 @@ class SearchBuilder extends BaseBuilder {
     return this;
   }
 
-  maxColumns(n) {
-    this.extraArgs.push("--max-columns", String(n));
-    return this;
-  }
-
-  encoding(name) {
-    this.extraArgs.push("--encoding", name);
-    return this;
-  }
-
   start() {
     const args = ["--json", ...this.buildCommonArgs(), this.options.pattern, ...this.paths];
     return new SearchSession(this.runtime, args, this.options.cwd, this.buildSessionOptions());
   }
+
+  async next(count) {
+    return await readOneShotBatch(this.start(), count);
+  }
+
+  async drain() {
+    assertNoArguments(arguments, "SearchBuilder.drain()");
+    return await readOneShotDrain(this.start());
+  }
+
+  async show() {
+    assertNoArguments(arguments, "SearchBuilder.show()");
+    assertRuntimeWrite(this.runtime);
+    return await showOneShotDrain(this.start());
+  }
 }
 
 class FilesBuilder extends BaseBuilder {
-  constructor(runtime, options) {
-    super(runtime, options);
-    this.applyObjectOptions(options);
-  }
-
-  applyObjectOptions(options) {
-    applySharedObjectOptions(this, options);
-  }
-
   start() {
     const args = ["--files", ...this.buildCommonArgs()];
     return new FileSession(this.runtime, args, this.options.cwd, this.buildSessionOptions());
+  }
+
+  async next(count) {
+    return await readOneShotBatch(this.start(), count);
+  }
+
+  async drain() {
+    assertNoArguments(arguments, "FilesBuilder.drain()");
+    return await readOneShotDrain(this.start());
+  }
+
+  async show() {
+    assertNoArguments(arguments, "FilesBuilder.show()");
+    assertRuntimeWrite(this.runtime);
+    return await showOneShotDrain(this.start());
   }
 }
 
@@ -510,15 +443,18 @@ class BaseSession {
     });
   }
 
-  async cancel(options = {}) {
+  async cancel() {
+    if (arguments.length > 0) {
+      throw new TypeError("cancel() does not accept arguments.");
+    }
     if (!this.done) {
       this.cancelled = true;
       this.resumeForShutdown();
       this.kill("SIGTERM");
-      const closed = await waitUntilDoneOrTimeout(this, options.graceMs ?? DEFAULT_CANCEL_GRACE_MS);
+      const closed = await waitUntilDoneOrTimeout(this, DEFAULT_CANCEL_GRACE_MS);
       if (!closed && !this.done) {
         this.kill("SIGKILL");
-        const forceClosed = await waitUntilDoneOrTimeout(this, options.forceMs ?? DEFAULT_CANCEL_FORCE_MS);
+        const forceClosed = await waitUntilDoneOrTimeout(this, DEFAULT_CANCEL_FORCE_MS);
         if (!forceClosed && !this.done) {
           this.forceFinished = true;
           this.finish(undefined, "force-cancel-timeout");
@@ -526,16 +462,6 @@ class BaseSession {
       }
     }
     return { cancelled: this.cancelled, forceFinished: this.forceFinished, stats: snapshotStats(this.stats) };
-  }
-
-  async *batches(input) {
-    while (true) {
-      const batch = await this.next(input);
-      yield batch;
-      if (isBatchDone(batch)) {
-        break;
-      }
-    }
   }
 
   summary() {
@@ -587,8 +513,8 @@ class SearchSession extends BaseSession {
     }
   }
 
-  async next(input) {
-    const batch = await this.readStructuredBatch(input, "SearchSession.next()", {
+  async next(count) {
+    const batch = await this.readStructuredBatch(count, "SearchSession.next()", {
       maxTextBytes: DEFAULT_SEARCH_TEXT_MAX_BYTES
     });
     return {
@@ -597,9 +523,28 @@ class SearchSession extends BaseSession {
     };
   }
 
-  async readStructuredBatch(input, methodName, outputLimits = {}) {
-    const { limit: maxBlocks, timeoutMs } = normalizeSearchNextOptions(input, this.readTimeoutMs, methodName);
-    const deadline = Date.now() + timeoutMs;
+  async drain() {
+    assertNoArguments(arguments, "SearchSession.drain()");
+    const batch = await this.readStructuredBatch(Number.MAX_SAFE_INTEGER, "SearchSession.drain()", {
+      maxTextBytes: DEFAULT_DRAIN_TEXT_MAX_BYTES
+    });
+    return {
+      text: formatSearchText(batch.files),
+      info: batch.stopReason
+    };
+  }
+
+  async show() {
+    assertNoArguments(arguments, "SearchSession.show()");
+    assertRuntimeWrite(this.runtime);
+    const batch = await this.drain();
+    writeRuntimeOutput(this.runtime, formatShowValue(batch));
+    return batch;
+  }
+
+  async readStructuredBatch(count, methodName, outputLimits = {}) {
+    const maxBlocks = normalizeNextCount(count, methodName);
+    const deadline = Date.now() + this.readTimeoutMs;
     const files = [];
     const filesByPath = new Map();
     let blockCount = 0;
@@ -709,12 +654,35 @@ class FileSession extends BaseSession {
     this.enqueue(line);
   }
 
-  async next(input) {
-    const { limit: maxFiles, timeoutMs } = normalizeNextOptions(input, "maxFiles", this.readTimeoutMs);
-    const deadline = Date.now() + timeoutMs;
+  async next(count) {
+    const maxFiles = normalizeNextCount(count, "FileSession.next()");
+    return await this.readFileBatch({ maxFiles });
+  }
+
+  async drain() {
+    assertNoArguments(arguments, "FileSession.drain()");
+    return await this.readFileBatch({ maxFilesBytes: DEFAULT_DRAIN_TEXT_MAX_BYTES });
+  }
+
+  async show() {
+    assertNoArguments(arguments, "FileSession.show()");
+    assertRuntimeWrite(this.runtime);
+    const batch = await this.drain();
+    writeRuntimeOutput(this.runtime, formatShowValue(batch));
+    return batch;
+  }
+
+  async readFileBatch(limits) {
+    const deadline = Date.now() + this.readTimeoutMs;
     const files = [];
     let readTimedOut = false;
-    while (files.length < maxFiles) {
+    let maxFilesHit = false;
+    let maxFilesBytesHit = false;
+    while (true) {
+      if (limits.maxFiles !== undefined && files.length >= limits.maxFiles) {
+        maxFilesHit = !this.done || this.queue.length > 0;
+        break;
+      }
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) {
         readTimedOut = true;
@@ -731,56 +699,29 @@ class FileSession extends BaseSession {
       if (this.queue.length === 0) {
         break;
       }
-      files.push(this.queue.shift());
+      const nextFile = this.queue.shift();
+      if (
+        limits.maxFilesBytes !== undefined &&
+        utf8ByteLength(JSON.stringify([...files, nextFile])) > limits.maxFilesBytes
+      ) {
+        this.queue.unshift(nextFile);
+        maxFilesBytesHit = true;
+        break;
+      }
+      files.push(nextFile);
       this.resumeStdoutIfNeeded();
     }
     if (this.error && this.done && this.queue.length === 0) {
       throw this.error;
     }
-    const hasRemaining = !this.done || this.queue.length > 0;
-    const maxFilesHit = files.length >= maxFiles && hasRemaining;
     return {
       files,
       stats: snapshotStats(this.stats),
       done: this.done && this.queue.length === 0,
-      truncated: maxFilesHit,
+      truncated: maxFilesHit || maxFilesBytesHit,
       readTimedOut,
-      stopReason: stopReason(this, { maxFilesHit, readTimedOut })
+      stopReason: stopReason(this, { maxFilesHit, maxFilesBytesHit, readTimedOut })
     };
-  }
-}
-
-function applySharedObjectOptions(builder, options) {
-  applyTokenOption(builder.extraArgs, "--glob", options.glob);
-  if (options.globs !== undefined) {
-    for (const pattern of normalizeTokenArray(options.globs, "globs")) {
-      builder.extraArgs.push("--glob", pattern);
-    }
-  }
-  applyTokenOption(builder.extraArgs, "--type", options.type);
-  applyBoolean(builder.extraArgs, "--hidden", options.hidden);
-  applyBoolean(builder.extraArgs, "--no-ignore", options.noIgnore);
-  applyBoolean(builder.extraArgs, "--follow", options.follow);
-  if (options.args !== undefined) {
-    builder.extraArgs.push(...normalizeTokenArray(options.args, "args"));
-  }
-}
-
-function applyBoolean(args, flag, value) {
-  if (value === true) {
-    args.push(flag);
-  }
-}
-
-function applyNumberOption(args, flag, value) {
-  if (value !== undefined) {
-    args.push(flag, String(value));
-  }
-}
-
-function applyTokenOption(args, flag, value) {
-  if (value !== undefined) {
-    args.push(flag, value);
   }
 }
 
@@ -798,25 +739,21 @@ function assertToken(value, name) {
   return value;
 }
 
-function normalizeLimit(input, name) {
-  const value = typeof input === "object" && input !== null ? input[name] : input;
-  const limit = value ?? 100;
-  return normalizePositiveInteger(limit, name);
-}
-
-function normalizeNextOptions(input, limitName, defaultReadTimeoutMs) {
-  const timeoutValue = typeof input === "object" && input !== null ? input.timeoutMs : undefined;
-  return {
-    limit: normalizeLimit(input, limitName),
-    timeoutMs: normalizeOptionalPositiveInteger(timeoutValue, "timeoutMs", defaultReadTimeoutMs)
-  };
-}
-
-function normalizeSearchNextOptions(input, defaultReadTimeoutMs, methodName = "SearchSession.next()") {
-  if (typeof input === "object" && input !== null && Object.hasOwn(input, "maxResults")) {
-    throw new TypeError(`${methodName} uses maxBlocks; maxResults is not supported.`);
+function normalizeNextCount(count, methodName) {
+  if (typeof count === "object" && count !== null) {
+    throw new TypeError(`${methodName} only accepts a positive integer count.`);
   }
-  return normalizeNextOptions(input, "maxBlocks", defaultReadTimeoutMs);
+  try {
+    return normalizePositiveInteger(count, "count");
+  } catch (cause) {
+    throw new TypeError(`${methodName} only accepts a positive integer count.`, { cause });
+  }
+}
+
+function assertNoArguments(args, methodName) {
+  if (args.length > 0) {
+    throw new TypeError(`${methodName} does not accept arguments.`);
+  }
 }
 
 function eventToSearchLine(event) {
@@ -1165,6 +1102,92 @@ function isBatchDone(batch) {
   return batch.done === true;
 }
 
+async function readOneShotBatch(session, count) {
+  try {
+    const batch = await session.next(count);
+    if (!isBatchDone(batch)) {
+      await session.cancel();
+    }
+    return batch;
+  } catch (error) {
+    if (!session.done) {
+      await session.cancel().catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function readOneShotDrain(session) {
+  try {
+    const batch = await session.drain();
+    if (!isBatchDone(batch)) {
+      await session.cancel();
+    }
+    return batch;
+  } catch (error) {
+    if (!session.done) {
+      await session.cancel().catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function showOneShotDrain(session) {
+  try {
+    const batch = await session.show();
+    if (!isBatchDone(batch)) {
+      await session.cancel();
+    }
+    return batch;
+  } catch (error) {
+    if (!session.done) {
+      await session.cancel().catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+function resolveWrite(options) {
+  if (typeof options.write === "function") {
+    return options.write;
+  }
+  const write = options.globals?.nodeRepl?.write;
+  if (typeof write === "function") {
+    return write.bind(options.globals.nodeRepl);
+  }
+  return undefined;
+}
+
+function writeRuntimeOutput(runtime, text) {
+  assertRuntimeWrite(runtime);
+  runtime.write(text);
+}
+
+function assertRuntimeWrite(runtime) {
+  if (typeof runtime.write !== "function") {
+    throw new Error("rg.show requires setupRgRuntime({ globals: globalThis }) with nodeRepl.write available.");
+  }
+}
+
+function formatShowValue(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value.text === "string") {
+    return value.text;
+  }
+  if (typeof value.stdout === "string") {
+    return value.stdout;
+  }
+  if (Array.isArray(value.files)) {
+    return value.files.join("\n");
+  }
+  return JSON.stringify(value, null, 2);
+}
+
 function stopReason(session, reasons) {
   if (reasons.maxTextBytesHit) {
     return "maxTextBytes";
@@ -1174,6 +1197,9 @@ function stopReason(session, reasons) {
   }
   if (reasons.maxFilesHit) {
     return "maxFiles";
+  }
+  if (reasons.maxFilesBytesHit) {
+    return "maxFilesBytes";
   }
   if (reasons.readTimedOut) {
     return "readTimeout";
