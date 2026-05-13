@@ -74,6 +74,8 @@ test("SearchSession throws RgProcessError when rg exits above code 1", async (t)
       assert.equal(error.exitCode > 1, true);
       assert.match(error.stderr, /regex|error|parse/i);
       assert.match(error.stderrPreview, /regex|error|parse/i);
+      assert.match(error.message, /rg search failed with exit code 2\./);
+      assert.match(error.message, /unclosed character class/);
       assert.equal(typeof error.stderrBytes, "number");
       assert.equal(error.stderrTruncated, false);
       assert.equal(JSON.stringify(error).includes("stderrPreview"), true);
@@ -501,6 +503,7 @@ test("raw defaults to a strict 16KB output cap and allows explicit expansion", a
   const capped = await rg.raw(["x", "large.txt"], { cwd: directory });
   assert.equal(capped.truncated, true);
   assert.equal(capped.stdout.length <= 16 * 1024, true);
+  assert.equal(capped.stdout.length > 0, true);
 
   const expanded = await rg.raw(["x", "large.txt"], {
     cwd: directory,
@@ -508,6 +511,22 @@ test("raw defaults to a strict 16KB output cap and allows explicit expansion", a
   });
   assert.equal(expanded.truncated, false);
   assert.equal(expanded.stdout.length > 16 * 1024, true);
+});
+
+test("raw keeps partial chunks when maxBytes truncates output", async (t) => {
+  const directory = await withFixture(t);
+  const rg = await setupAvailableRuntime(t, directory);
+  if (!rg) {
+    return;
+  }
+
+  await writeFile(join(directory, "large.txt"), `${"x".repeat(30 * 1024)}\n`);
+
+  const capped = await rg.raw(["x", "large.txt"], { cwd: directory, maxBytes: 80 });
+
+  assert.equal(capped.truncated, true);
+  assert.equal(capped.stdout.length > 0, true);
+  assert.equal(Buffer.byteLength(capped.stdout) <= 80, true);
 });
 
 test("rg.show writes raw stdout and returns the resolved value", async (t) => {
@@ -518,7 +537,7 @@ test("rg.show writes raw stdout and returns the resolved value", async (t) => {
     return;
   }
 
-  const raw = await rg.show(rg.raw(["--version"], { maxBytes: 1024, timeoutMs: 5000 }));
+  const raw = await rg.raw(["--version"], { maxBytes: 1024, timeoutMs: 5000 }).then(rg.show);
 
   assert.equal(typeof raw.stdout, "string");
   assert.equal(writes.join(""), raw.stdout);

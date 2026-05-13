@@ -35,14 +35,15 @@ export class RgProcessError extends Error {
    * @returns {RgProcessError} Process error instance.
    */
   constructor(details) {
-    super(`rg ${details.kind} failed with exit code ${details.exitCode ?? "unknown"}.`);
+    const stderrPreview = formatStderrPreview(details.stderr);
+    super(formatProcessErrorMessage(details, stderrPreview));
     this.name = "RgProcessError";
     this.kind = details.kind;
     this.args = [...details.args];
     this.cwd = details.cwd;
     this.exitCode = details.exitCode;
     this.signal = details.signal;
-    this.stderrPreview = formatStderrPreview(details.stderr);
+    this.stderrPreview = stderrPreview;
     this.stderrBytes = details.stderrBytes;
     this.stderrTruncated = details.stderrTruncated;
     Object.defineProperty(this, "stderr", {
@@ -50,6 +51,14 @@ export class RgProcessError extends Error {
       enumerable: false
     });
   }
+}
+
+function formatProcessErrorMessage(details, stderrPreview) {
+  const base = `rg ${details.kind} failed with exit code ${details.exitCode ?? "unknown"}.`;
+  if (!stderrPreview) {
+    return base;
+  }
+  return `${base}\n\n${stderrPreview}`;
 }
 
 /**
@@ -78,6 +87,7 @@ class RgRuntime {
     this.write = resolveWrite(options);
     this.nextSessionId = 1;
     this.activeSessions = new Map();
+    this.show = this.show.bind(this);
   }
 
   search(pattern) {
@@ -996,22 +1006,16 @@ async function runRaw(command, args, options) {
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
-    const size = Buffer.byteLength(chunk);
-    stdoutBytes += size;
-    if (stdoutBytes <= options.maxBytes) {
-      stdout += chunk;
-    } else {
-      truncated = true;
-    }
+    const result = appendCappedChunk(stdout, chunk, stdoutBytes, options.maxBytes);
+    stdout = result.text;
+    stdoutBytes = result.bytes;
+    truncated ||= result.truncated;
   });
   child.stderr.on("data", (chunk) => {
-    const size = Buffer.byteLength(chunk);
-    stderrBytes += size;
-    if (stderrBytes <= options.maxBytes) {
-      stderr += chunk;
-    } else {
-      truncated = true;
-    }
+    const result = appendCappedChunk(stderr, chunk, stderrBytes, options.maxBytes);
+    stderr = result.text;
+    stderrBytes = result.bytes;
+    truncated ||= result.truncated;
   });
   return await new Promise((resolve, reject) => {
     let settled = false;
@@ -1063,6 +1067,36 @@ async function runRaw(command, args, options) {
       finish(exitCode, signal);
     });
   });
+}
+
+function appendCappedChunk(text, chunk, currentBytes, maxBytes) {
+  const chunkBytes = Buffer.byteLength(chunk);
+  const remainingBytes = maxBytes - currentBytes;
+  if (remainingBytes <= 0) {
+    return { text, bytes: currentBytes + chunkBytes, truncated: true };
+  }
+  if (chunkBytes <= remainingBytes) {
+    return { text: text + chunk, bytes: currentBytes + chunkBytes, truncated: false };
+  }
+  return {
+    text: text + takeUtf8Prefix(chunk, remainingBytes),
+    bytes: currentBytes + chunkBytes,
+    truncated: true
+  };
+}
+
+function takeUtf8Prefix(value, maxBytes) {
+  let bytes = 0;
+  let prefix = "";
+  for (const char of value) {
+    const size = Buffer.byteLength(char);
+    if (bytes + size > maxBytes) {
+      break;
+    }
+    bytes += size;
+    prefix += char;
+  }
+  return prefix;
 }
 
 function waitUntilDone(session) {
