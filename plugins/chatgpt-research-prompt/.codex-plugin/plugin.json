@@ -1,0 +1,16 @@
+{
+  "name": "chatgpt-research-prompt",
+  "version": "0.1.0",
+  "description": "Copy-ready research prompt generator for ChatGPT Pro web search",
+  "skills": "./skills/",
+  "keywords": ["chatgpt", "chatgpt-pro", "web-search", "prompt", "research"],
+  "interface": {
+    "displayName": "ChatGPT Research Prompt",
+    "shortDescription": "Draft copy-ready research prompts for ChatGPT Pro",
+    "longDescription": "Provides a skill that turns a user's research question into a source-grounded prompt intended for ChatGPT Pro's web search experience.",
+    "developerName": "jiangxiaoxu",
+    "category": "Productivity",
+    "capabilities": ["Read"],
+    "brandColor": "#111827"
+  }
+}
