@@ -8,3 +8,4 @@ Included plugins:
 
 - `node-repl`: local Node REPL MCP server wrapper.
 - `rg`: Node REPL helper for structured ripgrep search sessions.
+- `chatgpt-research-prompt`: copy-ready research prompt generator for ChatGPT Pro web search.
