@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { RgProcessError, setupRgRuntime } from "../scripts/rg-client.mjs";
 
 const SEARCH_TEXT_MAX_BYTES = 12 * 1024;
+const DRAIN_TEXT_MAX_BYTES = 16 * 1024;
 
 async function withFixture(t) {
   const directory = await mkdtemp(join(tmpdir(), "rg-client-test-"));
@@ -22,8 +23,8 @@ async function withFixture(t) {
   return directory;
 }
 
-async function setupAvailableRuntime(t, directory) {
-  const { rg } = setupRgRuntime({ defaultCwd: directory, readTimeoutMs: 5000 });
+async function setupAvailableRuntime(t, directory, options = {}) {
+  const { rg } = setupRgRuntime({ ...options, defaultCwd: directory, readTimeoutMs: 5000 });
   try {
     await rg.raw(["--version"], { maxBytes: 1024, timeoutMs: 5000 });
   } catch (error) {
@@ -89,20 +90,33 @@ test("FileSession throws RgProcessError when rg exits above code 1", async (t) =
     return;
   }
 
-  const session = rg.files().arg("--type").start();
+  const session = rg.files().glob("[").start();
 
   await assert.rejects(
     session.next(10),
     (error) => {
       assert.equal(error instanceof RgProcessError, true);
       assert.equal(error.kind, "files");
-      assert.deepEqual(error.args, ["--files", "--type"]);
+      assert.deepEqual(error.args, ["--files", "--glob", "["]);
       assert.equal(error.cwd, directory);
       assert.equal(error.exitCode > 1, true);
       assert.equal(error.stderrTruncated, false);
       return true;
     }
   );
+});
+
+test("trimmed builder and runtime APIs are unavailable", async (t) => {
+  const directory = await withFixture(t);
+  const { rg } = setupRgRuntime({ defaultCwd: directory });
+
+  assert.equal(typeof rg.createSearch, "undefined");
+  assert.equal(typeof rg.createFiles, "undefined");
+  assert.equal(typeof rg.search("x").context, "undefined");
+  assert.equal(typeof rg.search("x").word, "undefined");
+  assert.equal(typeof rg.search("x").follow, "undefined");
+  assert.equal(typeof rg.files().args, "undefined");
+  assert.equal(typeof rg.files().follow, "undefined");
 });
 
 test("SearchSession.next returns heading text with context block separators", async (t) => {
@@ -112,8 +126,8 @@ test("SearchSession.next returns heading text with context block separators", as
     return;
   }
 
-  const session = rg.search("match").path("alpha.txt").context(1).start();
-  const batch = await session.next({ maxBlocks: 2 });
+  const session = rg.search("match").path("alpha.txt").beforeContext(1).afterContext(1).start();
+  const batch = await session.next(2);
   await session.cancel();
 
   assert.equal(batch.info, "maxBlocks");
@@ -130,6 +144,52 @@ test("SearchSession.next returns heading text with context block separators", as
   assert.equal(Object.hasOwn(batch, "stopReason"), false);
 });
 
+test("SearchBuilder.next returns first batch and auto-cancels truncated sessions", async (t) => {
+  const directory = await withFixture(t);
+  const rg = await setupAvailableRuntime(t, directory);
+  if (!rg) {
+    return;
+  }
+
+  const batch = await rg.search("match").path("alpha.txt").beforeContext(1).afterContext(1).next(2);
+
+  assert.equal(batch.info, "maxBlocks");
+  assert.equal(
+    batch.text,
+    ["alpha.txt", "1-one", "2:match-a", "3-three", "--", "5-five", "6:match-b", "7-seven"].join("\n")
+  );
+  assert.deepEqual(rg.sessions(), []);
+});
+
+test("SearchBuilder.drain reads complete small result and leaves no active session", async (t) => {
+  const directory = await withFixture(t);
+  const rg = await setupAvailableRuntime(t, directory);
+  if (!rg) {
+    return;
+  }
+
+  const batch = await rg.search("match").path("adjacent.txt").drain();
+
+  assert.equal(batch.info, "done");
+  assert.equal(batch.text, ["adjacent.txt", "2:match left", "3:match right"].join("\n"));
+  assert.deepEqual(rg.sessions(), []);
+});
+
+test("SearchBuilder.show writes search text and returns the drained batch", async (t) => {
+  const directory = await withFixture(t);
+  const writes = [];
+  const rg = await setupAvailableRuntime(t, directory, { write: (text) => writes.push(text) });
+  if (!rg) {
+    return;
+  }
+
+  const batch = await rg.search("match").path("adjacent.txt").show();
+
+  assert.equal(batch.info, "done");
+  assert.equal(writes.join(""), ["adjacent.txt", "2:match left", "3:match right"].join("\n"));
+  assert.deepEqual(rg.sessions(), []);
+});
+
 test("SearchSession.next omits match-only block separators and uses paths only as headings", async (t) => {
   const directory = await withFixture(t);
   const rg = await setupAvailableRuntime(t, directory);
@@ -138,7 +198,7 @@ test("SearchSession.next omits match-only block separators and uses paths only a
   }
 
   const session = rg.search("match").path("alpha.txt").path("adjacent.txt").start();
-  const batch = await session.next({ maxBlocks: 10 });
+  const batch = await session.next(10);
 
   assert.equal(batch.info, "done");
   assert.equal(Object.hasOwn(batch, "done"), false);
@@ -166,11 +226,29 @@ test("SearchSession.next caps large text batches at 12KB", async (t) => {
   await writeFile(join(directory, "large-text.txt"), `${lines}\n`);
 
   const session = rg.search("needle").path("large-text.txt").start();
-  const batch = await session.next({ maxBlocks: 500 });
+  const batch = await session.next(500);
   await session.cancel();
 
   assert.equal(batch.info, "maxTextBytes");
   assert.equal(Buffer.byteLength(batch.text, "utf8") <= SEARCH_TEXT_MAX_BYTES, true);
+});
+
+test("SearchSession.drain caps large text batches at 16KB", async (t) => {
+  const directory = await withFixture(t);
+  const rg = await setupAvailableRuntime(t, directory);
+  if (!rg) {
+    return;
+  }
+
+  const lines = Array.from({ length: 160 }, (_, index) => `needle-${index}-${"x".repeat(180)}`).join("\n");
+  await writeFile(join(directory, "large-drain.txt"), `${lines}\n`);
+
+  const session = rg.search("needle").path("large-drain.txt").start();
+  const batch = await session.drain();
+  await session.cancel();
+
+  assert.equal(batch.info, "maxTextBytes");
+  assert.equal(Buffer.byteLength(batch.text, "utf8") <= DRAIN_TEXT_MAX_BYTES, true);
 });
 
 test("SearchSession.next truncates a single long line within the 12KB cap", async (t) => {
@@ -183,7 +261,7 @@ test("SearchSession.next truncates a single long line within the 12KB cap", asyn
   await writeFile(join(directory, "long-line.txt"), `${"x".repeat(30 * 1024)}needle\n`);
 
   const session = rg.search("needle").path("long-line.txt").start();
-  const batch = await session.next({ maxBlocks: 10 });
+  const batch = await session.next(10);
   await session.cancel();
 
   assert.equal(batch.info, "maxTextBytes");
@@ -198,9 +276,9 @@ test("SearchSession maxBlocks truncates on block boundaries and next continues",
     return;
   }
 
-  const session = rg.search("match").path("alpha.txt").context(1).start();
-  const first = await session.next({ maxBlocks: 2 });
-  const second = await session.next({ maxBlocks: 2 });
+  const session = rg.search("match").path("alpha.txt").beforeContext(1).afterContext(1).start();
+  const first = await session.next(2);
+  const second = await session.next(2);
 
   assert.equal(first.info, "maxBlocks");
   assert.equal(
@@ -211,7 +289,40 @@ test("SearchSession maxBlocks truncates on block boundaries and next continues",
   assert.equal(second.text, ["alpha.txt", "9-nine", "10:match-c", "11-ten"].join("\n"));
 });
 
-test("SearchSession rejects maxResults object input", async (t) => {
+test("SearchSession.drain after next returns only remaining output", async (t) => {
+  const directory = await withFixture(t);
+  const rg = await setupAvailableRuntime(t, directory);
+  if (!rg) {
+    return;
+  }
+
+  const session = rg.search("match").path("alpha.txt").beforeContext(1).afterContext(1).start();
+  const first = await session.next(2);
+  const remaining = await session.drain();
+
+  assert.equal(first.info, "maxBlocks");
+  assert.equal(remaining.info, "done");
+  assert.equal(remaining.text, ["alpha.txt", "9-nine", "10:match-c", "11-ten"].join("\n"));
+});
+
+test("SearchSession.show after next writes only remaining output", async (t) => {
+  const directory = await withFixture(t);
+  const writes = [];
+  const rg = await setupAvailableRuntime(t, directory, { write: (text) => writes.push(text) });
+  if (!rg) {
+    return;
+  }
+
+  const session = rg.search("match").path("alpha.txt").beforeContext(1).afterContext(1).start();
+  const first = await session.next(2);
+  const remaining = await session.show();
+
+  assert.equal(first.info, "maxBlocks");
+  assert.equal(remaining.info, "done");
+  assert.equal(writes.join(""), ["alpha.txt", "9-nine", "10:match-c", "11-ten"].join("\n"));
+});
+
+test("SearchSession rejects object input", async (t) => {
   const directory = await withFixture(t);
   const rg = await setupAvailableRuntime(t, directory);
   if (!rg) {
@@ -220,32 +331,62 @@ test("SearchSession rejects maxResults object input", async (t) => {
 
   const session = rg.search("match").start();
 
-  await assert.rejects(session.next({ maxResults: 1 }), {
-    name: "TypeError"
-  });
+  await assert.rejects(session.next({ maxBlocks: 2 }), /only accepts a positive integer count/);
+  await assert.rejects(session.next({ timeoutMs: 1 }), /only accepts a positive integer count/);
+  await assert.rejects(session.next({ maxResults: 1 }), /only accepts a positive integer count/);
+  await assert.rejects(session.next(-1), /only accepts a positive integer count/);
+  await assert.rejects(session.drain(1), /does not accept arguments/);
+  await assert.rejects(session.show(1), /does not accept arguments/);
+  await assert.rejects(rg.search("match").drain(1), /does not accept arguments/);
+  await assert.rejects(rg.search("match").show(1), /does not accept arguments/);
   await session.cancel();
 });
 
-test("SearchSession.batches yields default heading text objects", async (t) => {
+test("FilesBuilder.next returns first batch and auto-cancels truncated sessions", async (t) => {
   const directory = await withFixture(t);
   const rg = await setupAvailableRuntime(t, directory);
   if (!rg) {
     return;
   }
 
-  const session = rg.search("match").path("alpha.txt").start();
-  const iterator = session.batches({ maxBlocks: 1 });
-  const first = await iterator.next();
-  await session.cancel();
+  const batch = await rg.files().next(1);
 
-  assert.equal(first.done, false);
-  assert.equal(typeof first.value.text, "string");
-  assert.equal(Object.hasOwn(first.value, "files"), false);
-  assert.equal(Object.hasOwn(first.value, "blockCount"), false);
-  assert.equal(Object.hasOwn(first.value, "done"), false);
-  assert.equal(Object.hasOwn(first.value, "truncated"), false);
-  assert.equal(Object.hasOwn(first.value, "stopReason"), false);
-  assert.equal(first.value.info, "maxBlocks");
+  assert.equal(batch.files.length, 1);
+  assert.equal(batch.truncated, true);
+  assert.equal(batch.stopReason, "maxFiles");
+  assert.deepEqual(rg.sessions(), []);
+});
+
+test("FilesBuilder.drain reads complete result and leaves no active session", async (t) => {
+  const directory = await withFixture(t);
+  const rg = await setupAvailableRuntime(t, directory);
+  if (!rg) {
+    return;
+  }
+
+  const batch = await rg.files().drain();
+
+  assert.deepEqual(new Set(batch.files), new Set(["alpha.txt", "adjacent.txt", "beta.txt"]));
+  assert.equal(batch.done, true);
+  assert.equal(batch.truncated, false);
+  assert.equal(batch.readTimedOut, false);
+  assert.equal(batch.stopReason, "done");
+  assert.deepEqual(rg.sessions(), []);
+});
+
+test("FilesBuilder.show writes file paths and returns the drained batch", async (t) => {
+  const directory = await withFixture(t);
+  const writes = [];
+  const rg = await setupAvailableRuntime(t, directory, { write: (text) => writes.push(text) });
+  if (!rg) {
+    return;
+  }
+
+  const batch = await rg.files().show();
+
+  assert.deepEqual(new Set(batch.files), new Set(["alpha.txt", "adjacent.txt", "beta.txt"]));
+  assert.deepEqual(new Set(writes.join("").split("\n")), new Set(["alpha.txt", "adjacent.txt", "beta.txt"]));
+  assert.deepEqual(rg.sessions(), []);
 });
 
 test("FileSession uses maxFiles as the truncation stop reason", async (t) => {
@@ -256,12 +397,86 @@ test("FileSession uses maxFiles as the truncation stop reason", async (t) => {
   }
 
   const session = rg.files().start();
-  const batch = await session.next({ maxFiles: 1 });
+  const batch = await session.next(1);
   await session.cancel();
 
   assert.equal(batch.files.length, 1);
   assert.equal(batch.truncated, true);
   assert.equal(batch.stopReason, "maxFiles");
+});
+
+test("FileSession.drain after next returns only remaining files", async (t) => {
+  const directory = await withFixture(t);
+  const rg = await setupAvailableRuntime(t, directory);
+  if (!rg) {
+    return;
+  }
+
+  const session = rg.files().start();
+  const first = await session.next(1);
+  const remaining = await session.drain();
+
+  assert.equal(first.files.length, 1);
+  assert.equal(remaining.files.includes(first.files[0]), false);
+  assert.deepEqual(new Set([...first.files, ...remaining.files]), new Set(["alpha.txt", "adjacent.txt", "beta.txt"]));
+  assert.equal(remaining.done, true);
+  assert.equal(remaining.truncated, false);
+  assert.equal(remaining.stopReason, "done");
+});
+
+test("FileSession.show after next writes only remaining files", async (t) => {
+  const directory = await withFixture(t);
+  const writes = [];
+  const rg = await setupAvailableRuntime(t, directory, { write: (text) => writes.push(text) });
+  if (!rg) {
+    return;
+  }
+
+  const session = rg.files().start();
+  const first = await session.next(1);
+  const remaining = await session.show();
+
+  assert.equal(first.files.length, 1);
+  assert.equal(remaining.files.includes(first.files[0]), false);
+  assert.deepEqual(new Set(writes.join("").split("\n")), new Set(remaining.files));
+  assert.equal(remaining.stopReason, "done");
+});
+
+test("session.cancel uses fixed internal timing and rejects arguments", async (t) => {
+  const directory = await withFixture(t);
+  const rg = await setupAvailableRuntime(t, directory);
+  if (!rg) {
+    return;
+  }
+
+  const session = rg.search("match").start();
+  const result = await session.cancel();
+  assert.equal(typeof result.cancelled, "boolean");
+  assert.deepEqual(rg.sessions(), []);
+
+  const invalid = rg.search("match").start();
+  await assert.rejects(invalid.cancel("fast"), /does not accept arguments/);
+  await assert.rejects(invalid.cancel({ graceMs: 50 }), /does not accept arguments/);
+  await invalid.cancel();
+});
+
+test("FileSession rejects object input", async (t) => {
+  const directory = await withFixture(t);
+  const rg = await setupAvailableRuntime(t, directory);
+  if (!rg) {
+    return;
+  }
+
+  const session = rg.files().start();
+
+  await assert.rejects(session.next({ maxFiles: 1 }), /only accepts a positive integer count/);
+  await assert.rejects(session.next({ timeoutMs: 1 }), /only accepts a positive integer count/);
+  await assert.rejects(session.next(-1), /only accepts a positive integer count/);
+  await assert.rejects(session.drain(1), /does not accept arguments/);
+  await assert.rejects(session.show(1), /does not accept arguments/);
+  await assert.rejects(rg.files().drain(1), /does not accept arguments/);
+  await assert.rejects(rg.files().show(1), /does not accept arguments/);
+  await session.cancel();
 });
 
 test("raw validates maxBytes before spawning rg", async (t) => {
@@ -295,41 +510,16 @@ test("raw defaults to a strict 16KB output cap and allows explicit expansion", a
   assert.equal(expanded.stdout.length > 16 * 1024, true);
 });
 
-test("session stderr truncation is reported on errors, summaries, and stats", async (t) => {
-  if (process.platform === "win32") {
-    t.skip("fake executable fixture is POSIX-only");
+test("rg.show writes raw stdout and returns the resolved value", async (t) => {
+  const directory = await withFixture(t);
+  const writes = [];
+  const rg = await setupAvailableRuntime(t, directory, { write: (text) => writes.push(text) });
+  if (!rg) {
     return;
   }
 
-  const directory = await withFixture(t);
-  const fakeRg = join(directory, "rg");
-  const stderr = Array.from({ length: 40 }, (_, index) => `stderr-line-${index}-${"x".repeat(80)}`).join("\n");
-  await writeFile(fakeRg, `#!/usr/bin/env node\nprocess.stderr.write(${JSON.stringify(stderr)});\nprocess.exit(2);\n`, {
-    mode: 0o755
-  });
-  const { rg } = setupRgRuntime({ defaultCwd: directory, rgPath: fakeRg, readTimeoutMs: 5000 });
-  const session = rg.search("needle").start();
+  const raw = await rg.show(rg.raw(["--version"], { maxBytes: 1024, timeoutMs: 5000 }));
 
-  assert.equal(session.summary().stderrTruncated, false);
-  await assert.rejects(
-    session.next(10),
-    (error) => {
-      assert.equal(error instanceof RgProcessError, true);
-      assert.equal(error.stderrTruncated, true);
-      assert.equal(error.stderr.length <= 1024, true);
-      assert.equal(error.stderrPreview.length < error.stderr.length, true);
-      assert.equal(error.stderrPreview.split("\n").length <= 10, true);
-      assert.equal(error.stderrPreview.includes("stderr-line-39"), true);
-      assert.equal(JSON.stringify(error).includes(error.stderr), false);
-      return true;
-    }
-  );
-  const summary = session.summary();
-  assert.equal(summary.stderrTruncated, true);
-  assert.equal(summary.stderrPreview.split("\n").length <= 10, true);
-  assert.equal(summary.stderrPreview.includes("stderr-line-39"), true);
-  assert.equal(typeof summary.stderrBytes, "number");
-  assert.equal(Object.hasOwn(summary, "stderr"), false);
-  assert.equal(summary.stats.stderrTruncated, true);
-  assert.equal(typeof summary.stats.stderrBytes, "number");
+  assert.equal(typeof raw.stdout, "string");
+  assert.equal(writes.join(""), raw.stdout);
 });
