@@ -28,6 +28,18 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Developer Tools"
+    },
+    {
+      "name": "chatgpt-research-prompt",
+      "source": {
+        "source": "local",
+        "path": "./plugins/chatgpt-research-prompt"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
     }
   ]
 }
