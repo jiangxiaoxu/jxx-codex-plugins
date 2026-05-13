@@ -27,11 +27,18 @@ Use only these methods. Do not invent chain methods.
 - `FilesBuilder`: `cwd(path)`, `glob(pattern)`, `type(name)`, `hidden()`, `noIgnore()`, `next(n)`, `drain()`, `show()`, `start()`
 - `SearchSession` / `FileSession`: `next(n)`, `drain()`, `show()`, `cancel()`
 
-`rg.search(pattern)` builds a text search. `rg.files()` builds a file listing. `rg.raw(args, options?)` runs low-level ripgrep arguments. `rg.show(value)` prints an existing result.
+`rg.search(pattern)` builds a text search builder. `rg.files()` builds a file listing builder. `rg.raw(args, options?)` immediately runs low-level ripgrep arguments and returns a Promise for one raw result object. `rg.show(value)` prints an existing result.
 
 Builders collect filters before a command starts. Use `next(n)` for one batch, `drain()` for remaining output with the built-in cap, `show()` to drain and print, and `start()` when the session must continue across calls.
 
 Sessions represent running rg processes. Use `next(n)` to read more, `drain()` to read the remaining capped output, `show()` to display the remaining capped output, and `cancel()` when the session is no longer needed.
+
+Return shapes:
+
+- Search batches return `{ text, info }`.
+- File batches return `{ files, stats, done, truncated, readTimedOut, stopReason }`.
+- Raw calls return `{ args, cwd, exitCode, signal, stdout, stderr, timedOut, truncated, forceFinished }`.
+- `rg.show(value)` returns the resolved value after writing the display text.
 
 ## Examples
 
@@ -56,6 +63,7 @@ Files:
 ```js
 await rg.files().glob("*.md").show();
 await rg.files().type("ts").hidden().show();
+await rg.show(await rg.raw(["--files", "src"]));
 ```
 
 Batch control:
@@ -85,8 +93,15 @@ if (batch.info === "done") {
 Raw and cleanup:
 
 ```js
-await rg.show(await rg.raw(["--version"]));
-await rg.show(await rg.raw(["TODO", "src"], { maxBytes: 32 * 1024 }));
+const version = await rg.raw(["--version"]);
+await rg.show(version);
+
+const rawSearch = await rg.raw(["TODO", "src"], { maxBytes: 32 * 1024 });
+await rg.show(rawSearch);
+if (rawSearch.exitCode > 1) {
+  await rg.show(rawSearch.stderr);
+}
+
 await rg.show(rg.sessions());
 await rg.cancelAll();
 ```
@@ -101,6 +116,9 @@ await rg.cancelAll();
 - Session `next/drain/show` continues from the current cursor and does not auto-`cancel()`;when not fully read, continue with `next/drain` or call `cancel()`.
 - `rg.show(value)` displays an existing value only and does not continue reading a session;search batches display `text`, file batches display one file per line, and raw results display `stdout`.
 - Check stop reasons: search uses `info`, files use `stopReason`;only `done` means fully read, while `maxTextBytes/maxFiles/maxFilesBytes/readTimeout` means incomplete.
-- Use `raw()` for unstructured flags or version checks;`raw()` keeps 16KB by default, pass `{ maxBytes }` for more.
+- `rg.raw(args, options?)` is not a builder or session;do not call `.next()`, `.drain()`, `.show()`, or `.start()` on it. Await it, then pass the result to `rg.show(...)` if display is needed.
+- `rg.show(await rg.raw(...))` prints raw `stdout` only. Inspect the returned result's `stderr` and `exitCode` when diagnosing raw failures.
+- Use `raw()` for unstructured flags, version checks, or unsupported chains;`raw()` keeps 16KB by default, pass `{ maxBytes }` for more.
+- `FilesBuilder` does not support `.path(...)`. Use `.glob(...)`, `.type(...)`, `.hidden()`, `.noIgnore()`, or `rg.raw(["--files", path])` for path-specific file listing.
 - Explicit `.cwd(...)` is needed only when searching outside the bootstrap cwd.
 - Check `rg.sessions()` for leftovers. Use `cancel()` or `rg.cancelAll()` when sessions are no longer needed.
