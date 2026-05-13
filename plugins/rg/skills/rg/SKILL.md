@@ -27,7 +27,7 @@ Use only these methods. Do not invent chain methods.
 - `FilesBuilder`: `cwd(path)`, `glob(pattern)`, `type(name)`, `hidden()`, `noIgnore()`, `next(n)`, `drain()`, `show()`, `start()`
 - `SearchSession` / `FileSession`: `next(n)`, `drain()`, `show()`, `cancel()`
 
-`rg.search(pattern)` builds a text search builder. `rg.files()` builds a file listing builder. `rg.raw(args, options?)` immediately runs low-level ripgrep arguments and returns a Promise for one raw result object. `rg.show(value)` prints an existing result.
+`rg.search(pattern)` builds a text search builder. `rg.files()` builds a file listing builder. `rg.raw(args, options?)` immediately runs low-level ripgrep arguments and returns a Promise for one raw result object. `rg.show(value)` prints an existing result, or a string message as-is.
 
 Builders collect filters before a command starts. Use `next(n)` for one batch, `drain()` for remaining output with the built-in cap, `show()` to drain and print, and `start()` when the session must continue across calls.
 
@@ -74,7 +74,7 @@ await rg.show(await session.next(20));
 await session.show();
 ```
 
-Cross-call session:
+Cross-call session, first call:
 
 ```js
 if (globalThis.rgSession) {
@@ -87,6 +87,22 @@ await rg.show(batch);
 
 if (batch.info === "done") {
   delete globalThis.rgSession;
+}
+```
+
+Cross-call session, later call:
+
+```js
+const session = globalThis.rgSession;
+if (!session) {
+  await rg.show("No active rg session.");
+} else {
+  const batch = await session.next(20);
+  await rg.show(batch);
+
+  if (batch.info === "done") {
+    delete globalThis.rgSession;
+  }
 }
 ```
 
@@ -114,7 +130,8 @@ await rg.cancelAll();
 - `drain()` / `show()` do not accept arguments;`drain()` reads up to about 16KB, and search `next()` text is capped at 12KB.
 - Builder `next/drain/show` uses a temporary session and auto-`cancel()`s when the result is not fully read.
 - Session `next/drain/show` continues from the current cursor and does not auto-`cancel()`;when not fully read, continue with `next/drain` or call `cancel()`.
-- `rg.show(value)` displays an existing value only and does not continue reading a session;search batches display `text`, file batches display one file per line, and raw results display `stdout`.
+- For a cross-call session, call builder `.start()` only in the first call. Later calls should reuse the stored session and call `session.next(...)`, `session.drain()`, `session.show()`, or `session.cancel()`.
+- `rg.show(value)` displays an existing value only and does not continue reading a session;strings display as-is, search batches display `text`, file batches display one file per line, and raw results display `stdout`.
 - Check stop reasons: search uses `info`, files use `stopReason`;only `done` means fully read, while `maxTextBytes/maxFiles/maxFilesBytes/readTimeout` means incomplete.
 - `rg.raw(args, options?)` is not a builder or session;do not call `.next()`, `.drain()`, `.show()`, or `.start()` on it. Await it, then pass the result to `rg.show(...)` if display is needed.
 - `rg.show(await rg.raw(...))` prints raw `stdout` only. Inspect the returned result's `stderr` and `exitCode` when diagnosing raw failures.
