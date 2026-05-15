@@ -1,4 +1,4 @@
 interface:
   display_name: "ChatGPT Research Prompt"
-  short_description: "Draft research prompts for ChatGPT Pro"
-  default_prompt: "Use $chatgpt-research-prompt to turn my current question into a copy-ready ChatGPT Pro research prompt."
+  short_description: "Draft ChatGPT research prompts"
+  default_prompt: "Use $chatgpt-research-prompt to draft a ChatGPT research prompt."
