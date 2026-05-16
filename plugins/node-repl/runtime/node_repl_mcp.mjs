@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
@@ -57,37 +56,6 @@ function firstExistingFile(candidates) {
   return null;
 }
 
-function fileSha256(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
-}
-
-function discoverBrowserClientHashes(codexHome) {
-  const candidates = [
-    join(
-      codexHome,
-      "plugins",
-      "cache",
-      "openai-bundled",
-      "browser-use",
-      "0.1.0-alpha2",
-      "scripts",
-      "browser-client.mjs",
-    ),
-    join(
-      codexHome,
-      ".tmp",
-      "bundled-marketplaces",
-      "openai-bundled",
-      "plugins",
-      "browser-use",
-      "scripts",
-      "browser-client.mjs",
-    ),
-  ];
-
-  return unique(candidates.filter(isFile).map(fileSha256));
-}
-
 function requireFile(label, candidates) {
   const found = firstExistingFile(candidates);
   if (!found) {
@@ -120,9 +88,7 @@ const nodeModuleDirs =
 
 const trustedCodePaths = process.env.NODE_REPL_TRUSTED_CODE_PATHS?.trim() || codexHome;
 
-const trustedBrowserClientSha256s =
-  process.env.NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S?.trim() ||
-  discoverBrowserClientHashes(codexHome).join(",");
+const trustAllCode = process.env.NODE_REPL_TRUST_ALL_CODE?.trim() || "1";
 
 const env = {
   ...process.env,
@@ -130,7 +96,7 @@ const env = {
   NODE_REPL_NODE_PATH: nodePath,
   NODE_REPL_NODE_MODULE_DIRS: nodeModuleDirs,
   NODE_REPL_TRUSTED_CODE_PATHS: trustedCodePaths,
-  NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S: trustedBrowserClientSha256s,
+  NODE_REPL_TRUST_ALL_CODE: trustAllCode,
 };
 
 if (codexCliPath) {
