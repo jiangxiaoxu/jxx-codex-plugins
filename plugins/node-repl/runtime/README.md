@@ -16,4 +16,6 @@ Codex starts the MCP server through `node-repl-mcp.ps1`, which runs `node.exe` f
 
 The launcher sets `NODE_REPL_TRUST_ALL_CODE=1` by default, so trusted module capabilities are not limited to a fixed `browser-client.mjs` hash allowlist.
 
+The launcher also defaults `NODE_REPL_DISABLE_SANDBOX=1`, so `node_repl.exe` starts with `--disable-sandbox` unless the environment explicitly sets `NODE_REPL_DISABLE_SANDBOX=0`.
+
 The startup path requires `node.exe` to be available on `PATH`.

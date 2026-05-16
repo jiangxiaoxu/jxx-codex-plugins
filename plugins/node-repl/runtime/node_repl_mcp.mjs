@@ -89,6 +89,7 @@ const nodeModuleDirs =
 const trustedCodePaths = process.env.NODE_REPL_TRUSTED_CODE_PATHS?.trim() || codexHome;
 
 const trustAllCode = process.env.NODE_REPL_TRUST_ALL_CODE?.trim() || "1";
+const disableSandbox = process.env.NODE_REPL_DISABLE_SANDBOX?.trim() || "1";
 
 const env = {
   ...process.env,
@@ -97,6 +98,7 @@ const env = {
   NODE_REPL_NODE_MODULE_DIRS: nodeModuleDirs,
   NODE_REPL_TRUSTED_CODE_PATHS: trustedCodePaths,
   NODE_REPL_TRUST_ALL_CODE: trustAllCode,
+  NODE_REPL_DISABLE_SANDBOX: disableSandbox,
 };
 
 if (codexCliPath) {
@@ -104,7 +106,7 @@ if (codexCliPath) {
 }
 
 const args = process.argv.slice(2);
-if (process.env.NODE_REPL_DISABLE_SANDBOX === "1" && !args.includes("--disable-sandbox")) {
+if (disableSandbox === "1" && !args.includes("--disable-sandbox")) {
   args.unshift("--disable-sandbox");
 }
 

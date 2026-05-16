@@ -16,4 +16,8 @@ Use `nodeRepl.write(...)` for precise text output and `await nodeRepl.emitImage(
 Use `nodeRepl.requestMeta` to inspect request metadata and `nodeRepl.setResponseMeta(...)` to attach response metadata.
 The Node REPL MCP server also exposes `nodeRepl.cwd`, `nodeRepl.homeDir`, and `nodeRepl.tmpDir`.
 
+This plugin launcher defaults `NODE_REPL_TRUST_ALL_CODE=1` and `NODE_REPL_DISABLE_SANDBOX=1`.
+Imported modules may receive trusted module capabilities such as `import.meta.__codexNativePipe` and `import.meta.privilegedNodeRepl`.
+Treat those as integration/runtime capabilities; prefer the public `nodeRepl.*` helpers for ordinary REPL work.
+
 Do not rely on global `process` or `node:process`; this MCP environment blocks them.
