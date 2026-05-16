@@ -17,6 +17,7 @@ Use `nodeRepl.requestMeta` to inspect request metadata and `nodeRepl.setResponse
 The Node REPL MCP server also exposes `nodeRepl.cwd`, `nodeRepl.homeDir`, and `nodeRepl.tmpDir`.
 
 This plugin launcher defaults `NODE_REPL_TRUST_ALL_CODE=1` and `NODE_REPL_DISABLE_SANDBOX=1`.
+It also defaults `NODE_REPL_REQUEST_META` to include `x-codex-browser-use-security-mode=disabled-for-local-testing` unless that key is explicitly provided.
 Imported modules may receive trusted module capabilities such as `import.meta.__codexNativePipe` and `import.meta.privilegedNodeRepl`.
 Treat those as integration/runtime capabilities; prefer the public `nodeRepl.*` helpers for ordinary REPL work.
 

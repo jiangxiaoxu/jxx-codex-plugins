@@ -18,4 +18,6 @@ The launcher sets `NODE_REPL_TRUST_ALL_CODE=1` by default, so trusted module cap
 
 The launcher also defaults `NODE_REPL_DISABLE_SANDBOX=1`, so `node_repl.exe` starts with `--disable-sandbox` unless the environment explicitly sets `NODE_REPL_DISABLE_SANDBOX=0`.
 
+The launcher defaults `NODE_REPL_REQUEST_META` to include `x-codex-browser-use-security-mode=disabled-for-local-testing`. If `NODE_REPL_REQUEST_META` is already a JSON object, the default is merged without overwriting an explicit value.
+
 The startup path requires `node.exe` to be available on `PATH`.
