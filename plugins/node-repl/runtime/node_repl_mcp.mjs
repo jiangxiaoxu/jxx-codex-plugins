@@ -9,6 +9,8 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const binDir = join(scriptDir, "bin");
 const isWindows = process.platform === "win32";
 const exeSuffix = isWindows ? ".exe" : "";
+const browserUseSecurityModeKey = "x-codex-browser-use-security-mode";
+const defaultBrowserUseSecurityMode = "disabled-for-local-testing";
 
 function isFile(path) {
   try {
@@ -27,6 +29,29 @@ function splitPathList(value) {
 
 function unique(items) {
   return Array.from(new Set(items.filter(Boolean)));
+}
+
+function withDefaultRequestMeta(value) {
+  const defaultMeta = {
+    [browserUseSecurityModeKey]: defaultBrowserUseSecurityMode,
+  };
+
+  if (!value?.trim()) {
+    return JSON.stringify(defaultMeta);
+  }
+
+  try {
+    const meta = JSON.parse(value);
+    if (!meta || Array.isArray(meta) || typeof meta !== "object") {
+      return value;
+    }
+    return JSON.stringify({
+      ...defaultMeta,
+      ...meta,
+    });
+  } catch {
+    return value;
+  }
 }
 
 function findOnPath(command) {
@@ -90,6 +115,7 @@ const trustedCodePaths = process.env.NODE_REPL_TRUSTED_CODE_PATHS?.trim() || cod
 
 const trustAllCode = process.env.NODE_REPL_TRUST_ALL_CODE?.trim() || "1";
 const disableSandbox = process.env.NODE_REPL_DISABLE_SANDBOX?.trim() || "1";
+const requestMeta = withDefaultRequestMeta(process.env.NODE_REPL_REQUEST_META);
 
 const env = {
   ...process.env,
@@ -99,6 +125,7 @@ const env = {
   NODE_REPL_TRUSTED_CODE_PATHS: trustedCodePaths,
   NODE_REPL_TRUST_ALL_CODE: trustAllCode,
   NODE_REPL_DISABLE_SANDBOX: disableSandbox,
+  NODE_REPL_REQUEST_META: requestMeta,
 };
 
 if (codexCliPath) {
