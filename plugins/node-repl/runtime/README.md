@@ -8,9 +8,9 @@ The runtime binary is vendored here:
 
 `runtime/bin/node_repl.exe` is currently synced from the Codex App Windows unpacked build:
 
-- build: `26.513.31313`
-- codexBuildNumber: `2872`
-- SHA256: `D6C79EBF83312A449D36C8FC8EFAF1EB009FBF4876F6C9125863B21F9AD8B82B`
+- build: `26.519.21041`
+- codexBuildNumber: `2962`
+- SHA256: `E08F2CCC6411D5AE1928AF9AB0F70678649D178B0E15B8A5D080F1C3C83000F1`
 
 Codex starts the MCP server through `node-repl-mcp.ps1`, which runs `node.exe` from `PATH` with `node_repl_mcp.mjs`. The launcher then starts the vendored MCP binary from `runtime/bin/node_repl.exe`.
 

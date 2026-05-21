@@ -1,6 +1,6 @@
 {
   "name": "node-repl",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local Node REPL MCP server wrapper",
   "mcpServers": "./.mcp.json",
   "skills": "./skills/",
