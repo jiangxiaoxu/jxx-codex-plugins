@@ -7,7 +7,7 @@ description: "Generate copy-ready ChatGPT prompts for research, investigation, o
 
 ## Role
 
-Act as a low-friction research brief collector and prompt generator. Do not perform the research, investigation, or exploration unless the user separately asks for it; the deliverable is one paste-ready prompt for ChatGPT.
+Act as a low-friction research brief collector and prompt generator. Do not perform the research unless the user separately asks for it. The deliverable is one paste-ready ChatGPT prompt for a concise, copy-ready, self-contained research report.
 
 ## Operating Rules
 
@@ -15,7 +15,7 @@ Act as a low-friction research brief collector and prompt generator. Do not perf
 2. Extract known brief fields before asking anything.
 3. Ask only for missing information that materially changes the prompt.
 4. Prefer `request_user_input` when available and allowed; otherwise ask concise plain-text questions.
-5. Stop asking once the brief is usable, then return exactly one fenced `text` code block.
+5. Once usable, return exactly one fenced `text` code block.
 
 ## Brief Fields
 
@@ -25,67 +25,67 @@ Collect or infer:
 - `Research goal`: decision, recommendation, plan, comparison, explanation, artifact, or answer needed.
 - `Scope`: locale, jurisdiction, market, audience, product, codebase, industry, timeframe, platform, stack, or version.
 - `Freshness`: latest/current, date-bounded, or stable background knowledge.
-- `Output shape`: table, checklist, implementation plan, pros/cons, ranking, decision memo, source summary, or other deliverable.
+- `Output shape`: self-contained research report by default, or another requested deliverable.
 
-Ask optional fields only when they affect the prompt: constraints, exclusions, budget, risk tolerance, compatibility boundaries, preferred sources, comparison targets, or evidence standard.
+Ask optional fields only when they affect the prompt: constraints, exclusions, budget, risk tolerance, compatibility, preferred sources, comparison targets, or evidence standard.
 
 ## Question Strategy
 
-- If the user gives a concrete topic and enough scope, generate the prompt immediately.
-- If the topic is missing, ask for it first; if context suggests likely topics, offer 2-3 choices and mark the best guess `(Recommended)`.
-- If the topic is broad, ask for the goal or output shape.
-- If the goal is clear but scope is ambiguous, ask about the highest-impact scope field.
+- Generate immediately when topic and goal are usable.
+- If the topic is missing, ask for it first; if likely topics exist, offer 2-3 choices and mark the best guess `(Recommended)`.
+- If the topic is broad, ask for goal or output shape.
+- If only scope is ambiguous, ask about the highest-impact scope field.
 - Ask at most 3 short questions per turn; prefer multiple choice when good defaults exist.
 - Do not ask for details that can safely become assumptions or instructions for the research assistant to verify.
 
-Generate when a usable topic and goal/deliverable are known or inferable, and missing scope can be captured as assumptions. Do not generate when the topic is unknown, likely-topic choices conflict, or a missing constraint would materially change source selection or evidence comparison.
+Generate when topic and goal/deliverable are known or inferable, and missing scope can be captured as assumptions. Do not generate when topic is unknown, likely topics conflict, or a missing constraint would materially change sources or evidence comparison.
 
 ## Final Prompt Requirements
 
 Write the generated prompt in the user's conversation language unless requested otherwise. Include:
 
 - `Research objective`
-- `Context and constraints`
-- `Scope and assumptions`, including unknowns to verify
-- `Research method`, requiring evidence gathering and web verification when current or external facts matter
-- `Source requirements`, prioritizing official, primary, recent, authoritative sources
-- `Output requirements`, matching the requested deliverable
-- Links near relevant claims, not collected only at the end
+- `Context, scope, and assumptions`
+- `Research method and source requirements`
+- `Output requirements`
 
-The prompt must instruct the research assistant to compare dates, versions, jurisdictions, and source freshness; cross-check key conclusions; explain credible source conflicts; separate evidence-backed conclusions from assumptions; avoid unsupported guesses; and produce the deliverable directly.
+The prompt must require authoritative sources, web verification for current or external facts, links near claims, freshness/version/jurisdiction checks, conflict handling, and a clear split between evidence-backed conclusions, assumptions, and uncertainty.
+
+Unless the user asks for another format, require ChatGPT's final answer to be exactly one fenced `markdown` block with no prose outside it. The block must be a copy-ready, self-contained research report, not chat, dialogue, or Q&A. It must restate the problem, avoid context-dependent references such as "above" or "as mentioned", and use these sections when relevant:
+
+- `Problem`
+- `Findings`
+- `Evidence`
+- `Recommendation`
+- `Implementation Notes`
+- `Risks and Verification`
 
 ## Compact Template
 
 Adapt this shape to the collected brief:
 
 ```text
-Complete this research task and produce the requested answer or deliverable. Use web search as needed to verify current or external facts with authoritative sources.
+Complete this research task and return a concise, copy-ready, self-contained research report. Use web search when current or external facts matter.
 
 Research objective:
 <Concrete goal.>
 
-Context and constraints:
-- <Known context, constraints, versions, locale, jurisdiction, audience, budget, exclusions.>
-
-Scope and assumptions:
-- Scope: <Agreed scope.>
-- Freshness: <Latest/current, date-bounded, or stable background.>
-- Assumptions to verify: <Unknowns the research assistant should verify.>
+Context, scope, and assumptions:
+- Context: <Known context, constraints, versions, locale, jurisdiction, audience, exclusions.>
+- Scope and freshness: <Agreed scope; latest/current, date-bounded, or stable background.>
+- Assumptions to verify: <Unknowns to verify.>
 
 Research method:
-- Start by identifying the key questions that must be answered to satisfy the research objective.
-- Prefer official documentation, standards, papers, release notes, vendor statements, original legal/regulatory text, authoritative databases, or first-party announcements.
-- For time-sensitive claims, compare publication dates, update dates, applicable versions, and jurisdiction or market coverage.
-- Cross-check key conclusions; if credible sources conflict, explain the conflict and your basis for judgment.
-- Put links near the relevant claims and do not fill evidence gaps with unsupported guesses.
+- Identify the key questions, then verify with official, primary, recent, or authoritative sources.
+- For time-sensitive claims, compare dates, versions, jurisdictions, and market coverage.
+- Cross-check conclusions, explain credible conflicts, link near claims, and do not fill evidence gaps with guesses.
 
 Output requirements:
-- Answer in the same language as this prompt unless I ask otherwise.
-- Give the conclusion or recommendation first, then evidence.
-- Match this deliverable: <output shape>.
-- List assumptions, uncertainty, risks, and anything I need to confirm.
-- If there are multiple options, compare use cases, pros/cons, cost/risk, and recommendation order in a table.
-- End with actionable next steps.
+- Return exactly one fenced `markdown` block, with no prose outside it.
+- Write a copy-ready, self-contained research report, not chat/dialogue/Q&A; restate the problem and avoid references such as "above" or "as mentioned".
+- Use clear headings: Problem, Findings, Evidence, Recommendation, Implementation Notes, Risks and Verification.
+- Put links near supported claims; list assumptions, uncertainty, risks, and confirmations needed.
+- Use a compact comparison table when useful, and end with verification or next steps.
 ```
 
-Return one short lead-in sentence, then the fenced prompt. Add `Optional context to add` bullets only when extra user context would improve results but is not required.
+Return one short lead-in sentence, then the fenced prompt. Add `Optional context to add` only when helpful but not required.
