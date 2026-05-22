@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Node REPL helper for ripgrep searches",
   "skills": "./skills/",
-  "keywords": ["rg", "ripgrep", "node-repl"],
+  "keywords": ["rg", "ripgrep"],
   "interface": {
     "displayName": "rg",
     "shortDescription": "Use ripgrep from the Node REPL",
