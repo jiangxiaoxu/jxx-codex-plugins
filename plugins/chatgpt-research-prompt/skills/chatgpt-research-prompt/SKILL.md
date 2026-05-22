@@ -51,13 +51,13 @@ Write the generated prompt in the user's conversation language unless requested 
 
 The prompt must require authoritative sources, web verification for current or external facts, links near claims, freshness/version/jurisdiction checks, conflict handling, and a clear split between evidence-backed conclusions, assumptions, and uncertainty.
 
-Unless the user asks for another format, require ChatGPT's final answer to be exactly one fenced `markdown` block with no prose outside it. The block must be a copy-ready, self-contained research report, not chat, dialogue, or Q&A. It must restate the problem, avoid context-dependent references such as "above" or "as mentioned", and use these sections when relevant:
+Unless the user asks for another format, require ChatGPT's final answer to be exactly one fenced `markdown` block with no prose outside it. The block must be a copy-ready, self-contained research report, not chat, dialogue, or Q&A. It must restate the problem, avoid context-dependent references such as "above" or "as mentioned", and use these headings when relevant; omit empty or irrelevant sections:
 
 - `Problem`
 - `Findings`
 - `Evidence`
 - `Recommendation`
-- `Implementation Notes`
+- `Next Steps`
 - `Risks and Verification`
 
 ## Compact Template
@@ -83,8 +83,9 @@ Research method:
 Output requirements:
 - Return exactly one fenced `markdown` block, with no prose outside it.
 - Write a copy-ready, self-contained research report, not chat/dialogue/Q&A; restate the problem and avoid references such as "above" or "as mentioned".
-- Use clear headings: Problem, Findings, Evidence, Recommendation, Implementation Notes, Risks and Verification.
+- Use clear headings when relevant: Problem, Findings, Evidence, Recommendation, Next Steps, Risks and Verification. Omit empty or irrelevant sections.
 - Put links near supported claims; list assumptions, uncertainty, risks, and confirmations needed.
+- State unknowns as assumptions, risks, or verification items, not follow-up questions.
 - Use a compact comparison table when useful, and end with verification or next steps.
 ```
 
