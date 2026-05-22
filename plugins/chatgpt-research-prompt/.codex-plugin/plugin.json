@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-research-prompt",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Copy-ready research prompt generator for ChatGPT web search",
   "skills": "./skills/",
   "keywords": ["chatgpt","web-search", "prompt", "research"],
