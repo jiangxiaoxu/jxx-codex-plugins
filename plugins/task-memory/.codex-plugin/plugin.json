@@ -1,20 +1,29 @@
 {
   "name": "task-memory",
-  "version": "0.1.0",
-  "description": "Durable task memory and subagent report handoffs for Codex",
+  "version": "0.1.1",
+  "description": "Durable task memory with summaries, evidence reports, archived report copies, and command-only handoffs for Codex",
   "author": {
     "name": "jiangxiaoxu"
   },
   "skills": "./skills/",
-  "keywords": ["task-memory", "task-state", "subagent", "handoff", "reports"],
+  "keywords": [
+    "task-memory",
+    "task-state",
+    "subagent",
+    "handoff",
+    "reports"
+  ],
   "interface": {
     "displayName": "Task Memory",
-    "shortDescription": "Maintain task_state.md and subagent report handoffs.",
-    "longDescription": "Provides a skill and helper script for durable task memory across context compaction, root-owned task_state.md updates, and subagent report handoffs.",
+    "shortDescription": "Maintain and summarize task_state.md with handoffs.",
+    "longDescription": "Provides a skill and helper script for durable task memory across context compaction, root-owned task_state.md updates and summaries, evidence-bearing report handoffs, best-effort archived report copies, and command-only chat handoffs.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
-    "capabilities": ["Read", "Write"],
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
     "brandColor": "#111827",
-    "defaultPrompt": "Use $task-memory to maintain task_state.md. Subagents create reports only; root absorbs durable evidence into task_state.md and deletes fully absorbed reports."
+    "defaultPrompt": "Use $task-memory to maintain or summarize task_state.md. For summary/总结 requests, ask for compression, evidence-retention, and history-handling choices before rewriting task_state.md. Evidence-bearing handoffs create reports for root to absorb and archive; archived reports are non-authoritative audit copies, and command-only handoffs return chat-only results."
   }
 }
