@@ -1,6 +1,6 @@
 ---
 name: task-memory
-description: Create, resume, summarize, and maintain lightweight task memory for long-running Codex or AI agent work. Use when a task needs durable state across context compaction, handoffs, resumes, repeated exploration, or subagent delegation; when root should keep or summarize task_state.md; when evidence-bearing subagents should write reports; when command-only subagents should return chat-only results; or when the user invokes $task-memory with summary, summarize, compact, 总结, 整理, or 精简.
+description: Maintain durable task_state.md memory with summaries, report handoffs, and command-only handoffs.
 ---
 
 # Task Memory
@@ -31,7 +31,7 @@ Subagents never edit `task_state.md`. Choose the handoff mode by task shape, not
 - Use a report-required handoff for exploration, implementation, impact analysis, call tracing, decision support, durable evidence collection, or any subtask whose result should survive context compaction as independent evidence.
 - Use a command-only handoff only when the subtask executes parent-specified commands and returns command results, exit status, scoped output, or short error signatures without independent exploration, implementation, or durable analysis.
 
-For report-required handoffs, the subagent activates/reads this skill first, runs `status`, reads `task_state.md`, does the assigned work, creates one report in `reports/`, writes the report, and returns the report path to root.
+For report-required handoffs, the subagent activates/reads this skill first, runs `status`, reads `task_state.md`, does the assigned work, creates one report in `reports/`, writes the report, and returns only the report path plus one high-level sentence summarizing the result to root.
 
 For command-only handoffs, the subagent may run `status` if it needs task context, but it does not run `create-report` and does not write to `reports/`. It returns results in chat. Root decides whether any command result is durable enough to write into `task_state.md`.
 
@@ -44,7 +44,7 @@ Before dispatching a report-required subagent:
 1. Update `task_state.md` with the latest goal, state, open items, and pending reports.
 2. Explicitly activate this skill for the subagent with `Use $task-memory` at the start of the brief, and pass the skill as a structured skill item when the tool supports it.
 3. Include the absolute workspace path, `task-id`, and suggested report name in the subagent brief.
-4. Tell the subagent to run `status`, read `task_state.md`, run `create-report`, write the generated report, and return the report path.
+4. Tell the subagent to run `status`, read `task_state.md`, run `create-report`, write the generated report, and return only the report path plus one high-level sentence summarizing the result.
 5. Tell the subagent not to modify `task_state.md`.
 
 After a report-required subagent finishes:
@@ -59,17 +59,16 @@ After a report-required subagent finishes:
 
 Keep `task_state.md` compact, but preserve enough hard pointers and findings to prevent repeated exploration after context compaction. Preserve one durable evidence item per independent subsystem, decision, risk, or validation result; combine related pointers when possible, but do not drop hard evidence only to keep the entry short.
 
-When absorbing a report, preserve durable items from `Evidence`, `Data or Control Flow`, `Validation`, `Open Risks`, and `Suggested Task State Update`:
+When absorbing a report, use `Conclusion`, `Absorbable Findings`, and `Open or Not Checked` as the source. Preserve durable items:
 
-- Stable conclusion, decision, or failure status.
+- Stable conclusion, decision, risk, validation result, or failure status.
 - Exact evidence pointers: `path:line-line`, symbol/function/class names, config keys, query names, API fields, command names, test names, source URLs, or error signatures.
-- Data flow, control flow, dependency chain, or ownership boundary when the conclusion depends on behavior across components.
-- Validation command or method, result, and scope: full validation, scoped validation, probe only, or not checked.
-- Remaining uncertainty, risk, blocker, and next action.
+- One short fact after an evidence pointer when it helps root absorb without reopening the source immediately.
+- Remaining uncertainty, blocker, not-checked validation, and next action.
 
 Move remaining risks, blockers, uncertainties, and next actions into `Open`.
 
-Before archiving a report, each durable item must be represented in `task_state.md`, intentionally discarded as non-durable, or left unabsorbed with the report still pending. If an item looks like durable evidence but is intentionally discarded, note the reason briefly in the absorbed report note or `Open`. Usually discard raw stdout, large diffs, repetitive search output, dead-end exploration, abandoned hypotheses, and duplicate evidence after their durable conclusion has been captured.
+Before archiving a report, each durable item must be represented in `task_state.md`, intentionally discarded as non-durable, or left unabsorbed with the report still pending. If an item looks like durable evidence but is intentionally discarded, note the reason briefly in the absorbed report note or `Open`. Usually discard raw stdout, large diffs, repetitive search output, reasoning traces, dead-end exploration, abandoned hypotheses, and duplicate evidence after their durable conclusion has been captured.
 
 A report is adequately absorbed only when another agent can continue from `task_state.md` without reopening or regenerating that report for the same decision, even if the archived report is unreadable or has been deleted.
 
@@ -77,7 +76,9 @@ For command-only handoffs, do not create a synthetic absorbed-report note. If th
 
 ## Report Shape
 
-Ask subagents to write concise reports that are easy to absorb. Use `None`, `N/A`, or `Not checked` when a section does not apply. For implementation reports, include changed file paths under `Evidence` and validation under `Validation`.
+Ask subagents to write absorption-ready summaries, not detailed audit logs. Use `None`, `N/A`, or `Not checked` when a section does not apply. Prefer 1-5 high-signal bullets total over exhaustive detail.
+
+Each absorbable finding should be suitable to copy or condense into `task_state.md`. Evidence must start with a hard pointer, then may include at most one short fact. Do not paste raw stdout, large diffs, search output, reasoning process, dead-end hypotheses, duplicate evidence, or information root is unlikely to absorb.
 
 ````markdown
 # <Report Title>
@@ -89,28 +90,16 @@ Repo/context snapshot: <commit, branch, timestamp, or "not checked">
 
 ## Conclusion
 
-- <Direct answer, decision, or failure status.>
+- <1-2 bullets with the direct answer, decision, or failure status.>
 
-## Evidence
+## Absorbable Findings
 
-- `<path:line-line>` `<symbol/config/API/test/command>` - <fact supported by this pointer>.
-- `<path>` `<symbol>` - <fact supported by this pointer when line numbers are unavailable>.
+- <Finding, decision, risk, or validation result.> Evidence: `<path:line-line>` `<symbol/config/API/test/command>` - <one short fact>.
+- <Another finding, or `None` if no durable finding should be absorbed.> Evidence: `<command/test/error signature>` - <one short fact or `not checked`>.
 
-## Data or Control Flow
+## Open or Not Checked
 
-- <Only include for behavior tracing, routing, ownership, update logic, or dependencies. Name concrete nodes and edges. Use `None` if not applicable.>
-
-## Validation
-
-- `<command or method>` - <pass/fail/not run>; scope: <full/scoped/probe only/not checked>; relevant output or error signature: <short exact signature or None>.
-
-## Open Risks
-
-- <Remaining uncertainty, blocker, or condition that would change the conclusion. Use `None` if closed.>
-
-## Suggested Task State Update
-
-- <Compact durable finding with inline evidence pointer and validation/risk when relevant. Do not write headline-only bullets that require this report to remain available.>
+- <0-3 bullets with blockers, unresolved questions, not-run validation, or next actions that change what root should do. Use `None` if closed.>
 ````
 
 ## Task State Shape
@@ -236,13 +225,13 @@ Constraints:
 - Do not modify task_state.md.
 - Do not modify source files unless explicitly assigned.
 - Use the Report Shape from $task-memory.
-- Keep the report concise and evidence-based.
-- The returned 3-5 key points are only a preview; the report file is the durable handoff artifact.
+- Write an absorption-ready summary, not a detailed audit log.
 - Fill `Scope` with the assigned subtask and explicit boundaries.
-- Include exact evidence pointers and validation scope.
-- In Suggested Task State Update, include inline evidence pointers so root can absorb it before archiving the report.
-- For flow investigations, name concrete nodes and edges.
-- Return only the report path and 3-5 key points.
+- Put only durable conclusions, decisions, risks, validation results, and next actions into Absorbable Findings or Open or Not Checked.
+- Start each evidence item with a hard pointer, then add at most one short fact.
+- On success, return only the generated report absolute path plus one high-level summary sentence, such as `Report written; conclusion: <one sentence>.`
+- Do not use bullets in the chat return. Do not repeat Absorbable Findings or Open or Not Checked details in chat.
+- If you cannot create or write the report, return only a short failure note with the reason, the command attempted, and any partial report path or `None`.
 ```
 
 Use this shape when dispatching a command-only subagent:

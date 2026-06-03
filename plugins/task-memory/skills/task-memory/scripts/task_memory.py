@@ -132,25 +132,13 @@ Repo/context snapshot: not checked
 
 - TBD
 
-## Evidence
+## Absorbable Findings
 
-- `<path:line-line>` `<symbol/config/API/test/command>` - TBD
+- `<finding>` Evidence: `<path:line-line>` `<symbol/config/API/test/command>` - TBD
 
-## Data or Control Flow
+## Open or Not Checked
 
 - N/A
-
-## Validation
-
-- `<command or method>` - not run; scope: not checked; relevant output or error signature: None
-
-## Open Risks
-
-- TBD
-
-## Suggested Task State Update
-
-- `<finding>` - evidence: `<path:line-line>` `<symbol/test/command>`; validation/risk: TBD
 """
 
 
