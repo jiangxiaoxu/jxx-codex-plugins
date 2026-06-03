@@ -1,0 +1,4 @@
+interface:
+  display_name: "Task Memory"
+  short_description: "Maintain task_state.md and subagent report handoffs."
+  default_prompt: "Use $task-memory to maintain task_state.md. Subagents create reports only; root absorbs durable evidence into task_state.md and deletes fully absorbed reports."

@@ -1,0 +1,20 @@
+{
+  "name": "task-memory",
+  "version": "0.1.0",
+  "description": "Durable task memory and subagent report handoffs for Codex",
+  "author": {
+    "name": "jiangxiaoxu"
+  },
+  "skills": "./skills/",
+  "keywords": ["task-memory", "task-state", "subagent", "handoff", "reports"],
+  "interface": {
+    "displayName": "Task Memory",
+    "shortDescription": "Maintain task_state.md and subagent report handoffs.",
+    "longDescription": "Provides a skill and helper script for durable task memory across context compaction, root-owned task_state.md updates, and subagent report handoffs.",
+    "developerName": "jiangxiaoxu",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "brandColor": "#111827",
+    "defaultPrompt": "Use $task-memory to maintain task_state.md. Subagents create reports only; root absorbs durable evidence into task_state.md and deletes fully absorbed reports."
+  }
+}
