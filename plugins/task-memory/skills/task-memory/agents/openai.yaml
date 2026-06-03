@@ -1,4 +1,4 @@
 interface:
   display_name: "Task Memory"
-  short_description: "Maintain and summarize task_state.md with handoffs."
-  default_prompt: "Use $task-memory to maintain or summarize task_state.md. For summary/总结 requests, ask for compression, evidence-retention, and history-handling choices before rewriting task_state.md. Evidence-bearing handoffs create reports for root to absorb and archive; archived reports are non-authoritative audit copies, and command-only handoffs return chat-only results."
+  short_description: "Maintain task_state.md with handoffs."
+  default_prompt: "Use $task-memory to maintain task memory for this task."
