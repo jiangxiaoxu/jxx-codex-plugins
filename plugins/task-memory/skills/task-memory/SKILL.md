@@ -22,7 +22,15 @@ task-<task-id>/
 
 Root owns `task_state.md`.
 
-Root updates `task_state.md` directly whenever durable task memory changes: goal or scope changes, stable decisions, completed root work, important evidence, validation results, blockers, open questions, and absorbed subagent reports.
+Root updates `task_state.md` whenever durable memory changes: goal/scope, decisions, completed root work, important evidence, decision-bearing validation, blockers, open questions, and absorbed reports.
+
+## Validation, Review, and State Checks
+
+State checks inspect current task, worktree, environment, or generated-output state; `state check` is a category, while `status` is the task-memory script command. Treat routine validation, review, and state-check results as non-durable by default. Write them to `task_state.md` only when they change resume, decisions, validation, or handoff.
+
+Record final/representative validation, failures, blockers, unresolved risks, next-step-changing not-run validation, unexpected side effects including tracked-file changes caused or revealed by validation/review/state-check commands, and requested audit facts. Do not record intermediate passing validation, routine review/state-check output, raw stdout, repeated command history, or local inspection details just because they were produced.
+
+When recording one, keep one short conclusion plus the smallest useful pointer, command, test, affected-file summary, or error signature. Merge repeats into the current validation or risk entry instead of appending a timeline.
 
 Do not route root's own work through `reports/` unless the user explicitly asks for a handoff or audit artifact.
 
@@ -31,54 +39,53 @@ Subagents never edit `task_state.md`. Choose the handoff mode by task shape, not
 - Use a report-required handoff for exploration, implementation, impact analysis, call tracing, decision support, durable evidence collection, or any subtask whose result should survive context compaction as independent evidence.
 - Use a command-only handoff only when the subtask executes parent-specified commands and returns command results, exit status, scoped output, or short error signatures without independent exploration, implementation, or durable analysis.
 
-For report-required handoffs, the subagent activates/reads this skill first, runs `status`, reads `task_state.md`, does the assigned work, creates one report in `reports/`, writes the report, and returns only the report path plus one high-level sentence summarizing the result to root.
+For report-required handoffs, the subagent activates/reads this skill first, runs `status`, reads `task_state.md`, creates exactly one report, does the assigned work, writes findings to that report, and returns only the report path plus one high-level sentence summarizing the result to root.
 
-For command-only handoffs, the subagent may run `status` if it needs task context, but it does not run `create-report` and does not write to `reports/`. It returns results in chat. Root decides whether any command result is durable enough to write into `task_state.md`.
+For command-only handoffs, the subagent may run `status` if it needs task context, but it does not run `create-report` and does not write to `reports/`. It returns results in chat. Root applies the validation/review/state-check rules before writing any command result into `task_state.md`.
 
-Reports are temporary inbox items. After root fully absorbs a report into `task_state.md`, root archives the report under `reports/archive/`. Keep only a short absorbed-report note in `task_state.md`. Full absorption means the task can resume from `task_state.md` without reopening or regenerating the report for the same decision.
+Reports are temporary inbox items. After full absorption into `task_state.md`, root archives the report under `reports/archive/` and keeps only a short absorbed-report note. Full absorption means resume does not require reopening or regenerating that report.
 
-Archived reports are best-effort audit copies, not durable state. They may become unreadable or be deleted by later cleanup. Never rely on an archived report to resume work; preserve everything needed to continue in `task_state.md` before archiving.
+Archived reports are best-effort audit copies, not durable state. Preserve everything needed to continue in `task_state.md` before archiving.
 
 Before dispatching a report-required subagent:
 
-1. Update `task_state.md` with the latest goal, state, open items, and pending reports.
-2. Explicitly activate this skill for the subagent with `Use $task-memory` at the start of the brief, and pass the skill as a structured skill item when the tool supports it.
-3. Include the absolute workspace path, `task-id`, and suggested report name in the subagent brief.
-4. Tell the subagent to run `status`, read `task_state.md`, run `create-report`, write the generated report, and return only the report path plus one high-level sentence summarizing the result.
-5. Tell the subagent not to modify `task_state.md`.
+1. Update `task_state.md` with latest goal, state, open items, and existing pending reports, if any.
+2. Activate this skill for the subagent with `Use $task-memory`; pass it as a structured skill item when supported.
+3. Include absolute workspace path, `task-id`, report name, status/create-report steps, report-return format, and `Do not modify task_state.md`.
+
+Do not add `Reports > Pending` when dispatching or running `create-report`. Add one only if root reads the finished report and durable content remains unabsorbed; until then, `status` tracks live unarchived reports.
 
 After a report-required subagent finishes:
 
-1. Read the report from `reports/` in full. Do not rely only on returned key points.
-2. Absorb durable content into `task_state.md` using the absorption rules below.
-3. If anything remains unabsorbed, keep the report in `reports/` and add a short `Reports > Pending` note explaining what remains.
-4. When absorption is complete, add one short `Reports > Absorbed` entry with the report filename, headline conclusion, and where the durable content was absorbed in `State`.
-5. Archive only a fully absorbed report. Do not archive a report merely because its headline conclusion was copied.
+1. Read the report in full; do not rely only on returned key points.
+2. Absorb durable content into `task_state.md`.
+3. If anything remains unabsorbed, keep the report pending and note why under `Reports > Pending`.
+4. When complete, remove the matching `Reports > Pending` note if one exists, add one `Reports > Absorbed` note with filename, conclusion, and `State` location, then archive. Do not archive merely because the headline was copied.
 
 ## Absorption Rules
 
-Keep `task_state.md` compact, but preserve enough hard pointers and findings to prevent repeated exploration after context compaction. Preserve one durable evidence item per independent subsystem, decision, risk, or validation result; combine related pointers when possible, but do not drop hard evidence only to keep the entry short.
+Keep `task_state.md` compact, but preserve enough pointers and findings to prevent repeated exploration after compaction. Preserve one durable evidence item per independent subsystem, decision, risk, or decision-bearing validation; combine related pointers when possible.
 
-When absorbing a report, use `Conclusion`, `Absorbable Findings`, and `Open or Not Checked` as the source. Preserve durable items:
+When absorbing a report, use `Conclusion`, `Absorbable Findings`, and `Open or Not Checked`. Preserve:
 
-- Stable conclusion, decision, risk, validation result, or failure status.
-- Exact evidence pointers: `path:line-line`, symbol/function/class names, config keys, query names, API fields, command names, test names, source URLs, or error signatures.
-- One short fact after an evidence pointer when it helps root absorb without reopening the source immediately.
+- Stable conclusion, decision, risk, decision-bearing validation result, or failure status.
+- Exact evidence pointers: `path:line-line`, symbols, config keys, API fields, command/test names, source URLs, or error signatures.
+- One short fact after an evidence pointer when it prevents immediate source reopening.
 - Remaining uncertainty, blocker, not-checked validation, and next action.
 
 Move remaining risks, blockers, uncertainties, and next actions into `Open`.
 
-Before archiving a report, each durable item must be represented in `task_state.md`, intentionally discarded as non-durable, or left unabsorbed with the report still pending. If an item looks like durable evidence but is intentionally discarded, note the reason briefly in the absorbed report note or `Open`. Usually discard raw stdout, large diffs, repetitive search output, reasoning traces, dead-end exploration, abandoned hypotheses, and duplicate evidence after their durable conclusion has been captured.
+Before archiving, each durable item must be represented in `task_state.md`, intentionally discarded as non-durable, or left pending. If durable-looking evidence is discarded, briefly note why. Usually discard raw stdout, large diffs, routine review/state-check output, repeated command/search output, inspection output, reasoning traces, dead ends, abandoned hypotheses, and duplicate evidence after the durable conclusion is captured.
 
-A report is adequately absorbed only when another agent can continue from `task_state.md` without reopening or regenerating that report for the same decision, even if the archived report is unreadable or has been deleted.
+A report is absorbed only when another agent can continue from `task_state.md` without reopening or regenerating it for the same decision.
 
-For command-only handoffs, do not create a synthetic absorbed-report note. If the command result is durable, root records it directly under `State` or `Open` with the command, result, scope, and short error signature when relevant. If it is not durable, leave it in chat only.
+For command-only handoffs, do not create a synthetic absorbed-report note. If the command result is durable under the validation/review/state-check rules, root records it directly under `State` or `Open` with the command, result, scope, and short error signature when relevant. Otherwise leave it in chat.
 
 ## Report Shape
 
-Ask subagents to write absorption-ready summaries, not detailed audit logs. Use `None`, `N/A`, or `Not checked` when a section does not apply. Prefer 1-5 high-signal bullets total over exhaustive detail.
+Ask subagents for absorption-ready summaries, not audit logs. Use `None`, `N/A`, or `Not checked` when a section does not apply. Prefer 1-5 high-signal bullets.
 
-Each absorbable finding should be suitable to copy or condense into `task_state.md`. Evidence must start with a hard pointer, then may include at most one short fact. Do not paste raw stdout, large diffs, search output, reasoning process, dead-end hypotheses, duplicate evidence, or information root is unlikely to absorb.
+Each absorbable finding should be copyable or easy to condense into `task_state.md`. Evidence must start with a hard pointer and at most one short fact. Do not paste raw stdout, large diffs, routine review/state-check output, intermediate successful validation output, search/inspection output, reasoning process, dead ends, duplicate evidence, or unlikely-to-absorb information.
 
 ````markdown
 # <Report Title>
@@ -94,7 +101,7 @@ Repo/context snapshot: <commit, branch, timestamp, or "not checked">
 
 ## Absorbable Findings
 
-- <Finding, decision, risk, or validation result.> Evidence: `<path:line-line>` `<symbol/config/API/test/command>` - <one short fact>.
+- <Finding, decision, risk, failure status, or decision-bearing validation result.> Evidence: `<path:line-line>` `<symbol/config/API/test/command>` - <one short fact>.
 - <Another finding, or `None` if no durable finding should be absorbed.> Evidence: `<command/test/error signature>` - <one short fact or `not checked`>.
 
 ## Open or Not Checked
@@ -120,9 +127,11 @@ Use these sections:
 ## Reports
 ```
 
-`Goal` stores the objective and success criteria. `State` stores current phase, durable understanding, completed work, confirmed decisions, validation status, and high-signal evidence. `Open` stores unresolved questions, blockers, and next subagent-ready gaps. `Reports` stores pending report notes and one-line absorbed report notes.
+`Goal` stores objective and success criteria. `State` stores current phase, durable understanding, completed work, decisions, acceptance-relevant validation, and high-signal evidence. `Open` stores unresolved questions, blockers, and next subagent-ready gaps. `Reports` stores pending and absorbed report notes.
 
-Within `State`, prefer this compact shape when the task has evidence-bearing findings. When absorbing an evidence-bearing report, include at least one durable finding, evidence ledger item, or validation item unless the report only confirms no durable change:
+Under `Reports`, use `Pending` and `Absorbed` sublists. Pending notes include filename and why pending; Absorbed notes include filename, conclusion, and `State` location. When a pending report becomes absorbed, remove its matching Pending note.
+
+Within `State`, prefer this compact shape for evidence-bearing findings. Include at least one durable finding, evidence ledger item, or validation item unless the report only confirms no durable change:
 
 ```markdown
 - Current phase: <phase>
@@ -131,39 +140,41 @@ Within `State`, prefer this compact shape when the task has evidence-bearing fin
 - Evidence ledger:
   - `<short label>`: `<path:line-line>` `<symbol/config/API/test/command>` - <fact this pointer supports>.
 - Validation:
-  - `<command or method>` - <pass/fail>; scope: <full/scoped/probe/not checked>; notes: <short exact error signature or None>.
+  - `<command or method>` - <pass/fail>; scope: <full/scoped/probe/not checked>; notes: <short error signature, blocker, or None>.
 ```
 
 Omit empty nested labels when they do not add value.
 
+Use `Validation` for acceptance-relevant checks. Do not record routine review/state-check commands or intermediate passing validation unless they expose a failure, blocker, open risk, unexpected side effect, or user-requested audit fact.
+
 ## Summary Protocol
 
-Use this protocol when the user invokes this skill with words like `summary`, `summarize`, `compact`, `总结`, `整理`, or `精简`, or otherwise asks to summarize `task_state.md`.
+Use when the user asks to summarize, compact, or clean up `task_state.md`.
 
 Summary is a root-owned rewrite of `task_state.md`, not a report workflow. Do not create a report for summarization. Do not read archived reports during normal summary; archived reports are non-authoritative audit copies and may be unreadable or deleted.
 
 Before rewriting `task_state.md`, run `status`, read `task_state.md`, and check pending reports. If pending reports overlap with the summary, absorb them or explicitly leave them pending before summarizing.
 
-Ask the user for summary options before modifying `task_state.md`, unless the user already provided equivalent choices. Prefer `request_user_input` when available. Offer these choices:
+Ask for options before modifying `task_state.md`, unless already provided. Prefer `request_user_input`. Offer:
 
 - Summary level:
-  - `Balanced` (recommended): compact duplicated history and low-value detail, keep active decisions, key evidence pointers, validation status, and open work.
-  - `Conservative`: remove only obvious repetition and stale noise, preserving most evidence ledger and report history.
-  - `Aggressive`: keep only the goal, current phase, active decisions, blockers, next actions, and highest-signal evidence.
+  - `Balanced` (recommended): compact low-value detail; keep active decisions, key evidence, acceptance validation, and open work.
+  - `Conservative`: remove only obvious repetition and stale noise.
+  - `Aggressive`: keep only goal, phase, active decisions, blockers, next actions, and highest-signal evidence.
 - Evidence retention:
-  - `Hard pointers` (recommended): keep at least one path, symbol, command, test, source URL, or error signature per active decision, risk, validation result, or subsystem finding.
-  - `Decision focused`: keep conclusions and only the minimal evidence needed to avoid rework.
+  - `Hard pointers` (recommended): keep one path, symbol, command, test, URL, or error signature per active decision, risk, decision-bearing validation, or subsystem finding.
+  - `Decision focused`: keep conclusions and minimal anti-rework evidence.
   - `Minimal`: keep evidence only for open risks, blockers, failing validation, public interfaces, or irreversible decisions.
 - History handling:
-  - `Archive absorbed notes` (recommended): collapse absorbed report notes to short one-line history and remove raw logs, repeated search output, abandoned hypotheses, and duplicate validation details.
-  - `Keep timeline`: preserve a compact chronological trail for handoff or audit needs.
-  - `Current state only`: discard completed-history detail unless it changes current behavior, risk, validation, or next steps.
+  - `Collapse absorbed notes` (recommended): compact absorbed report notes and remove raw logs, routine validation/review/state-check history, repeated search output, abandoned hypotheses, and duplicate validation detail.
+  - `Keep timeline`: preserve a compact chronological trail.
+  - `Current state only`: discard completed-history detail unless it changes behavior, risk, acceptance validation, or next steps.
 
-When applying a summary, preserve the `# Task State`, `Goal`, `State`, `Open`, and `Reports` sections. The resulting `task_state.md` must be sufficient to resume the task without chat history, pending reports that were absorbed, or archived reports. Do not discard unresolved blockers, pending report notes, active next actions, validation failures, or evidence for open decisions.
+When applying a summary, preserve `# Task State`, `Goal`, `State`, `Open`, and `Reports`. The result must support resume without chat history, archived reports, or reopening absorbed reports; pending reports may remain only as notes under `Reports`. Do not discard blockers, pending report notes, active next actions, validation failures, final acceptance status, unexpected side effects, or evidence for open decisions. Remove routine validation/review/state-check history unless audit was requested.
 
 ## Resume Protocol
 
-After context compaction, handoff, or a long pause, root must treat `task_state.md` as the source of truth.
+After compaction, handoff, or a long pause, root treats `task_state.md` as source of truth.
 
 1. Run `status` for the workspace and task-id.
 2. Read `task_state.md`.
@@ -171,11 +182,13 @@ After context compaction, handoff, or a long pause, root must treat `task_state.
 4. Absorb or explicitly leave pending any report that overlaps with the next planned work.
 5. Continue from `Goal`, `State`, `Open`, and pending report notes, not from chat history alone.
 
-Archived reports listed by `status` are audit history only. Do not read them during normal resume, and do not depend on them being readable or present.
+Archived reports are audit history only. Do not read them during normal resume or depend on them.
 
 ## Scripts
 
-Use bundled scripts for the mechanical parts of the workflow.
+Use bundled scripts for mechanical workflow steps.
+
+Run commands from this skill directory, or replace `scripts/task_memory.py` with its absolute path. Run `init` only for a new task; for existing task memory, run `status` with the actual task-id.
 
 ```bash
 python scripts/task_memory.py init --workspace <absolute-workspace> --task-id <task-id>
@@ -184,69 +197,72 @@ python scripts/task_memory.py create-report --workspace <absolute-workspace> --t
 python scripts/task_memory.py archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>
 ```
 
-`init` creates `task_state.md`, `reports/`, and `reports/archive/`. If the requested `--task-id` already exists, it creates the next available `-001`, `-002`, etc. variant and prints `task_id=<actual-task-id>`.
+`init` creates `task_state.md`, `reports/`, and `reports/archive/`; if needed it appends `-001`, `-002`, etc. and prints `task_id=<actual-task-id>`.
 
-`status` has no side effects. It prints `task_dir`, `task_state`, `reports_dir`, `archive_dir`, `pending_reports`, any existing `pending_report` paths, `archived_reports`, and any existing `archived_report` paths.
+`status` has no side effects and prints task/report paths plus pending and archived report lists.
 
-`create-report` creates a report template and prints its absolute path. The `--name` value should be a short hyphen-case or quoted English phrase and is normalized to lowercase hyphen-case.
+`create-report` creates a report template and prints its absolute path. `--name` should be short hyphen-case or quoted English and is normalized to lowercase hyphen-case.
 
-`archive-report` moves an already absorbed report from `reports/` to `reports/archive/` and does not edit `task_state.md`. Root must absorb the report manually before archiving. If the archive target filename already exists, the script appends `-001`, `-002`, etc. and never overwrites an existing archived report.
+`archive-report` moves an absorbed report to `reports/archive/`, never edits `task_state.md`, and appends `-001`, `-002`, etc. rather than overwriting. `--report` takes the report filename only, not the absolute path returned by `create-report`.
 
-Only root may run `archive-report`. Subagents must never archive reports. Archive reports one filename at a time using the script; do not move reports with shell commands, wildcards, or directory operations.
+Only root may run `archive-report`. Archive one filename at a time with the script; do not move reports with shell commands, wildcards, or directory operations.
 
-Always pass an absolute path to `--workspace`. The script can resolve relative paths, but absolute paths are more reliable across subagents, handoffs, and context compaction.
+Always pass an absolute `--workspace`.
 
 ## Brief Templates
 
-Use this shape when dispatching a report-required subagent:
+Report-required subagent brief:
 
 ```text
-Use $task-memory for this subtask. Follow the subagent protocol in that skill.
+Use $task-memory for this subtask. Follow the subagent protocol.
 
 Task memory:
 - workspace: <absolute workspace path>
 - task-id: <task-id>
 - report name: <short report name>
 
-Start by running:
+Run:
 python scripts/task_memory.py status --workspace <absolute workspace path> --task-id <task-id>
 
-Then read the returned task_state path.
+If not running from this skill directory, replace `scripts/task_memory.py` with its absolute path.
 
-Before writing your findings, create your report by running:
+Read the returned task_state path.
+
+Create your report before writing findings:
 python scripts/task_memory.py create-report --workspace <absolute workspace path> --task-id <task-id> --name <short report name>
 
-Write your report to the generated report path.
+Write to the generated report path.
 
 Task:
 <specific assignment>
 
 Constraints:
-- Do not modify task_state.md.
-- Do not modify source files unless explicitly assigned.
-- Use the Report Shape from $task-memory.
-- Write an absorption-ready summary, not a detailed audit log.
-- Fill `Scope` with the assigned subtask and explicit boundaries.
-- Put only durable conclusions, decisions, risks, validation results, and next actions into Absorbable Findings or Open or Not Checked.
+- Do not modify task_state.md or source files unless explicitly assigned.
+- Use the Report Shape from $task-memory; write an absorption-ready summary.
+- Fill `Scope` with the assigned subtask and boundaries.
+- Put only durable conclusions, decisions, risks, final/representative validation, failure signatures, unexpected side effects, and next actions into Absorbable Findings or Open or Not Checked.
+- Omit routine validation, review, state-check, raw stdout, and repeated static-check detail unless durable.
 - Start each evidence item with a hard pointer, then add at most one short fact.
-- On success, return only the generated report absolute path plus one high-level summary sentence, such as `Report written; conclusion: <one sentence>.`
-- Do not use bullets in the chat return. Do not repeat Absorbable Findings or Open or Not Checked details in chat.
-- If you cannot create or write the report, return only a short failure note with the reason, the command attempted, and any partial report path or `None`.
+- On success, return only the report path plus one high-level sentence, such as `Report written; conclusion: <one sentence>.`
+- Do not use bullets or repeat report details in chat.
+- If blocked, return only the reason, attempted command, and partial report path or `None`.
 ```
 
-Use this shape when dispatching a command-only subagent:
+Command-only subagent brief:
 
 ```text
-Use $task-memory for this subtask only if you need task context. This is a command-only handoff.
+Use $task-memory only if task context is needed. This is a command-only handoff.
 
 Task memory:
 - workspace: <absolute workspace path>
 - task-id: <task-id>
 
-If task context is needed, start by running:
+If needed, run:
 python scripts/task_memory.py status --workspace <absolute workspace path> --task-id <task-id>
 
-Then read the returned task_state path.
+If not running from this skill directory, replace `scripts/task_memory.py` with its absolute path.
+
+If you ran `status`, read the returned task_state path.
 
 Do not run create-report. Do not write a report file. Do not modify task_state.md.
 
@@ -257,6 +273,6 @@ Constraints:
 - Run only the assigned command family and directly necessary observation commands.
 - Do not modify source files unless explicitly assigned.
 - Do not perform independent exploration, implementation, impact analysis, or decision support.
-- Return command, cwd, pass/fail status, exit code when available, scope, and the shortest useful stdout/stderr excerpt or error signature.
+- Return command, cwd, pass/fail, exit code when available, scope, and the shortest useful output excerpt or error signature.
 - Return results in chat only.
 ```
