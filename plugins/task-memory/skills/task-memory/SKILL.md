@@ -15,10 +15,6 @@ Task memory lives under `--workspace`, normally the current workspace root, as `
 
 Root owns `task_state.md` and updates it for durable goal/scope changes, decisions, completed root work, important evidence, decision-bearing validation, blockers, open questions, and absorbed reports. Do not route root's own work through `reports/` unless the user asks for a handoff or audit artifact.
 
-## Language Protocol
-
-Write `task_state.md` content and report prose in the user's customary language unless requested otherwise. Infer it from user/root instructions and existing `task_state.md`; if unsure, follow `task_state.md`, not the English template. Keep English for fixed headings (`Goal`, `State`, `Open`, `Reports`, `Conclusion`, `Absorbable Findings`, `Open or Not Checked`), workflow terms (`root`, `subagent`, `report`, `handoff`, `status`, `create-report`, `archive-report`, `task_state.md`), and technical text: paths, commands, symbols, API/config fields, test names, error signatures, source quotes.
-
 Treat routine validation, review, and state-check results as non-durable by default. Record final/representative validation, failures, blockers, unresolved risks, next-step-changing not-run validation, unexpected side effects, and requested audit facts. Do not record intermediate passing validation, routine output, raw stdout, repeated command history, or local inspection details. When recording, keep one short conclusion plus the smallest useful pointer, command, affected-file summary, or error signature; merge repeats.
 
 ## Handoffs
@@ -124,7 +120,7 @@ Archived reports are audit history only; do not read or depend on them during no
 
 ## Scripts
 
-Use bundled scripts for mechanical steps. Run from this skill directory, or replace `scripts/task_memory.py` with its absolute path. Run `init` only for a new task; for existing memory, run `status` with the actual task-id. Always pass an absolute `--workspace`.
+Use bundled scripts for mechanical steps. Resolve `scripts/task_memory.py` relative to the absolute path of this `SKILL.md`, or call `task_memory.py` by its absolute path. Run `init` only for a new task; for existing memory, run `status` with the actual task-id. Always pass an absolute `--workspace`.
 
 ```bash
 python scripts/task_memory.py init --workspace <absolute-workspace> --task-id <task-id>
@@ -146,15 +142,16 @@ Task memory:
 - workspace: <absolute workspace path>
 - task-id: <task-id>
 - report name: <short report name>
-- skill directory: <absolute skill directory>
+- skill file: <absolute path to task-memory SKILL.md>
+- task memory script: <absolute path to scripts/task_memory.py>
 
 Run:
-python <absolute skill directory>/scripts/task_memory.py status --workspace <absolute workspace path> --task-id <task-id>
+python <absolute task memory script path> status --workspace <absolute workspace path> --task-id <task-id>
 
 Read the returned task_state path.
 
 Create your report before writing findings:
-python <absolute skill directory>/scripts/task_memory.py create-report --workspace <absolute workspace path> --task-id <task-id> --name <short report name>
+python <absolute task memory script path> create-report --workspace <absolute workspace path> --task-id <task-id> --name <short report name>
 
 Write to the generated report path.
 
@@ -163,7 +160,7 @@ Task:
 
 Constraints:
 - Do not modify task_state.md or source files unless explicitly assigned.
-- Use the Report Shape from $task-memory; write absorption-ready prose in the user's customary language inferred from user/root instructions and `task_state.md`, while keeping key workflow and technical terms in English.
+- Use the Report Shape from $task-memory; write absorption-ready prose.
 - Fill `Scope` with the assigned boundaries.
 - Put only durable conclusions, decisions, risks, final validation, failure signatures, side effects, and next actions into Absorbable Findings or Open or Not Checked.
 - Omit routine validation/review/state-check detail, raw stdout, and repeated static-check detail unless durable.
@@ -181,10 +178,11 @@ Use $task-memory only if task context is needed. This is a command-only handoff.
 Task memory:
 - workspace: <absolute workspace path>
 - task-id: <task-id>
-- skill directory: <absolute skill directory>
+- skill file: <absolute path to task-memory SKILL.md>
+- task memory script: <absolute path to scripts/task_memory.py>
 
 If needed, run:
-python <absolute skill directory>/scripts/task_memory.py status --workspace <absolute workspace path> --task-id <task-id>
+python <absolute task memory script path> status --workspace <absolute workspace path> --task-id <task-id>
 
 If you ran `status`, read the returned task_state path.
 
