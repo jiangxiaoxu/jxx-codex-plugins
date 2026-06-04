@@ -24,6 +24,12 @@ Root owns `task_state.md`.
 
 Root updates `task_state.md` whenever durable memory changes: goal/scope, decisions, completed root work, important evidence, decision-bearing validation, blockers, open questions, and absorbed reports.
 
+## Language Protocol
+
+Write `task_state.md` content and report prose in the user's customary language for the current task, unless the user explicitly requests another language.
+
+Keep key terms in English: fixed headings such as `Goal`, `State`, `Open`, `Reports`, `Conclusion`, `Absorbable Findings`, and `Open or Not Checked`; workflow terms such as `root`, `subagent`, `report`, `handoff`, `status`, `create-report`, `archive-report`, and `task_state.md`; and technical text such as paths, commands, symbols, API fields, config keys, test names, error signatures, and source quotes.
+
 ## Validation, Review, and State Checks
 
 State checks inspect current task, worktree, environment, or generated-output state; `state check` is a category, while `status` is the task-memory script command. Treat routine validation, review, and state-check results as non-durable by default. Write them to `task_state.md` only when they change resume, decisions, validation, or handoff.
@@ -238,6 +244,7 @@ Task:
 Constraints:
 - Do not modify task_state.md or source files unless explicitly assigned.
 - Use the Report Shape from $task-memory; write an absorption-ready summary.
+- Write prose in the user's customary language while keeping key workflow and technical terms in English.
 - Fill `Scope` with the assigned subtask and boundaries.
 - Put only durable conclusions, decisions, risks, final/representative validation, failure signatures, unexpected side effects, and next actions into Absorbable Findings or Open or Not Checked.
 - Omit routine validation, review, state-check, raw stdout, and repeated static-check detail unless durable.
