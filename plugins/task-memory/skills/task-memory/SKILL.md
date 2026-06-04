@@ -220,15 +220,15 @@ Task memory:
 - workspace: <absolute workspace path>
 - task-id: <task-id>
 - report name: <short report name>
-- task_memory.py: <absolute path to task_memory.py>
+- skill directory: <absolute path to this skill directory>
 
 Run:
-python <absolute path to task_memory.py> status --workspace <absolute workspace path> --task-id <task-id>
+python <absolute path to this skill directory>/scripts/task_memory.py status --workspace <absolute workspace path> --task-id <task-id>
 
 Read the returned task_state path.
 
 Create your report before writing findings:
-python <absolute path to task_memory.py> create-report --workspace <absolute workspace path> --task-id <task-id> --name <short report name>
+python <absolute path to this skill directory>/scripts/task_memory.py create-report --workspace <absolute workspace path> --task-id <task-id> --name <short report name>
 
 Write to the generated report path.
 
@@ -255,10 +255,10 @@ Use $task-memory only if task context is needed. This is a command-only handoff.
 Task memory:
 - workspace: <absolute workspace path>
 - task-id: <task-id>
-- task_memory.py: <absolute path to task_memory.py>
+- skill directory: <absolute path to this skill directory>
 
 If needed, run:
-python <absolute path to task_memory.py> status --workspace <absolute workspace path> --task-id <task-id>
+python <absolute path to this skill directory>/scripts/task_memory.py status --workspace <absolute workspace path> --task-id <task-id>
 
 If you ran `status`, read the returned task_state path.
 
