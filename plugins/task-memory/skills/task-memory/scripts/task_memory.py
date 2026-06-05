@@ -9,6 +9,9 @@ from datetime import datetime
 from pathlib import Path
 
 
+ENABLE_LEGACY_TASK_DIR_COMPAT = True
+
+
 def normalize_token(value: str, field_name: str) -> str:
     token = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     if not token:
@@ -23,14 +26,65 @@ def resolve_workspace(value: str) -> Path:
     return workspace
 
 
+def task_memory_root_path(workspace: Path) -> Path:
+    return workspace / "task-memory"
+
+
+def new_task_dir_path(workspace: Path, normalized_task_id: str) -> Path:
+    return task_memory_root_path(workspace) / f"task-{normalized_task_id}"
+
+
+def legacy_task_dir_path(workspace: Path, normalized_task_id: str) -> Path:
+    return workspace / f"task-{normalized_task_id}"
+
+
+def available_task_names(task_parent: Path) -> list[str]:
+    return sorted(path.name for path in task_parent.glob("task-*") if path.is_dir())
+
+
+def has_task_memory_shape(task_dir: Path) -> bool:
+    return task_state_path(task_dir).is_file() and reports_dir_path(task_dir).is_dir()
+
+
+def available_legacy_task_names(workspace: Path) -> list[str]:
+    task_memory_root = task_memory_root_path(workspace).resolve()
+    return sorted(
+        path.name
+        for path in workspace.glob("task-*")
+        if path.is_dir() and (path.resolve() != task_memory_root or has_task_memory_shape(path))
+    )
+
+
+def task_dir_not_found_hint(workspace: Path) -> str:
+    task_memory_root = task_memory_root_path(workspace)
+    new_tasks = available_task_names(task_memory_root)
+    hints = [
+        f"New-layout tasks: {', '.join(new_tasks)}" if new_tasks else "No task-memory/task-* directories found."
+    ]
+    if ENABLE_LEGACY_TASK_DIR_COMPAT:
+        legacy_tasks = available_legacy_task_names(workspace)
+        hints.append(
+            f"Legacy tasks: {', '.join(legacy_tasks)}"
+            if legacy_tasks
+            else "No legacy task-* directories found."
+        )
+    return " " + " ".join(hints)
+
+
 def resolve_task_dir(workspace: Path, task_id: str, must_exist: bool = True) -> Path:
     normalized_task_id = normalize_token(task_id, "--task-id")
-    task_dir = workspace / f"task-{normalized_task_id}"
-    if must_exist and not task_dir.is_dir():
-        available = sorted(path.name for path in workspace.glob("task-*") if path.is_dir())
-        hint = f" Available tasks: {', '.join(available)}" if available else " No task-* directories found."
-        raise SystemExit(f"task memory folder not found: {task_dir}.{hint}")
-    return task_dir
+    task_dir = new_task_dir_path(workspace, normalized_task_id)
+    if task_dir.is_dir() or not must_exist:
+        return task_dir
+
+    if ENABLE_LEGACY_TASK_DIR_COMPAT:
+        legacy_task_dir = legacy_task_dir_path(workspace, normalized_task_id)
+        legacy_is_task_memory_root = legacy_task_dir.resolve() == task_memory_root_path(workspace).resolve()
+        if legacy_task_dir.is_dir() and (not legacy_is_task_memory_root or has_task_memory_shape(legacy_task_dir)):
+            return legacy_task_dir
+
+    hint = task_dir_not_found_hint(workspace)
+    raise SystemExit(f"task memory folder not found: {task_dir}.{hint}")
 
 
 def task_state_path(task_dir: Path) -> Path:
@@ -102,13 +156,13 @@ def next_sequence(reports_dir: Path, date: str) -> int:
 
 
 def allocate_task_dir(workspace: Path, task_id: str) -> tuple[str, Path]:
-    task_dir = workspace / f"task-{task_id}"
+    task_dir = new_task_dir_path(workspace, task_id)
     if not task_dir.exists():
         return task_id, task_dir
     sequence = 1
     while sequence < 1000:
         candidate_task_id = f"{task_id}-{sequence:03d}"
-        candidate = workspace / f"task-{candidate_task_id}"
+        candidate = new_task_dir_path(workspace, candidate_task_id)
         if not candidate.exists():
             return candidate_task_id, candidate
         sequence += 1
@@ -256,12 +310,12 @@ def command_archive_report(args: argparse.Namespace) -> int:
 
 
 def add_common_task_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--workspace", required=True, help="Absolute workspace path containing task-<task-id> folders.")
+    parser.add_argument("--workspace", required=True, help="Absolute workspace path containing the task-memory/task-<task-id> folders.")
     parser.add_argument("--task-id", required=True, help="Workspace-unique task id, normalized to lowercase hyphen-case.")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Manage task-<task-id>/task_state.md, reports/, and reports/archive/.")
+    parser = argparse.ArgumentParser(description="Manage task-memory/task-<task-id>/task_state.md, reports/, and reports/archive/.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("init", help="Create a task memory folder.")
