@@ -7,9 +7,11 @@ description: Maintain durable task_state.md memory with summaries, report handof
 
 Use this skill to keep long tasks recoverable without relying on chat history as source of truth.
 
-Task memory lives under `--workspace`, normally the current workspace root, as `task-<task-id>/task_state.md` plus `reports/archive/`.
+Task memory lives under `--workspace`, normally the current workspace root, as `task-memory/task-<task-id>/task_state.md` plus `reports/archive/`.
 
-`init` creates `task-<task-id>` or the next `-001`, `-002`, etc. variant and prints `task_id=<actual-task-id>`. Use the actual task id thereafter.
+`init` creates the `task-memory/` parent folder plus `task-<task-id>` or the next `-001`, `-002`, etc. variant under it, then prints `task_id=<actual-task-id>`. Use the actual task id thereafter.
+
+For compatibility, existing legacy memory at `--workspace/task-<task-id>/` is still readable by `status`, `create-report`, and `archive-report` when no matching new-layout task exists. New-layout memory is canonical and wins if both locations exist. New tasks are always created under `--workspace/task-memory/`. Legacy fallback is controlled by `ENABLE_LEGACY_TASK_DIR_COMPAT` in `scripts/task_memory.py` so it can be disabled in one place.
 
 ## Core Protocol
 
@@ -120,7 +122,7 @@ Archived reports are audit history only; do not read or depend on them during no
 
 ## Scripts
 
-Use bundled scripts for mechanical steps. Resolve `scripts/task_memory.py` relative to the absolute path of this `SKILL.md`, or call `task_memory.py` by its absolute path. Run `init` only for a new task; for existing memory, run `status` with the actual task-id. Always pass an absolute `--workspace`.
+Use bundled scripts for mechanical steps. Resolve `scripts/task_memory.py` relative to the absolute path of this `SKILL.md`, or call `task_memory.py` by its absolute path. Run `init` only for a new task; for existing memory, run `status` with the actual task-id. Always pass an absolute `--workspace`; the script stores new memory under `--workspace/task-memory/`.
 
 ```bash
 python scripts/task_memory.py init --workspace <absolute-workspace> --task-id <task-id>
@@ -129,7 +131,7 @@ python scripts/task_memory.py create-report --workspace <absolute-workspace> --t
 python scripts/task_memory.py archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>
 ```
 
-`init` creates `task_state.md`, `reports/`, and `reports/archive/`; if needed it appends `-001`, `-002`, etc. and prints `task_id=<actual-task-id>`. `status` has no side effects and prints task/report paths plus pending/archived reports. `create-report` creates a template and prints its absolute path; `--name` becomes lowercase hyphen-case. `archive-report` moves one absorbed report filename to `reports/archive/`, never edits `task_state.md`, and appends `-001`, `-002`, etc. instead of overwriting. Only root may run `archive-report`; do not move reports with shell commands, wildcards, or directory operations.
+`init` creates `task-memory/task-<task-id>/task_state.md`, `reports/`, and `reports/archive/`; if needed it appends `-001`, `-002`, etc. and prints `task_id=<actual-task-id>`. `status` has no side effects and prints task/report paths plus pending/archived reports; with compatibility enabled, it can fall back to existing legacy `task-<task-id>/` only when no matching new-layout task exists. `create-report` creates a template and prints its absolute path; `--name` becomes lowercase hyphen-case. `archive-report` moves one absorbed report filename to `reports/archive/`, never edits `task_state.md`, and appends `-001`, `-002`, etc. instead of overwriting. Only root may run `archive-report`; do not move reports with shell commands, wildcards, or directory operations.
 
 ## Brief Templates
 
