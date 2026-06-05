@@ -1,6 +1,6 @@
 ---
 name: task-memory
-description: Maintain durable task_state.md memory with summaries, report handoffs, and command-only handoffs.
+description: Maintain durable task_state.md memory for root sessions and task-memory subagent handoffs.
 ---
 
 # Task Memory
@@ -13,6 +13,14 @@ Task memory lives under `--workspace`, normally the current workspace root, as `
 
 For compatibility, existing legacy memory at `--workspace/task-<task-id>/` is still readable by `status`, `create-report`, and `archive-report` when no matching new-layout task exists. New-layout memory is canonical and wins if both locations exist. New tasks are always created under `--workspace/task-memory/`. Legacy fallback is controlled by `ENABLE_LEGACY_TASK_DIR_COMPAT` in `scripts/task_memory.py` so it can be disabled in one place.
 
+## Role Routing
+
+On activation, first route by agent role and handoff mode:
+
+- Root session: own `task_state.md`, update durable state, dispatch handoffs, absorb reports, and archive absorbed reports.
+- Report-required subagent: activate/read `$task-memory`, run `status`, read `task_state.md`, create exactly one report, write findings there, and return only the report path plus one high-level summary sentence.
+- Command-only subagent: activate/read `$task-memory`, run `status` and read `task_state.md` only when task context is needed, never run `create-report`, never write a report, and return command results in chat.
+
 ## Core Protocol
 
 Root owns `task_state.md` and updates it for durable goal/scope changes, decisions, completed root work, important evidence, decision-bearing validation, blockers, open questions, and absorbed reports. Do not route root's own work through `reports/` unless the user asks for a handoff or audit artifact.
@@ -21,7 +29,17 @@ Treat routine validation, review, and state-check results as non-durable by defa
 
 ## Handoffs
 
-Subagents never edit `task_state.md`. Choose handoff mode by task shape:
+Subagents never edit `task_state.md`.
+
+Dispatch contract:
+
+- Root must explicitly choose `Report-required` or `Command-only` before delegating any work that should use task memory, and must include the matching canonical brief below. Do not rely on a partial paraphrase.
+- Every task-memory handoff brief must include `Use $task-memory`, `task-id`, and the mode-specific constraints. Report-required briefs must also include a report name.
+- Do not make root repeat the skill file, task memory script path, or workspace in normal handoffs. Subagents activate/read `$task-memory`, resolve bundled scripts from the skill, and use the current workspace unless the brief explicitly states otherwise.
+- If a subagent brief includes `Use $task-memory` plus `task-id`, the subagent must activate/read `$task-memory` and follow the matching handoff mode.
+- If the brief omits the handoff mode, classify by task shape: exploration, implementation, impact analysis, call tracing, decision support, durable evidence collection, or results that should survive compaction are `Report-required`; parent-specified command execution is `Command-only`.
+
+Choose handoff mode by task shape:
 
 - Report-required: exploration, implementation, impact analysis, call tracing, decision support, durable evidence collection, or results that should survive compaction as independent evidence.
 - Command-only: parent-specified command execution returning command, cwd, pass/fail, exit code, scoped output, or short error signatures without independent exploration, implementation, or durable analysis.
@@ -29,13 +47,13 @@ Subagents never edit `task_state.md`. Choose handoff mode by task shape:
 Report-required flow:
 
 1. Root updates `task_state.md` with latest goal, state, open items, and pending reports.
-2. Root briefs the subagent with `Use $task-memory`, absolute workspace, `task-id`, report name, status/create-report steps, return format, and `Do not modify task_state.md`.
+2. Root briefs the subagent with `Use $task-memory`, `task-id`, report name, status/create-report steps, return format, and `Do not modify task_state.md`.
 3. Subagent activates/reads this skill, runs `status`, reads `task_state.md`, creates exactly one report, does the work, writes findings, and returns only the report path plus one high-level summary sentence.
 4. Root reads the report in full, absorbs durable content into `task_state.md`, then archives only when fully absorbed.
 
 Do not add `Reports > Pending` when dispatching or running `create-report`; `status` tracks live unarchived reports. Add Pending only after root reads a finished report and durable content remains unabsorbed. When absorption completes, remove matching Pending, add one `Reports > Absorbed` note with filename, conclusion, and `State` location, then archive.
 
-Command-only handoffs may run `status` only if task context is needed. They do not run `create-report`, do not write reports, and return results in chat. Root applies the validation/state-check rules before writing any command result to `task_state.md`; do not create synthetic absorbed-report notes.
+Command-only handoffs may run `status` only if task context is needed. They do not run `create-report`, do not write reports, and return results in chat. Command-only activation never implies report creation; unless the brief explicitly selects `Report-required`, do not run `create-report` or write a report. Root applies the validation/state-check rules before writing any command result to `task_state.md`; do not create synthetic absorbed-report notes.
 
 Archived reports are best-effort audit copies, not durable state. Preserve resume-critical content in `task_state.md` before archiving; do not rely on archived reports.
 
@@ -124,6 +142,8 @@ Archived reports are audit history only; do not read or depend on them during no
 
 Use bundled scripts for mechanical steps. Resolve `scripts/task_memory.py` relative to the absolute path of this `SKILL.md`, or call `task_memory.py` by its absolute path. Run `init` only for a new task; for existing memory, run `status` with the actual task-id. Always pass an absolute `--workspace`; the script stores new memory under `--workspace/task-memory/`.
 
+Do not expose script paths or workspace arguments in normal subagent briefs. After a subagent activates `$task-memory`, it resolves `scripts/task_memory.py` from this skill, uses the current workspace root as the absolute `--workspace`, and only overrides that workspace when the brief explicitly says so.
+
 ```bash
 python scripts/task_memory.py init --workspace <absolute-workspace> --task-id <task-id>
 python scripts/task_memory.py status --workspace <absolute-workspace> --task-id <task-id>
@@ -138,22 +158,18 @@ python scripts/task_memory.py archive-report --workspace <absolute-workspace> --
 Report-required subagent brief:
 
 ```text
-Use $task-memory for this subtask. Follow the subagent protocol.
+Use $task-memory for this subtask. This is a report-required task-memory handoff. Follow the subagent protocol.
 
 Task memory:
-- workspace: <absolute workspace path>
 - task-id: <task-id>
 - report name: <short report name>
-- skill file: <absolute path to task-memory SKILL.md>
-- task memory script: <absolute path to scripts/task_memory.py>
 
-Run:
-python <absolute task memory script path> status --workspace <absolute workspace path> --task-id <task-id>
+Run `status` for this `task-id` using $task-memory.
 
 Read the returned task_state path.
 
 Create your report before writing findings:
-python <absolute task memory script path> create-report --workspace <absolute workspace path> --task-id <task-id> --name <short report name>
+Run `create-report` with the report name above using $task-memory.
 
 Write to the generated report path.
 
@@ -175,16 +191,12 @@ Constraints:
 Command-only subagent brief:
 
 ```text
-Use $task-memory only if task context is needed. This is a command-only handoff.
+This is a command-only task-memory handoff. Use $task-memory for routing; load task context via status only when needed. Do not run create-report or write a report.
 
 Task memory:
-- workspace: <absolute workspace path>
 - task-id: <task-id>
-- skill file: <absolute path to task-memory SKILL.md>
-- task memory script: <absolute path to scripts/task_memory.py>
 
-If needed, run:
-python <absolute task memory script path> status --workspace <absolute workspace path> --task-id <task-id>
+If needed, run `status` for this `task-id` using $task-memory.
 
 If you ran `status`, read the returned task_state path.
 
