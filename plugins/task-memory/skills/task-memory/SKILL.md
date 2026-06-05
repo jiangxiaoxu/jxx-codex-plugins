@@ -1,6 +1,6 @@
 ---
 name: task-memory
-description: Maintain durable task_state.md memory for root sessions and task-memory subagent handoffs.
+description: Maintain durable task_state.md memory for task-state owners, report handoffs, command-only handoffs, and delegated worker handoffs. Use when Codex needs to create, resume, update, or summarize task state; dispatch scoped work with task-id context; or handle nested task-memory subagent reports.
 ---
 
 # Task Memory
@@ -17,25 +17,34 @@ For compatibility, existing legacy memory at `--workspace/task-<task-id>/` is st
 
 On activation, first route by agent role and handoff mode:
 
-- Root session: own `task_state.md`, update durable state, dispatch handoffs, absorb reports, and archive absorbed reports.
-- Report-required subagent: activate/read `$task-memory`, run `status`, read `task_state.md`, create exactly one report, write findings there, and return only the report path plus one high-level summary sentence.
+- Task-state owner: usually `/root`; owns `task_state.md`, updates durable state, dispatches or receives handoffs, absorbs reports, archives absorbed reports, and performs final integration.
+- Dispatching agent: any agent allowed to delegate child work; passes `$task-memory`, `task-id`, handoff mode, and task-local context to child workers without modifying `task_state.md` unless it is also the task-state owner.
+- Report-required subagent: activate/read `$task-memory`, run `status`, read `task_state.md`, create exactly one report, write findings there, and return only the report path plus one high-level summary sentence to the direct parent.
 - Command-only subagent: activate/read `$task-memory`, run `status` and read `task_state.md` only when task context is needed, never run `create-report`, never write a report, and return command results in chat.
+
+## Dispatcher Worker Delegation
+
+When an agent activates `$task-memory` and is allowed to dispatch child work, keep the parent context small by preferring worker handoffs for implementation work with a clear write scope, substantial file-reading needs, or details that can be recovered from `task_state.md` plus the parent brief.
+
+Before the task-state owner dispatches a worker, it updates `task_state.md` with current goal, scope, decisions, constraints, open questions, and any pending report context the worker needs. A non-owner dispatcher does not edit `task_state.md`; it adds only task-local context, write scope, constraints, and expected return details to the child brief.
+
+Use a worker handoff when the worker can start from `task_state.md`, combine it with the direct parent brief, implement within explicit boundaries, and return durable findings through a report. The task-state owner keeps ownership of `task_state.md`, report absorption, archive decisions, final integration, and cross-worker conflict resolution. A nested worker returns its report to the direct parent; that parent incorporates durable child findings into its own report, and the task-state owner later absorbs them into `task_state.md`.
 
 ## Core Protocol
 
-Root owns `task_state.md` and updates it for durable goal/scope changes, decisions, completed root work, important evidence, decision-bearing validation, blockers, open questions, and absorbed reports. Do not route root's own work through `reports/` unless the user asks for a handoff or audit artifact.
+The task-state owner owns `task_state.md` and updates it for durable goal/scope changes, decisions, completed owner work, important evidence, decision-bearing validation, blockers, open questions, and absorbed reports. Do not route the task-state owner's own work through `reports/` unless the user asks for a handoff or audit artifact.
 
 Treat routine validation, review, and state-check results as non-durable by default. Record final/representative validation, failures, blockers, unresolved risks, next-step-changing not-run validation, unexpected side effects, and requested audit facts. Do not record intermediate passing validation, routine output, raw stdout, repeated command history, or local inspection details. When recording, keep one short conclusion plus the smallest useful pointer, command, affected-file summary, or error signature; merge repeats.
 
 ## Handoffs
 
-Subagents never edit `task_state.md`.
+Non-owner subagents never edit `task_state.md`.
 
 Dispatch contract:
 
-- Root must explicitly choose `Report-required` or `Command-only` before delegating any work that should use task memory, and must include the matching canonical brief below. Do not rely on a partial paraphrase.
+- A dispatching agent must explicitly choose `Report-required` or `Command-only` before delegating any work that should use task memory, and must include the matching canonical brief below. Do not rely on a partial paraphrase.
 - Every task-memory handoff brief must include `Use $task-memory`, `task-id`, and the mode-specific constraints. Report-required briefs must also include a report name.
-- Do not make root repeat the skill file, task memory script path, or workspace in normal handoffs. Subagents activate/read `$task-memory`, resolve bundled scripts from the skill, and use the current workspace unless the brief explicitly states otherwise.
+- Do not make the dispatching agent repeat the skill file, task memory script path, or workspace in normal handoffs. Subagents activate/read `$task-memory`, resolve bundled scripts from the skill, and use the current workspace unless the brief explicitly states otherwise.
 - If a subagent brief includes `Use $task-memory` plus `task-id`, the subagent must activate/read `$task-memory` and follow the matching handoff mode.
 - If the brief omits the handoff mode, classify by task shape: exploration, implementation, impact analysis, call tracing, decision support, durable evidence collection, or results that should survive compaction are `Report-required`; parent-specified command execution is `Command-only`.
 
@@ -44,16 +53,18 @@ Choose handoff mode by task shape:
 - Report-required: exploration, implementation, impact analysis, call tracing, decision support, durable evidence collection, or results that should survive compaction as independent evidence.
 - Command-only: parent-specified command execution returning command, cwd, pass/fail, exit code, scoped output, or short error signatures without independent exploration, implementation, or durable analysis.
 
+For implementation, prefer a worker handoff when the write scope and validation boundary can be stated clearly. Keep the work in the current parent only for very small edits, state/report absorption, final integration, or tasks that require immediate parent decisions while editing.
+
 Report-required flow:
 
-1. Root updates `task_state.md` with latest goal, state, open items, and pending reports.
-2. Root briefs the subagent with `Use $task-memory`, `task-id`, report name, status/create-report steps, return format, and `Do not modify task_state.md`.
-3. Subagent activates/reads this skill, runs `status`, reads `task_state.md`, creates exactly one report, does the work, writes findings, and returns only the report path plus one high-level summary sentence.
-4. Root reads the report in full, absorbs durable content into `task_state.md`, then archives only when fully absorbed.
+1. The task-state owner updates `task_state.md` with latest goal, state, open items, and pending reports before dispatching. A non-owner dispatcher adds only task-local context to the child brief.
+2. The dispatching agent briefs the subagent with `Use $task-memory`, `task-id`, report name, status/create-report steps, return format, and `Do not modify task_state.md`.
+3. Subagent activates/reads this skill, runs `status`, reads `task_state.md`, creates exactly one report, does the work, writes findings, and returns only the report path plus one high-level summary sentence to the direct parent.
+4. The direct parent reads the report in full. If the direct parent is not the task-state owner, it incorporates durable child findings into its own report; the task-state owner later absorbs durable content into `task_state.md` and archives only when fully absorbed.
 
-Do not add `Reports > Pending` when dispatching or running `create-report`; `status` tracks live unarchived reports. Add Pending only after root reads a finished report and durable content remains unabsorbed. When absorption completes, remove matching Pending, add one `Reports > Absorbed` note with filename, conclusion, and `State` location, then archive.
+Do not add `Reports > Pending` when dispatching or running `create-report`; `status` tracks live unarchived reports. Add Pending only after the task-state owner reads a finished report and durable content remains unabsorbed. When absorption completes, remove matching Pending, add one `Reports > Absorbed` note with filename, conclusion, and `State` location, then archive.
 
-Command-only handoffs may run `status` only if task context is needed. They do not run `create-report`, do not write reports, and return results in chat. Command-only activation never implies report creation; unless the brief explicitly selects `Report-required`, do not run `create-report` or write a report. Root applies the validation/state-check rules before writing any command result to `task_state.md`; do not create synthetic absorbed-report notes.
+Command-only handoffs may run `status` only if task context is needed. They do not run `create-report`, do not write reports, and return results in chat. Command-only activation never implies report creation; unless the brief explicitly selects `Report-required`, do not run `create-report` or write a report. The task-state owner applies the validation/state-check rules before writing any command result to `task_state.md`; do not create synthetic absorbed-report notes.
 
 Archived reports are best-effort audit copies, not durable state. Preserve resume-critical content in `task_state.md` before archiving; do not rely on archived reports.
 
@@ -83,7 +94,7 @@ Repo/context snapshot: <commit, branch, timestamp, or "not checked">
 - <Finding, decision, risk, failure status, or decision-bearing validation result.> Evidence: `<path:line-line>` `<symbol/config/API/test/command>` - <one short fact>.
 - <Another finding, or `None` if no durable finding should be absorbed.> Evidence: `<command/test/error signature>` - <one short fact or `not checked`>.
 ## Open or Not Checked
-- <0-3 bullets with blockers, unresolved questions, not-run validation, or next actions that change what root should do. Use `None` if closed.>
+- <0-3 bullets with blockers, unresolved questions, not-run validation, or next actions that change what the direct parent or task-state owner should do. Use `None` if closed.>
 ````
 
 ## Task State Shape
@@ -116,7 +127,7 @@ Use `Validation` for acceptance-relevant checks. Do not record routine review/st
 
 ## Summary Protocol
 
-Use when the user asks to summarize, compact, or clean up `task_state.md`. Summary is a root-owned rewrite, not a report workflow; do not create a report or read archived reports for normal summary.
+Use when the user asks to summarize, compact, or clean up `task_state.md`. Summary is a task-state-owner rewrite, not a report workflow; do not create a report or read archived reports for normal summary.
 
 Before rewriting, run `status`, read `task_state.md`, and check pending reports. Absorb overlapping pending reports or explicitly leave them pending. Ask for options before modifying unless already provided; prefer `request_user_input`:
 
@@ -128,7 +139,7 @@ When applying a summary, preserve `# Task State`, `Goal`, `State`, `Open`, and `
 
 ## Resume Protocol
 
-After compaction, handoff, or long pause, root treats `task_state.md` as source of truth:
+After compaction, handoff, or long pause, the task-state owner treats `task_state.md` as source of truth:
 
 1. Run `status` for workspace and task-id.
 2. Read `task_state.md`.
@@ -151,7 +162,7 @@ python scripts/task_memory.py create-report --workspace <absolute-workspace> --t
 python scripts/task_memory.py archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>
 ```
 
-`init` creates `task-memory/task-<task-id>/task_state.md`, `reports/`, and `reports/archive/`; if needed it appends `-001`, `-002`, etc. and prints `task_id=<actual-task-id>`. `status` has no side effects and prints task/report paths plus pending/archived reports; with compatibility enabled, it can fall back to existing legacy `task-<task-id>/` only when no matching new-layout task exists. `create-report` creates a template and prints its absolute path; `--name` becomes lowercase hyphen-case. `archive-report` moves one absorbed report filename to `reports/archive/`, never edits `task_state.md`, and appends `-001`, `-002`, etc. instead of overwriting. Only root may run `archive-report`; do not move reports with shell commands, wildcards, or directory operations.
+`init` creates `task-memory/task-<task-id>/task_state.md`, `reports/`, and `reports/archive/`; if needed it appends `-001`, `-002`, etc. and prints `task_id=<actual-task-id>`. `status` has no side effects and prints task/report paths plus pending/archived reports; with compatibility enabled, it can fall back to existing legacy `task-<task-id>/` only when no matching new-layout task exists. `create-report` creates a template and prints its absolute path; `--name` becomes lowercase hyphen-case. `archive-report` moves one absorbed report filename to `reports/archive/`, never edits `task_state.md`, and appends `-001`, `-002`, etc. instead of overwriting. Only the task-state owner may run `archive-report`; do not move reports with shell commands, wildcards, or directory operations.
 
 ## Brief Templates
 
@@ -186,6 +197,42 @@ Constraints:
 - On success, return only the report path plus one high-level sentence, e.g. `Report written; conclusion: <one sentence>.`
 - Do not use bullets or repeat report details in chat.
 - If blocked, return only the reason, attempted command, and partial report path or `None`.
+```
+
+Worker implementation brief:
+
+```text
+Use $task-memory for this subtask. This is a report-required worker implementation handoff.
+
+Task memory:
+- task-id: <task-id>
+- report name: <short report name>
+
+Run `status` for this `task-id` using $task-memory.
+
+Read the returned task_state path before implementation.
+
+Create your report before writing findings:
+Run `create-report` with the report name above using $task-memory.
+
+Task:
+<specific implementation assignment>
+
+Write scope:
+- Allowed: <files, directories, modules, or symbols the worker may modify>
+- Forbidden: <files, directories, modules, or behaviors the worker must not modify>
+
+Validation:
+<scoped validation commands or checks to run, or `Not required; explain why not run`>
+
+Constraints:
+- Do not modify task_state.md.
+- Modify source files only within the allowed write scope.
+- Use existing project patterns and keep unrelated refactors out of scope.
+- If implementation requires a new schema, generated file, public API, permission/cache/concurrency behavior, cross-package change, or expanded write scope, stop and report the risk instead of proceeding.
+- Put final changes, durable decisions, validation results, failures, blockers, side effects, and open risks in the report.
+- On success, return only the report path plus one high-level summary sentence to your direct parent.
+- If blocked, return only the blocker, attempted command or checked pointer, and partial report path or `None`.
 ```
 
 Command-only subagent brief:
