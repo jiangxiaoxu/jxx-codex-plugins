@@ -269,7 +269,7 @@ def command_archive_report(args: argparse.Namespace) -> int:
     print(f"Task state: {task_state}")
     print(f"Report to archive: {report}")
     print(f"Archive target: {archive_target}")
-    print("Before archiving, root must fully absorb durable report content into task_state.md.")
+    print("Before archiving, the task-state owner must fully absorb durable report content into task_state.md.")
     print("Archive gate: conclusion, evidence pointers, flow, validation, risks, and next actions are either absorbed, intentionally discarded as non-durable, or left pending.")
     print("Archived reports are best-effort audit copies and may later be unreadable or deleted.")
 
@@ -284,7 +284,16 @@ def add_common_task_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Manage task-memory/task-<task-id>/task_state.md, reports/, and reports/archive/.")
+    parser = argparse.ArgumentParser(
+        description="Manage task-memory/task-<task-id>/task_state.md, reports/, and reports/archive/.",
+        epilog="""Examples:
+  python scripts/task_memory.py init --workspace <absolute-workspace> --task-id <task-id>
+  python scripts/task_memory.py status --workspace <absolute-workspace> --task-id <task-id>
+  python scripts/task_memory.py create-report --workspace <absolute-workspace> --task-id <task-id> --name thumbnail-cache-check
+  python scripts/task_memory.py archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("init", help="Create a task memory folder.")
