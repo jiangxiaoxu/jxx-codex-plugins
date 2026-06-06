@@ -10,18 +10,18 @@ Task memory lives under `--workspace`, normally the current workspace root, as `
 Task memory root is `--workspace/task-memory/`; each task lives at `task-<task-id>/` with `task_state.md`, `reports/`, and `reports/archive/`.
 
 ## Activation Mode
-On activation, follow the mode selected by the caller. When this skill is activated outside an explicit handoff brief, act as the Task-state owner. A handoff agent must use the mode named in its brief; if the brief does not select `Report-required` or `Command-only`, do not infer ownership:
-- Task-state owner: owns `task_state.md`, durable updates, report absorption/archive, final integration, and summaries.
+On activation, follow the mode selected by the caller. Only `/root` or the root session may act as the Task-state owner; non-root agents must never infer or claim task-state ownership. A handoff agent must use the mode named in its brief; if the brief does not select `Report-required` or `Command-only`, do not infer ownership:
+- Task-state owner: `/root` or the root session owns `task_state.md`, durable updates, report absorption/archive, final integration, and summaries.
 - Report-required handoff agent: run `status`, read `task_state.md`, create exactly one report, write findings there, and return only the report path plus a brief status to the direct parent.
 - Command-only handoff agent: run `status` and read `task_state.md` only when task context is needed, never run `create-report`, never write a report, and return command results in chat.
 Handoff agents must not create, delegate to, manage, wait on, absorb, archive, or update `task_state.md`. If a handoff agent finds that more work is needed, record the recommended follow-up scope in the report or chat result for its parent.
 
 ## Core Protocol
-The task-state owner owns `task_state.md` and updates it for durable goal/scope changes, decisions, completed owner work, important evidence, decision-bearing validation, blockers, open questions, and absorbed reports. Do not route the task-state owner's own work through `reports/` unless the user asks for a handoff or audit artifact.
+The task-state owner (`/root` or the root session) owns `task_state.md` and updates it for durable goal/scope changes, decisions, completed owner work, important evidence, decision-bearing validation, blockers, open questions, and absorbed reports. Do not route the task-state owner's own work through `reports/` unless the user asks for a handoff or audit artifact.
 Treat routine validation, review, and state-check results as non-durable by default. Record final/representative validation, failures, blockers, unresolved risks, next-step-changing not-run validation, unexpected side effects, and requested audit facts. Do not record intermediate passing validation, routine output, raw stdout, repeated command history, or local inspection details. When recording, keep one short conclusion plus the smallest useful pointer, command, affected-file summary, or error signature; merge repeats.
 
 ## Handoff Modes
-Handoff agents never edit `task_state.md`. A caller may explicitly brief a handoff as `Report-required` or `Command-only`; this skill only defines how those modes record task memory.
+Handoff agents never edit `task_state.md`. The task-state owner must explicitly brief each handoff as `Report-required` or `Command-only`; this skill only defines how those modes record task memory. Implementation, worker, code-modification, explorer, investigation, mapping, and impact-analysis handoffs are `Report-required`. Validation, test, build, smoke, command-run, and log-observation handoffs are `Command-only`.
 
 Every task-memory handoff agent brief must start with `Use $task-memory` and include `task-id`. Report-required briefs must also include a parent-chosen `report name`. Do not repeat the skill path, script path, or workspace in normal briefs; handoff agents activate/read `$task-memory`, resolve bundled scripts, and use the current workspace unless the brief explicitly overrides it.
 Report-required flow:
@@ -93,13 +93,13 @@ Resume steps: 1. Run `status` for workspace and task-id. 2. Read `task_state.md`
 Archived reports are audit history only; do not read or depend on them during normal resume.
 
 ## Scripts
-Use bundled scripts for mechanical steps. Resolve `scripts/task_memory.py` relative to the absolute path of this `SKILL.md`, or call `task_memory.py` by its absolute path. Always pass an absolute `--workspace`; the script stores task memory under `--workspace/task-memory/`.
+Use bundled scripts for mechanical steps. Resolve `scripts/task_memory.py` from the directory containing this `SKILL.md`, not from the parent `skills/` directory; or call `task_memory.py` by its absolute path. Always pass an absolute `--workspace`; the script stores task memory under `--workspace/task-memory/`.
 Do not expose script paths or workspace arguments in normal handoff agent briefs. After a handoff agent activates `$task-memory`, it resolves `scripts/task_memory.py` from this skill, uses the current workspace root as the absolute `--workspace`, and only overrides that workspace when the brief explicitly says so.
 Run `python scripts/task_memory.py -h` for command syntax and examples.
 `init` creates task memory, `status` inspects paths and reports without side effects, `create-report` creates one pending report template, and `archive-report` moves one absorbed report into `reports/archive/` without editing `task_state.md`. Only the task-state owner may run `archive-report`; do not move reports with shell commands, wildcards, or directory operations.
 
 ## Brief Templates
-Use short natural-language briefs. Include only the task memory identifiers, the actual task, and boundaries that are specific to this handoff. Do not paste the protocol rules unless they override the defaults above.
+Use short natural-language briefs. Include only the task memory identifiers, the actual task, and boundaries that are specific to this handoff. Select `Report-required` for implementation/explorer handoffs and `Command-only` for validation handoffs. Do not paste the protocol rules unless they override the defaults above.
 
 Report-required handoff agent brief:
 ```text
