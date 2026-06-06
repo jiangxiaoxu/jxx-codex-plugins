@@ -10,7 +10,7 @@ Task memory lives under `--workspace`, normally the current workspace root, as `
 Task memory root is `--workspace/task-memory/`; each task lives at `task-<task-id>/` with `task_state.md`, `reports/`, and `reports/archive/`.
 
 ## Activation Mode
-On activation, follow the mode already selected by the caller. If no handoff mode is selected, act as the Task-state owner:
+On activation, follow the mode selected by the caller. When this skill is activated outside an explicit handoff brief, act as the Task-state owner. A handoff agent must use the mode named in its brief; if the brief does not select `Report-required` or `Command-only`, do not infer ownership:
 - Task-state owner: owns `task_state.md`, durable updates, report absorption/archive, final integration, and summaries.
 - Report-required handoff agent: run `status`, read `task_state.md`, create exactly one report, write findings there, and return only the report path plus a brief status to the direct parent.
 - Command-only handoff agent: run `status` and read `task_state.md` only when task context is needed, never run `create-report`, never write a report, and return command results in chat.
