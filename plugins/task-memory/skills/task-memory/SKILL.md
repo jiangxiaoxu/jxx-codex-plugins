@@ -1,6 +1,6 @@
 ---
 name: task-memory
-description: Maintain durable task_state.md memory, report artifacts, command-only handoff results, and absorbed report summaries. Use when starting exploration for a non-trivial task, when implementing a plan, or whenever the main chat thread needs continuing task-local state beyond chat history.
+description: Maintain durable task state for process-oriented work that may move through problem framing, exploration, analysis, implementation, and validation. Use as soon as a task enters any stage where progress, decisions, evidence, handoffs, or resume context should survive beyond chat history and be integrated into a single source of truth.
 ---
 
 # Task Memory
@@ -15,13 +15,17 @@ On activation, follow the mode selected by the caller. Only `/root` or the root 
 - Report-required handoff agent: run `status`, read `task_state.md`, create exactly one report, write findings there, and return only the report path plus a brief status to the direct parent.
 - Command-only handoff agent: run `status` and read `task_state.md` only when task context is needed, never run `create-report`, never write a report, and return command results in chat.
 Handoff agents must not create, delegate to, manage, wait on, absorb, archive, or update `task_state.md`. If a handoff agent finds that more work is needed, record the recommended follow-up scope in the report or chat result for its parent.
+When the task-state owner handles long self-contained implementation or code-modification work, dispatch a `worker` handoff agent without forking chat context. Keep small fixes, integration glue, conflict resolution, report absorption/archive, and final response work in the task-state owner.
 
 ## Core Protocol
 The task-state owner (`/root` or the root session) owns `task_state.md` and updates it for durable goal/scope changes, decisions, completed owner work, important evidence, decision-bearing validation, blockers, open questions, and absorbed reports. Do not route the task-state owner's own work through `reports/` unless the user asks for a handoff or audit artifact.
+When handling git changes, do not stage task memory files by default. Leave `task_state.md`, reports, and archived reports in the working tree unless the user explicitly asks to stage them or the user has already staged them.
 Treat routine validation, review, and state-check results as non-durable by default. Record final/representative validation, failures, blockers, unresolved risks, next-step-changing not-run validation, unexpected side effects, and requested audit facts. Do not record intermediate passing validation, routine output, raw stdout, repeated command history, or local inspection details. When recording, keep one short conclusion plus the smallest useful pointer, command, affected-file summary, or error signature; merge repeats.
 
 ## Handoff Modes
 Handoff agents never edit `task_state.md`. The task-state owner must explicitly brief each handoff as `Report-required` or `Command-only`; this skill only defines how those modes record task memory. Implementation, worker, code-modification, explorer, investigation, mapping, and impact-analysis handoffs are `Report-required`. Validation, test, build, smoke, command-run, and log-observation handoffs are `Command-only`.
+
+For worker implementation handoffs, always dispatch a worker handoff agent and do not fork chat context. Include enough context pointers and boundaries in the brief, but treat them as goal guidance rather than exhaustive file limits. Workers may modify directly related code, tests, config, public contracts, and docs needed for a coherent implementation, run relevant local validation, follow the `Report-required` flow, and never edit `task_state.md`. If blocked by a missing decision, a material scope change, or a validation constraint, write that in the partial report before returning.
 
 Every task-memory handoff agent brief must start with `Use $task-memory` and include `task-id`. Report-required briefs must also include a parent-chosen `report name`. Do not repeat the skill path, script path, or workspace in normal briefs; handoff agents activate/read `$task-memory`, resolve bundled scripts, and use the current workspace unless the brief explicitly overrides it.
 Report-required flow:
@@ -100,12 +104,20 @@ Run `python scripts/task_memory.py -h` for command syntax and examples.
 
 ## Brief Templates
 Use short natural-language briefs. Include only the task memory identifiers, the actual task, and boundaries that are specific to this handoff. Select `Report-required` for implementation/explorer handoffs and `Command-only` for validation handoffs. Do not paste the protocol rules unless they override the defaults above.
+For long self-contained implementation or code-modification work, always dispatch a worker handoff agent, do not fork chat context, and use the worker-oriented report-required brief.
 
 Report-required handoff agent brief:
 ```text
 Use $task-memory for a report-required handoff agent. Task memory: task-id=<task-id>; report name=<short report name>.
 Run `status`, read task_state, then run `create-report` before writing findings. <One or two sentences describing the assignment and its specific boundaries.>
 Return only the report path and status; do not repeat report content in chat. If blocked, write the blocker into the partial report first, then return the blocker status and partial report path.
+```
+
+Worker implementation dispatch brief:
+```text
+Use $task-memory for a report-required worker implementation handoff. Task memory: task-id=<task-id>; report name=<short report name>.
+Run `status`, read task_state, then run `create-report`. Implement <specific goal> within <boundaries>; include directly related code/tests/config/public contracts/docs, and validate with <checks>.
+Return only the report path and status. If blocked, unable to validate, or a material scope change is needed, write that and any completed work into the partial report before returning.
 ```
 
 Command-only handoff agent brief:
