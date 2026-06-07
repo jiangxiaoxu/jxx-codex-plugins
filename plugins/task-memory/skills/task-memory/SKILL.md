@@ -99,8 +99,11 @@ Archived reports are audit history only; do not read or depend on them during no
 ## Scripts
 Use bundled scripts for mechanical steps. Resolve `scripts/task_memory.py` from the directory containing this `SKILL.md`, not from the parent `skills/` directory; or call `task_memory.py` by its absolute path. Always pass an absolute `--workspace`; the script stores task memory under `--workspace/task-memory/`.
 Do not expose script paths or workspace arguments in normal handoff agent briefs. After a handoff agent activates `$task-memory`, it resolves `scripts/task_memory.py` from this skill, uses the current workspace root as the absolute `--workspace`, and only overrides that workspace when the brief explicitly says so.
-Run `python scripts/task_memory.py -h` for command syntax and examples.
-`init` creates task memory, `status` inspects paths and reports without side effects, `create-report` creates one pending report template, and `archive-report` moves one absorbed report into `reports/archive/` without editing `task_state.md`. Only the task-state owner may run `archive-report`; do not move reports with shell commands, wildcards, or directory operations.
+Script syntax: `python scripts/task_memory.py {init,status,create-report,archive-report} ...`.
+- `init --workspace <absolute-workspace> --task-id <task-id>` creates a task memory folder.
+- `status --workspace <absolute-workspace> --task-id <task-id>` prints task memory paths, pending reports, and archived reports without side effects.
+- `create-report --workspace <absolute-workspace> --task-id <task-id> --name <report-name>` creates one pending report template.
+- `archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>` moves one absorbed report from `reports/` to `reports/archive/` without editing `task_state.md`. Only the task-state owner may run `archive-report`; do not move reports with shell commands, wildcards, or directory operations.
 
 ## Brief Templates
 Use short natural-language briefs. Include only the task memory identifiers, the actual task, and boundaries that are specific to this handoff. Select `Report-required` for implementation/explorer handoffs and `Command-only` for validation handoffs. Do not paste the protocol rules unless they override the defaults above.
