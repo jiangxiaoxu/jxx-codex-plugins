@@ -64,17 +64,18 @@ def archive_dir_path(task_dir: Path) -> Path:
     return reports_dir_path(task_dir) / "archive"
 
 
-def validate_task_dir(task_dir: Path) -> tuple[Path, Path, Path]:
+def validate_task_dir(task_dir: Path, require_reports: bool = True) -> tuple[Path, Path, Path]:
     task_state = task_state_path(task_dir)
     reports_dir = reports_dir_path(task_dir)
     archive_dir = archive_dir_path(task_dir)
     if not task_state.is_file():
         raise SystemExit(f"missing task_state.md: {task_state}")
-    if not reports_dir.is_dir():
+    if reports_dir.exists() and not reports_dir.is_dir():
+        raise SystemExit(f"reports path exists but is not a directory: {reports_dir}")
+    if require_reports and not reports_dir.is_dir():
         raise SystemExit(f"missing reports directory: {reports_dir}")
     if archive_dir.exists() and not archive_dir.is_dir():
         raise SystemExit(f"reports archive path exists but is not a directory: {archive_dir}")
-    archive_dir.mkdir(exist_ok=True)
     return task_state, reports_dir, archive_dir
 
 
@@ -90,11 +91,9 @@ def task_state_template(task_name: str) -> str:
 
 - Current phase: initialization
 - Durable findings:
-  - Task memory folder created — evidence: task_state.md, reports/, and reports/archive/ initialized; validation: scaffold only.
+  - Task memory folder created - evidence: task_state.md, reports/, and reports/archive/ initialized.
 - Evidence ledger:
-  - `task-memory-init`: task_state.md + reports/ + reports/archive/ — initial durable memory scaffold.
-- Validation:
-  - scaffold creation — pass; scope: scaffold only; notes: no task work validated yet.
+  - `task-memory-init`: task_state.md + reports/ + reports/archive/ - initial durable memory scaffold.
 
 ## Open
 
@@ -103,9 +102,6 @@ def task_state_template(task_name: str) -> str:
 ## Reports
 
 Pending:
-- none
-
-Absorbed:
 - none
 """
 
@@ -153,9 +149,9 @@ Repo/context snapshot: not checked
 
 ## Absorbable Findings
 
-- `<finding>` Evidence: `<path:line-line>` `<symbol/config/API/test/command>` - TBD
+- `<finding>` Evidence: `<path:line-line>` `<symbol/config/API/error signature>` - TBD
 
-## Open or Not Checked
+## Open or Unresolved
 
 - N/A
 
@@ -231,9 +227,8 @@ def command_init(args: argparse.Namespace) -> int:
 def command_status(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    task_state, reports_dir, archive_dir = validate_task_dir(task_dir)
-    pending_reports = sorted(reports_dir.glob("*.md"))
-    archived_reports = sorted(archive_dir.glob("*.md"))
+    task_state, reports_dir, archive_dir = validate_task_dir(task_dir, require_reports=False)
+    pending_reports = sorted(reports_dir.glob("*.md")) if reports_dir.is_dir() else []
 
     print(f"task_dir={task_dir}")
     print(f"task_state={task_state}")
@@ -242,16 +237,14 @@ def command_status(args: argparse.Namespace) -> int:
     print(f"pending_reports={len(pending_reports)}")
     for report in pending_reports:
         print(f"pending_report={report.name}|{report}")
-    print(f"archived_reports={len(archived_reports)}")
-    for report in archived_reports:
-        print(f"archived_report={report.name}|{report}")
     return 0
 
 
 def command_create_report(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    task_state, reports_dir, _archive_dir = validate_task_dir(task_dir)
+    task_state, reports_dir, _archive_dir = validate_task_dir(task_dir, require_reports=False)
+    reports_dir.mkdir(exist_ok=True)
     report_name = normalize_token(args.name, "--name")
     report = create_report_file(reports_dir, report_name, task_state)
 
@@ -262,15 +255,17 @@ def command_create_report(args: argparse.Namespace) -> int:
 def command_archive_report(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    task_state, reports_dir, archive_dir = validate_task_dir(task_dir)
+    task_state, reports_dir, archive_dir = validate_task_dir(task_dir, require_reports=False)
+    reports_dir.mkdir(exist_ok=True)
     report = resolve_pending_report(reports_dir, args.report)
+    archive_dir.mkdir(exist_ok=True)
     archive_target = next_archive_path(archive_dir, report.name)
 
     print(f"Task state: {task_state}")
     print(f"Report to archive: {report}")
     print(f"Archive target: {archive_target}")
     print("Before archiving, the task-state owner must fully absorb durable report content into task_state.md.")
-    print("Archive gate: conclusion, evidence pointers, flow, validation, risks, and next actions are either absorbed, intentionally discarded as non-durable, or left pending.")
+    print("Archive gate: conclusion, evidence pointers, risks, and next actions are either absorbed, intentionally discarded as non-durable, or left pending.")
     print("Archived reports are best-effort audit copies and may later be unreadable or deleted.")
 
     report.rename(archive_target)
@@ -300,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_task_args(init_parser)
     init_parser.set_defaults(func=command_init)
 
-    status_parser = subparsers.add_parser("status", help="Print task memory paths, pending reports, and archived reports.")
+    status_parser = subparsers.add_parser("status", help="Print task memory paths and pending reports.")
     add_common_task_args(status_parser)
     status_parser.set_defaults(func=command_status)
 
