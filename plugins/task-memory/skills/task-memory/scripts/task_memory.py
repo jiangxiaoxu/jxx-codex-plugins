@@ -142,6 +142,8 @@ Created: {created}
 Task state read: {task_state}
 Scope: TBD
 Repo/context snapshot: not checked
+Status: in-progress
+Last updated: {created}
 
 ## Conclusion
 
@@ -175,7 +177,7 @@ def create_report_file(reports_dir: Path, report_name: str, task_state: Path) ->
     raise SystemExit(f"could not allocate report filename for date {date}: {reports_dir}")
 
 
-def resolve_pending_report(reports_dir: Path, report_value: str) -> Path:
+def resolve_live_report(reports_dir: Path, report_value: str) -> Path:
     report_path = Path(report_value).expanduser()
     if report_path.is_absolute():
         candidate = report_path.resolve()
@@ -186,7 +188,7 @@ def resolve_pending_report(reports_dir: Path, report_value: str) -> Path:
     if candidate.suffix != ".md":
         raise SystemExit(f"refusing to archive a non-markdown report: {candidate}")
     if candidate.parent != reports_dir.resolve():
-        raise SystemExit(f"refusing to archive a report outside the pending reports directory: {candidate}")
+        raise SystemExit(f"refusing to archive a report outside the live/unarchived reports directory: {candidate}")
     return candidate
 
 
@@ -228,14 +230,17 @@ def command_status(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
     task_state, reports_dir, archive_dir = validate_task_dir(task_dir, require_reports=False)
-    pending_reports = sorted(reports_dir.glob("*.md")) if reports_dir.is_dir() else []
+    live_reports = sorted(reports_dir.glob("*.md")) if reports_dir.is_dir() else []
 
     print(f"task_dir={task_dir}")
     print(f"task_state={task_state}")
     print(f"reports_dir={reports_dir}")
     print(f"archive_dir={archive_dir}")
-    print(f"pending_reports={len(pending_reports)}")
-    for report in pending_reports:
+    print(f"live_unarchived_reports={len(live_reports)}")
+    for report in live_reports:
+        print(f"live_unarchived_report={report.name}|{report}")
+    print(f"pending_reports={len(live_reports)}")
+    for report in live_reports:
         print(f"pending_report={report.name}|{report}")
     return 0
 
@@ -257,15 +262,16 @@ def command_archive_report(args: argparse.Namespace) -> int:
     task_dir = resolve_task_dir(workspace, args.task_id)
     task_state, reports_dir, archive_dir = validate_task_dir(task_dir, require_reports=False)
     reports_dir.mkdir(exist_ok=True)
-    report = resolve_pending_report(reports_dir, args.report)
+    report = resolve_live_report(reports_dir, args.report)
     archive_dir.mkdir(exist_ok=True)
     archive_target = next_archive_path(archive_dir, report.name)
 
     print(f"Task state: {task_state}")
     print(f"Report to archive: {report}")
     print(f"Archive target: {archive_target}")
-    print("Before archiving, the task-state owner must fully absorb durable report content into task_state.md.")
-    print("Archive gate: conclusion, evidence pointers, risks, and next actions are either absorbed, intentionally discarded as non-durable, or left pending.")
+    print("Before archiving an absorbed report, the task-state owner must fully absorb durable report content into task_state.md.")
+    print("In-progress archive gate: the task-state owner may archive Status: in-progress as lifecycle cleanup only after the handoff is no longer running and the live progress artifact should no longer be used.")
+    print("Archive gate: conclusion, evidence pointers, risks, and next actions are either absorbed, intentionally discarded as non-durable, left pending after any stopped-partial review, or intentionally not absorbed for in-progress cleanup.")
     print("Archived reports are best-effort audit copies and may later be unreadable or deleted.")
 
     report.rename(archive_target)
@@ -295,18 +301,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_task_args(init_parser)
     init_parser.set_defaults(func=command_init)
 
-    status_parser = subparsers.add_parser("status", help="Print task memory paths and pending reports.")
+    status_parser = subparsers.add_parser("status", help="Print task memory paths and live/unarchived report files.")
     add_common_task_args(status_parser)
     status_parser.set_defaults(func=command_status)
 
-    create_report_parser = subparsers.add_parser("create-report", help="Create a pending report template.")
+    create_report_parser = subparsers.add_parser("create-report", help="Create a live/unarchived report template.")
     add_common_task_args(create_report_parser)
     create_report_parser.add_argument("--name", required=True, help="Short report name, normalized to lowercase hyphen-case.")
     create_report_parser.set_defaults(func=command_create_report)
 
-    archive_report_parser = subparsers.add_parser("archive-report", help="Archive an absorbed report from reports/.")
+    archive_report_parser = subparsers.add_parser("archive-report", help="Archive an absorbed report or in-progress lifecycle cleanup report from reports/.")
     add_common_task_args(archive_report_parser)
-    archive_report_parser.add_argument("--report", required=True, help="Report filename under reports/. Archive one absorbed report at a time.")
+    archive_report_parser.add_argument("--report", required=True, help="Report filename under reports/. Archive one report at a time.")
     archive_report_parser.set_defaults(func=command_archive_report)
 
     return parser
