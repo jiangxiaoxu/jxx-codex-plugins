@@ -4,3 +4,4 @@ downloads/
 tmp/
 *.log
 !.gitkeep
+__pycache__
