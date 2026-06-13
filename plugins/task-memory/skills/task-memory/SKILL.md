@@ -10,25 +10,26 @@ Task memory keeps long work resumable without chat history. It lives under `--wo
 Script commands in this skill are run through `python scripts/task_memory.py ...`; Resolve `scripts/task_memory.py` from this `SKILL.md` directory and always pass absolute `--workspace`.
 
 First choose the current role:
-- Owner: `init` only if needed, then `status`, read `task_state.md`, check live reports, update durable state, dispatch handoffs, absorb finished reports, and archive only after absorption.
+- Task owner: `init` only if needed, then `status`, read `task_state.md`, check live reports, update durable state, dispatch handoffs, absorb finished reports, and archive only after absorption.
 - Report-required handoff: `status`, read `task_state.md`, run `create-report` once before substantive work, keep the report current, set final `Status`, then return only report path plus brief status.
 - Command-only handoff: run only the assigned command scope; use `status` only if task context is needed; never create/write reports; return the shortest useful result.
 
 Critical guardrails:
 - Never let handoff agents edit `task_state.md`.
 - Never let command-only handoffs run `create-report` or write reports.
-- When this skill is active and a task-id exists, delegated investigation, mapping, impact analysis, implementation, code modification, and validation briefs must start with `Use $task-memory` and use the appropriate handoff template.
+- When this skill is active and a task-id exists, delegated exploration, investigation, mapping, impact analysis, implementation, code modification, and validation briefs must start with `Use $task-memory` and use the appropriate handoff template.
+- When subagent tooling is available, the task owner should prefer dispatching exploration-class, implementation, and code-modification work to a suitable subagent for the task type rather than executing it directly, unless the task owner must keep the work for lifecycle, conflict, or very small glue reasons.
 - Never archive a live `Status: in-progress` report while the child may still write to it.
 - Never record routine validation, review, build, test, state-check output, raw stdout, or command history in `task_state.md`.
 - Never expose the script path or workspace args in normal handoff briefs unless overriding the current workspace.
 
 ## Modes And Ownership
 On activation, follow the caller-selected mode. If a handoff brief does not select `Report-required` or `Command-only`, do not infer ownership.
-- Task-state owner: only `/root` or the root session. Owns `task_state.md`, durable updates, report absorption/archive, final integration, and summaries.
+- Task owner: only `/root` or the root session. Owns the task lifecycle: `task_state.md`, durable updates, handoff dispatch, report absorption/archive, final integration, and summaries.
 - Report-required handoff: run `status`, read `task_state.md`, create exactly one report, maintain `Status` and `Last updated`, write compact findings as discovered, and return only report path plus brief status.
 - Command-only handoff: run `status`/read `task_state.md` only when task context is needed; never run `create-report`; return command results in chat.
 
-Only the task-state owner may run `init`, edit `task_state.md`, absorb, or archive. Handoff agents never edit `task_state.md`. If they find more work, put recommended follow-up scope in the report or chat result. For long self-contained implementation/code-modification work, the owner dispatches a worker handoff without forking chat context; small fixes, glue, conflict resolution, absorption/archive, and final response stay with the owner.
+Only the task owner may run `init`, edit `task_state.md`, absorb, or archive. Handoff agents never edit `task_state.md`. If they find more work, put recommended follow-up scope in the report or chat result. Only the task owner applies the subagent-dispatch preference: after activation, the task owner should bias toward dispatching exploration, investigation, mapping, impact-analysis, implementation, and code-modification tasks to a suitable subagent without forking chat context, instead of executing those tasks directly. Small fixes, glue, conflict resolution, absorption/archive, and final response stay with the task owner.
 
 ## Scripts
 Resolve `scripts/task_memory.py` from this `SKILL.md` directory. Always pass absolute `--workspace`; normal handoff briefs should not expose script paths or workspace args.
@@ -37,10 +38,10 @@ Resolve `scripts/task_memory.py` from this `SKILL.md` directory. Always pass abs
 - `init --workspace <absolute-workspace> --task-id <task-id>` creates the task memory folder.
 - `status --workspace <absolute-workspace> --task-id <task-id>` prints task paths and live/unarchived report files without side effects; missing `reports/` or `archive/` are treated as empty. Legacy `pending_reports`/`pending_report` output aliases refer to the same live/unarchived files, not `task_state.md` `Reports` pending notes.
 - `create-report --workspace <absolute-workspace> --task-id <task-id> --name <report-name>` creates one live/unarchived report template with `Status: in-progress` and `Last updated`.
-- `archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>` moves one report from `reports/` to `reports/archive/` without editing `task_state.md`, creating missing report directories when needed. Use only for absorbed reports or `Status: in-progress` cleanup after the handoff is no longer running. Only the owner may run it; do not move reports manually.
+- `archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>` moves one report from `reports/` to `reports/archive/` without editing `task_state.md`, creating missing report directories when needed. Use only for absorbed reports or `Status: in-progress` cleanup after the handoff is no longer running. Only the task owner may run it; do not move reports manually.
 
 ## Task State Rules
-The owner records durable goal/scope changes, decisions, completed owner work, important evidence, blockers, open questions, and pending report state. Do not route owner work through `reports/` unless the user asks for handoff/audit output.
+The task owner records durable goal/scope changes, decisions, completed task-owner work, important evidence, blockers, open questions, and pending report state. Do not route task-owner work through `reports/` unless the user asks for handoff/audit output.
 
 Keep `task_state.md` current, not historical. Remove resolved issues, risks, blockers, pending reports, questions, and next actions; keep only active decisions, behavior facts, anti-reopen evidence, and resume-critical follow-up. Do not stage task-memory files unless the user explicitly asks or already staged them.
 
@@ -56,15 +57,15 @@ Validation, review, build, test, and state-check results are non-durable. Do not
 `Goal` stores objective/success criteria. `State` stores phase, durable understanding, completed work, decisions, and high-signal evidence. `Open` stores active questions, blockers, risks, and handoff-ready gaps. `Reports` stores only pending/unabsorbed report notes; no absorbed/archive history and no `Validation` section.
 
 ## Handoffs
-The owner must explicitly brief each handoff as `Report-required` or `Command-only`. Use `Report-required` for implementation, worker, code modification, explorer, investigation, mapping, impact analysis, and any validation that needs durable findings. Use `Command-only` only for validation, test, build, smoke, command-run, benchmark, or log observation limited to exact command execution with no durable findings expected.
+The task owner must explicitly brief each handoff as `Report-required` or `Command-only`. Use `Report-required` for exploration, investigation, mapping, impact analysis, implementation, code modification, and any validation that needs durable findings. Use `Command-only` only for validation, test, build, smoke, command-run, benchmark, or log observation limited to exact command execution with no durable findings expected.
 
 All task-memory handoff briefs start with `Use $task-memory` and include `task-id`; report-required briefs also include a parent-chosen `report name`. Do not include skill path, script path, or workspace unless overriding the current workspace.
 
-For worker implementation handoffs, use boundaries as goal guidance rather than exhaustive file limits. Workers may change directly related code, tests, config, public contracts, and docs needed for a coherent implementation; validation status stays in chat unless it reveals an independently actionable issue.
+For implementation and code-modification handoffs, use boundaries as goal guidance rather than exhaustive file limits. Handoff agents may change directly related code, tests, config, public contracts, and docs needed for a coherent implementation; validation status stays in chat unless it reveals an independently actionable issue.
 
 ### Subagent Dispatch Gate
-When this skill is active and a task-id exists, treat subagent dispatch as part of the task-memory workflow. Before delegating investigation, mapping, impact analysis, implementation, code modification, or validation, classify the handoff and choose the matching template:
-- Report-required: explorer, worker, investigation, mapping, impact analysis, implementation, code modification, and validation that needs durable findings.
+When this skill is active and a task-id exists, treat subagent dispatch as part of the task-memory workflow. Before delegating exploration, investigation, mapping, impact analysis, implementation, code modification, or validation, classify the handoff and choose the matching template:
+- Report-required: exploration, investigation, mapping, impact analysis, implementation, code modification, and validation that needs durable findings.
 - Command-only: build, test, smoke, benchmark, log observation, exact command execution, and validation limited to command/log observation with no durable findings expected.
 
 The parent must use the selected task-memory handoff template before calling `spawn_agent`. The brief should already answer the gate checks:
@@ -74,7 +75,7 @@ The parent must use the selected task-memory handoff template before calling `sp
 
 If the work has an active task-id and the delegated task is not purely conversational, the subagent brief must start with one of the skill templates. The parent must correct any missing preamble item before dispatch. If classification is uncertain, use Report-required unless the handoff is limited to exact command execution and has no durable findings to preserve.
 
-Purely conversational means the child is only being asked to clarify scope, coordinate next steps, or answer a short process question without reading task/repo files, running commands, searching externally, changing files, or producing durable findings. A brief that asks for evidence, analysis, mapping, validation, implementation, or resume-relevant output is not purely conversational.
+Purely conversational means the child is only being asked to clarify scope, coordinate next steps, or answer a short process question without reading task/repo files, running commands, searching externally, changing files, or producing durable findings. A brief that asks for evidence, exploration, analysis, mapping, validation, implementation, or resume-relevant output is not purely conversational.
 
 Meaningful work starts once the child reads task/repo/source/config/docs, runs a command, searches, edits files, creates a report, or produces task-specific analysis or findings. Startup, acknowledgement, or an immediate clarification question before those actions does not count as meaningful work.
 
@@ -108,22 +109,22 @@ If the parent notices that a subagent was spawned without the required task-memo
 - Note the recovery in `task_state.md` if the missed handoff affects resumability.
 
 ### Report-required Flow
-1. Owner updates `task_state.md` if needed, then briefs the handoff with task id, report name, status/create-report steps, boundaries, and return format.
+1. Task owner updates `task_state.md` if needed, then briefs the handoff with task id, report name, status/create-report steps, boundaries, and return format.
 2. Handoff runs `status`, reads `task_state.md`, creates one report before substantive work, sets `Status: in-progress`, and keeps the report current while working.
 3. Handoff writes durable findings, blockers, scope changes, and meaningful completed-work checkpoints as discovered; update `Last updated` for each meaningful update. Keep content absorption-oriented and compact; no logs or routine command output.
 4. Before returning, reduce chat-intended substance into `Conclusion`, `Absorbable Findings`, or `Open or Unresolved`; set `Status: completed`, `blocked`, or `stopped`; keep `## Role Result` short. Chat return is only report path plus brief status.
-5. For completed/blocked absorption, owner reads the report in full, absorbs durable content into `task_state.md`, and archives only when fully absorbed. `Status: in-progress` lifecycle cleanup is a separate archive path and never implies absorption.
+5. For completed/blocked absorption, task owner reads the report in full, absorbs durable content into `task_state.md`, and archives only when fully absorbed. `Status: in-progress` lifecycle cleanup is a separate archive path and never implies absorption.
 
-Do not add `Reports > Pending` when briefing or creating reports; `status` tracks live/unarchived files separately from `task_state.md` pending notes. Add Pending only after the owner reads a finished or stopped-partial-reviewed report and durable content remains unabsorbed. Remove the Pending note when absorbed and archived; do not add absorbed-report history notes to `task_state.md`.
+Do not add `Reports > Pending` when briefing or creating reports; `status` tracks live/unarchived files separately from `task_state.md` pending notes. Add Pending only after the task owner reads a finished or stopped-partial-reviewed report and durable content remains unabsorbed. Remove the Pending note when absorbed and archived; do not add absorbed-report history notes to `task_state.md`.
 
 ### Command-only Flow
-Command-only handoffs may run `status` only if task context is needed. They never create/write reports. The owner must not copy command results into `task_state.md`; only record independently actionable underlying issues with stable pointers. Do not create synthetic absorbed-report notes.
+Command-only handoffs may run `status` only if task context is needed. They never create/write reports. The task owner must not copy command results into `task_state.md`; only record independently actionable underlying issues with stable pointers. Do not create synthetic absorbed-report notes.
 
 ## Report Lifecycle And Absorption
-- Live `Status: in-progress` while the child may still write: lifecycle signal only. The owner or direct parent may read it to decide wait/follow-up/stop/takeover/cleanup. Do not absorb, archive, or treat partial findings as final.
-- Non-owner direct parent reading live `in-progress`: use the report only for lifecycle decisions.
-- `Status: completed` or `Status: blocked`: owner reads the report in full, absorbs durable content into `task_state.md`, then archives only when fully absorbed.
-- `Status: stopped`, or externally stopped/cancelled/terminal: owner reviews stable findings, moves still-relevant risks/actions to `Open`, discards unstable partial content, and archives if appropriate. External lifecycle states do not add report `Status` values.
+- Live `Status: in-progress` while the child may still write: lifecycle signal only. The task owner or direct parent may read it to decide wait/follow-up/stop/takeover/cleanup. Do not absorb, archive, or treat partial findings as final.
+- Non-task-owner direct parent reading live `in-progress`: use the report only for lifecycle decisions.
+- `Status: completed` or `Status: blocked`: task owner reads the report in full, absorbs durable content into `task_state.md`, then archives only when fully absorbed.
+- `Status: stopped`, or externally stopped/cancelled/terminal: task owner reviews stable findings, moves still-relevant risks/actions to `Open`, discards unstable partial content, and archives if appropriate. External lifecycle states do not add report `Status` values.
 - Malformed, heading-incomplete, or half-written partial report: treat as `Status: in-progress` until the handoff is terminal. Do not absorb it while the child can still write.
 
 Absorb from `Conclusion`, `Absorbable Findings`, and `Open or Unresolved`. Preserve stable conclusions, decisions, risks, exact evidence pointers (`path:line-line`, symbols, config keys, API fields, source URLs, error signatures), one anti-reopen fact, and remaining blockers/actions. Before archiving, each durable item must be in `task_state.md`, intentionally discarded as non-durable, or left pending. Discard raw stdout, diffs, routine checks, repeated searches, reasoning traces, dead ends, and duplicates after capturing the conclusion. A report is absorbed only when `task_state.md` is enough to continue without reopening/regenerating it.
@@ -150,14 +151,14 @@ Last updated: <timestamp>
 ````
 
 ## Summary And Resume
-Summary is an owner rewrite of `task_state.md`, not a report workflow. Before rewriting, run `status`, read `task_state.md`, and check live/unarchived reports plus `Reports` pending notes. Ask for summary options before modifying unless already provided; prefer `request_user_input` when available. Read report `Status` before absorption: absorb completed/blocked reports, or externally stopped/cancelled/terminal reports after stopped-partial review. Still-running `in-progress` reports are only lifecycle signals; leave them live unless the handoff is no longer running and the owner deliberately archives them as cleanup.
+Summary is a task-owner rewrite of `task_state.md`, not a report workflow. Before rewriting, run `status`, read `task_state.md`, and check live/unarchived reports plus `Reports` pending notes. Ask for summary options before modifying unless already provided; prefer `request_user_input` when available. Read report `Status` before absorption: absorb completed/blocked reports, or externally stopped/cancelled/terminal reports after stopped-partial review. Still-running `in-progress` reports are only lifecycle signals; leave them live unless the handoff is no longer running and the task owner deliberately archives them as cleanup.
 
 If options are not provided, default to `Balanced` summary, `Hard pointers` evidence, and `Current state only` history. Preserve `Goal`, `State`, `Open`, and `Reports`; keep active blockers, pending notes, next actions, unexpected side effects, and evidence for open decisions. Remove resolved blockers/risks/actions, stale pending notes, absorbed history, and validation/review/state-check history unless an active underlying issue remains.
 
 Resume after compaction/handoff/pause: run `status`; read `task_state.md`; check live/unarchived reports and pending notes including report `Status`; absorb eligible reports or review stopped partials; use still-running `in-progress` reports only to wait/follow up/stop/take over; archive in-progress only after the handoff is no longer running. Continue from `Goal`, `State`, `Open`, live report state, and pending notes. Archived reports are best-effort audit copies, not durable state; preserve resume-critical content in `task_state.md` before archiving and do not rely on archived reports during normal resume.
 
 ## Brief Templates
-Choose report-required for implementation, worker, code modification, explorer, investigation, mapping, impact analysis, and any validation that needs durable findings. Choose command-only only for validation, test, build, smoke, command-run, benchmark, or log observation limited to exact command execution with no durable findings expected.
+Choose report-required for exploration, investigation, mapping, impact analysis, implementation, code modification, and any validation that needs durable findings. Choose command-only only for validation, test, build, smoke, command-run, benchmark, or log observation limited to exact command execution with no durable findings expected.
 
 Report-required handoff:
 ```text
@@ -166,9 +167,9 @@ Run `status`, read `task_state`, then run `create-report` before substantive wor
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status; do not repeat report content in chat. If blocked, write the blocker into the partial report first.
 ```
 
-Worker implementation handoff:
+Implementation handoff:
 ```text
-Use $task-memory for a report-required worker implementation handoff. Task memory: task-id=<task-id>; report name=<short report name>.
+Use $task-memory for a report-required implementation handoff. Task memory: task-id=<task-id>; report name=<short report name>.
 Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Implement <goal> within <boundaries>; include directly related code/tests/config/public contracts/docs, and validate with <checks>.
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status. If blocked by non-validation issue or material scope change, write it and completed work into the report; validation status stays in chat unless it reveals an independently actionable issue.
 ```
