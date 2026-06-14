@@ -1,0 +1,23 @@
+{
+  "name": "figma-mcp-bridge",
+  "version": "0.1.0",
+  "description": "Figma MCP stdio frontend with a local OAuth bootstrap bridge.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Figma MCP Bridge",
+    "shortDescription": "Use Figma MCP over stdio with local OAuth bootstrap.",
+    "longDescription": "Provides a persistent figma-stdio MCP server for the official Figma remote MCP endpoint and a local HTTP bridge used only to bootstrap Codex OAuth login and cache credentials.",
+    "developerName": "jiangxiaoxu",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Network",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": "Start the Figma MCP bridge."
+  }
+}

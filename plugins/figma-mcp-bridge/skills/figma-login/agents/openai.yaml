@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma Login"
+  short_description: "Trigger Figma MCP OAuth login."
+  default_prompt: "Run Figma MCP OAuth login."

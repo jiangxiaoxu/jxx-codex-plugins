@@ -1,0 +1,31 @@
+{
+  "name": "@jxx-codex-plugins/figma-mcp-stdio",
+  "version": "0.1.0",
+  "description": "Stdio MCP frontend for the official Figma remote MCP.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "figma-mcp-stdio-bridge": "./dist/stdio-cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "npm run typecheck && node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}

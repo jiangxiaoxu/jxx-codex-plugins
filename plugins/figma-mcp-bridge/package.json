@@ -1,0 +1,16 @@
+{
+  "name": "@jxx-codex-plugins/figma-mcp-bridge",
+  "version": "0.1.0",
+  "description": "Figma MCP stdio frontend with a local OAuth bootstrap bridge.",
+  "type": "module",
+  "main": "./scripts/server.mjs",
+  "scripts": {
+    "login:figma-http": "powershell -ExecutionPolicy Bypass -File scripts/login-figma-http.ps1",
+    "start": "node scripts/server.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}

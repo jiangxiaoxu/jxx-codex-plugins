@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.figma-mcp-bridge-oauth.json
+.figma-mcp-bridge-oauth.json.tmp
+!stdio-mcp/dist/
+!stdio-mcp/dist/**

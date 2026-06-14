@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "figma-stdio": {
+      "command": "node",
+      "args": [
+        "./stdio-mcp/dist/stdio-cli.js"
+      ]
+    }
+  }
+}
