@@ -1,4 +1,4 @@
 interface:
   display_name: "Task Memory"
-  short_description: "Persist task state for exploration, implementation, and handoffs."
+  short_description: "Persist state for long tasks and change handoffs."
   default_prompt: "Use $task-memory to maintain task memory for this task."
