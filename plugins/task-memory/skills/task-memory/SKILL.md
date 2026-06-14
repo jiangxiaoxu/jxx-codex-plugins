@@ -7,7 +7,7 @@ description: Maintain durable task state and handoff reports for wide-scope sear
 Task memory keeps long work resumable without chat history. It lives under `--workspace/task-memory/task-<task-id>/` with `task_state.md`, `reports/`, and `reports/archive/`. `init` creates the task folder, using `-001`, `-002`, etc. when needed, and prints `task_id=<actual-task-id>`; use that id afterward.
 
 ## AI Execution Checklist
-Script commands in this skill are run through `python scripts/task_memory.py ...`; Resolve `scripts/task_memory.py` from this `SKILL.md` directory and always pass absolute `--workspace`.
+Script commands in this skill are run through the bundled helper at `<skill_dir>/scripts/task_memory.py`, where `<skill_dir>` is the directory that contains this `SKILL.md`. Do not resolve `scripts/task_memory.py` from the current working directory, plugin root, plugin cache root, repository root, or any hard-coded installed cache version. Before the first helper command in a session, verify that `<skill_dir>/scripts/task_memory.py` exists; if it does not, search only the current skill bundle for `scripts/task_memory.py`, use the discovered absolute path, and report the path mismatch briefly. Always pass absolute `--workspace`.
 
 First choose the current role:
 - Task owner: `init` only if needed, then `status`, read `task_state.md`, check live reports, update durable state, dispatch handoffs, absorb finished reports, and archive only after absorption.
@@ -34,9 +34,9 @@ On activation, follow the caller-selected mode. If a handoff brief does not sele
 Only the task owner may run `init`, edit `task_state.md`, absorb, or archive. Handoff agents never edit `task_state.md`. If they find more work, put recommended follow-up scope in the report or chat result. Handoff agents own only their assigned scope; final integration and final response stay with the task owner.
 
 ## Scripts
-Resolve `scripts/task_memory.py` from this `SKILL.md` directory. Always pass absolute `--workspace`; normal handoff briefs should not expose script paths or workspace args.
+Resolve the helper script as `<skill_dir>/scripts/task_memory.py`, with `<skill_dir>` equal to the directory containing this `SKILL.md`. The script is not at the plugin version root. Use an absolute script path after resolution, especially from installed cache locations. Always pass absolute `--workspace`; normal handoff briefs should not expose script paths or workspace args.
 
-`python scripts/task_memory.py {init,status,create-report,archive-report} ...`
+`python <skill_dir>/scripts/task_memory.py {init,status,create-report,archive-report} ...`
 - `init --workspace <absolute-workspace> --task-id <task-id>` creates the task memory folder.
 - `status --workspace <absolute-workspace> --task-id <task-id>` prints task paths and live/unarchived report files without side effects; missing `reports/` or `archive/` are treated as empty. Legacy `pending_reports`/`pending_report` output aliases refer to the same live/unarchived files, not `task_state.md` `Reports` pending notes.
 - `create-report --workspace <absolute-workspace> --task-id <task-id> --name <report-name>` creates one live/unarchived report template with `Status: in-progress` and `Last updated`.
