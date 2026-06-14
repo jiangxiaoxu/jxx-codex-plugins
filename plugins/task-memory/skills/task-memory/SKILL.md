@@ -1,6 +1,6 @@
 ---
 name: task-memory
-description: Maintain durable task state for process-oriented work that may move through problem framing, exploration, analysis, implementation, and validation. Use as soon as progress, decisions, evidence, handoffs, or resume context should survive beyond chat history.
+description: Maintain durable task state and handoff reports for process-oriented coding work. Use for exploration, investigation, mapping, impact analysis, implementation, code modification, validation loops, and any subagent handoff where findings, decisions, changes, or resume context should persist; activate even for short exploration or implementation tasks, not only long-running work.
 ---
 
 # Task Memory
