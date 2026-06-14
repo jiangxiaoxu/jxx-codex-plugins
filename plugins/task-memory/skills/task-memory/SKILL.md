@@ -18,7 +18,8 @@ Critical guardrails:
 - Never let handoff agents edit `task_state.md`.
 - Never let command-only handoffs run `create-report` or write reports.
 - When this skill is active and a task-id exists, delegated exploration, investigation, mapping, impact analysis, implementation, code modification, and validation briefs must start with `Use $task-memory` and use the appropriate handoff template.
-- When subagent tooling is available, the task owner should prefer dispatching exploration-class, implementation, and code-modification work to a suitable subagent for the task type rather than executing it directly, unless the task owner must keep the work for lifecycle, conflict, or very small glue reasons.
+- When subagent tooling is available and delegation is permitted, the task owner dispatches exploration-class, implementation, and code-modification work to the matching subagent role by default rather than executing it directly.
+- Under those conditions, prefer an explorer subagent for exploration-class work. Implementation-class tasks that can be stated as complete work items, including feature or behavior changes, must use a worker subagent even when the change is not isolated or independent. Exceptions are limited to very small glue, local conflict resolution, report absorption/archive, final response, unresolved task-owner decisions, or lifecycle/conflict constraints. The task owner keeps lifecycle/state ownership; the subagent owns its assigned evidence chain or implementation scope until it returns.
 - Never archive a live `Status: in-progress` report while the child may still write to it.
 - Never record routine validation, review, build, test, state-check output, raw stdout, or command history in `task_state.md`.
 - Never expose the script path or workspace args in normal handoff briefs unless overriding the current workspace.
@@ -29,7 +30,7 @@ On activation, follow the caller-selected mode. If a handoff brief does not sele
 - Report-required handoff: run `status`, read `task_state.md`, create exactly one report, maintain `Status` and `Last updated`, write compact findings as discovered, and return only report path plus brief status.
 - Command-only handoff: run `status`/read `task_state.md` only when task context is needed; never run `create-report`; return command results in chat.
 
-Only the task owner may run `init`, edit `task_state.md`, absorb, or archive. Handoff agents never edit `task_state.md`. If they find more work, put recommended follow-up scope in the report or chat result. Only the task owner applies the subagent-dispatch preference: after activation, the task owner should bias toward dispatching exploration, investigation, mapping, impact-analysis, implementation, and code-modification tasks to a suitable subagent without forking chat context, instead of executing those tasks directly. Small fixes, glue, conflict resolution, absorption/archive, and final response stay with the task owner.
+Only the task owner may run `init`, edit `task_state.md`, absorb, or archive. Handoff agents never edit `task_state.md`. If they find more work, put recommended follow-up scope in the report or chat result. Handoff agents own only their assigned scope; final integration and final response stay with the task owner.
 
 ## Scripts
 Resolve `scripts/task_memory.py` from this `SKILL.md` directory. Always pass absolute `--workspace`; normal handoff briefs should not expose script paths or workspace args.
@@ -61,7 +62,9 @@ The task owner must explicitly brief each handoff as `Report-required` or `Comma
 
 All task-memory handoff briefs start with `Use $task-memory` and include `task-id`; report-required briefs also include a parent-chosen `report name`. Do not include skill path, script path, or workspace unless overriding the current workspace.
 
-For implementation and code-modification handoffs, use boundaries as goal guidance rather than exhaustive file limits. Handoff agents may change directly related code, tests, config, public contracts, and docs needed for a coherent implementation; validation status stays in chat unless it reveals an independently actionable issue.
+For exploration, investigation, mapping, and impact-analysis handoffs, use boundaries as investigation guidance rather than exhaustive search limits. When subagent tooling is available, delegation is permitted, and the assignment has a clear investigation question or scope, prefer a report-required handoff to an explorer subagent. The explorer subagent may read related code, config, docs, tests, and external sources when allowed and needed to answer the assigned evidence chain. The task owner does not independently advance that evidence chain while the explorer subagent owns it.
+
+For implementation and code-modification handoffs, use boundaries as goal guidance rather than exhaustive file limits. When subagent tooling is available, delegation is permitted, and the assignment can be stated as a complete implementation task with a clear goal and no unresolved task-owner decision that must be answered before coding, it must use a report-required implementation handoff to a worker subagent. The work does not need to be isolated or independent; the worker subagent may make related cross-file, cross-module, contract, test, config, or doc changes needed for a coherent implementation. The task owner does not implement the same change inline while the worker subagent owns it. Validation status stays in chat unless it reveals an independently actionable issue.
 
 ### Subagent Dispatch Gate
 When this skill is active and a task-id exists, treat subagent dispatch as part of the task-memory workflow. Before delegating exploration, investigation, mapping, impact analysis, implementation, code modification, or validation, classify the handoff and choose the matching template:
@@ -162,15 +165,22 @@ Choose report-required for exploration, investigation, mapping, impact analysis,
 
 Report-required handoff:
 ```text
-Use $task-memory for a report-required handoff agent. Task memory: task-id=<task-id>; report name=<short report name>.
+Use $task-memory for a report-required handoff to a subagent. Task memory: task-id=<task-id>; report name=<short report name>.
 Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Keep required report headings intact on every save. <Assignment and boundaries.>
+Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status; do not repeat report content in chat. If blocked, write the blocker into the partial report first.
+```
+
+Explorer handoff:
+```text
+Use $task-memory for a report-required handoff to an explorer subagent. Task memory: task-id=<task-id>; report name=<short report name>.
+Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Own the evidence chain for <investigation question> within <boundaries>; inspect related code/config/docs/tests and external sources when allowed and needed.
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status; do not repeat report content in chat. If blocked, write the blocker into the partial report first.
 ```
 
 Implementation handoff:
 ```text
-Use $task-memory for a report-required implementation handoff. Task memory: task-id=<task-id>; report name=<short report name>.
-Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Implement <goal> within <boundaries>; include directly related code/tests/config/public contracts/docs, and validate with <checks>.
+Use $task-memory for a report-required implementation handoff to a worker subagent. Task memory: task-id=<task-id>; report name=<short report name>.
+Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Own the implementation for <goal> within <boundaries>; include related code/tests/config/public contracts/docs, and validate with <checks>.
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status. If blocked by non-validation issue or material scope change, write it and completed work into the report; validation status stays in chat unless it reveals an independently actionable issue.
 ```
 
