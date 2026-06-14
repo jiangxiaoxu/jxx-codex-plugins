@@ -2,6 +2,7 @@
   "mcpServers": {
     "figma-stdio": {
       "command": "node",
+      "cwd": ".",
       "args": [
         "./stdio-mcp/dist/stdio-cli.js"
       ]
