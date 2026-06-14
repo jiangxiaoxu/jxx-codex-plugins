@@ -1,6 +1,6 @@
 {
   "name": "task-memory",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "description": "Durable task memory with summaries, evidence reports, archived report copies, and command-only handoffs for Codex",
   "author": {
     "name": "jiangxiaoxu"

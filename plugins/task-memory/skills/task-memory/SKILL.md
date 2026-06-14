@@ -1,6 +1,6 @@
 ---
 name: task-memory
-description: Maintain durable task state and handoff reports for process-oriented coding work. Use for exploration, investigation, mapping, impact analysis, implementation, code modification, validation loops, and any subagent handoff where findings, decisions, changes, or resume context should persist; activate even for short exploration or implementation tasks, not only long-running work.
+description: Maintain durable task state and handoff reports for long-running, exploration-heavy, investigation-heavy, or multi-step coding work. Use when a task needs durable decision tracking, handoffs, interruption handling, or resume context. Also use before spawning subagents for exploration, investigation, implementation, or code-modification work where findings, decisions, or changes should persist. Do not activate solely for validation, build, test, smoke, benchmark, log-observation, brief local edits, or one-shot commands.
 ---
 
 # Task Memory
