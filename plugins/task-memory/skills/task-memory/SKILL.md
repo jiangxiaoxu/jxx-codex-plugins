@@ -17,6 +17,7 @@ First choose the current role:
 Critical guardrails:
 - Never let handoff agents edit `task_state.md`.
 - Never let command-only handoffs run `create-report` or write reports.
+- When durable resumability is needed and no task-id exists, the task owner runs `init` before dispatching handoffs.
 - When this skill is active and a task-id exists, delegated exploration, investigation, mapping, impact analysis, implementation, code modification, and validation briefs must start with `Use $task-memory` and use the appropriate handoff template.
 - When subagent tooling is available and delegation is permitted, the task owner dispatches exploration-class, implementation, and code-modification work to the matching subagent role by default rather than executing it directly.
 - Under those conditions, prefer an explorer subagent for exploration-class work. Implementation-class tasks that can be stated as complete work items, including feature or behavior changes, must use a worker subagent even when the change is not isolated or independent. Exceptions are limited to very small glue, local conflict resolution, report absorption/archive, final response, unresolved task-owner decisions, or lifecycle/conflict constraints. The task owner keeps lifecycle/state ownership; the subagent owns its assigned evidence chain or implementation scope until it returns.
