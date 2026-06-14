@@ -288,10 +288,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Manage task-memory/task-<task-id>/task_state.md, reports/, and reports/archive/.",
         epilog="""Examples:
-  python scripts/task_memory.py init --workspace <absolute-workspace> --task-id <task-id>
-  python scripts/task_memory.py status --workspace <absolute-workspace> --task-id <task-id>
-  python scripts/task_memory.py create-report --workspace <absolute-workspace> --task-id <task-id> --name thumbnail-cache-check
-  python scripts/task_memory.py archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>
+  python <skill_dir>/scripts/task_memory.py init --workspace <absolute-workspace> --task-id <task-id>
+  python <skill_dir>/scripts/task_memory.py status --workspace <absolute-workspace> --task-id <task-id>
+  python <skill_dir>/scripts/task_memory.py create-report --workspace <absolute-workspace> --task-id <task-id> --name thumbnail-cache-check
+  python <skill_dir>/scripts/task_memory.py archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
