@@ -44,4 +44,5 @@ export {
   startFigmaStdioMcpServer,
   type FigmaMcpProxyClient,
   type FigmaStdioMcpServerOptions,
+  type StartFigmaStdioMcpServerOptions,
 } from "./stdio-server.js";

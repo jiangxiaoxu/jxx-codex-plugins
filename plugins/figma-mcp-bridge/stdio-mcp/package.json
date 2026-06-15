@@ -4,6 +4,7 @@
   "description": "Stdio MCP frontend for the official Figma remote MCP.",
   "type": "module",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "figma-mcp-stdio-bridge": "./dist/stdio-cli.js"
   },
@@ -12,7 +13,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "npm run typecheck && node scripts/build.mjs",
+    "build": "npm run typecheck && node scripts/build.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs"
   },

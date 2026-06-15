@@ -7127,6 +7127,7 @@ ${authorizationUrl.toString()}`
 // src/oauth-callback.ts
 import { createServer } from "node:http";
 import { URL as URL2 } from "node:url";
+var CLOSED_BEFORE_AUTHORIZATION_MESSAGE = "OAuth callback server was closed before authorization completed.";
 function sendHtml(response, status, title, body) {
   response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
   response.end(
@@ -7145,12 +7146,14 @@ async function startOAuthCallbackServer(options) {
   const callbackUrl = `http://${options.host}:${options.port}${options.path}`;
   let timeout;
   let settled = false;
+  let closePromise;
   let resolveCode;
   let rejectCode;
   const codePromise = new Promise((resolve4, reject) => {
     resolveCode = resolve4;
     rejectCode = reject;
   });
+  codePromise.catch(() => void 0);
   const server = createServer(async (request, response) => {
     try {
       const url2 = new URL2(request.url ?? "/", callbackUrl);
@@ -7164,23 +7167,22 @@ async function startOAuthCallbackServer(options) {
         const description = url2.searchParams.get("error_description");
         const message = description ? `${error2}: ${description}` : error2;
         sendHtml(response, 400, "Authorization failed", message);
-        rejectCode(new Error(`OAuth authorization failed: ${message}`));
-        settled = true;
+        settleWithError(new Error(`OAuth authorization failed: ${message}`));
         return;
       }
       const code = url2.searchParams.get("code");
       if (!code) {
         sendHtml(response, 400, "Authorization failed", "Missing authorization code.");
-        rejectCode(new Error("OAuth callback did not include a code."));
-        settled = true;
+        settleWithError(new Error("OAuth callback did not include a code."));
         return;
       }
       const expectedState = await options.getExpectedState?.();
       const receivedState = url2.searchParams.get("state") ?? void 0;
       if (expectedState && receivedState !== expectedState) {
         sendHtml(response, 400, "Authorization failed", "OAuth state mismatch.");
-        rejectCode(new Error("OAuth callback state did not match the saved state."));
-        settled = true;
+        settleWithError(
+          new Error("OAuth callback state did not match the saved state.")
+        );
         return;
       }
       sendHtml(
@@ -7189,17 +7191,44 @@ async function startOAuthCallbackServer(options) {
         "Authorization complete",
         "You can close this window and return to the terminal."
       );
-      resolveCode(code);
-      settled = true;
-    } finally {
-      if (settled) {
-        if (timeout) {
-          clearTimeout(timeout);
+      settleWithCode(code);
+    } catch (error2) {
+      if (!settled) {
+        if (!response.headersSent) {
+          sendHtml(response, 500, "Authorization failed", "Internal callback error.");
         }
-        void closeServer(server);
+        settleWithError(asError(error2));
       }
     }
   });
+  const clearAuthTimeout = () => {
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = void 0;
+    }
+  };
+  const requestClose = () => {
+    closePromise ??= closeServer(server);
+    return closePromise;
+  };
+  const settleWithCode = (code) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearAuthTimeout();
+    resolveCode(code);
+    requestClose().catch(() => void 0);
+  };
+  const settleWithError = (error2) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearAuthTimeout();
+    rejectCode(error2);
+    requestClose().catch(() => void 0);
+  };
   await new Promise((resolve4, reject) => {
     server.once("error", reject);
     server.listen(options.port, options.host, () => {
@@ -7208,19 +7237,23 @@ async function startOAuthCallbackServer(options) {
     });
   });
   timeout = setTimeout(() => {
-    rejectCode(new Error("Timed out waiting for OAuth callback."));
-    void closeServer(server);
+    settleWithError(new Error("Timed out waiting for OAuth callback."));
   }, options.timeoutMs);
   return {
     url: callbackUrl,
     waitForCode: () => codePromise,
     close: async () => {
-      if (timeout) {
-        clearTimeout(timeout);
+      if (!settled) {
+        settleWithError(new Error(CLOSED_BEFORE_AUTHORIZATION_MESSAGE));
+      } else {
+        clearAuthTimeout();
       }
-      await closeServer(server);
+      await requestClose();
     }
   };
+}
+function asError(error2) {
+  return error2 instanceof Error ? error2 : new Error(String(error2));
 }
 
 // node_modules/zod/v4/core/core.js
@@ -17466,6 +17499,10 @@ var RemoteMcpClient = class {
   callbackServerFactory;
   client;
   transport;
+  callbackServer;
+  connectPromise;
+  connectionGeneration = 0;
+  closedCallbackServers = /* @__PURE__ */ new WeakSet();
   constructor(options = {}) {
     this.config = createConfig(options);
     this.callbackServerFactory = options.callbackServerFactory ?? startOAuthCallbackServer;
@@ -17489,12 +17526,35 @@ ${authorizationUrl.toString()}`
     });
   }
   async connect() {
+    if (this.client) {
+      return;
+    }
+    const connectionGeneration = this.connectionGeneration;
+    const connectPromise = this.connectPromise ?? (this.connectPromise = this.connectWithOAuthRetry(connectionGeneration));
     try {
-      await this.connectOnce();
+      await connectPromise;
+    } finally {
+      if (this.connectPromise === connectPromise) {
+        this.connectPromise = void 0;
+      }
+    }
+  }
+  async connectWithOAuthRetry(connectionGeneration) {
+    try {
+      await this.setConnectedIfCurrent(
+        await this.connectOnce(connectionGeneration),
+        connectionGeneration
+      );
       return;
     } catch (error2) {
+      if (error2 instanceof StaleConnectionError) {
+        throw error2;
+      }
       const unauthorizedTransport = this.transport;
       if (isForbiddenClientRegistrationError(error2)) {
+        await this.closeTransport(unauthorizedTransport, {
+          clearInFlight: false
+        });
         throw new Error(
           [
             "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
@@ -17504,27 +17564,50 @@ ${authorizationUrl.toString()}`
           { cause: error2 }
         );
       }
-      if (!(error2 instanceof UnauthorizedError) || !unauthorizedTransport) {
+      if (!isUnauthorizedError(error2) || !unauthorizedTransport) {
+        await this.closeTransport(unauthorizedTransport, {
+          clearInFlight: false
+        });
         throw error2;
       }
-      const callbackServer = await this.callbackServerFactory({
-        host: this.config.callbackHost,
-        port: this.config.callbackPort,
-        path: this.config.callbackPath,
-        timeoutMs: this.config.authTimeoutMs,
-        getExpectedState: () => this.authProvider.expectedState()
-      });
+      let callbackServer;
       try {
+        try {
+          callbackServer = await this.callbackServerFactory({
+            host: this.config.callbackHost,
+            port: this.config.callbackPort,
+            path: this.config.callbackPath,
+            timeoutMs: this.config.authTimeoutMs,
+            getExpectedState: () => this.authProvider.expectedState()
+          });
+        } catch (callbackServerError) {
+          if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+            throw new StaleConnectionError();
+          }
+          throw callbackServerError;
+        }
+        if (!this.trackCallbackServer(callbackServer, connectionGeneration)) {
+          await this.closeCallbackServer(callbackServer);
+          throw new StaleConnectionError();
+        }
         const authorizationCode = await callbackServer.waitForCode();
+        if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+          throw new StaleConnectionError();
+        }
         await unauthorizedTransport.finishAuth(authorizationCode);
-        await unauthorizedTransport.close().catch(() => void 0);
-        await this.connectOnce();
       } finally {
-        await callbackServer.close();
+        await this.closeTransport(unauthorizedTransport, {
+          clearInFlight: false
+        });
+        await this.closeCallbackServer(callbackServer);
       }
+      await this.setConnectedIfCurrent(
+        await this.connectOnce(connectionGeneration),
+        connectionGeneration
+      );
     }
   }
-  async connectOnce() {
+  async connectOnce(connectionGeneration = this.connectionGeneration) {
     const client = new Client(
       {
         name: this.config.clientName,
@@ -17538,13 +17621,27 @@ ${authorizationUrl.toString()}`
         authProvider: this.authProvider
       }
     );
-    this.transport = transport;
-    await client.connect(transport);
-    this.client = client;
+    if (!this.trackTransport(transport, connectionGeneration)) {
+      await transport.close().catch(() => void 0);
+      throw new StaleConnectionError();
+    }
+    try {
+      await client.connect(transport);
+    } catch (error2) {
+      if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+        await transport.close().catch(() => void 0);
+        throw new StaleConnectionError();
+      }
+      throw error2;
+    }
+    if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+      await this.closeTransport(transport, { clearInFlight: false });
+      throw new StaleConnectionError();
+    }
     return { client, transport };
   }
   async close() {
-    await this.transport?.close();
+    await this.closeTransport(this.transport, { clearInFlight: true });
   }
   requireClient() {
     if (!this.client) {
@@ -17564,6 +17661,78 @@ ${authorizationUrl.toString()}`
   async readResource(uri) {
     return this.requireClient().readResource({ uri });
   }
+  async setConnectedIfCurrent(connection, connectionGeneration) {
+    if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+      await this.closeTransport(connection.transport, { clearInFlight: false });
+      throw new StaleConnectionError();
+    }
+    this.setConnected(connection);
+  }
+  setConnected(connection) {
+    if (this.transport !== connection.transport) {
+      this.trackTransport(connection.transport);
+    }
+    this.client = connection.client;
+  }
+  trackTransport(transport, connectionGeneration = this.connectionGeneration) {
+    if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+      return false;
+    }
+    const existingOnClose = transport.onclose;
+    const existingOnError = transport.onerror;
+    this.transport = transport;
+    transport.onclose = () => {
+      existingOnClose?.();
+      const callbackServer = this.resetConnection(transport);
+      void this.closeCallbackServer(callbackServer);
+    };
+    transport.onerror = (error2) => {
+      existingOnError?.(error2);
+    };
+    return true;
+  }
+  async closeTransport(transport, { clearInFlight }) {
+    const callbackServer = this.resetConnection(transport, { clearInFlight });
+    await Promise.all([
+      transport?.close().catch(() => void 0),
+      this.closeCallbackServer(callbackServer)
+    ]);
+  }
+  resetConnection(transport, { clearInFlight = true } = {}) {
+    if (transport && this.transport !== transport) {
+      return void 0;
+    }
+    this.client = void 0;
+    this.transport = void 0;
+    if (clearInFlight) {
+      this.connectionGeneration += 1;
+      this.connectPromise = void 0;
+      const callbackServer = this.callbackServer;
+      this.callbackServer = void 0;
+      return callbackServer;
+    }
+    return void 0;
+  }
+  isCurrentConnectionAttempt(connectionGeneration) {
+    return connectionGeneration === this.connectionGeneration;
+  }
+  trackCallbackServer(callbackServer, connectionGeneration) {
+    if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+      return false;
+    }
+    this.callbackServer = callbackServer;
+    return true;
+  }
+  async closeCallbackServer(callbackServer) {
+    if (!callbackServer || this.closedCallbackServers.has(callbackServer)) {
+      return;
+    }
+    if (this.callbackServer === callbackServer) {
+      this.callbackServer = void 0;
+    }
+    this.closedCallbackServers.add(callbackServer);
+    await callbackServer.close().catch(() => void 0);
+  }
 };
 function createRemoteMcpClient(options = {}) {
   return new RemoteMcpClient(options);
@@ -17572,6 +17741,18 @@ function isForbiddenClientRegistrationError(error2) {
   const message = typeof error2 === "object" && error2 !== null && "message" in error2 && typeof error2.message === "string" ? error2.message : String(error2);
   return message.includes("HTTP 403") && message.includes("Forbidden");
 }
+function isUnauthorizedError(error2) {
+  if (error2 instanceof UnauthorizedError) {
+    return true;
+  }
+  return typeof error2 === "object" && error2 !== null && "constructor" in error2 && typeof error2.constructor === "function" && error2.constructor.name === "UnauthorizedError";
+}
+var StaleConnectionError = class extends Error {
+  constructor() {
+    super("MCP connection attempt was cancelled.");
+    this.name = "StaleConnectionError";
+  }
+};
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
 var ExperimentalServerTasks = class {
@@ -18310,19 +18491,92 @@ function createFigmaStdioMcpServer(options = {}) {
   return { server, client };
 }
 async function startFigmaStdioMcpServer(options = {}) {
-  const { server, client } = createFigmaStdioMcpServer(options);
-  const transport = new StdioServerTransport();
-  const closeClient = async () => {
-    await client.close().catch(() => void 0);
+  const { transport: configuredTransport, ...serverOptions } = options;
+  const { server, client } = createFigmaStdioMcpServer(serverOptions);
+  const transport = configuredTransport ?? new StdioServerTransport();
+  let clientClosePromise;
+  let cleanupComplete = false;
+  let removeStdinCloseHandlers = () => void 0;
+  let closedResolved = false;
+  let resolveClosed;
+  const closed = new Promise((resolve4) => {
+    resolveClosed = resolve4;
+  });
+  const resolveServerClosed = () => {
+    if (closedResolved) {
+      return;
+    }
+    closedResolved = true;
+    resolveClosed();
   };
-  transport.onclose = closeClient;
-  process.once("SIGINT", () => {
-    void closeClient().finally(() => process.exit(130));
-  });
-  process.once("SIGTERM", () => {
-    void closeClient().finally(() => process.exit(143));
-  });
-  await server.connect(transport);
+  const closeClient = () => {
+    clientClosePromise ??= client.close().catch(() => void 0);
+    return clientClosePromise;
+  };
+  const cleanupSignalHandlers = () => {
+    if (cleanupComplete) {
+      return;
+    }
+    cleanupComplete = true;
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+    removeStdinCloseHandlers();
+  };
+  const closeFromTransport = () => {
+    try {
+      existingOnClose?.();
+    } finally {
+      cleanupSignalHandlers();
+      void closeClient().finally(() => resolveServerClosed());
+    }
+  };
+  const closeFromSignal = (exitCode) => {
+    cleanupSignalHandlers();
+    void closeClient().finally(() => process.exit(exitCode));
+  };
+  const onSigint = () => {
+    closeFromSignal(130);
+  };
+  const onSigterm = () => {
+    closeFromSignal(143);
+  };
+  const existingOnClose = transport.onclose;
+  transport.onclose = closeFromTransport;
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
+  if (!configuredTransport) {
+    removeStdinCloseHandlers = closeTransportWhenStdinEnds(transport, () => {
+      cleanupSignalHandlers();
+      void closeClient().finally(() => resolveServerClosed());
+    });
+  }
+  try {
+    await server.connect(transport);
+    await closed;
+  } catch (error2) {
+    cleanupSignalHandlers();
+    await server.close().catch(async () => {
+      await transport.close().catch(() => void 0);
+    });
+    await closeClient();
+    throw error2;
+  }
+}
+function closeTransportWhenStdinEnds(transport, onCloseError) {
+  let closeRequested = false;
+  const closeTransport = () => {
+    if (closeRequested) {
+      return;
+    }
+    closeRequested = true;
+    void transport.close().catch(onCloseError);
+  };
+  process.stdin.once("end", closeTransport);
+  process.stdin.once("close", closeTransport);
+  return () => {
+    process.stdin.off("end", closeTransport);
+    process.stdin.off("close", closeTransport);
+  };
 }
 function asRecord(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) {

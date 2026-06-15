@@ -15,6 +15,9 @@ export interface OAuthCallbackServer {
   close(): Promise<void>;
 }
 
+const CLOSED_BEFORE_AUTHORIZATION_MESSAGE =
+  "OAuth callback server was closed before authorization completed.";
+
 function sendHtml(
   response: ServerResponse,
   status: number,
@@ -42,6 +45,7 @@ export async function startOAuthCallbackServer(
   const callbackUrl = `http://${options.host}:${options.port}${options.path}`;
   let timeout: NodeJS.Timeout | undefined;
   let settled = false;
+  let closePromise: Promise<void> | undefined;
   let resolveCode: (code: string) => void;
   let rejectCode: (error: Error) => void;
 
@@ -49,6 +53,7 @@ export async function startOAuthCallbackServer(
     resolveCode = resolve;
     rejectCode = reject;
   });
+  codePromise.catch(() => undefined);
 
   const server = createServer(async (request, response) => {
     try {
@@ -64,16 +69,14 @@ export async function startOAuthCallbackServer(
         const description = url.searchParams.get("error_description");
         const message = description ? `${error}: ${description}` : error;
         sendHtml(response, 400, "Authorization failed", message);
-        rejectCode(new Error(`OAuth authorization failed: ${message}`));
-        settled = true;
+        settleWithError(new Error(`OAuth authorization failed: ${message}`));
         return;
       }
 
       const code = url.searchParams.get("code");
       if (!code) {
         sendHtml(response, 400, "Authorization failed", "Missing authorization code.");
-        rejectCode(new Error("OAuth callback did not include a code."));
-        settled = true;
+        settleWithError(new Error("OAuth callback did not include a code."));
         return;
       }
 
@@ -81,8 +84,9 @@ export async function startOAuthCallbackServer(
       const receivedState = url.searchParams.get("state") ?? undefined;
       if (expectedState && receivedState !== expectedState) {
         sendHtml(response, 400, "Authorization failed", "OAuth state mismatch.");
-        rejectCode(new Error("OAuth callback state did not match the saved state."));
-        settled = true;
+        settleWithError(
+          new Error("OAuth callback state did not match the saved state."),
+        );
         return;
       }
 
@@ -92,17 +96,45 @@ export async function startOAuthCallbackServer(
         "Authorization complete",
         "You can close this window and return to the terminal.",
       );
-      resolveCode(code);
-      settled = true;
-    } finally {
-      if (settled) {
-        if (timeout) {
-          clearTimeout(timeout);
+      settleWithCode(code);
+    } catch (error) {
+      if (!settled) {
+        if (!response.headersSent) {
+          sendHtml(response, 500, "Authorization failed", "Internal callback error.");
         }
-        void closeServer(server);
+        settleWithError(asError(error));
       }
     }
   });
+
+  const clearAuthTimeout = () => {
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = undefined;
+    }
+  };
+  const requestClose = () => {
+    closePromise ??= closeServer(server);
+    return closePromise;
+  };
+  const settleWithCode = (code: string) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearAuthTimeout();
+    resolveCode(code);
+    requestClose().catch(() => undefined);
+  };
+  const settleWithError = (error: Error) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearAuthTimeout();
+    rejectCode(error);
+    requestClose().catch(() => undefined);
+  };
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -113,18 +145,23 @@ export async function startOAuthCallbackServer(
   });
 
   timeout = setTimeout(() => {
-    rejectCode(new Error("Timed out waiting for OAuth callback."));
-    void closeServer(server);
+    settleWithError(new Error("Timed out waiting for OAuth callback."));
   }, options.timeoutMs);
 
   return {
     url: callbackUrl,
     waitForCode: () => codePromise,
     close: async () => {
-      if (timeout) {
-        clearTimeout(timeout);
+      if (!settled) {
+        settleWithError(new Error(CLOSED_BEFORE_AUTHORIZATION_MESSAGE));
+      } else {
+        clearAuthTimeout();
       }
-      await closeServer(server);
+      await requestClose();
     },
   };
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }

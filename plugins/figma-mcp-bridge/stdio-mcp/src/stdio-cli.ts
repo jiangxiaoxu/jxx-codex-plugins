@@ -1,7 +1,8 @@
+#!/usr/bin/env node
 import {
   isDirectRun,
   startFigmaStdioMcpServer,
-} from "./stdio-server.js";
+} from "./index.js";
 
 if (isDirectRun(import.meta.url)) {
   await startFigmaStdioMcpServer({

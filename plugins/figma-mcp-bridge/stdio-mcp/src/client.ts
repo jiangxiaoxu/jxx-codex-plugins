@@ -19,6 +19,11 @@ import {
   type OAuthCallbackServerOptions,
 } from "./oauth-callback.js";
 
+interface RemoteMcpConnection {
+  client: Client;
+  transport: StreamableHTTPClientTransport;
+}
+
 export interface RemoteMcpClientOptions extends NodeReplConfigInput {
   onAuthorizationUrl?: (authorizationUrl: URL) => void | Promise<void>;
   callbackServerFactory?: (
@@ -34,6 +39,10 @@ export class RemoteMcpClient {
   ) => Promise<OAuthCallbackServer>;
   private client?: Client;
   private transport?: StreamableHTTPClientTransport;
+  private callbackServer?: OAuthCallbackServer;
+  private connectPromise?: Promise<void>;
+  private connectionGeneration = 0;
+  private readonly closedCallbackServers = new WeakSet<OAuthCallbackServer>();
 
   constructor(options: RemoteMcpClientOptions = {}) {
     this.config = createConfig(options);
@@ -59,12 +68,41 @@ export class RemoteMcpClient {
   }
 
   async connect(): Promise<void> {
+    if (this.client) {
+      return;
+    }
+
+    const connectionGeneration = this.connectionGeneration;
+    const connectPromise =
+      this.connectPromise ??
+      (this.connectPromise = this.connectWithOAuthRetry(connectionGeneration));
     try {
-      await this.connectOnce();
+      await connectPromise;
+    } finally {
+      if (this.connectPromise === connectPromise) {
+        this.connectPromise = undefined;
+      }
+    }
+  }
+
+  private async connectWithOAuthRetry(
+    connectionGeneration: number,
+  ): Promise<void> {
+    try {
+      await this.setConnectedIfCurrent(
+        await this.connectOnce(connectionGeneration),
+        connectionGeneration,
+      );
       return;
     } catch (error) {
+      if (error instanceof StaleConnectionError) {
+        throw error;
+      }
       const unauthorizedTransport = this.transport;
       if (isForbiddenClientRegistrationError(error)) {
+        await this.closeTransport(unauthorizedTransport, {
+          clearInFlight: false,
+        });
         throw new Error(
           [
             "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
@@ -74,33 +112,56 @@ export class RemoteMcpClient {
           { cause: error },
         );
       }
-      if (!(error instanceof UnauthorizedError) || !unauthorizedTransport) {
+      if (!isUnauthorizedError(error) || !unauthorizedTransport) {
+        await this.closeTransport(unauthorizedTransport, {
+          clearInFlight: false,
+        });
         throw error;
       }
 
-      const callbackServer = await this.callbackServerFactory({
-        host: this.config.callbackHost,
-        port: this.config.callbackPort,
-        path: this.config.callbackPath,
-        timeoutMs: this.config.authTimeoutMs,
-        getExpectedState: () => this.authProvider.expectedState(),
-      });
+      let callbackServer: OAuthCallbackServer | undefined;
 
       try {
+        try {
+          callbackServer = await this.callbackServerFactory({
+            host: this.config.callbackHost,
+            port: this.config.callbackPort,
+            path: this.config.callbackPath,
+            timeoutMs: this.config.authTimeoutMs,
+            getExpectedState: () => this.authProvider.expectedState(),
+          });
+        } catch (callbackServerError) {
+          if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+            throw new StaleConnectionError();
+          }
+          throw callbackServerError;
+        }
+        if (!this.trackCallbackServer(callbackServer, connectionGeneration)) {
+          await this.closeCallbackServer(callbackServer);
+          throw new StaleConnectionError();
+        }
         const authorizationCode = await callbackServer.waitForCode();
+        if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+          throw new StaleConnectionError();
+        }
         await unauthorizedTransport.finishAuth(authorizationCode);
-        await unauthorizedTransport.close().catch(() => undefined);
-        await this.connectOnce();
       } finally {
-        await callbackServer.close();
+        await this.closeTransport(unauthorizedTransport, {
+          clearInFlight: false,
+        });
+        await this.closeCallbackServer(callbackServer);
       }
+
+      await this.setConnectedIfCurrent(
+        await this.connectOnce(connectionGeneration),
+        connectionGeneration,
+      );
     }
   }
 
-  protected async connectOnce(): Promise<{
-    client: Client;
-    transport: StreamableHTTPClientTransport;
-  }> {
+  protected async connectOnce(
+    connectionGeneration = this.connectionGeneration,
+  ): Promise<RemoteMcpConnection> {
     const client = new Client(
       {
         name: this.config.clientName,
@@ -114,14 +175,28 @@ export class RemoteMcpClient {
         authProvider: this.authProvider,
       },
     );
-    this.transport = transport;
-    await client.connect(transport);
-    this.client = client;
+    if (!this.trackTransport(transport, connectionGeneration)) {
+      await transport.close().catch(() => undefined);
+      throw new StaleConnectionError();
+    }
+    try {
+      await client.connect(transport);
+    } catch (error) {
+      if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+        await transport.close().catch(() => undefined);
+        throw new StaleConnectionError();
+      }
+      throw error;
+    }
+    if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+      await this.closeTransport(transport, { clearInFlight: false });
+      throw new StaleConnectionError();
+    }
     return { client, transport };
   }
 
   async close(): Promise<void> {
-    await this.transport?.close();
+    await this.closeTransport(this.transport, { clearInFlight: true });
   }
 
   private requireClient(): Client {
@@ -149,6 +224,103 @@ export class RemoteMcpClient {
   async readResource(uri: string): Promise<ReadResourceResult> {
     return this.requireClient().readResource({ uri });
   }
+
+  private async setConnectedIfCurrent(
+    connection: RemoteMcpConnection,
+    connectionGeneration: number,
+  ): Promise<void> {
+    if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+      await this.closeTransport(connection.transport, { clearInFlight: false });
+      throw new StaleConnectionError();
+    }
+    this.setConnected(connection);
+  }
+
+  private setConnected(connection: RemoteMcpConnection): void {
+    if (this.transport !== connection.transport) {
+      this.trackTransport(connection.transport);
+    }
+    this.client = connection.client;
+  }
+
+  private trackTransport(
+    transport: StreamableHTTPClientTransport,
+    connectionGeneration = this.connectionGeneration,
+  ): boolean {
+    if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+      return false;
+    }
+    const existingOnClose = transport.onclose;
+    const existingOnError = transport.onerror;
+    this.transport = transport;
+    transport.onclose = () => {
+      existingOnClose?.();
+      const callbackServer = this.resetConnection(transport);
+      void this.closeCallbackServer(callbackServer);
+    };
+    transport.onerror = (error) => {
+      existingOnError?.(error);
+    };
+    return true;
+  }
+
+  private async closeTransport(
+    transport: StreamableHTTPClientTransport | undefined,
+    { clearInFlight }: { clearInFlight: boolean },
+  ): Promise<void> {
+    const callbackServer = this.resetConnection(transport, { clearInFlight });
+    await Promise.all([
+      transport?.close().catch(() => undefined),
+      this.closeCallbackServer(callbackServer),
+    ]);
+  }
+
+  private resetConnection(
+    transport?: StreamableHTTPClientTransport,
+    { clearInFlight = true }: { clearInFlight?: boolean } = {},
+  ): OAuthCallbackServer | undefined {
+    if (transport && this.transport !== transport) {
+      return undefined;
+    }
+    this.client = undefined;
+    this.transport = undefined;
+    if (clearInFlight) {
+      this.connectionGeneration += 1;
+      this.connectPromise = undefined;
+      const callbackServer = this.callbackServer;
+      this.callbackServer = undefined;
+      return callbackServer;
+    }
+    return undefined;
+  }
+
+  private isCurrentConnectionAttempt(connectionGeneration: number): boolean {
+    return connectionGeneration === this.connectionGeneration;
+  }
+
+  private trackCallbackServer(
+    callbackServer: OAuthCallbackServer,
+    connectionGeneration: number,
+  ): boolean {
+    if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
+      return false;
+    }
+    this.callbackServer = callbackServer;
+    return true;
+  }
+
+  private async closeCallbackServer(
+    callbackServer: OAuthCallbackServer | undefined,
+  ): Promise<void> {
+    if (!callbackServer || this.closedCallbackServers.has(callbackServer)) {
+      return;
+    }
+    if (this.callbackServer === callbackServer) {
+      this.callbackServer = undefined;
+    }
+    this.closedCallbackServers.add(callbackServer);
+    await callbackServer.close().catch(() => undefined);
+  }
 }
 
 export function createRemoteMcpClient(
@@ -166,4 +338,24 @@ function isForbiddenClientRegistrationError(error: unknown): boolean {
       ? error.message
       : String(error);
   return message.includes("HTTP 403") && message.includes("Forbidden");
+}
+
+function isUnauthorizedError(error: unknown): error is UnauthorizedError {
+  if (error instanceof UnauthorizedError) {
+    return true;
+  }
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "constructor" in error &&
+    typeof error.constructor === "function" &&
+    error.constructor.name === "UnauthorizedError"
+  );
+}
+
+class StaleConnectionError extends Error {
+  constructor() {
+    super("MCP connection attempt was cancelled.");
+    this.name = "StaleConnectionError";
+  }
 }
