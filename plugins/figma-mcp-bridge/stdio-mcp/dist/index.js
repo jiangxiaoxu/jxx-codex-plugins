@@ -17463,10 +17463,12 @@ async function openBrowser(url2) {
 var RemoteMcpClient = class {
   config;
   authProvider;
+  callbackServerFactory;
   client;
   transport;
   constructor(options = {}) {
     this.config = createConfig(options);
+    this.callbackServerFactory = options.callbackServerFactory ?? startOAuthCallbackServer;
     this.authProvider = new PersistentOAuthProvider({
       redirectUrl: this.config.callbackUrl,
       clientMetadata: this.config.clientMetadata,
@@ -17487,21 +17489,12 @@ ${authorizationUrl.toString()}`
     });
   }
   async connect() {
-    const callbackServer = await startOAuthCallbackServer({
-      host: this.config.callbackHost,
-      port: this.config.callbackPort,
-      path: this.config.callbackPath,
-      timeoutMs: this.config.authTimeoutMs,
-      getExpectedState: () => this.authProvider.expectedState()
-    });
     try {
       await this.connectOnce();
-      await callbackServer.close();
       return;
     } catch (error2) {
       const unauthorizedTransport = this.transport;
       if (isForbiddenClientRegistrationError(error2)) {
-        await callbackServer.close();
         throw new Error(
           [
             "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
@@ -17512,13 +17505,23 @@ ${authorizationUrl.toString()}`
         );
       }
       if (!(error2 instanceof UnauthorizedError) || !unauthorizedTransport) {
-        await callbackServer.close();
         throw error2;
       }
-      const authorizationCode = await callbackServer.waitForCode();
-      await unauthorizedTransport.finishAuth(authorizationCode);
-      await unauthorizedTransport.close().catch(() => void 0);
-      await this.connectOnce();
+      const callbackServer = await this.callbackServerFactory({
+        host: this.config.callbackHost,
+        port: this.config.callbackPort,
+        path: this.config.callbackPath,
+        timeoutMs: this.config.authTimeoutMs,
+        getExpectedState: () => this.authProvider.expectedState()
+      });
+      try {
+        const authorizationCode = await callbackServer.waitForCode();
+        await unauthorizedTransport.finishAuth(authorizationCode);
+        await unauthorizedTransport.close().catch(() => void 0);
+        await this.connectOnce();
+      } finally {
+        await callbackServer.close();
+      }
     }
   }
   async connectOnce() {
