@@ -101,7 +101,7 @@ The plugin bundles one MCP server entry in `.mcp.json`:
 
 - `figma-stdio`: starts the bundled stdio frontend from the plugin root and connects directly to `https://mcp.figma.com/mcp` using the shared OAuth cache. The `cwd` value is intentionally relative; Codex resolves plugin MCP `cwd` values beneath the installed plugin directory, so the CLI path in `args` stays relative to the bundle.
 
-The HTTP bridge remains available for OAuth bootstrap and standalone debugging, but it is not installed as a persistent plugin MCP server.
+The HTTP bridge remains available for Figma MCP login and standalone debugging, but it is not installed as a persistent plugin MCP server.
 
 ## Stdio MCP Frontend
 
@@ -123,7 +123,7 @@ otherwise USERPROFILE/.codex/.figma-mcp-bridge-oauth.json
 
 ## Standalone HTTP MCP Config
 
-For OAuth bootstrap or debugging outside the bundled `figma-login` skill, you can point Codex at the local HTTP bridge manually:
+For Figma MCP login or debugging outside the bundled `figma-router` login workflow, you can point Codex at the local HTTP bridge manually:
 
 ```json
 {
