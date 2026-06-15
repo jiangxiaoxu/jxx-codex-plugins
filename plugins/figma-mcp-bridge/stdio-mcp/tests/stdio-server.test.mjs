@@ -5,10 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import {
-  createFigmaStdioMcpServer,
-  startFigmaStdioMcpServer,
-} from "../dist/index.js";
+import { createFigmaStdioMcpServer } from "../dist/index.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -123,55 +120,6 @@ test("stdio MCP server proxies tools and resources to the Figma client", async (
   ]);
 });
 
-test("startFigmaStdioMcpServer removes owned signal handlers when transport closes", async () => {
-  const calls = [];
-  const transport = new ControlledTransport();
-  let existingOnCloseCalls = 0;
-  transport.onclose = () => {
-    existingOnCloseCalls += 1;
-  };
-  const sigintCount = process.listenerCount("SIGINT");
-  const sigtermCount = process.listenerCount("SIGTERM");
-
-  const running = startFigmaStdioMcpServer({
-    client: createFakeProxyClient(calls),
-    transport,
-  });
-
-  assert.equal(transport.startCalls, 1);
-  assert.equal(process.listenerCount("SIGINT"), sigintCount + 1);
-  assert.equal(process.listenerCount("SIGTERM"), sigtermCount + 1);
-
-  await transport.close();
-  await transport.close();
-  await running;
-
-  assert.equal(process.listenerCount("SIGINT"), sigintCount);
-  assert.equal(process.listenerCount("SIGTERM"), sigtermCount);
-  assert.equal(existingOnCloseCalls, 2);
-  assert.deepEqual(calls, [["close"]]);
-});
-
-test("startFigmaStdioMcpServer removes owned signal handlers when transport start fails", async () => {
-  const calls = [];
-  const transport = new ControlledTransport({ failStart: true });
-  const sigintCount = process.listenerCount("SIGINT");
-  const sigtermCount = process.listenerCount("SIGTERM");
-
-  await assert.rejects(
-    startFigmaStdioMcpServer({
-      client: createFakeProxyClient(calls),
-      transport,
-    }),
-    /transport start failed/,
-  );
-
-  assert.equal(process.listenerCount("SIGINT"), sigintCount);
-  assert.equal(process.listenerCount("SIGTERM"), sigtermCount);
-  assert.equal(transport.closeCalls, 1);
-  assert.deepEqual(calls, [["close"]]);
-});
-
 test("stdio CLI exits cleanly when stdin ends", async () => {
   const result = await runCliWithClosedStdin();
 
@@ -180,30 +128,6 @@ test("stdio CLI exits cleanly when stdin ends", async () => {
   assert.equal(result.stdout, "");
   assert.equal(result.stderr, "");
 });
-
-class ControlledTransport {
-  constructor(options = {}) {
-    this.failStart = options.failStart ?? false;
-    this.startCalls = 0;
-    this.closeCalls = 0;
-  }
-
-  async start() {
-    this.startCalls += 1;
-    if (this.failStart) {
-      throw new Error("transport start failed");
-    }
-  }
-
-  async send() {
-    // Test transport never sends messages.
-  }
-
-  async close() {
-    this.closeCalls += 1;
-    this.onclose?.();
-  }
-}
 
 function runCliWithClosedStdin() {
   return new Promise((resolve, reject) => {
@@ -234,27 +158,4 @@ function runCliWithClosedStdin() {
     });
     child.stdin.end();
   });
-}
-
-function createFakeProxyClient(calls) {
-  return {
-    async connect() {
-      calls.push(["connect"]);
-    },
-    async close() {
-      calls.push(["close"]);
-    },
-    async listTools() {
-      return { tools: [] };
-    },
-    async callTool() {
-      return { content: [] };
-    },
-    async listResources() {
-      return { resources: [] };
-    },
-    async readResource(uri) {
-      return { contents: [{ uri }] };
-    },
-  };
 }

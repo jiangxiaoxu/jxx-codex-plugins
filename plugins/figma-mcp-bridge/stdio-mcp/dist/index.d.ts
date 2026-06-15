@@ -4,4 +4,4 @@ export { OAuthStateStore, parseOAuthState, type OAuthCredentialScope, type OAuth
 export { PersistentOAuthProvider, type AuthorizationRedirectHandler, type PersistentOAuthProviderOptions, } from "./oauth-provider.js";
 export { startOAuthCallbackServer, type OAuthCallbackServer, type OAuthCallbackServerOptions, } from "./oauth-callback.js";
 export { RemoteMcpClient, createRemoteMcpClient, type RemoteMcpClientOptions, } from "./client.js";
-export { createFigmaStdioMcpServer, isDirectRun, startFigmaStdioMcpServer, type FigmaMcpProxyClient, type FigmaStdioMcpServerOptions, type StartFigmaStdioMcpServerOptions, } from "./stdio-server.js";
+export { createFigmaStdioMcpServer, type FigmaMcpProxyClient, type FigmaStdioMcpServerOptions, } from "./stdio-server.js";

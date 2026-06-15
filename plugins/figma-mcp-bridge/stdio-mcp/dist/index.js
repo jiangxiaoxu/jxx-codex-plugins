@@ -2979,7 +2979,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve4.call(this, root, ref);
+      let _sch = resolve3.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3006,7 +3006,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve4(root, ref) {
+    function resolve3(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3637,7 +3637,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve4(baseURI, relativeURI, options) {
+    function resolve3(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3895,7 +3895,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve4,
+      resolve: resolve3,
       resolveComponent,
       equal,
       serialize,
@@ -7138,8 +7138,8 @@ async function closeServer(server) {
   if (!server.listening) {
     return;
   }
-  await new Promise((resolve4, reject) => {
-    server.close((error2) => error2 ? reject(error2) : resolve4());
+  await new Promise((resolve3, reject) => {
+    server.close((error2) => error2 ? reject(error2) : resolve3());
   });
 }
 async function startOAuthCallbackServer(options) {
@@ -7149,8 +7149,8 @@ async function startOAuthCallbackServer(options) {
   let closePromise;
   let resolveCode;
   let rejectCode;
-  const codePromise = new Promise((resolve4, reject) => {
-    resolveCode = resolve4;
+  const codePromise = new Promise((resolve3, reject) => {
+    resolveCode = resolve3;
     rejectCode = reject;
   });
   codePromise.catch(() => void 0);
@@ -7229,11 +7229,11 @@ async function startOAuthCallbackServer(options) {
     rejectCode(error2);
     requestClose().catch(() => void 0);
   };
-  await new Promise((resolve4, reject) => {
+  await new Promise((resolve3, reject) => {
     server.once("error", reject);
     server.listen(options.port, options.host, () => {
       server.off("error", reject);
-      resolve4();
+      resolve3();
     });
   });
   timeout = setTimeout(() => {
@@ -14772,7 +14772,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
+        await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -14789,7 +14789,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve3, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -14867,7 +14867,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve4(parseResult.data);
+            resolve3(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -15128,12 +15128,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve4, reject) => {
+    return new Promise((resolve3, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve4, interval);
+      const timeoutId = setTimeout(resolve3, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -17478,16 +17478,16 @@ async function openBrowser(url2) {
   const os = platform();
   const command = os === "darwin" ? "open" : os === "win32" ? "cmd.exe" : "xdg-open";
   const args = os === "win32" ? ["/c", "start", "", href] : [href];
-  return new Promise((resolve4) => {
+  return new Promise((resolve3) => {
     const child = spawn(command, args, {
       detached: true,
       stdio: "ignore",
       windowsHide: true
     });
-    child.on("error", () => resolve4(false));
+    child.on("error", () => resolve3(false));
     child.on("spawn", () => {
       child.unref();
-      resolve4(true);
+      resolve3(true);
     });
   });
 }
@@ -18347,101 +18347,7 @@ var Server = class extends Protocol {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
-import process3 from "node:process";
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
-var ReadBuffer = class {
-  append(chunk) {
-    this._buffer = this._buffer ? Buffer.concat([this._buffer, chunk]) : chunk;
-  }
-  readMessage() {
-    if (!this._buffer) {
-      return null;
-    }
-    const index = this._buffer.indexOf("\n");
-    if (index === -1) {
-      return null;
-    }
-    const line = this._buffer.toString("utf8", 0, index).replace(/\r$/, "");
-    this._buffer = this._buffer.subarray(index + 1);
-    return deserializeMessage(line);
-  }
-  clear() {
-    this._buffer = void 0;
-  }
-};
-function deserializeMessage(line) {
-  return JSONRPCMessageSchema.parse(JSON.parse(line));
-}
-function serializeMessage(message) {
-  return JSON.stringify(message) + "\n";
-}
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
-var StdioServerTransport = class {
-  constructor(_stdin = process3.stdin, _stdout = process3.stdout) {
-    this._stdin = _stdin;
-    this._stdout = _stdout;
-    this._readBuffer = new ReadBuffer();
-    this._started = false;
-    this._ondata = (chunk) => {
-      this._readBuffer.append(chunk);
-      this.processReadBuffer();
-    };
-    this._onerror = (error2) => {
-      this.onerror?.(error2);
-    };
-  }
-  /**
-   * Starts listening for messages on stdin.
-   */
-  async start() {
-    if (this._started) {
-      throw new Error("StdioServerTransport already started! If using Server class, note that connect() calls start() automatically.");
-    }
-    this._started = true;
-    this._stdin.on("data", this._ondata);
-    this._stdin.on("error", this._onerror);
-  }
-  processReadBuffer() {
-    while (true) {
-      try {
-        const message = this._readBuffer.readMessage();
-        if (message === null) {
-          break;
-        }
-        this.onmessage?.(message);
-      } catch (error2) {
-        this.onerror?.(error2);
-      }
-    }
-  }
-  async close() {
-    this._stdin.off("data", this._ondata);
-    this._stdin.off("error", this._onerror);
-    const remainingDataListeners = this._stdin.listenerCount("data");
-    if (remainingDataListeners === 0) {
-      this._stdin.pause();
-    }
-    this._readBuffer.clear();
-    this.onclose?.();
-  }
-  send(message) {
-    return new Promise((resolve4) => {
-      const json = serializeMessage(message);
-      if (this._stdout.write(json)) {
-        resolve4();
-      } else {
-        this._stdout.once("drain", resolve4);
-      }
-    });
-  }
-};
-
 // src/stdio-server.ts
-import { resolve as resolve3 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
 function createFigmaStdioMcpServer(options = {}) {
   const client = options.client ?? createRemoteMcpClient({
     ...options,
@@ -18490,94 +18396,6 @@ function createFigmaStdioMcpServer(options = {}) {
   );
   return { server, client };
 }
-async function startFigmaStdioMcpServer(options = {}) {
-  const { transport: configuredTransport, ...serverOptions } = options;
-  const { server, client } = createFigmaStdioMcpServer(serverOptions);
-  const transport = configuredTransport ?? new StdioServerTransport();
-  let clientClosePromise;
-  let cleanupComplete = false;
-  let removeStdinCloseHandlers = () => void 0;
-  let closedResolved = false;
-  let resolveClosed;
-  const closed = new Promise((resolve4) => {
-    resolveClosed = resolve4;
-  });
-  const resolveServerClosed = () => {
-    if (closedResolved) {
-      return;
-    }
-    closedResolved = true;
-    resolveClosed();
-  };
-  const closeClient = () => {
-    clientClosePromise ??= client.close().catch(() => void 0);
-    return clientClosePromise;
-  };
-  const cleanupSignalHandlers = () => {
-    if (cleanupComplete) {
-      return;
-    }
-    cleanupComplete = true;
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
-    removeStdinCloseHandlers();
-  };
-  const closeFromTransport = () => {
-    try {
-      existingOnClose?.();
-    } finally {
-      cleanupSignalHandlers();
-      void closeClient().finally(() => resolveServerClosed());
-    }
-  };
-  const closeFromSignal = (exitCode) => {
-    cleanupSignalHandlers();
-    void closeClient().finally(() => process.exit(exitCode));
-  };
-  const onSigint = () => {
-    closeFromSignal(130);
-  };
-  const onSigterm = () => {
-    closeFromSignal(143);
-  };
-  const existingOnClose = transport.onclose;
-  transport.onclose = closeFromTransport;
-  process.once("SIGINT", onSigint);
-  process.once("SIGTERM", onSigterm);
-  if (!configuredTransport) {
-    removeStdinCloseHandlers = closeTransportWhenStdinEnds(transport, () => {
-      cleanupSignalHandlers();
-      void closeClient().finally(() => resolveServerClosed());
-    });
-  }
-  try {
-    await server.connect(transport);
-    await closed;
-  } catch (error2) {
-    cleanupSignalHandlers();
-    await server.close().catch(async () => {
-      await transport.close().catch(() => void 0);
-    });
-    await closeClient();
-    throw error2;
-  }
-}
-function closeTransportWhenStdinEnds(transport, onCloseError) {
-  let closeRequested = false;
-  const closeTransport = () => {
-    if (closeRequested) {
-      return;
-    }
-    closeRequested = true;
-    void transport.close().catch(onCloseError);
-  };
-  process.stdin.once("end", closeTransport);
-  process.stdin.once("close", closeTransport);
-  return () => {
-    process.stdin.off("end", closeTransport);
-    process.stdin.off("close", closeTransport);
-  };
-}
 function asRecord(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value;
@@ -18589,13 +18407,6 @@ function asMcpResult(value) {
     return value;
   }
   throw new Error("Upstream MCP server returned a non-object result.");
-}
-function isDirectRun(importMetaUrl, argv = process.argv) {
-  const script = argv[1];
-  if (!script) {
-    return false;
-  }
-  return resolve3(fileURLToPath2(importMetaUrl)) === resolve3(script);
 }
 export {
   DEFAULT_AUTH_TIMEOUT_MS,
@@ -18615,9 +18426,7 @@ export {
   createFigmaStdioMcpServer,
   createRemoteMcpClient,
   findCodexHomeOAuthCachePath,
-  isDirectRun,
   normalizeCallbackPath,
   parseOAuthState,
-  startFigmaStdioMcpServer,
   startOAuthCallbackServer
 };

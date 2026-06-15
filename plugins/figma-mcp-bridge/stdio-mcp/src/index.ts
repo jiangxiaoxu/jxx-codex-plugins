@@ -40,9 +40,6 @@ export {
 } from "./client.js";
 export {
   createFigmaStdioMcpServer,
-  isDirectRun,
-  startFigmaStdioMcpServer,
   type FigmaMcpProxyClient,
   type FigmaStdioMcpServerOptions,
-  type StartFigmaStdioMcpServerOptions,
 } from "./stdio-server.js";

@@ -47,11 +47,10 @@ The shared cache must already contain valid `clientInformation`, `access_token`,
 ## Package API
 
 ```ts
-import {
-  createFigmaStdioMcpServer,
-  startFigmaStdioMcpServer
-} from "@jxx-codex-plugins/figma-mcp-stdio";
+import { createFigmaStdioMcpServer } from "@jxx-codex-plugins/figma-mcp-stdio";
 ```
+
+The package root is the API entry and does not own the process lifecycle. The CLI run-loop entry is `@jxx-codex-plugins/figma-mcp-stdio/cli` and is used by the `figma-mcp-stdio-bridge` bin.
 
 Low-level exports remain available for embedding: `RemoteMcpClient`, `PersistentOAuthProvider`, `OAuthStateStore`, and config helpers.
 
