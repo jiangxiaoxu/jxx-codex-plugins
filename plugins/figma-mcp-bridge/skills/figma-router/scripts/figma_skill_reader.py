@@ -19,12 +19,17 @@ class FigmaSkillUriError(ValueError):
 
 def _normalize_input(uri_or_name: str) -> str:
     if uri_or_name.startswith(_URI_PREFIX):
-        return uri_or_name
-    if "://" in uri_or_name:
+        uri = uri_or_name
+    elif "://" in uri_or_name:
         raise FigmaSkillUriError(f"Expected URI starting with {_URI_PREFIX!r}: {uri_or_name!r}")
-    if "/" in uri_or_name or "\\" in uri_or_name:
-        return f"{_URI_PREFIX}{uri_or_name}"
-    return f"{_URI_PREFIX}{uri_or_name}/SKILL.md"
+    elif "/" in uri_or_name or "\\" in uri_or_name:
+        uri = f"{_URI_PREFIX}{uri_or_name}"
+    else:
+        uri = f"{_URI_PREFIX}{uri_or_name}/SKILL.md"
+
+    if uri.endswith("/SKILL.md"):
+        return f"{uri[:-len('/SKILL.md')]}/SKILL.source.md"
+    return uri
 
 
 def resolve(uri_or_name: str) -> Path:
