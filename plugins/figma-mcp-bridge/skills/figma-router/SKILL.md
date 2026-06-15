@@ -12,7 +12,7 @@ Use this skill as the lightweight entry point for Figma MCP tasks. Do not copy, 
 1. Identify the task type before reading a large Figma skill.
 2. Use the route table below to choose the official bundled skill document and the local lightweight reference.
 3. Read exactly the most relevant local reference from `references/`.
-4. Read the bundled official copy under `references/official-figma-skills/<skill>/` before acting; use MCP resources only as tool/runtime identities, not as the documentation source.
+4. Read the bundled official copy under `references/official-figma-skills/<skill>/` before acting; use MCP resources only as tool/runtime identities, not as the documentation source. Bundled official skill entry files are named `SKILL.source.md` so they are not discovered as live skills.
 5. For `use_figma`, `create_new_file`, or `generate_diagram`, preserve the original mandatory prerequisite semantics: load the specific Figma skill or its `skill://figma/.../SKILL.md` MCP resource before every matching tool call.
 
 For deterministic loading from a `skill://figma/...` URI or a short skill name such as `figma-use`, use the bundled helper at `<skill_dir>/scripts/figma_skill_reader.py`, where `<skill_dir>` is the directory containing this `SKILL.md`. Its `read(uri_or_name) -> str` function returns the bundled plugin-local document content.
@@ -21,14 +21,14 @@ For deterministic loading from a `skill://figma/...` URI or a short skill name s
 
 | Task | Bundled official document | Local reference | Required before tool call |
 | --- | --- | --- | --- |
-| Code Connect templates, component mapping, `.figma.ts`, `.figma.js` | `references/official-figma-skills/figma-code-connect/SKILL.md` | `references/figma-code-connect.md` | Read before Code Connect work. |
-| Create a new design, FigJam, or Slides file | `references/official-figma-skills/figma-create-new-file/SKILL.md` | `references/figma-create-new-file.md` | Mandatory before every `create_new_file` call. |
-| App/page/view/modal/drawer/panel to Figma | `references/official-figma-skills/figma-generate-design/SKILL.md` | `references/figma-generate-design.md` | Read alongside `figma-use` guidance when writing to Figma. |
-| Diagram, Mermaid, flowchart, ERD, sequence, state, Gantt, timeline, architecture | `references/official-figma-skills/figma-generate-diagram/SKILL.md` | `references/figma-generate-diagram.md` | Mandatory before every `generate_diagram` call. |
-| Design system, tokens, variables, component library, component creation | `references/official-figma-skills/figma-generate-library/SKILL.md` | `references/figma-generate-library.md` | Read with `figma-use` before Figma library writes. |
-| Figma Plugin API execution, canvas writes, programmatic inspection | `references/official-figma-skills/figma-use/SKILL.md` | `references/figma-use.md` | Mandatory before every `use_figma` call. |
-| FigJam board inspection, board scaffolds, FigJam nodes, image upload routing | `references/official-figma-skills/figma-use-figjam/SKILL.md` | `references/figma-use-figjam.md` | Read with `figma-use` for FigJam boards; route image uploads to asset upload guidance. |
-| Slides deck organization, speaker notes, themes, slide grids, lifecycle, properties | `references/official-figma-skills/figma-use-slides/SKILL.md` | `references/figma-use-slides.md` | Read with `figma-use` for Slides files. |
+| Code Connect templates, component mapping, `.figma.ts`, `.figma.js` | `references/official-figma-skills/figma-code-connect/SKILL.source.md` | `references/figma-code-connect.md` | Read before Code Connect work. |
+| Create a new design, FigJam, or Slides file | `references/official-figma-skills/figma-create-new-file/SKILL.source.md` | `references/figma-create-new-file.md` | Mandatory before every `create_new_file` call. |
+| App/page/view/modal/drawer/panel to Figma | `references/official-figma-skills/figma-generate-design/SKILL.source.md` | `references/figma-generate-design.md` | Read alongside `figma-use` guidance when writing to Figma. |
+| Diagram, Mermaid, flowchart, ERD, sequence, state, Gantt, timeline, architecture | `references/official-figma-skills/figma-generate-diagram/SKILL.source.md` | `references/figma-generate-diagram.md` | Mandatory before every `generate_diagram` call. |
+| Design system, tokens, variables, component library, component creation | `references/official-figma-skills/figma-generate-library/SKILL.source.md` | `references/figma-generate-library.md` | Read with `figma-use` before Figma library writes. |
+| Figma Plugin API execution, canvas writes, programmatic inspection | `references/official-figma-skills/figma-use/SKILL.source.md` | `references/figma-use.md` | Mandatory before every `use_figma` call. |
+| FigJam board inspection, board scaffolds, FigJam nodes, image upload routing | `references/official-figma-skills/figma-use-figjam/SKILL.source.md` | `references/figma-use-figjam.md` | Read with `figma-use` for FigJam boards; route image uploads to asset upload guidance. |
+| Slides deck organization, speaker notes, themes, slide grids, lifecycle, properties | `references/official-figma-skills/figma-use-slides/SKILL.source.md` | `references/figma-use-slides.md` | Read with `figma-use` for Slides files. |
 | Exact Plugin API type lookup | `references/official-figma-skills/figma-use/references/plugin-api-standalone.index.md` and `references/official-figma-skills/figma-use/references/plugin-api-standalone.d.ts` | `references/plugin-api-lookup.md` and `references/plugin-api-standalone.md` | Read index first, then use the bundled `.d.ts` document reference for targeted symbol search. |
 
 ## Official Skill Summaries
@@ -77,4 +77,4 @@ api_ref = read("figma-use/references/api-reference.md")
 api_index = read("figma-use/references/plugin-api-standalone.index.md")
 ```
 
-The resolver accepts `skill://figma/...` URIs, relative Figma skill document paths such as `figma-use/references/api-reference.md`, or short skill names that resolve to `<skill>/SKILL.md`. It only returns files inside `references/official-figma-skills/`.
+The resolver accepts `skill://figma/...` URIs, relative Figma skill document paths such as `figma-use/references/api-reference.md`, or short skill names. Inputs ending in `SKILL.md` are mapped to bundled `SKILL.source.md` files. It only returns files inside `references/official-figma-skills/`.
