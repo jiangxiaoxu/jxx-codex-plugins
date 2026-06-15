@@ -13,20 +13,32 @@ import {
   type NodeReplConfigInput,
 } from "./config.js";
 import { PersistentOAuthProvider } from "./oauth-provider.js";
-import { startOAuthCallbackServer } from "./oauth-callback.js";
+import {
+  startOAuthCallbackServer,
+  type OAuthCallbackServer,
+  type OAuthCallbackServerOptions,
+} from "./oauth-callback.js";
 
 export interface RemoteMcpClientOptions extends NodeReplConfigInput {
   onAuthorizationUrl?: (authorizationUrl: URL) => void | Promise<void>;
+  callbackServerFactory?: (
+    options: OAuthCallbackServerOptions,
+  ) => Promise<OAuthCallbackServer>;
 }
 
 export class RemoteMcpClient {
   readonly config: NodeReplConfig;
   readonly authProvider: PersistentOAuthProvider;
+  private readonly callbackServerFactory: (
+    options: OAuthCallbackServerOptions,
+  ) => Promise<OAuthCallbackServer>;
   private client?: Client;
   private transport?: StreamableHTTPClientTransport;
 
   constructor(options: RemoteMcpClientOptions = {}) {
     this.config = createConfig(options);
+    this.callbackServerFactory =
+      options.callbackServerFactory ?? startOAuthCallbackServer;
     this.authProvider = new PersistentOAuthProvider({
       redirectUrl: this.config.callbackUrl,
       clientMetadata: this.config.clientMetadata,
@@ -47,22 +59,12 @@ export class RemoteMcpClient {
   }
 
   async connect(): Promise<void> {
-    const callbackServer = await startOAuthCallbackServer({
-      host: this.config.callbackHost,
-      port: this.config.callbackPort,
-      path: this.config.callbackPath,
-      timeoutMs: this.config.authTimeoutMs,
-      getExpectedState: () => this.authProvider.expectedState(),
-    });
-
     try {
       await this.connectOnce();
-      await callbackServer.close();
       return;
     } catch (error) {
       const unauthorizedTransport = this.transport;
       if (isForbiddenClientRegistrationError(error)) {
-        await callbackServer.close();
         throw new Error(
           [
             "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
@@ -73,18 +75,29 @@ export class RemoteMcpClient {
         );
       }
       if (!(error instanceof UnauthorizedError) || !unauthorizedTransport) {
-        await callbackServer.close();
         throw error;
       }
 
-      const authorizationCode = await callbackServer.waitForCode();
-      await unauthorizedTransport.finishAuth(authorizationCode);
-      await unauthorizedTransport.close().catch(() => undefined);
-      await this.connectOnce();
+      const callbackServer = await this.callbackServerFactory({
+        host: this.config.callbackHost,
+        port: this.config.callbackPort,
+        path: this.config.callbackPath,
+        timeoutMs: this.config.authTimeoutMs,
+        getExpectedState: () => this.authProvider.expectedState(),
+      });
+
+      try {
+        const authorizationCode = await callbackServer.waitForCode();
+        await unauthorizedTransport.finishAuth(authorizationCode);
+        await unauthorizedTransport.close().catch(() => undefined);
+        await this.connectOnce();
+      } finally {
+        await callbackServer.close();
+      }
     }
   }
 
-  private async connectOnce(): Promise<{
+  protected async connectOnce(): Promise<{
     client: Client;
     transport: StreamableHTTPClientTransport;
   }> {
