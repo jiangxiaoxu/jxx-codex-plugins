@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-bridge",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Figma MCP stdio frontend with a local OAuth bootstrap bridge.",
   "author": {
     "name": "Local developer"
@@ -18,6 +18,8 @@
       "Read",
       "Write"
     ],
+    "composerIcon": "./assets/figma-mcp-bridge-icon.png",
+    "logo": "./assets/figma-mcp-bridge-icon.png",
     "defaultPrompt": "Start the Figma MCP bridge."
   }
 }
