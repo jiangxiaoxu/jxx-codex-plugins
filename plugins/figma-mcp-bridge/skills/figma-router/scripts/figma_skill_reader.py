@@ -1,4 +1,4 @@
-"""Read bundled Figma skill documents from names or skill://figma/... URIs."""
+"""Resolve bundled Figma skill documents from names or skill://figma/... URIs."""
 
 from __future__ import annotations
 
@@ -67,27 +67,31 @@ def read(uri_or_name: str, encoding: str = "utf-8") -> str:
     return resolve(uri_or_name).read_text(encoding=encoding)
 
 
+def stat(uri_or_name: str) -> tuple[Path, int]:
+    """Return the resolved path and file size for a bundled Figma skill document."""
+    resolved = resolve(uri_or_name)
+    return resolved, resolved.stat().st_size
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Read bundled Figma skill documents by skill://figma/... URI, relative path, or skill name.",
+        description="Resolve bundled Figma skill documents by skill://figma/... URI, relative path, or skill name.",
         epilog=(
             "examples:\n"
             "  python <skill_dir>/scripts/figma_skill_reader.py figma-use\n"
             "  python <skill_dir>/scripts/figma_skill_reader.py figma-use/references/api-reference.md\n"
             "  python <skill_dir>/scripts/figma_skill_reader.py skill://figma/figma-code-connect/SKILL.md\n"
-            "  python <skill_dir>/scripts/figma_skill_reader.py figma-use --path\n"
+            "  python <skill_dir>/scripts/figma_skill_reader.py figma-use/references/plugin-api-standalone.d.ts\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("uri", help="Figma skill URI or name, for example skill://figma/figma-code-connect/SKILL.md or figma-use")
-    parser.add_argument("--path", action="store_true", help="Print the resolved plugin-local path instead of content.")
     args = parser.parse_args()
 
     try:
-        if args.path:
-            print(resolve(args.uri))
-        else:
-            print(read(args.uri), end="")
+        resolved, size_bytes = stat(args.uri)
+        print(f"path={resolved}")
+        print(f"size_bytes={size_bytes}")
     except (FigmaSkillUriError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

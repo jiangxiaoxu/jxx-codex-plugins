@@ -12,11 +12,11 @@ Use this skill as the lightweight entry point for Figma MCP tasks. Do not copy, 
 1. Identify the task type before reading a large Figma skill.
 2. Use the route table below to choose the reader input and the local lightweight reference.
 3. Read exactly the most relevant local reference from `references/`.
-4. Load official Figma skill content with `python <skill_dir>/scripts/figma_skill_reader.py <reader-input>`. Do not read `references/official-figma-skills/...` directly from router steps.
+4. Resolve the official Figma skill document with `python <skill_dir>/scripts/figma_skill_reader.py <reader-input>`. The helper returns only the bundled file path and file size, not file content.
 5. Use MCP resources only as tool/runtime identities, not as the documentation source. Bundled official skill entry files are named `SKILL.source.md` so they are not discovered as live skills.
-6. For `use_figma`, `create_new_file`, or `generate_diagram`, preserve the original mandatory prerequisite semantics: load the matching official Figma skill content through the reader before every matching tool call.
+6. For `use_figma`, `create_new_file`, or `generate_diagram`, preserve the original mandatory prerequisite semantics: resolve the matching official Figma skill document through the helper before every matching tool call, then read only the needed file sections if the local lightweight reference is insufficient.
 
-For deterministic loading from a `skill://figma/...` URI or a short skill name such as `figma-use`, run the bundled helper at `<skill_dir>/scripts/figma_skill_reader.py`, where `<skill_dir>` is the directory containing this `SKILL.md`. The command prints the bundled plugin-local document content to stdout.
+For deterministic resolution from a `skill://figma/...` URI or a short skill name such as `figma-use`, run the bundled helper at `<skill_dir>/scripts/figma_skill_reader.py`, where `<skill_dir>` is the directory containing this `SKILL.md`. The command prints `path=<resolved-file>` and `size_bytes=<bytes>` to stdout.
 
 ## Route Table
 
@@ -51,9 +51,9 @@ The full `plugin-api-standalone.d.ts` is bundled at `references/official-figma-s
 
 Resolve the helper script as `<skill_dir>/scripts/figma_skill_reader.py`, with `<skill_dir>` equal to the directory containing this `SKILL.md`. Do not resolve `scripts/figma_skill_reader.py` from the current working directory, plugin root, repository root, installed cache root, or any hard-coded local path. Before the first helper command in a session, verify that `<skill_dir>/scripts/figma_skill_reader.py` exists; if it does not, search only the current `figma-router` skill bundle for `scripts/figma_skill_reader.py`, use the discovered absolute path, and report the path mismatch briefly.
 
-Run the helper directly with Python:
+Run the helper directly with Python. It does not print file content; it prints the resolved plugin-local path and file size.
 
-`python <skill_dir>/scripts/figma_skill_reader.py <uri-or-name> [--path]`
+`python <skill_dir>/scripts/figma_skill_reader.py <uri-or-name>`
 
 Examples:
 
@@ -61,10 +61,15 @@ Examples:
 python <skill_dir>/scripts/figma_skill_reader.py figma-use
 python <skill_dir>/scripts/figma_skill_reader.py figma-use/references/api-reference.md
 python <skill_dir>/scripts/figma_skill_reader.py skill://figma/figma-code-connect/SKILL.md
-python <skill_dir>/scripts/figma_skill_reader.py figma-use --path
+python <skill_dir>/scripts/figma_skill_reader.py figma-use/references/plugin-api-standalone.d.ts
 python <skill_dir>/scripts/figma_skill_reader.py -h
 ```
 
-The command prints document content to stdout by default. With `--path`, it prints the resolved plugin-local file path.
+Output shape:
+
+```text
+path=<absolute-plugin-local-path>
+size_bytes=<file-size>
+```
 
 The resolver accepts `skill://figma/...` URIs, relative Figma skill document paths such as `figma-use/references/api-reference.md`, or short skill names. Inputs ending in `SKILL.md` are mapped to bundled `SKILL.source.md` files. It only returns files inside `references/official-figma-skills/`.
