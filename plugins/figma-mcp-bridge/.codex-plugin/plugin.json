@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-bridge",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Figma MCP stdio frontend with a local OAuth bootstrap bridge.",
   "author": {
     "name": "Local developer"
