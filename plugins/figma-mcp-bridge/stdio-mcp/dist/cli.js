@@ -18448,6 +18448,7 @@ var StaleConnectionError = class extends Error {
 };
 
 // src/stdio-server.ts
+var TOOL_TITLE_ARGUMENT = "title";
 function createFigmaStdioMcpServer(options = {}) {
   const client = options.client ?? createRemoteMcpClient({
     ...options,
@@ -18469,14 +18470,16 @@ function createFigmaStdioMcpServer(options = {}) {
   );
   server.setRequestHandler(ListToolsRequestSchema, async (_request) => {
     await client.connect();
-    return asMcpResult(await client.listTools());
+    return injectRequiredTitleArgument(asMcpResult(await client.listTools()));
   });
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     await client.connect();
+    const args = asRecord(request.params.arguments);
+    assertRequiredTitleArgument(args);
     return asMcpResult(
       await client.callTool(
         request.params.name,
-        asRecord(request.params.arguments)
+        stripTitleArgument(args)
       )
     );
   });
@@ -18507,6 +18510,53 @@ function asMcpResult(value) {
     return value;
   }
   throw new Error("Upstream MCP server returned a non-object result.");
+}
+function injectRequiredTitleArgument(result) {
+  if (!Array.isArray(result.tools)) {
+    return result;
+  }
+  return {
+    ...result,
+    tools: result.tools.map((tool) => {
+      if (!isRecord2(tool)) {
+        return tool;
+      }
+      return {
+        ...tool,
+        inputSchema: injectTitleIntoInputSchema(tool.inputSchema)
+      };
+    })
+  };
+}
+function injectTitleIntoInputSchema(inputSchema) {
+  const schema = isRecord2(inputSchema) ? inputSchema : {};
+  const properties = isRecord2(schema.properties) ? schema.properties : {};
+  const required2 = Array.isArray(schema.required) ? schema.required : [];
+  return {
+    ...schema,
+    type: "object",
+    properties: {
+      ...properties,
+      [TOOL_TITLE_ARGUMENT]: {
+        type: "string",
+        description: "Human-readable title used when presenting output to the user."
+      }
+    },
+    required: required2.includes(TOOL_TITLE_ARGUMENT) ? required2 : [...required2, TOOL_TITLE_ARGUMENT]
+  };
+}
+function assertRequiredTitleArgument(args) {
+  if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
+    throw new Error('Tool argument "title" is required and must be a string.');
+  }
+}
+function stripTitleArgument(args) {
+  return Object.fromEntries(
+    Object.entries(args).filter(([name]) => name !== TOOL_TITLE_ARGUMENT)
+  );
+}
+function isRecord2(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 // src/cli.ts

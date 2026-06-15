@@ -29,7 +29,13 @@ test("stdio MCP server proxies tools and resources to the Figma client", async (
           {
             name: "whoami",
             description: "Return the authenticated Figma user.",
-            inputSchema: { type: "object", properties: {} },
+            inputSchema: {
+              type: "object",
+              properties: {
+                verbose: { type: "boolean" },
+              },
+              required: ["verbose"],
+            },
           },
         ],
       };
@@ -78,13 +84,24 @@ test("stdio MCP server proxies tools and resources to the Figma client", async (
       {
         name: "whoami",
         description: "Return the authenticated Figma user.",
-        inputSchema: { type: "object", properties: {} },
+        inputSchema: {
+          type: "object",
+          properties: {
+            verbose: { type: "boolean" },
+            title: {
+              type: "string",
+              description:
+                "Human-readable title used when presenting output to the user.",
+            },
+          },
+          required: ["verbose", "title"],
+        },
       },
     ],
   });
   assert.deepEqual(await mcpClient.callTool({
     name: "whoami",
-    arguments: { verbose: true },
+    arguments: { verbose: true, title: "Current Figma user" },
   }), {
     content: [
       {
@@ -97,6 +114,13 @@ test("stdio MCP server proxies tools and resources to the Figma client", async (
       },
     ],
   });
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "whoami",
+      arguments: { verbose: true },
+    }),
+    /Tool argument "title" is required and must be a string\./,
+  );
   assert.deepEqual(await mcpClient.listResources(), {
     resources: [{ uri: "figma://doc", name: "doc" }],
   });
