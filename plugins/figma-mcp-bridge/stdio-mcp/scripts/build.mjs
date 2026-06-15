@@ -22,6 +22,11 @@ const outputs = [
     bundle: true,
   },
   {
+    entryPoint: resolve(root, "src/cli.ts"),
+    outfile: resolve(dist, "cli.js"),
+    bundle: true,
+  },
+  {
     entryPoint: resolve(root, "src/stdio-cli.ts"),
     outfile: resolve(dist, "stdio-cli.js"),
     bundle: false,

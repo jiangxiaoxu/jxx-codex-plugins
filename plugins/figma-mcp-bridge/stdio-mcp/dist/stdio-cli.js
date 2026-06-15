@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import {
   isDirectRun,
-  startFigmaStdioMcpServer
-} from "./index.js";
+  runFigmaStdioMcpCli
+} from "./cli.js";
 if (isDirectRun(import.meta.url)) {
-  await startFigmaStdioMcpServer({
+  await runFigmaStdioMcpCli({
     useBridgeOAuthCache: true,
     openBrowser: false
   });

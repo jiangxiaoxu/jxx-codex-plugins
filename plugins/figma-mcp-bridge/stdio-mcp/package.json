@@ -5,6 +5,18 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js",
+      "default": "./dist/cli.js"
+    }
+  },
   "bin": {
     "figma-mcp-stdio-bridge": "./dist/stdio-cli.js"
   },

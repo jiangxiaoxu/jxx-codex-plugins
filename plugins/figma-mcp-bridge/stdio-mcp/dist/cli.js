@@ -2979,7 +2979,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3006,7 +3006,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3637,7 +3637,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3895,7 +3895,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -6884,377 +6884,8 @@ var require_dist = __commonJS({
   }
 });
 
-// src/constants.ts
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-var DEFAULT_FIGMA_MCP_ENDPOINT = "https://mcp.figma.com/mcp";
-var DEFAULT_CALLBACK_HOST = "127.0.0.1";
-var DEFAULT_CALLBACK_PORT = 18765;
-var DEFAULT_CALLBACK_PATH = "/oauth/callback";
-var DEFAULT_AUTH_TIMEOUT_MS = 18e4;
-var DEFAULT_CLIENT_NAME = "jxx-codex-figma-mcp";
-var DEFAULT_CLIENT_VERSION = "0.1.0";
-var BRIDGE_OAUTH_CACHE_FILENAME = ".figma-mcp-bridge-oauth.json";
-var distDir = dirname(fileURLToPath(import.meta.url));
-var PLUGIN_ROOT = resolve(distDir, "..");
-var DEFAULT_OAUTH_STATE_PATH = resolve(
-  PLUGIN_ROOT,
-  ".mcp-oauth-state.json"
-);
-
-// src/config.ts
-import { resolve as resolve2 } from "node:path";
-function normalizeCallbackPath(path) {
-  return path.startsWith("/") ? path : `/${path}`;
-}
-function createCallbackUrl(options = {}) {
-  const host = options.host ?? DEFAULT_CALLBACK_HOST;
-  const port = options.port ?? DEFAULT_CALLBACK_PORT;
-  const path = normalizeCallbackPath(options.path ?? DEFAULT_CALLBACK_PATH);
-  return `http://${host}:${port}${path}`;
-}
-function createClientMetadata(redirectUrl, overrides = {}) {
-  return {
-    grant_types: ["authorization_code", "refresh_token"],
-    response_types: ["code"],
-    token_endpoint_auth_method: "client_secret_post",
-    ...overrides,
-    client_name: overrides.client_name ?? DEFAULT_CLIENT_NAME,
-    redirect_uris: overrides.redirect_uris ?? [redirectUrl]
-  };
-}
-function readEnv(name) {
-  if (typeof process === "undefined") {
-    return void 0;
-  }
-  return process.env[name];
-}
-function findCodexHomeOAuthCachePath(env = typeof process === "undefined" ? {} : process.env) {
-  if (env.CODEX_HOME) {
-    return resolve2(env.CODEX_HOME, BRIDGE_OAUTH_CACHE_FILENAME);
-  }
-  if (env.USERPROFILE) {
-    return resolve2(env.USERPROFILE, ".codex", BRIDGE_OAUTH_CACHE_FILENAME);
-  }
-  return void 0;
-}
-function createConfig(input = {}) {
-  const callbackHost = input.callbackHost ?? DEFAULT_CALLBACK_HOST;
-  const callbackPort = input.callbackPort ?? DEFAULT_CALLBACK_PORT;
-  const callbackPath = normalizeCallbackPath(input.callbackPath ?? DEFAULT_CALLBACK_PATH);
-  const callbackUrl = createCallbackUrl({
-    host: callbackHost,
-    port: callbackPort,
-    path: callbackPath
-  });
-  const useBridgeOAuthCache = input.useBridgeOAuthCache ?? readEnv("FIGMA_MCP_USE_BRIDGE_OAUTH_CACHE") === "1";
-  const statePath = input.statePath ?? readEnv("FIGMA_MCP_OAUTH_CACHE_PATH") ?? (useBridgeOAuthCache ? findCodexHomeOAuthCachePath() ?? missingBridgeOAuthCachePath() : DEFAULT_OAUTH_STATE_PATH);
-  return {
-    endpoint: input.endpoint ?? DEFAULT_FIGMA_MCP_ENDPOINT,
-    statePath: resolve2(statePath),
-    callbackHost,
-    callbackPort,
-    callbackPath,
-    callbackUrl,
-    authTimeoutMs: input.authTimeoutMs ?? DEFAULT_AUTH_TIMEOUT_MS,
-    openBrowser: input.openBrowser ?? true,
-    clientName: input.clientName ?? DEFAULT_CLIENT_NAME,
-    clientVersion: input.clientVersion ?? DEFAULT_CLIENT_VERSION,
-    clientMetadata: createClientMetadata(callbackUrl, input.clientMetadata),
-    useBridgeOAuthCache
-  };
-}
-function missingBridgeOAuthCachePath() {
-  throw new Error(
-    "Unable to resolve Figma MCP OAuth cache path. Set FIGMA_MCP_OAUTH_CACHE_PATH, CODEX_HOME, or USERPROFILE."
-  );
-}
-
-// src/oauth-state.ts
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname as dirname2 } from "node:path";
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function optionalRecord(value) {
-  return isRecord(value) ? value : void 0;
-}
-function parseOAuthState(json) {
-  const value = JSON.parse(json);
-  if (!isRecord(value)) {
-    return {};
-  }
-  return {
-    ...value,
-    clientInformation: optionalRecord(
-      value.clientInformation
-    ),
-    tokens: optionalRecord(value.tokens),
-    codeVerifier: typeof value.codeVerifier === "string" ? value.codeVerifier : void 0,
-    discoveryState: optionalRecord(value.discoveryState),
-    lastState: typeof value.lastState === "string" ? value.lastState : void 0
-  };
-}
-var OAuthStateStore = class {
-  constructor(statePath) {
-    this.statePath = statePath;
-  }
-  statePath;
-  async read() {
-    try {
-      return parseOAuthState(await readFile(this.statePath, "utf8"));
-    } catch (error2) {
-      if (error2 instanceof Error && "code" in error2 && error2.code === "ENOENT") {
-        return {};
-      }
-      throw error2;
-    }
-  }
-  async write(state) {
-    await mkdir(dirname2(this.statePath), { recursive: true });
-    const tmpPath = `${this.statePath}.tmp`;
-    await writeFile(tmpPath, `${JSON.stringify(state, null, 2)}
-`, {
-      encoding: "utf8",
-      mode: 384
-    });
-    await rename(tmpPath, this.statePath);
-  }
-  async update(update) {
-    const next = update(await this.read());
-    await this.write(next);
-    return next;
-  }
-  async clear() {
-    await rm(this.statePath, { force: true });
-  }
-};
-
-// src/oauth-provider.ts
-import { randomBytes } from "node:crypto";
-var PersistentOAuthProvider = class {
-  constructor(options) {
-    this.options = options;
-    this.clientMetadataUrl = options.clientMetadataUrl;
-    this.store = new OAuthStateStore(options.statePath);
-    this.redirectHandler = options.onRedirect ?? ((authorizationUrl) => {
-      console.error(
-        `Open this URL to authorize MCP access:
-${authorizationUrl.toString()}`
-      );
-    });
-  }
-  options;
-  clientMetadataUrl;
-  store;
-  redirectHandler;
-  get redirectUrl() {
-    return this.options.redirectUrl;
-  }
-  get clientMetadata() {
-    return this.options.clientMetadata;
-  }
-  get statePath() {
-    return this.options.statePath;
-  }
-  async state() {
-    const state = randomBytes(16).toString("hex");
-    await this.store.update((current) => ({ ...current, lastState: state }));
-    return state;
-  }
-  async savedState() {
-    return this.store.read();
-  }
-  async expectedState() {
-    return (await this.store.read()).lastState;
-  }
-  async clientInformation() {
-    return (await this.store.read()).clientInformation;
-  }
-  async saveClientInformation(clientInformation) {
-    await this.store.update((current) => ({ ...current, clientInformation }));
-  }
-  async tokens() {
-    return (await this.store.read()).tokens;
-  }
-  async saveTokens(tokens) {
-    await this.store.update((current) => ({ ...current, tokens }));
-  }
-  async redirectToAuthorization(authorizationUrl) {
-    await this.redirectHandler(authorizationUrl);
-  }
-  async saveCodeVerifier(codeVerifier) {
-    await this.store.update((current) => ({ ...current, codeVerifier }));
-  }
-  async codeVerifier() {
-    const codeVerifier = (await this.store.read()).codeVerifier;
-    if (!codeVerifier) {
-      throw new Error("No OAuth code verifier is saved.");
-    }
-    return codeVerifier;
-  }
-  async saveDiscoveryState(discoveryState) {
-    await this.store.update((current) => ({ ...current, discoveryState }));
-  }
-  async discoveryState() {
-    return (await this.store.read()).discoveryState;
-  }
-  async invalidateCredentials(scope) {
-    if (scope === "all") {
-      await this.store.clear();
-      return;
-    }
-    await this.store.update((current) => {
-      const next = { ...current };
-      if (scope === "client") {
-        delete next.clientInformation;
-      }
-      if (scope === "tokens") {
-        delete next.tokens;
-      }
-      if (scope === "verifier") {
-        delete next.codeVerifier;
-        delete next.lastState;
-      }
-      if (scope === "discovery") {
-        delete next.discoveryState;
-      }
-      return next;
-    });
-  }
-};
-
-// src/oauth-callback.ts
-import { createServer } from "node:http";
-import { URL as URL2 } from "node:url";
-var CLOSED_BEFORE_AUTHORIZATION_MESSAGE = "OAuth callback server was closed before authorization completed.";
-function sendHtml(response, status, title, body) {
-  response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
-  response.end(
-    `<!doctype html><html><head><title>${title}</title></head><body><h1>${title}</h1><p>${body}</p></body></html>`
-  );
-}
-async function closeServer(server) {
-  if (!server.listening) {
-    return;
-  }
-  await new Promise((resolve3, reject) => {
-    server.close((error2) => error2 ? reject(error2) : resolve3());
-  });
-}
-async function startOAuthCallbackServer(options) {
-  const callbackUrl = `http://${options.host}:${options.port}${options.path}`;
-  let timeout;
-  let settled = false;
-  let closePromise;
-  let resolveCode;
-  let rejectCode;
-  const codePromise = new Promise((resolve3, reject) => {
-    resolveCode = resolve3;
-    rejectCode = reject;
-  });
-  codePromise.catch(() => void 0);
-  const server = createServer(async (request, response) => {
-    try {
-      const url2 = new URL2(request.url ?? "/", callbackUrl);
-      if (url2.pathname !== options.path) {
-        response.writeHead(404);
-        response.end("Not found");
-        return;
-      }
-      const error2 = url2.searchParams.get("error");
-      if (error2) {
-        const description = url2.searchParams.get("error_description");
-        const message = description ? `${error2}: ${description}` : error2;
-        sendHtml(response, 400, "Authorization failed", message);
-        settleWithError(new Error(`OAuth authorization failed: ${message}`));
-        return;
-      }
-      const code = url2.searchParams.get("code");
-      if (!code) {
-        sendHtml(response, 400, "Authorization failed", "Missing authorization code.");
-        settleWithError(new Error("OAuth callback did not include a code."));
-        return;
-      }
-      const expectedState = await options.getExpectedState?.();
-      const receivedState = url2.searchParams.get("state") ?? void 0;
-      if (expectedState && receivedState !== expectedState) {
-        sendHtml(response, 400, "Authorization failed", "OAuth state mismatch.");
-        settleWithError(
-          new Error("OAuth callback state did not match the saved state.")
-        );
-        return;
-      }
-      sendHtml(
-        response,
-        200,
-        "Authorization complete",
-        "You can close this window and return to the terminal."
-      );
-      settleWithCode(code);
-    } catch (error2) {
-      if (!settled) {
-        if (!response.headersSent) {
-          sendHtml(response, 500, "Authorization failed", "Internal callback error.");
-        }
-        settleWithError(asError(error2));
-      }
-    }
-  });
-  const clearAuthTimeout = () => {
-    if (timeout) {
-      clearTimeout(timeout);
-      timeout = void 0;
-    }
-  };
-  const requestClose = () => {
-    closePromise ??= closeServer(server);
-    return closePromise;
-  };
-  const settleWithCode = (code) => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    clearAuthTimeout();
-    resolveCode(code);
-    requestClose().catch(() => void 0);
-  };
-  const settleWithError = (error2) => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    clearAuthTimeout();
-    rejectCode(error2);
-    requestClose().catch(() => void 0);
-  };
-  await new Promise((resolve3, reject) => {
-    server.once("error", reject);
-    server.listen(options.port, options.host, () => {
-      server.off("error", reject);
-      resolve3();
-    });
-  });
-  timeout = setTimeout(() => {
-    settleWithError(new Error("Timed out waiting for OAuth callback."));
-  }, options.timeoutMs);
-  return {
-    url: callbackUrl,
-    waitForCode: () => codePromise,
-    close: async () => {
-      if (!settled) {
-        settleWithError(new Error(CLOSED_BEFORE_AUTHORIZATION_MESSAGE));
-      } else {
-        clearAuthTimeout();
-      }
-      await requestClose();
-    }
-  };
-}
-function asError(error2) {
-  return error2 instanceof Error ? error2 : new Error(String(error2));
-}
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
+import process3 from "node:process";
 
 // node_modules/zod/v4/core/core.js
 var _a;
@@ -11635,69 +11266,6 @@ var optionalProcessor = (schema, ctx, _json, params) => {
   seen.ref = def.innerType;
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
-function isZ4Schema(s) {
-  const schema = s;
-  return !!schema._zod;
-}
-function safeParse2(schema, data) {
-  if (isZ4Schema(schema)) {
-    const result2 = safeParse(schema, data);
-    return result2;
-  }
-  const v3Schema = schema;
-  const result = v3Schema.safeParse(data);
-  return result;
-}
-function getObjectShape(schema) {
-  if (!schema)
-    return void 0;
-  let rawShape;
-  if (isZ4Schema(schema)) {
-    const v4Schema = schema;
-    rawShape = v4Schema._zod?.def?.shape;
-  } else {
-    const v3Schema = schema;
-    rawShape = v3Schema.shape;
-  }
-  if (!rawShape)
-    return void 0;
-  if (typeof rawShape === "function") {
-    try {
-      return rawShape();
-    } catch {
-      return void 0;
-    }
-  }
-  return rawShape;
-}
-function getLiteralValue(schema) {
-  if (isZ4Schema(schema)) {
-    const v4Schema = schema;
-    const def2 = v4Schema._zod?.def;
-    if (def2) {
-      if (def2.value !== void 0)
-        return def2.value;
-      if (Array.isArray(def2.values) && def2.values.length > 0) {
-        return def2.values[0];
-      }
-    }
-  }
-  const v3Schema = schema;
-  const def = v3Schema._def;
-  if (def) {
-    if (def.value !== void 0)
-      return def.value;
-    if (Array.isArray(def.values) && def.values.length > 0) {
-      return def.values[0];
-    }
-  }
-  const directValue = schema.value;
-  if (directValue !== void 0)
-    return directValue;
-  return void 0;
-}
-
 // node_modules/zod/v4/classic/iso.js
 var iso_exports = {};
 __export(iso_exports, {
@@ -11781,16 +11349,16 @@ var ZodRealError = /* @__PURE__ */ $constructor("ZodError", initializer2, {
 // node_modules/zod/v4/classic/parse.js
 var parse2 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
-var safeParse3 = /* @__PURE__ */ _safeParse(ZodRealError);
+var safeParse2 = /* @__PURE__ */ _safeParse(ZodRealError);
 var safeParseAsync2 = /* @__PURE__ */ _safeParseAsync(ZodRealError);
-var encode2 = /* @__PURE__ */ _encode(ZodRealError);
-var decode2 = /* @__PURE__ */ _decode(ZodRealError);
-var encodeAsync2 = /* @__PURE__ */ _encodeAsync(ZodRealError);
-var decodeAsync2 = /* @__PURE__ */ _decodeAsync(ZodRealError);
-var safeEncode2 = /* @__PURE__ */ _safeEncode(ZodRealError);
-var safeDecode2 = /* @__PURE__ */ _safeDecode(ZodRealError);
-var safeEncodeAsync2 = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
-var safeDecodeAsync2 = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
+var encode = /* @__PURE__ */ _encode(ZodRealError);
+var decode = /* @__PURE__ */ _decode(ZodRealError);
+var encodeAsync = /* @__PURE__ */ _encodeAsync(ZodRealError);
+var decodeAsync = /* @__PURE__ */ _decodeAsync(ZodRealError);
+var safeEncode = /* @__PURE__ */ _safeEncode(ZodRealError);
+var safeDecode = /* @__PURE__ */ _safeDecode(ZodRealError);
+var safeEncodeAsync = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
+var safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
 
 // node_modules/zod/v4/classic/schemas.js
 var _installedGroups = /* @__PURE__ */ new WeakMap();
@@ -11843,18 +11411,18 @@ var ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
   inst.type = def.type;
   Object.defineProperty(inst, "_def", { value: def });
   inst.parse = (data, params) => parse2(inst, data, params, { callee: inst.parse });
-  inst.safeParse = (data, params) => safeParse3(inst, data, params);
+  inst.safeParse = (data, params) => safeParse2(inst, data, params);
   inst.parseAsync = async (data, params) => parseAsync2(inst, data, params, { callee: inst.parseAsync });
   inst.safeParseAsync = async (data, params) => safeParseAsync2(inst, data, params);
   inst.spa = inst.safeParseAsync;
-  inst.encode = (data, params) => encode2(inst, data, params);
-  inst.decode = (data, params) => decode2(inst, data, params);
-  inst.encodeAsync = async (data, params) => encodeAsync2(inst, data, params);
-  inst.decodeAsync = async (data, params) => decodeAsync2(inst, data, params);
-  inst.safeEncode = (data, params) => safeEncode2(inst, data, params);
-  inst.safeDecode = (data, params) => safeDecode2(inst, data, params);
-  inst.safeEncodeAsync = async (data, params) => safeEncodeAsync2(inst, data, params);
-  inst.safeDecodeAsync = async (data, params) => safeDecodeAsync2(inst, data, params);
+  inst.encode = (data, params) => encode(inst, data, params);
+  inst.decode = (data, params) => decode(inst, data, params);
+  inst.encodeAsync = async (data, params) => encodeAsync(inst, data, params);
+  inst.decodeAsync = async (data, params) => decodeAsync(inst, data, params);
+  inst.safeEncode = (data, params) => safeEncode(inst, data, params);
+  inst.safeDecode = (data, params) => safeDecode(inst, data, params);
+  inst.safeEncodeAsync = async (data, params) => safeEncodeAsync(inst, data, params);
+  inst.safeDecodeAsync = async (data, params) => safeDecodeAsync(inst, data, params);
   _installLazyMethods(inst, "ZodType", {
     check(...chks) {
       const def2 = this.def;
@@ -12347,7 +11915,7 @@ var ZodObject = /* @__PURE__ */ $constructor("ZodObject", (inst, def) => {
     }
   });
 });
-function object2(shape, params) {
+function object(shape, params) {
   const def = {
     type: "object",
     shape: shape ?? {},
@@ -12741,10 +12309,10 @@ var TaskCreationParamsSchema = looseObject({
    */
   pollInterval: number2().optional()
 });
-var TaskMetadataSchema = object2({
+var TaskMetadataSchema = object({
   ttl: number2().optional()
 });
-var RelatedTaskMetadataSchema = object2({
+var RelatedTaskMetadataSchema = object({
   taskId: string2()
 });
 var RequestMetaSchema = looseObject({
@@ -12757,7 +12325,7 @@ var RequestMetaSchema = looseObject({
    */
   [RELATED_TASK_META_KEY]: RelatedTaskMetadataSchema.optional()
 });
-var BaseRequestParamsSchema = object2({
+var BaseRequestParamsSchema = object({
   /**
    * See [General fields: `_meta`](/specification/draft/basic/index#meta) for notes on `_meta` usage.
    */
@@ -12775,18 +12343,18 @@ var TaskAugmentedRequestParamsSchema = BaseRequestParamsSchema.extend({
   task: TaskMetadataSchema.optional()
 });
 var isTaskAugmentedRequestParams = (value) => TaskAugmentedRequestParamsSchema.safeParse(value).success;
-var RequestSchema = object2({
+var RequestSchema = object({
   method: string2(),
   params: BaseRequestParamsSchema.loose().optional()
 });
-var NotificationsParamsSchema = object2({
+var NotificationsParamsSchema = object({
   /**
    * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
    * for notes on _meta usage.
    */
   _meta: RequestMetaSchema.optional()
 });
-var NotificationSchema = object2({
+var NotificationSchema = object({
   method: string2(),
   params: NotificationsParamsSchema.loose().optional()
 });
@@ -12798,18 +12366,18 @@ var ResultSchema = looseObject({
   _meta: RequestMetaSchema.optional()
 });
 var RequestIdSchema = union([string2(), number2().int()]);
-var JSONRPCRequestSchema = object2({
+var JSONRPCRequestSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   id: RequestIdSchema,
   ...RequestSchema.shape
 }).strict();
 var isJSONRPCRequest = (value) => JSONRPCRequestSchema.safeParse(value).success;
-var JSONRPCNotificationSchema = object2({
+var JSONRPCNotificationSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   ...NotificationSchema.shape
 }).strict();
 var isJSONRPCNotification = (value) => JSONRPCNotificationSchema.safeParse(value).success;
-var JSONRPCResultResponseSchema = object2({
+var JSONRPCResultResponseSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   id: RequestIdSchema,
   result: ResultSchema
@@ -12826,10 +12394,10 @@ var ErrorCode;
   ErrorCode2[ErrorCode2["InternalError"] = -32603] = "InternalError";
   ErrorCode2[ErrorCode2["UrlElicitationRequired"] = -32042] = "UrlElicitationRequired";
 })(ErrorCode || (ErrorCode = {}));
-var JSONRPCErrorResponseSchema = object2({
+var JSONRPCErrorResponseSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   id: RequestIdSchema.optional(),
-  error: object2({
+  error: object({
     /**
      * The error type that occurred.
      */
@@ -12869,7 +12437,7 @@ var CancelledNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/cancelled"),
   params: CancelledNotificationParamsSchema
 });
-var IconSchema = object2({
+var IconSchema = object({
   /**
    * URL or data URI for the icon.
    */
@@ -12894,7 +12462,7 @@ var IconSchema = object2({
    */
   theme: _enum(["light", "dark"]).optional()
 });
-var IconsSchema = object2({
+var IconsSchema = object({
   /**
    * Optional set of sized icons that the client can display in a user interface.
    *
@@ -12908,7 +12476,7 @@ var IconsSchema = object2({
    */
   icons: array(IconSchema).optional()
 });
-var BaseMetadataSchema = object2({
+var BaseMetadataSchema = object({
   /** Intended for programmatic or logical use, but used as a display name in past specs or fallback */
   name: string2(),
   /**
@@ -12938,7 +12506,7 @@ var ImplementationSchema = BaseMetadataSchema.extend({
    */
   description: string2().optional()
 });
-var FormElicitationCapabilitySchema = intersection(object2({
+var FormElicitationCapabilitySchema = intersection(object({
   applyDefaults: boolean2().optional()
 }), record(string2(), unknown()));
 var ElicitationCapabilitySchema = preprocess((value) => {
@@ -12948,7 +12516,7 @@ var ElicitationCapabilitySchema = preprocess((value) => {
     }
   }
   return value;
-}, intersection(object2({
+}, intersection(object({
   form: FormElicitationCapabilitySchema.optional(),
   url: AssertObjectSchema.optional()
 }), record(string2(), unknown()).optional()));
@@ -13000,7 +12568,7 @@ var ServerTasksCapabilitySchema = looseObject({
     }).optional()
   }).optional()
 });
-var ClientCapabilitiesSchema = object2({
+var ClientCapabilitiesSchema = object({
   /**
    * Experimental, non-standard capabilities that the client supports.
    */
@@ -13008,7 +12576,7 @@ var ClientCapabilitiesSchema = object2({
   /**
    * Present if the client supports sampling from an LLM.
    */
-  sampling: object2({
+  sampling: object({
     /**
      * Present if the client supports context inclusion via includeContext parameter.
      * If not declared, servers SHOULD only use `includeContext: "none"` (or omit it).
@@ -13026,7 +12594,7 @@ var ClientCapabilitiesSchema = object2({
   /**
    * Present if the client supports listing roots.
    */
-  roots: object2({
+  roots: object({
     /**
      * Whether the client supports issuing notifications for changes to the roots list.
      */
@@ -13053,7 +12621,7 @@ var InitializeRequestSchema = RequestSchema.extend({
   method: literal("initialize"),
   params: InitializeRequestParamsSchema
 });
-var ServerCapabilitiesSchema = object2({
+var ServerCapabilitiesSchema = object({
   /**
    * Experimental, non-standard capabilities that the server supports.
    */
@@ -13069,7 +12637,7 @@ var ServerCapabilitiesSchema = object2({
   /**
    * Present if the server offers any prompt templates.
    */
-  prompts: object2({
+  prompts: object({
     /**
      * Whether this server supports issuing notifications for changes to the prompt list.
      */
@@ -13078,7 +12646,7 @@ var ServerCapabilitiesSchema = object2({
   /**
    * Present if the server offers any resources to read.
    */
-  resources: object2({
+  resources: object({
     /**
      * Whether this server supports clients subscribing to resource updates.
      */
@@ -13091,7 +12659,7 @@ var ServerCapabilitiesSchema = object2({
   /**
    * Present if the server offers any tools to call.
    */
-  tools: object2({
+  tools: object({
     /**
      * Whether this server supports issuing notifications for changes to the tool list.
      */
@@ -13129,7 +12697,7 @@ var PingRequestSchema = RequestSchema.extend({
   method: literal("ping"),
   params: BaseRequestParamsSchema.optional()
 });
-var ProgressSchema = object2({
+var ProgressSchema = object({
   /**
    * The progress thus far. This should increase every time progress is made, even if the total is unknown.
    */
@@ -13143,7 +12711,7 @@ var ProgressSchema = object2({
    */
   message: optional(string2())
 });
-var ProgressNotificationParamsSchema = object2({
+var ProgressNotificationParamsSchema = object({
   ...NotificationsParamsSchema.shape,
   ...ProgressSchema.shape,
   /**
@@ -13173,7 +12741,7 @@ var PaginatedResultSchema = ResultSchema.extend({
   nextCursor: CursorSchema.optional()
 });
 var TaskStatusSchema = _enum(["working", "input_required", "completed", "failed", "cancelled"]);
-var TaskSchema = object2({
+var TaskSchema = object({
   taskId: string2(),
   status: TaskStatusSchema,
   /**
@@ -13230,7 +12798,7 @@ var CancelTaskRequestSchema = RequestSchema.extend({
   })
 });
 var CancelTaskResultSchema = ResultSchema.merge(TaskSchema);
-var ResourceContentsSchema = object2({
+var ResourceContentsSchema = object({
   /**
    * The URI of this resource.
    */
@@ -13266,7 +12834,7 @@ var BlobResourceContentsSchema = ResourceContentsSchema.extend({
   blob: Base64Schema
 });
 var RoleSchema = _enum(["user", "assistant"]);
-var AnnotationsSchema = object2({
+var AnnotationsSchema = object({
   /**
    * Intended audience(s) for the resource.
    */
@@ -13280,7 +12848,7 @@ var AnnotationsSchema = object2({
    */
   lastModified: iso_exports.datetime({ offset: true }).optional()
 });
-var ResourceSchema = object2({
+var ResourceSchema = object({
   ...BaseMetadataSchema.shape,
   ...IconsSchema.shape,
   /**
@@ -13313,7 +12881,7 @@ var ResourceSchema = object2({
    */
   _meta: optional(looseObject({}))
 });
-var ResourceTemplateSchema = object2({
+var ResourceTemplateSchema = object({
   ...BaseMetadataSchema.shape,
   ...IconsSchema.shape,
   /**
@@ -13392,7 +12960,7 @@ var ResourceUpdatedNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/resources/updated"),
   params: ResourceUpdatedNotificationParamsSchema
 });
-var PromptArgumentSchema = object2({
+var PromptArgumentSchema = object({
   /**
    * The name of the argument.
    */
@@ -13406,7 +12974,7 @@ var PromptArgumentSchema = object2({
    */
   required: optional(boolean2())
 });
-var PromptSchema = object2({
+var PromptSchema = object({
   ...BaseMetadataSchema.shape,
   ...IconsSchema.shape,
   /**
@@ -13443,7 +13011,7 @@ var GetPromptRequestSchema = RequestSchema.extend({
   method: literal("prompts/get"),
   params: GetPromptRequestParamsSchema
 });
-var TextContentSchema = object2({
+var TextContentSchema = object({
   type: literal("text"),
   /**
    * The text content of the message.
@@ -13459,7 +13027,7 @@ var TextContentSchema = object2({
    */
   _meta: record(string2(), unknown()).optional()
 });
-var ImageContentSchema = object2({
+var ImageContentSchema = object({
   type: literal("image"),
   /**
    * The base64-encoded image data.
@@ -13479,7 +13047,7 @@ var ImageContentSchema = object2({
    */
   _meta: record(string2(), unknown()).optional()
 });
-var AudioContentSchema = object2({
+var AudioContentSchema = object({
   type: literal("audio"),
   /**
    * The base64-encoded audio data.
@@ -13499,7 +13067,7 @@ var AudioContentSchema = object2({
    */
   _meta: record(string2(), unknown()).optional()
 });
-var ToolUseContentSchema = object2({
+var ToolUseContentSchema = object({
   type: literal("tool_use"),
   /**
    * The name of the tool to invoke.
@@ -13522,7 +13090,7 @@ var ToolUseContentSchema = object2({
    */
   _meta: record(string2(), unknown()).optional()
 });
-var EmbeddedResourceSchema = object2({
+var EmbeddedResourceSchema = object({
   type: literal("resource"),
   resource: union([TextResourceContentsSchema, BlobResourceContentsSchema]),
   /**
@@ -13545,7 +13113,7 @@ var ContentBlockSchema = union([
   ResourceLinkSchema,
   EmbeddedResourceSchema
 ]);
-var PromptMessageSchema = object2({
+var PromptMessageSchema = object({
   role: RoleSchema,
   content: ContentBlockSchema
 });
@@ -13560,7 +13128,7 @@ var PromptListChangedNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/prompts/list_changed"),
   params: NotificationsParamsSchema.optional()
 });
-var ToolAnnotationsSchema = object2({
+var ToolAnnotationsSchema = object({
   /**
    * A human-readable title for the tool.
    */
@@ -13599,7 +13167,7 @@ var ToolAnnotationsSchema = object2({
    */
   openWorldHint: boolean2().optional()
 });
-var ToolExecutionSchema = object2({
+var ToolExecutionSchema = object({
   /**
    * Indicates the tool's preference for task-augmented execution.
    * - "required": Clients MUST invoke the tool as a task
@@ -13610,7 +13178,7 @@ var ToolExecutionSchema = object2({
    */
   taskSupport: _enum(["required", "optional", "forbidden"]).optional()
 });
-var ToolSchema = object2({
+var ToolSchema = object({
   ...BaseMetadataSchema.shape,
   ...IconsSchema.shape,
   /**
@@ -13621,7 +13189,7 @@ var ToolSchema = object2({
    * A JSON Schema 2020-12 object defining the expected parameters for the tool.
    * Must have type: 'object' at the root level per MCP spec.
    */
-  inputSchema: object2({
+  inputSchema: object({
     type: literal("object"),
     properties: record(string2(), AssertObjectSchema).optional(),
     required: array(string2()).optional()
@@ -13631,7 +13199,7 @@ var ToolSchema = object2({
    * returned in the structuredContent field of a CallToolResult.
    * Must have type: 'object' at the root level per MCP spec.
    */
-  outputSchema: object2({
+  outputSchema: object({
     type: literal("object"),
     properties: record(string2(), AssertObjectSchema).optional(),
     required: array(string2()).optional()
@@ -13707,7 +13275,7 @@ var ToolListChangedNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/tools/list_changed"),
   params: NotificationsParamsSchema.optional()
 });
-var ListChangedOptionsBaseSchema = object2({
+var ListChangedOptionsBaseSchema = object({
   /**
    * If true, the list will be refreshed automatically when a list changed notification is received.
    * The callback will be called with the updated list.
@@ -13756,13 +13324,13 @@ var LoggingMessageNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/message"),
   params: LoggingMessageNotificationParamsSchema
 });
-var ModelHintSchema = object2({
+var ModelHintSchema = object({
   /**
    * A hint for a model name.
    */
   name: string2().optional()
 });
-var ModelPreferencesSchema = object2({
+var ModelPreferencesSchema = object({
   /**
    * Optional hints to use for model selection.
    */
@@ -13780,7 +13348,7 @@ var ModelPreferencesSchema = object2({
    */
   intelligencePriority: number2().min(0).max(1).optional()
 });
-var ToolChoiceSchema = object2({
+var ToolChoiceSchema = object({
   /**
    * Controls when tools are used:
    * - "auto": Model decides whether to use tools (default)
@@ -13789,11 +13357,11 @@ var ToolChoiceSchema = object2({
    */
   mode: _enum(["auto", "required", "none"]).optional()
 });
-var ToolResultContentSchema = object2({
+var ToolResultContentSchema = object({
   type: literal("tool_result"),
   toolUseId: string2().describe("The unique identifier for the corresponding tool call."),
   content: array(ContentBlockSchema).default([]),
-  structuredContent: object2({}).loose().optional(),
+  structuredContent: object({}).loose().optional(),
   isError: boolean2().optional(),
   /**
    * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
@@ -13809,7 +13377,7 @@ var SamplingMessageContentBlockSchema = discriminatedUnion("type", [
   ToolUseContentSchema,
   ToolResultContentSchema
 ]);
-var SamplingMessageSchema = object2({
+var SamplingMessageSchema = object({
   role: RoleSchema,
   content: union([SamplingMessageContentBlockSchema, array(SamplingMessageContentBlockSchema)]),
   /**
@@ -13909,13 +13477,13 @@ var CreateMessageResultWithToolsSchema = ResultSchema.extend({
    */
   content: union([SamplingMessageContentBlockSchema, array(SamplingMessageContentBlockSchema)])
 });
-var BooleanSchemaSchema = object2({
+var BooleanSchemaSchema = object({
   type: literal("boolean"),
   title: string2().optional(),
   description: string2().optional(),
   default: boolean2().optional()
 });
-var StringSchemaSchema = object2({
+var StringSchemaSchema = object({
   type: literal("string"),
   title: string2().optional(),
   description: string2().optional(),
@@ -13924,7 +13492,7 @@ var StringSchemaSchema = object2({
   format: _enum(["email", "uri", "date", "date-time"]).optional(),
   default: string2().optional()
 });
-var NumberSchemaSchema = object2({
+var NumberSchemaSchema = object({
   type: _enum(["number", "integer"]),
   title: string2().optional(),
   description: string2().optional(),
@@ -13932,24 +13500,24 @@ var NumberSchemaSchema = object2({
   maximum: number2().optional(),
   default: number2().optional()
 });
-var UntitledSingleSelectEnumSchemaSchema = object2({
+var UntitledSingleSelectEnumSchemaSchema = object({
   type: literal("string"),
   title: string2().optional(),
   description: string2().optional(),
   enum: array(string2()),
   default: string2().optional()
 });
-var TitledSingleSelectEnumSchemaSchema = object2({
+var TitledSingleSelectEnumSchemaSchema = object({
   type: literal("string"),
   title: string2().optional(),
   description: string2().optional(),
-  oneOf: array(object2({
+  oneOf: array(object({
     const: string2(),
     title: string2()
   })),
   default: string2().optional()
 });
-var LegacyTitledEnumSchemaSchema = object2({
+var LegacyTitledEnumSchemaSchema = object({
   type: literal("string"),
   title: string2().optional(),
   description: string2().optional(),
@@ -13958,26 +13526,26 @@ var LegacyTitledEnumSchemaSchema = object2({
   default: string2().optional()
 });
 var SingleSelectEnumSchemaSchema = union([UntitledSingleSelectEnumSchemaSchema, TitledSingleSelectEnumSchemaSchema]);
-var UntitledMultiSelectEnumSchemaSchema = object2({
+var UntitledMultiSelectEnumSchemaSchema = object({
   type: literal("array"),
   title: string2().optional(),
   description: string2().optional(),
   minItems: number2().optional(),
   maxItems: number2().optional(),
-  items: object2({
+  items: object({
     type: literal("string"),
     enum: array(string2())
   }),
   default: array(string2()).optional()
 });
-var TitledMultiSelectEnumSchemaSchema = object2({
+var TitledMultiSelectEnumSchemaSchema = object({
   type: literal("array"),
   title: string2().optional(),
   description: string2().optional(),
   minItems: number2().optional(),
   maxItems: number2().optional(),
-  items: object2({
-    anyOf: array(object2({
+  items: object({
+    anyOf: array(object({
       const: string2(),
       title: string2()
     }))
@@ -14002,7 +13570,7 @@ var ElicitRequestFormParamsSchema = TaskAugmentedRequestParamsSchema.extend({
    * A restricted subset of JSON Schema.
    * Only top-level properties are allowed, without nesting.
    */
-  requestedSchema: object2({
+  requestedSchema: object({
     type: literal("object"),
     properties: record(string2(), PrimitiveSchemaDefinitionSchema),
     required: array(string2()).optional()
@@ -14058,14 +13626,14 @@ var ElicitResultSchema = ResultSchema.extend({
    */
   content: preprocess((val) => val === null ? void 0 : val, record(string2(), union([string2(), number2(), boolean2(), array(string2())])).optional())
 });
-var ResourceTemplateReferenceSchema = object2({
+var ResourceTemplateReferenceSchema = object({
   type: literal("ref/resource"),
   /**
    * The URI or URI template of the resource.
    */
   uri: string2()
 });
-var PromptReferenceSchema = object2({
+var PromptReferenceSchema = object({
   type: literal("ref/prompt"),
   /**
    * The name of the prompt or prompt template
@@ -14077,7 +13645,7 @@ var CompleteRequestParamsSchema = BaseRequestParamsSchema.extend({
   /**
    * The argument's information
    */
-  argument: object2({
+  argument: object({
     /**
      * The name of the argument
      */
@@ -14087,7 +13655,7 @@ var CompleteRequestParamsSchema = BaseRequestParamsSchema.extend({
      */
     value: string2()
   }),
-  context: object2({
+  context: object({
     /**
      * Previously-resolved variables in a URI template or prompt.
      */
@@ -14114,7 +13682,7 @@ var CompleteResultSchema = ResultSchema.extend({
     hasMore: optional(boolean2())
   })
 });
-var RootSchema = object2({
+var RootSchema = object({
   /**
    * The URI identifying the root. This *must* start with file:// for now.
    */
@@ -14243,6 +13811,162 @@ var UrlElicitationRequiredError = class extends McpError {
   }
 };
 
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
+var ReadBuffer = class {
+  append(chunk) {
+    this._buffer = this._buffer ? Buffer.concat([this._buffer, chunk]) : chunk;
+  }
+  readMessage() {
+    if (!this._buffer) {
+      return null;
+    }
+    const index = this._buffer.indexOf("\n");
+    if (index === -1) {
+      return null;
+    }
+    const line = this._buffer.toString("utf8", 0, index).replace(/\r$/, "");
+    this._buffer = this._buffer.subarray(index + 1);
+    return deserializeMessage(line);
+  }
+  clear() {
+    this._buffer = void 0;
+  }
+};
+function deserializeMessage(line) {
+  return JSONRPCMessageSchema.parse(JSON.parse(line));
+}
+function serializeMessage(message) {
+  return JSON.stringify(message) + "\n";
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
+var StdioServerTransport = class {
+  constructor(_stdin = process3.stdin, _stdout = process3.stdout) {
+    this._stdin = _stdin;
+    this._stdout = _stdout;
+    this._readBuffer = new ReadBuffer();
+    this._started = false;
+    this._ondata = (chunk) => {
+      this._readBuffer.append(chunk);
+      this.processReadBuffer();
+    };
+    this._onerror = (error2) => {
+      this.onerror?.(error2);
+    };
+  }
+  /**
+   * Starts listening for messages on stdin.
+   */
+  async start() {
+    if (this._started) {
+      throw new Error("StdioServerTransport already started! If using Server class, note that connect() calls start() automatically.");
+    }
+    this._started = true;
+    this._stdin.on("data", this._ondata);
+    this._stdin.on("error", this._onerror);
+  }
+  processReadBuffer() {
+    while (true) {
+      try {
+        const message = this._readBuffer.readMessage();
+        if (message === null) {
+          break;
+        }
+        this.onmessage?.(message);
+      } catch (error2) {
+        this.onerror?.(error2);
+      }
+    }
+  }
+  async close() {
+    this._stdin.off("data", this._ondata);
+    this._stdin.off("error", this._onerror);
+    const remainingDataListeners = this._stdin.listenerCount("data");
+    if (remainingDataListeners === 0) {
+      this._stdin.pause();
+    }
+    this._readBuffer.clear();
+    this.onclose?.();
+  }
+  send(message) {
+    return new Promise((resolve4) => {
+      const json = serializeMessage(message);
+      if (this._stdout.write(json)) {
+        resolve4();
+      } else {
+        this._stdout.once("drain", resolve4);
+      }
+    });
+  }
+};
+
+// src/cli.ts
+import { resolve as resolve3 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
+function isZ4Schema(s) {
+  const schema = s;
+  return !!schema._zod;
+}
+function safeParse3(schema, data) {
+  if (isZ4Schema(schema)) {
+    const result2 = safeParse(schema, data);
+    return result2;
+  }
+  const v3Schema = schema;
+  const result = v3Schema.safeParse(data);
+  return result;
+}
+function getObjectShape(schema) {
+  if (!schema)
+    return void 0;
+  let rawShape;
+  if (isZ4Schema(schema)) {
+    const v4Schema = schema;
+    rawShape = v4Schema._zod?.def?.shape;
+  } else {
+    const v3Schema = schema;
+    rawShape = v3Schema.shape;
+  }
+  if (!rawShape)
+    return void 0;
+  if (typeof rawShape === "function") {
+    try {
+      return rawShape();
+    } catch {
+      return void 0;
+    }
+  }
+  return rawShape;
+}
+function getLiteralValue(schema) {
+  if (isZ4Schema(schema)) {
+    const v4Schema = schema;
+    const def2 = v4Schema._zod?.def;
+    if (def2) {
+      if (def2.value !== void 0)
+        return def2.value;
+      if (Array.isArray(def2.values) && def2.values.length > 0) {
+        return def2.values[0];
+      }
+    }
+  }
+  const v3Schema = schema;
+  const def = v3Schema._def;
+  if (def) {
+    if (def.value !== void 0)
+      return def.value;
+    if (Array.isArray(def.values) && def.values.length > 0) {
+      return def.values[0];
+    }
+  }
+  const directValue = schema.value;
+  if (directValue !== void 0)
+    return directValue;
+  return void 0;
+}
+
 // node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
 function isTerminal(status) {
   return status === "completed" || status === "failed" || status === "cancelled";
@@ -14265,7 +13989,7 @@ function getMethodLiteral(schema) {
   return value;
 }
 function parseWithCompat(schema, data) {
-  const result = safeParse2(schema, data);
+  const result = safeParse3(schema, data);
   if (!result.success) {
     throw result.error;
   }
@@ -14772,7 +14496,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -14789,7 +14513,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -14863,11 +14587,11 @@ var Protocol = class {
           return reject(response);
         }
         try {
-          const parseResult = safeParse2(resultSchema, response.result);
+          const parseResult = safeParse3(resultSchema, response.result);
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve3(parseResult.data);
+            resolve4(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -15128,12 +14852,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve3, interval);
+      const timeoutId = setTimeout(resolve4, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -15294,6 +15018,634 @@ var AjvJsonSchemaValidator = class {
   }
 };
 
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
+var ExperimentalServerTasks = class {
+  constructor(_server) {
+    this._server = _server;
+  }
+  /**
+   * Sends a request and returns an AsyncGenerator that yields response messages.
+   * The generator is guaranteed to end with either a 'result' or 'error' message.
+   *
+   * This method provides streaming access to request processing, allowing you to
+   * observe intermediate task status updates for task-augmented requests.
+   *
+   * @param request - The request to send
+   * @param resultSchema - Zod schema for validating the result
+   * @param options - Optional request options (timeout, signal, task creation params, etc.)
+   * @returns AsyncGenerator that yields ResponseMessage objects
+   *
+   * @experimental
+   */
+  requestStream(request, resultSchema, options) {
+    return this._server.requestStream(request, resultSchema, options);
+  }
+  /**
+   * Sends a sampling request and returns an AsyncGenerator that yields response messages.
+   * The generator is guaranteed to end with either a 'result' or 'error' message.
+   *
+   * For task-augmented requests, yields 'taskCreated' and 'taskStatus' messages
+   * before the final result.
+   *
+   * @example
+   * ```typescript
+   * const stream = server.experimental.tasks.createMessageStream({
+   *     messages: [{ role: 'user', content: { type: 'text', text: 'Hello' } }],
+   *     maxTokens: 100
+   * }, {
+   *     onprogress: (progress) => {
+   *         // Handle streaming tokens via progress notifications
+   *         console.log('Progress:', progress.message);
+   *     }
+   * });
+   *
+   * for await (const message of stream) {
+   *     switch (message.type) {
+   *         case 'taskCreated':
+   *             console.log('Task created:', message.task.taskId);
+   *             break;
+   *         case 'taskStatus':
+   *             console.log('Task status:', message.task.status);
+   *             break;
+   *         case 'result':
+   *             console.log('Final result:', message.result);
+   *             break;
+   *         case 'error':
+   *             console.error('Error:', message.error);
+   *             break;
+   *     }
+   * }
+   * ```
+   *
+   * @param params - The sampling request parameters
+   * @param options - Optional request options (timeout, signal, task creation params, onprogress, etc.)
+   * @returns AsyncGenerator that yields ResponseMessage objects
+   *
+   * @experimental
+   */
+  createMessageStream(params, options) {
+    const clientCapabilities = this._server.getClientCapabilities();
+    if ((params.tools || params.toolChoice) && !clientCapabilities?.sampling?.tools) {
+      throw new Error("Client does not support sampling tools capability.");
+    }
+    if (params.messages.length > 0) {
+      const lastMessage = params.messages[params.messages.length - 1];
+      const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
+      const hasToolResults = lastContent.some((c) => c.type === "tool_result");
+      const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
+      const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
+      const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
+      if (hasToolResults) {
+        if (lastContent.some((c) => c.type !== "tool_result")) {
+          throw new Error("The last message must contain only tool_result content if any is present");
+        }
+        if (!hasPreviousToolUse) {
+          throw new Error("tool_result blocks are not matching any tool_use from the previous message");
+        }
+      }
+      if (hasPreviousToolUse) {
+        const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
+        const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
+        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+          throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
+        }
+      }
+    }
+    return this.requestStream({
+      method: "sampling/createMessage",
+      params
+    }, CreateMessageResultSchema, options);
+  }
+  /**
+   * Sends an elicitation request and returns an AsyncGenerator that yields response messages.
+   * The generator is guaranteed to end with either a 'result' or 'error' message.
+   *
+   * For task-augmented requests (especially URL-based elicitation), yields 'taskCreated'
+   * and 'taskStatus' messages before the final result.
+   *
+   * @example
+   * ```typescript
+   * const stream = server.experimental.tasks.elicitInputStream({
+   *     mode: 'url',
+   *     message: 'Please authenticate',
+   *     elicitationId: 'auth-123',
+   *     url: 'https://example.com/auth'
+   * }, {
+   *     task: { ttl: 300000 } // Task-augmented for long-running auth flow
+   * });
+   *
+   * for await (const message of stream) {
+   *     switch (message.type) {
+   *         case 'taskCreated':
+   *             console.log('Task created:', message.task.taskId);
+   *             break;
+   *         case 'taskStatus':
+   *             console.log('Task status:', message.task.status);
+   *             break;
+   *         case 'result':
+   *             console.log('User action:', message.result.action);
+   *             break;
+   *         case 'error':
+   *             console.error('Error:', message.error);
+   *             break;
+   *     }
+   * }
+   * ```
+   *
+   * @param params - The elicitation request parameters
+   * @param options - Optional request options (timeout, signal, task creation params, etc.)
+   * @returns AsyncGenerator that yields ResponseMessage objects
+   *
+   * @experimental
+   */
+  elicitInputStream(params, options) {
+    const clientCapabilities = this._server.getClientCapabilities();
+    const mode = params.mode ?? "form";
+    switch (mode) {
+      case "url": {
+        if (!clientCapabilities?.elicitation?.url) {
+          throw new Error("Client does not support url elicitation.");
+        }
+        break;
+      }
+      case "form": {
+        if (!clientCapabilities?.elicitation?.form) {
+          throw new Error("Client does not support form elicitation.");
+        }
+        break;
+      }
+    }
+    const normalizedParams = mode === "form" && params.mode === void 0 ? { ...params, mode: "form" } : params;
+    return this.requestStream({
+      method: "elicitation/create",
+      params: normalizedParams
+    }, ElicitResultSchema, options);
+  }
+  /**
+   * Gets the current status of a task.
+   *
+   * @param taskId - The task identifier
+   * @param options - Optional request options
+   * @returns The task status
+   *
+   * @experimental
+   */
+  async getTask(taskId, options) {
+    return this._server.getTask({ taskId }, options);
+  }
+  /**
+   * Retrieves the result of a completed task.
+   *
+   * @param taskId - The task identifier
+   * @param resultSchema - Zod schema for validating the result
+   * @param options - Optional request options
+   * @returns The task result
+   *
+   * @experimental
+   */
+  async getTaskResult(taskId, resultSchema, options) {
+    return this._server.getTaskResult({ taskId }, resultSchema, options);
+  }
+  /**
+   * Lists tasks with optional pagination.
+   *
+   * @param cursor - Optional pagination cursor
+   * @param options - Optional request options
+   * @returns List of tasks with optional next cursor
+   *
+   * @experimental
+   */
+  async listTasks(cursor, options) {
+    return this._server.listTasks(cursor ? { cursor } : void 0, options);
+  }
+  /**
+   * Cancels a running task.
+   *
+   * @param taskId - The task identifier
+   * @param options - Optional request options
+   *
+   * @experimental
+   */
+  async cancelTask(taskId, options) {
+    return this._server.cancelTask({ taskId }, options);
+  }
+};
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
+function assertToolsCallTaskCapability(requests, method, entityName) {
+  if (!requests) {
+    throw new Error(`${entityName} does not support task creation (required for ${method})`);
+  }
+  switch (method) {
+    case "tools/call":
+      if (!requests.tools?.call) {
+        throw new Error(`${entityName} does not support task creation for tools/call (required for ${method})`);
+      }
+      break;
+    default:
+      break;
+  }
+}
+function assertClientRequestTaskCapability(requests, method, entityName) {
+  if (!requests) {
+    throw new Error(`${entityName} does not support task creation (required for ${method})`);
+  }
+  switch (method) {
+    case "sampling/createMessage":
+      if (!requests.sampling?.createMessage) {
+        throw new Error(`${entityName} does not support task creation for sampling/createMessage (required for ${method})`);
+      }
+      break;
+    case "elicitation/create":
+      if (!requests.elicitation?.create) {
+        throw new Error(`${entityName} does not support task creation for elicitation/create (required for ${method})`);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
+var Server = class extends Protocol {
+  /**
+   * Initializes this server with the given name and version information.
+   */
+  constructor(_serverInfo, options) {
+    super(options);
+    this._serverInfo = _serverInfo;
+    this._loggingLevels = /* @__PURE__ */ new Map();
+    this.LOG_LEVEL_SEVERITY = new Map(LoggingLevelSchema.options.map((level, index) => [level, index]));
+    this.isMessageIgnored = (level, sessionId) => {
+      const currentLevel = this._loggingLevels.get(sessionId);
+      return currentLevel ? this.LOG_LEVEL_SEVERITY.get(level) < this.LOG_LEVEL_SEVERITY.get(currentLevel) : false;
+    };
+    this._capabilities = options?.capabilities ?? {};
+    this._instructions = options?.instructions;
+    this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
+    this.setRequestHandler(InitializeRequestSchema, (request) => this._oninitialize(request));
+    this.setNotificationHandler(InitializedNotificationSchema, () => this.oninitialized?.());
+    if (this._capabilities.logging) {
+      this.setRequestHandler(SetLevelRequestSchema, async (request, extra) => {
+        const transportSessionId = extra.sessionId || extra.requestInfo?.headers["mcp-session-id"] || void 0;
+        const { level } = request.params;
+        const parseResult = LoggingLevelSchema.safeParse(level);
+        if (parseResult.success) {
+          this._loggingLevels.set(transportSessionId, parseResult.data);
+        }
+        return {};
+      });
+    }
+  }
+  /**
+   * Access experimental features.
+   *
+   * WARNING: These APIs are experimental and may change without notice.
+   *
+   * @experimental
+   */
+  get experimental() {
+    if (!this._experimental) {
+      this._experimental = {
+        tasks: new ExperimentalServerTasks(this)
+      };
+    }
+    return this._experimental;
+  }
+  /**
+   * Registers new capabilities. This can only be called before connecting to a transport.
+   *
+   * The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
+   */
+  registerCapabilities(capabilities) {
+    if (this.transport) {
+      throw new Error("Cannot register capabilities after connecting to transport");
+    }
+    this._capabilities = mergeCapabilities(this._capabilities, capabilities);
+  }
+  /**
+   * Override request handler registration to enforce server-side validation for tools/call.
+   */
+  setRequestHandler(requestSchema, handler) {
+    const shape = getObjectShape(requestSchema);
+    const methodSchema = shape?.method;
+    if (!methodSchema) {
+      throw new Error("Schema is missing a method literal");
+    }
+    let methodValue;
+    if (isZ4Schema(methodSchema)) {
+      const v4Schema = methodSchema;
+      const v4Def = v4Schema._zod?.def;
+      methodValue = v4Def?.value ?? v4Schema.value;
+    } else {
+      const v3Schema = methodSchema;
+      const legacyDef = v3Schema._def;
+      methodValue = legacyDef?.value ?? v3Schema.value;
+    }
+    if (typeof methodValue !== "string") {
+      throw new Error("Schema method literal must be a string");
+    }
+    const method = methodValue;
+    if (method === "tools/call") {
+      const wrappedHandler = async (request, extra) => {
+        const validatedRequest = safeParse3(CallToolRequestSchema, request);
+        if (!validatedRequest.success) {
+          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
+        }
+        const { params } = validatedRequest.data;
+        const result = await Promise.resolve(handler(request, extra));
+        if (params.task) {
+          const taskValidationResult = safeParse3(CreateTaskResultSchema, result);
+          if (!taskValidationResult.success) {
+            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+          }
+          return taskValidationResult.data;
+        }
+        const validationResult = safeParse3(CallToolResultSchema, result);
+        if (!validationResult.success) {
+          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage}`);
+        }
+        return validationResult.data;
+      };
+      return super.setRequestHandler(requestSchema, wrappedHandler);
+    }
+    return super.setRequestHandler(requestSchema, handler);
+  }
+  assertCapabilityForMethod(method) {
+    switch (method) {
+      case "sampling/createMessage":
+        if (!this._clientCapabilities?.sampling) {
+          throw new Error(`Client does not support sampling (required for ${method})`);
+        }
+        break;
+      case "elicitation/create":
+        if (!this._clientCapabilities?.elicitation) {
+          throw new Error(`Client does not support elicitation (required for ${method})`);
+        }
+        break;
+      case "roots/list":
+        if (!this._clientCapabilities?.roots) {
+          throw new Error(`Client does not support listing roots (required for ${method})`);
+        }
+        break;
+      case "ping":
+        break;
+    }
+  }
+  assertNotificationCapability(method) {
+    switch (method) {
+      case "notifications/message":
+        if (!this._capabilities.logging) {
+          throw new Error(`Server does not support logging (required for ${method})`);
+        }
+        break;
+      case "notifications/resources/updated":
+      case "notifications/resources/list_changed":
+        if (!this._capabilities.resources) {
+          throw new Error(`Server does not support notifying about resources (required for ${method})`);
+        }
+        break;
+      case "notifications/tools/list_changed":
+        if (!this._capabilities.tools) {
+          throw new Error(`Server does not support notifying of tool list changes (required for ${method})`);
+        }
+        break;
+      case "notifications/prompts/list_changed":
+        if (!this._capabilities.prompts) {
+          throw new Error(`Server does not support notifying of prompt list changes (required for ${method})`);
+        }
+        break;
+      case "notifications/elicitation/complete":
+        if (!this._clientCapabilities?.elicitation?.url) {
+          throw new Error(`Client does not support URL elicitation (required for ${method})`);
+        }
+        break;
+      case "notifications/cancelled":
+        break;
+      case "notifications/progress":
+        break;
+    }
+  }
+  assertRequestHandlerCapability(method) {
+    if (!this._capabilities) {
+      return;
+    }
+    switch (method) {
+      case "completion/complete":
+        if (!this._capabilities.completions) {
+          throw new Error(`Server does not support completions (required for ${method})`);
+        }
+        break;
+      case "logging/setLevel":
+        if (!this._capabilities.logging) {
+          throw new Error(`Server does not support logging (required for ${method})`);
+        }
+        break;
+      case "prompts/get":
+      case "prompts/list":
+        if (!this._capabilities.prompts) {
+          throw new Error(`Server does not support prompts (required for ${method})`);
+        }
+        break;
+      case "resources/list":
+      case "resources/templates/list":
+      case "resources/read":
+        if (!this._capabilities.resources) {
+          throw new Error(`Server does not support resources (required for ${method})`);
+        }
+        break;
+      case "tools/call":
+      case "tools/list":
+        if (!this._capabilities.tools) {
+          throw new Error(`Server does not support tools (required for ${method})`);
+        }
+        break;
+      case "tasks/get":
+      case "tasks/list":
+      case "tasks/result":
+      case "tasks/cancel":
+        if (!this._capabilities.tasks) {
+          throw new Error(`Server does not support tasks capability (required for ${method})`);
+        }
+        break;
+      case "ping":
+      case "initialize":
+        break;
+    }
+  }
+  assertTaskCapability(method) {
+    assertClientRequestTaskCapability(this._clientCapabilities?.tasks?.requests, method, "Client");
+  }
+  assertTaskHandlerCapability(method) {
+    if (!this._capabilities) {
+      return;
+    }
+    assertToolsCallTaskCapability(this._capabilities.tasks?.requests, method, "Server");
+  }
+  async _oninitialize(request) {
+    const requestedVersion = request.params.protocolVersion;
+    this._clientCapabilities = request.params.capabilities;
+    this._clientVersion = request.params.clientInfo;
+    const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion) ? requestedVersion : LATEST_PROTOCOL_VERSION;
+    return {
+      protocolVersion,
+      capabilities: this.getCapabilities(),
+      serverInfo: this._serverInfo,
+      ...this._instructions && { instructions: this._instructions }
+    };
+  }
+  /**
+   * After initialization has completed, this will be populated with the client's reported capabilities.
+   */
+  getClientCapabilities() {
+    return this._clientCapabilities;
+  }
+  /**
+   * After initialization has completed, this will be populated with information about the client's name and version.
+   */
+  getClientVersion() {
+    return this._clientVersion;
+  }
+  getCapabilities() {
+    return this._capabilities;
+  }
+  async ping() {
+    return this.request({ method: "ping" }, EmptyResultSchema);
+  }
+  // Implementation
+  async createMessage(params, options) {
+    if (params.tools || params.toolChoice) {
+      if (!this._clientCapabilities?.sampling?.tools) {
+        throw new Error("Client does not support sampling tools capability.");
+      }
+    }
+    if (params.messages.length > 0) {
+      const lastMessage = params.messages[params.messages.length - 1];
+      const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
+      const hasToolResults = lastContent.some((c) => c.type === "tool_result");
+      const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
+      const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
+      const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
+      if (hasToolResults) {
+        if (lastContent.some((c) => c.type !== "tool_result")) {
+          throw new Error("The last message must contain only tool_result content if any is present");
+        }
+        if (!hasPreviousToolUse) {
+          throw new Error("tool_result blocks are not matching any tool_use from the previous message");
+        }
+      }
+      if (hasPreviousToolUse) {
+        const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
+        const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
+        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+          throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
+        }
+      }
+    }
+    if (params.tools) {
+      return this.request({ method: "sampling/createMessage", params }, CreateMessageResultWithToolsSchema, options);
+    }
+    return this.request({ method: "sampling/createMessage", params }, CreateMessageResultSchema, options);
+  }
+  /**
+   * Creates an elicitation request for the given parameters.
+   * For backwards compatibility, `mode` may be omitted for form requests and will default to `'form'`.
+   * @param params The parameters for the elicitation request.
+   * @param options Optional request options.
+   * @returns The result of the elicitation request.
+   */
+  async elicitInput(params, options) {
+    const mode = params.mode ?? "form";
+    switch (mode) {
+      case "url": {
+        if (!this._clientCapabilities?.elicitation?.url) {
+          throw new Error("Client does not support url elicitation.");
+        }
+        const urlParams = params;
+        return this.request({ method: "elicitation/create", params: urlParams }, ElicitResultSchema, options);
+      }
+      case "form": {
+        if (!this._clientCapabilities?.elicitation?.form) {
+          throw new Error("Client does not support form elicitation.");
+        }
+        const formParams = params.mode === "form" ? params : { ...params, mode: "form" };
+        const result = await this.request({ method: "elicitation/create", params: formParams }, ElicitResultSchema, options);
+        if (result.action === "accept" && result.content && formParams.requestedSchema) {
+          try {
+            const validator = this._jsonSchemaValidator.getValidator(formParams.requestedSchema);
+            const validationResult = validator(result.content);
+            if (!validationResult.valid) {
+              throw new McpError(ErrorCode.InvalidParams, `Elicitation response content does not match requested schema: ${validationResult.errorMessage}`);
+            }
+          } catch (error2) {
+            if (error2 instanceof McpError) {
+              throw error2;
+            }
+            throw new McpError(ErrorCode.InternalError, `Error validating elicitation response: ${error2 instanceof Error ? error2.message : String(error2)}`);
+          }
+        }
+        return result;
+      }
+    }
+  }
+  /**
+   * Creates a reusable callback that, when invoked, will send a `notifications/elicitation/complete`
+   * notification for the specified elicitation ID.
+   *
+   * @param elicitationId The ID of the elicitation to mark as complete.
+   * @param options Optional notification options. Useful when the completion notification should be related to a prior request.
+   * @returns A function that emits the completion notification when awaited.
+   */
+  createElicitationCompletionNotifier(elicitationId, options) {
+    if (!this._clientCapabilities?.elicitation?.url) {
+      throw new Error("Client does not support URL elicitation (required for notifications/elicitation/complete)");
+    }
+    return () => this.notification({
+      method: "notifications/elicitation/complete",
+      params: {
+        elicitationId
+      }
+    }, options);
+  }
+  async listRoots(params, options) {
+    return this.request({ method: "roots/list", params }, ListRootsResultSchema, options);
+  }
+  /**
+   * Sends a logging message to the client, if connected.
+   * Note: You only need to send the parameters object, not the entire JSON RPC message
+   * @see LoggingMessageNotification
+   * @param params
+   * @param sessionId optional for stateless and backward compatibility
+   */
+  async sendLoggingMessage(params, sessionId) {
+    if (this._capabilities.logging) {
+      if (!this.isMessageIgnored(params.level, sessionId)) {
+        return this.notification({ method: "notifications/message", params });
+      }
+    }
+  }
+  async sendResourceUpdated(params) {
+    return this.notification({
+      method: "notifications/resources/updated",
+      params
+    });
+  }
+  async sendResourceListChanged() {
+    return this.notification({
+      method: "notifications/resources/list_changed"
+    });
+  }
+  async sendToolListChanged() {
+    return this.notification({ method: "notifications/tools/list_changed" });
+  }
+  async sendPromptListChanged() {
+    return this.notification({ method: "notifications/prompts/list_changed" });
+  }
+};
+
 // node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/client.js
 var ExperimentalClientTasks = class {
   constructor(_client) {
@@ -15448,41 +15800,6 @@ var ExperimentalClientTasks = class {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
-function assertToolsCallTaskCapability(requests, method, entityName) {
-  if (!requests) {
-    throw new Error(`${entityName} does not support task creation (required for ${method})`);
-  }
-  switch (method) {
-    case "tools/call":
-      if (!requests.tools?.call) {
-        throw new Error(`${entityName} does not support task creation for tools/call (required for ${method})`);
-      }
-      break;
-    default:
-      break;
-  }
-}
-function assertClientRequestTaskCapability(requests, method, entityName) {
-  if (!requests) {
-    throw new Error(`${entityName} does not support task creation (required for ${method})`);
-  }
-  switch (method) {
-    case "sampling/createMessage":
-      if (!requests.sampling?.createMessage) {
-        throw new Error(`${entityName} does not support task creation for sampling/createMessage (required for ${method})`);
-      }
-      break;
-    case "elicitation/create":
-      if (!requests.elicitation?.create) {
-        throw new Error(`${entityName} does not support task creation for elicitation/create (required for ${method})`);
-      }
-      break;
-    default:
-      break;
-  }
-}
-
 // node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js
 function applyElicitationDefaults(schema, data) {
   if (!schema || data === null || typeof data !== "object")
@@ -15619,7 +15936,7 @@ var Client = class extends Protocol {
     const method = methodValue;
     if (method === "elicitation/create") {
       const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(ElicitRequestSchema, request);
+        const validatedRequest = safeParse3(ElicitRequestSchema, request);
         if (!validatedRequest.success) {
           const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation request: ${errorMessage}`);
@@ -15635,14 +15952,14 @@ var Client = class extends Protocol {
         }
         const result = await Promise.resolve(handler(request, extra));
         if (params.task) {
-          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
+          const taskValidationResult = safeParse3(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
             const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
             throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
           }
           return taskValidationResult.data;
         }
-        const validationResult = safeParse2(ElicitResultSchema, result);
+        const validationResult = safeParse3(ElicitResultSchema, result);
         if (!validationResult.success) {
           const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation result: ${errorMessage}`);
@@ -15663,7 +15980,7 @@ var Client = class extends Protocol {
     }
     if (method === "sampling/createMessage") {
       const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(CreateMessageRequestSchema, request);
+        const validatedRequest = safeParse3(CreateMessageRequestSchema, request);
         if (!validatedRequest.success) {
           const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid sampling request: ${errorMessage}`);
@@ -15671,7 +15988,7 @@ var Client = class extends Protocol {
         const { params } = validatedRequest.data;
         const result = await Promise.resolve(handler(request, extra));
         if (params.task) {
-          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
+          const taskValidationResult = safeParse3(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
             const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
             throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
@@ -15680,7 +15997,7 @@ var Client = class extends Protocol {
         }
         const hasTools = params.tools || params.toolChoice;
         const resultSchema = hasTools ? CreateMessageResultWithToolsSchema : CreateMessageResultSchema;
-        const validationResult = safeParse2(resultSchema, result);
+        const validationResult = safeParse3(resultSchema, result);
         if (!validationResult.success) {
           const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid sampling result: ${errorMessage}`);
@@ -16135,13 +16452,13 @@ var OpenIdProviderMetadataSchema = looseObject({
   op_tos_uri: SafeUrlSchema.optional(),
   client_id_metadata_document_supported: boolean2().optional()
 });
-var OpenIdProviderDiscoveryMetadataSchema = object2({
+var OpenIdProviderDiscoveryMetadataSchema = object({
   ...OpenIdProviderMetadataSchema.shape,
   ...OAuthMetadataSchema.pick({
     code_challenge_methods_supported: true
   }).shape
 });
-var OAuthTokensSchema = object2({
+var OAuthTokensSchema = object({
   access_token: string2(),
   id_token: string2().optional(),
   // Optional for OAuth 2.1, but necessary in OpenID Connect
@@ -16150,13 +16467,13 @@ var OAuthTokensSchema = object2({
   scope: string2().optional(),
   refresh_token: string2().optional()
 }).strip();
-var OAuthErrorResponseSchema = object2({
+var OAuthErrorResponseSchema = object({
   error: string2(),
   error_description: string2().optional(),
   error_uri: string2().optional()
 });
 var OptionalSafeUrlSchema = SafeUrlSchema.optional().or(literal("").transform(() => void 0));
-var OAuthClientMetadataSchema = object2({
+var OAuthClientMetadataSchema = object({
   redirect_uris: array(SafeUrlSchema),
   token_endpoint_auth_method: string2().optional(),
   grant_types: array(string2()).optional(),
@@ -16174,18 +16491,18 @@ var OAuthClientMetadataSchema = object2({
   software_version: string2().optional(),
   software_statement: string2().optional()
 }).strip();
-var OAuthClientInformationSchema = object2({
+var OAuthClientInformationSchema = object({
   client_id: string2(),
   client_secret: string2().optional(),
   client_id_issued_at: number2().optional(),
   client_secret_expires_at: number2().optional()
 }).strip();
 var OAuthClientInformationFullSchema = OAuthClientMetadataSchema.merge(OAuthClientInformationSchema);
-var OAuthClientRegistrationErrorSchema = object2({
+var OAuthClientRegistrationErrorSchema = object({
   error: string2(),
   error_description: string2().optional()
 }).strip();
-var OAuthTokenRevocationRequestSchema = object2({
+var OAuthTokenRevocationRequestSchema = object({
   token: string2(),
   token_type_hint: string2().optional()
 }).strip();
@@ -17478,18 +17795,394 @@ async function openBrowser(url2) {
   const os = platform();
   const command = os === "darwin" ? "open" : os === "win32" ? "cmd.exe" : "xdg-open";
   const args = os === "win32" ? ["/c", "start", "", href] : [href];
-  return new Promise((resolve3) => {
+  return new Promise((resolve4) => {
     const child = spawn(command, args, {
       detached: true,
       stdio: "ignore",
       windowsHide: true
     });
-    child.on("error", () => resolve3(false));
+    child.on("error", () => resolve4(false));
     child.on("spawn", () => {
       child.unref();
-      resolve3(true);
+      resolve4(true);
     });
   });
+}
+
+// src/config.ts
+import { resolve as resolve2 } from "node:path";
+
+// src/constants.ts
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+var DEFAULT_FIGMA_MCP_ENDPOINT = "https://mcp.figma.com/mcp";
+var DEFAULT_CALLBACK_HOST = "127.0.0.1";
+var DEFAULT_CALLBACK_PORT = 18765;
+var DEFAULT_CALLBACK_PATH = "/oauth/callback";
+var DEFAULT_AUTH_TIMEOUT_MS = 18e4;
+var DEFAULT_CLIENT_NAME = "jxx-codex-figma-mcp";
+var DEFAULT_CLIENT_VERSION = "0.1.0";
+var BRIDGE_OAUTH_CACHE_FILENAME = ".figma-mcp-bridge-oauth.json";
+var distDir = dirname(fileURLToPath(import.meta.url));
+var PLUGIN_ROOT = resolve(distDir, "..");
+var DEFAULT_OAUTH_STATE_PATH = resolve(
+  PLUGIN_ROOT,
+  ".mcp-oauth-state.json"
+);
+
+// src/config.ts
+function normalizeCallbackPath(path) {
+  return path.startsWith("/") ? path : `/${path}`;
+}
+function createCallbackUrl(options = {}) {
+  const host = options.host ?? DEFAULT_CALLBACK_HOST;
+  const port = options.port ?? DEFAULT_CALLBACK_PORT;
+  const path = normalizeCallbackPath(options.path ?? DEFAULT_CALLBACK_PATH);
+  return `http://${host}:${port}${path}`;
+}
+function createClientMetadata(redirectUrl, overrides = {}) {
+  return {
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "client_secret_post",
+    ...overrides,
+    client_name: overrides.client_name ?? DEFAULT_CLIENT_NAME,
+    redirect_uris: overrides.redirect_uris ?? [redirectUrl]
+  };
+}
+function readEnv(name) {
+  if (typeof process === "undefined") {
+    return void 0;
+  }
+  return process.env[name];
+}
+function findCodexHomeOAuthCachePath(env = typeof process === "undefined" ? {} : process.env) {
+  if (env.CODEX_HOME) {
+    return resolve2(env.CODEX_HOME, BRIDGE_OAUTH_CACHE_FILENAME);
+  }
+  if (env.USERPROFILE) {
+    return resolve2(env.USERPROFILE, ".codex", BRIDGE_OAUTH_CACHE_FILENAME);
+  }
+  return void 0;
+}
+function createConfig(input = {}) {
+  const callbackHost = input.callbackHost ?? DEFAULT_CALLBACK_HOST;
+  const callbackPort = input.callbackPort ?? DEFAULT_CALLBACK_PORT;
+  const callbackPath = normalizeCallbackPath(input.callbackPath ?? DEFAULT_CALLBACK_PATH);
+  const callbackUrl = createCallbackUrl({
+    host: callbackHost,
+    port: callbackPort,
+    path: callbackPath
+  });
+  const useBridgeOAuthCache = input.useBridgeOAuthCache ?? readEnv("FIGMA_MCP_USE_BRIDGE_OAUTH_CACHE") === "1";
+  const statePath = input.statePath ?? readEnv("FIGMA_MCP_OAUTH_CACHE_PATH") ?? (useBridgeOAuthCache ? findCodexHomeOAuthCachePath() ?? missingBridgeOAuthCachePath() : DEFAULT_OAUTH_STATE_PATH);
+  return {
+    endpoint: input.endpoint ?? DEFAULT_FIGMA_MCP_ENDPOINT,
+    statePath: resolve2(statePath),
+    callbackHost,
+    callbackPort,
+    callbackPath,
+    callbackUrl,
+    authTimeoutMs: input.authTimeoutMs ?? DEFAULT_AUTH_TIMEOUT_MS,
+    openBrowser: input.openBrowser ?? true,
+    clientName: input.clientName ?? DEFAULT_CLIENT_NAME,
+    clientVersion: input.clientVersion ?? DEFAULT_CLIENT_VERSION,
+    clientMetadata: createClientMetadata(callbackUrl, input.clientMetadata),
+    useBridgeOAuthCache
+  };
+}
+function missingBridgeOAuthCachePath() {
+  throw new Error(
+    "Unable to resolve Figma MCP OAuth cache path. Set FIGMA_MCP_OAUTH_CACHE_PATH, CODEX_HOME, or USERPROFILE."
+  );
+}
+
+// src/oauth-provider.ts
+import { randomBytes } from "node:crypto";
+
+// src/oauth-state.ts
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname as dirname2 } from "node:path";
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function optionalRecord(value) {
+  return isRecord(value) ? value : void 0;
+}
+function parseOAuthState(json) {
+  const value = JSON.parse(json);
+  if (!isRecord(value)) {
+    return {};
+  }
+  return {
+    ...value,
+    clientInformation: optionalRecord(
+      value.clientInformation
+    ),
+    tokens: optionalRecord(value.tokens),
+    codeVerifier: typeof value.codeVerifier === "string" ? value.codeVerifier : void 0,
+    discoveryState: optionalRecord(value.discoveryState),
+    lastState: typeof value.lastState === "string" ? value.lastState : void 0
+  };
+}
+var OAuthStateStore = class {
+  constructor(statePath) {
+    this.statePath = statePath;
+  }
+  statePath;
+  async read() {
+    try {
+      return parseOAuthState(await readFile(this.statePath, "utf8"));
+    } catch (error2) {
+      if (error2 instanceof Error && "code" in error2 && error2.code === "ENOENT") {
+        return {};
+      }
+      throw error2;
+    }
+  }
+  async write(state) {
+    await mkdir(dirname2(this.statePath), { recursive: true });
+    const tmpPath = `${this.statePath}.tmp`;
+    await writeFile(tmpPath, `${JSON.stringify(state, null, 2)}
+`, {
+      encoding: "utf8",
+      mode: 384
+    });
+    await rename(tmpPath, this.statePath);
+  }
+  async update(update) {
+    const next = update(await this.read());
+    await this.write(next);
+    return next;
+  }
+  async clear() {
+    await rm(this.statePath, { force: true });
+  }
+};
+
+// src/oauth-provider.ts
+var PersistentOAuthProvider = class {
+  constructor(options) {
+    this.options = options;
+    this.clientMetadataUrl = options.clientMetadataUrl;
+    this.store = new OAuthStateStore(options.statePath);
+    this.redirectHandler = options.onRedirect ?? ((authorizationUrl) => {
+      console.error(
+        `Open this URL to authorize MCP access:
+${authorizationUrl.toString()}`
+      );
+    });
+  }
+  options;
+  clientMetadataUrl;
+  store;
+  redirectHandler;
+  get redirectUrl() {
+    return this.options.redirectUrl;
+  }
+  get clientMetadata() {
+    return this.options.clientMetadata;
+  }
+  get statePath() {
+    return this.options.statePath;
+  }
+  async state() {
+    const state = randomBytes(16).toString("hex");
+    await this.store.update((current) => ({ ...current, lastState: state }));
+    return state;
+  }
+  async savedState() {
+    return this.store.read();
+  }
+  async expectedState() {
+    return (await this.store.read()).lastState;
+  }
+  async clientInformation() {
+    return (await this.store.read()).clientInformation;
+  }
+  async saveClientInformation(clientInformation) {
+    await this.store.update((current) => ({ ...current, clientInformation }));
+  }
+  async tokens() {
+    return (await this.store.read()).tokens;
+  }
+  async saveTokens(tokens) {
+    await this.store.update((current) => ({ ...current, tokens }));
+  }
+  async redirectToAuthorization(authorizationUrl) {
+    await this.redirectHandler(authorizationUrl);
+  }
+  async saveCodeVerifier(codeVerifier) {
+    await this.store.update((current) => ({ ...current, codeVerifier }));
+  }
+  async codeVerifier() {
+    const codeVerifier = (await this.store.read()).codeVerifier;
+    if (!codeVerifier) {
+      throw new Error("No OAuth code verifier is saved.");
+    }
+    return codeVerifier;
+  }
+  async saveDiscoveryState(discoveryState) {
+    await this.store.update((current) => ({ ...current, discoveryState }));
+  }
+  async discoveryState() {
+    return (await this.store.read()).discoveryState;
+  }
+  async invalidateCredentials(scope) {
+    if (scope === "all") {
+      await this.store.clear();
+      return;
+    }
+    await this.store.update((current) => {
+      const next = { ...current };
+      if (scope === "client") {
+        delete next.clientInformation;
+      }
+      if (scope === "tokens") {
+        delete next.tokens;
+      }
+      if (scope === "verifier") {
+        delete next.codeVerifier;
+        delete next.lastState;
+      }
+      if (scope === "discovery") {
+        delete next.discoveryState;
+      }
+      return next;
+    });
+  }
+};
+
+// src/oauth-callback.ts
+import { createServer } from "node:http";
+import { URL as URL2 } from "node:url";
+var CLOSED_BEFORE_AUTHORIZATION_MESSAGE = "OAuth callback server was closed before authorization completed.";
+function sendHtml(response, status, title, body) {
+  response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
+  response.end(
+    `<!doctype html><html><head><title>${title}</title></head><body><h1>${title}</h1><p>${body}</p></body></html>`
+  );
+}
+async function closeServer(server) {
+  if (!server.listening) {
+    return;
+  }
+  await new Promise((resolve4, reject) => {
+    server.close((error2) => error2 ? reject(error2) : resolve4());
+  });
+}
+async function startOAuthCallbackServer(options) {
+  const callbackUrl = `http://${options.host}:${options.port}${options.path}`;
+  let timeout;
+  let settled = false;
+  let closePromise;
+  let resolveCode;
+  let rejectCode;
+  const codePromise = new Promise((resolve4, reject) => {
+    resolveCode = resolve4;
+    rejectCode = reject;
+  });
+  codePromise.catch(() => void 0);
+  const server = createServer(async (request, response) => {
+    try {
+      const url2 = new URL2(request.url ?? "/", callbackUrl);
+      if (url2.pathname !== options.path) {
+        response.writeHead(404);
+        response.end("Not found");
+        return;
+      }
+      const error2 = url2.searchParams.get("error");
+      if (error2) {
+        const description = url2.searchParams.get("error_description");
+        const message = description ? `${error2}: ${description}` : error2;
+        sendHtml(response, 400, "Authorization failed", message);
+        settleWithError(new Error(`OAuth authorization failed: ${message}`));
+        return;
+      }
+      const code = url2.searchParams.get("code");
+      if (!code) {
+        sendHtml(response, 400, "Authorization failed", "Missing authorization code.");
+        settleWithError(new Error("OAuth callback did not include a code."));
+        return;
+      }
+      const expectedState = await options.getExpectedState?.();
+      const receivedState = url2.searchParams.get("state") ?? void 0;
+      if (expectedState && receivedState !== expectedState) {
+        sendHtml(response, 400, "Authorization failed", "OAuth state mismatch.");
+        settleWithError(
+          new Error("OAuth callback state did not match the saved state.")
+        );
+        return;
+      }
+      sendHtml(
+        response,
+        200,
+        "Authorization complete",
+        "You can close this window and return to the terminal."
+      );
+      settleWithCode(code);
+    } catch (error2) {
+      if (!settled) {
+        if (!response.headersSent) {
+          sendHtml(response, 500, "Authorization failed", "Internal callback error.");
+        }
+        settleWithError(asError(error2));
+      }
+    }
+  });
+  const clearAuthTimeout = () => {
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = void 0;
+    }
+  };
+  const requestClose = () => {
+    closePromise ??= closeServer(server);
+    return closePromise;
+  };
+  const settleWithCode = (code) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearAuthTimeout();
+    resolveCode(code);
+    requestClose().catch(() => void 0);
+  };
+  const settleWithError = (error2) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearAuthTimeout();
+    rejectCode(error2);
+    requestClose().catch(() => void 0);
+  };
+  await new Promise((resolve4, reject) => {
+    server.once("error", reject);
+    server.listen(options.port, options.host, () => {
+      server.off("error", reject);
+      resolve4();
+    });
+  });
+  timeout = setTimeout(() => {
+    settleWithError(new Error("Timed out waiting for OAuth callback."));
+  }, options.timeoutMs);
+  return {
+    url: callbackUrl,
+    waitForCode: () => codePromise,
+    close: async () => {
+      if (!settled) {
+        settleWithError(new Error(CLOSED_BEFORE_AUTHORIZATION_MESSAGE));
+      } else {
+        clearAuthTimeout();
+      }
+      await requestClose();
+    }
+  };
+}
+function asError(error2) {
+  return error2 instanceof Error ? error2 : new Error(String(error2));
 }
 
 // src/client.ts
@@ -17754,599 +18447,6 @@ var StaleConnectionError = class extends Error {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
-var ExperimentalServerTasks = class {
-  constructor(_server) {
-    this._server = _server;
-  }
-  /**
-   * Sends a request and returns an AsyncGenerator that yields response messages.
-   * The generator is guaranteed to end with either a 'result' or 'error' message.
-   *
-   * This method provides streaming access to request processing, allowing you to
-   * observe intermediate task status updates for task-augmented requests.
-   *
-   * @param request - The request to send
-   * @param resultSchema - Zod schema for validating the result
-   * @param options - Optional request options (timeout, signal, task creation params, etc.)
-   * @returns AsyncGenerator that yields ResponseMessage objects
-   *
-   * @experimental
-   */
-  requestStream(request, resultSchema, options) {
-    return this._server.requestStream(request, resultSchema, options);
-  }
-  /**
-   * Sends a sampling request and returns an AsyncGenerator that yields response messages.
-   * The generator is guaranteed to end with either a 'result' or 'error' message.
-   *
-   * For task-augmented requests, yields 'taskCreated' and 'taskStatus' messages
-   * before the final result.
-   *
-   * @example
-   * ```typescript
-   * const stream = server.experimental.tasks.createMessageStream({
-   *     messages: [{ role: 'user', content: { type: 'text', text: 'Hello' } }],
-   *     maxTokens: 100
-   * }, {
-   *     onprogress: (progress) => {
-   *         // Handle streaming tokens via progress notifications
-   *         console.log('Progress:', progress.message);
-   *     }
-   * });
-   *
-   * for await (const message of stream) {
-   *     switch (message.type) {
-   *         case 'taskCreated':
-   *             console.log('Task created:', message.task.taskId);
-   *             break;
-   *         case 'taskStatus':
-   *             console.log('Task status:', message.task.status);
-   *             break;
-   *         case 'result':
-   *             console.log('Final result:', message.result);
-   *             break;
-   *         case 'error':
-   *             console.error('Error:', message.error);
-   *             break;
-   *     }
-   * }
-   * ```
-   *
-   * @param params - The sampling request parameters
-   * @param options - Optional request options (timeout, signal, task creation params, onprogress, etc.)
-   * @returns AsyncGenerator that yields ResponseMessage objects
-   *
-   * @experimental
-   */
-  createMessageStream(params, options) {
-    const clientCapabilities = this._server.getClientCapabilities();
-    if ((params.tools || params.toolChoice) && !clientCapabilities?.sampling?.tools) {
-      throw new Error("Client does not support sampling tools capability.");
-    }
-    if (params.messages.length > 0) {
-      const lastMessage = params.messages[params.messages.length - 1];
-      const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
-      const hasToolResults = lastContent.some((c) => c.type === "tool_result");
-      const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
-      const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
-      const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
-      if (hasToolResults) {
-        if (lastContent.some((c) => c.type !== "tool_result")) {
-          throw new Error("The last message must contain only tool_result content if any is present");
-        }
-        if (!hasPreviousToolUse) {
-          throw new Error("tool_result blocks are not matching any tool_use from the previous message");
-        }
-      }
-      if (hasPreviousToolUse) {
-        const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
-        const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
-        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
-          throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
-        }
-      }
-    }
-    return this.requestStream({
-      method: "sampling/createMessage",
-      params
-    }, CreateMessageResultSchema, options);
-  }
-  /**
-   * Sends an elicitation request and returns an AsyncGenerator that yields response messages.
-   * The generator is guaranteed to end with either a 'result' or 'error' message.
-   *
-   * For task-augmented requests (especially URL-based elicitation), yields 'taskCreated'
-   * and 'taskStatus' messages before the final result.
-   *
-   * @example
-   * ```typescript
-   * const stream = server.experimental.tasks.elicitInputStream({
-   *     mode: 'url',
-   *     message: 'Please authenticate',
-   *     elicitationId: 'auth-123',
-   *     url: 'https://example.com/auth'
-   * }, {
-   *     task: { ttl: 300000 } // Task-augmented for long-running auth flow
-   * });
-   *
-   * for await (const message of stream) {
-   *     switch (message.type) {
-   *         case 'taskCreated':
-   *             console.log('Task created:', message.task.taskId);
-   *             break;
-   *         case 'taskStatus':
-   *             console.log('Task status:', message.task.status);
-   *             break;
-   *         case 'result':
-   *             console.log('User action:', message.result.action);
-   *             break;
-   *         case 'error':
-   *             console.error('Error:', message.error);
-   *             break;
-   *     }
-   * }
-   * ```
-   *
-   * @param params - The elicitation request parameters
-   * @param options - Optional request options (timeout, signal, task creation params, etc.)
-   * @returns AsyncGenerator that yields ResponseMessage objects
-   *
-   * @experimental
-   */
-  elicitInputStream(params, options) {
-    const clientCapabilities = this._server.getClientCapabilities();
-    const mode = params.mode ?? "form";
-    switch (mode) {
-      case "url": {
-        if (!clientCapabilities?.elicitation?.url) {
-          throw new Error("Client does not support url elicitation.");
-        }
-        break;
-      }
-      case "form": {
-        if (!clientCapabilities?.elicitation?.form) {
-          throw new Error("Client does not support form elicitation.");
-        }
-        break;
-      }
-    }
-    const normalizedParams = mode === "form" && params.mode === void 0 ? { ...params, mode: "form" } : params;
-    return this.requestStream({
-      method: "elicitation/create",
-      params: normalizedParams
-    }, ElicitResultSchema, options);
-  }
-  /**
-   * Gets the current status of a task.
-   *
-   * @param taskId - The task identifier
-   * @param options - Optional request options
-   * @returns The task status
-   *
-   * @experimental
-   */
-  async getTask(taskId, options) {
-    return this._server.getTask({ taskId }, options);
-  }
-  /**
-   * Retrieves the result of a completed task.
-   *
-   * @param taskId - The task identifier
-   * @param resultSchema - Zod schema for validating the result
-   * @param options - Optional request options
-   * @returns The task result
-   *
-   * @experimental
-   */
-  async getTaskResult(taskId, resultSchema, options) {
-    return this._server.getTaskResult({ taskId }, resultSchema, options);
-  }
-  /**
-   * Lists tasks with optional pagination.
-   *
-   * @param cursor - Optional pagination cursor
-   * @param options - Optional request options
-   * @returns List of tasks with optional next cursor
-   *
-   * @experimental
-   */
-  async listTasks(cursor, options) {
-    return this._server.listTasks(cursor ? { cursor } : void 0, options);
-  }
-  /**
-   * Cancels a running task.
-   *
-   * @param taskId - The task identifier
-   * @param options - Optional request options
-   *
-   * @experimental
-   */
-  async cancelTask(taskId, options) {
-    return this._server.cancelTask({ taskId }, options);
-  }
-};
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
-var Server = class extends Protocol {
-  /**
-   * Initializes this server with the given name and version information.
-   */
-  constructor(_serverInfo, options) {
-    super(options);
-    this._serverInfo = _serverInfo;
-    this._loggingLevels = /* @__PURE__ */ new Map();
-    this.LOG_LEVEL_SEVERITY = new Map(LoggingLevelSchema.options.map((level, index) => [level, index]));
-    this.isMessageIgnored = (level, sessionId) => {
-      const currentLevel = this._loggingLevels.get(sessionId);
-      return currentLevel ? this.LOG_LEVEL_SEVERITY.get(level) < this.LOG_LEVEL_SEVERITY.get(currentLevel) : false;
-    };
-    this._capabilities = options?.capabilities ?? {};
-    this._instructions = options?.instructions;
-    this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
-    this.setRequestHandler(InitializeRequestSchema, (request) => this._oninitialize(request));
-    this.setNotificationHandler(InitializedNotificationSchema, () => this.oninitialized?.());
-    if (this._capabilities.logging) {
-      this.setRequestHandler(SetLevelRequestSchema, async (request, extra) => {
-        const transportSessionId = extra.sessionId || extra.requestInfo?.headers["mcp-session-id"] || void 0;
-        const { level } = request.params;
-        const parseResult = LoggingLevelSchema.safeParse(level);
-        if (parseResult.success) {
-          this._loggingLevels.set(transportSessionId, parseResult.data);
-        }
-        return {};
-      });
-    }
-  }
-  /**
-   * Access experimental features.
-   *
-   * WARNING: These APIs are experimental and may change without notice.
-   *
-   * @experimental
-   */
-  get experimental() {
-    if (!this._experimental) {
-      this._experimental = {
-        tasks: new ExperimentalServerTasks(this)
-      };
-    }
-    return this._experimental;
-  }
-  /**
-   * Registers new capabilities. This can only be called before connecting to a transport.
-   *
-   * The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
-   */
-  registerCapabilities(capabilities) {
-    if (this.transport) {
-      throw new Error("Cannot register capabilities after connecting to transport");
-    }
-    this._capabilities = mergeCapabilities(this._capabilities, capabilities);
-  }
-  /**
-   * Override request handler registration to enforce server-side validation for tools/call.
-   */
-  setRequestHandler(requestSchema, handler) {
-    const shape = getObjectShape(requestSchema);
-    const methodSchema = shape?.method;
-    if (!methodSchema) {
-      throw new Error("Schema is missing a method literal");
-    }
-    let methodValue;
-    if (isZ4Schema(methodSchema)) {
-      const v4Schema = methodSchema;
-      const v4Def = v4Schema._zod?.def;
-      methodValue = v4Def?.value ?? v4Schema.value;
-    } else {
-      const v3Schema = methodSchema;
-      const legacyDef = v3Schema._def;
-      methodValue = legacyDef?.value ?? v3Schema.value;
-    }
-    if (typeof methodValue !== "string") {
-      throw new Error("Schema method literal must be a string");
-    }
-    const method = methodValue;
-    if (method === "tools/call") {
-      const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(CallToolRequestSchema, request);
-        if (!validatedRequest.success) {
-          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
-        }
-        const { params } = validatedRequest.data;
-        const result = await Promise.resolve(handler(request, extra));
-        if (params.task) {
-          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
-          if (!taskValidationResult.success) {
-            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
-          }
-          return taskValidationResult.data;
-        }
-        const validationResult = safeParse2(CallToolResultSchema, result);
-        if (!validationResult.success) {
-          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage}`);
-        }
-        return validationResult.data;
-      };
-      return super.setRequestHandler(requestSchema, wrappedHandler);
-    }
-    return super.setRequestHandler(requestSchema, handler);
-  }
-  assertCapabilityForMethod(method) {
-    switch (method) {
-      case "sampling/createMessage":
-        if (!this._clientCapabilities?.sampling) {
-          throw new Error(`Client does not support sampling (required for ${method})`);
-        }
-        break;
-      case "elicitation/create":
-        if (!this._clientCapabilities?.elicitation) {
-          throw new Error(`Client does not support elicitation (required for ${method})`);
-        }
-        break;
-      case "roots/list":
-        if (!this._clientCapabilities?.roots) {
-          throw new Error(`Client does not support listing roots (required for ${method})`);
-        }
-        break;
-      case "ping":
-        break;
-    }
-  }
-  assertNotificationCapability(method) {
-    switch (method) {
-      case "notifications/message":
-        if (!this._capabilities.logging) {
-          throw new Error(`Server does not support logging (required for ${method})`);
-        }
-        break;
-      case "notifications/resources/updated":
-      case "notifications/resources/list_changed":
-        if (!this._capabilities.resources) {
-          throw new Error(`Server does not support notifying about resources (required for ${method})`);
-        }
-        break;
-      case "notifications/tools/list_changed":
-        if (!this._capabilities.tools) {
-          throw new Error(`Server does not support notifying of tool list changes (required for ${method})`);
-        }
-        break;
-      case "notifications/prompts/list_changed":
-        if (!this._capabilities.prompts) {
-          throw new Error(`Server does not support notifying of prompt list changes (required for ${method})`);
-        }
-        break;
-      case "notifications/elicitation/complete":
-        if (!this._clientCapabilities?.elicitation?.url) {
-          throw new Error(`Client does not support URL elicitation (required for ${method})`);
-        }
-        break;
-      case "notifications/cancelled":
-        break;
-      case "notifications/progress":
-        break;
-    }
-  }
-  assertRequestHandlerCapability(method) {
-    if (!this._capabilities) {
-      return;
-    }
-    switch (method) {
-      case "completion/complete":
-        if (!this._capabilities.completions) {
-          throw new Error(`Server does not support completions (required for ${method})`);
-        }
-        break;
-      case "logging/setLevel":
-        if (!this._capabilities.logging) {
-          throw new Error(`Server does not support logging (required for ${method})`);
-        }
-        break;
-      case "prompts/get":
-      case "prompts/list":
-        if (!this._capabilities.prompts) {
-          throw new Error(`Server does not support prompts (required for ${method})`);
-        }
-        break;
-      case "resources/list":
-      case "resources/templates/list":
-      case "resources/read":
-        if (!this._capabilities.resources) {
-          throw new Error(`Server does not support resources (required for ${method})`);
-        }
-        break;
-      case "tools/call":
-      case "tools/list":
-        if (!this._capabilities.tools) {
-          throw new Error(`Server does not support tools (required for ${method})`);
-        }
-        break;
-      case "tasks/get":
-      case "tasks/list":
-      case "tasks/result":
-      case "tasks/cancel":
-        if (!this._capabilities.tasks) {
-          throw new Error(`Server does not support tasks capability (required for ${method})`);
-        }
-        break;
-      case "ping":
-      case "initialize":
-        break;
-    }
-  }
-  assertTaskCapability(method) {
-    assertClientRequestTaskCapability(this._clientCapabilities?.tasks?.requests, method, "Client");
-  }
-  assertTaskHandlerCapability(method) {
-    if (!this._capabilities) {
-      return;
-    }
-    assertToolsCallTaskCapability(this._capabilities.tasks?.requests, method, "Server");
-  }
-  async _oninitialize(request) {
-    const requestedVersion = request.params.protocolVersion;
-    this._clientCapabilities = request.params.capabilities;
-    this._clientVersion = request.params.clientInfo;
-    const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion) ? requestedVersion : LATEST_PROTOCOL_VERSION;
-    return {
-      protocolVersion,
-      capabilities: this.getCapabilities(),
-      serverInfo: this._serverInfo,
-      ...this._instructions && { instructions: this._instructions }
-    };
-  }
-  /**
-   * After initialization has completed, this will be populated with the client's reported capabilities.
-   */
-  getClientCapabilities() {
-    return this._clientCapabilities;
-  }
-  /**
-   * After initialization has completed, this will be populated with information about the client's name and version.
-   */
-  getClientVersion() {
-    return this._clientVersion;
-  }
-  getCapabilities() {
-    return this._capabilities;
-  }
-  async ping() {
-    return this.request({ method: "ping" }, EmptyResultSchema);
-  }
-  // Implementation
-  async createMessage(params, options) {
-    if (params.tools || params.toolChoice) {
-      if (!this._clientCapabilities?.sampling?.tools) {
-        throw new Error("Client does not support sampling tools capability.");
-      }
-    }
-    if (params.messages.length > 0) {
-      const lastMessage = params.messages[params.messages.length - 1];
-      const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
-      const hasToolResults = lastContent.some((c) => c.type === "tool_result");
-      const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
-      const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
-      const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
-      if (hasToolResults) {
-        if (lastContent.some((c) => c.type !== "tool_result")) {
-          throw new Error("The last message must contain only tool_result content if any is present");
-        }
-        if (!hasPreviousToolUse) {
-          throw new Error("tool_result blocks are not matching any tool_use from the previous message");
-        }
-      }
-      if (hasPreviousToolUse) {
-        const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
-        const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
-        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
-          throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
-        }
-      }
-    }
-    if (params.tools) {
-      return this.request({ method: "sampling/createMessage", params }, CreateMessageResultWithToolsSchema, options);
-    }
-    return this.request({ method: "sampling/createMessage", params }, CreateMessageResultSchema, options);
-  }
-  /**
-   * Creates an elicitation request for the given parameters.
-   * For backwards compatibility, `mode` may be omitted for form requests and will default to `'form'`.
-   * @param params The parameters for the elicitation request.
-   * @param options Optional request options.
-   * @returns The result of the elicitation request.
-   */
-  async elicitInput(params, options) {
-    const mode = params.mode ?? "form";
-    switch (mode) {
-      case "url": {
-        if (!this._clientCapabilities?.elicitation?.url) {
-          throw new Error("Client does not support url elicitation.");
-        }
-        const urlParams = params;
-        return this.request({ method: "elicitation/create", params: urlParams }, ElicitResultSchema, options);
-      }
-      case "form": {
-        if (!this._clientCapabilities?.elicitation?.form) {
-          throw new Error("Client does not support form elicitation.");
-        }
-        const formParams = params.mode === "form" ? params : { ...params, mode: "form" };
-        const result = await this.request({ method: "elicitation/create", params: formParams }, ElicitResultSchema, options);
-        if (result.action === "accept" && result.content && formParams.requestedSchema) {
-          try {
-            const validator = this._jsonSchemaValidator.getValidator(formParams.requestedSchema);
-            const validationResult = validator(result.content);
-            if (!validationResult.valid) {
-              throw new McpError(ErrorCode.InvalidParams, `Elicitation response content does not match requested schema: ${validationResult.errorMessage}`);
-            }
-          } catch (error2) {
-            if (error2 instanceof McpError) {
-              throw error2;
-            }
-            throw new McpError(ErrorCode.InternalError, `Error validating elicitation response: ${error2 instanceof Error ? error2.message : String(error2)}`);
-          }
-        }
-        return result;
-      }
-    }
-  }
-  /**
-   * Creates a reusable callback that, when invoked, will send a `notifications/elicitation/complete`
-   * notification for the specified elicitation ID.
-   *
-   * @param elicitationId The ID of the elicitation to mark as complete.
-   * @param options Optional notification options. Useful when the completion notification should be related to a prior request.
-   * @returns A function that emits the completion notification when awaited.
-   */
-  createElicitationCompletionNotifier(elicitationId, options) {
-    if (!this._clientCapabilities?.elicitation?.url) {
-      throw new Error("Client does not support URL elicitation (required for notifications/elicitation/complete)");
-    }
-    return () => this.notification({
-      method: "notifications/elicitation/complete",
-      params: {
-        elicitationId
-      }
-    }, options);
-  }
-  async listRoots(params, options) {
-    return this.request({ method: "roots/list", params }, ListRootsResultSchema, options);
-  }
-  /**
-   * Sends a logging message to the client, if connected.
-   * Note: You only need to send the parameters object, not the entire JSON RPC message
-   * @see LoggingMessageNotification
-   * @param params
-   * @param sessionId optional for stateless and backward compatibility
-   */
-  async sendLoggingMessage(params, sessionId) {
-    if (this._capabilities.logging) {
-      if (!this.isMessageIgnored(params.level, sessionId)) {
-        return this.notification({ method: "notifications/message", params });
-      }
-    }
-  }
-  async sendResourceUpdated(params) {
-    return this.notification({
-      method: "notifications/resources/updated",
-      params
-    });
-  }
-  async sendResourceListChanged() {
-    return this.notification({
-      method: "notifications/resources/list_changed"
-    });
-  }
-  async sendToolListChanged() {
-    return this.notification({ method: "notifications/tools/list_changed" });
-  }
-  async sendPromptListChanged() {
-    return this.notification({ method: "notifications/prompts/list_changed" });
-  }
-};
-
 // src/stdio-server.ts
 function createFigmaStdioMcpServer(options = {}) {
   const client = options.client ?? createRemoteMcpClient({
@@ -18408,25 +18508,99 @@ function asMcpResult(value) {
   }
   throw new Error("Upstream MCP server returned a non-object result.");
 }
+
+// src/cli.ts
+async function runFigmaStdioMcpCli(options = {}) {
+  const { server, client } = createFigmaStdioMcpServer(options);
+  const transport = new StdioServerTransport();
+  let clientClosePromise;
+  let cleanupComplete = false;
+  let removeStdinCloseHandlers = () => void 0;
+  let exitStarted = false;
+  let exitOnTransportClose = true;
+  const closeClient = () => {
+    clientClosePromise ??= client.close().catch(() => void 0);
+    return clientClosePromise;
+  };
+  const cleanupSignalHandlers = () => {
+    if (cleanupComplete) {
+      return;
+    }
+    cleanupComplete = true;
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+    removeStdinCloseHandlers();
+  };
+  const exitAfterClose = (exitCode) => {
+    if (exitStarted) {
+      return;
+    }
+    exitStarted = true;
+    cleanupSignalHandlers();
+    void closeClient().finally(() => process.exit(exitCode));
+  };
+  const closeFromTransport = () => {
+    try {
+      existingOnClose?.();
+    } finally {
+      if (exitOnTransportClose) {
+        exitAfterClose(0);
+      }
+    }
+  };
+  const closeFromSignal = (exitCode) => {
+    exitAfterClose(exitCode);
+  };
+  const onSigint = () => {
+    closeFromSignal(130);
+  };
+  const onSigterm = () => {
+    closeFromSignal(143);
+  };
+  const existingOnClose = transport.onclose;
+  transport.onclose = closeFromTransport;
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
+  removeStdinCloseHandlers = closeTransportWhenStdinEnds(transport, () => {
+    exitAfterClose(0);
+  });
+  try {
+    await server.connect(transport);
+    return await new Promise(() => void 0);
+  } catch (error2) {
+    exitOnTransportClose = false;
+    cleanupSignalHandlers();
+    await server.close().catch(async () => {
+      await transport.close().catch(() => void 0);
+    });
+    await closeClient();
+    throw error2;
+  }
+}
+function isDirectRun(importMetaUrl, argv = process.argv) {
+  const script = argv[1];
+  if (!script) {
+    return false;
+  }
+  return resolve3(fileURLToPath2(importMetaUrl)) === resolve3(script);
+}
+function closeTransportWhenStdinEnds(transport, onCloseError) {
+  let closeRequested = false;
+  const closeTransport = () => {
+    if (closeRequested) {
+      return;
+    }
+    closeRequested = true;
+    void transport.close().catch(onCloseError);
+  };
+  process.stdin.once("end", closeTransport);
+  process.stdin.once("close", closeTransport);
+  return () => {
+    process.stdin.off("end", closeTransport);
+    process.stdin.off("close", closeTransport);
+  };
+}
 export {
-  DEFAULT_AUTH_TIMEOUT_MS,
-  DEFAULT_CALLBACK_HOST,
-  DEFAULT_CALLBACK_PATH,
-  DEFAULT_CALLBACK_PORT,
-  DEFAULT_CLIENT_NAME,
-  DEFAULT_CLIENT_VERSION,
-  DEFAULT_FIGMA_MCP_ENDPOINT,
-  DEFAULT_OAUTH_STATE_PATH,
-  OAuthStateStore,
-  PersistentOAuthProvider,
-  RemoteMcpClient,
-  createCallbackUrl,
-  createClientMetadata,
-  createConfig,
-  createFigmaStdioMcpServer,
-  createRemoteMcpClient,
-  findCodexHomeOAuthCachePath,
-  normalizeCallbackPath,
-  parseOAuthState,
-  startOAuthCallbackServer
+  isDirectRun,
+  runFigmaStdioMcpCli
 };
