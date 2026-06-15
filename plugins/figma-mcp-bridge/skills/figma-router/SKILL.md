@@ -1,20 +1,21 @@
 ---
 name: figma-router
-description: Unified routing entry for official Figma MCP skill workflows. Use for Figma design, FigJam, Slides, Make, Code Connect, design systems, tokens, components, use_figma, create_new_file, generate_diagram, generate_figma_design, Plugin API lookup, or any task that needs choosing the correct official Figma skill, MCP resource, or local Figma reference before tool use.
+description: Unified routing entry for official Figma MCP skill workflows and Figma MCP login. Use for Figma design, FigJam, Slides, Make, Code Connect, design systems, tokens, components, use_figma, create_new_file, generate_diagram, generate_figma_design, Plugin API lookup, Figma MCP login/auth refresh, or any task that needs choosing the correct official Figma skill, MCP resource, or local Figma reference before tool use.
 ---
 
 # Figma Router
 
-Use this skill as the lightweight entry point for Figma MCP tasks. Do not copy, rewrite, delete, or reorganize the official Figma plugin cache.
+Use this skill as the lightweight entry point for Figma MCP tasks, including Figma MCP login for the bundled bridge. Do not copy, rewrite, delete, or reorganize the official Figma plugin cache.
 
 ## Route
 
 1. Identify the task type before reading a large Figma skill.
-2. Use the route table below to choose the reader input and the local lightweight reference.
-3. Read exactly the most relevant local reference from `references/`.
-4. Resolve the official Figma skill document with `python <skill_dir>/scripts/figma_skill_reader.py <reader-input>`. The helper returns only the bundled file path and file size, not file content.
-5. Use MCP resources only as tool/runtime identities, not as the documentation source. Bundled official skill entry files are named `SKILL.source.md` so they are not discovered as live skills.
-6. For `use_figma`, `create_new_file`, or `generate_diagram`, preserve the original mandatory prerequisite semantics: resolve the matching official Figma skill document through the helper before every matching tool call, then read only the needed file sections if the local lightweight reference is insufficient.
+2. If the user asks for Figma MCP login, auth setup, credential refresh, or auth repair, use the Figma MCP Login section below.
+3. Otherwise, use the route table below to choose the reader input and the local lightweight reference.
+4. Read exactly the most relevant local reference from `references/`.
+5. Resolve the official Figma skill document with `python <skill_dir>/scripts/figma_skill_reader.py <reader-input>`. The helper returns only the bundled file path and file size, not file content.
+6. Use MCP resources only as tool/runtime identities, not as the documentation source. Bundled official skill entry files are named `SKILL.source.md` so they are not discovered as live skills.
+7. For `use_figma`, `create_new_file`, or `generate_diagram`, preserve the original mandatory prerequisite semantics: resolve the matching official Figma skill document through the helper before every matching tool call, then read only the needed file sections if the local lightweight reference is insufficient.
 
 For deterministic resolution from a `skill://figma/...` URI or a short skill name such as `figma-use`, run the bundled helper at `<skill_dir>/scripts/figma_skill_reader.py`, where `<skill_dir>` is the directory containing this `SKILL.md`. The command prints `path=<resolved-file>` and `size_bytes=<bytes>` to stdout.
 
@@ -46,6 +47,25 @@ For deterministic resolution from a `skill://figma/...` URI or a short skill nam
 ## API Lookup
 
 The full `plugin-api-standalone.d.ts` is bundled at `references/official-figma-skills/figma-use/references/plugin-api-standalone.d.ts`. Treat that plugin-local copy as the source-of-truth document for exact API symbols; use [references/plugin-api-standalone.md](references/plugin-api-standalone.md) for its path and access rules. The bundled official Figma 2.0.9 skill copy contains eight skill folders; do not add routes for skills that are not present there.
+
+## Figma MCP Login
+
+Run the login helper from the plugin root, which is two directories above this `SKILL.md`:
+
+```text
+workdir: <plugin-root>
+command: npm run login:figma-http
+```
+
+The helper starts the local HTTP bridge, temporarily logs in through `figma-http`, then removes that temporary MCP entry. After browser OAuth, the shared cache is written to the first matching path:
+
+```text
+FIGMA_MCP_OAUTH_CACHE_PATH
+CODEX_HOME/.figma-mcp-bridge-oauth.json
+USERPROFILE/.codex/.figma-mcp-bridge-oauth.json
+```
+
+Do not add persistent `figma-http`; the plugin's persistent MCP server is `figma-stdio`.
 
 ## Scripts
 

@@ -1,7 +1,7 @@
 {
   "name": "@jxx-codex-plugins/figma-mcp-bridge",
   "version": "0.1.0",
-  "description": "Figma MCP stdio frontend with a local OAuth bootstrap bridge.",
+  "description": "Figma MCP stdio frontend with local Figma MCP login support.",
   "type": "module",
   "main": "./scripts/server.mjs",
   "scripts": {

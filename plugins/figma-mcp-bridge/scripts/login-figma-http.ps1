@@ -118,7 +118,7 @@ function Invoke-CodexMcp {
 
 $resolvedCachePath = Resolve-OAuthCachePath
 
-Write-Host "Figma HTTP MCP OAuth bootstrap"
+Write-Host "Figma MCP login"
 Write-Host "Server name: $serverName"
 Write-Host "Server URL:  $serverUrl"
 Write-Host "CODEX_HOME:  $env:CODEX_HOME"
