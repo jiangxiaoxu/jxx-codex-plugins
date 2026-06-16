@@ -238,10 +238,7 @@ def command_status(args: argparse.Namespace) -> int:
     print(f"archive_dir={archive_dir}")
     print(f"live_unarchived_reports={len(live_reports)}")
     for report in live_reports:
-        print(f"live_unarchived_report={report.name}|{report}")
-    print(f"pending_reports={len(live_reports)}")
-    for report in live_reports:
-        print(f"pending_report={report.name}|{report}")
+        print(f"live_unarchived_report={report.name}")
     return 0
 
 
