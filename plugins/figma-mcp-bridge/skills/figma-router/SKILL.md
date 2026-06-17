@@ -19,6 +19,8 @@ Use this skill as the lightweight entry point for Figma MCP tasks, including Fig
 
 For deterministic resolution from a `skill://figma/...` URI or a short skill name such as `figma-use`, run the bundled helper at `<skill_dir>/scripts/figma_skill_reader.py`, where `<skill_dir>` is the directory containing this `SKILL.md`. The command prints `path=<resolved-file>` and `size_bytes=<bytes>` to stdout.
 
+After this `SKILL.md` is loaded, use the loaded skill instructions from the current context. Do not reread this file only because the Figma Router skill activates again. Likewise, after a routed official skill `SKILL.source.md` or reference document is progressively loaded, use the loaded text from the current context. Reread a skill or reference document only when the current context does not contain the needed text.
+
 ## Route Table
 
 | Task | Reader input | Local reference | Required before tool call |
