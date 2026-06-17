@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-bridge",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Figma MCP stdio frontend with local Figma MCP login support.",
   "author": {
     "name": "Local developer"
