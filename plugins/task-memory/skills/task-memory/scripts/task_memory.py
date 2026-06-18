@@ -64,10 +64,15 @@ def archive_dir_path(task_dir: Path) -> Path:
     return reports_dir_path(task_dir) / "archive"
 
 
-def validate_task_dir(task_dir: Path, require_reports: bool = True) -> tuple[Path, Path, Path]:
+def artifacts_dir_path(task_dir: Path) -> Path:
+    return task_dir / "artifacts"
+
+
+def validate_task_dir(task_dir: Path, require_reports: bool = True) -> tuple[Path, Path, Path, Path]:
     task_state = task_state_path(task_dir)
     reports_dir = reports_dir_path(task_dir)
     archive_dir = archive_dir_path(task_dir)
+    artifacts_dir = artifacts_dir_path(task_dir)
     if not task_state.is_file():
         raise SystemExit(f"missing task_state.md: {task_state}")
     if reports_dir.exists() and not reports_dir.is_dir():
@@ -76,7 +81,9 @@ def validate_task_dir(task_dir: Path, require_reports: bool = True) -> tuple[Pat
         raise SystemExit(f"missing reports directory: {reports_dir}")
     if archive_dir.exists() and not archive_dir.is_dir():
         raise SystemExit(f"reports archive path exists but is not a directory: {archive_dir}")
-    return task_state, reports_dir, archive_dir
+    if artifacts_dir.exists() and not artifacts_dir.is_dir():
+        raise SystemExit(f"artifacts path exists but is not a directory: {artifacts_dir}")
+    return task_state, reports_dir, archive_dir, artifacts_dir
 
 
 def task_state_template(task_name: str) -> str:
@@ -91,9 +98,9 @@ def task_state_template(task_name: str) -> str:
 
 - Current phase: initialization
 - Durable findings:
-  - Task memory folder created - evidence: task_state.md, reports/, and reports/archive/ initialized.
+  - Task memory folder created - evidence: task_state.md, reports/, reports/archive/, and artifacts/ initialized.
 - Evidence ledger:
-  - `task-memory-init`: task_state.md + reports/ + reports/archive/ - initial durable memory scaffold.
+  - `task-memory-init`: task_state.md + reports/ + reports/archive/ + artifacts/ - initial durable memory scaffold and centralized artifact storage.
 
 ## Open
 
@@ -213,9 +220,11 @@ def command_init(args: argparse.Namespace) -> int:
     actual_task_id, task_dir = allocate_task_dir(workspace, task_id)
     reports_dir = reports_dir_path(task_dir)
     archive_dir = archive_dir_path(task_dir)
+    artifacts_dir = artifacts_dir_path(task_dir)
     task_state = task_state_path(task_dir)
 
     archive_dir.mkdir(parents=True)
+    artifacts_dir.mkdir()
     task_state.write_text(task_state_template(f"task-{actual_task_id}"), encoding="utf-8", newline="\n")
 
     print(f"task_id={actual_task_id}")
@@ -223,19 +232,21 @@ def command_init(args: argparse.Namespace) -> int:
     print(f"task_state={task_state}")
     print(f"reports_dir={reports_dir}")
     print(f"archive_dir={archive_dir}")
+    print(f"artifacts_dir={artifacts_dir}")
     return 0
 
 
 def command_status(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    task_state, reports_dir, archive_dir = validate_task_dir(task_dir, require_reports=False)
+    task_state, reports_dir, archive_dir, artifacts_dir = validate_task_dir(task_dir, require_reports=False)
     live_reports = sorted(reports_dir.glob("*.md")) if reports_dir.is_dir() else []
 
     print(f"task_dir={task_dir}")
     print(f"task_state={task_state}")
     print(f"reports_dir={reports_dir}")
     print(f"archive_dir={archive_dir}")
+    print(f"artifacts_dir={artifacts_dir}")
     print(f"live_unarchived_reports={len(live_reports)}")
     for report in live_reports:
         print(f"live_unarchived_report={report.name}")
@@ -245,7 +256,7 @@ def command_status(args: argparse.Namespace) -> int:
 def command_create_report(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    task_state, reports_dir, _archive_dir = validate_task_dir(task_dir, require_reports=False)
+    task_state, reports_dir, _archive_dir, _artifacts_dir = validate_task_dir(task_dir, require_reports=False)
     reports_dir.mkdir(exist_ok=True)
     report_name = normalize_token(args.name, "--name")
     report = create_report_file(reports_dir, report_name, task_state)
@@ -257,7 +268,7 @@ def command_create_report(args: argparse.Namespace) -> int:
 def command_archive_report(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    task_state, reports_dir, archive_dir = validate_task_dir(task_dir, require_reports=False)
+    task_state, reports_dir, archive_dir, _artifacts_dir = validate_task_dir(task_dir, require_reports=False)
     reports_dir.mkdir(exist_ok=True)
     report = resolve_live_report(reports_dir, args.report)
     archive_dir.mkdir(exist_ok=True)
@@ -283,7 +294,7 @@ def add_common_task_args(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Manage task-memory/task-<task-id>/task_state.md, reports/, and reports/archive/.",
+        description="Manage task-memory/task-<task-id>/task_state.md, reports/, reports/archive/, and artifacts/.",
         epilog="""Examples:
   python <skill_dir>/scripts/task_memory.py init --workspace <absolute-workspace> --task-id <task-id>
   python <skill_dir>/scripts/task_memory.py status --workspace <absolute-workspace> --task-id <task-id>
