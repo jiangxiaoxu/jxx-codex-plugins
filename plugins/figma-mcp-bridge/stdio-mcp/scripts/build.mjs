@@ -27,8 +27,24 @@ const outputs = [
     bundle: true,
   },
   {
+    entryPoint: resolve(root, "src/repl-server.ts"),
+    outfile: resolve(dist, "repl-server.js"),
+    bundle: true,
+  },
+  {
+    entryPoint: resolve(root, "src/repl-cli.ts"),
+    outfile: resolve(dist, "repl-cli.js"),
+    bundle: true,
+  },
+  {
     entryPoint: resolve(root, "src/stdio-cli.ts"),
     outfile: resolve(dist, "stdio-cli.js"),
+    bundle: false,
+    executable: true,
+  },
+  {
+    entryPoint: resolve(root, "src/repl-stdio-cli.ts"),
+    outfile: resolve(dist, "repl-stdio-cli.js"),
     bundle: false,
     executable: true,
   },
