@@ -15,10 +15,16 @@
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js",
       "default": "./dist/cli.js"
+    },
+    "./repl": {
+      "types": "./dist/repl-server.d.ts",
+      "import": "./dist/repl-server.js",
+      "default": "./dist/repl-server.js"
     }
   },
   "bin": {
-    "figma-mcp-stdio-bridge": "./dist/stdio-cli.js"
+    "figma-mcp-stdio-bridge": "./dist/stdio-cli.js",
+    "figma-repl-mcp": "./dist/repl-stdio-cli.js"
   },
   "files": [
     "dist",

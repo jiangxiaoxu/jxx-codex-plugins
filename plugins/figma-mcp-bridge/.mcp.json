@@ -6,6 +6,13 @@
       "args": [
         "./stdio-mcp/dist/stdio-cli.js"
       ]
+    },
+    "figma-repl-mcp": {
+      "command": "node",
+      "cwd": ".",
+      "args": [
+        "./stdio-mcp/dist/repl-stdio-cli.js"
+      ]
     }
   }
 }

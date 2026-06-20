@@ -6884,377 +6884,12 @@ var require_dist = __commonJS({
   }
 });
 
-// src/constants.ts
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-var DEFAULT_FIGMA_MCP_ENDPOINT = "https://mcp.figma.com/mcp";
-var DEFAULT_CALLBACK_HOST = "127.0.0.1";
-var DEFAULT_CALLBACK_PORT = 18765;
-var DEFAULT_CALLBACK_PATH = "/oauth/callback";
-var DEFAULT_AUTH_TIMEOUT_MS = 18e4;
-var DEFAULT_CLIENT_NAME = "jxx-codex-figma-mcp";
-var DEFAULT_CLIENT_VERSION = "0.1.0";
-var BRIDGE_OAUTH_CACHE_FILENAME = ".figma-mcp-bridge-oauth.json";
-var distDir = dirname(fileURLToPath(import.meta.url));
-var PLUGIN_ROOT = resolve(distDir, "..");
-var DEFAULT_OAUTH_STATE_PATH = resolve(
-  PLUGIN_ROOT,
-  ".mcp-oauth-state.json"
-);
-
-// src/config.ts
-import { resolve as resolve2 } from "node:path";
-function normalizeCallbackPath(path) {
-  return path.startsWith("/") ? path : `/${path}`;
-}
-function createCallbackUrl(options = {}) {
-  const host = options.host ?? DEFAULT_CALLBACK_HOST;
-  const port = options.port ?? DEFAULT_CALLBACK_PORT;
-  const path = normalizeCallbackPath(options.path ?? DEFAULT_CALLBACK_PATH);
-  return `http://${host}:${port}${path}`;
-}
-function createClientMetadata(redirectUrl, overrides = {}) {
-  return {
-    grant_types: ["authorization_code", "refresh_token"],
-    response_types: ["code"],
-    token_endpoint_auth_method: "client_secret_post",
-    ...overrides,
-    client_name: overrides.client_name ?? DEFAULT_CLIENT_NAME,
-    redirect_uris: overrides.redirect_uris ?? [redirectUrl]
-  };
-}
-function readEnv(name) {
-  if (typeof process === "undefined") {
-    return void 0;
-  }
-  return process.env[name];
-}
-function findCodexHomeOAuthCachePath(env = typeof process === "undefined" ? {} : process.env) {
-  if (env.CODEX_HOME) {
-    return resolve2(env.CODEX_HOME, BRIDGE_OAUTH_CACHE_FILENAME);
-  }
-  if (env.USERPROFILE) {
-    return resolve2(env.USERPROFILE, ".codex", BRIDGE_OAUTH_CACHE_FILENAME);
-  }
-  return void 0;
-}
-function createConfig(input = {}) {
-  const callbackHost = input.callbackHost ?? DEFAULT_CALLBACK_HOST;
-  const callbackPort = input.callbackPort ?? DEFAULT_CALLBACK_PORT;
-  const callbackPath = normalizeCallbackPath(input.callbackPath ?? DEFAULT_CALLBACK_PATH);
-  const callbackUrl = createCallbackUrl({
-    host: callbackHost,
-    port: callbackPort,
-    path: callbackPath
-  });
-  const useBridgeOAuthCache = input.useBridgeOAuthCache ?? readEnv("FIGMA_MCP_USE_BRIDGE_OAUTH_CACHE") === "1";
-  const statePath = input.statePath ?? readEnv("FIGMA_MCP_OAUTH_CACHE_PATH") ?? (useBridgeOAuthCache ? findCodexHomeOAuthCachePath() ?? missingBridgeOAuthCachePath() : DEFAULT_OAUTH_STATE_PATH);
-  return {
-    endpoint: input.endpoint ?? DEFAULT_FIGMA_MCP_ENDPOINT,
-    statePath: resolve2(statePath),
-    callbackHost,
-    callbackPort,
-    callbackPath,
-    callbackUrl,
-    authTimeoutMs: input.authTimeoutMs ?? DEFAULT_AUTH_TIMEOUT_MS,
-    openBrowser: input.openBrowser ?? true,
-    clientName: input.clientName ?? DEFAULT_CLIENT_NAME,
-    clientVersion: input.clientVersion ?? DEFAULT_CLIENT_VERSION,
-    clientMetadata: createClientMetadata(callbackUrl, input.clientMetadata),
-    useBridgeOAuthCache
-  };
-}
-function missingBridgeOAuthCachePath() {
-  throw new Error(
-    "Unable to resolve Figma MCP OAuth cache path. Set FIGMA_MCP_OAUTH_CACHE_PATH, CODEX_HOME, or USERPROFILE."
-  );
-}
-
-// src/oauth-state.ts
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname as dirname2 } from "node:path";
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function optionalRecord(value) {
-  return isRecord(value) ? value : void 0;
-}
-function parseOAuthState(json) {
-  const value = JSON.parse(json);
-  if (!isRecord(value)) {
-    return {};
-  }
-  return {
-    ...value,
-    clientInformation: optionalRecord(
-      value.clientInformation
-    ),
-    tokens: optionalRecord(value.tokens),
-    codeVerifier: typeof value.codeVerifier === "string" ? value.codeVerifier : void 0,
-    discoveryState: optionalRecord(value.discoveryState),
-    lastState: typeof value.lastState === "string" ? value.lastState : void 0
-  };
-}
-var OAuthStateStore = class {
-  constructor(statePath) {
-    this.statePath = statePath;
-  }
-  statePath;
-  async read() {
-    try {
-      return parseOAuthState(await readFile(this.statePath, "utf8"));
-    } catch (error2) {
-      if (error2 instanceof Error && "code" in error2 && error2.code === "ENOENT") {
-        return {};
-      }
-      throw error2;
-    }
-  }
-  async write(state) {
-    await mkdir(dirname2(this.statePath), { recursive: true });
-    const tmpPath = `${this.statePath}.tmp`;
-    await writeFile(tmpPath, `${JSON.stringify(state, null, 2)}
-`, {
-      encoding: "utf8",
-      mode: 384
-    });
-    await rename(tmpPath, this.statePath);
-  }
-  async update(update) {
-    const next = update(await this.read());
-    await this.write(next);
-    return next;
-  }
-  async clear() {
-    await rm(this.statePath, { force: true });
-  }
-};
-
-// src/oauth-provider.ts
-import { randomBytes } from "node:crypto";
-var PersistentOAuthProvider = class {
-  constructor(options) {
-    this.options = options;
-    this.clientMetadataUrl = options.clientMetadataUrl;
-    this.store = new OAuthStateStore(options.statePath);
-    this.redirectHandler = options.onRedirect ?? ((authorizationUrl) => {
-      console.error(
-        `Open this URL to authorize MCP access:
-${authorizationUrl.toString()}`
-      );
-    });
-  }
-  options;
-  clientMetadataUrl;
-  store;
-  redirectHandler;
-  get redirectUrl() {
-    return this.options.redirectUrl;
-  }
-  get clientMetadata() {
-    return this.options.clientMetadata;
-  }
-  get statePath() {
-    return this.options.statePath;
-  }
-  async state() {
-    const state = randomBytes(16).toString("hex");
-    await this.store.update((current) => ({ ...current, lastState: state }));
-    return state;
-  }
-  async savedState() {
-    return this.store.read();
-  }
-  async expectedState() {
-    return (await this.store.read()).lastState;
-  }
-  async clientInformation() {
-    return (await this.store.read()).clientInformation;
-  }
-  async saveClientInformation(clientInformation) {
-    await this.store.update((current) => ({ ...current, clientInformation }));
-  }
-  async tokens() {
-    return (await this.store.read()).tokens;
-  }
-  async saveTokens(tokens) {
-    await this.store.update((current) => ({ ...current, tokens }));
-  }
-  async redirectToAuthorization(authorizationUrl) {
-    await this.redirectHandler(authorizationUrl);
-  }
-  async saveCodeVerifier(codeVerifier) {
-    await this.store.update((current) => ({ ...current, codeVerifier }));
-  }
-  async codeVerifier() {
-    const codeVerifier = (await this.store.read()).codeVerifier;
-    if (!codeVerifier) {
-      throw new Error("No OAuth code verifier is saved.");
-    }
-    return codeVerifier;
-  }
-  async saveDiscoveryState(discoveryState) {
-    await this.store.update((current) => ({ ...current, discoveryState }));
-  }
-  async discoveryState() {
-    return (await this.store.read()).discoveryState;
-  }
-  async invalidateCredentials(scope) {
-    if (scope === "all") {
-      await this.store.clear();
-      return;
-    }
-    await this.store.update((current) => {
-      const next = { ...current };
-      if (scope === "client") {
-        delete next.clientInformation;
-      }
-      if (scope === "tokens") {
-        delete next.tokens;
-      }
-      if (scope === "verifier") {
-        delete next.codeVerifier;
-        delete next.lastState;
-      }
-      if (scope === "discovery") {
-        delete next.discoveryState;
-      }
-      return next;
-    });
-  }
-};
-
-// src/oauth-callback.ts
-import { createServer } from "node:http";
-import { URL as URL2 } from "node:url";
-var CLOSED_BEFORE_AUTHORIZATION_MESSAGE = "OAuth callback server was closed before authorization completed.";
-function sendHtml(response, status, title, body) {
-  response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
-  response.end(
-    `<!doctype html><html><head><title>${title}</title></head><body><h1>${title}</h1><p>${body}</p></body></html>`
-  );
-}
-async function closeServer(server) {
-  if (!server.listening) {
-    return;
-  }
-  await new Promise((resolve4, reject) => {
-    server.close((error2) => error2 ? reject(error2) : resolve4());
-  });
-}
-async function startOAuthCallbackServer(options) {
-  const callbackUrl = `http://${options.host}:${options.port}${options.path}`;
-  let timeout;
-  let settled = false;
-  let closePromise;
-  let resolveCode;
-  let rejectCode;
-  const codePromise = new Promise((resolve4, reject) => {
-    resolveCode = resolve4;
-    rejectCode = reject;
-  });
-  codePromise.catch(() => void 0);
-  const server = createServer(async (request, response) => {
-    try {
-      const url2 = new URL2(request.url ?? "/", callbackUrl);
-      if (url2.pathname !== options.path) {
-        response.writeHead(404);
-        response.end("Not found");
-        return;
-      }
-      const error2 = url2.searchParams.get("error");
-      if (error2) {
-        const description = url2.searchParams.get("error_description");
-        const message = description ? `${error2}: ${description}` : error2;
-        sendHtml(response, 400, "Authorization failed", message);
-        settleWithError(new Error(`OAuth authorization failed: ${message}`));
-        return;
-      }
-      const code = url2.searchParams.get("code");
-      if (!code) {
-        sendHtml(response, 400, "Authorization failed", "Missing authorization code.");
-        settleWithError(new Error("OAuth callback did not include a code."));
-        return;
-      }
-      const expectedState = await options.getExpectedState?.();
-      const receivedState = url2.searchParams.get("state") ?? void 0;
-      if (expectedState && receivedState !== expectedState) {
-        sendHtml(response, 400, "Authorization failed", "OAuth state mismatch.");
-        settleWithError(
-          new Error("OAuth callback state did not match the saved state.")
-        );
-        return;
-      }
-      sendHtml(
-        response,
-        200,
-        "Authorization complete",
-        "You can close this window and return to the terminal."
-      );
-      settleWithCode(code);
-    } catch (error2) {
-      if (!settled) {
-        if (!response.headersSent) {
-          sendHtml(response, 500, "Authorization failed", "Internal callback error.");
-        }
-        settleWithError(asError(error2));
-      }
-    }
-  });
-  const clearAuthTimeout = () => {
-    if (timeout) {
-      clearTimeout(timeout);
-      timeout = void 0;
-    }
-  };
-  const requestClose = () => {
-    closePromise ??= closeServer(server);
-    return closePromise;
-  };
-  const settleWithCode = (code) => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    clearAuthTimeout();
-    resolveCode(code);
-    requestClose().catch(() => void 0);
-  };
-  const settleWithError = (error2) => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    clearAuthTimeout();
-    rejectCode(error2);
-    requestClose().catch(() => void 0);
-  };
-  await new Promise((resolve4, reject) => {
-    server.once("error", reject);
-    server.listen(options.port, options.host, () => {
-      server.off("error", reject);
-      resolve4();
-    });
-  });
-  timeout = setTimeout(() => {
-    settleWithError(new Error("Timed out waiting for OAuth callback."));
-  }, options.timeoutMs);
-  return {
-    url: callbackUrl,
-    waitForCode: () => codePromise,
-    close: async () => {
-      if (!settled) {
-        settleWithError(new Error(CLOSED_BEFORE_AUTHORIZATION_MESSAGE));
-      } else {
-        clearAuthTimeout();
-      }
-      await requestClose();
-    }
-  };
-}
-function asError(error2) {
-  return error2 instanceof Error ? error2 : new Error(String(error2));
-}
+// src/repl-server.ts
+import { randomUUID } from "node:crypto";
+import { mkdir as mkdir2, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname as dirname3, isAbsolute, relative, resolve as resolve3 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // node_modules/zod/v4/core/core.js
 var _a;
@@ -15294,6 +14929,634 @@ var AjvJsonSchemaValidator = class {
   }
 };
 
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
+var ExperimentalServerTasks = class {
+  constructor(_server) {
+    this._server = _server;
+  }
+  /**
+   * Sends a request and returns an AsyncGenerator that yields response messages.
+   * The generator is guaranteed to end with either a 'result' or 'error' message.
+   *
+   * This method provides streaming access to request processing, allowing you to
+   * observe intermediate task status updates for task-augmented requests.
+   *
+   * @param request - The request to send
+   * @param resultSchema - Zod schema for validating the result
+   * @param options - Optional request options (timeout, signal, task creation params, etc.)
+   * @returns AsyncGenerator that yields ResponseMessage objects
+   *
+   * @experimental
+   */
+  requestStream(request, resultSchema, options) {
+    return this._server.requestStream(request, resultSchema, options);
+  }
+  /**
+   * Sends a sampling request and returns an AsyncGenerator that yields response messages.
+   * The generator is guaranteed to end with either a 'result' or 'error' message.
+   *
+   * For task-augmented requests, yields 'taskCreated' and 'taskStatus' messages
+   * before the final result.
+   *
+   * @example
+   * ```typescript
+   * const stream = server.experimental.tasks.createMessageStream({
+   *     messages: [{ role: 'user', content: { type: 'text', text: 'Hello' } }],
+   *     maxTokens: 100
+   * }, {
+   *     onprogress: (progress) => {
+   *         // Handle streaming tokens via progress notifications
+   *         console.log('Progress:', progress.message);
+   *     }
+   * });
+   *
+   * for await (const message of stream) {
+   *     switch (message.type) {
+   *         case 'taskCreated':
+   *             console.log('Task created:', message.task.taskId);
+   *             break;
+   *         case 'taskStatus':
+   *             console.log('Task status:', message.task.status);
+   *             break;
+   *         case 'result':
+   *             console.log('Final result:', message.result);
+   *             break;
+   *         case 'error':
+   *             console.error('Error:', message.error);
+   *             break;
+   *     }
+   * }
+   * ```
+   *
+   * @param params - The sampling request parameters
+   * @param options - Optional request options (timeout, signal, task creation params, onprogress, etc.)
+   * @returns AsyncGenerator that yields ResponseMessage objects
+   *
+   * @experimental
+   */
+  createMessageStream(params, options) {
+    const clientCapabilities = this._server.getClientCapabilities();
+    if ((params.tools || params.toolChoice) && !clientCapabilities?.sampling?.tools) {
+      throw new Error("Client does not support sampling tools capability.");
+    }
+    if (params.messages.length > 0) {
+      const lastMessage = params.messages[params.messages.length - 1];
+      const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
+      const hasToolResults = lastContent.some((c) => c.type === "tool_result");
+      const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
+      const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
+      const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
+      if (hasToolResults) {
+        if (lastContent.some((c) => c.type !== "tool_result")) {
+          throw new Error("The last message must contain only tool_result content if any is present");
+        }
+        if (!hasPreviousToolUse) {
+          throw new Error("tool_result blocks are not matching any tool_use from the previous message");
+        }
+      }
+      if (hasPreviousToolUse) {
+        const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
+        const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
+        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+          throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
+        }
+      }
+    }
+    return this.requestStream({
+      method: "sampling/createMessage",
+      params
+    }, CreateMessageResultSchema, options);
+  }
+  /**
+   * Sends an elicitation request and returns an AsyncGenerator that yields response messages.
+   * The generator is guaranteed to end with either a 'result' or 'error' message.
+   *
+   * For task-augmented requests (especially URL-based elicitation), yields 'taskCreated'
+   * and 'taskStatus' messages before the final result.
+   *
+   * @example
+   * ```typescript
+   * const stream = server.experimental.tasks.elicitInputStream({
+   *     mode: 'url',
+   *     message: 'Please authenticate',
+   *     elicitationId: 'auth-123',
+   *     url: 'https://example.com/auth'
+   * }, {
+   *     task: { ttl: 300000 } // Task-augmented for long-running auth flow
+   * });
+   *
+   * for await (const message of stream) {
+   *     switch (message.type) {
+   *         case 'taskCreated':
+   *             console.log('Task created:', message.task.taskId);
+   *             break;
+   *         case 'taskStatus':
+   *             console.log('Task status:', message.task.status);
+   *             break;
+   *         case 'result':
+   *             console.log('User action:', message.result.action);
+   *             break;
+   *         case 'error':
+   *             console.error('Error:', message.error);
+   *             break;
+   *     }
+   * }
+   * ```
+   *
+   * @param params - The elicitation request parameters
+   * @param options - Optional request options (timeout, signal, task creation params, etc.)
+   * @returns AsyncGenerator that yields ResponseMessage objects
+   *
+   * @experimental
+   */
+  elicitInputStream(params, options) {
+    const clientCapabilities = this._server.getClientCapabilities();
+    const mode = params.mode ?? "form";
+    switch (mode) {
+      case "url": {
+        if (!clientCapabilities?.elicitation?.url) {
+          throw new Error("Client does not support url elicitation.");
+        }
+        break;
+      }
+      case "form": {
+        if (!clientCapabilities?.elicitation?.form) {
+          throw new Error("Client does not support form elicitation.");
+        }
+        break;
+      }
+    }
+    const normalizedParams = mode === "form" && params.mode === void 0 ? { ...params, mode: "form" } : params;
+    return this.requestStream({
+      method: "elicitation/create",
+      params: normalizedParams
+    }, ElicitResultSchema, options);
+  }
+  /**
+   * Gets the current status of a task.
+   *
+   * @param taskId - The task identifier
+   * @param options - Optional request options
+   * @returns The task status
+   *
+   * @experimental
+   */
+  async getTask(taskId, options) {
+    return this._server.getTask({ taskId }, options);
+  }
+  /**
+   * Retrieves the result of a completed task.
+   *
+   * @param taskId - The task identifier
+   * @param resultSchema - Zod schema for validating the result
+   * @param options - Optional request options
+   * @returns The task result
+   *
+   * @experimental
+   */
+  async getTaskResult(taskId, resultSchema, options) {
+    return this._server.getTaskResult({ taskId }, resultSchema, options);
+  }
+  /**
+   * Lists tasks with optional pagination.
+   *
+   * @param cursor - Optional pagination cursor
+   * @param options - Optional request options
+   * @returns List of tasks with optional next cursor
+   *
+   * @experimental
+   */
+  async listTasks(cursor, options) {
+    return this._server.listTasks(cursor ? { cursor } : void 0, options);
+  }
+  /**
+   * Cancels a running task.
+   *
+   * @param taskId - The task identifier
+   * @param options - Optional request options
+   *
+   * @experimental
+   */
+  async cancelTask(taskId, options) {
+    return this._server.cancelTask({ taskId }, options);
+  }
+};
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
+function assertToolsCallTaskCapability(requests, method, entityName) {
+  if (!requests) {
+    throw new Error(`${entityName} does not support task creation (required for ${method})`);
+  }
+  switch (method) {
+    case "tools/call":
+      if (!requests.tools?.call) {
+        throw new Error(`${entityName} does not support task creation for tools/call (required for ${method})`);
+      }
+      break;
+    default:
+      break;
+  }
+}
+function assertClientRequestTaskCapability(requests, method, entityName) {
+  if (!requests) {
+    throw new Error(`${entityName} does not support task creation (required for ${method})`);
+  }
+  switch (method) {
+    case "sampling/createMessage":
+      if (!requests.sampling?.createMessage) {
+        throw new Error(`${entityName} does not support task creation for sampling/createMessage (required for ${method})`);
+      }
+      break;
+    case "elicitation/create":
+      if (!requests.elicitation?.create) {
+        throw new Error(`${entityName} does not support task creation for elicitation/create (required for ${method})`);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
+var Server = class extends Protocol {
+  /**
+   * Initializes this server with the given name and version information.
+   */
+  constructor(_serverInfo, options) {
+    super(options);
+    this._serverInfo = _serverInfo;
+    this._loggingLevels = /* @__PURE__ */ new Map();
+    this.LOG_LEVEL_SEVERITY = new Map(LoggingLevelSchema.options.map((level, index) => [level, index]));
+    this.isMessageIgnored = (level, sessionId) => {
+      const currentLevel = this._loggingLevels.get(sessionId);
+      return currentLevel ? this.LOG_LEVEL_SEVERITY.get(level) < this.LOG_LEVEL_SEVERITY.get(currentLevel) : false;
+    };
+    this._capabilities = options?.capabilities ?? {};
+    this._instructions = options?.instructions;
+    this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
+    this.setRequestHandler(InitializeRequestSchema, (request) => this._oninitialize(request));
+    this.setNotificationHandler(InitializedNotificationSchema, () => this.oninitialized?.());
+    if (this._capabilities.logging) {
+      this.setRequestHandler(SetLevelRequestSchema, async (request, extra) => {
+        const transportSessionId = extra.sessionId || extra.requestInfo?.headers["mcp-session-id"] || void 0;
+        const { level } = request.params;
+        const parseResult = LoggingLevelSchema.safeParse(level);
+        if (parseResult.success) {
+          this._loggingLevels.set(transportSessionId, parseResult.data);
+        }
+        return {};
+      });
+    }
+  }
+  /**
+   * Access experimental features.
+   *
+   * WARNING: These APIs are experimental and may change without notice.
+   *
+   * @experimental
+   */
+  get experimental() {
+    if (!this._experimental) {
+      this._experimental = {
+        tasks: new ExperimentalServerTasks(this)
+      };
+    }
+    return this._experimental;
+  }
+  /**
+   * Registers new capabilities. This can only be called before connecting to a transport.
+   *
+   * The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
+   */
+  registerCapabilities(capabilities) {
+    if (this.transport) {
+      throw new Error("Cannot register capabilities after connecting to transport");
+    }
+    this._capabilities = mergeCapabilities(this._capabilities, capabilities);
+  }
+  /**
+   * Override request handler registration to enforce server-side validation for tools/call.
+   */
+  setRequestHandler(requestSchema, handler) {
+    const shape = getObjectShape(requestSchema);
+    const methodSchema = shape?.method;
+    if (!methodSchema) {
+      throw new Error("Schema is missing a method literal");
+    }
+    let methodValue;
+    if (isZ4Schema(methodSchema)) {
+      const v4Schema = methodSchema;
+      const v4Def = v4Schema._zod?.def;
+      methodValue = v4Def?.value ?? v4Schema.value;
+    } else {
+      const v3Schema = methodSchema;
+      const legacyDef = v3Schema._def;
+      methodValue = legacyDef?.value ?? v3Schema.value;
+    }
+    if (typeof methodValue !== "string") {
+      throw new Error("Schema method literal must be a string");
+    }
+    const method = methodValue;
+    if (method === "tools/call") {
+      const wrappedHandler = async (request, extra) => {
+        const validatedRequest = safeParse2(CallToolRequestSchema, request);
+        if (!validatedRequest.success) {
+          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
+        }
+        const { params } = validatedRequest.data;
+        const result = await Promise.resolve(handler(request, extra));
+        if (params.task) {
+          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
+          if (!taskValidationResult.success) {
+            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+          }
+          return taskValidationResult.data;
+        }
+        const validationResult = safeParse2(CallToolResultSchema, result);
+        if (!validationResult.success) {
+          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage}`);
+        }
+        return validationResult.data;
+      };
+      return super.setRequestHandler(requestSchema, wrappedHandler);
+    }
+    return super.setRequestHandler(requestSchema, handler);
+  }
+  assertCapabilityForMethod(method) {
+    switch (method) {
+      case "sampling/createMessage":
+        if (!this._clientCapabilities?.sampling) {
+          throw new Error(`Client does not support sampling (required for ${method})`);
+        }
+        break;
+      case "elicitation/create":
+        if (!this._clientCapabilities?.elicitation) {
+          throw new Error(`Client does not support elicitation (required for ${method})`);
+        }
+        break;
+      case "roots/list":
+        if (!this._clientCapabilities?.roots) {
+          throw new Error(`Client does not support listing roots (required for ${method})`);
+        }
+        break;
+      case "ping":
+        break;
+    }
+  }
+  assertNotificationCapability(method) {
+    switch (method) {
+      case "notifications/message":
+        if (!this._capabilities.logging) {
+          throw new Error(`Server does not support logging (required for ${method})`);
+        }
+        break;
+      case "notifications/resources/updated":
+      case "notifications/resources/list_changed":
+        if (!this._capabilities.resources) {
+          throw new Error(`Server does not support notifying about resources (required for ${method})`);
+        }
+        break;
+      case "notifications/tools/list_changed":
+        if (!this._capabilities.tools) {
+          throw new Error(`Server does not support notifying of tool list changes (required for ${method})`);
+        }
+        break;
+      case "notifications/prompts/list_changed":
+        if (!this._capabilities.prompts) {
+          throw new Error(`Server does not support notifying of prompt list changes (required for ${method})`);
+        }
+        break;
+      case "notifications/elicitation/complete":
+        if (!this._clientCapabilities?.elicitation?.url) {
+          throw new Error(`Client does not support URL elicitation (required for ${method})`);
+        }
+        break;
+      case "notifications/cancelled":
+        break;
+      case "notifications/progress":
+        break;
+    }
+  }
+  assertRequestHandlerCapability(method) {
+    if (!this._capabilities) {
+      return;
+    }
+    switch (method) {
+      case "completion/complete":
+        if (!this._capabilities.completions) {
+          throw new Error(`Server does not support completions (required for ${method})`);
+        }
+        break;
+      case "logging/setLevel":
+        if (!this._capabilities.logging) {
+          throw new Error(`Server does not support logging (required for ${method})`);
+        }
+        break;
+      case "prompts/get":
+      case "prompts/list":
+        if (!this._capabilities.prompts) {
+          throw new Error(`Server does not support prompts (required for ${method})`);
+        }
+        break;
+      case "resources/list":
+      case "resources/templates/list":
+      case "resources/read":
+        if (!this._capabilities.resources) {
+          throw new Error(`Server does not support resources (required for ${method})`);
+        }
+        break;
+      case "tools/call":
+      case "tools/list":
+        if (!this._capabilities.tools) {
+          throw new Error(`Server does not support tools (required for ${method})`);
+        }
+        break;
+      case "tasks/get":
+      case "tasks/list":
+      case "tasks/result":
+      case "tasks/cancel":
+        if (!this._capabilities.tasks) {
+          throw new Error(`Server does not support tasks capability (required for ${method})`);
+        }
+        break;
+      case "ping":
+      case "initialize":
+        break;
+    }
+  }
+  assertTaskCapability(method) {
+    assertClientRequestTaskCapability(this._clientCapabilities?.tasks?.requests, method, "Client");
+  }
+  assertTaskHandlerCapability(method) {
+    if (!this._capabilities) {
+      return;
+    }
+    assertToolsCallTaskCapability(this._capabilities.tasks?.requests, method, "Server");
+  }
+  async _oninitialize(request) {
+    const requestedVersion = request.params.protocolVersion;
+    this._clientCapabilities = request.params.capabilities;
+    this._clientVersion = request.params.clientInfo;
+    const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion) ? requestedVersion : LATEST_PROTOCOL_VERSION;
+    return {
+      protocolVersion,
+      capabilities: this.getCapabilities(),
+      serverInfo: this._serverInfo,
+      ...this._instructions && { instructions: this._instructions }
+    };
+  }
+  /**
+   * After initialization has completed, this will be populated with the client's reported capabilities.
+   */
+  getClientCapabilities() {
+    return this._clientCapabilities;
+  }
+  /**
+   * After initialization has completed, this will be populated with information about the client's name and version.
+   */
+  getClientVersion() {
+    return this._clientVersion;
+  }
+  getCapabilities() {
+    return this._capabilities;
+  }
+  async ping() {
+    return this.request({ method: "ping" }, EmptyResultSchema);
+  }
+  // Implementation
+  async createMessage(params, options) {
+    if (params.tools || params.toolChoice) {
+      if (!this._clientCapabilities?.sampling?.tools) {
+        throw new Error("Client does not support sampling tools capability.");
+      }
+    }
+    if (params.messages.length > 0) {
+      const lastMessage = params.messages[params.messages.length - 1];
+      const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
+      const hasToolResults = lastContent.some((c) => c.type === "tool_result");
+      const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
+      const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
+      const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
+      if (hasToolResults) {
+        if (lastContent.some((c) => c.type !== "tool_result")) {
+          throw new Error("The last message must contain only tool_result content if any is present");
+        }
+        if (!hasPreviousToolUse) {
+          throw new Error("tool_result blocks are not matching any tool_use from the previous message");
+        }
+      }
+      if (hasPreviousToolUse) {
+        const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
+        const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
+        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+          throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
+        }
+      }
+    }
+    if (params.tools) {
+      return this.request({ method: "sampling/createMessage", params }, CreateMessageResultWithToolsSchema, options);
+    }
+    return this.request({ method: "sampling/createMessage", params }, CreateMessageResultSchema, options);
+  }
+  /**
+   * Creates an elicitation request for the given parameters.
+   * For backwards compatibility, `mode` may be omitted for form requests and will default to `'form'`.
+   * @param params The parameters for the elicitation request.
+   * @param options Optional request options.
+   * @returns The result of the elicitation request.
+   */
+  async elicitInput(params, options) {
+    const mode = params.mode ?? "form";
+    switch (mode) {
+      case "url": {
+        if (!this._clientCapabilities?.elicitation?.url) {
+          throw new Error("Client does not support url elicitation.");
+        }
+        const urlParams = params;
+        return this.request({ method: "elicitation/create", params: urlParams }, ElicitResultSchema, options);
+      }
+      case "form": {
+        if (!this._clientCapabilities?.elicitation?.form) {
+          throw new Error("Client does not support form elicitation.");
+        }
+        const formParams = params.mode === "form" ? params : { ...params, mode: "form" };
+        const result = await this.request({ method: "elicitation/create", params: formParams }, ElicitResultSchema, options);
+        if (result.action === "accept" && result.content && formParams.requestedSchema) {
+          try {
+            const validator = this._jsonSchemaValidator.getValidator(formParams.requestedSchema);
+            const validationResult = validator(result.content);
+            if (!validationResult.valid) {
+              throw new McpError(ErrorCode.InvalidParams, `Elicitation response content does not match requested schema: ${validationResult.errorMessage}`);
+            }
+          } catch (error2) {
+            if (error2 instanceof McpError) {
+              throw error2;
+            }
+            throw new McpError(ErrorCode.InternalError, `Error validating elicitation response: ${error2 instanceof Error ? error2.message : String(error2)}`);
+          }
+        }
+        return result;
+      }
+    }
+  }
+  /**
+   * Creates a reusable callback that, when invoked, will send a `notifications/elicitation/complete`
+   * notification for the specified elicitation ID.
+   *
+   * @param elicitationId The ID of the elicitation to mark as complete.
+   * @param options Optional notification options. Useful when the completion notification should be related to a prior request.
+   * @returns A function that emits the completion notification when awaited.
+   */
+  createElicitationCompletionNotifier(elicitationId, options) {
+    if (!this._clientCapabilities?.elicitation?.url) {
+      throw new Error("Client does not support URL elicitation (required for notifications/elicitation/complete)");
+    }
+    return () => this.notification({
+      method: "notifications/elicitation/complete",
+      params: {
+        elicitationId
+      }
+    }, options);
+  }
+  async listRoots(params, options) {
+    return this.request({ method: "roots/list", params }, ListRootsResultSchema, options);
+  }
+  /**
+   * Sends a logging message to the client, if connected.
+   * Note: You only need to send the parameters object, not the entire JSON RPC message
+   * @see LoggingMessageNotification
+   * @param params
+   * @param sessionId optional for stateless and backward compatibility
+   */
+  async sendLoggingMessage(params, sessionId) {
+    if (this._capabilities.logging) {
+      if (!this.isMessageIgnored(params.level, sessionId)) {
+        return this.notification({ method: "notifications/message", params });
+      }
+    }
+  }
+  async sendResourceUpdated(params) {
+    return this.notification({
+      method: "notifications/resources/updated",
+      params
+    });
+  }
+  async sendResourceListChanged() {
+    return this.notification({
+      method: "notifications/resources/list_changed"
+    });
+  }
+  async sendToolListChanged() {
+    return this.notification({ method: "notifications/tools/list_changed" });
+  }
+  async sendPromptListChanged() {
+    return this.notification({ method: "notifications/prompts/list_changed" });
+  }
+};
+
 // node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/client.js
 var ExperimentalClientTasks = class {
   constructor(_client) {
@@ -15447,41 +15710,6 @@ var ExperimentalClientTasks = class {
     return this._client.requestStream(request, resultSchema, options);
   }
 };
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
-function assertToolsCallTaskCapability(requests, method, entityName) {
-  if (!requests) {
-    throw new Error(`${entityName} does not support task creation (required for ${method})`);
-  }
-  switch (method) {
-    case "tools/call":
-      if (!requests.tools?.call) {
-        throw new Error(`${entityName} does not support task creation for tools/call (required for ${method})`);
-      }
-      break;
-    default:
-      break;
-  }
-}
-function assertClientRequestTaskCapability(requests, method, entityName) {
-  if (!requests) {
-    throw new Error(`${entityName} does not support task creation (required for ${method})`);
-  }
-  switch (method) {
-    case "sampling/createMessage":
-      if (!requests.sampling?.createMessage) {
-        throw new Error(`${entityName} does not support task creation for sampling/createMessage (required for ${method})`);
-      }
-      break;
-    case "elicitation/create":
-      if (!requests.elicitation?.create) {
-        throw new Error(`${entityName} does not support task creation for elicitation/create (required for ${method})`);
-      }
-      break;
-    default:
-      break;
-  }
-}
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js
 function applyElicitationDefaults(schema, data) {
@@ -17492,6 +17720,382 @@ async function openBrowser(url2) {
   });
 }
 
+// src/config.ts
+import { resolve as resolve2 } from "node:path";
+
+// src/constants.ts
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+var DEFAULT_FIGMA_MCP_ENDPOINT = "https://mcp.figma.com/mcp";
+var DEFAULT_CALLBACK_HOST = "127.0.0.1";
+var DEFAULT_CALLBACK_PORT = 18765;
+var DEFAULT_CALLBACK_PATH = "/oauth/callback";
+var DEFAULT_AUTH_TIMEOUT_MS = 18e4;
+var DEFAULT_CLIENT_NAME = "jxx-codex-figma-mcp";
+var DEFAULT_CLIENT_VERSION = "0.1.0";
+var BRIDGE_OAUTH_CACHE_FILENAME = ".figma-mcp-bridge-oauth.json";
+var distDir = dirname(fileURLToPath(import.meta.url));
+var PLUGIN_ROOT = resolve(distDir, "..");
+var DEFAULT_OAUTH_STATE_PATH = resolve(
+  PLUGIN_ROOT,
+  ".mcp-oauth-state.json"
+);
+
+// src/config.ts
+function normalizeCallbackPath(path) {
+  return path.startsWith("/") ? path : `/${path}`;
+}
+function createCallbackUrl(options = {}) {
+  const host = options.host ?? DEFAULT_CALLBACK_HOST;
+  const port = options.port ?? DEFAULT_CALLBACK_PORT;
+  const path = normalizeCallbackPath(options.path ?? DEFAULT_CALLBACK_PATH);
+  return `http://${host}:${port}${path}`;
+}
+function createClientMetadata(redirectUrl, overrides = {}) {
+  return {
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "client_secret_post",
+    ...overrides,
+    client_name: overrides.client_name ?? DEFAULT_CLIENT_NAME,
+    redirect_uris: overrides.redirect_uris ?? [redirectUrl]
+  };
+}
+function readEnv(name) {
+  if (typeof process === "undefined") {
+    return void 0;
+  }
+  return process.env[name];
+}
+function findCodexHomeOAuthCachePath(env = typeof process === "undefined" ? {} : process.env) {
+  if (env.CODEX_HOME) {
+    return resolve2(env.CODEX_HOME, BRIDGE_OAUTH_CACHE_FILENAME);
+  }
+  if (env.USERPROFILE) {
+    return resolve2(env.USERPROFILE, ".codex", BRIDGE_OAUTH_CACHE_FILENAME);
+  }
+  return void 0;
+}
+function createConfig(input = {}) {
+  const callbackHost = input.callbackHost ?? DEFAULT_CALLBACK_HOST;
+  const callbackPort = input.callbackPort ?? DEFAULT_CALLBACK_PORT;
+  const callbackPath = normalizeCallbackPath(input.callbackPath ?? DEFAULT_CALLBACK_PATH);
+  const callbackUrl = createCallbackUrl({
+    host: callbackHost,
+    port: callbackPort,
+    path: callbackPath
+  });
+  const useBridgeOAuthCache = input.useBridgeOAuthCache ?? readEnv("FIGMA_MCP_USE_BRIDGE_OAUTH_CACHE") === "1";
+  const statePath = input.statePath ?? readEnv("FIGMA_MCP_OAUTH_CACHE_PATH") ?? (useBridgeOAuthCache ? findCodexHomeOAuthCachePath() ?? missingBridgeOAuthCachePath() : DEFAULT_OAUTH_STATE_PATH);
+  return {
+    endpoint: input.endpoint ?? DEFAULT_FIGMA_MCP_ENDPOINT,
+    statePath: resolve2(statePath),
+    callbackHost,
+    callbackPort,
+    callbackPath,
+    callbackUrl,
+    authTimeoutMs: input.authTimeoutMs ?? DEFAULT_AUTH_TIMEOUT_MS,
+    openBrowser: input.openBrowser ?? true,
+    clientName: input.clientName ?? DEFAULT_CLIENT_NAME,
+    clientVersion: input.clientVersion ?? DEFAULT_CLIENT_VERSION,
+    clientMetadata: createClientMetadata(callbackUrl, input.clientMetadata),
+    useBridgeOAuthCache
+  };
+}
+function missingBridgeOAuthCachePath() {
+  throw new Error(
+    "Unable to resolve Figma MCP OAuth cache path. Set FIGMA_MCP_OAUTH_CACHE_PATH, CODEX_HOME, or USERPROFILE."
+  );
+}
+
+// src/oauth-provider.ts
+import { randomBytes } from "node:crypto";
+
+// src/oauth-state.ts
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname as dirname2 } from "node:path";
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function optionalRecord(value) {
+  return isRecord(value) ? value : void 0;
+}
+function parseOAuthState(json) {
+  const value = JSON.parse(json);
+  if (!isRecord(value)) {
+    return {};
+  }
+  return {
+    ...value,
+    clientInformation: optionalRecord(
+      value.clientInformation
+    ),
+    tokens: optionalRecord(value.tokens),
+    codeVerifier: typeof value.codeVerifier === "string" ? value.codeVerifier : void 0,
+    discoveryState: optionalRecord(value.discoveryState),
+    lastState: typeof value.lastState === "string" ? value.lastState : void 0
+  };
+}
+var OAuthStateStore = class {
+  constructor(statePath) {
+    this.statePath = statePath;
+  }
+  statePath;
+  async read() {
+    try {
+      return parseOAuthState(await readFile(this.statePath, "utf8"));
+    } catch (error2) {
+      if (error2 instanceof Error && "code" in error2 && error2.code === "ENOENT") {
+        return {};
+      }
+      throw error2;
+    }
+  }
+  async write(state) {
+    await mkdir(dirname2(this.statePath), { recursive: true });
+    const tmpPath = `${this.statePath}.tmp`;
+    await writeFile(tmpPath, `${JSON.stringify(state, null, 2)}
+`, {
+      encoding: "utf8",
+      mode: 384
+    });
+    await rename(tmpPath, this.statePath);
+  }
+  async update(update) {
+    const next = update(await this.read());
+    await this.write(next);
+    return next;
+  }
+  async clear() {
+    await rm(this.statePath, { force: true });
+  }
+};
+
+// src/oauth-provider.ts
+var PersistentOAuthProvider = class {
+  constructor(options) {
+    this.options = options;
+    this.clientMetadataUrl = options.clientMetadataUrl;
+    this.store = new OAuthStateStore(options.statePath);
+    this.redirectHandler = options.onRedirect ?? ((authorizationUrl) => {
+      console.error(
+        `Open this URL to authorize MCP access:
+${authorizationUrl.toString()}`
+      );
+    });
+  }
+  options;
+  clientMetadataUrl;
+  store;
+  redirectHandler;
+  get redirectUrl() {
+    return this.options.redirectUrl;
+  }
+  get clientMetadata() {
+    return this.options.clientMetadata;
+  }
+  get statePath() {
+    return this.options.statePath;
+  }
+  async state() {
+    const state = randomBytes(16).toString("hex");
+    await this.store.update((current) => ({ ...current, lastState: state }));
+    return state;
+  }
+  async savedState() {
+    return this.store.read();
+  }
+  async expectedState() {
+    return (await this.store.read()).lastState;
+  }
+  async clientInformation() {
+    return (await this.store.read()).clientInformation;
+  }
+  async saveClientInformation(clientInformation) {
+    await this.store.update((current) => ({ ...current, clientInformation }));
+  }
+  async tokens() {
+    return (await this.store.read()).tokens;
+  }
+  async saveTokens(tokens) {
+    await this.store.update((current) => ({ ...current, tokens }));
+  }
+  async redirectToAuthorization(authorizationUrl) {
+    await this.redirectHandler(authorizationUrl);
+  }
+  async saveCodeVerifier(codeVerifier) {
+    await this.store.update((current) => ({ ...current, codeVerifier }));
+  }
+  async codeVerifier() {
+    const codeVerifier = (await this.store.read()).codeVerifier;
+    if (!codeVerifier) {
+      throw new Error("No OAuth code verifier is saved.");
+    }
+    return codeVerifier;
+  }
+  async saveDiscoveryState(discoveryState) {
+    await this.store.update((current) => ({ ...current, discoveryState }));
+  }
+  async discoveryState() {
+    return (await this.store.read()).discoveryState;
+  }
+  async invalidateCredentials(scope) {
+    if (scope === "all") {
+      await this.store.clear();
+      return;
+    }
+    await this.store.update((current) => {
+      const next = { ...current };
+      if (scope === "client") {
+        delete next.clientInformation;
+      }
+      if (scope === "tokens") {
+        delete next.tokens;
+      }
+      if (scope === "verifier") {
+        delete next.codeVerifier;
+        delete next.lastState;
+      }
+      if (scope === "discovery") {
+        delete next.discoveryState;
+      }
+      return next;
+    });
+  }
+};
+
+// src/oauth-callback.ts
+import { createServer } from "node:http";
+import { URL as URL2 } from "node:url";
+var CLOSED_BEFORE_AUTHORIZATION_MESSAGE = "OAuth callback server was closed before authorization completed.";
+function sendHtml(response, status, title, body) {
+  response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
+  response.end(
+    `<!doctype html><html><head><title>${title}</title></head><body><h1>${title}</h1><p>${body}</p></body></html>`
+  );
+}
+async function closeServer(server) {
+  if (!server.listening) {
+    return;
+  }
+  await new Promise((resolve4, reject) => {
+    server.close((error2) => error2 ? reject(error2) : resolve4());
+  });
+}
+async function startOAuthCallbackServer(options) {
+  const callbackUrl = `http://${options.host}:${options.port}${options.path}`;
+  let timeout;
+  let settled = false;
+  let closePromise;
+  let resolveCode;
+  let rejectCode;
+  const codePromise = new Promise((resolve4, reject) => {
+    resolveCode = resolve4;
+    rejectCode = reject;
+  });
+  codePromise.catch(() => void 0);
+  const server = createServer(async (request, response) => {
+    try {
+      const url2 = new URL2(request.url ?? "/", callbackUrl);
+      if (url2.pathname !== options.path) {
+        response.writeHead(404);
+        response.end("Not found");
+        return;
+      }
+      const error2 = url2.searchParams.get("error");
+      if (error2) {
+        const description = url2.searchParams.get("error_description");
+        const message = description ? `${error2}: ${description}` : error2;
+        sendHtml(response, 400, "Authorization failed", message);
+        settleWithError(new Error(`OAuth authorization failed: ${message}`));
+        return;
+      }
+      const code = url2.searchParams.get("code");
+      if (!code) {
+        sendHtml(response, 400, "Authorization failed", "Missing authorization code.");
+        settleWithError(new Error("OAuth callback did not include a code."));
+        return;
+      }
+      const expectedState = await options.getExpectedState?.();
+      const receivedState = url2.searchParams.get("state") ?? void 0;
+      if (expectedState && receivedState !== expectedState) {
+        sendHtml(response, 400, "Authorization failed", "OAuth state mismatch.");
+        settleWithError(
+          new Error("OAuth callback state did not match the saved state.")
+        );
+        return;
+      }
+      sendHtml(
+        response,
+        200,
+        "Authorization complete",
+        "You can close this window and return to the terminal."
+      );
+      settleWithCode(code);
+    } catch (error2) {
+      if (!settled) {
+        if (!response.headersSent) {
+          sendHtml(response, 500, "Authorization failed", "Internal callback error.");
+        }
+        settleWithError(asError(error2));
+      }
+    }
+  });
+  const clearAuthTimeout = () => {
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = void 0;
+    }
+  };
+  const requestClose = () => {
+    closePromise ??= closeServer(server);
+    return closePromise;
+  };
+  const settleWithCode = (code) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearAuthTimeout();
+    resolveCode(code);
+    requestClose().catch(() => void 0);
+  };
+  const settleWithError = (error2) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearAuthTimeout();
+    rejectCode(error2);
+    requestClose().catch(() => void 0);
+  };
+  await new Promise((resolve4, reject) => {
+    server.once("error", reject);
+    server.listen(options.port, options.host, () => {
+      server.off("error", reject);
+      resolve4();
+    });
+  });
+  timeout = setTimeout(() => {
+    settleWithError(new Error("Timed out waiting for OAuth callback."));
+  }, options.timeoutMs);
+  return {
+    url: callbackUrl,
+    waitForCode: () => codePromise,
+    close: async () => {
+      if (!settled) {
+        settleWithError(new Error(CLOSED_BEFORE_AUTHORIZATION_MESSAGE));
+      } else {
+        clearAuthTimeout();
+      }
+      await requestClose();
+    }
+  };
+}
+function asError(error2) {
+  return error2 instanceof Error ? error2 : new Error(String(error2));
+}
+
 // src/client.ts
 var RemoteMcpClient = class {
   config;
@@ -17754,717 +18358,7 @@ var StaleConnectionError = class extends Error {
   }
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
-var ExperimentalServerTasks = class {
-  constructor(_server) {
-    this._server = _server;
-  }
-  /**
-   * Sends a request and returns an AsyncGenerator that yields response messages.
-   * The generator is guaranteed to end with either a 'result' or 'error' message.
-   *
-   * This method provides streaming access to request processing, allowing you to
-   * observe intermediate task status updates for task-augmented requests.
-   *
-   * @param request - The request to send
-   * @param resultSchema - Zod schema for validating the result
-   * @param options - Optional request options (timeout, signal, task creation params, etc.)
-   * @returns AsyncGenerator that yields ResponseMessage objects
-   *
-   * @experimental
-   */
-  requestStream(request, resultSchema, options) {
-    return this._server.requestStream(request, resultSchema, options);
-  }
-  /**
-   * Sends a sampling request and returns an AsyncGenerator that yields response messages.
-   * The generator is guaranteed to end with either a 'result' or 'error' message.
-   *
-   * For task-augmented requests, yields 'taskCreated' and 'taskStatus' messages
-   * before the final result.
-   *
-   * @example
-   * ```typescript
-   * const stream = server.experimental.tasks.createMessageStream({
-   *     messages: [{ role: 'user', content: { type: 'text', text: 'Hello' } }],
-   *     maxTokens: 100
-   * }, {
-   *     onprogress: (progress) => {
-   *         // Handle streaming tokens via progress notifications
-   *         console.log('Progress:', progress.message);
-   *     }
-   * });
-   *
-   * for await (const message of stream) {
-   *     switch (message.type) {
-   *         case 'taskCreated':
-   *             console.log('Task created:', message.task.taskId);
-   *             break;
-   *         case 'taskStatus':
-   *             console.log('Task status:', message.task.status);
-   *             break;
-   *         case 'result':
-   *             console.log('Final result:', message.result);
-   *             break;
-   *         case 'error':
-   *             console.error('Error:', message.error);
-   *             break;
-   *     }
-   * }
-   * ```
-   *
-   * @param params - The sampling request parameters
-   * @param options - Optional request options (timeout, signal, task creation params, onprogress, etc.)
-   * @returns AsyncGenerator that yields ResponseMessage objects
-   *
-   * @experimental
-   */
-  createMessageStream(params, options) {
-    const clientCapabilities = this._server.getClientCapabilities();
-    if ((params.tools || params.toolChoice) && !clientCapabilities?.sampling?.tools) {
-      throw new Error("Client does not support sampling tools capability.");
-    }
-    if (params.messages.length > 0) {
-      const lastMessage = params.messages[params.messages.length - 1];
-      const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
-      const hasToolResults = lastContent.some((c) => c.type === "tool_result");
-      const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
-      const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
-      const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
-      if (hasToolResults) {
-        if (lastContent.some((c) => c.type !== "tool_result")) {
-          throw new Error("The last message must contain only tool_result content if any is present");
-        }
-        if (!hasPreviousToolUse) {
-          throw new Error("tool_result blocks are not matching any tool_use from the previous message");
-        }
-      }
-      if (hasPreviousToolUse) {
-        const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
-        const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
-        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
-          throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
-        }
-      }
-    }
-    return this.requestStream({
-      method: "sampling/createMessage",
-      params
-    }, CreateMessageResultSchema, options);
-  }
-  /**
-   * Sends an elicitation request and returns an AsyncGenerator that yields response messages.
-   * The generator is guaranteed to end with either a 'result' or 'error' message.
-   *
-   * For task-augmented requests (especially URL-based elicitation), yields 'taskCreated'
-   * and 'taskStatus' messages before the final result.
-   *
-   * @example
-   * ```typescript
-   * const stream = server.experimental.tasks.elicitInputStream({
-   *     mode: 'url',
-   *     message: 'Please authenticate',
-   *     elicitationId: 'auth-123',
-   *     url: 'https://example.com/auth'
-   * }, {
-   *     task: { ttl: 300000 } // Task-augmented for long-running auth flow
-   * });
-   *
-   * for await (const message of stream) {
-   *     switch (message.type) {
-   *         case 'taskCreated':
-   *             console.log('Task created:', message.task.taskId);
-   *             break;
-   *         case 'taskStatus':
-   *             console.log('Task status:', message.task.status);
-   *             break;
-   *         case 'result':
-   *             console.log('User action:', message.result.action);
-   *             break;
-   *         case 'error':
-   *             console.error('Error:', message.error);
-   *             break;
-   *     }
-   * }
-   * ```
-   *
-   * @param params - The elicitation request parameters
-   * @param options - Optional request options (timeout, signal, task creation params, etc.)
-   * @returns AsyncGenerator that yields ResponseMessage objects
-   *
-   * @experimental
-   */
-  elicitInputStream(params, options) {
-    const clientCapabilities = this._server.getClientCapabilities();
-    const mode = params.mode ?? "form";
-    switch (mode) {
-      case "url": {
-        if (!clientCapabilities?.elicitation?.url) {
-          throw new Error("Client does not support url elicitation.");
-        }
-        break;
-      }
-      case "form": {
-        if (!clientCapabilities?.elicitation?.form) {
-          throw new Error("Client does not support form elicitation.");
-        }
-        break;
-      }
-    }
-    const normalizedParams = mode === "form" && params.mode === void 0 ? { ...params, mode: "form" } : params;
-    return this.requestStream({
-      method: "elicitation/create",
-      params: normalizedParams
-    }, ElicitResultSchema, options);
-  }
-  /**
-   * Gets the current status of a task.
-   *
-   * @param taskId - The task identifier
-   * @param options - Optional request options
-   * @returns The task status
-   *
-   * @experimental
-   */
-  async getTask(taskId, options) {
-    return this._server.getTask({ taskId }, options);
-  }
-  /**
-   * Retrieves the result of a completed task.
-   *
-   * @param taskId - The task identifier
-   * @param resultSchema - Zod schema for validating the result
-   * @param options - Optional request options
-   * @returns The task result
-   *
-   * @experimental
-   */
-  async getTaskResult(taskId, resultSchema, options) {
-    return this._server.getTaskResult({ taskId }, resultSchema, options);
-  }
-  /**
-   * Lists tasks with optional pagination.
-   *
-   * @param cursor - Optional pagination cursor
-   * @param options - Optional request options
-   * @returns List of tasks with optional next cursor
-   *
-   * @experimental
-   */
-  async listTasks(cursor, options) {
-    return this._server.listTasks(cursor ? { cursor } : void 0, options);
-  }
-  /**
-   * Cancels a running task.
-   *
-   * @param taskId - The task identifier
-   * @param options - Optional request options
-   *
-   * @experimental
-   */
-  async cancelTask(taskId, options) {
-    return this._server.cancelTask({ taskId }, options);
-  }
-};
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
-var Server = class extends Protocol {
-  /**
-   * Initializes this server with the given name and version information.
-   */
-  constructor(_serverInfo, options) {
-    super(options);
-    this._serverInfo = _serverInfo;
-    this._loggingLevels = /* @__PURE__ */ new Map();
-    this.LOG_LEVEL_SEVERITY = new Map(LoggingLevelSchema.options.map((level, index) => [level, index]));
-    this.isMessageIgnored = (level, sessionId) => {
-      const currentLevel = this._loggingLevels.get(sessionId);
-      return currentLevel ? this.LOG_LEVEL_SEVERITY.get(level) < this.LOG_LEVEL_SEVERITY.get(currentLevel) : false;
-    };
-    this._capabilities = options?.capabilities ?? {};
-    this._instructions = options?.instructions;
-    this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
-    this.setRequestHandler(InitializeRequestSchema, (request) => this._oninitialize(request));
-    this.setNotificationHandler(InitializedNotificationSchema, () => this.oninitialized?.());
-    if (this._capabilities.logging) {
-      this.setRequestHandler(SetLevelRequestSchema, async (request, extra) => {
-        const transportSessionId = extra.sessionId || extra.requestInfo?.headers["mcp-session-id"] || void 0;
-        const { level } = request.params;
-        const parseResult = LoggingLevelSchema.safeParse(level);
-        if (parseResult.success) {
-          this._loggingLevels.set(transportSessionId, parseResult.data);
-        }
-        return {};
-      });
-    }
-  }
-  /**
-   * Access experimental features.
-   *
-   * WARNING: These APIs are experimental and may change without notice.
-   *
-   * @experimental
-   */
-  get experimental() {
-    if (!this._experimental) {
-      this._experimental = {
-        tasks: new ExperimentalServerTasks(this)
-      };
-    }
-    return this._experimental;
-  }
-  /**
-   * Registers new capabilities. This can only be called before connecting to a transport.
-   *
-   * The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
-   */
-  registerCapabilities(capabilities) {
-    if (this.transport) {
-      throw new Error("Cannot register capabilities after connecting to transport");
-    }
-    this._capabilities = mergeCapabilities(this._capabilities, capabilities);
-  }
-  /**
-   * Override request handler registration to enforce server-side validation for tools/call.
-   */
-  setRequestHandler(requestSchema, handler) {
-    const shape = getObjectShape(requestSchema);
-    const methodSchema = shape?.method;
-    if (!methodSchema) {
-      throw new Error("Schema is missing a method literal");
-    }
-    let methodValue;
-    if (isZ4Schema(methodSchema)) {
-      const v4Schema = methodSchema;
-      const v4Def = v4Schema._zod?.def;
-      methodValue = v4Def?.value ?? v4Schema.value;
-    } else {
-      const v3Schema = methodSchema;
-      const legacyDef = v3Schema._def;
-      methodValue = legacyDef?.value ?? v3Schema.value;
-    }
-    if (typeof methodValue !== "string") {
-      throw new Error("Schema method literal must be a string");
-    }
-    const method = methodValue;
-    if (method === "tools/call") {
-      const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(CallToolRequestSchema, request);
-        if (!validatedRequest.success) {
-          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
-        }
-        const { params } = validatedRequest.data;
-        const result = await Promise.resolve(handler(request, extra));
-        if (params.task) {
-          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
-          if (!taskValidationResult.success) {
-            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
-          }
-          return taskValidationResult.data;
-        }
-        const validationResult = safeParse2(CallToolResultSchema, result);
-        if (!validationResult.success) {
-          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage}`);
-        }
-        return validationResult.data;
-      };
-      return super.setRequestHandler(requestSchema, wrappedHandler);
-    }
-    return super.setRequestHandler(requestSchema, handler);
-  }
-  assertCapabilityForMethod(method) {
-    switch (method) {
-      case "sampling/createMessage":
-        if (!this._clientCapabilities?.sampling) {
-          throw new Error(`Client does not support sampling (required for ${method})`);
-        }
-        break;
-      case "elicitation/create":
-        if (!this._clientCapabilities?.elicitation) {
-          throw new Error(`Client does not support elicitation (required for ${method})`);
-        }
-        break;
-      case "roots/list":
-        if (!this._clientCapabilities?.roots) {
-          throw new Error(`Client does not support listing roots (required for ${method})`);
-        }
-        break;
-      case "ping":
-        break;
-    }
-  }
-  assertNotificationCapability(method) {
-    switch (method) {
-      case "notifications/message":
-        if (!this._capabilities.logging) {
-          throw new Error(`Server does not support logging (required for ${method})`);
-        }
-        break;
-      case "notifications/resources/updated":
-      case "notifications/resources/list_changed":
-        if (!this._capabilities.resources) {
-          throw new Error(`Server does not support notifying about resources (required for ${method})`);
-        }
-        break;
-      case "notifications/tools/list_changed":
-        if (!this._capabilities.tools) {
-          throw new Error(`Server does not support notifying of tool list changes (required for ${method})`);
-        }
-        break;
-      case "notifications/prompts/list_changed":
-        if (!this._capabilities.prompts) {
-          throw new Error(`Server does not support notifying of prompt list changes (required for ${method})`);
-        }
-        break;
-      case "notifications/elicitation/complete":
-        if (!this._clientCapabilities?.elicitation?.url) {
-          throw new Error(`Client does not support URL elicitation (required for ${method})`);
-        }
-        break;
-      case "notifications/cancelled":
-        break;
-      case "notifications/progress":
-        break;
-    }
-  }
-  assertRequestHandlerCapability(method) {
-    if (!this._capabilities) {
-      return;
-    }
-    switch (method) {
-      case "completion/complete":
-        if (!this._capabilities.completions) {
-          throw new Error(`Server does not support completions (required for ${method})`);
-        }
-        break;
-      case "logging/setLevel":
-        if (!this._capabilities.logging) {
-          throw new Error(`Server does not support logging (required for ${method})`);
-        }
-        break;
-      case "prompts/get":
-      case "prompts/list":
-        if (!this._capabilities.prompts) {
-          throw new Error(`Server does not support prompts (required for ${method})`);
-        }
-        break;
-      case "resources/list":
-      case "resources/templates/list":
-      case "resources/read":
-        if (!this._capabilities.resources) {
-          throw new Error(`Server does not support resources (required for ${method})`);
-        }
-        break;
-      case "tools/call":
-      case "tools/list":
-        if (!this._capabilities.tools) {
-          throw new Error(`Server does not support tools (required for ${method})`);
-        }
-        break;
-      case "tasks/get":
-      case "tasks/list":
-      case "tasks/result":
-      case "tasks/cancel":
-        if (!this._capabilities.tasks) {
-          throw new Error(`Server does not support tasks capability (required for ${method})`);
-        }
-        break;
-      case "ping":
-      case "initialize":
-        break;
-    }
-  }
-  assertTaskCapability(method) {
-    assertClientRequestTaskCapability(this._clientCapabilities?.tasks?.requests, method, "Client");
-  }
-  assertTaskHandlerCapability(method) {
-    if (!this._capabilities) {
-      return;
-    }
-    assertToolsCallTaskCapability(this._capabilities.tasks?.requests, method, "Server");
-  }
-  async _oninitialize(request) {
-    const requestedVersion = request.params.protocolVersion;
-    this._clientCapabilities = request.params.capabilities;
-    this._clientVersion = request.params.clientInfo;
-    const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion) ? requestedVersion : LATEST_PROTOCOL_VERSION;
-    return {
-      protocolVersion,
-      capabilities: this.getCapabilities(),
-      serverInfo: this._serverInfo,
-      ...this._instructions && { instructions: this._instructions }
-    };
-  }
-  /**
-   * After initialization has completed, this will be populated with the client's reported capabilities.
-   */
-  getClientCapabilities() {
-    return this._clientCapabilities;
-  }
-  /**
-   * After initialization has completed, this will be populated with information about the client's name and version.
-   */
-  getClientVersion() {
-    return this._clientVersion;
-  }
-  getCapabilities() {
-    return this._capabilities;
-  }
-  async ping() {
-    return this.request({ method: "ping" }, EmptyResultSchema);
-  }
-  // Implementation
-  async createMessage(params, options) {
-    if (params.tools || params.toolChoice) {
-      if (!this._clientCapabilities?.sampling?.tools) {
-        throw new Error("Client does not support sampling tools capability.");
-      }
-    }
-    if (params.messages.length > 0) {
-      const lastMessage = params.messages[params.messages.length - 1];
-      const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
-      const hasToolResults = lastContent.some((c) => c.type === "tool_result");
-      const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
-      const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
-      const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
-      if (hasToolResults) {
-        if (lastContent.some((c) => c.type !== "tool_result")) {
-          throw new Error("The last message must contain only tool_result content if any is present");
-        }
-        if (!hasPreviousToolUse) {
-          throw new Error("tool_result blocks are not matching any tool_use from the previous message");
-        }
-      }
-      if (hasPreviousToolUse) {
-        const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
-        const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
-        if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
-          throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
-        }
-      }
-    }
-    if (params.tools) {
-      return this.request({ method: "sampling/createMessage", params }, CreateMessageResultWithToolsSchema, options);
-    }
-    return this.request({ method: "sampling/createMessage", params }, CreateMessageResultSchema, options);
-  }
-  /**
-   * Creates an elicitation request for the given parameters.
-   * For backwards compatibility, `mode` may be omitted for form requests and will default to `'form'`.
-   * @param params The parameters for the elicitation request.
-   * @param options Optional request options.
-   * @returns The result of the elicitation request.
-   */
-  async elicitInput(params, options) {
-    const mode = params.mode ?? "form";
-    switch (mode) {
-      case "url": {
-        if (!this._clientCapabilities?.elicitation?.url) {
-          throw new Error("Client does not support url elicitation.");
-        }
-        const urlParams = params;
-        return this.request({ method: "elicitation/create", params: urlParams }, ElicitResultSchema, options);
-      }
-      case "form": {
-        if (!this._clientCapabilities?.elicitation?.form) {
-          throw new Error("Client does not support form elicitation.");
-        }
-        const formParams = params.mode === "form" ? params : { ...params, mode: "form" };
-        const result = await this.request({ method: "elicitation/create", params: formParams }, ElicitResultSchema, options);
-        if (result.action === "accept" && result.content && formParams.requestedSchema) {
-          try {
-            const validator = this._jsonSchemaValidator.getValidator(formParams.requestedSchema);
-            const validationResult = validator(result.content);
-            if (!validationResult.valid) {
-              throw new McpError(ErrorCode.InvalidParams, `Elicitation response content does not match requested schema: ${validationResult.errorMessage}`);
-            }
-          } catch (error2) {
-            if (error2 instanceof McpError) {
-              throw error2;
-            }
-            throw new McpError(ErrorCode.InternalError, `Error validating elicitation response: ${error2 instanceof Error ? error2.message : String(error2)}`);
-          }
-        }
-        return result;
-      }
-    }
-  }
-  /**
-   * Creates a reusable callback that, when invoked, will send a `notifications/elicitation/complete`
-   * notification for the specified elicitation ID.
-   *
-   * @param elicitationId The ID of the elicitation to mark as complete.
-   * @param options Optional notification options. Useful when the completion notification should be related to a prior request.
-   * @returns A function that emits the completion notification when awaited.
-   */
-  createElicitationCompletionNotifier(elicitationId, options) {
-    if (!this._clientCapabilities?.elicitation?.url) {
-      throw new Error("Client does not support URL elicitation (required for notifications/elicitation/complete)");
-    }
-    return () => this.notification({
-      method: "notifications/elicitation/complete",
-      params: {
-        elicitationId
-      }
-    }, options);
-  }
-  async listRoots(params, options) {
-    return this.request({ method: "roots/list", params }, ListRootsResultSchema, options);
-  }
-  /**
-   * Sends a logging message to the client, if connected.
-   * Note: You only need to send the parameters object, not the entire JSON RPC message
-   * @see LoggingMessageNotification
-   * @param params
-   * @param sessionId optional for stateless and backward compatibility
-   */
-  async sendLoggingMessage(params, sessionId) {
-    if (this._capabilities.logging) {
-      if (!this.isMessageIgnored(params.level, sessionId)) {
-        return this.notification({ method: "notifications/message", params });
-      }
-    }
-  }
-  async sendResourceUpdated(params) {
-    return this.notification({
-      method: "notifications/resources/updated",
-      params
-    });
-  }
-  async sendResourceListChanged() {
-    return this.notification({
-      method: "notifications/resources/list_changed"
-    });
-  }
-  async sendToolListChanged() {
-    return this.notification({ method: "notifications/tools/list_changed" });
-  }
-  async sendPromptListChanged() {
-    return this.notification({ method: "notifications/prompts/list_changed" });
-  }
-};
-
-// src/stdio-server.ts
-var TOOL_TITLE_ARGUMENT = "title";
-function createFigmaStdioMcpServer(options = {}) {
-  const client = options.client ?? createRemoteMcpClient({
-    ...options,
-    useBridgeOAuthCache: options.useBridgeOAuthCache ?? true,
-    openBrowser: options.openBrowser ?? false
-  });
-  const server = new Server(
-    {
-      name: options.name ?? "figma-mcp-stdio-bridge",
-      version: options.version ?? "0.1.0"
-    },
-    {
-      capabilities: {
-        tools: {},
-        resources: {}
-      },
-      instructions: "Transparent stdio MCP bridge for the official Figma remote MCP server. OAuth is read from the local figma-mcp-bridge cache by default."
-    }
-  );
-  server.setRequestHandler(ListToolsRequestSchema, async (_request) => {
-    await client.connect();
-    return injectRequiredTitleArgument(asMcpResult(await client.listTools()));
-  });
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    await client.connect();
-    const args = asRecord(request.params.arguments);
-    assertRequiredTitleArgument(args);
-    return asMcpResult(
-      await client.callTool(
-        request.params.name,
-        stripTitleArgument(args)
-      )
-    );
-  });
-  server.setRequestHandler(
-    ListResourcesRequestSchema,
-    async (_request) => {
-      await client.connect();
-      return asMcpResult(await client.listResources());
-    }
-  );
-  server.setRequestHandler(
-    ReadResourceRequestSchema,
-    async (request) => {
-      await client.connect();
-      return asMcpResult(await client.readResource(request.params.uri));
-    }
-  );
-  return { server, client };
-}
-function asRecord(value) {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value;
-  }
-  return {};
-}
-function asMcpResult(value) {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value;
-  }
-  throw new Error("Upstream MCP server returned a non-object result.");
-}
-function injectRequiredTitleArgument(result) {
-  if (!Array.isArray(result.tools)) {
-    return result;
-  }
-  return {
-    ...result,
-    tools: result.tools.map((tool) => {
-      if (!isRecord2(tool)) {
-        return tool;
-      }
-      return {
-        ...tool,
-        inputSchema: injectTitleIntoInputSchema(tool.inputSchema)
-      };
-    })
-  };
-}
-function injectTitleIntoInputSchema(inputSchema) {
-  const schema = isRecord2(inputSchema) ? inputSchema : {};
-  const properties = isRecord2(schema.properties) ? schema.properties : {};
-  const required2 = Array.isArray(schema.required) ? schema.required : [];
-  return {
-    ...schema,
-    type: "object",
-    properties: {
-      ...properties,
-      [TOOL_TITLE_ARGUMENT]: {
-        type: "string",
-        description: "Human-readable title used when presenting output to the user."
-      }
-    },
-    required: required2.includes(TOOL_TITLE_ARGUMENT) ? required2 : [...required2, TOOL_TITLE_ARGUMENT]
-  };
-}
-function assertRequiredTitleArgument(args) {
-  if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
-    throw new Error('Tool argument "title" is required and must be a string.');
-  }
-}
-function stripTitleArgument(args) {
-  return Object.fromEntries(
-    Object.entries(args).filter(([name]) => name !== TOOL_TITLE_ARGUMENT)
-  );
-}
-function isRecord2(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 // src/repl-server.ts
-import { randomUUID } from "node:crypto";
-import { mkdir as mkdir2, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname as dirname3, isAbsolute, relative, resolve as resolve3 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
 var FIGMA_REPL_DEFAULT_SESSION_ID = "default";
 var DEFAULT_EVAL_TOOL_NAME = "use_figma";
 var DEFAULT_EVAL_ARGUMENT_CANDIDATES = [
@@ -18475,7 +18369,7 @@ var DEFAULT_EVAL_ARGUMENT_CANDIDATES = [
   "command"
 ];
 var DEFAULT_HISTORY_LIMIT = 50;
-var TOOL_TITLE_ARGUMENT2 = "title";
+var TOOL_TITLE_ARGUMENT = "title";
 var DEFAULT_DOCS_SEARCH_MAX_RESULTS = 5;
 var DEFAULT_DOCS_SEARCH_SNIPPET_LINES = 3;
 var MAX_DOCS_SEARCH_RESULTS = 10;
@@ -18828,7 +18722,7 @@ function createFigmaReplMcpServer(options = {}) {
     tools: createReplToolDescriptions()
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const args = asRecord2(request.params.arguments);
+    const args = asRecord(request.params.arguments);
     switch (request.params.name) {
       case "figma_repl_open":
         return handleOpen(args, { sessions, upstreamToolCache, config: config2 });
@@ -18970,7 +18864,7 @@ function createFigmaReplMcpServer(options = {}) {
   return { server, client, sessions };
 }
 async function handleOpen(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const session = truthy(args.reset) ? runtime.sessions.reset(asOptionalString(args.sessionId)) : runtime.sessions.getOrCreate(asOptionalString(args.sessionId));
   assignOptionalString(session, "label", args.label);
   assignOptionalString(session, "fileUrl", args.fileUrl);
@@ -18994,7 +18888,7 @@ async function handleOpen(args, runtime) {
     fileUrl: session.fileUrl
   });
   session.lastDiagnostics = openDiagnostics;
-  if (isRecord3(args.upstreamArguments)) {
+  if (isRecord2(args.upstreamArguments)) {
     session.upstreamArguments = {
       ...session.upstreamArguments,
       ...args.upstreamArguments
@@ -19022,7 +18916,7 @@ async function handleEval(args, runtime) {
   if (!args.code || typeof args.code !== "string") {
     throw new Error('Tool argument "code" is required and must be a string.');
   }
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   if (isStringRecord(args.handleUpdates)) {
     mergeHandles(session, args.handleUpdates);
@@ -19065,7 +18959,7 @@ async function handleEval(args, runtime) {
   });
 }
 async function handleRunScriptFile(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const scriptPath = resolveScriptInputPath(args, session);
   const source = await readFile2(scriptPath, "utf8");
@@ -19263,7 +19157,7 @@ async function handleRunScriptFile(args, runtime) {
   });
 }
 async function handleApplyAssetManifest(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const manifest = await loadAssetManifest(args, session);
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
@@ -19366,7 +19260,7 @@ async function handleApplyAssetManifest(args, runtime) {
   return makeJsonToolResult(payload);
 }
 async function handleCaptureNode(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const nodeId = asOptionalString(args.nodeId) ?? asOptionalString(args.targetNodeId);
   if (!nodeId) {
     throw new Error('Tool argument "nodeId" or "targetNodeId" is required and must be a string.');
@@ -19434,7 +19328,7 @@ async function handleCaptureNode(args, runtime) {
   return makeJsonToolResult(payload);
 }
 async function handleRunTaskPlan(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const plan = await loadTaskPlan(args, session);
   const resultFile = resolveTaskPlanResultFile(args, plan.planPath, session);
@@ -19512,7 +19406,7 @@ async function handleRunTaskPlan(args, runtime) {
   return makeJsonToolResult(payload);
 }
 async function handlePrepareTask(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const session = runtime?.sessions.getOrCreate(args.sessionId);
   applyWorkspaceFileContextArgs(session, args);
   const intentSlug = deriveIntentSlug(args, "figma-task");
@@ -19559,7 +19453,7 @@ async function handlePrepareTask(args, runtime) {
   });
 }
 async function handleInitWorkspace(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   if (!args.cwd || typeof args.cwd !== "string") {
     throw new Error('Tool argument "cwd" is required and must be a string.');
   }
@@ -19591,7 +19485,7 @@ async function handleInitWorkspace(args, runtime) {
   });
 }
 function handlePlanTask(args) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const surface = normalizeSurface(args.surface ?? args.expectedSurface) ?? "design";
   const intent = typeof args.intent === "string" ? args.intent : typeof args.goal === "string" ? args.goal : typeof args.task === "string" ? args.task : "";
   return makeJsonToolResult({
@@ -19620,7 +19514,7 @@ function handlePlanTask(args) {
   });
 }
 function handleApiCard(args) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const query = typeof args.card === "string" ? args.card : typeof args.query === "string" ? args.query : "";
   const maxCards = normalizeBoundedInteger(args.maxCards, 3, 8);
   const cards = query ? searchApiCards(query, maxCards) : FIGMA_REPL_API_CARDS.slice(0, maxCards);
@@ -19632,7 +19526,7 @@ function handleApiCard(args) {
   });
 }
 function handleSuggestApi(args) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const intent = normalizeLookupQuery(args.intent ?? args.task, "intent");
   const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
   return makeJsonToolResult({
@@ -19643,7 +19537,7 @@ function handleSuggestApi(args) {
   });
 }
 async function handleInspect(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(asOptionalString(args.sessionId));
   const target = asOptionalString(args.target) ?? "$selection";
   const depth = normalizePositiveInteger(args.depth, 2);
@@ -19690,7 +19584,7 @@ async function handleInspect(args, runtime) {
   });
 }
 function handleCacheGet(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const session = runtime.sessions.get(asOptionalString(args.sessionId));
   const includeHistory = args.includeHistory !== false;
   const historyLimit = normalizePositiveInteger(args.historyLimit, DEFAULT_HISTORY_LIMIT);
@@ -19702,7 +19596,7 @@ function handleCacheGet(args, runtime) {
   });
 }
 async function handleValidateHandles(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(asOptionalString(args.sessionId));
   const requested = Array.isArray(args.handles) ? args.handles.filter((item) => typeof item === "string" && item.length > 0) : Object.keys(session.handles);
   const code = [
@@ -19757,14 +19651,14 @@ async function handleValidateHandles(args, runtime) {
   });
 }
 function handleCapabilities(args) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   return makeJsonToolResult({
     ok: true,
     ...createCapabilitiesPayload()
   });
 }
 async function handleListUpstreamTools(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   return makeJsonToolResult({
     ok: true,
@@ -19772,7 +19666,7 @@ async function handleListUpstreamTools(args, runtime) {
   });
 }
 async function handleCallUpstreamTool(args, runtime) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   if (!args.toolName || typeof args.toolName !== "string") {
     throw new Error('Tool argument "toolName" is required and must be a string.');
   }
@@ -19781,7 +19675,7 @@ async function handleCallUpstreamTool(args, runtime) {
       `Refusing to proxy local figma-repl-mcp tool "${args.toolName}". Call it directly instead.`
     );
   }
-  const upstreamArgs = isRecord3(args.arguments) ? args.arguments : {};
+  const upstreamArgs = isRecord2(args.arguments) ? args.arguments : {};
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = tools.find((item) => item.name === args.toolName);
   if (!tool) {
@@ -19811,7 +19705,7 @@ async function handleCallUpstreamTool(args, runtime) {
   });
 }
 async function handleDocsSearch(args) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const query = normalizeLookupQuery(args.query, "query");
   const matches = await searchReferenceFiles({
     query,
@@ -19838,7 +19732,7 @@ async function handleDocsSearch(args) {
   });
 }
 async function handleApiLookup(args) {
-  assertRequiredTitleArgument2(args);
+  assertRequiredTitleArgument(args);
   const symbol = normalizeLookupQuery(args.symbol, "symbol");
   const matches = await searchReferenceFiles({
     query: symbol,
@@ -19872,9 +19766,9 @@ function createUpstreamToolCache(client) {
         return cached2;
       }
       await client.connect();
-      const result = asRecord2(await client.listTools());
+      const result = asRecord(await client.listTools());
       const tools = Array.isArray(result.tools) ? result.tools : [];
-      cached2 = tools.filter(isRecord3).map((tool) => ({
+      cached2 = tools.filter(isRecord2).map((tool) => ({
         name: String(tool.name ?? ""),
         description: asOptionalString(tool.description),
         inputSchema: tool.inputSchema
@@ -19895,7 +19789,7 @@ async function resolveEvalSettings(session, args, runtime) {
   const argumentName = asOptionalString(args.upstreamArgument) ?? session.evalToolArgument ?? runtime.config.evalToolArgument ?? inferEvalArgumentName(tool) ?? "code";
   const upstreamArguments = {
     ...session.upstreamArguments,
-    ...isRecord3(args.upstreamArguments) ? args.upstreamArguments : {}
+    ...isRecord2(args.upstreamArguments) ? args.upstreamArguments : {}
   };
   if (typeof upstreamArguments.fileKey !== "string" || upstreamArguments.fileKey.length === 0) {
     const fileKey = extractFigmaFileKey(session.fileUrl);
@@ -19916,8 +19810,8 @@ async function resolveEvalSettings(session, args, runtime) {
   return { toolName, argumentName, upstreamArguments };
 }
 function inferEvalArgumentName(tool) {
-  const schema = isRecord3(tool.inputSchema) ? tool.inputSchema : void 0;
-  const properties = isRecord3(schema?.properties) ? schema?.properties : void 0;
+  const schema = isRecord2(tool.inputSchema) ? tool.inputSchema : void 0;
+  const properties = isRecord2(schema?.properties) ? schema?.properties : void 0;
   if (!properties) {
     return void 0;
   }
@@ -19927,7 +19821,7 @@ function inferEvalArgumentName(tool) {
     }
   }
   const stringProperty2 = Object.entries(properties).find(([, value]) => {
-    const schemaValue = isRecord3(value) ? value : void 0;
+    const schemaValue = isRecord2(value) ? value : void 0;
     return schemaValue?.type === "string";
   });
   return stringProperty2?.[0];
@@ -21328,7 +21222,7 @@ function createScriptOutputWriter(args, session) {
 async function loadAssetManifest(args, session) {
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
   const manifestValue = manifestPath ? JSON.parse(await readFile2(manifestPath, "utf8")) : void 0;
-  const manifestRecord = asRecord2(manifestValue);
+  const manifestRecord = asRecord(manifestValue);
   const manifestAssets = Array.isArray(manifestValue) ? manifestValue : Array.isArray(manifestRecord.assets) ? manifestRecord.assets : void 0;
   const inlineAssets = Array.isArray(args.assets) ? args.assets : void 0;
   const rawAssets = inlineAssets ?? manifestAssets;
@@ -21345,7 +21239,7 @@ async function loadAssetManifest(args, session) {
   };
 }
 function normalizeManifestAsset(value, index, baseDir) {
-  const record2 = asRecord2(value);
+  const record2 = asRecord(value);
   const rawPath = asOptionalString(record2.path) ?? asOptionalString(record2.filePath) ?? asOptionalString(record2.localPath);
   if (!rawPath) {
     throw new Error(`Asset manifest entry ${index} requires path, filePath, or localPath.`);
@@ -21467,7 +21361,7 @@ function expandTemplateValue(value, context) {
   if (Array.isArray(value)) {
     return value.map((item) => expandTemplateValue(item, context));
   }
-  if (isRecord3(value)) {
+  if (isRecord2(value)) {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, expandTemplateValue(item, context)])
     );
@@ -21478,7 +21372,7 @@ function readTemplatePath(context, path) {
   const parts = path.split(".").filter(Boolean);
   let current = context;
   for (const part of parts) {
-    if (!isRecord3(current)) {
+    if (!isRecord2(current)) {
       return void 0;
     }
     current = current[part];
@@ -21486,7 +21380,7 @@ function readTemplatePath(context, path) {
   return current;
 }
 function inputSchemaProperties(inputSchema) {
-  return asRecord2(asRecord2(inputSchema).properties);
+  return asRecord(asRecord(inputSchema).properties);
 }
 function assignFirstKnownProperty(target, properties, names, value) {
   if (value === void 0) {
@@ -21575,8 +21469,8 @@ return {
         primaryFix: parsed.primaryFix
       };
     }
-    const result = asRecord2(asRecord2(parsed.json).result);
-    const validations = Array.isArray(result.validations) ? result.validations.filter(isRecord3) : [];
+    const result = asRecord(asRecord(parsed.json).result);
+    const validations = Array.isArray(result.validations) ? result.validations.filter(isRecord2) : [];
     const invalidCount = Number(result.invalidCount ?? validations.filter((item) => item.status !== "valid").length);
     for (const asset of options.assetResults) {
       const targetNodeId = asOptionalString(asset.targetNodeId);
@@ -21632,10 +21526,10 @@ async function submitLocalAssetUploadIfAvailable(asset, parsed) {
   };
 }
 function extractAssetSubmitUrl(value) {
-  const record2 = asRecord2(value);
+  const record2 = asRecord(value);
   const uploads = Array.isArray(record2.uploads) ? record2.uploads : [];
   for (const upload of uploads) {
-    const uploadRecord = asRecord2(upload);
+    const uploadRecord = asRecord(upload);
     const submitUrl = asOptionalString(uploadRecord.submitUrl) ?? asOptionalString(uploadRecord.uploadUrl) ?? asOptionalString(uploadRecord.url);
     if (submitUrl) {
       return submitUrl;
@@ -21685,8 +21579,8 @@ function resolveWorkspaceAwareFile(value, session, argumentName) {
   return resolveWorkspaceFile(session.workspace.sessionDir, raw, argumentName);
 }
 async function writeCaptureOutputFile(outputFile, upstream, parsed) {
-  const rawContent = asRecord2(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord3) : [];
+  const rawContent = asRecord(upstream).content;
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord2) : [];
   const image = content.find((item) => item.type === "image" && typeof item.data === "string");
   await mkdir2(dirname3(outputFile), { recursive: true });
   if (image && typeof image.data === "string") {
@@ -21791,8 +21685,8 @@ function jpegDimensions(buffer) {
   return {};
 }
 function extractCaptureImageUrl(upstream, parsed) {
-  const rawContent = asRecord2(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord3) : [];
+  const rawContent = asRecord(upstream).content;
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord2) : [];
   for (const item of content) {
     if (item.type === "image") {
       const imageUrl = firstHttpUrl([
@@ -21836,7 +21730,7 @@ function findCaptureImageUrlInValue(value, depth) {
     }
     return void 0;
   }
-  if (!isRecord3(value)) {
+  if (!isRecord2(value)) {
     return void 0;
   }
   const priorityKeys = [
@@ -21883,14 +21777,14 @@ function normalizeHttpUrl(value) {
 async function loadTaskPlan(args, session) {
   const planPath = resolveWorkspaceAwareFile(args.planPath, session, "planPath");
   const planValue = planPath ? JSON.parse(await readFile2(planPath, "utf8")) : void 0;
-  const planRecord = asRecord2(planValue);
+  const planRecord = asRecord(planValue);
   const steps = Array.isArray(args.steps) ? args.steps : Array.isArray(planValue) ? planValue : Array.isArray(planRecord.steps) ? planRecord.steps : void 0;
   if (!steps || steps.length === 0) {
     throw new Error('Tool argument "steps" or "planPath" with steps is required.');
   }
   return {
     planPath,
-    steps: steps.map((step) => asRecord2(step))
+    steps: steps.map((step) => asRecord(step))
   };
 }
 function resolveTaskPlanResultFile(args, planPath, session) {
@@ -21975,7 +21869,7 @@ function taskPlanStepArguments(step) {
         ([key]) => !["id", "type", "tool", "args"].includes(key)
       )
     ),
-    ...asRecord2(step.args)
+    ...asRecord(step.args)
   };
 }
 function normalizeTaskPlanStepType(step) {
@@ -22009,7 +21903,7 @@ function taskPlanStepSucceeded(result) {
   if (result.ok === false) {
     return false;
   }
-  const nestedResult = asRecord2(result.result);
+  const nestedResult = asRecord(result.result);
   if (nestedResult.ok === false) {
     return false;
   }
@@ -22136,7 +22030,7 @@ function formatScriptRunSummaryMarkdown(summary) {
   if (summary.resultSummary) {
     lines.push(`- resultSummary: ${String(summary.resultSummary)}`);
   }
-  if (isRecord3(summary.upstreamError)) {
+  if (isRecord2(summary.upstreamError)) {
     lines.push(`- upstreamError: ${String(summary.upstreamError.message ?? "")}`);
   }
   if (summary.primaryFix) {
@@ -23120,12 +23014,12 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 function parseUpstreamToolResult(value) {
-  const record2 = asRecord2(value);
+  const record2 = asRecord(value);
   const structured = record2.structuredContent;
   if (structured !== void 0) {
     return annotateParsedUpstreamToolResult(JSON.stringify(structured), structured);
   }
-  const text = Array.isArray(record2.content) ? record2.content.map((item) => asRecord2(item).text).filter((item) => typeof item === "string").join("\n") : JSON.stringify(value);
+  const text = Array.isArray(record2.content) ? record2.content.map((item) => asRecord(item).text).filter((item) => typeof item === "string").join("\n") : JSON.stringify(value);
   return annotateParsedUpstreamToolResult(text, parseJsonLenient(text));
 }
 function annotateParsedUpstreamToolResult(text, json) {
@@ -23138,7 +23032,7 @@ function annotateParsedUpstreamToolResult(text, json) {
   };
 }
 function extractParsedUpstreamError(text, json) {
-  const record2 = asRecord2(json);
+  const record2 = asRecord(json);
   if (record2.ok !== false) {
     const trimmed = text.trim();
     if (!/^Error:/u.test(trimmed) && !/Figma Debug UUID:/u.test(trimmed)) {
@@ -23152,7 +23046,7 @@ function extractParsedUpstreamError(text, json) {
       parsed: json
     };
   }
-  const errorRecord = asRecord2(record2.error);
+  const errorRecord = asRecord(record2.error);
   const message = stringFromUnknown(record2.error) ?? asOptionalString(errorRecord.message) ?? asOptionalString(record2.message) ?? text.slice(0, 1e3) ?? "Upstream Figma execution failed.";
   return {
     message,
@@ -23196,7 +23090,7 @@ function stringFromUnknown(value) {
   if (typeof value === "string" && value.length > 0) {
     return value;
   }
-  if (isRecord3(value)) {
+  if (isRecord2(value)) {
     const message = asOptionalString(value.message);
     if (message) return message;
   }
@@ -23251,9 +23145,9 @@ function firstBalancedJsonSlice(text) {
   return void 0;
 }
 function updateSessionFromParsedResult(session, value) {
-  const record2 = asRecord2(value);
-  const repl = asRecord2(record2.__figmaRepl);
-  const result = asRecord2(record2.result);
+  const record2 = asRecord(value);
+  const repl = asRecord(record2.__figmaRepl);
+  const result = asRecord(record2.result);
   if (isStringRecord(repl.handles)) {
     mergeHandles(session, repl.handles);
   }
@@ -23287,7 +23181,7 @@ function collectNodeIds(value) {
       item.forEach(visit);
       return;
     }
-    if (isRecord3(item)) {
+    if (isRecord2(item)) {
       if (typeof item.id === "string") ids.add(item.id);
       for (const child of Object.values(item)) visit(child);
     }
@@ -23296,9 +23190,9 @@ function collectNodeIds(value) {
   return [...ids];
 }
 function summarizeParsedResult(parsed) {
-  const record2 = asRecord2(parsed.json);
+  const record2 = asRecord(parsed.json);
   const result = record2.result;
-  if (isRecord3(result)) {
+  if (isRecord2(result)) {
     if (typeof result.summary === "string") return result.summary;
     if (typeof result.opCount === "number") return `Returned opCount=${result.opCount}.`;
   }
@@ -23406,8 +23300,8 @@ function sanitizeSessionId(sessionId) {
   }
   return value.slice(0, 120);
 }
-function assertRequiredTitleArgument2(args) {
-  if (typeof args[TOOL_TITLE_ARGUMENT2] !== "string") {
+function assertRequiredTitleArgument(args) {
+  if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
     throw new Error('Tool argument "title" is required and must be a string.');
   }
 }
@@ -23449,7 +23343,7 @@ function makeJsonToolResult(value) {
 }
 function parseJsonToolResult(result) {
   const content = Array.isArray(result.content) ? result.content : [];
-  const firstText = content.map((item) => asRecord2(item).text).find((item) => typeof item === "string");
+  const firstText = content.map((item) => asRecord(item).text).find((item) => typeof item === "string");
   if (firstText === void 0) {
     return result;
   }
@@ -23471,27 +23365,27 @@ function removeUndefined(value) {
   if (Array.isArray(value)) {
     return value.map(removeUndefined);
   }
-  if (!isRecord3(value)) {
+  if (!isRecord2(value)) {
     return value;
   }
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== void 0).map(([key, item]) => [key, removeUndefined(item)])
   );
 }
-function asRecord2(value) {
-  if (isRecord3(value)) {
+function asRecord(value) {
+  if (isRecord2(value)) {
     return value;
   }
   return {};
 }
 function recordFromUnknown(value) {
-  return isRecord3(value) ? value : void 0;
+  return isRecord2(value) ? value : void 0;
 }
-function isRecord3(value) {
+function isRecord2(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function isStringRecord(value) {
-  return isRecord3(value) && Object.values(value).every((item) => typeof item === "string");
+  return isRecord2(value) && Object.values(value).every((item) => typeof item === "string");
 }
 function asOptionalString(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
@@ -23570,30 +23464,11 @@ function literal2(value) {
   return JSON.stringify(value);
 }
 export {
-  DEFAULT_AUTH_TIMEOUT_MS,
-  DEFAULT_CALLBACK_HOST,
-  DEFAULT_CALLBACK_PATH,
-  DEFAULT_CALLBACK_PORT,
-  DEFAULT_CLIENT_NAME,
-  DEFAULT_CLIENT_VERSION,
-  DEFAULT_FIGMA_MCP_ENDPOINT,
-  DEFAULT_OAUTH_STATE_PATH,
   FIGMA_REPL_DEFAULT_SESSION_ID,
-  OAuthStateStore,
-  PersistentOAuthProvider,
-  RemoteMcpClient,
   assertSafeFigmaReplCode,
-  createCallbackUrl,
-  createClientMetadata,
-  createConfig,
+  buildFigmaEvalScript,
   createFigmaReplClient,
   createFigmaReplMcpServer,
   createFigmaReplSessionStore,
-  createFigmaStdioMcpServer,
-  createRemoteMcpClient,
-  diagnoseFigmaReplCode,
-  findCodexHomeOAuthCachePath,
-  normalizeCallbackPath,
-  parseOAuthState,
-  startOAuthCallbackServer
+  diagnoseFigmaReplCode
 };

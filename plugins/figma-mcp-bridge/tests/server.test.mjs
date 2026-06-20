@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -28,6 +28,23 @@ test("createBridgeConfig applies defaults and normalizes path", () => {
   assert.equal(config.path, "/mcp");
   assert.equal(config.target, "https://mcp.figma.com/mcp");
   assert.equal(config.oauthCacheEnabled, true);
+});
+
+test(".mcp.json registers stdio and REPL MCP servers", async () => {
+  const manifest = JSON.parse(
+    await readFile(new URL("../.mcp.json", import.meta.url), "utf8"),
+  );
+
+  assert.deepEqual(manifest.mcpServers["figma-stdio"], {
+    command: "node",
+    cwd: ".",
+    args: ["./stdio-mcp/dist/stdio-cli.js"],
+  });
+  assert.deepEqual(manifest.mcpServers["figma-repl-mcp"], {
+    command: "node",
+    cwd: ".",
+    args: ["./stdio-mcp/dist/repl-stdio-cli.js"],
+  });
 });
 
 test("createBridgeConfig uses CODEX_HOME as the OAuth cache location", async () => {
