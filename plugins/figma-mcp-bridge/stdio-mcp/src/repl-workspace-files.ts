@@ -90,7 +90,7 @@ export function resolveScriptInputPath(
   const scriptPath = asOptionalString(args.scriptPath);
   if (scriptPath) {
     if (!isAbsolute(scriptPath)) {
-      throw new Error('Tool argument "scriptPath" must be an absolute path. Use inputFile after figma_repl_init_workspace for workspace-relative files.');
+      throw new Error('Tool argument "scriptPath" must be an absolute path. Use inputFile after figma_repl_prepare_task for workspace-relative files.');
     }
     return scriptPath;
   }
@@ -99,7 +99,7 @@ export function resolveScriptInputPath(
     throw new Error('Tool argument "scriptPath" or "inputFile" is required.');
   }
   if (!session.workspace) {
-    throw new Error("inputFile requires an initialized file-context workspace. Call figma_repl_init_workspace first.");
+    throw new Error("inputFile requires an initialized file-context workspace. Call figma_repl_prepare_task first.");
   }
   return resolveWorkspaceFile(session.workspace.sessionDir, inputFile, "inputFile");
 }

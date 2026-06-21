@@ -14,7 +14,7 @@ This document is for AI agents maintaining `figma-mcp-bridge`. It is not the use
 
 Runtime payloads are canonical for the agent-facing router contract:
 
-- `figma_repl_capabilities`
+- `figma-repl://capabilities`
 - static resources under `figma-repl://*`
 - tool metadata from `stdio-mcp/src/repl-tool-metadata.ts`
 - intent/API guidance from `stdio-mcp/src/repl-guidance-catalog.ts`
@@ -24,10 +24,11 @@ Runtime payloads are canonical for the agent-facing router contract:
 
 Pin these facts when changing the router surface:
 
-- agents start with `figma_repl_capabilities`;
+- agents start by reading `figma-repl://capabilities`;
 - `figma-repl-mcp` is the primary agent-facing entrypoint;
-- exposed resources include the `figma-repl://guide`, `file-workflow`, `workflow-tools`, `scripts`, `patterns`, `api-cards`, `intents`, `docs`, `api`, `safety`, and `sessions` family;
-- `figma_repl_suggest_api` returns `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`;
+- exposed resources include the `figma-repl://capabilities`, `guide`, `file-workflow`, `workflow-tools`, `scripts`, `patterns`, `api-cards`, `intents`, `docs`, `api`, `safety`, `upstream-tools`, and `sessions` family;
+- `figma_repl_guidance` returns `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`;
+- public `figma_repl_*` tools are exactly `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, `figma_repl_run_task_plan`, `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_inspect`, `figma_repl_call_upstream_tool`, and `figma_repl_lookup`;
 - bundled corpus files are internal lookup data, not agent-facing docs;
 - `figma_repl_call_upstream_tool` is only for explicit uncovered upstream capabilities.
 

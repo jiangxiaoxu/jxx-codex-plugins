@@ -17,6 +17,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const expectedStaticResourceUris = [
   "figma-repl://api",
   "figma-repl://api-cards",
+  "figma-repl://capabilities",
   "figma-repl://docs",
   "figma-repl://file-workflow",
   "figma-repl://guide",
@@ -25,6 +26,7 @@ const expectedStaticResourceUris = [
   "figma-repl://safety",
   "figma-repl://scripts",
   "figma-repl://sessions",
+  "figma-repl://upstream-tools",
   "figma-repl://workflow-tools",
 ];
 const queryOutputFields = [
@@ -49,9 +51,10 @@ function structuredToolResult(result) {
   assert.equal(result.content?.[0]?.type, "text");
   assert.ok(result.structuredContent);
   const expectedSummary = result.structuredContent.ok === false
-    ? "Figma REPL tool failed; see structuredContent."
-    : "Figma REPL tool completed; see structuredContent.";
+    ? "Figma REPL tool failed."
+    : "Figma REPL tool completed.";
   assert.equal(result.content[0].text, expectedSummary);
+  assert.doesNotMatch(result.content[0].text, /structuredContent/i);
   return result.structuredContent;
 }
 
@@ -107,16 +110,10 @@ test("figma REPL eval wraps code and persists returned handles", async () => {
   assert.equal(evalJson.upstreamTool, "use_figma");
   assert.equal(evalJson.upstreamArgument, "code");
 
-  const cacheResult = await mcpClient.callTool({
-    name: "figma_repl_cache_get",
-    arguments: {
-      title: "Read local session cache",
-      sessionId: "main",
-    },
-  });
-  const cacheJson = structuredToolResult(cacheResult);
-  assert.equal(cacheJson.session.handles.$card, "12:34");
-  assert.equal(cacheJson.session.history.length, 1);
+  const sessionResource = await mcpClient.readResource({ uri: "figma-repl://sessions/main" });
+  const sessionJson = JSON.parse(sessionResource.contents[0].text);
+  assert.equal(sessionJson.handles.$card, "12:34");
+  assert.equal(sessionJson.history.length, 1);
 
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
   await mcpClient.close();
@@ -138,12 +135,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   await server.connect(serverTransport);
   await mcpClient.connect(clientTransport);
 
-  const capabilitiesResult = await mcpClient.callTool({
-    name: "figma_repl_capabilities",
-    arguments: { title: "Read capabilities" },
-  });
-  const capabilities = structuredToolResult(capabilitiesResult);
-  assert.equal(capabilities.ok, true);
+  const capabilitiesResource = await mcpClient.readResource({ uri: "figma-repl://capabilities" });
+  const capabilities = JSON.parse(capabilitiesResource.contents[0].text);
   assert.ok(capabilities.guide);
   assert.ok(capabilities.patterns);
   assert.ok(capabilities.scriptWorkflow);
@@ -199,32 +192,66 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.examples.every((example) => JSON.stringify(example)));
 
   const tools = await mcpClient.listTools();
+  assert.ok(!tools.tools.some((tool) => tool.name === "figma_repl_capabilities"));
   assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
-    "figma_repl_api_lookup",
     "figma_repl_apply_asset_manifest",
-    "figma_repl_cache_get",
     "figma_repl_call_upstream_tool",
-    "figma_repl_capabilities",
     "figma_repl_capture_node",
-    "figma_repl_docs_search",
     "figma_repl_eval",
     "figma_repl_guidance",
-    "figma_repl_init_workspace",
     "figma_repl_inspect",
-    "figma_repl_list_upstream_tools",
+    "figma_repl_lookup",
     "figma_repl_open",
-    "figma_repl_plan_task",
     "figma_repl_prepare_task",
     "figma_repl_run_script_file",
     "figma_repl_run_task_plan",
-    "figma_repl_validate_handles",
   ]);
+  assert.equal(tools.tools.length, 11);
+  await assert.rejects(
+    () => mcpClient.callTool({
+      name: "figma_repl_capabilities",
+      arguments: { title: "Read capabilities" },
+    }),
+    /Unknown figma-repl-mcp tool: figma_repl_capabilities/,
+  );
+  for (const deletedTool of [
+    "figma_repl_init_workspace",
+    "figma_repl_plan_task",
+    "figma_repl_cache_get",
+    "figma_repl_validate_handles",
+    "figma_repl_list_upstream_tools",
+    "figma_repl_docs_search",
+    "figma_repl_api_lookup",
+    "figma_repl_suggest_api",
+    "figma_repl_api_card",
+  ]) {
+    await assert.rejects(
+      () => mcpClient.callTool({
+        name: deletedTool,
+        arguments: { title: "Deleted tool" },
+      }),
+      new RegExp(`Unknown figma-repl-mcp tool: ${deletedTool}`),
+    );
+  }
+  for (const tool of tools.tools) {
+    assert.equal(tool.outputSchema?.type, "object", `${tool.name} advertises an object outputSchema`);
+    assert.equal(tool.outputSchema?.properties?.ok?.type, "boolean", `${tool.name} pins ok in outputSchema`);
+    assert.deepEqual(tool.outputSchema?.required, ["ok"], `${tool.name} requires ok in outputSchema`);
+    assert.equal(tool.outputSchema?.additionalProperties, true, `${tool.name} keeps outputSchema forward-compatible`);
+    assert.ok(
+      Object.keys(tool.outputSchema?.properties ?? {}).length <= 12,
+      `${tool.name} outputSchema stays concise`,
+    );
+  }
 
   const resources = await mcpClient.listResources();
   const uris = resources.resources.map((resource) => resource.uri);
   assert.deepEqual(uris.filter((uri) => !uri.startsWith("figma-repl://sessions/")).sort(), expectedStaticResourceUris);
   assert.ok(uris.every((uri) => !uri.includes("official-figma-skills")));
   assert.ok(uris.every((uri) => !uri.includes("/references/")));
+
+  const aggregateResource = await mcpClient.readResource({ uri: "figma-repl://capabilities" });
+  assert.deepEqual(JSON.parse(aggregateResource.contents[0].text).queryStrategy.outputFields, queryOutputFields);
 
   const scriptsResource = await mcpClient.readResource({ uri: "figma-repl://scripts" });
   const scripts = JSON.parse(scriptsResource.contents[0].text);
@@ -284,15 +311,22 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
 
   const docsResource = await mcpClient.readResource({ uri: "figma-repl://docs" });
   const docs = JSON.parse(docsResource.contents[0].text);
-  assert.equal(docs.tool, "figma_repl_docs_search");
+  assert.equal(docs.tool, "figma_repl_lookup");
+  assert.equal(docs.kind, "docs");
   assert.match(docs.purpose, /internal Figma corpus/);
   assert.match(docs.workflow.join(" "), /instead of reading bundled corpus files/);
 
   const apiResource = await mcpClient.readResource({ uri: "figma-repl://api" });
   const api = JSON.parse(apiResource.contents[0].text);
-  assert.equal(api.tool, "figma_repl_api_lookup");
+  assert.equal(api.tool, "figma_repl_lookup");
+  assert.equal(api.kind, "api");
   assert.match(api.guardrail, /never returned/);
-  assert.deepEqual(calls.map((call) => call[0]), []);
+
+  const upstreamResource = await mcpClient.readResource({ uri: "figma-repl://upstream-tools" });
+  const upstream = JSON.parse(upstreamResource.contents[0].text);
+  assert.ok(Array.isArray(upstream.tools));
+  assert.match(upstream.guidance, /figma_repl_call_upstream_tool/);
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
   await mcpClient.close();
 });
 
@@ -304,7 +338,7 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   const docsText = [skillText, openaiText, pluginReadme, stdioReadme].join("\n");
 
   assert.match(skillText, /After OAuth registration, use `figma-repl-mcp` as the agent-facing entrypoint/);
-  assert.match(skillText, /Start with `figma_repl_capabilities`/);
+  assert.match(skillText, /Start by reading `figma-repl:\/\/capabilities`/);
   assert.match(skillText, /Bundled reference files are internal lookup corpus/);
   assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`/);
   for (const uri of expectedStaticResourceUris.filter((uri) => uri !== "figma-repl://sessions")) {
@@ -475,9 +509,10 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
   );
   await assert.rejects(
     mcpClient.callTool({
-      name: "figma_repl_docs_search",
+      name: "figma_repl_lookup",
       arguments: {
         title: "Reject docs query",
+        kind: "docs",
         query: 123,
       },
     }),
@@ -485,13 +520,24 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
   );
   await assert.rejects(
     mcpClient.callTool({
-      name: "figma_repl_api_lookup",
+      name: "figma_repl_lookup",
       arguments: {
         title: "Reject API symbol",
+        kind: "api",
         symbol: 123,
       },
     }),
     /Tool argument "symbol" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_lookup",
+      arguments: {
+        title: "Reject lookup kind",
+        kind: "bad",
+      },
+    }),
+    /Tool argument "kind" must be one of: docs, api\./,
   );
   await assert.rejects(
     mcpClient.callTool({
@@ -572,6 +618,17 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
       },
     }),
     /Tool argument "scriptName" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_inspect",
+      arguments: {
+        title: "Reject inspect handles",
+        mode: "validate",
+        handles: [123],
+      },
+    }),
+    /Tool argument "handles\[0\]" must be a string\./,
   );
   assert.deepEqual(calls, []);
   await mcpClient.close();
@@ -1151,7 +1208,7 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
     await mcpClient.connect(clientTransport);
 
     const initResult = await mcpClient.callTool({
-      name: "figma_repl_init_workspace",
+      name: "figma_repl_prepare_task",
       arguments: {
         title: "Initialize workspace",
         sessionId: "workspace-plan",
@@ -1163,7 +1220,7 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
       },
     });
     const initJson = structuredToolResult(initResult);
-    const fileDir = initJson.workspace.fileDir;
+    const fileDir = initJson.task.workspace.fileDir;
     await writeFile(resolve(fileDir, "workspace-plan.figma.js"), "return { summary: 'dry run' };", "utf8");
     await writeFile(resolve(fileDir, "asset.png"), "asset bytes", "utf8");
 
@@ -1210,7 +1267,7 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
   }
 });
 
-test("figma REPL docs_search returns capped local reference snippets", async () => {
+test("figma REPL lookup kind=docs returns capped local reference snippets", async () => {
   const calls = [];
   const { server } = createFigmaReplMcpServer({
     client: createFakeFigmaClient(calls, () => {
@@ -1227,9 +1284,10 @@ test("figma REPL docs_search returns capped local reference snippets", async () 
   await mcpClient.connect(clientTransport);
 
   const result = await mcpClient.callTool({
-    name: "figma_repl_docs_search",
+    name: "figma_repl_lookup",
     arguments: {
       title: "Search docs",
+      kind: "docs",
       query: "component properties",
       maxResults: 2,
       maxSnippetLines: 2,
@@ -1237,6 +1295,7 @@ test("figma REPL docs_search returns capped local reference snippets", async () 
   });
   const json = structuredToolResult(result);
   assert.equal(json.ok, true);
+  assert.equal(json.kind, "docs");
   assert.equal(json.results.length <= 2, true);
   assert.ok(json.results.length > 0);
   for (const item of json.results) {
@@ -1254,7 +1313,7 @@ test("figma REPL docs_search returns capped local reference snippets", async () 
   await mcpClient.close();
 });
 
-test("figma REPL api_lookup returns BM25-ranked Plugin API chunks without dumping d.ts", async () => {
+test("figma REPL lookup kind=api returns BM25-ranked Plugin API chunks without dumping d.ts", async () => {
   const calls = [];
   const { server } = createFigmaReplMcpServer({
     client: createFakeFigmaClient(calls, () => {
@@ -1271,9 +1330,10 @@ test("figma REPL api_lookup returns BM25-ranked Plugin API chunks without dumpin
   await mcpClient.connect(clientTransport);
 
   const result = await mcpClient.callTool({
-    name: "figma_repl_api_lookup",
+    name: "figma_repl_lookup",
     arguments: {
       title: "Lookup createFrame",
+      kind: "api",
       symbol: "createFrame",
       maxResults: 4,
       maxSnippetLines: 4,
@@ -1281,6 +1341,7 @@ test("figma REPL api_lookup returns BM25-ranked Plugin API chunks without dumpin
   });
   const json = structuredToolResult(result);
   assert.equal(json.ok, true);
+  assert.equal(json.kind, "api");
   assert.ok(json.results.length > 0);
   assert.equal(json.results.length <= 4, true);
   assert.match(json.guidance, /Bundled corpus files are not returned as documents/);
@@ -1794,7 +1855,7 @@ test("figma REPL run_script_file writes output files and limits inline result fi
   }
 });
 
-test("figma REPL init_workspace uses file context and intent file pairs", async () => {
+test("figma REPL prepare_task uses file context and intent file pairs", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-workspace-"));
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
@@ -1823,13 +1884,14 @@ test("figma REPL init_workspace uses file context and intent file pairs", async 
     await mcpClient.connect(clientTransport);
 
     const initResult = await mcpClient.callTool({
-      name: "figma_repl_init_workspace",
+      name: "figma_repl_prepare_task",
       arguments: {
         title: "Init workspace",
         sessionId: "settings-workspace",
         intent: "Settings Panel Polish",
         fileUrl: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
         cwd: tempDir,
+        overwrite: true,
       },
     });
     const initJson = structuredToolResult(initResult);
@@ -1837,15 +1899,15 @@ test("figma REPL init_workspace uses file context and intent file pairs", async 
     assert.equal(initJson.session.slug, "settings-workspace");
     assert.equal(initJson.session.fileKey, "ExampleFigmaFileKey012");
     assert.equal(initJson.session.surface, "design");
-    assert.equal(initJson.workspace.fileContext, "ExampleFigmaFileKey012");
-    assert.equal(initJson.workspace.intentSlug, "settings-panel-polish");
-    assert.equal(initJson.workspace.fileDir, resolve(tempDir, "figma-mcp", "ExampleFigmaFileKey012"));
-    assert.equal(initJson.workspace.sessionDir, initJson.workspace.fileDir);
-    assert.equal(initJson.files.script, "settings-panel-polish.figma.js");
-    assert.equal(initJson.files.result, "settings-panel-polish.result.json");
+    assert.equal(initJson.task.fileContext, "ExampleFigmaFileKey012");
+    assert.equal(initJson.task.intentSlug, "settings-panel-polish");
+    assert.equal(initJson.task.workspace.fileDir, resolve(tempDir, "figma-mcp", "ExampleFigmaFileKey012"));
+    assert.equal(initJson.task.workspace.sessionDir, initJson.task.workspace.fileDir);
+    assert.equal(initJson.task.workspace.files.script, "settings-panel-polish.figma.js");
+    assert.equal(initJson.task.workspace.files.result, "settings-panel-polish.result.json");
 
     await writeFile(
-      resolve(initJson.workspace.fileDir, "settings-panel-polish.figma.js"),
+      resolve(initJson.task.workspace.fileDir, "settings-panel-polish.figma.js"),
       "return { summary: 'workspace file result' };",
       "utf8",
     );
@@ -1861,9 +1923,9 @@ test("figma REPL init_workspace uses file context and intent file pairs", async 
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.session.workspace.sessionDir, initJson.workspace.sessionDir);
+    assert.equal(json.session.workspace.sessionDir, initJson.task.workspace.sessionDir);
     assert.equal(json.session.surface, "design");
-    assert.equal(json.outputFiles.resultFile, resolve(initJson.workspace.fileDir, "settings-panel-polish.result.json"));
+    assert.equal(json.outputFiles.resultFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
     assert.equal(json.parsed, undefined);
     const resultFile = JSON.parse(await readFile(json.outputFiles.resultFile, "utf8"));
     assert.equal(resultFile.parsed.result.payload.length, 160);
@@ -1883,8 +1945,8 @@ test("figma REPL init_workspace uses file context and intent file pairs", async 
     assert.equal(preparedJson.task.fileContext, "ExampleFigmaFileKey012");
     assert.equal(preparedJson.task.workspace.fileKey, "ExampleFigmaFileKey012");
     assert.equal(preparedJson.task.intentSlug, "token-audit");
-    assert.equal(preparedJson.task.scriptPath, resolve(initJson.workspace.fileDir, "token-audit.figma.js"));
-    assert.equal(preparedJson.task.resultFile, resolve(initJson.workspace.fileDir, "token-audit.result.json"));
+    assert.equal(preparedJson.task.scriptPath, resolve(initJson.task.workspace.fileDir, "token-audit.figma.js"));
+    assert.equal(preparedJson.task.resultFile, resolve(initJson.task.workspace.fileDir, "token-audit.result.json"));
 
     await assert.rejects(
       mcpClient.callTool({
@@ -2045,9 +2107,10 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   assert.doesNotMatch(cardResult.content[0].text, /text|Read text card|loadFontAsync/);
 
   const planResult = await mcpClient.callTool({
-    name: "figma_repl_plan_task",
+    name: "figma_repl_guidance",
     arguments: {
       title: "Plan file workflow",
+      mode: "plan",
       goal: "Create a settings card with title and button",
       surface: "design",
       workflow: "script-file",
@@ -2055,10 +2118,12 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   });
   const planJson = structuredToolResult(planResult);
   assert.equal(planJson.ok, true);
-  assert.equal(planJson.plan.surface, "design");
-  assert.equal(planJson.plan.workflow, "script-file");
-  assert.ok(planJson.plan.recommendedTools.includes("figma_repl_prepare_task"));
-  assert.ok(planJson.plan.recommendedTools.includes("figma_repl_guidance"));
+  assert.equal(planJson.mode, "plan");
+  assert.equal(planJson.workflow.primaryTool, "figma_repl_run_script_file");
+  assert.ok(planJson.steps.some((step) => /figma_repl_prepare_task/.test(step)));
+  assert.ok(planJson.recommendedTools.includes("figma_repl_prepare_task"));
+  assert.ok(planJson.recommendedTools.includes("figma_repl_guidance"));
+  assert.ok(planJson.suggestedCards.length > 0);
 
   const suggestResult = await mcpClient.callTool({
     name: "figma_repl_guidance",
@@ -2070,7 +2135,7 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   });
   const suggestJson = structuredToolResult(suggestResult);
   assert.equal(suggestJson.ok, true);
-  assert.equal(suggestJson.mode, "intent");
+  assert.equal(suggestJson.mode, "guidance");
   assert.equal(Object.hasOwn(suggestJson, "intent"), false);
   assert.equal(Object.hasOwn(suggestJson, "cardQuery"), false);
   assert.equal(Object.hasOwn(suggestJson, "expectedSurface"), false);
@@ -2113,7 +2178,7 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   await mcpClient.close();
 });
 
-test("figma REPL validate_handles reports valid, missing, and stale", async () => {
+test("figma REPL inspect mode=validate reports valid, missing, and stale", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.match(args.code, /__requestedHandles/);
@@ -2158,10 +2223,11 @@ test("figma REPL validate_handles reports valid, missing, and stale", async () =
     },
   });
   const result = await mcpClient.callTool({
-    name: "figma_repl_validate_handles",
+    name: "figma_repl_inspect",
     arguments: {
       title: "Validate handles",
       sessionId: "main",
+      mode: "validate",
       handles: ["$valid", "$missing", "$stale"],
     },
   });

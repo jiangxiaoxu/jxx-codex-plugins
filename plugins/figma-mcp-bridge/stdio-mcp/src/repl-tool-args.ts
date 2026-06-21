@@ -127,20 +127,6 @@ export interface FigmaReplRunTaskPlanArguments {
   inlineResultLimit?: number;
 }
 
-export interface FigmaReplInitWorkspaceArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  intent?: string;
-  task?: string;
-  fileUrl?: string;
-  fileKey?: string;
-  fileSlug?: string;
-  cwd: string;
-  dirName?: string;
-  overwrite?: boolean;
-}
-
 export interface FigmaReplCallUpstreamToolArguments {
   [key: string]: unknown;
   title?: string;
@@ -151,18 +137,12 @@ export interface FigmaReplCallUpstreamToolArguments {
   includeRawUpstream?: boolean;
 }
 
-export interface FigmaReplDocsSearchArguments {
+export interface FigmaReplLookupArguments {
   [key: string]: unknown;
   title?: string;
-  query: string;
-  maxResults?: number;
-  maxSnippetLines?: number;
-}
-
-export interface FigmaReplApiLookupArguments {
-  [key: string]: unknown;
-  title?: string;
-  symbol: string;
+  kind?: "docs" | "api";
+  query?: string;
+  symbol?: string;
   maxResults?: number;
   maxSnippetLines?: number;
 }
@@ -176,6 +156,8 @@ export interface FigmaReplPrepareTaskArguments {
   fileUrl?: string;
   fileKey?: string;
   fileSlug?: string;
+  cwd?: string;
+  dirName?: string;
   goal?: string;
   taskSlug?: string;
   taskName?: string;
@@ -190,33 +172,41 @@ export interface FigmaReplPrepareTaskArguments {
   overwrite?: boolean;
 }
 
-export interface FigmaReplPlanTaskArguments {
-  [key: string]: unknown;
-  title?: string;
-  goal?: string;
-  surface?: FigmaReplSurface;
-  workflow?: string;
-  task?: string;
-  expectedSurface?: FigmaReplSurface;
-  intent?: string;
-}
-
 export interface FigmaReplGuidanceArguments {
   [key: string]: unknown;
   title?: string;
+  mode?: "guidance" | "plan" | "card" | "catalog";
   card?: string;
   query?: string;
   task?: string;
   intent?: string;
+  goal?: string;
   surface?: FigmaReplSurface;
+  workflow?: string;
   expectedSurface?: FigmaReplSurface;
   maxCards?: number;
+}
+
+export interface FigmaReplInspectArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  mode?: "inspect" | "validate";
+  target?: string;
+  depth?: number;
+  handles?: string[];
+  upstreamTool?: string;
+  upstreamArgument?: string;
+  upstreamArguments?: Record<string, unknown>;
 }
 
 const FIGMA_REPL_SURFACES = ["design", "figjam", "slides"] as const satisfies readonly FigmaReplSurface[];
 const FIGMA_REPL_EVAL_MODES = ["read", "write"] as const;
 const FIGMA_REPL_RETURN_MODES = ["auto", "json", "text", "raw"] as const;
 const FIGMA_REPL_HELPER_PROFILES = ["auto", "minimal", "asset", "clone", "full"] as const satisfies readonly FigmaReplHelperProfile[];
+const FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as const;
+const FIGMA_REPL_INSPECT_MODES = ["inspect", "validate"] as const;
+const FIGMA_REPL_LOOKUP_KINDS = ["docs", "api"] as const;
 
 export function asEvalArgs(args: unknown): FigmaReplEvalArguments {
   const record = parseToolArgs<FigmaReplEvalArguments>(args);
@@ -297,21 +287,6 @@ export function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments 
   return record;
 }
 
-export function asInitWorkspaceArgs(args: unknown): FigmaReplInitWorkspaceArguments {
-  const record = parseToolArgs<FigmaReplInitWorkspaceArguments>(args);
-  assertOptionalStringFields(record, [
-    "sessionId",
-    "intent",
-    "task",
-    "fileUrl",
-    "fileKey",
-    "fileSlug",
-    "cwd",
-    "dirName",
-  ]);
-  return record;
-}
-
 export function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments {
   const record = parseToolArgs<FigmaReplPrepareTaskArguments>(args);
   assertOptionalStringFields(record, [
@@ -321,6 +296,8 @@ export function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments 
     "fileUrl",
     "fileKey",
     "fileSlug",
+    "cwd",
+    "dirName",
     "goal",
     "taskSlug",
     "taskName",
@@ -336,24 +313,31 @@ export function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments 
   return record;
 }
 
-export function asPlanTaskArgs(args: unknown): FigmaReplPlanTaskArguments {
-  const record = parseToolArgs<FigmaReplPlanTaskArguments>(args);
-  assertOptionalStringFields(record, [
-    "goal",
-    "workflow",
-    "task",
-    "intent",
-  ]);
+export function asGuidanceArgs(args: unknown): FigmaReplGuidanceArguments {
+  const record = parseToolArgs<FigmaReplGuidanceArguments>(args);
+  assertOptionalStringFields(record, ["card", "query", "task", "intent", "goal", "workflow"]);
+  assertOptionalEnum(record, "mode", FIGMA_REPL_GUIDANCE_MODES);
   assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
   assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
   return record;
 }
 
-export function asGuidanceArgs(args: unknown): FigmaReplGuidanceArguments {
-  const record = parseToolArgs<FigmaReplGuidanceArguments>(args);
-  assertOptionalStringFields(record, ["card", "query", "task", "intent"]);
-  assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
-  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
+export function asInspectArgs(args: unknown): FigmaReplInspectArguments {
+  const record = parseToolArgs<FigmaReplInspectArguments>(args);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "target",
+    "upstreamTool",
+    "upstreamArgument",
+  ]);
+  assertOptionalEnum(record, "mode", FIGMA_REPL_INSPECT_MODES);
+  assertOptionalRecord(record, "upstreamArguments");
+  const handles = assertOptionalArray(record, "handles");
+  handles?.forEach((handle, index) => {
+    if (typeof handle !== "string") {
+      throw new Error(`Tool argument "handles[${index}]" must be a string.`);
+    }
+  });
   return record;
 }
 
@@ -364,15 +348,10 @@ export function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamTool
   return record;
 }
 
-export function asDocsSearchArgs(args: unknown): FigmaReplDocsSearchArguments {
-  const record = parseToolArgs<FigmaReplDocsSearchArguments>(args);
-  assertOptionalStringFields(record, ["query"]);
-  return record;
-}
-
-export function asApiLookupArgs(args: unknown): FigmaReplApiLookupArguments {
-  const record = parseToolArgs<FigmaReplApiLookupArguments>(args);
-  assertOptionalStringFields(record, ["symbol"]);
+export function asLookupArgs(args: unknown): FigmaReplLookupArguments {
+  const record = parseToolArgs<FigmaReplLookupArguments>(args);
+  assertOptionalEnum(record, "kind", FIGMA_REPL_LOOKUP_KINDS);
+  assertOptionalStringFields(record, ["query", "symbol"]);
   return record;
 }
 

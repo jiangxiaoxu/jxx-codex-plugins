@@ -54,31 +54,27 @@ import {
 } from "./repl-script-runner.js";
 import {
   assertRequiredTitleArgument,
-  asApiLookupArgs,
   asApplyAssetManifestArgs,
   asCallUpstreamToolArgs,
   asCaptureNodeArgs,
-  asDocsSearchArgs,
   asEvalArgs,
   asGuidanceArgs,
-  asInitWorkspaceArgs,
-  asPlanTaskArgs,
+  asInspectArgs,
+  asLookupArgs,
   asPrepareTaskArgs,
   asRunScriptFileArgs,
   asRunTaskPlanArgs,
   withDefaultTitle,
 } from "./repl-tool-args.js";
 import type {
-  FigmaReplApiLookupArguments,
   FigmaReplApplyAssetManifestArguments,
   FigmaReplCallUpstreamToolArguments,
   FigmaReplCaptureNodeArguments,
-  FigmaReplDocsSearchArguments,
   FigmaReplEvalArguments,
   FigmaReplGuidanceArguments,
-  FigmaReplInitWorkspaceArguments,
+  FigmaReplInspectArguments,
+  FigmaReplLookupArguments,
   FigmaReplOpenArguments,
-  FigmaReplPlanTaskArguments,
   FigmaReplPrepareTaskArguments,
   FigmaReplRunScriptFileArguments,
   FigmaReplRunTaskPlanArguments,
@@ -129,17 +125,15 @@ export type {
 };
 export type { FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 export type {
-  FigmaReplApiLookupArguments,
   FigmaReplApplyAssetManifestArguments,
   FigmaReplAssetManifestAsset,
   FigmaReplCallUpstreamToolArguments,
   FigmaReplCaptureNodeArguments,
-  FigmaReplDocsSearchArguments,
   FigmaReplEvalArguments,
   FigmaReplGuidanceArguments,
-  FigmaReplInitWorkspaceArguments,
+  FigmaReplInspectArguments,
+  FigmaReplLookupArguments,
   FigmaReplOpenArguments,
-  FigmaReplPlanTaskArguments,
   FigmaReplPrepareTaskArguments,
   FigmaReplRunScriptFileArguments,
   FigmaReplRunTaskPlanArguments,
@@ -200,17 +194,11 @@ export interface FigmaReplClient {
   applyAssetManifest(args: FigmaReplApplyAssetManifestArguments): Promise<unknown>;
   captureNode(args: FigmaReplCaptureNodeArguments): Promise<unknown>;
   runTaskPlan(args: FigmaReplRunTaskPlanArguments): Promise<unknown>;
-  initWorkspace(args: FigmaReplInitWorkspaceArguments): Promise<unknown>;
   prepareTask(args: FigmaReplPrepareTaskArguments): Promise<unknown>;
-  planTask(args: FigmaReplPlanTaskArguments): Promise<unknown>;
   guidance(args: FigmaReplGuidanceArguments): Promise<unknown>;
-  inspect(args?: Record<string, unknown>): Promise<unknown>;
-  cacheGet(args?: Record<string, unknown>): Promise<unknown>;
-  validateHandles(args?: Record<string, unknown>): Promise<unknown>;
-  listUpstreamTools(args?: Record<string, unknown>): Promise<unknown>;
+  inspect(args?: FigmaReplInspectArguments): Promise<unknown>;
   callUpstreamTool(args: FigmaReplCallUpstreamToolArguments): Promise<unknown>;
-  docsSearch(args: FigmaReplDocsSearchArguments): Promise<unknown>;
-  apiLookup(args: FigmaReplApiLookupArguments): Promise<unknown>;
+  lookup(args: FigmaReplLookupArguments): Promise<unknown>;
 }
 
 export interface FigmaReplSession {
@@ -429,13 +417,6 @@ export function createFigmaReplClient(
         asRunTaskPlanArgs(withDefaultTitle(args, "Run Figma REPL task plan")),
         runtime,
       ),
-    initWorkspace: async (args) =>
-      parseJsonToolResult(
-        await handleInitWorkspace(
-          asInitWorkspaceArgs(withDefaultTitle(args, "Initialize Figma REPL workspace")),
-          { sessions: runtime.sessions },
-        ),
-      ),
     prepareTask: async (args) =>
       parseJsonToolResult(
         await handlePrepareTask(
@@ -443,52 +424,22 @@ export function createFigmaReplClient(
           { sessions: runtime.sessions },
         ),
       ),
-    planTask: async (args) =>
-      parseJsonToolResult(
-        handlePlanTask(asPlanTaskArgs(withDefaultTitle(args, "Plan Figma REPL task"))),
-      ),
     guidance: async (args) =>
       parseJsonToolResult(
         await handleGuidance(asGuidanceArgs(withDefaultTitle(args, "Read Figma REPL guidance"))),
       ),
     inspect: async (args = {}) =>
       parseJsonToolResult(
-        await handleInspect(withDefaultTitle(args, "Inspect Figma REPL target"), runtime),
-      ),
-    cacheGet: async (args = {}) =>
-      parseJsonToolResult(
-        handleCacheGet(withDefaultTitle(args, "Read Figma REPL cache"), runtime),
-      ),
-    validateHandles: async (args = {}) =>
-      parseJsonToolResult(
-        await handleValidateHandles(
-          withDefaultTitle(args, "Validate Figma REPL handles"),
-          runtime,
-        ),
-      ),
-    listUpstreamTools: async (args = {}) =>
-      parseJsonToolResult(
-        await handleListUpstreamTools(
-          withDefaultTitle(args, "List upstream Figma MCP tools"),
-          runtime,
-        ),
+        await handleInspect(asInspectArgs(withDefaultTitle(args, "Inspect Figma REPL target")), runtime),
       ),
     callUpstreamTool: async (args) =>
       executeCallUpstreamTool(
         asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool")),
         runtime,
       ),
-    docsSearch: async (args) =>
+    lookup: async (args) =>
       parseJsonToolResult(
-        await handleDocsSearch(
-          asDocsSearchArgs(withDefaultTitle(args, "Search Figma REPL documentation")),
-        ),
-      ),
-    apiLookup: async (args) =>
-      parseJsonToolResult(
-        await handleApiLookup(
-          asApiLookupArgs(withDefaultTitle(args, "Look up Figma Plugin API symbol")),
-        ),
+        await handleLookup(asLookupArgs(withDefaultTitle(args, "Look up Figma REPL reference"))),
       ),
   };
 }
@@ -515,7 +466,7 @@ export function createFigmaReplMcpServer(
       },
       instructions: [
         "Stateful REPL-style MCP proxy for the official Figma MCP server.",
-        "Use figma_repl_run_script_file for repairable .figma.js workflows, figma_repl_eval for small batched Plugin API JavaScript, and figma_repl_cache_get to reuse handles across calls.",
+        "Use figma_repl_prepare_task and figma_repl_run_script_file for repairable .figma.js workflows, figma_repl_eval for small batched Plugin API JavaScript, and figma-repl://sessions resources to inspect local state.",
         "The proxy stores only local session metadata and node-id handles; Figma execution still happens through the upstream use_figma tool.",
       ].join(" "),
     },
@@ -567,34 +518,20 @@ export function createFigmaReplMcpServer(
           upstreamToolCache,
           config,
         });
-      case "figma_repl_init_workspace":
-        return handleInitWorkspace(asInitWorkspaceArgs(rawArgs), { sessions });
       case "figma_repl_prepare_task":
         return handlePrepareTask(asPrepareTaskArgs(rawArgs), { sessions });
-      case "figma_repl_plan_task":
-        return handlePlanTask(asPlanTaskArgs(rawArgs));
       case "figma_repl_guidance":
         return handleGuidance(asGuidanceArgs(rawArgs));
       case "figma_repl_inspect":
-        return handleInspect(args, { client, sessions, upstreamToolCache, config });
-      case "figma_repl_cache_get":
-        return handleCacheGet(args, { sessions });
-      case "figma_repl_validate_handles":
-        return handleValidateHandles(args, { client, sessions, upstreamToolCache, config });
-      case "figma_repl_capabilities":
-        return handleCapabilities(args);
-      case "figma_repl_list_upstream_tools":
-        return handleListUpstreamTools(args, { upstreamToolCache });
+        return handleInspect(asInspectArgs(rawArgs), { client, sessions, upstreamToolCache, config });
       case "figma_repl_call_upstream_tool":
         return handleCallUpstreamTool(asCallUpstreamToolArgs(rawArgs), {
           client,
           sessions,
           upstreamToolCache,
         });
-      case "figma_repl_docs_search":
-        return handleDocsSearch(asDocsSearchArgs(rawArgs));
-      case "figma_repl_api_lookup":
-        return handleApiLookup(asApiLookupArgs(rawArgs));
+      case "figma_repl_lookup":
+        return handleLookup(asLookupArgs(rawArgs));
       default:
         throw new Error(`Unknown figma-repl-mcp tool: ${request.params.name}`);
     }
@@ -604,6 +541,11 @@ export function createFigmaReplMcpServer(
     ListResourcesRequestSchema,
     async (_request: ListResourcesRequest) => ({
       resources: [
+        {
+          uri: "figma-repl://capabilities",
+          name: "Figma REPL aggregate capabilities",
+          mimeType: "application/json",
+        },
         {
           uri: "figma-repl://guide",
           name: "Figma REPL agent guide",
@@ -655,6 +597,11 @@ export function createFigmaReplMcpServer(
           mimeType: "application/json",
         },
         {
+          uri: "figma-repl://upstream-tools",
+          name: "Figma upstream MCP tools",
+          mimeType: "application/json",
+        },
+        {
           uri: "figma-repl://sessions",
           name: "Figma REPL sessions",
           mimeType: "application/json",
@@ -670,7 +617,10 @@ export function createFigmaReplMcpServer(
 
   server.setRequestHandler(
     ReadResourceRequestSchema,
-    async (request: ReadResourceRequest) => readReplResource(request.params.uri, sessions),
+    async (request: ReadResourceRequest) => readReplResource(request.params.uri, {
+      sessions,
+      upstreamToolCache,
+    }),
   );
 
   return { server, client, sessions };
@@ -1311,12 +1261,8 @@ async function handlePrepareTask(
   const session = runtime?.sessions.getOrCreate(args.sessionId);
   applyWorkspaceFileContextArgs(session, args);
   const intentSlug = deriveIntentSlug(args, "figma-task");
-  const workspace = resolvePreparedTaskWorkspace({
-    args,
-    taskSlug: intentSlug,
-    fileSlug: deriveFileSlug(args, session),
-    session,
-  });
+  const fileSlug = deriveFileSlug(args, session);
+  const workspace = resolvePrepareTaskWorkspace(args, intentSlug, fileSlug, session);
   if (session) {
     session.workspace = workspace;
     touchSession(session);
@@ -1341,6 +1287,7 @@ async function handlePrepareTask(
 
   return makeJsonToolResult({
     ok: true,
+    session: session ? publicSession(session) : undefined,
     task: {
       slug: intentSlug,
       intentSlug,
@@ -1361,59 +1308,57 @@ async function handlePrepareTask(
   });
 }
 
-async function handleInitWorkspace(
-  args: FigmaReplInitWorkspaceArguments,
-  runtime: { sessions: FigmaReplSessionStore },
-): Promise<Record<string, unknown>> {
-  assertRequiredTitleArgument(args);
-  if (!args.cwd || typeof args.cwd !== "string") {
-    throw new Error('Tool argument "cwd" is required and must be a string.');
+function resolvePrepareTaskWorkspace(
+  args: FigmaReplPrepareTaskArguments,
+  intentSlug: string,
+  fileSlug: string,
+  session: FigmaReplSession | undefined,
+): FigmaReplSessionWorkspace {
+  if (typeof args.cwd === "string" && args.cwd.length > 0) {
+    if (!isAbsolute(args.cwd)) {
+      throw new Error('Tool argument "cwd" must be an absolute path.');
+    }
+    return createSessionWorkspace({
+      cwd: args.cwd,
+      dirName: args.dirName,
+      fileKey: session?.fileKey ?? args.fileKey,
+      fileSlug,
+      intentSlug,
+    });
   }
-  if (!isAbsolute(args.cwd)) {
-    throw new Error('Tool argument "cwd" must be an absolute path.');
+  const hasFileContext = Boolean(args.fileUrl || args.fileKey || args.fileSlug || args.dirName);
+  const hasExplicitTaskWorkspace = Boolean(args.taskDir || args.workspaceDir || args.taskRoot);
+  if (hasFileContext && !session?.workspace && !hasExplicitTaskWorkspace) {
+    return createSessionWorkspace({
+      cwd: process.cwd(),
+      dirName: args.dirName,
+      fileKey: session?.fileKey ?? args.fileKey,
+      fileSlug,
+      intentSlug,
+    });
   }
-  const session = runtime.sessions.getOrCreate(args.sessionId);
-  applyWorkspaceFileContextArgs(session, args);
-  const workspace = createSessionWorkspace({
-    cwd: args.cwd,
-    dirName: args.dirName,
-    fileKey: session.fileKey,
-    fileSlug: deriveFileSlug(args, session),
-    intentSlug: deriveIntentSlug(args, session.id),
-  });
-  await ensureWorkspaceDirectories(workspace);
-  session.workspace = workspace;
-  touchSession(session);
-  return makeJsonToolResult({
-    ok: true,
-    session: publicSession(session),
-    workspace,
-    files: workspace.files,
-    next: [
-      "Edit the .figma.js file inside this file-context folder.",
-      "Run figma_repl_run_script_file with inputFile/outputFile names instead of absolute paths.",
-      "Read the paired .result.json file when inline response is capped.",
-    ],
+  return resolvePreparedTaskWorkspace({
+    args,
+    taskSlug: intentSlug,
+    fileSlug,
+    session,
   });
 }
 
-function handlePlanTask(args: FigmaReplPlanTaskArguments): Record<string, unknown> {
+async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
-  const surface = normalizeSurface(args.surface ?? args.expectedSurface) ?? "design";
-  const intent = typeof args.intent === "string"
-    ? args.intent
-    : typeof args.goal === "string"
-      ? args.goal
-      : typeof args.task === "string"
-        ? args.task
-        : "";
-  return makeJsonToolResult({
-    ok: true,
-    workflow: createFileWorkflowPayload(),
-    plan: {
-      surface,
-      workflow: args.workflow ?? "script-file",
-      intent,
+  const intentSource = args.intent ?? args.task ?? args.goal;
+  const cardSource = args.card ?? args.query;
+  const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
+  const mode = args.mode ?? (cardSource ? "card" : intentSource ? "guidance" : "catalog");
+  if (mode === "plan") {
+    const planIntent = typeof intentSource === "string"
+      ? normalizeLookupQuery(intentSource, "intent")
+      : "figma file task";
+    return makeJsonToolResult({
+      ok: true,
+      mode: "plan",
+      workflow: createFileWorkflowPayload(),
       steps: [
         "Prepare or reuse a task workspace with figma_repl_prepare_task.",
         "Write the transaction in a local .figma.js file using $ helpers and native Figma Plugin API calls.",
@@ -1427,23 +1372,18 @@ function handlePlanTask(args: FigmaReplPlanTaskArguments): Record<string, unknow
         "figma_repl_run_script_file",
         "figma_repl_inspect",
       ],
-      suggestedCards: chooseApiCardsForIntent(intent, 4).map((card) => card.id),
-    },
-  });
-}
-
-async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<string, unknown>> {
-  assertRequiredTitleArgument(args);
-  const intentSource = args.intent ?? args.task;
-  const cardSource = args.card ?? args.query;
-  const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
+      suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id),
+    });
+  }
   const intent = typeof intentSource === "string"
     ? normalizeLookupQuery(intentSource, "intent")
     : undefined;
   const cardQuery = typeof cardSource === "string"
     ? normalizeLookupQuery(cardSource, "card or query")
     : undefined;
-  const cards = cardQuery
+  const cards = mode === "catalog"
+    ? FIGMA_REPL_API_CARDS.slice(0, maxCards)
+    : cardQuery
     ? searchApiCards(cardQuery, maxCards)
     : intent
       ? chooseApiCardsForIntent(intent, maxCards)
@@ -1460,7 +1400,7 @@ async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<
   const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
   return makeJsonToolResult({
     ok: true,
-    mode: intent ? "intent" : cardQuery ? "card" : "catalog",
+    mode,
     cards,
     catalogSize: FIGMA_REPL_API_CARDS.length,
     guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, avoid, and pitfalls for .figma.js file workflows.",
@@ -1473,7 +1413,7 @@ async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<
 }
 
 async function handleInspect(
-  args: Record<string, unknown>,
+  args: FigmaReplInspectArguments,
   runtime: {
     client: FigmaMcpProxyClient;
     sessions: FigmaReplSessionStore;
@@ -1482,6 +1422,9 @@ async function handleInspect(
   },
 ): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
+  if (args.mode === "validate") {
+    return makeJsonToolResult(await executeValidateHandles(args, runtime));
+  }
   const session = runtime.sessions.getOrCreate(asOptionalString(args.sessionId));
   const target = asOptionalString(args.target) ?? "$selection";
   const depth = normalizePositiveInteger(args.depth, 2);
@@ -1529,26 +1472,8 @@ async function handleInspect(
   });
 }
 
-function handleCacheGet(
-  args: Record<string, unknown>,
-  runtime: { sessions: FigmaReplSessionStore },
-): Record<string, unknown> {
-  assertRequiredTitleArgument(args);
-  const session = runtime.sessions.get(asOptionalString(args.sessionId));
-  const includeHistory = args.includeHistory !== false;
-  const historyLimit = normalizePositiveInteger(args.historyLimit, DEFAULT_HISTORY_LIMIT);
-  return makeJsonToolResult({
-    ok: true,
-    session: session
-      ? publicSession(session, { includeHistory, historyLimit })
-      : undefined,
-    sessions: runtime.sessions.list().map((item) => publicSession(item, { includeHistory: false })),
-    lastDiagnostics: session?.lastDiagnostics,
-  });
-}
-
-async function handleValidateHandles(
-  args: Record<string, unknown>,
+async function executeValidateHandles(
+  args: FigmaReplInspectArguments,
   runtime: {
     client: FigmaMcpProxyClient;
     sessions: FigmaReplSessionStore;
@@ -1598,39 +1523,19 @@ async function handleValidateHandles(
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
-    tool: "figma_repl_validate_handles",
+    tool: "figma_repl_inspect",
     title: asOptionalString(args.title),
-    mode: "read",
+    mode: "validate",
     summary: `Validated ${requested.length} Figma REPL handle(s).`,
     nodeIds: collectNodeIds(parsed.json),
   });
-  return makeJsonToolResult({
+  return {
     ok: true,
     session: publicSession(session),
     diagnostics,
     parsed: parsed.json,
     text: parsed.text,
-  });
-}
-
-function handleCapabilities(args: Record<string, unknown>): Record<string, unknown> {
-  assertRequiredTitleArgument(args);
-  return makeJsonToolResult({
-    ok: true,
-    ...createCapabilitiesPayload(),
-  });
-}
-
-async function handleListUpstreamTools(
-  args: Record<string, unknown>,
-  runtime: { upstreamToolCache: ReturnType<typeof createUpstreamToolCache> },
-): Promise<Record<string, unknown>> {
-  assertRequiredTitleArgument(args);
-  const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
-  return makeJsonToolResult({
-    ok: true,
-    tools,
-  });
+  };
 }
 
 async function handleCallUpstreamTool(
@@ -1691,41 +1596,41 @@ async function executeCallUpstreamTool(
   };
 }
 
-async function handleDocsSearch(
-  args: FigmaReplDocsSearchArguments,
+async function handleLookup(
+  args: FigmaReplLookupArguments,
 ): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
-  const query = normalizeLookupQuery(args.query, "query");
-  const matches = await searchReferenceFiles({
-    query,
-    files: DOCS_SEARCH_ALLOWLIST,
-    maxResults: normalizeBoundedInteger(
-      args.maxResults,
-      DEFAULT_DOCS_SEARCH_MAX_RESULTS,
-      MAX_DOCS_SEARCH_RESULTS,
-    ),
-    maxSnippetLines: normalizeBoundedInteger(
-      args.maxSnippetLines,
-      DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
-      MAX_DOCS_SEARCH_SNIPPET_LINES,
-    ),
-  });
-  return makeJsonToolResult({
-    ok: true,
-    query,
-    maxResults: matches.maxResults,
-    maxSnippetLines: matches.maxSnippetLines,
-    results: matches.results,
-    guidance:
-      "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_repl_docs_search or figma_repl_api_lookup when more detail is needed.",
-  });
-}
-
-async function handleApiLookup(
-  args: FigmaReplApiLookupArguments,
-): Promise<Record<string, unknown>> {
-  assertRequiredTitleArgument(args);
-  const symbol = normalizeLookupQuery(args.symbol, "symbol");
+  if (args.kind === "docs") {
+    const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
+    const matches = await searchReferenceFiles({
+      query,
+      files: DOCS_SEARCH_ALLOWLIST,
+      maxResults: normalizeBoundedInteger(
+        args.maxResults,
+        DEFAULT_DOCS_SEARCH_MAX_RESULTS,
+        MAX_DOCS_SEARCH_RESULTS,
+      ),
+      maxSnippetLines: normalizeBoundedInteger(
+        args.maxSnippetLines,
+        DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
+        MAX_DOCS_SEARCH_SNIPPET_LINES,
+      ),
+    });
+    return makeJsonToolResult({
+      ok: true,
+      kind: "docs",
+      query,
+      maxResults: matches.maxResults,
+      maxSnippetLines: matches.maxSnippetLines,
+      results: matches.results,
+      guidance:
+        "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_repl_lookup query or kind=api lookup when more detail is needed.",
+    });
+  }
+  if (args.kind !== "api") {
+    throw new Error('Tool argument "kind" must be one of: docs, api.');
+  }
+  const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
   const matches = await searchReferenceFiles({
     query: symbol,
     files: API_LOOKUP_FILES,
@@ -1735,6 +1640,7 @@ async function handleApiLookup(
   });
   return makeJsonToolResult({
     ok: true,
+    kind: "api",
     symbol,
     maxResults: matches.maxResults,
     maxSnippetLines: matches.maxSnippetLines,
@@ -3185,9 +3091,8 @@ function createFileWorkflowPayload(): Record<string, unknown> {
   return {
     primaryTool: "figma_repl_run_script_file",
     fileExtension: ".figma.js",
-    initTool: "figma_repl_init_workspace",
     prepareTool: "figma_repl_prepare_task",
-    planTool: "figma_repl_plan_task",
+    planTool: "figma_repl_guidance",
     workspaceLayout: "<cwd>/figma-mcp/<fileKey-or-fileSlug>/<intentSlug>.figma.js + <intentSlug>.result.json",
     outputFiles: ["inputFile", "outputFile", "inlineResultLimit"],
     workflowTools: ["figma_repl_apply_asset_manifest", "figma_repl_capture_node", "figma_repl_run_task_plan"],
@@ -3230,12 +3135,12 @@ function createIntentSuggestions(
     toolOrder: [
       "figma_repl_prepare_task",
       "figma_repl_guidance",
-      "figma_repl_api_lookup",
+      "figma_repl_lookup(kind=api)",
       "figma_repl_run_script_file(dryRun=true)",
       "figma_repl_run_script_file",
       "figma_repl_inspect",
     ],
-    referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_repl_api_lookup when exact API details are still missing.",
+    referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_repl_lookup kind=api query when exact API details are still missing.",
   };
 }
 
@@ -3255,12 +3160,11 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     guide: {
       purpose: "Unified Figma-facing MCP facade for agents after OAuth registration. Stay inside figma-repl-mcp; it keeps local session metadata/handles and can bridge to upstream Figma MCP tools through explicit REPL tools.",
       preferredFlow: [
-        "figma_repl_capabilities to choose the facade path",
-        "figma_repl_init_workspace with an absolute cwd, fileUrl or fileKey, and an intent",
-        "figma_repl_prepare_task or figma_repl_plan_task for repairable .figma.js workspaces",
-        "figma_repl_guidance for compact local intent routing and API cards when needed",
+        "Read figma-repl://capabilities to choose the facade path",
+        "figma_repl_prepare_task with an absolute cwd, fileUrl or fileKey, and an intent for repairable .figma.js workspaces",
+        "figma_repl_guidance with mode=plan for workflow planning or mode=guidance/card/catalog for compact local API cards",
         "figma_repl_open with fileUrl and expectedSurface for stateful Plugin API work",
-        "figma_repl_inspect or figma_repl_validate_handles before mutation",
+        "figma_repl_inspect with mode=inspect or mode=validate before mutation",
         "figma_repl_run_script_file with inputFile and dryRun=true for primary .figma.js workflows, output files, and line-aware repair",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through a manifest",
         "figma_repl_capture_node for final visual QA captures saved to local files",
@@ -3279,7 +3183,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       query: "Use figma_repl_guidance first for natural-language tasks; it returns recommendedCards, queryHints, apiSymbols, avoid, and compact referenceContext. Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
       pages: "Use targetPageId or one setCurrentPageAsync call; direct figma.currentPage assignment is blocked.",
       selection: "Use $.select instead of direct figma.currentPage.selection access in repairable scripts.",
-      validation: "Use figma_repl_validate_handles before mutating cached handles from an earlier call.",
+      validation: "Use figma_repl_inspect mode=validate before mutating cached handles from an earlier call.",
     },
     safety: {
       fatalDiagnosticsBlock: true,
@@ -3293,7 +3197,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       scriptShape: "Write an async function body in a local .figma.js file. The runner injects Figma REPL prelude plus $ helpers before upstream use_figma execution.",
       requiredArguments: ["title", "scriptPath or inputFile"],
       options: {
-        scriptPath: "Absolute path escape hatch. Prefer inputFile after figma_repl_init_workspace.",
+        scriptPath: "Absolute path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
         inputFile: "File name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
         dryRun: "Read, diagnose, inject helpers, and return compiledScript without calling upstream Figma.",
         strict: "Promote warnings to fatal diagnostics.",
@@ -3354,7 +3258,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         "Describe the user task in task or intent.",
         "Use recommendedCards to choose compact cards before broad docs lookup.",
         "Use queryHints as narrower follow-up searches when card guidance is insufficient.",
-        "Use apiSymbols for exact figma_repl_api_lookup calls.",
+        "Use apiSymbols for exact figma_repl_lookup kind=api calls.",
         "Treat avoid as task-specific guardrails before writing .figma.js.",
       ],
       commonCards: FIGMA_REPL_API_CARDS.map((card) => card.id),
@@ -3385,8 +3289,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       "Use compact docs/API lookup as the exposed documentation surface; bundled corpus files stay internal.",
     ],
     docsLookup: {
-      docsTool: "figma_repl_docs_search",
-      apiTool: "figma_repl_api_lookup",
+      lookupTool: "figma_repl_lookup",
       docsResource: "figma-repl://docs",
       apiResource: "figma-repl://api",
       guidanceTool: "figma_repl_guidance",
@@ -3422,6 +3325,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
 function readStaticReplResource(uri: string): Record<string, unknown> | undefined {
   const payload = createCapabilitiesPayload();
   const resources: Record<string, unknown> = {
+    "figma-repl://capabilities": payload,
     "figma-repl://guide": payload.guide,
     "figma-repl://patterns": payload.patterns,
     "figma-repl://scripts": payload.scriptWorkflow,
@@ -3456,9 +3360,10 @@ function readStaticReplResource(uri: string): Record<string, unknown> | undefine
     },
     "figma-repl://docs": {
       purpose: "Compact searchable facade guidance from the internal Figma corpus.",
-      tool: "figma_repl_docs_search",
+      tool: "figma_repl_lookup",
+      kind: "docs",
       workflow: [
-        "Search with a narrow query.",
+        "Search with kind=docs and a narrow query.",
         "Use matchType, confidence, and capped BM25 snippets.",
         "Run a narrower search instead of reading bundled corpus files.",
       ],
@@ -3469,11 +3374,12 @@ function readStaticReplResource(uri: string): Record<string, unknown> | undefine
     },
     "figma-repl://api": {
       purpose: "Targeted Figma Plugin API symbol lookup from the internal corpus.",
-      tool: "figma_repl_api_lookup",
+      tool: "figma_repl_lookup",
+      kind: "api",
       workflow: [
-        "Search exact symbols such as createFrame, loadFontAsync, VariableCollection, or SceneNode.",
+        "Search kind=api exact symbols such as createFrame, loadFontAsync, VariableCollection, or SceneNode.",
         "Use snippets with matchType and confidence.",
-        "For broader usage guidance, use figma_repl_docs_search.",
+        "For broader usage guidance, use figma_repl_lookup kind=docs.",
       ],
       ranking: "API references are chunked by Markdown headings/windows and d.ts symbol-ish blocks; exact symbols are boosted over broad token matches.",
       guardrail: "Bundled declaration files are internal corpus and are never returned as full documents.",
@@ -3496,10 +3402,31 @@ function readStaticReplResource(uri: string): Record<string, unknown> | undefine
   };
 }
 
-function readReplResource(uri: string, sessions: FigmaReplSessionStore): Record<string, unknown> {
+async function readReplResource(
+  uri: string,
+  runtime: {
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
   const staticResource = readStaticReplResource(uri);
   if (staticResource) {
     return staticResource;
+  }
+  if (uri === "figma-repl://upstream-tools") {
+    const tools = await runtime.upstreamToolCache.list(false);
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify({
+            tools,
+            guidance: "Read-only discovery for official upstream Figma MCP tools. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability.",
+          }, null, 2),
+        },
+      ],
+    };
   }
   if (uri === "figma-repl://sessions") {
     return {
@@ -3507,7 +3434,7 @@ function readReplResource(uri: string, sessions: FigmaReplSessionStore): Record<
         {
           uri,
           mimeType: "application/json",
-          text: JSON.stringify({ sessions: sessions.list().map((session) => publicSession(session)) }, null, 2),
+          text: JSON.stringify({ sessions: runtime.sessions.list().map((session) => publicSession(session)) }, null, 2),
         },
       ],
     };
@@ -3515,7 +3442,7 @@ function readReplResource(uri: string, sessions: FigmaReplSessionStore): Record<
   const prefix = "figma-repl://sessions/";
   if (uri.startsWith(prefix)) {
     const sessionId = decodeURIComponent(uri.slice(prefix.length));
-    const session = sessions.get(sessionId);
+    const session = runtime.sessions.get(sessionId);
     if (!session) {
       throw new Error(`Figma REPL session not found: ${sessionId}`);
     }
@@ -3855,9 +3782,9 @@ function parseJsonToolResult(result: Record<string, unknown>): unknown {
 function summarizeToolResult(value: unknown): string {
   const record = asRecord(value);
   if (record.ok === false) {
-    return "Figma REPL tool failed; see structuredContent.";
+    return "Figma REPL tool failed.";
   }
-  return "Figma REPL tool completed; see structuredContent.";
+  return "Figma REPL tool completed.";
 }
 
 function normalizeOAuthCachePath(oauthCachePath: string): string {

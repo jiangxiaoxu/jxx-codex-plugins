@@ -10,15 +10,14 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 ## Default Route
 
 1. If the user asks for login, auth setup, credential refresh, or auth repair, run the Figma MCP Login flow below.
-2. Start with `figma_repl_capabilities`, then use the file workflow.
+2. Start by reading `figma-repl://capabilities`, then use the file workflow.
 3. If direct `figma_repl_*` tools are not installed in the active Codex environment, use the package-local Node API `createFigmaReplClient` against the same OAuth cache.
 4. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
-5. Use `figma_repl_guidance`, `figma_repl_docs_search`, and `figma_repl_api_lookup` for guidance. Treat their snippets as the exposed documentation surface.
+5. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
 
 ## Primary File Workflow
 
-- Initialize context: `figma_repl_init_workspace({ cwd, fileUrl|fileKey, intent })`.
-- Prepare a repairable intent file: `figma_repl_prepare_task({ sessionId, intent|title|goal })`.
+- Prepare a repairable workspace and intent file: `figma_repl_prepare_task({ cwd, fileUrl|fileKey, intent|title|goal })`.
 - Edit the generated `<intent>.figma.js`; use native Figma Plugin API plus the injected `$` helpers.
 - Dry-run: `figma_repl_run_script_file({ sessionId, inputFile, dryRun: true, strict: true, expectedSurface })`.
 - Execute: `figma_repl_run_script_file({ sessionId, inputFile, outputFile })`.
@@ -34,23 +33,23 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls can u
 - Keep each transaction small and repairable. Use `dryRun: true`, then fix diagnostics by file line before executing.
 - Return compact JSON with changed node ids, handles, and validation notes. Write large results to the paired `outputFile` instead of relying on inline MCP output.
 - Common helpers: `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`.
-- Prefer `$.select` over direct selection mutation. Use `figma_repl_validate_handles` before reusing old handles.
+- Prefer `$.select` over direct selection mutation. Use `figma_repl_inspect({ mode: "validate" })` before reusing old handles.
 - For generated assets, use `$.imageAsset` only for small inline PNG/JPEG data; for larger local assets, create target rectangles and use `figma_repl_apply_asset_manifest`.
 - Use `figma_repl_capture_node` for final visual QA and `figma_repl_run_task_plan` for repeatable script, asset, capture, and upstream-tool sequences.
 
 ## Lookup Order
 
-- Use `figma_repl_capabilities` or resources such as `figma-repl://guide`, `figma-repl://patterns`, `figma-repl://scripts`, `figma-repl://file-workflow`, `figma-repl://workflow-tools`, `figma-repl://api-cards`, `figma-repl://intents`, `figma-repl://safety`, `figma-repl://docs`, and `figma-repl://api` for self-explaining workflow guidance.
+- Use `figma-repl://capabilities` for aggregate self-explaining guidance, or narrower resources such as `figma-repl://guide`, `figma-repl://patterns`, `figma-repl://scripts`, `figma-repl://file-workflow`, `figma-repl://workflow-tools`, `figma-repl://api-cards`, `figma-repl://intents`, `figma-repl://safety`, `figma-repl://docs`, `figma-repl://api`, and `figma-repl://upstream-tools`.
 - Use `figma_repl_guidance` for task-to-helper routing and curated short cards.
-- Use `figma_repl_docs_search` for BM25-ranked workflow snippets.
-- Use `figma_repl_api_lookup` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
+- Use `figma_repl_lookup({ kind: "docs" })` for BM25-ranked workflow snippets.
+- Use `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 
 Use `figma_repl_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
 
 ## Query Strategy
 
 - For natural-language tasks, call `figma_repl_guidance` first and use its `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext` fields before writing `.figma.js`.
-- Use `figma_repl_guidance` for compact patterns, then use `apiSymbols` with `figma_repl_api_lookup` only when exact Plugin API details are still missing.
+- Use `figma_repl_guidance` for compact patterns, then use `apiSymbols` with `figma_repl_lookup({ kind: "api" })` only when exact Plugin API details are still missing.
 - Treat `avoid` as task-specific guardrails, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
 - Prefer these anchors when narrowing a query: text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, FigJam/Slides.
 

@@ -69,19 +69,15 @@ await upstream.close();
 
 ## REPL File Workflow
 
-`figma_repl_run_script_file` is the primary path for non-trivial Plugin API work. Prefer initializing one workspace per Figma file, then use file names instead of absolute paths:
+`figma_repl_run_script_file` is the primary path for non-trivial Plugin API work. Prefer preparing one workspace per Figma file, then use file names instead of absolute paths:
 
 ```js
-await figma.initWorkspace({
+await figma.prepareTask({
   sessionId: "settings workspace",
   fileUrl: "https://www.figma.com/design/ExampleFigmaFileKey012/UI",
   intent: "settings panel polish",
-  cwd: "G:/Project/my-app",
-});
-await figma.prepareTask({
-  sessionId: "settings workspace",
-  intent: "settings panel polish",
   goal: "Update the settings panel",
+  cwd: "G:/Project/my-app",
   overwrite: true,
 });
 await figma.runScriptFile({
@@ -93,7 +89,7 @@ await figma.runScriptFile({
 });
 ```
 
-`figma_repl_init_workspace` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. A task normally uses `<intentSlug>.figma.js` and `<intentSlug>.result.json` in that folder. Absolute `scriptPath`, `outputDir`, and `resultFile` remain escape hatches.
+`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `cwd` or file context is supplied. A task normally uses `<intentSlug>.figma.js` and `<intentSlug>.result.json` in that folder. Absolute `scriptPath`, `outputDir`, and `resultFile` remain escape hatches.
 
 Write ordinary async JavaScript in `.figma.js` files. Use native Figma Plugin API calls for advanced work and injected `$` helpers for common agent tasks:
 
@@ -129,14 +125,15 @@ Keep `.figma.js` transactions small enough for upstream `use_figma` payload limi
 
 The REPL facade exposes compact self-explaining resources and tools:
 
-- workflow: `figma_repl_capabilities`, `figma_repl_plan_task`, `figma_repl_guidance`;
-- execution: `figma_repl_open`, `figma_repl_init_workspace`, `figma_repl_prepare_task`, `figma_repl_run_script_file`, `figma_repl_run_task_plan`;
+- workflow resources: `figma-repl://capabilities`, `figma-repl://guide`, `figma-repl://file-workflow`, `figma-repl://workflow-tools`;
+- workflow tools: `figma_repl_prepare_task`, `figma_repl_guidance`;
+- execution: `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_run_task_plan`;
 - assets and QA: `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`;
-- state: `figma_repl_inspect`, `figma_repl_cache_get`, `figma_repl_validate_handles`;
-- upstream bridge: `figma_repl_list_upstream_tools`, `figma_repl_call_upstream_tool`;
-- references: `figma_repl_docs_search`, `figma_repl_api_lookup`.
+- state resources: `figma-repl://sessions`, `figma-repl://sessions/{id}`;
+- upstream discovery/resource bridge: `figma-repl://upstream-tools`, `figma_repl_call_upstream_tool`;
+- references: `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`.
 
-Use `figma_repl_guidance` first for common intents and curated compact API cards. Use `figma_repl_docs_search` for BM25-ranked workflow snippets and `figma_repl_api_lookup` for exact Plugin API symbols. Use `figma_repl_call_upstream_tool` only for an explicit uncovered upstream capability. Lookup output is capped and confidence-labeled; bundled corpus files are internal and are not an agent-facing documentation path.
+Use `figma_repl_guidance` first for common intents, `mode: "plan"` workflow planning, and curated compact API cards. Use `figma_repl_lookup({ kind: "docs" })` for BM25-ranked workflow snippets and `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. Use `figma_repl_call_upstream_tool` only for an explicit uncovered upstream capability. Lookup output is capped and confidence-labeled; bundled corpus files are internal and are not an agent-facing documentation path.
 
 ## Diagnostics
 
