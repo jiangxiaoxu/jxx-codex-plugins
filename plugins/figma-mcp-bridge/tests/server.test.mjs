@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
   OAuthCache,
@@ -103,6 +104,53 @@ test("findCodexHomeOAuthCachePath uses USERPROFILE .codex when CODEX_HOME is mis
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("resolve-oauth-cache-path.py follows bridge cache priority", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-mcp-bridge-python-cache-"));
+  try {
+    const explicitPath = join(dir, "explicit-oauth.json");
+    const codexHome = join(dir, "codex-home");
+    const userProfile = join(dir, "profile");
+
+    const result = runResolveOAuthCachePath({
+      FIGMA_MCP_OAUTH_CACHE_PATH: explicitPath,
+      CODEX_HOME: codexHome,
+      USERPROFILE: userProfile,
+    });
+
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout.trim(), explicitPath);
+
+    const jsonResult = runResolveOAuthCachePath(
+      {
+        FIGMA_MCP_OAUTH_CACHE_PATH: undefined,
+        CODEX_HOME: codexHome,
+        USERPROFILE: userProfile,
+      },
+      ["--json"],
+    );
+    assert.equal(jsonResult.status, 0);
+    assert.deepEqual(JSON.parse(jsonResult.stdout), {
+      path: join(codexHome, ".figma-mcp-bridge-oauth.json"),
+      source: "CODEX_HOME",
+      exists: false,
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("resolve-oauth-cache-path.py can require an existing cache file", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-mcp-bridge-python-missing-cache-"));
+  const cachePath = join(dir, "missing-oauth.json");
+  const result = runResolveOAuthCachePath({
+    FIGMA_MCP_OAUTH_CACHE_PATH: cachePath,
+  }, ["--require-existing"]);
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Resolved OAuth cache file does not exist/u);
+  await rm(dir, { recursive: true, force: true });
 });
 
 test("createBridgeConfig fails without an allowed OAuth cache location", () => {
@@ -409,4 +457,25 @@ function withEnv(overrides, run) {
       }
     }
   }
+}
+
+function runResolveOAuthCachePath(overrides, args = []) {
+  const env = { ...process.env };
+  for (const [key, value] of Object.entries(overrides)) {
+    for (const existingKey of Object.keys(env)) {
+      if (existingKey.toLowerCase() === key.toLowerCase()) {
+        delete env[existingKey];
+      }
+    }
+    if (value === undefined) {
+      continue;
+    } else {
+      env[key] = value;
+    }
+  }
+  return spawnSync("python", ["scripts/resolve-oauth-cache-path.py", ...args], {
+    cwd: new URL("..", import.meta.url),
+    env,
+    encoding: "utf8",
+  });
 }

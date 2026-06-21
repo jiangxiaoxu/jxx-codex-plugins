@@ -6,6 +6,7 @@
   "main": "./scripts/server.mjs",
   "scripts": {
     "login:figma-http": "powershell -ExecutionPolicy Bypass -File scripts/login-figma-http.ps1",
+    "oauth-cache:path": "python scripts/resolve-oauth-cache-path.py",
     "start": "node scripts/server.mjs",
     "test": "node --test tests/*.test.mjs"
   },

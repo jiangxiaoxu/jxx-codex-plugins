@@ -20,6 +20,13 @@ CODEX_HOME/.figma-mcp-bridge-oauth.json
 USERPROFILE/.codex/.figma-mcp-bridge-oauth.json
 ```
 
+To print the resolved path for scripts or debugging:
+
+```powershell
+npm run oauth-cache:path
+python scripts/resolve-oauth-cache-path.py --json
+```
+
 The cache may contain `client_id`, `client_secret`, `access_token`, and `refresh_token`. Treat it as a sensitive local login file. It is ignored by git.
 
 ## Login
