@@ -129,14 +129,14 @@ Keep `.figma.js` transactions small enough for upstream `use_figma` payload limi
 
 The REPL facade exposes compact self-explaining resources and tools:
 
-- workflow: `figma_repl_capabilities`, `figma_repl_plan_task`, `figma_repl_suggest_api`, `figma_repl_api_card`;
+- workflow: `figma_repl_capabilities`, `figma_repl_plan_task`, `figma_repl_guidance`;
 - execution: `figma_repl_open`, `figma_repl_init_workspace`, `figma_repl_prepare_task`, `figma_repl_run_script_file`, `figma_repl_run_task_plan`;
 - assets and QA: `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`;
 - state: `figma_repl_inspect`, `figma_repl_cache_get`, `figma_repl_validate_handles`;
 - upstream bridge: `figma_repl_list_upstream_tools`, `figma_repl_call_upstream_tool`;
 - references: `figma_repl_docs_search`, `figma_repl_api_lookup`.
 
-Use `figma_repl_suggest_api` and `figma_repl_api_card` first for common intents. Use `figma_repl_docs_search` for BM25-ranked workflow snippets and `figma_repl_api_lookup` for exact Plugin API symbols. Use `figma_repl_call_upstream_tool` only for an explicit uncovered upstream capability. Lookup output is capped and confidence-labeled; bundled corpus files are internal and are not an agent-facing documentation path.
+Use `figma_repl_guidance` first for common intents and curated compact API cards. Use `figma_repl_docs_search` for BM25-ranked workflow snippets and `figma_repl_api_lookup` for exact Plugin API symbols. Use `figma_repl_call_upstream_tool` only for an explicit uncovered upstream capability. Lookup output is capped and confidence-labeled; bundled corpus files are internal and are not an agent-facing documentation path.
 
 ## Diagnostics
 

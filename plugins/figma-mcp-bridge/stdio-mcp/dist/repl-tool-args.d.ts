@@ -181,18 +181,13 @@ export interface FigmaReplPlanTaskArguments {
     expectedSurface?: FigmaReplSurface;
     intent?: string;
 }
-export interface FigmaReplApiCardArguments {
+export interface FigmaReplGuidanceArguments {
     [key: string]: unknown;
     title?: string;
     card?: string;
     query?: string;
-    maxCards?: number;
-}
-export interface FigmaReplSuggestApiArguments {
-    [key: string]: unknown;
-    title?: string;
     task?: string;
-    intent: string;
+    intent?: string;
     surface?: FigmaReplSurface;
     expectedSurface?: FigmaReplSurface;
     maxCards?: number;
@@ -205,8 +200,7 @@ export declare function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanAr
 export declare function asInitWorkspaceArgs(args: unknown): FigmaReplInitWorkspaceArguments;
 export declare function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments;
 export declare function asPlanTaskArgs(args: unknown): FigmaReplPlanTaskArguments;
-export declare function asApiCardArgs(args: unknown): FigmaReplApiCardArguments;
-export declare function asSuggestApiArgs(args: unknown): FigmaReplSuggestApiArguments;
+export declare function asGuidanceArgs(args: unknown): FigmaReplGuidanceArguments;
 export declare function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments;
 export declare function asDocsSearchArgs(args: unknown): FigmaReplDocsSearchArguments;
 export declare function asApiLookupArgs(args: unknown): FigmaReplApiLookupArguments;

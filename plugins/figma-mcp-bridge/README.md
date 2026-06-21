@@ -71,7 +71,7 @@ Agents should use `figma-repl-mcp` first:
 6. `figma_repl_run_script_file`
 7. `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, or `figma_repl_run_task_plan` when needed
 
-For API guidance, use `figma_repl_suggest_api`, `figma_repl_api_card`, `figma_repl_docs_search`, and `figma_repl_api_lookup`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
+For API guidance, use `figma_repl_guidance`, `figma_repl_docs_search`, and `figma_repl_api_lookup`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 
 Programmatic Node usage with an explicit OAuth cache:
 
