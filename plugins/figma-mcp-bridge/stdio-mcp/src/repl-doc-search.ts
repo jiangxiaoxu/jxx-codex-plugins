@@ -128,6 +128,17 @@ export function normalizeLookupQuery(value: unknown, name: string): string {
   return query;
 }
 
+export function normalizeLookupRankingQuery(value: unknown, name: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`Tool argument "${name}" is required and must be a string.`);
+  }
+  const query = value.trim();
+  if (!query) {
+    throw new Error(`Tool argument "${name}" must not be empty.`);
+  }
+  return query.slice(0, MAX_LOOKUP_QUERY_LENGTH).trimEnd();
+}
+
 function tokenizeQuery(query: string): string[] {
   return query
     .toLowerCase()

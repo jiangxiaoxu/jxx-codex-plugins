@@ -26,8 +26,10 @@ import {
   DOCS_SEARCH_ALLOWLIST,
   MAX_DOCS_SEARCH_RESULTS,
   MAX_DOCS_SEARCH_SNIPPET_LINES,
+  MAX_LOOKUP_QUERY_LENGTH,
   type ReferenceSearchResult,
   normalizeLookupQuery,
+  normalizeLookupRankingQuery,
   searchReferenceFiles,
 } from "./repl-doc-search.js";
 import {
@@ -481,6 +483,7 @@ export function createFigmaReplMcpServer(
       maxDocsSearchResults: MAX_DOCS_SEARCH_RESULTS,
       defaultDocsSearchSnippetLines: DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
       maxDocsSearchSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES,
+      maxLookupQueryLength: MAX_LOOKUP_QUERY_LENGTH,
     }),
   }));
 
@@ -1395,13 +1398,13 @@ function resolvePrepareTaskWorkspace(
 
 async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
-  const intentSource = args.intent ?? args.task ?? args.goal;
+  const intentSource = guidanceIntentSource(args);
   const cardSource = args.card ?? args.query;
   const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
   const mode = args.mode ?? (cardSource ? "card" : intentSource ? "guidance" : "catalog");
   if (mode === "plan") {
-    const planIntent = typeof intentSource === "string"
-      ? normalizeLookupQuery(intentSource, "intent")
+    const planIntent = intentSource
+      ? normalizeLookupRankingQuery(intentSource.value, intentSource.name)
       : "figma file task";
     return makeJsonToolResult({
       ok: true,
@@ -1423,8 +1426,8 @@ async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<
       suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id),
     });
   }
-  const intent = typeof intentSource === "string"
-    ? normalizeLookupQuery(intentSource, "intent")
+  const intent = intentSource
+    ? normalizeLookupRankingQuery(intentSource.value, intentSource.name)
     : undefined;
   const cardQuery = typeof cardSource === "string"
     ? normalizeLookupQuery(cardSource, "card or query")
@@ -1458,6 +1461,21 @@ async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<
     avoid: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
     suggestions,
   });
+}
+
+function guidanceIntentSource(
+  args: FigmaReplGuidanceArguments,
+): { name: "intent" | "task" | "goal"; value: string } | undefined {
+  if (typeof args.intent === "string") {
+    return { name: "intent", value: args.intent };
+  }
+  if (typeof args.task === "string") {
+    return { name: "task", value: args.task };
+  }
+  if (typeof args.goal === "string") {
+    return { name: "goal", value: args.goal };
+  }
+  return undefined;
 }
 
 async function handleInspect(

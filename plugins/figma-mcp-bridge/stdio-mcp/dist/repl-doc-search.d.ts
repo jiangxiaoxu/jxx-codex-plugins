@@ -28,3 +28,4 @@ export declare function searchReferenceFiles(options: {
     results: ReferenceSearchResult[];
 }>;
 export declare function normalizeLookupQuery(value: unknown, name: string): string;
+export declare function normalizeLookupRankingQuery(value: unknown, name: string): string;
