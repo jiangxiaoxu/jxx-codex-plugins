@@ -64,15 +64,16 @@ workdir: <plugin-root>
 command: npm run login:figma-http
 ```
 
-The helper starts the local HTTP bridge, temporarily logs in through `figma-http`, then removes that temporary MCP entry. After browser OAuth, the shared cache is written to the first matching path:
-
-```text
-FIGMA_MCP_OAUTH_CACHE_PATH
-CODEX_HOME/.figma-mcp-bridge-oauth.json
-USERPROFILE/.codex/.figma-mcp-bridge-oauth.json
-```
+The helper starts the local HTTP bridge, temporarily logs in through `figma-http`, then removes that temporary MCP entry. After browser OAuth, use the resolver below when a script or programmatic client needs the shared cache path.
 
 Do not add persistent `figma-http`; the plugin's persistent MCP servers are `figma-stdio` and `figma-repl-mcp`.
+
+To resolve the shared OAuth cache path for scripts or programmatic clients, run this from the plugin root:
+
+```text
+workdir: <plugin-root>
+command: npm run oauth-cache:path
+```
 
 ## Bundled Servers
 
