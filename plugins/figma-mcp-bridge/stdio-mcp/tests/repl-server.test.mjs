@@ -110,6 +110,11 @@ test("figma REPL eval wraps code and persists returned handles", async () => {
   assert.equal(evalJson.upstreamTool, "use_figma");
   assert.equal(evalJson.upstreamArgument, "code");
 
+  const sessionResources = await mcpClient.listResources();
+  const sessionListEntry = sessionResources.resources.find((resource) => resource.uri === "figma-repl://sessions/main");
+  assert.equal(sessionListEntry?.description, "Read when you need public state for this specific active REPL session.");
+  assert.equal(sessionListEntry?.mimeType, "application/json");
+
   const sessionResource = await mcpClient.readResource({ uri: "figma-repl://sessions/main" });
   const sessionJson = JSON.parse(sessionResource.contents[0].text);
   assert.equal(sessionJson.handles.$card, "12:34");
@@ -246,9 +251,23 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
 
   const resources = await mcpClient.listResources();
   const uris = resources.resources.map((resource) => resource.uri);
-  assert.deepEqual(uris.filter((uri) => !uri.startsWith("figma-repl://sessions/")).sort(), expectedStaticResourceUris);
+  const staticResources = resources.resources.filter((resource) => !resource.uri.startsWith("figma-repl://sessions/"));
+  assert.deepEqual(staticResources.map((resource) => resource.uri).sort(), expectedStaticResourceUris);
+  for (const resource of staticResources) {
+    assert.match(resource.description ?? "", /Read (first|when|only)/, `${resource.uri} has actionable description`);
+  }
   assert.ok(uris.every((uri) => !uri.includes("official-figma-skills")));
   assert.ok(uris.every((uri) => !uri.includes("/references/")));
+
+  const resourceTemplates = await mcpClient.listResourceTemplates();
+  assert.deepEqual(resourceTemplates.resourceTemplates, [
+    {
+      uriTemplate: "figma-repl://sessions/{id}",
+      name: "Figma REPL session by id",
+      description: "Read when you need full public state for a known REPL session id, including remembered handles, workspace files, file context, and recent call history.",
+      mimeType: "application/json",
+    },
+  ]);
 
   const aggregateResource = await mcpClient.readResource({ uri: "figma-repl://capabilities" });
   assert.deepEqual(JSON.parse(aggregateResource.contents[0].text).queryStrategy.outputFields, queryOutputFields);
