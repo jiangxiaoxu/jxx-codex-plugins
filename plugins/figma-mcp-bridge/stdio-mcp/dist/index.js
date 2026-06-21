@@ -21330,73 +21330,100 @@ function createFigmaReplMcpServer(options = {}) {
         {
           uri: "figma-repl://capabilities",
           name: "Figma REPL aggregate capabilities",
+          description: "Read first to choose the Figma REPL facade path, available tools, workflow resources, and lookup strategy.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://guide",
           name: "Figma REPL agent guide",
+          description: "Read when you need the compact agent-facing guide for preferred flow, delegation boundaries, and examples.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://patterns",
           name: "Figma REPL usage patterns",
+          description: "Read when you need practical usage patterns for common Figma REPL tasks before choosing tools.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://scripts",
           name: "Figma REPL script file workflow",
+          description: "Read when you need the small-script figma_repl_eval versus file-based figma_repl_run_script_file workflow details.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://file-workflow",
           name: "Figma REPL .figma.js file workflow",
+          description: "Read when you need to create or repair local .figma.js workspace files with figma_repl_prepare_task and figma_repl_run_script_file.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://workflow-tools",
           name: "Figma REPL workflow tools for plans, assets, and captures",
+          description: "Read when you need supporting workflow tools for asset manifests, captures, and task plans.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://api-cards",
           name: "Figma REPL compact API cards",
+          description: "Read when you need compact Plugin API cards before asking figma_repl_guidance or figma_repl_lookup for specifics.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://intents",
           name: "Figma REPL intent to API guidance",
+          description: "Read when you need to map a user intent to recommended guidance cards, query hints, and API symbols.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://safety",
           name: "Figma REPL safety and diagnostics",
+          description: "Read when you need safety, diagnostics, payload, or surface guardrails for Figma REPL execution.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://docs",
           name: "Figma REPL compact documentation lookup guide",
+          description: "Read when you need the compact documentation lookup route for internal corpus snippets via figma_repl_lookup.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://api",
           name: "Figma REPL Plugin API lookup guide",
+          description: "Read when you need the Plugin API lookup route for exact symbols via figma_repl_lookup.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://upstream-tools",
           name: "Figma upstream MCP tools",
+          description: "Read only when you need discovery for explicit uncovered official upstream Figma MCP capabilities.",
           mimeType: "application/json"
         },
         {
           uri: "figma-repl://sessions",
           name: "Figma REPL sessions",
+          description: "Read when you need the list of active REPL sessions and their ids before reading a specific session.",
           mimeType: "application/json"
         },
         ...sessions.list().map((session) => ({
           uri: `figma-repl://sessions/${encodeURIComponent(session.id)}`,
           name: `Figma REPL session ${session.id}`,
+          description: "Read when you need public state for this specific active REPL session.",
           mimeType: "application/json"
         }))
+      ]
+    })
+  );
+  server.setRequestHandler(
+    ListResourceTemplatesRequestSchema,
+    async (_request) => ({
+      resourceTemplates: [
+        {
+          uriTemplate: "figma-repl://sessions/{id}",
+          name: "Figma REPL session by id",
+          description: "Read when you need full public state for a known REPL session id, including remembered handles, workspace files, file context, and recent call history.",
+          mimeType: "application/json"
+        }
       ]
     })
   );
