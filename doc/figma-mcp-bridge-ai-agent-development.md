@@ -1,0 +1,87 @@
+# AI Agent Development Guide
+
+This document is for AI agents maintaining `figma-mcp-bridge`. It is not the user-facing Figma workflow. For user tasks, follow `skills/figma-router/SKILL.md` and the runtime MCP guidance first.
+
+## Current Direction
+
+- `figma-repl-mcp` is the primary agent-facing Figma workflow after OAuth.
+- `figma-stdio` stays as a transparent upstream bridge for parity checks and raw official MCP debugging.
+- Local `.figma.js` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, and compact docs/API lookup are the supported REPL path.
+- DSL, `$.ops`, `figma_repl_apply_ops`, `compileFigmaReplOps`, `FigmaReplOp`, and `FigmaReplApplyOpsArguments` are not part of the public or runtime contract.
+- Official files under `skills/figma-router/references/official-figma-skills/**` are internal corpus for lookup tools. Do not route agents to read them directly.
+
+## Canonical Contracts
+
+Runtime payloads are canonical for the agent-facing router contract:
+
+- `figma_repl_capabilities`
+- static resources under `figma-repl://*`
+- tool metadata from `stdio-mcp/src/repl-tool-metadata.ts`
+- intent/API guidance from `stdio-mcp/src/repl-guidance-catalog.ts`
+- docs/API snippets from `stdio-mcp/src/repl-doc-search.ts`
+
+`SKILL.md`, `openai.yaml`, and README files are secondary summaries. Keep them short and aligned with the runtime-owned contract. Prefer narrow parity tests over generated markdown or large copied prose.
+
+Pin these facts when changing the router surface:
+
+- agents start with `figma_repl_capabilities`;
+- `figma-repl-mcp` is the primary agent-facing entrypoint;
+- exposed resources include the `figma-repl://guide`, `file-workflow`, `workflow-tools`, `scripts`, `patterns`, `api-cards`, `intents`, `docs`, `api`, `safety`, and `sessions` family;
+- `figma_repl_suggest_api` returns `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`;
+- bundled corpus files are internal lookup data, not agent-facing docs;
+- `figma_repl_call_upstream_tool` is only for explicit uncovered upstream capabilities.
+
+## Source Ownership Map
+
+- `stdio-mcp/src/repl-server.ts`: MCP server composition, handler wiring, sessions, capability/resource payload assembly, and typed client surface.
+- `stdio-mcp/src/repl-script-runner.ts`: `.figma.js` compilation, helper bootstrap, helper profiles, preflight diagnostics, context diagnostics, and payload-size diagnostics.
+- `stdio-mcp/src/repl-workspace-files.ts`: workspace/path/script-output/capture-output/task-plan file helpers and `FigmaReplSessionWorkspace`.
+- `stdio-mcp/src/repl-tool-args.ts`: tool argument interfaces, default title helper, and explicit low-risk runtime parsers.
+- `stdio-mcp/src/repl-tool-metadata.ts`: canonical local tool descriptions and input schemas.
+- `stdio-mcp/src/repl-tool-registry.ts`: local tool names and task-plan step aliases.
+- `stdio-mcp/src/repl-guidance-catalog.ts`: API cards, intent buckets, query anchors, and pure guidance helpers.
+- `stdio-mcp/src/repl-doc-search.ts`: corpus allowlists, reference-root resolution, chunking, ranking, opaque `sourceId`, and lookup shaping.
+- `skills/figma-router/SKILL.md`: lightweight user-task router, not the canonical schema source.
+- `skills/figma-router/agents/openai.yaml`: thin metadata that points agents at `$figma-router`; do not expand it into a second contract.
+
+## Change Rules
+
+- Keep public tool names, resource URIs, result shapes, session semantics, and typed client signatures stable unless the task explicitly requests a breaking change.
+- Preserve compatibility in runtime parsers: do not reject unknown extra keys, do not change Boolean-style flag behavior, and do not duplicate path/workspace validation outside `repl-workspace-files.ts`.
+- Keep generated `dist` outputs in sync when `npm run build` changes them.
+- Do not reintroduce wrapper reference docs under `skills/figma-router/references/`; keep only `official-figma-skills/**` there.
+- Do not make docs canonical by copying large runtime payloads into markdown. Add or adjust narrow tests instead.
+- When changing plugin version numbers, update `plugins/figma-mcp-bridge/.codex-plugin/plugin.json` as part of the same release change.
+- When adding, renaming, or removing plugins under `plugins/*`, update `.agents/plugins/marketplace.json` and the root plugin list in `README.md`.
+
+## Development Workflow
+
+1. Inspect current git status before changing files. This repo often has staged and unstaged work in the same plugin.
+2. For runtime behavior, update source first, then tests, then generated `dist`.
+3. For router wording, update runtime payload/tests first. Touch `SKILL.md` or README only for concise summary alignment.
+4. Keep changes reviewable. Separate broad guidance/runtime refactors from validation hardening and docs parity work when possible.
+5. Do not stage or commit `task-memory/` unless the user explicitly asks.
+
+## Validation
+
+From `plugins/figma-mcp-bridge/stdio-mcp`:
+
+```bash
+npm run typecheck
+npm test
+```
+
+`npm test` runs the build and the Node test suite. Use it before committing runtime, parser, generated output, or docs parity changes.
+
+Useful test areas:
+
+- `tests/build-output.test.mjs`: package export and generated output contract.
+- `tests/repl-server.test.mjs`: MCP tools, typed client, resource payloads, parser validation, workspace flow, docs/API lookup, task plans, and parity smoke checks.
+
+## Release Checklist
+
+- Review staged vs unstaged files and keep the release unit coherent.
+- Confirm `task-memory/` is not staged unless explicitly requested.
+- Run `npm test` in `stdio-mcp`.
+- Check whether plugin version metadata needs a bump.
+- Check marketplace/root README updates only when plugin entries are added, renamed, or removed.
