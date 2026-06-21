@@ -1,4 +1,4 @@
 interface:
   display_name: "Figma Router"
-  short_description: "Route Figma MCP work and login"
+  short_description: "Route Figma MCP work through figma-repl-mcp or login"
   default_prompt: "Use $figma-router to route this Figma MCP task or login request to the correct workflow."

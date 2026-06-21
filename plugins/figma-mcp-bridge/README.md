@@ -55,7 +55,7 @@ The plugin's `.mcp.json` installs:
 
 `figma-stdio` is the transparent upstream bridge. Use it for parity checks or raw official MCP debugging.
 
-`figma-repl-mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.js` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, screenshot/capture output, task plans, process-local handles, and delegated upstream official tools.
+`figma-repl-mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.js` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, screenshot/capture output, task plans, process-local handles, and explicit delegated upstream official tools for uncovered capabilities.
 
 ## Agent Workflow
 

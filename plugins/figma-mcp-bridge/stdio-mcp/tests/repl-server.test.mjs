@@ -14,6 +14,36 @@ import {
 } from "../dist/index.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const expectedStaticResourceUris = [
+  "figma-repl://api",
+  "figma-repl://api-cards",
+  "figma-repl://docs",
+  "figma-repl://file-workflow",
+  "figma-repl://guide",
+  "figma-repl://intents",
+  "figma-repl://patterns",
+  "figma-repl://safety",
+  "figma-repl://scripts",
+  "figma-repl://sessions",
+  "figma-repl://workflow-tools",
+];
+const queryOutputFields = [
+  "recommendedCards",
+  "queryHints",
+  "apiSymbols",
+  "avoid",
+  "referenceContext",
+];
+const forbiddenRouterContractTerms = [
+  "figma_repl_apply_ops",
+  "figma_repl_applyOps",
+  "apply_ops",
+  "$.ops",
+  "$.applyOps",
+  "compileFigmaReplOps",
+  "FigmaReplOp",
+  "FigmaReplApplyOpsArguments",
+];
 
 test("figma REPL eval wraps code and persists returned handles", async () => {
   const calls = [];
@@ -118,14 +148,10 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.queryStrategy.searchAnchors.includes("text/font"));
   assert.ok(capabilities.queryStrategy.searchAnchors.includes("FigJam/Slides"));
   assert.match(capabilities.guide.purpose, /Unified Figma-facing MCP facade/);
+  assert.match(capabilities.guide.purpose, /figma-repl-mcp/);
   assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool"));
-  assert.deepEqual(capabilities.queryStrategy.outputFields, [
-    "recommendedCards",
-    "queryHints",
-    "apiSymbols",
-    "avoid",
-    "referenceContext",
-  ]);
+  assert.match(capabilities.guide.upstreamBridge, /figma_repl_call_upstream_tool/);
+  assert.deepEqual(capabilities.queryStrategy.outputFields, queryOutputFields);
   assert.ok(capabilities.queryStrategy.commonCards.includes("text.font"));
   assert.ok(capabilities.queryStrategy.commonCards.includes("surface.slides"));
   assert.equal(capabilities.scriptWorkflow.primaryTool, "figma_repl_run_script_file");
@@ -187,19 +213,9 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
 
   const resources = await mcpClient.listResources();
   const uris = resources.resources.map((resource) => resource.uri);
-  assert.deepEqual(uris.filter((uri) => !uri.startsWith("figma-repl://sessions/")).sort(), [
-    "figma-repl://api",
-    "figma-repl://api-cards",
-    "figma-repl://docs",
-    "figma-repl://file-workflow",
-    "figma-repl://guide",
-    "figma-repl://intents",
-    "figma-repl://patterns",
-    "figma-repl://safety",
-    "figma-repl://scripts",
-    "figma-repl://sessions",
-    "figma-repl://workflow-tools",
-  ]);
+  assert.deepEqual(uris.filter((uri) => !uri.startsWith("figma-repl://sessions/")).sort(), expectedStaticResourceUris);
+  assert.ok(uris.every((uri) => !uri.includes("official-figma-skills")));
+  assert.ok(uris.every((uri) => !uri.includes("/references/")));
 
   const scriptsResource = await mcpClient.readResource({ uri: "figma-repl://scripts" });
   const scripts = JSON.parse(scriptsResource.contents[0].text);
@@ -255,10 +271,13 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const intents = JSON.parse(intentsResource.contents[0].text);
   assert.equal(intents.tool, "figma_repl_suggest_api");
   assert.deepEqual(intents.queryStrategy.outputFields, capabilities.queryStrategy.outputFields);
+  assert.deepEqual(intents.examples[0].referenceContext, []);
 
   const docsResource = await mcpClient.readResource({ uri: "figma-repl://docs" });
   const docs = JSON.parse(docsResource.contents[0].text);
   assert.equal(docs.tool, "figma_repl_docs_search");
+  assert.match(docs.purpose, /internal Figma corpus/);
+  assert.match(docs.workflow.join(" "), /instead of reading bundled corpus files/);
 
   const apiResource = await mcpClient.readResource({ uri: "figma-repl://api" });
   const api = JSON.parse(apiResource.contents[0].text);
@@ -266,6 +285,30 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(api.guardrail, /never returned/);
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
+});
+
+test("figma router docs preserve runtime-owned contract wording", async () => {
+  const skillText = await readFile(resolve(packageRoot, "../skills/figma-router/SKILL.md"), "utf8");
+  const openaiText = await readFile(resolve(packageRoot, "../skills/figma-router/agents/openai.yaml"), "utf8");
+  const pluginReadme = await readFile(resolve(packageRoot, "../README.md"), "utf8");
+  const stdioReadme = await readFile(resolve(packageRoot, "README.md"), "utf8");
+  const docsText = [skillText, openaiText, pluginReadme, stdioReadme].join("\n");
+
+  assert.match(skillText, /After OAuth registration, use `figma-repl-mcp` as the agent-facing entrypoint/);
+  assert.match(skillText, /Start with `figma_repl_capabilities`/);
+  assert.match(skillText, /Bundled reference files are internal lookup corpus/);
+  assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`/);
+  for (const uri of expectedStaticResourceUris.filter((uri) => uri !== "figma-repl://sessions")) {
+    assert.match(skillText, new RegExp(uri.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(pluginReadme, /`figma-repl-mcp` is the primary agent workflow after OAuth registration/);
+  assert.match(pluginReadme, /Bundled reference files are internal lookup corpus/);
+  assert.match(stdioReadme, /bundled corpus files are internal and are not an agent-facing documentation path/);
+  assert.match(stdioReadme, /explicit uncovered upstream capability/);
+  assert.match(openaiText, /figma-repl-mcp/);
+  for (const term of forbiddenRouterContractTerms) {
+    assert.ok(!docsText.includes(term), `router docs must not mention ${term}`);
+  }
 });
 
 test("figma REPL proxies a fake upstream official tool and rejects local tool names", async () => {
@@ -336,6 +379,192 @@ test("figma REPL proxies a fake upstream official tool and rejects local tool na
     /Refusing to proxy local figma-repl-mcp tool/,
   );
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+  await mcpClient.close();
+});
+
+test("figma REPL runtime parsers reject malformed tool argument shapes", async () => {
+  const programmaticCalls = [];
+  const repl = createFigmaReplClient({
+    client: createFakeFigmaClient(programmaticCalls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  await assert.rejects(
+    repl.eval("not an object"),
+    /Tool arguments must be an object\./,
+  );
+  await repl.close();
+  assert.deepEqual(programmaticCalls, [["close"]]);
+
+  const calls = [];
+  const { server } = createFigmaReplMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_eval",
+      arguments: {
+        title: "Reject invalid enum",
+        code: "return {};",
+        mode: "inspect",
+      },
+    }),
+    /Tool argument "mode" must be one of: read, write\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_eval",
+      arguments: {
+        title: "Reject code shape",
+        code: 123,
+      },
+    }),
+    /Tool argument "code" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_eval",
+      arguments: {
+        title: "Reject upstream args",
+        code: "return {};",
+        upstreamArguments: [],
+      },
+    }),
+    /Tool argument "upstreamArguments" must be an object\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_call_upstream_tool",
+      arguments: {
+        title: "Reject upstream toolName",
+        toolName: 123,
+      },
+    }),
+    /Tool argument "toolName" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_call_upstream_tool",
+      arguments: {
+        title: "Reject upstream call args",
+        toolName: "generate_diagram",
+        arguments: [],
+      },
+    }),
+    /Tool argument "arguments" must be an object\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_docs_search",
+      arguments: {
+        title: "Reject docs query",
+        query: 123,
+      },
+    }),
+    /Tool argument "query" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_api_lookup",
+      arguments: {
+        title: "Reject API symbol",
+        symbol: 123,
+      },
+    }),
+    /Tool argument "symbol" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        title: "Reject input file shape",
+        inputFile: 123,
+      },
+    }),
+    /Tool argument "inputFile" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_apply_asset_manifest",
+      arguments: {
+        title: "Reject assets",
+        assets: {},
+      },
+    }),
+    /Tool argument "assets" must be an array\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_apply_asset_manifest",
+      arguments: {
+        title: "Reject manifest path shape",
+        manifestPath: 123,
+      },
+    }),
+    /Tool argument "manifestPath" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_run_task_plan",
+      arguments: {
+        title: "Reject steps",
+        steps: {},
+      },
+    }),
+    /Tool argument "steps" must be an array\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_apply_asset_manifest",
+      arguments: {
+        title: "Reject asset aliases",
+        assets: [{ filePath: 123, targetNodeId: "12:34" }],
+      },
+    }),
+    /Tool argument "assets\[0\]\.filePath" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_capture_node",
+      arguments: {
+        title: "Reject capture alias",
+        nodeId: 123,
+      },
+    }),
+    /Tool argument "nodeId" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_prepare_task",
+      arguments: {
+        title: "Reject prepare taskDir alias",
+        taskDir: 123,
+      },
+    }),
+    /Tool argument "taskDir" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_prepare_task",
+      arguments: {
+        title: "Reject prepare scriptName alias",
+        scriptName: 123,
+      },
+    }),
+    /Tool argument "scriptName" must be a string\./,
+  );
+  assert.deepEqual(calls, []);
   await mcpClient.close();
 });
 

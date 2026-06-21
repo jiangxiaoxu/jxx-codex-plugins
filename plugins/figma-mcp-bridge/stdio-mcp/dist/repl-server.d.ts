@@ -2,10 +2,12 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type RemoteMcpClientOptions } from "./client.js";
 import { assertSafeFigmaReplCode, diagnoseFigmaReplCode, type FigmaReplDiagnostic, type FigmaReplDiagnosticsOptions, type FigmaReplDiagnosticSeverity, type FigmaReplFileDiagnostic, type FigmaReplHelperProfile, type FigmaReplSurface } from "./repl-script-runner.js";
 import type { FigmaReplApiCardArguments, FigmaReplApiLookupArguments, FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDocsSearchArguments, FigmaReplEvalArguments, FigmaReplInitWorkspaceArguments, FigmaReplOpenArguments, FigmaReplPlanTaskArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSuggestApiArguments } from "./repl-tool-args.js";
+import { type FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 import type { FigmaMcpProxyClient } from "./stdio-server.js";
 export declare const FIGMA_REPL_DEFAULT_SESSION_ID = "default";
 export { assertSafeFigmaReplCode, diagnoseFigmaReplCode, };
 export type { FigmaReplDiagnostic, FigmaReplDiagnosticsOptions, FigmaReplDiagnosticSeverity, FigmaReplFileDiagnostic, FigmaReplHelperProfile, FigmaReplSurface, };
+export type { FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 export type { FigmaReplApiCardArguments, FigmaReplApiLookupArguments, FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDocsSearchArguments, FigmaReplEvalArguments, FigmaReplInitWorkspaceArguments, FigmaReplOpenArguments, FigmaReplPlanTaskArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSuggestApiArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
 export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
     client?: FigmaMcpProxyClient;
@@ -67,24 +69,6 @@ export interface FigmaReplSession {
     lastDiagnostics: FigmaReplDiagnostic[];
     history: FigmaReplHistoryEntry[];
     workspace?: FigmaReplSessionWorkspace;
-}
-export interface FigmaReplSessionWorkspace {
-    root: string;
-    fileDir: string;
-    fileContext: string;
-    fileKey?: string;
-    fileSlug: string;
-    intentSlug: string;
-    /**
-     * Compatibility alias for the file-context directory.
-     */
-    sessionDir: string;
-    scriptPath: string;
-    resultFile: string;
-    files: {
-        script: string;
-        result: string;
-    };
 }
 export interface FigmaReplHistoryEntry {
     id: string;
