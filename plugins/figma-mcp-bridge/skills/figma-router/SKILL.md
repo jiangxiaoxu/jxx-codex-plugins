@@ -68,8 +68,6 @@ The helper starts the local HTTP bridge, temporarily logs in through `figma-http
 
 Do not add persistent `figma-http`; the plugin's persistent MCP server is `figma_repl_mcp`.
 
-If an upgraded environment still shows `figma-repl-mcp`, reload or reinstall the plugin, or restart the MCP server, before checking tool schemas.
-
 To resolve the shared OAuth cache path for scripts or programmatic clients, run this from the plugin root:
 
 ```text
