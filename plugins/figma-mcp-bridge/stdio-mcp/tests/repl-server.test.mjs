@@ -1725,7 +1725,7 @@ test("figma REPL diagnostics return stable codes and strict promotes warnings", 
   );
 });
 
-test("figma REPL run_script_file dryRun returns file-aware diagnostics and compiled script", async () => {
+test("figma REPL run_script_file dryRun returns file-aware diagnostics without compiled script output", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-script-"));
   const scriptPath = resolve(tempDir, "script.js");
   const outputDir = resolve(tempDir, "outputs");
@@ -1772,8 +1772,7 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics and compi
     assert.equal(json.script.scriptPath, scriptPath);
     assert.equal(json.script.sourceLineCount, 3);
     assert.equal(json.script.executed, false);
-    assert.match(json.compiledScript, /\$\.checkpoint/);
-    assert.match(json.compiledScript, /figma_repl_run_script_file source:/);
+    assert.equal(json.compiledScript, undefined);
     assert.equal(json.diagnostics[0].code, "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT");
     assert.equal(json.diagnostics[0].source.scriptPath, scriptPath);
     assert.equal(json.diagnostics[0].source.line, 2);
@@ -1781,8 +1780,10 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics and compi
     const diagnosticsFile = await readPrettyJsonPointer(json.outputFiles.diagnosticsFile, resolve(outputDir, "diagnostics.json"));
     const summaryFile = await readTextPointer(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
     assert.equal(resultFile.dryRun, true);
+    assert.equal(resultFile.compiledScript, undefined);
     assert.equal(resultFile.raw, undefined);
     assert.equal(json.outputFiles.resultFile.rawBytes, undefined);
+    assert.equal(json.outputFiles.compiledScriptFile, undefined);
     assert.equal(diagnosticsFile.count, 1);
     assert.match(summaryFile, /dryRun: true/);
     assert.deepEqual(calls.map((call) => call[0]), []);
@@ -2042,10 +2043,13 @@ test("figma REPL run_script_file structures upstream ok false errors", async () 
     assert.equal(json.upstreamError.code, "FIGMA_INSTANCE_CHILD_REMOVE");
     assert.match(json.upstreamError.message, /instance subtree/);
     assert.match(json.primaryFix, /\$\.cloneNodeTree/);
+    assert.equal(json.compiledScript, undefined);
     assert.equal(json.raw, undefined);
     const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(outputDir, "result.json"));
+    const compiledFile = await readTextPointer(json.outputFiles.compiledScriptFile, resolve(outputDir, "result.compiled.js"));
     const summaryFile = await readTextPointer(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
     assert.equal(resultFile.ok, false);
+    assert.equal(resultFile.compiledScript, undefined);
     assert.deepEqual(resultFile.raw, {
       ok: false,
       error: {
@@ -2054,6 +2058,8 @@ test("figma REPL run_script_file structures upstream ok false errors", async () 
       },
     });
     assert.equal(json.outputFiles.resultFile.rawBytes, Buffer.byteLength(JSON.stringify(resultFile.raw), "utf8"));
+    assert.match(compiledFile, /\$\.cloneNodeTree/);
+    assert.match(compiledFile, /figma_repl_run_script_file source:/);
     assert.match(summaryFile, /primaryFix:/);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
     await mcpClient.close();
@@ -2062,7 +2068,7 @@ test("figma REPL run_script_file structures upstream ok false errors", async () 
   }
 });
 
-test("figma REPL run_script_file structures upstream text errors", async () => {
+test("figma REPL run_script_file structures upstream text errors without implicit files", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-upstream-text-error-"));
   const scriptPath = resolve(tempDir, "script.figma.js");
   await writeFile(scriptPath, "figma.currentPage.selection = [];", "utf8");
@@ -2105,6 +2111,12 @@ test("figma REPL run_script_file structures upstream text errors", async () => {
     assert.match(json.upstreamError.message, /set_selection/);
     assert.equal(json.upstreamError.details.debugUuid, "59c9dee0-3819-4e15-9a9e-a4a37a71072d");
     assert.match(json.primaryFix, /\$\.select/);
+    assert.equal(json.compiledScript, undefined);
+    assert.equal(json.outputFiles.compiledScriptFile, undefined);
+    await assert.rejects(
+      readFile(resolve(tempDir, "script.compiled.js"), "utf8"),
+      /ENOENT/,
+    );
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
     await mcpClient.close();
   } finally {
@@ -2188,6 +2200,19 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-workspace-"));
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
+    if (/workspace failure result/u.test(args.code)) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: false,
+              error: { message: "workspace failure result" },
+            }),
+          },
+        ],
+      };
+    }
     assert.match(args.code, /workspace file result/);
     return {
       content: [
@@ -2260,6 +2285,28 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     assert.equal(json.result, undefined);
     const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
     assert.equal(resultFile.result.result.payload.length, 160);
+
+    await writeFile(
+      resolve(initJson.task.workspace.fileDir, "settings-panel-polish.figma.js"),
+      "return { summary: 'workspace failure result' };",
+      "utf8",
+    );
+    const failedResult = await mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        title: "Run failed workspace file",
+        sessionId: "settings-workspace",
+        inputFile: "settings-panel-polish.figma.js",
+      },
+    });
+    const failedJson = structuredToolResult(failedResult);
+    assert.equal(failedJson.ok, false);
+    const failedCompiledFile = await readTextPointer(
+      failedJson.outputFiles.compiledScriptFile,
+      resolve(initJson.task.workspace.fileDir, "settings-panel-polish.compiled.js"),
+    );
+    assert.match(failedCompiledFile, /workspace failure result/);
+    assert.match(failedCompiledFile, /figma_repl_run_script_file source:/);
 
     const prepared = await mcpClient.callTool({
       name: "figma_repl_prepare_task",

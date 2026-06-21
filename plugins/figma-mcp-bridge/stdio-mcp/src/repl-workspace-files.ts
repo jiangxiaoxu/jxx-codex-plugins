@@ -34,6 +34,7 @@ export interface ScriptOutputFilePaths {
   resultFile?: string;
   diagnosticsFile?: string;
   summaryFile?: string;
+  compiledScriptFile?: string;
 }
 
 export interface FilePointerMetadata {
@@ -47,6 +48,7 @@ export interface ScriptOutputFileMetadata {
   resultFile?: FilePointerMetadata;
   diagnosticsFile?: FilePointerMetadata;
   summaryFile?: FilePointerMetadata;
+  compiledScriptFile?: FilePointerMetadata;
 }
 
 export interface FigmaReplWorkspaceFileSession {
@@ -69,6 +71,7 @@ export function createScriptOutputWriter(
     result: unknown;
     diagnostics: FigmaReplDiagnostic[];
     summary: Record<string, unknown>;
+    compiledScript?: string;
   }): Promise<ScriptOutputFileMetadata>;
 } {
   const files = resolveScriptOutputFiles(args, session);
@@ -87,6 +90,9 @@ export function createScriptOutputWriter(
       }
       if (files.summaryFile) {
         written.summaryFile = await writeMarkdownFile(files.summaryFile, formatSummaryMarkdown(payload.summary));
+      }
+      if (payload.compiledScript && files.compiledScriptFile) {
+        written.compiledScriptFile = await writeTextFile(files.compiledScriptFile, payload.compiledScript);
       }
       return written;
     },
@@ -439,18 +445,32 @@ function resolveScriptOutputFiles(
     const sessionDir = session.workspace.sessionDir;
     const inputFile = asOptionalString(args.inputFile);
     const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
+    const resultFile = resolveWorkspaceOutputFile(args.resultFile ?? args.outputFile, sessionDir, defaultResult, "resultFile/outputFile");
     return {
-      resultFile: resolveWorkspaceOutputFile(args.resultFile ?? args.outputFile, sessionDir, defaultResult, "resultFile/outputFile"),
+      resultFile,
       diagnosticsFile: args.diagnosticsFile ? resolveWorkspaceOutputFile(args.diagnosticsFile, sessionDir, "diagnostics.json", "diagnosticsFile") : undefined,
       summaryFile: args.summaryFile ? resolveWorkspaceOutputFile(args.summaryFile, sessionDir, "summary.md", "summaryFile") : undefined,
+      compiledScriptFile: compiledFilePathForResultFile(resultFile),
     };
   }
   const hasOutputDir = Boolean(outputDir);
+  const resultFile = resolveOptionalOutputFile(args.resultFile ?? args.outputFile, outputDir, hasOutputDir ? "result.json" : undefined, "resultFile/outputFile");
   return {
-    resultFile: resolveOptionalOutputFile(args.resultFile ?? args.outputFile, outputDir, hasOutputDir ? "result.json" : undefined, "resultFile/outputFile"),
+    resultFile,
     diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, hasOutputDir ? "diagnostics.json" : undefined, "diagnosticsFile"),
     summaryFile: resolveOptionalOutputFile(args.summaryFile, outputDir, hasOutputDir ? "summary.md" : undefined, "summaryFile"),
+    compiledScriptFile: resultFile ? compiledFilePathForResultFile(resultFile) : undefined,
   };
+}
+
+function compiledFilePathForResultFile(resultFile: string): string {
+  if (resultFile.endsWith(".result.json")) {
+    return `${resultFile.slice(0, -".result.json".length)}.compiled.js`;
+  }
+  if (resultFile.endsWith(".json")) {
+    return `${resultFile.slice(0, -".json".length)}.compiled.js`;
+  }
+  return `${resultFile}.compiled.js`;
 }
 
 function resolveWorkspaceOutputFile(
@@ -489,6 +509,12 @@ function resolveOptionalOutputFile(
 async function writeMarkdownFile(path: string, value: string): Promise<FilePointerMetadata> {
   await mkdir(dirname(path), { recursive: true });
   const content = value.endsWith("\n") ? value : `${value}\n`;
+  await writeFile(path, content, "utf8");
+  return textFileMetadata(path, content);
+}
+
+async function writeTextFile(path: string, content: string): Promise<FilePointerMetadata> {
+  await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content, "utf8");
   return textFileMetadata(path, content);
 }

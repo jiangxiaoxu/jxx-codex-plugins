@@ -24,6 +24,7 @@ export interface ScriptOutputFilePaths {
     resultFile?: string;
     diagnosticsFile?: string;
     summaryFile?: string;
+    compiledScriptFile?: string;
 }
 export interface FilePointerMetadata {
     path: string;
@@ -35,6 +36,7 @@ export interface ScriptOutputFileMetadata {
     resultFile?: FilePointerMetadata;
     diagnosticsFile?: FilePointerMetadata;
     summaryFile?: FilePointerMetadata;
+    compiledScriptFile?: FilePointerMetadata;
 }
 export interface FigmaReplWorkspaceFileSession {
     workspace?: FigmaReplSessionWorkspace;
@@ -50,6 +52,7 @@ export declare function createScriptOutputWriter(args: FigmaReplRunScriptFileArg
         result: unknown;
         diagnostics: FigmaReplDiagnostic[];
         summary: Record<string, unknown>;
+        compiledScript?: string;
     }): Promise<ScriptOutputFileMetadata>;
 };
 export declare function resolveScriptInputPath(args: FigmaReplRunScriptFileArguments, session: FigmaReplWorkspaceFileSession): string;
