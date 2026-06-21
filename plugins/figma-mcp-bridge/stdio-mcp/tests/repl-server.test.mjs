@@ -370,8 +370,8 @@ test("figma REPL eval exposes and executes the common $ helper surface", async (
       "const viaNode = await $.node('$clone');",
       "const resolvedCloneId = $.resolveId('$clone');",
       "$.forget('$clone');",
-      "const checkpoint = await $.checkpoint('eval-helper-surface', ['$root', '$title'], { depth: 0 });",
-      "return { helperTypes, handles: { ...$.handles }, checkpoints: $.checkpoints.length, root: root.id, title: title.id, allText: allText.length, found: found.id, selected: selected.selectedNodeIds, inspected, screenshotBytes, assetFill: asset.fills[0], cloneId: clone.clone.id, viaNode: viaNode.id, resolvedCloneId, cloneForgotten: !('$clone' in $.handles), checkpointName: checkpoint.name };",
+      "const checkpoint = await $.checkpoint('eval-helper-surface', [root, '$title'], { depth: 0 });",
+      "return { helperTypes, handles: { ...$.handles }, checkpoints: $.checkpoints.length, root: root.id, title: title.id, allText: allText.length, found: found.id, selected: selected.selectedNodeIds, inspected, screenshotBytes, assetFill: asset.fills[0], cloneId: clone.clone.id, viaNode: viaNode.id, resolvedCloneId, cloneForgotten: !('$clone' in $.handles), checkpointName: checkpoint.name, checkpointFirstId: checkpoint.summaries[0].id };",
     ].join("\n"),
   });
   const runScript = new Function("figma", `return (async () => {\n${script}\n})();`);
@@ -390,6 +390,7 @@ test("figma REPL eval exposes and executes the common $ helper surface", async (
   assert.equal(result.result.viaNode, result.result.resolvedCloneId);
   assert.equal(result.result.cloneForgotten, true);
   assert.equal(result.result.checkpointName, "eval-helper-surface");
+  assert.equal(result.result.checkpointFirstId, result.result.root);
   assert.equal(result.result.checkpoints, 1);
   assert.deepEqual(loadedFonts, [{ family: "Inter", style: "Regular" }]);
 });
@@ -426,7 +427,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.queryStrategy.searchAnchors.includes("text/font"));
   assert.ok(capabilities.queryStrategy.searchAnchors.includes("FigJam/Slides"));
   assert.match(capabilities.guide.purpose, /Unified Figma-facing MCP facade/);
-  assert.match(capabilities.guide.purpose, /figma-repl-mcp/);
+  assert.match(capabilities.guide.purpose, /figma_repl_mcp/);
   assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool"));
   assert.match(capabilities.guide.upstreamBridge, /figma_repl_call_upstream_tool/);
   assert.deepEqual(capabilities.queryStrategy.outputFields, queryOutputFields);
@@ -477,7 +478,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
       name: "figma_repl_capabilities",
       arguments: { title: "Read capabilities" },
     }),
-    /Unknown figma-repl-mcp tool: figma_repl_capabilities/,
+    /Unknown figma_repl_mcp tool: figma_repl_capabilities/,
   );
   for (const deletedTool of [
     "figma_repl_init_workspace",
@@ -495,7 +496,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
         name: deletedTool,
         arguments: { title: "Deleted tool" },
       }),
-      new RegExp(`Unknown figma-repl-mcp tool: ${deletedTool}`),
+      new RegExp(`Unknown figma_repl_mcp tool: ${deletedTool}`),
     );
   }
   for (const tool of tools.tools) {
@@ -615,18 +616,21 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   const stdioReadme = await readFile(resolve(packageRoot, "README.md"), "utf8");
   const docsText = [skillText, openaiText, pluginReadme, stdioReadme].join("\n");
 
-  assert.match(skillText, /After OAuth registration, use `figma-repl-mcp` as the agent-facing entrypoint/);
+  assert.match(skillText, /After OAuth registration, use `figma_repl_mcp` as the agent-facing entrypoint/);
   assert.match(skillText, /Start by reading `figma-repl:\/\/capabilities`/);
   assert.match(skillText, /Bundled reference files are internal lookup corpus/);
   assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`/);
   for (const uri of expectedStaticResourceUris.filter((uri) => uri !== "figma-repl://sessions")) {
     assert.match(skillText, new RegExp(uri.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  assert.match(pluginReadme, /`figma-repl-mcp` is the primary agent workflow after OAuth registration/);
+  assert.match(pluginReadme, /`figma_repl_mcp` is the primary agent workflow after OAuth registration/);
+  assert.match(pluginReadme, /server id changed from `figma-repl-mcp` to `figma_repl_mcp`/);
   assert.match(pluginReadme, /Bundled reference files are internal lookup corpus/);
+  assert.match(stdioReadme, /old persistent server id `figma-repl-mcp`/);
   assert.match(stdioReadme, /bundled corpus files are internal and are not an agent-facing documentation path/);
   assert.match(stdioReadme, /explicit uncovered upstream capability/);
-  assert.match(openaiText, /figma-repl-mcp/);
+  assert.match(skillText, /reload or reinstall the plugin, or restart the MCP server/);
+  assert.match(openaiText, /figma_repl_mcp/);
   for (const term of forbiddenRouterContractTerms) {
     assert.ok(!docsText.includes(term), `router docs must not mention ${term}`);
   }
@@ -698,7 +702,7 @@ test("figma REPL proxies a fake upstream official tool and rejects local tool na
         arguments: {},
       },
     }),
-    /Refusing to proxy local figma-repl-mcp tool/,
+    /Refusing to proxy local figma_repl_mcp tool/,
   );
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
   await mcpClient.close();
@@ -1382,6 +1386,85 @@ test("figma REPL downloads node screenshot URL responses to a local file", async
   }
 });
 
+test("figma REPL capture node injects session file key when upstream schema needs it", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-filekey-"));
+  const outputFile = resolve(tempDir, "node.png");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      assert.equal(name, "fake_screenshot");
+      assert.deepEqual(args, {
+        nodeId: "22:9",
+        fileKey: "EctrdKKdR3c8JTPl55qn3r",
+      });
+      return {
+        content: [
+          {
+            type: "image",
+            mimeType: "image/png",
+            data: Buffer.from("fake png").toString("base64"),
+          },
+        ],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "fake_screenshot",
+          description: "Fake screenshot tool.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              nodeId: { type: "string" },
+              fileKey: { type: "string" },
+            },
+          },
+        },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Open file context",
+        sessionId: "capture-filekey",
+        connect: false,
+        fileUrl: "https://www.figma.com/design/EctrdKKdR3c8JTPl55qn3r/Untitled",
+      },
+    });
+    const result = await mcpClient.callTool({
+      name: "figma_repl_capture_node",
+      arguments: {
+        title: "Capture node",
+        sessionId: "capture-filekey",
+        nodeId: "22:9",
+        outputFile,
+        toolName: "fake_screenshot",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.file, outputFile);
+    assertFilePointer(json.outputFiles.outputFile, outputFile, { bytes: Buffer.byteLength("fake png", "utf8"), lineCount: 0 });
+    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("figma REPL task plans run steps in order and stop on failure by default", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-plan-"));
   const scriptPath = resolve(tempDir, "script.figma.js");
@@ -1676,6 +1759,21 @@ test("figma REPL lookup kind=api returns BM25-ranked Plugin API chunks without d
 
 test("figma REPL diagnostics return stable codes and strict promotes warnings", async () => {
   assert.deepEqual(
+    diagnoseFigmaReplCode(
+      [
+        "const text = \"eval('1'); fetch('/'); import('x'); node.remove(); figma.createImage(bytes); node.characters = 'Hello'; await $.checkpoint('$root');\";",
+        `const inlineAsset = "await $.imageAsset({ base64: '${"A".repeat(100_000)}' });";`,
+        "// figma.root.findAll(() => true); figma.currentPage.selection = [node]; node.name = 'Primary'; figma.createSticky();",
+      ].join("\n"),
+      { mode: "read", expectedSurface: "design" },
+    ).map((item) => item.code),
+    [],
+  );
+  assert.deepEqual(
+    diagnoseFigmaReplCode("const = ;").map((item) => item.code),
+    ["FIGMA_REPL_PARSE_ERROR"],
+  );
+  assert.deepEqual(
     diagnoseFigmaReplCode("figma.currentPage = page;").map((item) => item.code),
     ["FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT"],
   );
@@ -1700,6 +1798,20 @@ test("figma REPL diagnostics return stable codes and strict promotes warnings", 
     /\$\.imageAsset/,
   );
   assert.deepEqual(
+    diagnoseFigmaReplCode("eval('1'); fetch('/'); import('x'); delete figma.currentPage; node.detachInstance();").map((item) => item.code),
+    [
+      "FIGMA_REPL_DYNAMIC_EVAL",
+      "FIGMA_REPL_NETWORK_ACCESS",
+      "FIGMA_REPL_DYNAMIC_IMPORT",
+      "FIGMA_REPL_FIGMA_DELETE",
+      "FIGMA_REPL_DESTRUCTIVE_OPERATION",
+    ],
+  );
+  assert.deepEqual(
+    diagnoseFigmaReplCode("figma.createSticky();", { expectedSurface: "design" }).map((item) => item.code),
+    ["FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN"],
+  );
+  assert.deepEqual(
     diagnoseFigmaReplCode("await $.imageAsset({ base64: 'AQIDBA==' });").map((item) => item.code),
     [],
   );
@@ -1712,6 +1824,10 @@ test("figma REPL diagnostics return stable codes and strict promotes warnings", 
     ["fatal"],
   );
   assert.deepEqual(
+    diagnoseFigmaReplCode(`await $.imageAsset({ ["base64"]: \`${"A".repeat(100_000)}\` });`).map((item) => item.code),
+    ["FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE"],
+  );
+  assert.deepEqual(
     diagnoseFigmaReplCode("await $.checkpoint('$root', { depth: 1 });", { strict: true }).map((item) => item.code),
     ["FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME"],
   );
@@ -1722,6 +1838,43 @@ test("figma REPL diagnostics return stable codes and strict promotes warnings", 
   assert.deepEqual(
     diagnoseFigmaReplCode("node.remove();", { allowDangerousOperations: true }).map((item) => item.code),
     [],
+  );
+  assert.deepEqual(
+    diagnoseFigmaReplCode(
+      "eval('1'); fetch('/'); import('x'); node.remove(); node.detachInstance();",
+      { allowDangerousOperations: true },
+    ).map((item) => item.code),
+    [],
+  );
+  assert.deepEqual(
+    diagnoseFigmaReplCode(
+      `eval('1'); fetch('/'); import('x'); node.remove(); node.detachInstance(); figma.createImage(bytes); await $.imageAsset({ base64: '${"A".repeat(100_000)}' });`,
+      { allowDangerousOperations: true },
+    ).map((item) => item.code),
+    ["FIGMA_REPL_IMAGE_CREATION", "FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE"],
+  );
+  assert.deepEqual(
+    diagnoseFigmaReplCode("node.remove(); node.detachInstance(); figma.currentPage.selection;", { generatedCode: true }).map((item) => item.code),
+    ["FIGMA_REPL_DESTRUCTIVE_OPERATION"],
+  );
+  assert.deepEqual(
+    diagnoseFigmaReplCode(
+      "return figma.currentPage.findAll(() => true).filter((node) => node.name === 'Primary' && node.layoutMode === 'VERTICAL').map((node) => ({ id: node.id, name: node.name, layoutMode: node.layoutMode, fills: node.fills }));",
+      { mode: "read" },
+    ).map((item) => item.code),
+    [],
+  );
+  assert.deepEqual(
+    diagnoseFigmaReplCode("node.name = 'Primary';", { mode: "read" }).map((item) => item.code),
+    ["FIGMA_REPL_READ_MODE_ASSIGNMENT"],
+  );
+  assert.deepEqual(
+    diagnoseFigmaReplCode("node.paddingLeft += 8;", { mode: "read" }).map((item) => item.code),
+    ["FIGMA_REPL_READ_MODE_ASSIGNMENT"],
+  );
+  assert.deepEqual(
+    diagnoseFigmaReplCode("node['paddingLeft']++;", { mode: "read" }).map((item) => item.code),
+    ["FIGMA_REPL_READ_MODE_ASSIGNMENT"],
   );
 });
 
@@ -1776,6 +1929,7 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics without c
     assert.equal(json.diagnostics[0].code, "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT");
     assert.equal(json.diagnostics[0].source.scriptPath, scriptPath);
     assert.equal(json.diagnostics[0].source.line, 2);
+    assert.equal(json.diagnostics[0].source.column, 1);
     const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(outputDir, "result.json"));
     const diagnosticsFile = await readPrettyJsonPointer(json.outputFiles.diagnosticsFile, resolve(outputDir, "diagnostics.json"));
     const summaryFile = await readTextPointer(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
@@ -1785,6 +1939,7 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics without c
     assert.equal(json.outputFiles.resultFile.rawBytes, undefined);
     assert.equal(json.outputFiles.compiledScriptFile, undefined);
     assert.equal(diagnosticsFile.count, 1);
+    assert.equal(diagnosticsFile.diagnostics[0].source.column, 1);
     assert.match(summaryFile, /dryRun: true/);
     assert.deepEqual(calls.map((call) => call[0]), []);
     await mcpClient.close();

@@ -489,7 +489,7 @@ async function resolveReferenceRoot(): Promise<string> {
     }
   }
   throw new Error(
-    "Unable to locate internal Figma corpus for figma-repl-mcp docs/API lookup.",
+    "Unable to locate internal Figma corpus for figma_repl_mcp docs/API lookup.",
   );
 }
 

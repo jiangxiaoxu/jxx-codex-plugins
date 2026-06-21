@@ -1,11 +1,11 @@
 ---
 name: figma-router
-description: Unified routing entry for Figma MCP login, figma-repl-mcp file workflows, and compact Figma Plugin API lookup. Use for Figma design, FigJam, Slides, design systems, tokens, components, use_figma, figma_repl_run_script_file, Plugin API lookup, or Figma MCP auth repair.
+description: Unified routing entry for Figma MCP login, figma_repl_mcp file workflows, and compact Figma Plugin API lookup. Use for Figma design, FigJam, Slides, design systems, tokens, components, use_figma, figma_repl_run_script_file, Plugin API lookup, or Figma MCP auth repair.
 ---
 
 # Figma Router
 
-Use this skill as the lightweight router for Figma MCP work. After OAuth registration, use `figma-repl-mcp` as the agent-facing entrypoint. Bundled reference files are internal lookup corpus; do not read or route agents to them directly.
+Use this skill as the lightweight router for Figma MCP work. After OAuth registration, use `figma_repl_mcp` as the agent-facing entrypoint. Bundled reference files are internal lookup corpus; do not read or route agents to them directly.
 
 ## Default Route
 
@@ -66,7 +66,9 @@ command: npm run login:figma-http
 
 The helper starts the local HTTP bridge, temporarily logs in through `figma-http`, then removes that temporary MCP entry. After browser OAuth, use the resolver below when a script or programmatic client needs the shared cache path.
 
-Do not add persistent `figma-http`; the plugin's persistent MCP server is `figma-repl-mcp`.
+Do not add persistent `figma-http`; the plugin's persistent MCP server is `figma_repl_mcp`.
+
+If an upgraded environment still shows `figma-repl-mcp`, reload or reinstall the plugin, or restart the MCP server, before checking tool schemas.
 
 To resolve the shared OAuth cache path for scripts or programmatic clients, run this from the plugin root:
 
@@ -77,5 +79,5 @@ command: npm run oauth-cache:path
 
 ## Bundled Servers
 
-- `figma-repl-mcp`: primary agent-facing facade after OAuth registration. It runs local `.figma.js` files, writes local output files, exposes compact docs/API lookup, stores process-local handles, can capture screenshots, applies generated assets, and delegates uncovered official capabilities.
+- `figma_repl_mcp`: primary agent-facing facade after OAuth registration. It runs local `.figma.js` files, writes local output files, exposes compact docs/API lookup, stores process-local handles, can capture screenshots, applies generated assets, and delegates uncovered official capabilities.
 - `figma-stdio`: optional transparent bridge for upstream debugging and parity checks. It is not installed as a persistent plugin MCP server by default; use the package CLI or Node API `createRemoteMcpClient` when raw official MCP access is required.

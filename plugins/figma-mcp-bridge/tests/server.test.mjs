@@ -36,8 +36,8 @@ test(".mcp.json registers the default REPL MCP server only", async () => {
     await readFile(new URL("../.mcp.json", import.meta.url), "utf8"),
   );
 
-  assert.deepEqual(Object.keys(manifest.mcpServers), ["figma-repl-mcp"]);
-  assert.deepEqual(manifest.mcpServers["figma-repl-mcp"], {
+  assert.deepEqual(Object.keys(manifest.mcpServers), ["figma_repl_mcp"]);
+  assert.deepEqual(manifest.mcpServers["figma_repl_mcp"], {
     command: "node",
     cwd: ".",
     args: ["./stdio-mcp/dist/repl-stdio-cli.js"],
