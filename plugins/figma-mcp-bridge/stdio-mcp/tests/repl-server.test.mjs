@@ -105,7 +105,6 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const capabilities = JSON.parse(capabilitiesResult.content[0].text);
   assert.equal(capabilities.ok, true);
   assert.ok(capabilities.guide);
-  assert.equal(capabilities.ops, undefined);
   assert.ok(capabilities.patterns);
   assert.ok(capabilities.scriptWorkflow);
   assert.ok(capabilities.fileWorkflow);
@@ -115,8 +114,20 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.safety);
   assert.ok(capabilities.facadeRoutingDelegationBoundaries);
   assert.ok(capabilities.docsLookup);
+  assert.ok(capabilities.queryStrategy);
+  assert.ok(capabilities.queryStrategy.searchAnchors.includes("text/font"));
+  assert.ok(capabilities.queryStrategy.searchAnchors.includes("FigJam/Slides"));
   assert.match(capabilities.guide.purpose, /Unified Figma-facing MCP facade/);
-  assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_call_upstream_tool for official capabilities not covered by the file workflow"));
+  assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool"));
+  assert.deepEqual(capabilities.queryStrategy.outputFields, [
+    "recommendedCards",
+    "queryHints",
+    "apiSymbols",
+    "avoid",
+    "referenceContext",
+  ]);
+  assert.ok(capabilities.queryStrategy.commonCards.includes("text.font"));
+  assert.ok(capabilities.queryStrategy.commonCards.includes("surface.slides"));
   assert.equal(capabilities.scriptWorkflow.primaryTool, "figma_repl_run_script_file");
   assert.equal(capabilities.fileWorkflow.primaryTool, "figma_repl_run_script_file");
   assert.deepEqual(
@@ -133,36 +144,62 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.scriptWorkflow.helpers["$.cloneNodeTree"], /instance-subtree/);
   assert.match(capabilities.scriptWorkflow.helpers["$.imageAsset"], /image-fill rectangle/);
   assert.match(capabilities.scriptWorkflow.helpers["$.screenshot"], /final QA/);
-  assert.equal(capabilities.scriptWorkflow.helpers["$.ops"], undefined);
   assert.match(capabilities.scriptWorkflow.helpers["$.checkpoint"], /summaries/);
+  assert.deepEqual(Object.keys(capabilities.scriptWorkflow.helpers).sort(), [
+    "$",
+    "$.checkpoint",
+    "$.cloneNodeTree",
+    "$.create",
+    "$.find",
+    "$.findAll",
+    "$.imageAsset",
+    "$.inspect",
+    "$.layout",
+    "$.screenshot",
+    "$.select",
+    "$.text",
+  ]);
   assert.ok(capabilities.examples);
-  assert.equal(JSON.stringify(capabilities).includes("figma_repl_apply_ops"), false);
-  assert.equal(JSON.stringify(capabilities).includes("$.ops"), false);
   assert.ok(capabilities.examples.every((example) => JSON.stringify(example)));
 
   const tools = await mcpClient.listTools();
-  assert.equal(
-    tools.tools.some((tool) => tool.name === "figma_repl_apply_ops"),
-    false,
-  );
-  assert.ok(tools.tools.some((tool) => tool.name === "figma_repl_apply_asset_manifest"));
-  assert.ok(tools.tools.some((tool) => tool.name === "figma_repl_capture_node"));
-  assert.ok(tools.tools.some((tool) => tool.name === "figma_repl_run_task_plan"));
+  assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
+    "figma_repl_api_card",
+    "figma_repl_api_lookup",
+    "figma_repl_apply_asset_manifest",
+    "figma_repl_cache_get",
+    "figma_repl_call_upstream_tool",
+    "figma_repl_capabilities",
+    "figma_repl_capture_node",
+    "figma_repl_docs_search",
+    "figma_repl_eval",
+    "figma_repl_init_workspace",
+    "figma_repl_inspect",
+    "figma_repl_list_upstream_tools",
+    "figma_repl_open",
+    "figma_repl_plan_task",
+    "figma_repl_prepare_task",
+    "figma_repl_run_script_file",
+    "figma_repl_run_task_plan",
+    "figma_repl_suggest_api",
+    "figma_repl_validate_handles",
+  ]);
 
   const resources = await mcpClient.listResources();
   const uris = resources.resources.map((resource) => resource.uri);
-  assert.ok(uris.includes("figma-repl://guide"));
-  assert.equal(uris.includes("figma-repl://ops"), false);
-  assert.ok(uris.includes("figma-repl://patterns"));
-  assert.ok(uris.includes("figma-repl://scripts"));
-  assert.ok(uris.includes("figma-repl://file-workflow"));
-  assert.ok(uris.includes("figma-repl://workflow-tools"));
-  assert.ok(uris.includes("figma-repl://api-cards"));
-  assert.ok(uris.includes("figma-repl://intents"));
-  assert.ok(uris.includes("figma-repl://safety"));
-  assert.ok(uris.includes("figma-repl://docs"));
-  assert.ok(uris.includes("figma-repl://api"));
-  assert.ok(uris.includes("figma-repl://sessions"));
+  assert.deepEqual(uris.filter((uri) => !uri.startsWith("figma-repl://sessions/")).sort(), [
+    "figma-repl://api",
+    "figma-repl://api-cards",
+    "figma-repl://docs",
+    "figma-repl://file-workflow",
+    "figma-repl://guide",
+    "figma-repl://intents",
+    "figma-repl://patterns",
+    "figma-repl://safety",
+    "figma-repl://scripts",
+    "figma-repl://sessions",
+    "figma-repl://workflow-tools",
+  ]);
 
   const scriptsResource = await mcpClient.readResource({ uri: "figma-repl://scripts" });
   const scripts = JSON.parse(scriptsResource.contents[0].text);
@@ -172,9 +209,25 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const workflowResource = await mcpClient.readResource({ uri: "figma-repl://file-workflow" });
   const workflow = JSON.parse(workflowResource.contents[0].text);
   assert.equal(workflow.prepareTool, "figma_repl_prepare_task");
-  assert.equal(workflow.helpers.includes("$.ops"), false);
-  assert.ok(workflow.helpers.includes("$.cloneNodeTree"));
-  assert.ok(workflow.workflowTools.includes("figma_repl_apply_asset_manifest"));
+  assert.deepEqual(workflow.helpers, [
+    "$",
+    "$.find",
+    "$.findAll",
+    "$.create",
+    "$.text",
+    "$.layout",
+    "$.imageAsset",
+    "$.screenshot",
+    "$.select",
+    "$.cloneNodeTree",
+    "$.checkpoint",
+    "$.inspect",
+  ]);
+  assert.deepEqual(workflow.workflowTools, [
+    "figma_repl_apply_asset_manifest",
+    "figma_repl_capture_node",
+    "figma_repl_run_task_plan",
+  ]);
 
   const workflowToolsResource = await mcpClient.readResource({ uri: "figma-repl://workflow-tools" });
   const workflowTools = JSON.parse(workflowToolsResource.contents[0].text);
@@ -184,11 +237,24 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
 
   const cardsResource = await mcpClient.readResource({ uri: "figma-repl://api-cards" });
   const cards = JSON.parse(cardsResource.contents[0].text);
-  assert.ok(cards.cards.some((card) => card.id === "text"));
+  const cardIds = cards.cards.map((card) => card.id);
+  assert.ok(cardIds.includes("text.font"));
+  assert.ok(cardIds.includes("layout.auto"));
+  assert.ok(cardIds.includes("variables.bind"));
+  assert.ok(cardIds.includes("styles.apply"));
+  assert.ok(cardIds.includes("components.variants"));
+  assert.ok(cardIds.includes("instances.properties"));
+  assert.ok(cardIds.includes("images.fill"));
+  assert.ok(cardIds.includes("capture.qa"));
+  assert.ok(cardIds.includes("surface.figjam"));
+  assert.ok(cardIds.includes("surface.slides"));
+  assert.ok(cards.cards.find((card) => card.id === "text.font").apiSymbols.includes("figma.loadFontAsync"));
+  assert.ok(cards.cards.find((card) => card.id === "images.fill").avoid.some((entry) => /large base64/.test(entry)));
 
   const intentsResource = await mcpClient.readResource({ uri: "figma-repl://intents" });
   const intents = JSON.parse(intentsResource.contents[0].text);
   assert.equal(intents.tool, "figma_repl_suggest_api");
+  assert.deepEqual(intents.queryStrategy.outputFields, capabilities.queryStrategy.outputFields);
 
   const docsResource = await mcpClient.readResource({ uri: "figma-repl://docs" });
   const docs = JSON.parse(docsResource.contents[0].text);
@@ -758,19 +824,19 @@ test("figma REPL task plans run steps in order and stop on failure by default", 
         steps: [
           {
             id: "dry-run",
-            type: "script-file",
+            type: "figma_repl_run_script_file",
             scriptPath,
             dryRun: true,
           },
           {
             id: "upstream-ok",
-            type: "upstream-tool",
+            type: "upstream",
             toolName: "fake_upstream_ok",
             arguments: { marker: "ok" },
           },
           {
             id: "upstream-fail",
-            type: "upstream-tool",
+            type: "figma_repl_call_upstream_tool",
             toolName: "fake_upstream_fail",
             arguments: { marker: "fail" },
           },
@@ -936,16 +1002,21 @@ test("figma REPL docs_search returns capped local reference snippets", async () 
   assert.equal(json.results.length <= 2, true);
   assert.ok(json.results.length > 0);
   for (const item of json.results) {
-    assert.equal(typeof item.file, "string");
+    assert.equal(typeof item.sourceId, "string");
+    assert.match(item.sourceId, /^internal:/);
     assert.equal(typeof item.lineStart, "number");
+    assert.ok(["exact-symbol", "phrase", "token"].includes(item.matchType));
+    assert.ok(["high", "medium", "low"].includes(item.confidence));
+    assert.equal(typeof item.score, "number");
     assert.equal(item.snippet.split("\n").length <= 2, true);
-    assert.doesNotMatch(item.file, /plugin-api-standalone\.d\.ts$/);
+    assert.equal("file" in item, false);
   }
+  assert.match(json.guidance, /BM25-ranked chunks/);
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
 });
 
-test("figma REPL api_lookup returns targeted Plugin API snippets without dumping d.ts", async () => {
+test("figma REPL api_lookup returns BM25-ranked Plugin API chunks without dumping d.ts", async () => {
   const calls = [];
   const { server } = createFigmaReplMcpServer({
     client: createFakeFigmaClient(calls, () => {
@@ -974,7 +1045,10 @@ test("figma REPL api_lookup returns targeted Plugin API snippets without dumping
   assert.equal(json.ok, true);
   assert.ok(json.results.length > 0);
   assert.equal(json.results.length <= 4, true);
-  assert.match(json.guidance, /never returns the full plugin-api-standalone\.d\.ts/);
+  assert.match(json.guidance, /Bundled corpus files are not returned as documents/);
+  assert.equal(json.results[0].matchType, "exact-symbol");
+  assert.equal(json.results[0].confidence, "high");
+  assert.equal(typeof json.results[0].chunkTitle, "string");
   assert.equal(
     json.results.every((item) => item.snippet.length < 2400 && item.snippet.split("\n").length <= 4),
     true,
@@ -1725,8 +1799,9 @@ test("figma REPL api_card and suggest_api return compact guidance without upstre
   });
   const cardJson = JSON.parse(cardResult.content[0].text);
   assert.equal(cardJson.ok, true);
-  assert.ok(cardJson.cards.some((card) => card.id === "text"));
+  assert.ok(cardJson.cards.some((card) => card.id === "text.font"));
   assert.match(JSON.stringify(cardJson.cards), /loadFontAsync/);
+  assert.ok(cardJson.cards.find((card) => card.id === "text.font").queryHints.some((hint) => /font/.test(hint)));
 
   const planResult = await mcpClient.callTool({
     name: "figma_repl_plan_task",
@@ -1753,8 +1828,40 @@ test("figma REPL api_card and suggest_api return compact guidance without upstre
   });
   const suggestJson = JSON.parse(suggestResult.content[0].text);
   assert.equal(suggestJson.ok, true);
-  assert.ok(suggestJson.suggestions.cards.some((card) => card.id === "components"));
+  assert.ok(suggestJson.suggestions.cards.some((card) => card.id === "components.variants"));
+  assert.ok(suggestJson.suggestions.recommendedCards.includes("components.variants"));
+  assert.ok(suggestJson.suggestions.queryHints.some((hint) => /component/.test(hint)));
+  assert.ok(suggestJson.suggestions.apiSymbols.includes("figma.combineAsVariants"));
+  assert.ok(suggestJson.suggestions.avoid.some((entry) => /non-component/.test(entry)));
+  assert.equal(suggestJson.suggestions.matchType, "api-card");
+  assert.equal(suggestJson.suggestions.confidence, "high");
+  assert.ok(suggestJson.suggestions.referenceContext.length > 0);
+  assert.ok(suggestJson.suggestions.referenceContext.every((item) => ["exact-symbol", "phrase", "token"].includes(item.matchType)));
+  assert.ok(suggestJson.suggestions.referenceContext.every((item) => item.snippet.split("\n").length <= 4));
   assert.equal(suggestJson.suggestions.workflow.primaryTool, "figma_repl_run_script_file");
+
+  const commonTaskExpectations = [
+    ["bind a color variable to a button fill", "variables.bind", "VariablesAPI.setBoundVariableForPaint"],
+    ["set instance properties on a button variant", "instances.properties", "InstanceNode.setProperties"],
+    ["apply generated PNG image fills and capture QA", "images.fill", "figma.createImage"],
+    ["create FigJam sticky notes connected by arrows", "surface.figjam", "figma.createSticky"],
+    ["organize a Slides deck into slide rows", "surface.slides", "figma.createSlide"],
+  ];
+  for (const [task, expectedCard, expectedSymbol] of commonTaskExpectations) {
+    const commonResult = await mcpClient.callTool({
+      name: "figma_repl_suggest_api",
+      arguments: {
+        title: `Suggest ${expectedCard}`,
+        task,
+        maxCards: 3,
+      },
+    });
+    const commonJson = JSON.parse(commonResult.content[0].text);
+    assert.ok(commonJson.suggestions.recommendedCards.includes(expectedCard));
+    assert.ok(commonJson.suggestions.apiSymbols.includes(expectedSymbol));
+    assert.ok(commonJson.suggestions.queryHints.length > 0);
+    assert.ok(commonJson.suggestions.avoid.length > 0);
+  }
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
 });
@@ -1874,6 +1981,61 @@ test("figma REPL programmatic client can call eval without MCP transport", async
   assert.equal(result.upstreamArgument, "code");
   assert.equal(result.parsed.result.summary, "read current page");
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+});
+
+test("figma REPL programmatic client returns typed script and upstream payloads", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-client-typed-"));
+  const scriptPath = resolve(tempDir, "typed-client.figma.js");
+  await writeFile(scriptPath, "return { summary: 'typed dry run' };", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      assert.equal(name, "fake_upstream");
+      assert.deepEqual(args, { marker: "typed" });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              result: {
+                summary: "typed upstream",
+              },
+            }),
+          },
+        ],
+      };
+    },
+    {
+      tools: [
+        { name: "fake_upstream", inputSchema: { type: "object", properties: {} } },
+      ],
+    },
+  );
+  const repl = createFigmaReplClient({ client: fakeClient });
+
+  try {
+    const scriptResult = await repl.runScriptFile({
+      scriptPath,
+      dryRun: true,
+    });
+    assert.equal(scriptResult.ok, true);
+    assert.equal(scriptResult.dryRun, true);
+    assert.equal("content" in scriptResult, false);
+
+    const upstreamResult = await repl.callUpstreamTool({
+      toolName: "fake_upstream",
+      arguments: { marker: "typed" },
+    });
+    assert.equal(upstreamResult.ok, true);
+    assert.equal(upstreamResult.result.result.summary, "typed upstream");
+    assert.equal("content" in upstreamResult, false);
+    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+  } finally {
+    await repl.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("figma REPL stdio CLI exits cleanly when stdin ends", async () => {
