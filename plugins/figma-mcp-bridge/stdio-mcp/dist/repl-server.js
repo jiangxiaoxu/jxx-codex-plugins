@@ -21028,6 +21028,23 @@ var DEFAULT_EVAL_ARGUMENT_CANDIDATES = [
   "js",
   "command"
 ];
+var FIGMA_REPL_EVAL_COMMON_HELPER_NAMES = [
+  "remember",
+  "forget",
+  "resolveId",
+  "node",
+  "select",
+  "cloneNodeTree",
+  "findAll",
+  "find",
+  "text",
+  "layout",
+  "create",
+  "inspect",
+  "screenshot",
+  "imageAsset",
+  "checkpoint"
+];
 var DEFAULT_HISTORY_LIMIT = 50;
 var DEFAULT_INLINE_RESULT_LIMIT = 4e3;
 var MAX_INLINE_RESULT_LIMIT = 1e6;
@@ -21484,7 +21501,8 @@ async function executeRunScriptFile(args, runtime) {
   const wrappedScript = buildFigmaEvalScript({
     session,
     code: compiled.code,
-    mode: "write"
+    mode: "write",
+    includeEvalHelpers: false
   });
   const diagnostics = [
     ...compiled.diagnostics,
@@ -22360,7 +22378,7 @@ function inferEvalArgumentName(tool) {
   return stringProperty2?.[0];
 }
 function buildFigmaEvalScript(options) {
-  return `${createFigmaReplPrelude(options.session, options.mode ?? "write")}
+  return `${createFigmaReplPrelude(options.session, options.mode ?? "write", options.includeEvalHelpers !== false)}
 async function __figmaReplUserMain() {
 ${options.code}
 }
@@ -22379,7 +22397,7 @@ return {
   result: __figmaReplResult
 };`;
 }
-function createFigmaReplPrelude(session, mode) {
+function createFigmaReplPrelude(session, mode, includeEvalHelpers) {
   return `const __figmaRepl = {
   sessionId: ${literal3(session.id)},
   mode: ${literal3(mode)},
@@ -22959,7 +22977,174 @@ function summarizeNode(node, depth = 1) {
     summary.children = node.children.slice(0, 30).map((child) => summarizeNode(child, depth - 1));
   }
   return summary;
-}`;
+}
+
+const __figmaReplEvalCheckpoints = [];
+$.handles = __figmaRepl.handles;
+$.remember = remember;
+$.forget = forget;
+$.resolveId = resolveHandleId;
+$.node = $;
+$.select = selectNodesForRepl;
+$.cloneNodeTree = cloneNodeTreeForRepl;
+$.findAll = async function findAll(criteria = {}) {
+  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
+  const root = input.within ? await $(input.within) : figma.currentPage;
+  const matches = queryNodes(root, {
+    name: input.name,
+    type: input.type,
+    includeInvisible: input.includeInvisible,
+    limit: input.limit || 50,
+  });
+  if (input.as && matches[0]) remember(input.as, matches[0]);
+  return matches;
+};
+$.find = async function find(criteria = {}) {
+  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
+  const matches = await $.findAll({ ...input, limit: input.limit || 1 });
+  const node = matches[0] || null;
+  if (!node && input.required !== false) {
+    throw new Error("No Figma node matched $.find criteria.");
+  }
+  if (node && input.as) remember(input.as, node);
+  return node;
+};
+$.text = async function text(targetOrOptions, textValue, options = {}) {
+  const input = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions)
+    ? targetOrOptions
+    : { target: targetOrOptions, text: textValue, ...options };
+  let node;
+  if (input.target) {
+    node = await $(input.target);
+    if (node.type !== "TEXT") throw new Error("$.text target must resolve to a TEXT node.");
+  } else {
+    node = figma.createText();
+    if (input.parent) {
+      const parent = await $(input.parent);
+      parent.appendChild(node);
+    } else {
+      figma.currentPage.appendChild(node);
+    }
+  }
+  const font = input.font || (input.fontFamily || input.fontStyle ? { family: input.fontFamily || "Inter", style: input.fontStyle || "Regular" } : undefined);
+  if (font) {
+    const fontName = fontFromHelperInput(font);
+    await loadFont(fontName);
+    node.fontName = fontName;
+    if (font.size !== undefined) node.fontSize = readFiniteNumber(font.size, "font.size");
+  } else {
+    await loadNodeFont(node);
+  }
+  if (input.text !== undefined) node.characters = String(input.text);
+  if (input.name !== undefined) node.name = String(input.name);
+  if (input.appearance !== undefined) applyAppearance(node, input.appearance);
+  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
+  if (input.size !== undefined) setNodeSizeFromInput(node, input.size);
+  if (input.as) remember(input.as, node);
+  return node;
+};
+$.layout = async function layout(target, layoutOptions = {}) {
+  const node = await $(target);
+  applyAutoLayout(node, layoutOptions);
+  return node;
+};
+$.create = async function create(options = {}) {
+  const type = String(options.type || "FRAME").toUpperCase();
+  const node = createHelperNode(type);
+  if (options.name !== undefined) node.name = String(options.name);
+  if (type === "TEXT") {
+    await applyTextHelper(node, { text: options.text || "", font: options.font, style: options.style });
+    if (options.appearance !== undefined) applyAppearance(node, options.appearance);
+  } else if (options.size !== undefined) {
+    setNodeSizeFromInput(node, options.size);
+  }
+  if (options.layout !== undefined) applyAutoLayout(node, options.layout);
+  if (options.appearance !== undefined && type !== "TEXT") applyAppearance(node, options.appearance);
+  if (options.parent) {
+    const parent = await $(options.parent);
+    parent.appendChild(node);
+  } else {
+    figma.currentPage.appendChild(node);
+  }
+  if (options.as) remember(options.as, node);
+  return node;
+};
+${includeEvalHelpers ? `
+function __figmaReplDecodeBase64(input) {
+  const source = String(input || "").replace(/^data:[^,]+,/u, "").replace(/\\s+/gu, "");
+  if (!source) throw new Error("$.imageAsset requires a non-empty base64 string or bytes array.");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = source.replace(/=+$/u, "");
+  const bytes = [];
+  let buffer = 0;
+  let bits = 0;
+  for (const char of clean) {
+    const value = alphabet.indexOf(char);
+    if (value < 0) throw new Error("$.imageAsset received invalid base64 data.");
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((buffer >> bits) & 0xff);
+    }
+  }
+  return new Uint8Array(bytes);
+}
+$.imageAsset = async function imageAsset(options = {}) {
+  const input = typeof options === "string" ? { base64: options } : (options || {});
+  const bytes = input.bytes instanceof Uint8Array
+    ? input.bytes
+    : Array.isArray(input.bytes)
+      ? new Uint8Array(input.bytes)
+      : __figmaReplDecodeBase64(input.base64);
+  const image = figma.createImage(bytes);
+  const node = input.target ? await $(input.target) : figma.createRectangle();
+  if (!("fills" in node)) throw new Error("$.imageAsset target must support fills.");
+  if (!input.target) {
+    if (input.parent) {
+      const parent = await $(input.parent);
+      parent.appendChild(node);
+    } else {
+      figma.currentPage.appendChild(node);
+    }
+  }
+  if (input.name !== undefined) node.name = String(input.name);
+  if (input.size !== undefined) {
+    setNodeSizeFromInput(node, input.size);
+  } else if (!input.target) {
+    node.resize(160, 160);
+  }
+  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
+  const scaleMode = String(input.scaleMode || input.fit || "FILL").toUpperCase();
+  if (!["FILL", "FIT", "CROP", "TILE"].includes(scaleMode)) {
+    throw new Error("$.imageAsset scaleMode must be FILL, FIT, CROP, or TILE.");
+  }
+  const paint = { type: "IMAGE", scaleMode, imageHash: image.hash };
+  if (input.opacity !== undefined) paint.opacity = readFiniteNumber(input.opacity, "opacity");
+  node.fills = [paint];
+  if (input.as) remember(input.as, node);
+  return node;
+};
+$.inspect = async function inspect(target, depth = 1) {
+  return summarizeNode(await $(target), depth);
+};
+$.screenshot = async function screenshot(target, options = {}) {
+  const node = await $(target);
+  if (!node || typeof node.screenshot !== "function") {
+    throw new Error("$.screenshot target does not support node.screenshot().");
+  }
+  return await node.screenshot(options);
+};
+` : ""}
+$.checkpoint = async function checkpoint(name, targets = [], options = {}) {
+  const input = Array.isArray(targets) ? targets : [targets];
+  const summaries = [];
+  for (const target of input) summaries.push(summarizeNode(await $(target), options.depth ?? 1));
+  const entry = { name: String(name || "checkpoint"), summaries, handles: { ...__figmaRepl.handles } };
+  __figmaReplEvalCheckpoints.push(entry);
+  return entry;
+};
+$.checkpoints = __figmaReplEvalCheckpoints;`;
 }
 async function loadAssetManifest(args, session) {
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
@@ -23507,6 +23692,35 @@ function createTaskScriptTemplate(taskSlug, args) {
     ""
   ].filter((line) => line !== void 0).join("\n");
 }
+var FIGMA_REPL_EVAL_HELPER_DESCRIPTIONS = {
+  "$": "Resolve a cached handle like $card, $selection, $currentPage, or a raw Figma node id.",
+  "$.remember": "Store a handle name for a node or node id in the current REPL session.",
+  "$.forget": "Remove a stored handle from the current REPL session.",
+  "$.resolveId": "Resolve a cached handle or raw node id string to a Figma node id.",
+  "$.node": "Resolve a cached handle or raw node id to the Figma node.",
+  "$.select": "Resolve handles/node ids, validate selectable scene nodes, update selection, and optionally zoom.",
+  "$.cloneNodeTree": "Copy a source node beside itself with outer-to-inner cloning and instance-subtree preservation.",
+  "$.findAll": "Find matching nodes by scoped criteria.",
+  "$.find": "Find one node by { name, type, within, as, required } and optionally remember it.",
+  "$.text": "Create or update a text node with font loading and optional handle storage.",
+  "$.layout": "Apply auto-layout properties to a target node.",
+  "$.create": "Create a common Design node with optional parent, size, layout, appearance, and handle.",
+  "$.inspect": "Resolve a handle or node id and return a compact node summary.",
+  "$.screenshot": "Attempt a target node screenshot when upstream supports node.screenshot(); fall back to official screenshot tools for final QA if no image payload is returned.",
+  "$.imageAsset": "Create or update an image-fill rectangle from small generated PNG/JPEG base64 or byte arrays; use upload_assets/upstream asset fill workflow for large files.",
+  "$.checkpoint": "Return handle and node summaries at repair-friendly points."
+};
+function evalHelperPath(name) {
+  return `$.${name}`;
+}
+function createEvalHelperPathList() {
+  return ["$", ...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES.map(evalHelperPath)];
+}
+function createEvalHelperDescriptionsPayload() {
+  return Object.fromEntries(
+    createEvalHelperPathList().map((name) => [name, FIGMA_REPL_EVAL_HELPER_DESCRIPTIONS[name]])
+  );
+}
 function createFileWorkflowPayload() {
   return {
     primaryTool: "figma_repl_run_script_file",
@@ -23516,7 +23730,7 @@ function createFileWorkflowPayload() {
     workspaceLayout: "<cwd>/figma-mcp/<fileKey-or-fileSlug>/<intentSlug>.figma.js + <intentSlug>.result.json",
     outputFiles: ["inputFile", "outputFile", "inlineResultLimit"],
     workflowTools: ["figma_repl_apply_asset_manifest", "figma_repl_capture_node", "figma_repl_run_task_plan"],
-    helpers: ["$", "$.find", "$.findAll", "$.create", "$.text", "$.layout", "$.imageAsset", "$.screenshot", "$.select", "$.cloneNodeTree", "$.checkpoint", "$.inspect"],
+    helpers: createEvalHelperPathList(),
     defaultTaskRoot: `${TASK_WORKSPACE_ROOT_ENV}, then OS temp figma-repl-mcp/tasks/<slug>`,
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.js files.",
@@ -23622,20 +23836,7 @@ function createCapabilitiesPayload() {
         summaryFile: "Advanced optional Markdown file when a separate summary is required.",
         inlineResultLimit: "Non-negative byte cap for large inline fields; omitted fields stay available in the paired result file."
       },
-      helpers: {
-        "$": "Resolve a cached handle like $card, $selection, $currentPage, or a raw Figma node id.",
-        "$.find": "Find one node by { name, type, within, as, required } and optionally remember it.",
-        "$.findAll": "Find matching nodes by scoped criteria.",
-        "$.text": "Create or update a text node with font loading and optional handle storage.",
-        "$.layout": "Apply auto-layout properties to a target node.",
-        "$.create": "Create a common Design node with optional parent, size, layout, appearance, and handle.",
-        "$.imageAsset": "Create or update an image-fill rectangle from small generated PNG/JPEG base64 or byte arrays; use upload_assets/upstream asset fill workflow for large files.",
-        "$.screenshot": "Attempt a target node screenshot when upstream supports node.screenshot(); fall back to official screenshot tools for final QA if no image payload is returned.",
-        "$.select": "Resolve handles/node ids, validate selectable scene nodes, update selection, and optionally zoom.",
-        "$.cloneNodeTree": "Copy a source node beside itself with outer-to-inner cloning and instance-subtree preservation.",
-        "$.checkpoint": "Return handle and node summaries at repair-friendly points.",
-        "$.inspect": "Resolve a handle or node id and return a compact node summary."
-      }
+      helpers: createEvalHelperDescriptionsPayload()
     },
     fileWorkflow: createFileWorkflowPayload(),
     workflowTools: {
@@ -24285,6 +24486,7 @@ function literal3(value) {
 }
 export {
   FIGMA_REPL_DEFAULT_SESSION_ID,
+  FIGMA_REPL_EVAL_COMMON_HELPER_NAMES,
   assertSafeFigmaReplCode,
   buildFigmaEvalScript,
   createFigmaReplClient,
