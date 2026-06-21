@@ -58,6 +58,49 @@ function structuredToolResult(result) {
   return result.structuredContent;
 }
 
+function assertFilePointer(pointer, expectedPath, options = {}) {
+  assert.equal(pointer?.path, expectedPath);
+  assert.equal(typeof pointer.bytes, "number");
+  assert.equal(typeof pointer.lineCount, "number");
+  if (options.bytes !== undefined) {
+    assert.equal(pointer.bytes, options.bytes);
+  } else {
+    assert.ok(pointer.bytes > 0);
+  }
+  if (options.lineCount !== undefined) {
+    assert.equal(pointer.lineCount, options.lineCount);
+  } else {
+    assert.ok(pointer.lineCount > 0);
+  }
+  return pointer.path;
+}
+
+async function readPrettyJsonPointer(pointer, expectedPath) {
+  const path = assertFilePointer(pointer, expectedPath);
+  const content = await readFile(path, "utf8");
+  assert.match(content, /\n/u);
+  assert.ok(content.trim().split(/\r?\n/u).length > 1);
+  assert.equal(countTextLines(content), pointer.lineCount);
+  assert.equal(Buffer.byteLength(content, "utf8"), pointer.bytes);
+  return JSON.parse(content);
+}
+
+async function readTextPointer(pointer, expectedPath) {
+  const path = assertFilePointer(pointer, expectedPath);
+  const content = await readFile(path, "utf8");
+  assert.equal(countTextLines(content), pointer.lineCount);
+  assert.equal(Buffer.byteLength(content, "utf8"), pointer.bytes);
+  return content;
+}
+
+function countTextLines(content) {
+  if (content.length === 0) {
+    return 0;
+  }
+  const newlineCount = content.match(/\n/gu)?.length ?? 0;
+  return content.endsWith("\n") ? newlineCount : newlineCount + 1;
+}
+
 test("figma REPL eval wraps code and persists returned handles", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
@@ -106,9 +149,13 @@ test("figma REPL eval wraps code and persists returned handles", async () => {
   });
   const evalJson = structuredToolResult(evalResult);
   assert.equal(evalJson.ok, true);
-  assert.equal(evalJson.session.handles.$card, "12:34");
-  assert.equal(evalJson.upstreamTool, "use_figma");
-  assert.equal(evalJson.upstreamArgument, "code");
+  assert.equal(evalJson.result.id, "12:34");
+  assert.equal(evalJson.parsed, undefined);
+  assert.equal(evalJson.text, undefined);
+  assert.equal(evalJson.upstreamTool, undefined);
+  assert.equal(evalJson.upstreamArgument, undefined);
+  assert.equal(evalJson.session.handleCount, 1);
+  assert.equal(evalJson.session.handles, undefined);
 
   const sessionResources = await mcpClient.listResources();
   const sessionListEntry = sessionResources.resources.find((resource) => resource.uri === "figma-repl://sessions/main");
@@ -239,6 +286,12 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     );
   }
   for (const tool of tools.tools) {
+    assert.deepEqual(
+      tool.inputSchema?.properties?.responseMode?.enum,
+      ["compact", "full", "debug"],
+      `${tool.name} supports responseMode`,
+    );
+    assert.equal(tool.inputSchema?.properties?.returnMode, undefined, `${tool.name} does not promote returnMode`);
     assert.equal(tool.outputSchema?.type, "object", `${tool.name} advertises an object outputSchema`);
     assert.equal(tool.outputSchema?.properties?.ok?.type, "boolean", `${tool.name} pins ok in outputSchema`);
     assert.deepEqual(tool.outputSchema?.required, ["ok"], `${tool.name} requires ok in outputSchema`);
@@ -418,15 +471,16 @@ test("figma REPL proxies a fake upstream official tool and rejects local tool na
     name: "figma_repl_call_upstream_tool",
     arguments: {
       title: "Generate diagram",
+      responseMode: "debug",
       toolName: "generate_diagram",
       arguments: { prompt: "Flow" },
-      includeRawUpstream: true,
     },
   });
   const json = structuredToolResult(result);
   assert.equal(json.ok, true);
   assert.equal(json.toolName, "generate_diagram");
   assert.equal(json.result.diagramId, "abc123");
+  assert.match(json.text, /abc123/);
   assert.ok(json.raw);
 
   await assert.rejects(
@@ -734,9 +788,10 @@ test("figma REPL applies asset manifests through explicit fake upstream schemas"
     assert.equal(json.assets[0].toolName, "fake_upload_asset");
     assert.equal(json.assets[0].result.summary, "asset filled");
     assert.equal(json.assets[0].result.payload, undefined);
-    assert.deepEqual(json.failures, []);
-    assert.equal(json.files.resultFile, resultFile);
-    const fileJson = JSON.parse(await readFile(resultFile, "utf8"));
+    assert.equal(json.failures, undefined);
+    assertFilePointer(json.outputFiles.resultFile, resultFile);
+    const fileJson = await readPrettyJsonPointer(json.outputFiles.resultFile, resultFile);
+    assert.equal(fileJson.outputFiles, undefined);
     assert.equal(fileJson.assets[0].result.summary, "asset filled");
     assert.equal(JSON.stringify(fileJson).includes("x".repeat(200)), false);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
@@ -978,6 +1033,7 @@ test("figma REPL captures node screenshot responses to a local file", async () =
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.equal(json.file, outputFile);
+    assertFilePointer(json.outputFiles.outputFile, outputFile, { bytes: Buffer.byteLength("fake png", "utf8"), lineCount: 0 });
     assert.equal(json.nodeId, "22:7");
     assert.equal(json.toolName, "fake_screenshot");
     assert.equal(json.mimeType, "image/png");
@@ -1070,6 +1126,7 @@ test("figma REPL downloads node screenshot URL responses to a local file", async
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.equal(json.file, outputFile);
+    assertFilePointer(json.outputFiles.outputFile, outputFile, { bytes: pngBytes.byteLength, lineCount: 0 });
     assert.equal(json.nodeId, "22:8");
     assert.equal(json.kind, "image");
     assert.equal(json.mimeType, "image/png");
@@ -1274,11 +1331,15 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.files.resultFile, resolve(fileDir, "run-workspace-plan.plan.result.json"));
+    assertFilePointer(json.outputFiles.resultFile, resolve(fileDir, "run-workspace-plan.plan.result.json"));
+    const planFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(fileDir, "run-workspace-plan.plan.result.json"));
+    assert.equal(planFile.outputFiles, undefined);
     assert.deepEqual(json.steps.map((step) => step.status), ["completed", "completed", "completed"]);
     assert.equal(JSON.parse(await readFile(resolve(fileDir, "script.result.json"), "utf8")).dryRun, true);
     assert.equal(JSON.parse(await readFile(resolve(fileDir, "asset.assets.result.json"), "utf8")).ok, true);
-    assert.equal(JSON.parse(await readFile(resolve(fileDir, "capture.capture.result.json"), "utf8")).file, resolve(fileDir, "capture.png"));
+    const captureFile = JSON.parse(await readFile(resolve(fileDir, "capture.capture.result.json"), "utf8"));
+    assert.equal(captureFile.file, resolve(fileDir, "capture.png"));
+    assert.equal(captureFile.outputFiles, undefined);
     assert.equal(await readFile(resolve(fileDir, "capture.png"), "utf8"), "workspace capture");
     await mcpClient.close();
   } finally {
@@ -1460,6 +1521,7 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics and compi
       name: "figma_repl_run_script_file",
       arguments: {
         title: "Preview script",
+        responseMode: "full",
         sessionId: "main",
         scriptPath,
         dryRun: true,
@@ -1479,12 +1541,9 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics and compi
     assert.equal(json.diagnostics[0].code, "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT");
     assert.equal(json.diagnostics[0].source.scriptPath, scriptPath);
     assert.equal(json.diagnostics[0].source.line, 2);
-    assert.equal(json.outputFiles.resultFile, resolve(outputDir, "result.json"));
-    assert.equal(json.outputFiles.diagnosticsFile, resolve(outputDir, "diagnostics.json"));
-    assert.equal(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
-    const resultFile = JSON.parse(await readFile(json.outputFiles.resultFile, "utf8"));
-    const diagnosticsFile = JSON.parse(await readFile(json.outputFiles.diagnosticsFile, "utf8"));
-    const summaryFile = await readFile(json.outputFiles.summaryFile, "utf8");
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(outputDir, "result.json"));
+    const diagnosticsFile = await readPrettyJsonPointer(json.outputFiles.diagnosticsFile, resolve(outputDir, "diagnostics.json"));
+    const summaryFile = await readTextPointer(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
     assert.equal(resultFile.dryRun, true);
     assert.equal(diagnosticsFile.count, 1);
     assert.match(summaryFile, /dryRun: true/);
@@ -1622,14 +1681,14 @@ test("figma REPL run_script_file executes helper-backed scripts through upstream
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.equal(json.script.executed, true);
-    assert.equal(json.script.helperProfile, "auto");
-    assert.equal(json.script.helpersIncluded.includes("$.imageAsset"), false);
-    assert.equal(json.script.helpersIncluded.includes("$.cloneNodeTree"), false);
     assert.equal(json.script.targetPageId, "0:1");
-    assert.equal(json.parsed.result.resized.width, 360);
-    assert.equal(json.session.handles.$scriptFrame, "20:1");
-    assert.equal(json.session.handles.$scriptTitle, "20:2");
-    assert.equal(json.session.history[0].tool, "figma_repl_run_script_file");
+    assert.equal(json.script.helpersIncluded, undefined);
+    assert.equal(json.result.resized.width, 360);
+    assert.equal(json.parsed, undefined);
+    assert.equal(json.text, undefined);
+    assert.equal(json.session.handleCount, 2);
+    assert.equal(json.session.handles, undefined);
+    assert.equal(json.session.history, undefined);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
     await mcpClient.close();
   } finally {
@@ -1686,6 +1745,7 @@ test("figma REPL run_script_file supports generated image asset helper without r
       name: "figma_repl_run_script_file",
       arguments: {
         title: "Run image helper script",
+        responseMode: "full",
         sessionId: "main",
         scriptPath,
         expectedSurface: "design",
@@ -1746,9 +1806,8 @@ test("figma REPL run_script_file structures upstream ok false errors", async () 
     assert.equal(json.upstreamError.code, "FIGMA_INSTANCE_CHILD_REMOVE");
     assert.match(json.upstreamError.message, /instance subtree/);
     assert.match(json.primaryFix, /\$\.cloneNodeTree/);
-    assert.equal(json.outputFiles.resultFile, resolve(outputDir, "result.json"));
-    const resultFile = JSON.parse(await readFile(json.outputFiles.resultFile, "utf8"));
-    const summaryFile = await readFile(json.outputFiles.summaryFile, "utf8");
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(outputDir, "result.json"));
+    const summaryFile = await readTextPointer(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
     assert.equal(resultFile.ok, false);
     assert.match(summaryFile, /primaryFix:/);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
@@ -1855,17 +1914,16 @@ test("figma REPL run_script_file writes output files and limits inline result fi
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.parsed, undefined);
+    assert.equal(json.result, undefined);
     assert.equal(json.text, undefined);
-    assert.equal(json.upstream, undefined);
+    assert.equal(json.raw, undefined);
     assert.deepEqual(
       json.inlineResultLimit.omitted.map((item) => item.field),
-      ["parsed", "text", "upstream"],
+      ["result"],
     );
-    assert.equal(json.outputFiles.resultFile, resolve(outputDir, "full-result.json"));
-    const resultFile = JSON.parse(await readFile(json.outputFiles.resultFile, "utf8"));
-    const summaryFile = await readFile(json.outputFiles.summaryFile, "utf8");
-    assert.equal(resultFile.parsed.result.payload.length, 200);
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(outputDir, "full-result.json"));
+    const summaryFile = await readTextPointer(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
+    assert.equal(resultFile.result.payload.length, 200);
     assert.match(summaryFile, /resultSummary: large result/);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
     await mcpClient.close();
@@ -1915,7 +1973,7 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     });
     const initJson = structuredToolResult(initResult);
     assert.equal(initJson.ok, true);
-    assert.equal(initJson.session.slug, "settings-workspace");
+    assert.equal(initJson.session.id, "settings-workspace");
     assert.equal(initJson.session.fileKey, "ExampleFigmaFileKey012");
     assert.equal(initJson.session.surface, "design");
     assert.equal(initJson.task.fileContext, "ExampleFigmaFileKey012");
@@ -1942,12 +2000,14 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.session.workspace.sessionDir, initJson.task.workspace.sessionDir);
+    assert.equal(json.session.workspace.fileContext, "ExampleFigmaFileKey012");
+    assert.deepEqual(json.session.workspace.files, initJson.task.workspace.files);
+    assert.equal(json.session.workspace.sessionDir, undefined);
     assert.equal(json.session.surface, "design");
-    assert.equal(json.outputFiles.resultFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
-    assert.equal(json.parsed, undefined);
-    const resultFile = JSON.parse(await readFile(json.outputFiles.resultFile, "utf8"));
-    assert.equal(resultFile.parsed.result.payload.length, 160);
+    assertFilePointer(json.outputFiles.resultFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
+    assert.equal(json.result, undefined);
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
+    assert.equal(resultFile.result.payload.length, 160);
 
     const prepared = await mcpClient.callTool({
       name: "figma_repl_prepare_task",
@@ -1965,7 +2025,7 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     assert.equal(preparedJson.task.workspace.fileKey, "ExampleFigmaFileKey012");
     assert.equal(preparedJson.task.intentSlug, "token-audit");
     assert.equal(preparedJson.task.scriptPath, resolve(initJson.task.workspace.fileDir, "token-audit.figma.js"));
-    assert.equal(preparedJson.task.resultFile, resolve(initJson.task.workspace.fileDir, "token-audit.result.json"));
+    assertFilePointer(preparedJson.task.resultFile, resolve(initJson.task.workspace.fileDir, "token-audit.result.json"));
 
     await assert.rejects(
       mcpClient.callTool({
@@ -2049,10 +2109,11 @@ test("figma REPL prepare_task creates .figma.js workspace and enforces overwrite
     assert.equal(json.task.workspaceDir, workspaceDir);
     assert.equal(json.task.taskDir, workspaceDir);
     assert.equal(json.task.scriptPath, resolve(workspaceDir, "settings-panel.figma.js"));
-    assert.equal(json.task.resultFile, resolve(workspaceDir, "settings-panel.result.json"));
+    assertFilePointer(json.task.resultFile, resolve(workspaceDir, "settings-panel.result.json"));
     assert.match(await readFile(json.task.scriptPath, "utf8"), /\$\.checkpoint/);
     assert.match(await readFile(json.task.scriptPath, "utf8"), /Goal: Create a settings panel/);
-    assert.equal(JSON.parse(await readFile(json.task.resultFile, "utf8")).status, "pending");
+    const pendingResult = await readPrettyJsonPointer(json.task.resultFile, resolve(workspaceDir, "settings-panel.result.json"));
+    assert.equal(pendingResult.status, "pending");
 
     await assert.rejects(
       mcpClient.callTool({
@@ -2252,7 +2313,7 @@ test("figma REPL inspect mode=validate reports valid, missing, and stale", async
   });
   const json = structuredToolResult(result);
   assert.deepEqual(
-    json.parsed.result.validations.map((item) => item.status),
+    json.result.validations.map((item) => item.status),
     ["valid", "missing", "stale"],
   );
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
@@ -2309,9 +2370,9 @@ test("figma REPL programmatic client can call eval without MCP transport", async
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.upstreamTool, "use_figma");
-  assert.equal(result.upstreamArgument, "code");
-  assert.equal(result.parsed.result.summary, "read current page");
+  assert.equal(result.upstreamTool, undefined);
+  assert.equal(result.upstreamArgument, undefined);
+  assert.equal(result.result.summary, "read current page");
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
 });
 
@@ -2361,7 +2422,7 @@ test("figma REPL programmatic client returns typed script and upstream payloads"
       arguments: { marker: "typed" },
     });
     assert.equal(upstreamResult.ok, true);
-    assert.equal(upstreamResult.result.result.summary, "typed upstream");
+    assert.equal(upstreamResult.result.summary, "typed upstream");
     assert.equal("content" in upstreamResult, false);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
   } finally {

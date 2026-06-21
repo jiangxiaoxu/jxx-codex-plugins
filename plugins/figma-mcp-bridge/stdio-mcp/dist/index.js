@@ -19862,8 +19862,8 @@ function literal2(value) {
 // src/repl-tool-args.ts
 var TOOL_TITLE_ARGUMENT2 = "title";
 var FIGMA_REPL_SURFACES = ["design", "figjam", "slides"];
+var FIGMA_REPL_RESPONSE_MODES = ["compact", "full", "debug"];
 var FIGMA_REPL_EVAL_MODES = ["read", "write"];
-var FIGMA_REPL_RETURN_MODES = ["auto", "json", "text", "raw"];
 var FIGMA_REPL_HELPER_PROFILES = ["auto", "minimal", "asset", "clone", "full"];
 var FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"];
 var FIGMA_REPL_INSPECT_MODES = ["inspect", "validate"];
@@ -19876,9 +19876,9 @@ function asEvalArgs(args) {
     "upstreamTool",
     "upstreamArgument"
   ]);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalEnum(record2, "mode", FIGMA_REPL_EVAL_MODES);
   assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
-  assertOptionalEnum(record2, "returnMode", FIGMA_REPL_RETURN_MODES);
   assertOptionalRecord(record2, "upstreamArguments");
   assertOptionalRecord(record2, "handleUpdates");
   return record2;
@@ -19898,6 +19898,7 @@ function asRunScriptFileArgs(args) {
     "diagnosticsFile",
     "summaryFile"
   ]);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalEnum(record2, "helperProfile", FIGMA_REPL_HELPER_PROFILES);
   assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
   assertOptionalRecord(record2, "upstreamArguments");
@@ -19912,6 +19913,7 @@ function asApplyAssetManifestArgs(args) {
     "resultFile",
     "outputFile"
   ]);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalRecord(record2, "arguments");
   assertOptionalRecord(record2, "argumentsTemplate");
   assertOptionalAssets(record2);
@@ -19927,6 +19929,7 @@ function asCaptureNodeArgs(args) {
     "resultFile",
     "toolName"
   ]);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalRecord(record2, "arguments");
   assertOptionalRecord(record2, "argumentsTemplate");
   return record2;
@@ -19939,6 +19942,7 @@ function asRunTaskPlanArgs(args) {
     "resultFile",
     "outputFile"
   ]);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalTaskPlanSteps(record2);
   return record2;
 }
@@ -19964,12 +19968,14 @@ function asPrepareTaskArgs(args) {
     "targetPageId",
     "template"
   ]);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
   return record2;
 }
 function asGuidanceArgs(args) {
   const record2 = parseToolArgs(args);
   assertOptionalStringFields(record2, ["card", "query", "task", "intent", "goal", "workflow"]);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalEnum(record2, "mode", FIGMA_REPL_GUIDANCE_MODES);
   assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
   assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
@@ -19983,6 +19989,7 @@ function asInspectArgs(args) {
     "upstreamTool",
     "upstreamArgument"
   ]);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalEnum(record2, "mode", FIGMA_REPL_INSPECT_MODES);
   assertOptionalRecord(record2, "upstreamArguments");
   const handles = assertOptionalArray(record2, "handles");
@@ -19996,11 +20003,13 @@ function asInspectArgs(args) {
 function asCallUpstreamToolArgs(args) {
   const record2 = parseToolArgs(args);
   assertOptionalStringFields(record2, ["sessionId", "toolName"]);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalRecord(record2, "arguments");
   return record2;
 }
 function asLookupArgs(args) {
   const record2 = parseToolArgs(args);
+  assertOptionalEnum(record2, "responseMode", FIGMA_REPL_RESPONSE_MODES);
   assertOptionalEnum(record2, "kind", FIGMA_REPL_LOOKUP_KINDS);
   assertOptionalStringFields(record2, ["query", "symbol"]);
   return record2;
@@ -20168,6 +20177,7 @@ function createReplToolDescriptions(options) {
       description: "Create or update a local Figma REPL session. Records fileKey/surface/page context, local handles, and upstream use_figma settings.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
         label: stringProperty("Human-readable session label."),
         fileUrl: stringProperty("Optional Figma file URL stored in local session metadata."),
@@ -20187,11 +20197,11 @@ function createReplToolDescriptions(options) {
       description: "Run one batched JavaScript transaction through upstream use_figma. Diagnostics block unsafe API-contract/read-mode/surface mistakes before dispatch.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
         code: stringProperty("JavaScript body executed inside an async function in the Figma Plugin API context. Use return to send structured output."),
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
         expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
-        returnMode: enumProperty(["auto", "json", "text", "raw"], "Controls how much parsed/text upstream output is returned."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
         upstreamTool: stringProperty("Override upstream eval tool name for this call."),
         upstreamArgument: stringProperty("Override upstream JavaScript argument name for this call."),
@@ -20205,6 +20215,7 @@ function createReplToolDescriptions(options) {
       description: "Primary file-based JavaScript workflow for Figma REPL. Reads an absolute scriptPath or a session-workspace inputFile, injects $ helpers, writes output files, and optionally executes through upstream use_figma.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
         scriptPath: stringProperty("Absolute path to a local JavaScript file. Prefer inputFile after figma_repl_prepare_task creates a file-context workspace."),
         inputFile: stringProperty("File name inside the initialized file-context directory. Defaults are created by figma_repl_prepare_task."),
@@ -20231,6 +20242,7 @@ function createReplToolDescriptions(options) {
       description: "Apply a local asset manifest to Figma target nodes through configurable upstream asset/upload tools. Use for large generated images after .figma.js creates target rectangles.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         manifestPath: stringProperty("Path to a JSON manifest. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of assets or an object with assets/toolName/argumentsTemplate."),
         assets: {
@@ -20253,6 +20265,7 @@ function createReplToolDescriptions(options) {
       description: "Capture one Figma node through a configurable upstream screenshot tool and save image bytes, screenshot URL payloads, or text responses to a local outputFile for final visual QA.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         nodeId: stringProperty("Figma node id to capture."),
         targetNodeId: stringProperty("Alias for nodeId."),
@@ -20270,6 +20283,7 @@ function createReplToolDescriptions(options) {
       description: "Run a sequential local JSON task plan: script-file dryRun/execute, asset manifest application, screenshot capture, and generic upstream tool calls. Stops on first failure by default.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
         planPath: stringProperty("JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of steps or an object with steps."),
         steps: {
@@ -20288,6 +20302,7 @@ function createReplToolDescriptions(options) {
       description: "Create or reuse an intent-specific .figma.js script and paired .result.json file. With cwd or file context, initializes <cwd>/figma-mcp/<fileKey-or-fileSlug>/ for inputFile/outputFile workflows.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
         intent: stringProperty("Human intent used to derive <intentSlug>.figma.js and <intentSlug>.result.json."),
         task: stringProperty("Alias for intent."),
@@ -20315,6 +20330,7 @@ function createReplToolDescriptions(options) {
       description: "Return compact guidance, file-workflow planning, curated API cards, or catalog metadata before broader lookup.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
         card: stringProperty("Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides."),
         query: stringProperty("Search query when card id is not known."),
@@ -20332,6 +20348,7 @@ function createReplToolDescriptions(options) {
       description: "Inspect $selection, $currentPage, a stored handle, or validate cached handles through one read-mode use_figma call.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
         mode: enumProperty(["inspect", "validate"], "Use inspect for target summaries or validate for cached handle status. Defaults to inspect."),
         target: stringProperty("$selection, $currentPage, a stored handle like $header, or a raw node id. Defaults to $selection."),
@@ -20351,6 +20368,7 @@ function createReplToolDescriptions(options) {
       description: "Proxy one official upstream Figma MCP tool call through figma-repl-mcp so agents can stay on the unified REPL facade for capabilities not covered by the file workflow.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
         toolName: stringProperty("Official upstream Figma MCP tool name to call. Local figma_repl_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
@@ -20363,6 +20381,7 @@ function createReplToolDescriptions(options) {
       description: "Look up compact docs snippets or targeted Figma Plugin API symbols from the internal corpus.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
         query: stringProperty("Keyword query, for example 'component properties' or 'Slides lifecycle'."),
         symbol: stringProperty("API symbol for kind=api, for example createFrame, loadFontAsync, VariableCollection."),
@@ -20384,8 +20403,9 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamTool: stringProperty("Upstream eval tool name used."),
     upstreamArgument: stringProperty("Upstream eval argument name used."),
     diagnostics: arrayProperty("Preflight diagnostics."),
-    parsed: jsonProperty("Parsed upstream JSON output when available."),
-    text: stringProperty("Raw upstream text output when available.")
+    result: jsonProperty("Parsed upstream JSON output when available."),
+    text: stringProperty("Raw upstream text output when available."),
+    raw: jsonProperty("Raw upstream MCP result for debug responses.")
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
@@ -20395,13 +20415,14 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     outputFiles: objectProperty("Files written for full result, diagnostics, or summary."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    parsed: jsonProperty("Parsed upstream JSON output when available."),
-    text: stringProperty("Raw upstream text output when available.")
+    result: jsonProperty("Parsed upstream JSON output when available."),
+    text: stringProperty("Raw upstream text output when available."),
+    raw: jsonProperty("Raw upstream MCP result for debug responses.")
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
     assets: arrayProperty("Per-asset upstream upload/fill results."),
     validation: objectProperty("Optional target validation result."),
-    files: objectProperty("Files written for compact result output."),
+    outputFiles: objectProperty("Files written for result output."),
     failures: arrayProperty("Per-asset or validation failures.")
   }),
   figma_repl_capture_node: toolOutputSchema({
@@ -20413,13 +20434,13 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     bytes: numberProperty("Saved output byte count."),
     qa: objectProperty("Compact capture QA hints."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
-    files: objectProperty("Files written for compact result output.")
+    outputFiles: objectProperty("Files written for result output.")
   }),
   figma_repl_run_task_plan: toolOutputSchema({
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     stopOnFailure: booleanProperty("Whether the plan was configured to stop on first failure."),
     steps: arrayProperty("Compact per-step execution summaries."),
-    files: objectProperty("Files written for plan result output."),
+    outputFiles: objectProperty("Files written for plan result output."),
     failures: arrayProperty("Failed task-plan steps.")
   }),
   figma_repl_prepare_task: toolOutputSchema({
@@ -20443,14 +20464,15 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_inspect: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
     diagnostics: arrayProperty("Read-mode diagnostics."),
-    parsed: jsonProperty("Parsed upstream JSON output when available."),
-    text: stringProperty("Raw upstream text output when available.")
+    result: jsonProperty("Parsed upstream JSON output when available."),
+    text: stringProperty("Raw upstream text output when available."),
+    raw: jsonProperty("Raw upstream MCP result for debug responses.")
   }),
   figma_repl_call_upstream_tool: toolOutputSchema({
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
     result: jsonProperty("Parsed upstream JSON output when available."),
     text: stringProperty("Raw upstream text output when available."),
-    raw: jsonProperty("Raw upstream MCP result when requested.")
+    raw: jsonProperty("Raw upstream MCP result for debug responses or explicit full-mode raw requests.")
   }),
   figma_repl_lookup: toolOutputSchema({
     kind: stringProperty("Lookup kind: docs or api."),
@@ -20495,6 +20517,12 @@ function objectSchema(properties, required2 = []) {
 }
 function titleProperty() {
   return stringProperty("Human-readable title used when presenting output to the user.");
+}
+function responseModeProperty() {
+  return enumProperty(
+    ["compact", "full", "debug"],
+    "Controls response detail. Defaults to compact; use full for expanded payloads or debug for session history and raw upstream data."
+  );
 }
 function stringProperty(description) {
   return { type: "string", description };
@@ -20545,19 +20573,16 @@ function createScriptOutputWriter(args, session, formatSummaryMarkdown) {
     async write(payload) {
       const written = {};
       if (files.resultFile) {
-        await writeJsonFile(files.resultFile, payload.result);
-        written.resultFile = files.resultFile;
+        written.resultFile = await writeJsonFile(files.resultFile, payload.result);
       }
       if (files.diagnosticsFile) {
-        await writeJsonFile(files.diagnosticsFile, {
+        written.diagnosticsFile = await writeJsonFile(files.diagnosticsFile, {
           diagnostics: payload.diagnostics,
           count: payload.diagnostics.length
         });
-        written.diagnosticsFile = files.diagnosticsFile;
       }
       if (files.summaryFile) {
-        await writeMarkdownFile(files.summaryFile, formatSummaryMarkdown(payload.summary));
-        written.summaryFile = files.summaryFile;
+        written.summaryFile = await writeMarkdownFile(files.summaryFile, formatSummaryMarkdown(payload.summary));
       }
       return written;
     }
@@ -20615,6 +20640,7 @@ async function writeCaptureOutputFile(outputFile, upstream, parsed) {
       kind: "image",
       mimeType: asOptionalString2(image.mimeType) ?? "image/png",
       bytes: buffer.byteLength,
+      lineCount: 0,
       ...dimensions
     };
   }
@@ -20634,6 +20660,7 @@ async function writeCaptureOutputFile(outputFile, upstream, parsed) {
       kind: "image",
       mimeType,
       bytes: buffer.byteLength,
+      lineCount: 0,
       ...dimensions,
       sourceUrl
     };
@@ -20644,7 +20671,8 @@ async function writeCaptureOutputFile(outputFile, upstream, parsed) {
   return {
     kind: "text",
     mimeType: "text/plain",
-    bytes: Buffer.byteLength(text, "utf8")
+    bytes: Buffer.byteLength(text, "utf8"),
+    lineCount: countTextLines(text)
   };
 }
 async function loadTaskPlan(args, session) {
@@ -20713,8 +20741,10 @@ function effectiveInlineResultLimit(value, files, defaultInlineResultLimit) {
 }
 async function writeJsonFile(path, value) {
   await mkdir2(dirname4(path), { recursive: true });
-  await writeFile2(path, `${JSON.stringify(removeUndefined(value), null, 2)}
-`, "utf8");
+  const content = `${JSON.stringify(removeUndefined(value), null, 2)}
+`;
+  await writeFile2(path, content, "utf8");
+  return textFileMetadata(path, content);
 }
 function createSessionWorkspace(options) {
   const dirName = asOptionalString2(options.dirName) ?? DEFAULT_WORKSPACE_DIR_NAME;
@@ -20813,6 +20843,7 @@ async function writeTaskFile(path, content, overwrite) {
     }
   }
   await writeFile2(path, content, "utf8");
+  return textFileMetadata(path, content);
 }
 function resolveScriptOutputFiles(args, session) {
   const outputDir = asOptionalString2(args.outputDir);
@@ -20859,8 +20890,24 @@ function resolveOptionalOutputFile(value, outputDir, fallbackName, name) {
 }
 async function writeMarkdownFile(path, value) {
   await mkdir2(dirname4(path), { recursive: true });
-  await writeFile2(path, value.endsWith("\n") ? value : `${value}
-`, "utf8");
+  const content = value.endsWith("\n") ? value : `${value}
+`;
+  await writeFile2(path, content, "utf8");
+  return textFileMetadata(path, content);
+}
+function textFileMetadata(path, content) {
+  return {
+    path,
+    bytes: Buffer.byteLength(content, "utf8"),
+    lineCount: countTextLines(content)
+  };
+}
+function countTextLines(content) {
+  if (content.length === 0) {
+    return 0;
+  }
+  const newlineCount = content.match(/\n/gu)?.length ?? 0;
+  return content.endsWith("\n") ? newlineCount : newlineCount + 1;
 }
 function resolveTaskWorkspace(options) {
   const explicitWorkspace = asOptionalString2(options.workspaceDir);
@@ -21478,10 +21525,11 @@ async function handleOpen(args, runtime) {
     session.evalToolName = evalSettings.toolName;
     session.evalToolArgument = evalSettings.argumentName;
   }
+  const responseMode = responseModeFromArgs(args);
   return makeJsonToolResult({
     ok: true,
-    session: publicSession(session),
-    diagnostics: session.lastDiagnostics,
+    session: responseSession(session, responseMode),
+    diagnostics: diagnosticsForResponse(session.lastDiagnostics, responseMode),
     upstreamTools: upstreamTools?.map((tool) => tool.name)
   });
 }
@@ -21520,15 +21568,19 @@ async function handleEval(args, runtime) {
     summary: summarizeParsedResult(parsed),
     nodeIds: collectNodeIds(parsed.json)
   });
+  const responseMode = responseModeFromArgs(args);
   return makeJsonToolResult({
-    ok: true,
-    session: publicSession(session),
-    upstreamTool: evalSettings.toolName,
-    upstreamArgument: evalSettings.argumentName,
-    text: args.returnMode === "json" ? void 0 : parsed.text,
-    parsed: args.returnMode === "text" ? void 0 : parsed.json,
-    diagnostics,
-    upstream: args.includeRawUpstream ? upstream : void 0
+    ok: !parsed.upstreamError,
+    session: responseSession(session, responseMode),
+    ...responseEvalSettingsFields(evalSettings, responseMode),
+    diagnostics: diagnosticsForResponse(diagnostics, responseMode),
+    ...upstreamResultFields({
+      parsed,
+      upstream,
+      responseMode,
+      includeRawUpstream: args.includeRawUpstream
+    }),
+    ...upstreamFailureFields(parsed)
   });
 }
 async function handleRunScriptFile(args, runtime) {
@@ -21575,15 +21627,17 @@ async function executeRunScriptFile(args, runtime) {
     dryRun: Boolean(args.dryRun),
     executed: !args.dryRun
   };
+  const responseMode = responseModeFromArgs(args);
+  const responseScript = responseScriptMetadata(scriptMetadata, responseMode);
   if (args.dryRun) {
     touchSession(session);
     const resultPayload2 = {
       ok: true,
       dryRun: true,
-      session: publicSession(session),
-      diagnostics,
-      script: scriptMetadata,
-      compiledScript: wrappedScript
+      session: responseSession(session, responseMode),
+      diagnostics: diagnosticsForResponse(diagnostics, responseMode),
+      script: responseScript,
+      compiledScript: responseMode === "compact" ? void 0 : wrappedScript
     };
     const outputFiles2 = await outputWriter.write({
       result: resultPayload2,
@@ -21611,11 +21665,10 @@ async function executeRunScriptFile(args, runtime) {
     const upstreamError = normalizeCaughtUpstreamError(error2);
     const resultPayload2 = {
       ok: false,
-      session: publicSession(session),
-      upstreamTool: evalSettings.toolName,
-      upstreamArgument: evalSettings.argumentName,
-      diagnostics,
-      script: scriptMetadata,
+      session: responseSession(session, responseMode),
+      ...responseEvalSettingsFields(evalSettings, responseMode),
+      diagnostics: diagnosticsForResponse(diagnostics, responseMode),
+      script: responseScript,
       upstreamError,
       primaryFix: primaryFixForUpstreamError(upstreamError)
     };
@@ -21648,16 +21701,17 @@ async function executeRunScriptFile(args, runtime) {
   if (parsed.upstreamError) {
     const resultPayload2 = {
       ok: false,
-      session: publicSession(session),
-      upstreamTool: evalSettings.toolName,
-      upstreamArgument: evalSettings.argumentName,
-      diagnostics,
-      script: scriptMetadata,
-      parsed: parsed.json,
-      text: parsed.text,
-      upstreamError: parsed.upstreamError,
-      primaryFix: parsed.primaryFix,
-      upstream: args.includeRawUpstream ? upstream : void 0
+      session: responseSession(session, responseMode),
+      ...responseEvalSettingsFields(evalSettings, responseMode),
+      diagnostics: diagnosticsForResponse(diagnostics, responseMode),
+      script: responseScript,
+      ...upstreamResultFields({
+        parsed,
+        upstream,
+        responseMode,
+        includeRawUpstream: args.includeRawUpstream
+      }),
+      ...upstreamFailureFields(parsed)
     };
     const outputFiles2 = await outputWriter.write({
       result: resultPayload2,
@@ -21682,7 +21736,7 @@ async function executeRunScriptFile(args, runtime) {
           outputFiles: outputFiles2
         },
         inlineResultLimit,
-        ["parsed", "text", "upstream", "upstreamError"]
+        ["result", "text", "raw", "upstreamError"]
       )
     };
   }
@@ -21698,14 +21752,16 @@ async function executeRunScriptFile(args, runtime) {
   });
   const resultPayload = {
     ok: true,
-    session: publicSession(session),
-    upstreamTool: evalSettings.toolName,
-    upstreamArgument: evalSettings.argumentName,
-    diagnostics,
-    script: scriptMetadata,
-    parsed: parsed.json,
-    text: parsed.text,
-    upstream: args.includeRawUpstream ? upstream : void 0
+    session: responseSession(session, responseMode),
+    ...responseEvalSettingsFields(evalSettings, responseMode),
+    diagnostics: diagnosticsForResponse(diagnostics, responseMode),
+    script: responseScript,
+    ...upstreamResultFields({
+      parsed,
+      upstream,
+      responseMode,
+      includeRawUpstream: args.includeRawUpstream
+    })
   };
   const outputFiles = await outputWriter.write({
     result: resultPayload,
@@ -21728,7 +21784,7 @@ async function executeRunScriptFile(args, runtime) {
         outputFiles
       },
       inlineResultLimit,
-      ["parsed", "text", "upstream"]
+      ["result", "text", "raw"]
     )
   };
 }
@@ -21742,6 +21798,7 @@ async function executeApplyAssetManifest(args, runtime) {
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const failures = [];
   const assetResults = [];
+  const responseMode = responseModeFromArgs(args);
   await runtime.client.connect();
   for (const asset of manifest.assets) {
     const tool = selectUpstreamTool({
@@ -21760,6 +21817,10 @@ async function executeApplyAssetManifest(args, runtime) {
       const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
       const parsed = parseUpstreamToolResult(upstream);
       const compactResult = compactParsedUpstreamResult(parsed);
+      const fullResult = {
+        ...upstreamResultFields({ parsed, upstream, responseMode }),
+        ...upstreamFailureFields(parsed)
+      };
       const upload = parsed.upstreamError ? void 0 : await submitLocalAssetUploadIfAvailable(asset, parsed);
       const ok2 = !parsed.upstreamError && upload?.ok !== false;
       const entry = {
@@ -21770,7 +21831,7 @@ async function executeApplyAssetManifest(args, runtime) {
         metadata: asset.metadata,
         toolName: tool.name,
         arguments: upstreamArguments,
-        result: upload ? { ...compactResult, upload } : compactResult,
+        result: upload ? { ...responseMode === "compact" ? compactResult : fullResult, upload } : responseMode === "compact" ? compactResult : fullResult,
         startedAt,
         finishedAt: (/* @__PURE__ */ new Date()).toISOString()
       };
@@ -21820,12 +21881,10 @@ async function executeApplyAssetManifest(args, runtime) {
     ok,
     assets: assetResults,
     validation,
-    files,
-    failures
+    failures: failures.length > 0 ? failures : void 0
   };
   if (resultFile) {
-    await writeJsonFile(resultFile, payload);
-    files.resultFile = resultFile;
+    files.resultFile = await writeJsonFile(resultFile, payload);
   }
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
@@ -21836,7 +21895,10 @@ async function executeApplyAssetManifest(args, runtime) {
     summary: `Applied ${assetResults.length} asset manifest entries with ${failures.length} failures.`,
     nodeIds: assetResults.map((asset) => asOptionalString3(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
   });
-  return payload;
+  return {
+    ...payload,
+    outputFiles: Object.keys(files).length > 0 ? files : void 0
+  };
 }
 async function handleCaptureNode(args, runtime) {
   return makeJsonToolResult(await executeCaptureNode(args, runtime));
@@ -21848,6 +21910,7 @@ async function executeCaptureNode(args, runtime) {
     throw new Error('Tool argument "nodeId" or "targetNodeId" is required and must be a string.');
   }
   const session = runtime.sessions.getOrCreate(args.sessionId);
+  const responseMode = responseModeFromArgs(args);
   const outputFile = resolveRequiredWorkspaceAwareFile(args.outputFile, session, "outputFile");
   const resultFile = resolveWorkspaceAwareFile(args.resultFile, session, "resultFile");
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
@@ -21866,21 +21929,32 @@ async function executeCaptureNode(args, runtime) {
   const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
   const parsed = parseUpstreamToolResult(upstream);
   if (parsed.upstreamError) {
+    const outputFiles2 = {};
     const payload2 = {
       ok: false,
       file: outputFile,
       nodeId,
       toolName: tool.name,
-      upstreamError: parsed.upstreamError,
-      primaryFix: parsed.primaryFix,
-      files: resultFile ? { resultFile } : void 0
+      ...upstreamResultFields({ parsed, upstream, responseMode }),
+      ...upstreamFailureFields(parsed)
     };
     if (resultFile) {
-      await writeJsonFile(resultFile, payload2);
+      outputFiles2.resultFile = await writeJsonFile(resultFile, payload2);
     }
-    return payload2;
+    return {
+      ...payload2,
+      outputFiles: Object.keys(outputFiles2).length > 0 ? outputFiles2 : void 0
+    };
   }
   const saved = await writeCaptureOutputFile(outputFile, upstream, parsed);
+  const outputFileMetadata = {
+    path: outputFile,
+    bytes: saved.bytes,
+    lineCount: saved.lineCount
+  };
+  const outputFiles = {
+    outputFile: outputFileMetadata
+  };
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -21898,16 +21972,20 @@ async function executeCaptureNode(args, runtime) {
     kind: saved.kind,
     mimeType: saved.mimeType,
     bytes: saved.bytes,
+    lineCount: saved.lineCount,
     width: saved.width,
     height: saved.height,
     sourceUrl: saved.sourceUrl,
     qa: createCaptureQa(saved),
-    files: resultFile ? { resultFile } : void 0
+    ...upstreamResultFields({ parsed, upstream, responseMode })
   };
   if (resultFile) {
-    await writeJsonFile(resultFile, payload);
+    outputFiles.resultFile = await writeJsonFile(resultFile, payload);
   }
-  return payload;
+  return {
+    ...payload,
+    outputFiles
+  };
 }
 async function handleRunTaskPlan(args, runtime) {
   return makeJsonToolResult(await executeRunTaskPlan(args, runtime));
@@ -21918,6 +21996,7 @@ async function executeRunTaskPlan(args, runtime) {
   const plan = await loadTaskPlan(args, session);
   const resultFile = resolveTaskPlanResultFile(args, plan.planPath, session);
   const stopOnFailure = args.stopOnFailure !== false;
+  const responseMode = responseModeFromArgs(args);
   const steps = [];
   let stopped = false;
   for (const [index, step] of plan.steps.entries()) {
@@ -21931,6 +22010,7 @@ async function executeRunTaskPlan(args, runtime) {
         type,
         title: `${args.title}: ${id}`,
         sessionId: args.sessionId,
+        responseMode,
         runtime
       });
       const ok = taskPlanStepSucceeded(result);
@@ -21973,12 +22053,11 @@ async function executeRunTaskPlan(args, runtime) {
     stopped,
     stopOnFailure,
     steps,
-    files: {
-      resultFile
-    },
-    failures
+    failures: failures.length > 0 ? failures : void 0
   };
-  await writeJsonFile(resultFile, payload);
+  const outputFiles = {
+    resultFile: await writeJsonFile(resultFile, payload)
+  };
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -21988,7 +22067,10 @@ async function executeRunTaskPlan(args, runtime) {
     summary: `Ran ${steps.length}/${plan.steps.length} task-plan steps with ${failures.length} failures.`,
     nodeIds: []
   });
-  return payload;
+  return {
+    ...payload,
+    outputFiles
+  };
 }
 async function handlePrepareTask(args, runtime) {
   assertRequiredTitleArgument2(args);
@@ -22007,7 +22089,7 @@ async function handlePrepareTask(args, runtime) {
   const resultFile = resolveWorkspaceFile(workspace.sessionDir, resultFileNameForScript(scriptName), "resultFile");
   await ensureWorkspaceDirectories(workspace);
   await writeTaskFile(scriptPath, createTaskScriptTemplate(intentSlug, args), Boolean(args.overwrite));
-  await writeTaskFile(resultFile, JSON.stringify({
+  const resultFileMetadata = await writeTaskFile(resultFile, JSON.stringify({
     ok: null,
     status: "pending",
     sessionId: session?.id,
@@ -22017,9 +22099,10 @@ async function handlePrepareTask(args, runtime) {
     scriptFile: scriptName,
     goal: args.goal
   }, null, 2) + "\n", Boolean(args.overwrite));
+  const responseMode = responseModeFromArgs(args);
   return makeJsonToolResult({
     ok: true,
-    session: session ? publicSession(session) : void 0,
+    session: session ? responseSession(session, responseMode) : void 0,
     task: {
       slug: intentSlug,
       intentSlug,
@@ -22029,7 +22112,7 @@ async function handlePrepareTask(args, runtime) {
       taskDir: workspaceDir,
       workspace,
       scriptPath,
-      resultFile,
+      resultFile: resultFileMetadata,
       overwritten: Boolean(args.overwrite)
     },
     next: [
@@ -22164,12 +22247,17 @@ async function handleInspect(args, runtime) {
     summary: `Inspected ${target}.`,
     nodeIds: collectNodeIds(parsed.json)
   });
+  const responseMode = responseModeFromArgs(args);
   return makeJsonToolResult({
-    ok: true,
-    session: publicSession(session),
-    diagnostics: session.lastDiagnostics,
-    parsed: parsed.json,
-    text: parsed.text
+    ok: !parsed.upstreamError,
+    session: responseSession(session, responseMode),
+    diagnostics: diagnosticsForResponse(session.lastDiagnostics, responseMode),
+    ...upstreamResultFields({
+      parsed,
+      upstream,
+      responseMode
+    }),
+    ...upstreamFailureFields(parsed)
   });
 }
 async function executeValidateHandles(args, runtime) {
@@ -22219,12 +22307,17 @@ async function executeValidateHandles(args, runtime) {
     summary: `Validated ${requested.length} Figma REPL handle(s).`,
     nodeIds: collectNodeIds(parsed.json)
   });
+  const responseMode = responseModeFromArgs(args);
   return {
-    ok: true,
-    session: publicSession(session),
-    diagnostics,
-    parsed: parsed.json,
-    text: parsed.text
+    ok: !parsed.upstreamError,
+    session: responseSession(session, responseMode),
+    diagnostics: diagnosticsForResponse(diagnostics, responseMode),
+    ...upstreamResultFields({
+      parsed,
+      upstream,
+      responseMode
+    }),
+    ...upstreamFailureFields(parsed)
   };
 }
 async function handleCallUpstreamTool(args, runtime) {
@@ -22261,12 +22354,17 @@ async function executeCallUpstreamTool(args, runtime) {
     summary: `Called upstream Figma MCP tool ${args.toolName}.`,
     nodeIds: collectNodeIds(parsed.json)
   });
+  const responseMode = responseModeFromArgs(args);
   return {
-    ok: true,
+    ok: !parsed.upstreamError,
     toolName: args.toolName,
-    result: parsed.json,
-    text: parsed.text,
-    raw: args.includeRawUpstream ? upstream : void 0
+    ...upstreamResultFields({
+      parsed,
+      upstream,
+      responseMode,
+      includeRawUpstream: args.includeRawUpstream
+    }),
+    ...upstreamFailureFields(parsed)
   };
 }
 async function handleLookup(args) {
@@ -23358,7 +23456,8 @@ async function runTaskPlanStep(options) {
   const rawStepArgs = taskPlanStepArguments(options.step);
   const commonArgs = {
     title: asOptionalString3(rawStepArgs.title) ?? options.title,
-    sessionId: asOptionalString3(rawStepArgs.sessionId) ?? options.sessionId
+    sessionId: asOptionalString3(rawStepArgs.sessionId) ?? options.sessionId,
+    responseMode: asOptionalString3(rawStepArgs.responseMode) ?? options.responseMode
   };
   const session = options.runtime.sessions.getOrCreate(commonArgs.sessionId);
   const stepArgs = withTaskPlanDefaultFiles(rawStepArgs, options.type, options.id, session);
@@ -23575,7 +23674,8 @@ function createFileWorkflowPayload() {
       "Use figma_repl_capture_node to write final visual QA captures to a local file; it returns bytes, MIME, dimensions when detectable, sourceUrl, and QA warnings.",
       "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest application, captures, and upstream calls; initialized workspaces get default step output files.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
-      "Use <intentSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files."
+      "Use <intentSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
+      "Default responseMode is compact: read parsed upstream JSON from result, non-JSON output from text, and file pointers from outputFiles. Use full/debug only when needed."
     ]
   };
 }
@@ -23625,7 +23725,13 @@ function createCapabilitiesPayload() {
         "figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool"
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
-      upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma-repl-mcp interface."
+      upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma-repl-mcp interface.",
+      responseModes: {
+        default: "compact",
+        compact: "Small agent-facing payloads: summarized session, non-empty diagnostics only, result-or-text upstream output, outputFiles pointers, and failure fields only when needed.",
+        full: "Expanded inline details without session.history.",
+        debug: "Full session history plus available result, text, and raw upstream MCP payloads."
+      }
     },
     patterns: {
       text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
@@ -23652,7 +23758,7 @@ function createCapabilitiesPayload() {
       options: {
         scriptPath: "Absolute path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
         inputFile: "File name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
-        dryRun: "Read, diagnose, inject helpers, and return compiledScript without calling upstream Figma.",
+        dryRun: "Read, diagnose, and inject helpers without calling upstream Figma. Use responseMode=full or debug when compiledScript is needed inline.",
         strict: "Promote warnings to fatal diagnostics.",
         expectedSurface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
         targetPageId: "Switch once to a known page before the script body runs.",
@@ -23660,7 +23766,7 @@ function createCapabilitiesPayload() {
         helperProfile: "auto, minimal, asset, clone, or full. Defaults to auto to keep upstream payloads smaller while injecting heavy helpers only when source uses them.",
         outputFile: "File name inside the initialized file-context folder. Defaults to the input script basename plus .result.json.",
         outputDir: "Advanced absolute directory escape hatch for split output files.",
-        resultFile: "Advanced absolute file path, outputDir-relative JSON path, or file-context-folder file name for full result output.",
+        resultFile: "Advanced absolute file path, outputDir-relative JSON path, or file-context-folder file name for response-mode-shaped result output.",
         diagnosticsFile: "Advanced optional JSON file when diagnostics must be split out of the paired result file.",
         summaryFile: "Advanced optional Markdown file when a separate summary is required.",
         inlineResultLimit: "Non-negative byte cap for large inline fields; omitted fields stay available in the paired result file."
@@ -24089,6 +24195,92 @@ function summarizeParsedResult(parsed) {
   if (typeof result === "string") return result.slice(0, 160);
   if (parsed.text) return parsed.text.slice(0, 160);
   return "Figma REPL command completed.";
+}
+function responseModeFromArgs(args) {
+  if (args.responseMode === "full" || args.responseMode === "debug") {
+    return args.responseMode;
+  }
+  if (args.returnMode === "raw") {
+    return "debug";
+  }
+  return "compact";
+}
+function diagnosticsForResponse(diagnostics, mode) {
+  if (!diagnostics || diagnostics.length === 0) {
+    return mode === "compact" ? void 0 : diagnostics;
+  }
+  return diagnostics;
+}
+function compactSession(session) {
+  return {
+    id: session.id,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    currentPageId: session.currentPageId,
+    knownPageCount: Object.keys(session.knownPages).length,
+    handleCount: Object.keys(session.handles).length,
+    workspace: session.workspace ? {
+      fileContext: session.workspace.fileContext,
+      files: session.workspace.files
+    } : void 0
+  };
+}
+function responseSession(session, mode) {
+  if (mode === "debug") {
+    return publicSession(session, { includeHistory: true });
+  }
+  if (mode === "full") {
+    return publicSession(session, { includeHistory: false });
+  }
+  return compactSession(session);
+}
+function responseScriptMetadata(metadata, mode) {
+  if (mode !== "compact") {
+    return metadata;
+  }
+  return {
+    scriptPath: metadata.scriptPath,
+    sourceLineCount: metadata.sourceLineCount,
+    targetPageId: metadata.targetPageId,
+    diagnosticsCount: metadata.diagnosticsCount,
+    dryRun: metadata.dryRun,
+    executed: metadata.executed
+  };
+}
+function responseEvalSettingsFields(evalSettings, mode) {
+  if (mode === "compact") {
+    return {};
+  }
+  return {
+    upstreamTool: evalSettings.toolName,
+    upstreamArgument: evalSettings.argumentName
+  };
+}
+function upstreamResultFields(options) {
+  const fields = {};
+  if (options.parsed.json !== void 0) {
+    fields.result = responseUpstreamJson(options.parsed.json, options.responseMode);
+  }
+  if (options.parsed.json === void 0 || options.responseMode === "debug") {
+    fields.text = options.parsed.text || void 0;
+  }
+  if (options.responseMode === "debug" || options.responseMode === "full" && options.includeRawUpstream) {
+    fields.raw = options.upstream;
+  }
+  return fields;
+}
+function responseUpstreamJson(value, mode) {
+  if (mode !== "compact") {
+    return value;
+  }
+  const record2 = asRecord3(value);
+  return record2.result !== void 0 ? record2.result : value;
+}
+function upstreamFailureFields(parsed) {
+  return {
+    upstreamError: parsed.upstreamError,
+    primaryFix: parsed.primaryFix
+  };
 }
 function publicSession(session, options = {}) {
   const includeHistory = options.includeHistory ?? true;

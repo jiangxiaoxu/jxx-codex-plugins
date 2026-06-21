@@ -57,6 +57,8 @@ The plugin's `.mcp.json` installs:
 
 `figma-repl-mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.js` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, screenshot/capture output, task plans, process-local handles, and explicit delegated upstream official tools for uncovered capabilities.
 
+Local `figma_repl_*` tools default to `responseMode: "compact"`. Compact responses use `result` for parsed upstream JSON, fall back to `text` when JSON is unavailable, omit empty diagnostics and raw upstream payloads, and point large data to `outputFiles` entries shaped as `{ path, bytes, lineCount }`. Use `responseMode: "full"` for expanded inline details or `responseMode: "debug"` when you need session history, raw upstream text, and raw upstream MCP payloads.
+
 `figma-stdio` is not installed as a persistent plugin server by default. Keep using `figma-repl-mcp` for agent work; use `figma-stdio` only through the package CLI or Node API for parity checks and raw official MCP debugging.
 
 ## Agent Workflow

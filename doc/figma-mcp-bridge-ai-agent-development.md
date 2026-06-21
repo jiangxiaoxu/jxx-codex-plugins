@@ -29,6 +29,8 @@ Pin these facts when changing the router surface:
 - exposed resources include the `figma-repl://capabilities`, `guide`, `file-workflow`, `workflow-tools`, `scripts`, `patterns`, `api-cards`, `intents`, `docs`, `api`, `safety`, `upstream-tools`, and `sessions` family;
 - `figma_repl_guidance` returns `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`;
 - public `figma_repl_*` tools are exactly `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, `figma_repl_run_task_plan`, `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_inspect`, `figma_repl_call_upstream_tool`, and `figma_repl_lookup`;
+- every public `figma_repl_*` tool accepts `responseMode: "compact" | "full" | "debug"` with compact as the default; compact responses use `result` for parsed upstream JSON, fall back to `text`, omit empty diagnostics/raw payloads, and use `outputFiles` for `{ path, bytes, lineCount }` file pointers;
+- `responseMode: "full"` keeps expanded inline details without `session.history`; `responseMode: "debug"` includes full session history and available raw upstream text/MCP payloads;
 - bundled corpus files are internal lookup data, not agent-facing docs;
 - `figma_repl_call_upstream_tool` is only for explicit uncovered upstream capabilities.
 

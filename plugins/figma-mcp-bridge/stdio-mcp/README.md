@@ -67,6 +67,12 @@ const tools = await upstream.listTools();
 await upstream.close();
 ```
 
+## REPL Response Modes
+
+Every local `figma_repl_*` tool accepts `responseMode: "compact" | "full" | "debug"` and defaults to `"compact"`. Compact responses keep inline output small: `session` is summarized, empty `diagnostics` are omitted, upstream JSON is returned as `result`, non-JSON upstream output falls back to `text`, and file pointers are under `outputFiles` as `{ path, bytes, lineCount }`.
+
+Use `"full"` when you need expanded inline details without `session.history`. Use `"debug"` when diagnosing upstream behavior; debug includes full session history plus available `result`, `text`, and raw upstream MCP payloads.
+
 ## REPL File Workflow
 
 `figma_repl_run_script_file` is the primary path for non-trivial Plugin API work. Prefer preparing one workspace per Figma file, then use file names instead of absolute paths:
