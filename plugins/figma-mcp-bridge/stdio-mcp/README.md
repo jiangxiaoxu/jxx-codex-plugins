@@ -67,11 +67,11 @@ const tools = await upstream.listTools();
 await upstream.close();
 ```
 
-## REPL Response Modes
+## REPL Response Shape
 
-Every local `figma_repl_*` tool accepts `responseMode: "compact" | "full" | "debug"` and defaults to `"compact"`. Compact responses keep inline output small: `session` is summarized, empty `diagnostics` are omitted, upstream JSON is returned as `result`, non-JSON upstream output falls back to `text`, and file pointers are under `outputFiles` as `{ path, bytes, lineCount }`.
+Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, upstream JSON is returned as `result`, non-JSON upstream output falls back to `text`, and file pointers are under `outputFiles` as `{ path, bytes, lineCount }`.
 
-Use `"full"` when you need expanded inline details without `session.history`. Use `"debug"` when diagnosing upstream behavior; debug includes full session history plus available `result`, `text`, and raw upstream MCP payloads.
+Raw upstream payloads are written only to output/result files, never returned inline in MCP structuredContent. Executed `figma_repl_run_script_file` result files include `raw`, parsed as JSON/object when upstream text is JSON, and the corresponding `outputFiles.resultFile` pointer includes `rawBytes`.
 
 ## REPL File Workflow
 

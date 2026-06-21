@@ -14,7 +14,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 3. If direct `figma_repl_*` tools are not installed in the active Codex environment, use the package-local Node API `createFigmaReplClient` against the same OAuth cache.
 4. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
 5. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-6. Keep the default compact responses unless debugging; use `responseMode: "full"` for expanded inline details and `responseMode: "debug"` for session history plus raw upstream payloads.
+6. Local `figma_repl_*` responses use a fixed structured shape; read large or raw upstream payloads from `outputFiles`, using `rawBytes` on file metadata to decide whether to inspect a result file.
 
 ## Primary File Workflow
 

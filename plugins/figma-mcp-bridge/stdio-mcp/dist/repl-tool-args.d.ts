@@ -1,9 +1,7 @@
 import type { FigmaReplHelperProfile, FigmaReplSurface } from "./repl-script-runner.js";
-export type FigmaReplResponseMode = "compact" | "full" | "debug";
 export interface FigmaReplOpenArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     sessionId?: string;
     label?: string;
     fileUrl?: string;
@@ -20,23 +18,19 @@ export interface FigmaReplOpenArguments {
 export interface FigmaReplEvalArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     sessionId?: string;
     code: string;
     mode?: "read" | "write";
     expectedSurface?: FigmaReplSurface;
-    returnMode?: "auto" | "json" | "text" | "raw";
     allowDangerousOperations?: boolean;
     upstreamTool?: string;
     upstreamArgument?: string;
     upstreamArguments?: Record<string, unknown>;
     handleUpdates?: Record<string, string>;
-    includeRawUpstream?: boolean;
 }
 export interface FigmaReplRunScriptFileArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     sessionId?: string;
     scriptPath?: string;
     inputFile?: string;
@@ -49,7 +43,6 @@ export interface FigmaReplRunScriptFileArguments {
     upstreamTool?: string;
     upstreamArgument?: string;
     upstreamArguments?: Record<string, unknown>;
-    includeRawUpstream?: boolean;
     outputDir?: string;
     outputFile?: string;
     resultFile?: string;
@@ -72,7 +65,6 @@ export interface FigmaReplAssetManifestAsset {
 export interface FigmaReplApplyAssetManifestArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     sessionId?: string;
     assets?: FigmaReplAssetManifestAsset[];
     manifestPath?: string;
@@ -88,7 +80,6 @@ export interface FigmaReplApplyAssetManifestArguments {
 export interface FigmaReplCaptureNodeArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     sessionId?: string;
     nodeId?: string;
     targetNodeId?: string;
@@ -111,7 +102,6 @@ export interface FigmaReplTaskPlanStep {
 export interface FigmaReplRunTaskPlanArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     sessionId?: string;
     planPath?: string;
     steps?: FigmaReplTaskPlanStep[];
@@ -123,17 +113,14 @@ export interface FigmaReplRunTaskPlanArguments {
 export interface FigmaReplCallUpstreamToolArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     sessionId?: string;
     toolName: string;
     arguments?: Record<string, unknown>;
     refresh?: boolean;
-    includeRawUpstream?: boolean;
 }
 export interface FigmaReplLookupArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     kind?: "docs" | "api";
     query?: string;
     symbol?: string;
@@ -143,7 +130,6 @@ export interface FigmaReplLookupArguments {
 export interface FigmaReplPrepareTaskArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     sessionId?: string;
     intent?: string;
     task?: string;
@@ -168,7 +154,6 @@ export interface FigmaReplPrepareTaskArguments {
 export interface FigmaReplGuidanceArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     mode?: "guidance" | "plan" | "card" | "catalog";
     card?: string;
     query?: string;
@@ -183,7 +168,6 @@ export interface FigmaReplGuidanceArguments {
 export interface FigmaReplInspectArguments {
     [key: string]: unknown;
     title?: string;
-    responseMode?: FigmaReplResponseMode;
     sessionId?: string;
     mode?: "inspect" | "validate";
     target?: string;
