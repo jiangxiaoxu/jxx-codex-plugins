@@ -5,8 +5,8 @@ Local bridge and plugin bundle for using the official Figma MCP server from Code
 The plugin provides:
 
 - an HTTP OAuth bridge for initial login and standalone debugging;
-- `figma-stdio`, a transparent stdio frontend for the official remote MCP server;
-- `figma-repl-mcp`, the preferred agent-facing facade for file-based Figma Plugin API work.
+- `figma-repl-mcp`, the preferred agent-facing facade for file-based Figma Plugin API work;
+- optional Node/CLI plumbing for a transparent upstream bridge when debugging official MCP behavior.
 
 ## OAuth Cache
 
@@ -37,7 +37,7 @@ Run the transient login helper from this plugin root:
 npm run login:figma-http
 ```
 
-The helper adds a temporary `figma-http` Codex MCP entry, runs browser OAuth through `http://127.0.0.1:18766/mcp`, then removes that temporary entry. Do not install `figma-http` as a persistent MCP server; the persistent plugin servers are `figma-stdio` and `figma-repl-mcp`.
+The helper adds a temporary `figma-http` Codex MCP entry, runs browser OAuth through `http://127.0.0.1:18766/mcp`, then removes that temporary entry. Do not install `figma-http` as a persistent MCP server; the persistent plugin server is `figma-repl-mcp`.
 
 ## Bundled MCP Servers
 
@@ -46,11 +46,6 @@ The plugin's `.mcp.json` installs:
 ```json
 {
   "mcpServers": {
-    "figma-stdio": {
-      "command": "node",
-      "cwd": ".",
-      "args": ["./stdio-mcp/dist/stdio-cli.js"]
-    },
     "figma-repl-mcp": {
       "command": "node",
       "cwd": ".",
@@ -60,9 +55,9 @@ The plugin's `.mcp.json` installs:
 }
 ```
 
-`figma-stdio` is the transparent upstream bridge. Use it for parity checks or raw official MCP debugging.
-
 `figma-repl-mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.js` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, screenshot/capture output, task plans, process-local handles, and explicit delegated upstream official tools for uncovered capabilities.
+
+`figma-stdio` is not installed as a persistent plugin server by default. Keep using `figma-repl-mcp` for agent work; use `figma-stdio` only through the package CLI or Node API for parity checks and raw official MCP debugging.
 
 ## Agent Workflow
 
@@ -100,6 +95,19 @@ await figma.close();
 ```
 
 `oauthCachePath` must be an absolute path to the existing bridge OAuth cache JSON file.
+
+For direct upstream debugging from Node or `node_repl`, use `createRemoteMcpClient`:
+
+```js
+const { createRemoteMcpClient } = await import("./stdio-mcp/dist/node-repl.js");
+
+const upstream = createRemoteMcpClient({
+  oauthCachePath: "C:/Users/you/.codex/.figma-mcp-bridge-oauth.json",
+});
+await upstream.connect();
+const tools = await upstream.listTools();
+await upstream.close();
+```
 
 ## Local Development
 

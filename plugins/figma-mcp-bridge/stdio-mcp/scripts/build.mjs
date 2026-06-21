@@ -32,6 +32,11 @@ const outputs = [
     bundle: true,
   },
   {
+    entryPoint: resolve(root, "src/node-repl.ts"),
+    outfile: resolve(dist, "node-repl.js"),
+    bundle: true,
+  },
+  {
     entryPoint: resolve(root, "src/repl-cli.ts"),
     outfile: resolve(dist, "repl-cli.js"),
     bundle: true,

@@ -66,7 +66,7 @@ command: npm run login:figma-http
 
 The helper starts the local HTTP bridge, temporarily logs in through `figma-http`, then removes that temporary MCP entry. After browser OAuth, use the resolver below when a script or programmatic client needs the shared cache path.
 
-Do not add persistent `figma-http`; the plugin's persistent MCP servers are `figma-stdio` and `figma-repl-mcp`.
+Do not add persistent `figma-http`; the plugin's persistent MCP server is `figma-repl-mcp`.
 
 To resolve the shared OAuth cache path for scripts or programmatic clients, run this from the plugin root:
 
@@ -78,4 +78,4 @@ command: npm run oauth-cache:path
 ## Bundled Servers
 
 - `figma-repl-mcp`: primary agent-facing facade after OAuth registration. It runs local `.figma.js` files, writes local output files, exposes compact docs/API lookup, stores process-local handles, can capture screenshots, applies generated assets, and delegates uncovered official capabilities.
-- `figma-stdio`: transparent stdio bridge to the official remote Figma MCP server. Keep for upstream debugging and parity checks.
+- `figma-stdio`: optional transparent bridge for upstream debugging and parity checks. It is not installed as a persistent plugin MCP server by default; use the package CLI or Node API `createRemoteMcpClient` when raw official MCP access is required.
