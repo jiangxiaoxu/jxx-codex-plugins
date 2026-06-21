@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
@@ -18,9 +17,115 @@ import {
   createRemoteMcpClient,
   type RemoteMcpClientOptions,
 } from "./client.js";
+import {
+  API_LOOKUP_FILES,
+  DEFAULT_DOCS_SEARCH_MAX_RESULTS,
+  DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
+  DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
+  DOCS_SEARCH_ALLOWLIST,
+  MAX_DOCS_SEARCH_RESULTS,
+  MAX_DOCS_SEARCH_SNIPPET_LINES,
+  type ReferenceSearchResult,
+  normalizeLookupQuery,
+  searchReferenceFiles,
+} from "./repl-doc-search.js";
+import {
+  FIGMA_REPL_API_CARDS,
+  FIGMA_REPL_COMMON_TASK_LABELS,
+  FIGMA_REPL_INTENT_EXAMPLE_QUERIES,
+  FIGMA_REPL_QUERY_OUTPUT_FIELDS,
+  FIGMA_REPL_QUERY_SEARCH_ANCHORS,
+  chooseApiCardsForIntent,
+  searchApiCards,
+  uniqueStrings,
+} from "./repl-guidance-catalog.js";
+import {
+  assertSafeFigmaReplCode,
+  compileFigmaReplScriptFile,
+  diagnoseFigmaReplCode,
+  diagnoseFigmaReplContext,
+  diagnoseWrappedScriptSize,
+  throwIfFatalDiagnostics,
+  type FigmaReplDiagnostic,
+  type FigmaReplDiagnosticsOptions,
+  type FigmaReplDiagnosticSeverity,
+  type FigmaReplFileDiagnostic,
+  type FigmaReplHelperProfile,
+  type FigmaReplSurface,
+} from "./repl-script-runner.js";
+import {
+  assertRequiredTitleArgument,
+  asApiCardArgs,
+  asApiLookupArgs,
+  asApplyAssetManifestArgs,
+  asCallUpstreamToolArgs,
+  asCaptureNodeArgs,
+  asDocsSearchArgs,
+  asEvalArgs,
+  asInitWorkspaceArgs,
+  asPlanTaskArgs,
+  asPrepareTaskArgs,
+  asRunScriptFileArgs,
+  asRunTaskPlanArgs,
+  asSuggestApiArgs,
+  withDefaultTitle,
+} from "./repl-tool-args.js";
+import type {
+  FigmaReplApiCardArguments,
+  FigmaReplApiLookupArguments,
+  FigmaReplApplyAssetManifestArguments,
+  FigmaReplCallUpstreamToolArguments,
+  FigmaReplCaptureNodeArguments,
+  FigmaReplDocsSearchArguments,
+  FigmaReplEvalArguments,
+  FigmaReplInitWorkspaceArguments,
+  FigmaReplOpenArguments,
+  FigmaReplPlanTaskArguments,
+  FigmaReplPrepareTaskArguments,
+  FigmaReplRunScriptFileArguments,
+  FigmaReplRunTaskPlanArguments,
+  FigmaReplSuggestApiArguments,
+  FigmaReplTaskPlanStep,
+} from "./repl-tool-args.js";
+import { createReplToolDescriptions } from "./repl-tool-metadata.js";
+import {
+  isLocalReplToolName,
+  normalizeTaskPlanStepType as normalizeTaskPlanStepTypeAlias,
+} from "./repl-tool-registry.js";
 import type { FigmaMcpProxyClient } from "./stdio-server.js";
 
 export const FIGMA_REPL_DEFAULT_SESSION_ID = "default";
+
+export {
+  assertSafeFigmaReplCode,
+  diagnoseFigmaReplCode,
+};
+export type {
+  FigmaReplDiagnostic,
+  FigmaReplDiagnosticsOptions,
+  FigmaReplDiagnosticSeverity,
+  FigmaReplFileDiagnostic,
+  FigmaReplHelperProfile,
+  FigmaReplSurface,
+};
+export type {
+  FigmaReplApiCardArguments,
+  FigmaReplApiLookupArguments,
+  FigmaReplApplyAssetManifestArguments,
+  FigmaReplAssetManifestAsset,
+  FigmaReplCallUpstreamToolArguments,
+  FigmaReplCaptureNodeArguments,
+  FigmaReplDocsSearchArguments,
+  FigmaReplEvalArguments,
+  FigmaReplInitWorkspaceArguments,
+  FigmaReplOpenArguments,
+  FigmaReplPlanTaskArguments,
+  FigmaReplPrepareTaskArguments,
+  FigmaReplRunScriptFileArguments,
+  FigmaReplRunTaskPlanArguments,
+  FigmaReplSuggestApiArguments,
+  FigmaReplTaskPlanStep,
+} from "./repl-tool-args.js";
 
 const DEFAULT_EVAL_TOOL_NAME = "use_figma";
 const DEFAULT_EVAL_ARGUMENT_CANDIDATES = [
@@ -31,70 +136,10 @@ const DEFAULT_EVAL_ARGUMENT_CANDIDATES = [
   "command",
 ];
 const DEFAULT_HISTORY_LIMIT = 50;
-const TOOL_TITLE_ARGUMENT = "title";
-const DEFAULT_DOCS_SEARCH_MAX_RESULTS = 5;
-const DEFAULT_DOCS_SEARCH_SNIPPET_LINES = 3;
-const MAX_DOCS_SEARCH_RESULTS = 10;
-const MAX_DOCS_SEARCH_SNIPPET_LINES = 8;
-const MAX_LOOKUP_QUERY_LENGTH = 120;
 const DEFAULT_INLINE_RESULT_LIMIT = 4_000;
 const MAX_INLINE_RESULT_LIMIT = 1_000_000;
 const TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 const DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
-const LOCAL_REPL_TOOL_NAMES = new Set([
-  "figma_repl_capabilities",
-  "figma_repl_open",
-  "figma_repl_eval",
-  "figma_repl_run_script_file",
-  "figma_repl_apply_asset_manifest",
-  "figma_repl_capture_node",
-  "figma_repl_run_task_plan",
-  "figma_repl_init_workspace",
-  "figma_repl_prepare_task",
-  "figma_repl_plan_task",
-  "figma_repl_api_card",
-  "figma_repl_suggest_api",
-  "figma_repl_inspect",
-  "figma_repl_cache_get",
-  "figma_repl_validate_handles",
-  "figma_repl_list_upstream_tools",
-  "figma_repl_call_upstream_tool",
-  "figma_repl_docs_search",
-  "figma_repl_api_lookup",
-]);
-const DOCS_SEARCH_ALLOWLIST = [
-  "figma-use.md",
-  "figma-create-new-file.md",
-  "figma-code-connect.md",
-  "figma-generate-design.md",
-  "figma-generate-diagram.md",
-  "figma-generate-library.md",
-  "figma-use-figjam.md",
-  "figma-use-slides.md",
-  "plugin-api-lookup.md",
-  "plugin-api-standalone.md",
-  "official-figma-skills/figma-use/SKILL.source.md",
-  "official-figma-skills/figma-use/references/api-reference.md",
-  "official-figma-skills/figma-use/references/common-patterns.md",
-  "official-figma-skills/figma-use/references/component-patterns.md",
-  "official-figma-skills/figma-use/references/effect-style-patterns.md",
-  "official-figma-skills/figma-use/references/gotchas.md",
-  "official-figma-skills/figma-use/references/plugin-api-patterns.md",
-  "official-figma-skills/figma-use/references/text-style-patterns.md",
-  "official-figma-skills/figma-use/references/validation-and-recovery.md",
-  "official-figma-skills/figma-use/references/variable-patterns.md",
-  "official-figma-skills/figma-use/references/working-with-design-systems/wwds.md",
-  "official-figma-skills/figma-use/references/working-with-design-systems/wwds-components.md",
-  "official-figma-skills/figma-use/references/working-with-design-systems/wwds-variables.md",
-  "official-figma-skills/figma-generate-library/SKILL.source.md",
-  "official-figma-skills/figma-generate-library/references/component-creation.md",
-  "official-figma-skills/figma-generate-library/references/discovery-phase.md",
-  "official-figma-skills/figma-generate-library/references/token-creation.md",
-  "official-figma-skills/figma-code-connect/SKILL.source.md",
-  "official-figma-skills/figma-code-connect/references/api.md",
-  "official-figma-skills/figma-use-figjam/SKILL.source.md",
-  "official-figma-skills/figma-use-slides/SKILL.source.md",
-];
 const DEFAULT_ASSET_TOOL_CANDIDATES = [
   "upload_assets",
   "upload_asset",
@@ -107,123 +152,6 @@ const DEFAULT_SCREENSHOT_TOOL_CANDIDATES = [
   "take_screenshot",
   "screenshot",
 ];
-const API_LOOKUP_FILES = [
-  "official-figma-skills/figma-use/references/plugin-api-standalone.index.md",
-  "official-figma-skills/figma-use/references/api-reference.md",
-  "official-figma-skills/figma-use/references/plugin-api-standalone.d.ts",
-];
-const FIGMA_REPL_API_CARDS: FigmaReplApiCard[] = [
-  {
-    id: "nodes",
-    title: "Create and update Design nodes",
-    intents: ["create", "frame", "rectangle", "ui", "layout"],
-    surface: "design",
-    helpers: ["$.create", "$.checkpoint"],
-    pluginApi: ["figma.createFrame", "figma.createRectangle", "resize", "appendChild"],
-    pitfalls: ["Set size before auto-layout if fixed dimensions matter.", "Remember handles with `as` for later repair."],
-  },
-  {
-    id: "text",
-    title: "Text and font-safe edits",
-    intents: ["text", "font", "copy", "label", "typography"],
-    surface: "design",
-    helpers: ["$.text", "figma_repl_api_lookup"],
-    pluginApi: ["figma.createText", "figma.loadFontAsync", "TextNode.characters"],
-    pitfalls: ["Always load the target font before changing characters or fontName.", "Use text styles for reusable typography."],
-  },
-  {
-    id: "auto-layout",
-    title: "Auto layout",
-    intents: ["layout", "spacing", "padding", "stack", "responsive"],
-    surface: "design",
-    helpers: ["$.layout", "$.create"],
-    pluginApi: ["layoutMode", "itemSpacing", "paddingLeft", "primaryAxisSizingMode"],
-    pitfalls: ["Use valid uppercase layout modes.", "Apply layout to frames, components, or component sets only."],
-  },
-  {
-    id: "variables",
-    title: "Variables and color tokens",
-    intents: ["variable", "token", "color", "theme", "mode"],
-    surface: "design",
-    helpers: ["figma_repl_api_lookup", "figma_repl_run_script_file"],
-    pluginApi: ["figma.variables.createVariableCollection", "figma.variables.createVariable", "setValueForMode"],
-    pitfalls: ["Variable APIs require Design files.", "Use native Plugin API calls in .figma.js for token creation."],
-  },
-  {
-    id: "styles",
-    title: "Text and paint styles",
-    intents: ["style", "paint", "typography", "library"],
-    surface: "design",
-    helpers: ["figma_repl_api_lookup", "figma_repl_run_script_file"],
-    pluginApi: ["figma.createTextStyle", "figma.createPaintStyle", "TextNode.textStyleId", "fills"],
-    pitfalls: ["Style creation is local to the file until published.", "Load fonts before setting text style font names."],
-  },
-  {
-    id: "components",
-    title: "Components and variants",
-    intents: ["component", "variant", "instance", "design system"],
-    surface: "design",
-    helpers: ["$.create", "figma_repl_api_lookup"],
-    pluginApi: ["figma.createComponent", "figma.combineAsVariants", "ComponentNode.createInstance"],
-    pitfalls: ["Variant combining requires component nodes.", "Use handles for source components before creating instances."],
-  },
-  {
-    id: "selection",
-    title: "Selection, query, and inspection",
-    intents: ["find", "select", "inspect", "query", "validate"],
-    surface: "any",
-    helpers: ["$.find", "$.findAll", "$.select", "$.inspect", "figma_repl_validate_handles"],
-    pluginApi: ["figma.currentPage.selection", "findAll", "getNodeByIdAsync"],
-    pitfalls: ["Avoid root-wide searches in large files.", "Use $.select instead of direct figma.currentPage.selection writes.", "Validate stale handles before mutation."],
-  },
-  {
-    id: "clone",
-    title: "Clone an existing node tree",
-    intents: ["clone", "copy", "duplicate", "side by side", "preserve instance"],
-    surface: "design",
-    helpers: ["$.cloneNodeTree", "$.select", "$.checkpoint"],
-    pluginApi: ["SceneNode.clone", "appendChild", "remove"],
-    pitfalls: ["Clone outer-to-inner when rebuilding children.", "Preserve instance subtrees whole; Figma does not allow rebuilding internal instance children."],
-  },
-  {
-    id: "pages",
-    title: "Page targeting",
-    intents: ["page", "surface", "current page", "navigation"],
-    surface: "any",
-    helpers: ["targetPageId", "figma_repl_open"],
-    pluginApi: ["figma.setCurrentPageAsync", "PageNode"],
-    pitfalls: ["Do not assign `figma.currentPage` directly.", "Use one page switch per transaction."],
-  },
-];
-
-export type FigmaReplSurface = "design" | "figjam" | "slides";
-
-export type FigmaReplDiagnosticSeverity = "fatal" | "warning";
-
-export interface FigmaReplDiagnostic {
-  code: string;
-  severity: FigmaReplDiagnosticSeverity;
-  message: string;
-  suggestion: string;
-  docsHint: string;
-}
-
-export interface FigmaReplFileDiagnostic extends FigmaReplDiagnostic {
-  source: {
-    scriptPath: string;
-    line?: number;
-    column?: number;
-  };
-}
-
-export interface FigmaReplDiagnosticsOptions {
-  allowDangerousOperations?: boolean;
-  mode?: "read" | "write";
-  generatedCode?: boolean;
-  expectedSurface?: FigmaReplSurface;
-  strict?: boolean;
-}
-
 export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
   client?: FigmaMcpProxyClient;
   name?: string;
@@ -242,23 +170,6 @@ export interface FigmaReplClientOptions extends FigmaReplMcpServerOptions {
    * This is a Node REPL-friendly alias for statePath.
    */
   oauthCachePath?: string;
-}
-
-export interface FigmaReplOpenArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  label?: string;
-  fileUrl?: string;
-  expectedSurface?: FigmaReplSurface;
-  currentPageId?: string;
-  reset?: boolean;
-  connect?: boolean;
-  refresh?: boolean;
-  upstreamTool?: string;
-  upstreamArgument?: string;
-  upstreamArguments?: Record<string, unknown>;
-  handles?: Record<string, string>;
 }
 
 export interface FigmaReplClient {
@@ -344,203 +255,6 @@ export interface FigmaReplSessionStore {
   rememberHistory(session: FigmaReplSession, entry: FigmaReplHistoryEntry): void;
 }
 
-export interface FigmaReplEvalArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  code: string;
-  mode?: "read" | "write";
-  expectedSurface?: FigmaReplSurface;
-  returnMode?: "auto" | "json" | "text" | "raw";
-  allowDangerousOperations?: boolean;
-  upstreamTool?: string;
-  upstreamArgument?: string;
-  upstreamArguments?: Record<string, unknown>;
-  handleUpdates?: Record<string, string>;
-  includeRawUpstream?: boolean;
-}
-
-export interface FigmaReplRunScriptFileArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  scriptPath?: string;
-  inputFile?: string;
-  helperProfile?: FigmaReplHelperProfile;
-  dryRun?: boolean;
-  strict?: boolean;
-  expectedSurface?: FigmaReplSurface;
-  targetPageId?: string;
-  allowDangerousOperations?: boolean;
-  upstreamTool?: string;
-  upstreamArgument?: string;
-  upstreamArguments?: Record<string, unknown>;
-  includeRawUpstream?: boolean;
-  outputDir?: string;
-  outputFile?: string;
-  resultFile?: string;
-  diagnosticsFile?: string;
-  summaryFile?: string;
-  inlineResultLimit?: number;
-}
-
-export interface FigmaReplAssetManifestAsset {
-  [key: string]: unknown;
-  path?: string;
-  filePath?: string;
-  localPath?: string;
-  targetNodeId?: string;
-  nodeId?: string;
-  name?: string;
-  metadata?: Record<string, unknown>;
-  toolName?: string;
-  arguments?: Record<string, unknown>;
-}
-
-export interface FigmaReplApplyAssetManifestArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  assets?: FigmaReplAssetManifestAsset[];
-  manifestPath?: string;
-  toolName?: string;
-  arguments?: Record<string, unknown>;
-  argumentsTemplate?: Record<string, unknown>;
-  validateTargets?: boolean;
-  refresh?: boolean;
-  resultFile?: string;
-  outputFile?: string;
-  inlineResultLimit?: number;
-}
-
-export interface FigmaReplCaptureNodeArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  nodeId?: string;
-  targetNodeId?: string;
-  outputFile?: string;
-  resultFile?: string;
-  toolName?: string;
-  arguments?: Record<string, unknown>;
-  argumentsTemplate?: Record<string, unknown>;
-  refresh?: boolean;
-  inlineResultLimit?: number;
-}
-
-export interface FigmaReplTaskPlanStep {
-  [key: string]: unknown;
-  id?: string;
-  type?: string;
-  tool?: string;
-  args?: Record<string, unknown>;
-  arguments?: Record<string, unknown>;
-}
-
-export interface FigmaReplRunTaskPlanArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  planPath?: string;
-  steps?: FigmaReplTaskPlanStep[];
-  stopOnFailure?: boolean;
-  resultFile?: string;
-  outputFile?: string;
-  inlineResultLimit?: number;
-}
-
-export interface FigmaReplInitWorkspaceArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  intent?: string;
-  task?: string;
-  fileUrl?: string;
-  fileKey?: string;
-  fileSlug?: string;
-  cwd: string;
-  dirName?: string;
-  overwrite?: boolean;
-}
-
-export interface FigmaReplCallUpstreamToolArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  toolName: string;
-  arguments?: Record<string, unknown>;
-  refresh?: boolean;
-  includeRawUpstream?: boolean;
-}
-
-export interface FigmaReplDocsSearchArguments {
-  [key: string]: unknown;
-  title?: string;
-  query: string;
-  maxResults?: number;
-  maxSnippetLines?: number;
-}
-
-export interface FigmaReplApiLookupArguments {
-  [key: string]: unknown;
-  title?: string;
-  symbol: string;
-  maxResults?: number;
-  maxSnippetLines?: number;
-}
-
-export interface FigmaReplPrepareTaskArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  intent?: string;
-  task?: string;
-  fileUrl?: string;
-  fileKey?: string;
-  fileSlug?: string;
-  goal?: string;
-  taskSlug?: string;
-  taskName?: string;
-  taskDir?: string;
-  fileName?: string;
-  taskRoot?: string;
-  workspaceDir?: string;
-  scriptName?: string;
-  expectedSurface?: FigmaReplSurface;
-  targetPageId?: string;
-  template?: string;
-  overwrite?: boolean;
-}
-
-export interface FigmaReplPlanTaskArguments {
-  [key: string]: unknown;
-  title?: string;
-  goal?: string;
-  surface?: FigmaReplSurface;
-  workflow?: string;
-  task?: string;
-  expectedSurface?: FigmaReplSurface;
-  intent?: string;
-}
-
-export interface FigmaReplApiCardArguments {
-  [key: string]: unknown;
-  title?: string;
-  card?: string;
-  query?: string;
-  maxCards?: number;
-}
-
-export interface FigmaReplSuggestApiArguments {
-  [key: string]: unknown;
-  title?: string;
-  task?: string;
-  intent: string;
-  surface?: FigmaReplSurface;
-  expectedSurface?: FigmaReplSurface;
-  maxCards?: number;
-}
-
 interface UpstreamToolInfo {
   name: string;
   description?: string;
@@ -568,31 +282,11 @@ interface FigmaReplUpstreamError {
   parsed?: unknown;
 }
 
-interface ReferenceSearchResult {
-  file: string;
-  lineStart: number;
-  lineEnd: number;
-  score: number;
-  snippet: string;
-}
-
-interface FigmaReplApiCard {
-  id: string;
-  title: string;
-  intents: string[];
-  surface: FigmaReplSurface | "any";
-  helpers: string[];
-  pluginApi: string[];
-  pitfalls: string[];
-}
-
 interface ScriptOutputFilePaths {
   resultFile?: string;
   diagnosticsFile?: string;
   summaryFile?: string;
 }
-
-export type FigmaReplHelperProfile = "auto" | "minimal" | "asset" | "clone" | "full";
 
 interface NormalizedAssetManifest {
   assets: NormalizedAssetManifestAsset[];
@@ -725,32 +419,24 @@ export function createFigmaReplClient(
         ),
       ),
     runScriptFile: async (args) =>
-      parseJsonToolResult(
-        await handleRunScriptFile(
-          asRunScriptFileArgs(withDefaultTitle(args, "Run Figma JavaScript file")),
-          runtime,
-        ),
+      executeRunScriptFile(
+        asRunScriptFileArgs(withDefaultTitle(args, "Run Figma JavaScript file")),
+        runtime,
       ),
     applyAssetManifest: async (args) =>
-      parseJsonToolResult(
-        await handleApplyAssetManifest(
-          asApplyAssetManifestArgs(withDefaultTitle(args, "Apply Figma asset manifest")),
-          runtime,
-        ),
+      executeApplyAssetManifest(
+        asApplyAssetManifestArgs(withDefaultTitle(args, "Apply Figma asset manifest")),
+        runtime,
       ),
     captureNode: async (args) =>
-      parseJsonToolResult(
-        await handleCaptureNode(
-          asCaptureNodeArgs(withDefaultTitle(args, "Capture Figma node")),
-          runtime,
-        ),
+      executeCaptureNode(
+        asCaptureNodeArgs(withDefaultTitle(args, "Capture Figma node")),
+        runtime,
       ),
     runTaskPlan: async (args) =>
-      parseJsonToolResult(
-        await handleRunTaskPlan(
-          asRunTaskPlanArgs(withDefaultTitle(args, "Run Figma REPL task plan")),
-          runtime,
-        ),
+      executeRunTaskPlan(
+        asRunTaskPlanArgs(withDefaultTitle(args, "Run Figma REPL task plan")),
+        runtime,
       ),
     initWorkspace: async (args) =>
       parseJsonToolResult(
@@ -776,7 +462,7 @@ export function createFigmaReplClient(
       ),
     suggestApi: async (args) =>
       parseJsonToolResult(
-        handleSuggestApi(asSuggestApiArgs(withDefaultTitle(args, "Suggest Figma REPL API"))),
+        await handleSuggestApi(asSuggestApiArgs(withDefaultTitle(args, "Suggest Figma REPL API"))),
       ),
     inspect: async (args = {}) =>
       parseJsonToolResult(
@@ -801,11 +487,9 @@ export function createFigmaReplClient(
         ),
       ),
     callUpstreamTool: async (args) =>
-      parseJsonToolResult(
-        await handleCallUpstreamTool(
-          asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool")),
-          runtime,
-        ),
+      executeCallUpstreamTool(
+        asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool")),
+        runtime,
       ),
     docsSearch: async (args) =>
       parseJsonToolResult(
@@ -851,7 +535,13 @@ export function createFigmaReplMcpServer(
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async (_request: ListToolsRequest) => ({
-    tools: createReplToolDescriptions(),
+    tools: createReplToolDescriptions({
+      taskWorkspaceRootEnv: TASK_WORKSPACE_ROOT_ENV,
+      defaultDocsSearchMaxResults: DEFAULT_DOCS_SEARCH_MAX_RESULTS,
+      maxDocsSearchResults: MAX_DOCS_SEARCH_RESULTS,
+      defaultDocsSearchSnippetLines: DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
+      maxDocsSearchSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES,
+    }),
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
@@ -1121,6 +811,13 @@ async function handleEval(
 
 async function handleRunScriptFile(
   args: FigmaReplRunScriptFileArguments,
+  runtime: FigmaReplRuntime,
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeRunScriptFile(args, runtime));
+}
+
+async function executeRunScriptFile(
+  args: FigmaReplRunScriptFileArguments,
   runtime: {
     client: FigmaMcpProxyClient;
     sessions: FigmaReplSessionStore;
@@ -1191,10 +888,10 @@ async function handleRunScriptFile(
         diagnostics,
       }),
     });
-    return makeJsonToolResult({
+    return {
       ...limitInlineScriptResult(resultPayload, inlineResultLimit, ["compiledScript"]),
       outputFiles,
-    });
+    };
   }
 
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
@@ -1230,7 +927,7 @@ async function handleRunScriptFile(
         primaryFix: resultPayload.primaryFix,
       }),
     });
-    return makeJsonToolResult({
+    return {
       ...limitInlineScriptResult(
         {
           ...resultPayload,
@@ -1239,7 +936,7 @@ async function handleRunScriptFile(
         inlineResultLimit,
         ["upstreamError"],
       ),
-    });
+    };
   }
   if (parsed.upstreamError) {
     const resultPayload = {
@@ -1271,7 +968,7 @@ async function handleRunScriptFile(
         primaryFix: parsed.primaryFix,
       }),
     });
-    return makeJsonToolResult({
+    return {
       ...limitInlineScriptResult(
         {
           ...resultPayload,
@@ -1280,7 +977,7 @@ async function handleRunScriptFile(
         inlineResultLimit,
         ["parsed", "text", "upstream", "upstreamError"],
       ),
-    });
+    };
   }
   updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
@@ -1318,7 +1015,7 @@ async function handleRunScriptFile(
       parsed,
     }),
   });
-  return makeJsonToolResult({
+  return {
     ...limitInlineScriptResult(
       {
         ...resultPayload,
@@ -1327,17 +1024,19 @@ async function handleRunScriptFile(
       inlineResultLimit,
       ["parsed", "text", "upstream"],
     ),
-  });
+  };
 }
 
 async function handleApplyAssetManifest(
   args: FigmaReplApplyAssetManifestArguments,
-  runtime: {
-    client: FigmaMcpProxyClient;
-    sessions: FigmaReplSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-    config: { evalToolName: string; evalToolArgument?: string };
-  },
+  runtime: FigmaReplRuntime,
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeApplyAssetManifest(args, runtime));
+}
+
+async function executeApplyAssetManifest(
+  args: FigmaReplApplyAssetManifestArguments,
+  runtime: FigmaReplRuntime,
 ): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
@@ -1445,17 +1144,19 @@ async function handleApplyAssetManifest(
       .map((asset) => asOptionalString(asset.targetNodeId))
       .filter((nodeId): nodeId is string => nodeId !== undefined),
   });
-  return makeJsonToolResult(payload);
+  return payload;
 }
 
 async function handleCaptureNode(
   args: FigmaReplCaptureNodeArguments,
-  runtime: {
-    client: FigmaMcpProxyClient;
-    sessions: FigmaReplSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-    config: { evalToolName: string; evalToolArgument?: string };
-  },
+  runtime: FigmaReplRuntime,
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeCaptureNode(args, runtime));
+}
+
+async function executeCaptureNode(
+  args: FigmaReplCaptureNodeArguments,
+  runtime: FigmaReplRuntime,
 ): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
   const nodeId = asOptionalString(args.nodeId) ?? asOptionalString(args.targetNodeId);
@@ -1493,7 +1194,7 @@ async function handleCaptureNode(
     if (resultFile) {
       await writeJsonFile(resultFile, payload);
     }
-    return makeJsonToolResult(payload);
+    return payload;
   }
   const saved = await writeCaptureOutputFile(outputFile, upstream, parsed);
   runtime.sessions.rememberHistory(session, {
@@ -1522,17 +1223,19 @@ async function handleCaptureNode(
   if (resultFile) {
     await writeJsonFile(resultFile, payload);
   }
-  return makeJsonToolResult(payload);
+  return payload;
 }
 
 async function handleRunTaskPlan(
   args: FigmaReplRunTaskPlanArguments,
-  runtime: {
-    client: FigmaMcpProxyClient;
-    sessions: FigmaReplSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-    config: { evalToolName: string; evalToolArgument?: string };
-  },
+  runtime: FigmaReplRuntime,
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeRunTaskPlan(args, runtime));
+}
+
+async function executeRunTaskPlan(
+  args: FigmaReplRunTaskPlanArguments,
+  runtime: FigmaReplRuntime,
 ): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
@@ -1611,7 +1314,7 @@ async function handleRunTaskPlan(
     summary: `Ran ${steps.length}/${plan.steps.length} task-plan steps with ${failures.length} failures.`,
     nodeIds: [],
   });
-  return makeJsonToolResult(payload);
+  return payload;
 }
 
 async function handlePrepareTask(
@@ -1750,19 +1453,26 @@ function handleApiCard(args: FigmaReplApiCardArguments): Record<string, unknown>
     ok: true,
     cards,
     catalogSize: FIGMA_REPL_API_CARDS.length,
-    guidance: "Use these compact cards before broader docs/API lookup; they are curated for .figma.js file workflows.",
+    guidance: "Use these compact cards before broader docs/API lookup; each card exposes queryHints, apiSymbols, avoid, and pitfalls for .figma.js file workflows.",
   });
 }
 
-function handleSuggestApi(args: FigmaReplSuggestApiArguments): Record<string, unknown> {
+async function handleSuggestApi(args: FigmaReplSuggestApiArguments): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
   const intent = normalizeLookupQuery(args.intent ?? args.task, "intent");
   const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
+  const context = await searchReferenceFiles({
+    query: intent,
+    files: DOCS_SEARCH_ALLOWLIST,
+    maxResults: DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
+    maxSnippetLines: 4,
+    exactSymbol: false,
+  });
   return makeJsonToolResult({
     ok: true,
     intent,
     expectedSurface: normalizeSurface(args.surface ?? args.expectedSurface),
-    suggestions: createIntentSuggestions(intent, maxCards),
+    suggestions: createIntentSuggestions(intent, maxCards, context.results),
   });
 }
 
@@ -1935,11 +1645,22 @@ async function handleCallUpstreamTool(
     upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
   },
 ): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeCallUpstreamTool(args, runtime));
+}
+
+async function executeCallUpstreamTool(
+  args: FigmaReplCallUpstreamToolArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
   if (!args.toolName || typeof args.toolName !== "string") {
     throw new Error('Tool argument "toolName" is required and must be a string.');
   }
-  if (LOCAL_REPL_TOOL_NAMES.has(args.toolName)) {
+  if (isLocalReplToolName(args.toolName)) {
     throw new Error(
       `Refusing to proxy local figma-repl-mcp tool "${args.toolName}". Call it directly instead.`,
     );
@@ -1965,13 +1686,13 @@ async function handleCallUpstreamTool(
     summary: `Called upstream Figma MCP tool ${args.toolName}.`,
     nodeIds: collectNodeIds(parsed.json),
   });
-  return makeJsonToolResult({
+  return {
     ok: true,
     toolName: args.toolName,
     result: parsed.json,
     text: parsed.text,
     raw: args.includeRawUpstream ? upstream : undefined,
-  });
+  };
 }
 
 async function handleDocsSearch(
@@ -1996,12 +1717,11 @@ async function handleDocsSearch(
   return makeJsonToolResult({
     ok: true,
     query,
-    searchRoot: matches.searchRoot,
     maxResults: matches.maxResults,
     maxSnippetLines: matches.maxSnippetLines,
     results: matches.results,
     guidance:
-      "Use these capped snippets as routing/context. Run a narrower figma_repl_docs_search or figma_repl_api_lookup instead of reading the whole reference tree.",
+      "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_repl_docs_search or figma_repl_api_lookup when more detail is needed.",
   });
 }
 
@@ -2020,12 +1740,11 @@ async function handleApiLookup(
   return makeJsonToolResult({
     ok: true,
     symbol,
-    searchRoot: matches.searchRoot,
     maxResults: matches.maxResults,
     maxSnippetLines: matches.maxSnippetLines,
     results: matches.results,
     guidance:
-      "Results are capped Plugin API snippets with file/line evidence. This tool never returns the full plugin-api-standalone.d.ts file.",
+      "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents.",
   });
 }
 
@@ -2156,439 +1875,6 @@ return {
   },
   result: __figmaReplResult
 };`;
-}
-
-interface CompiledFigmaReplScriptFile {
-  code: string;
-  diagnostics: FigmaReplFileDiagnostic[];
-  metadata: {
-    scriptPath: string;
-    sourceBytes: number;
-    sourceLineCount: number;
-    helperApiVersion: string;
-    helperProfile: FigmaReplHelperProfile;
-    helpersIncluded: string[];
-    targetPageId?: string;
-    expectedSurface?: FigmaReplSurface;
-    diagnosticsCount: number;
-  };
-}
-
-function compileFigmaReplScriptFile(options: {
-  scriptPath: string;
-  source: string;
-  targetPageId?: string;
-  expectedSurface?: FigmaReplSurface;
-  allowDangerousOperations?: boolean;
-  strict?: boolean;
-  helperProfile?: unknown;
-}): CompiledFigmaReplScriptFile {
-  const helperProfile = resolveFigmaReplHelperProfile(options.helperProfile, options.source);
-  const diagnostics = toFileDiagnostics(
-    options.scriptPath,
-    options.source,
-    diagnoseFigmaReplCode(options.source, {
-      allowDangerousOperations: options.allowDangerousOperations,
-      expectedSurface: options.expectedSurface,
-      mode: "write",
-      strict: options.strict,
-    }),
-  );
-  const lines = [createFigmaReplScriptHelperBootstrap(helperProfile)];
-  if (options.targetPageId) {
-    lines.push(`{ const __targetPage = await getNodeById(${literal(options.targetPageId)}); if (__targetPage.type !== "PAGE") throw new Error("targetPageId must resolve to a PAGE node."); await figma.setCurrentPageAsync(__targetPage); }`);
-  }
-  lines.push(`// figma_repl_run_script_file source: ${options.scriptPath}`);
-  lines.push(options.source);
-  return {
-    code: lines.join("\n"),
-    diagnostics,
-    metadata: {
-      scriptPath: options.scriptPath,
-      sourceBytes: Buffer.byteLength(options.source, "utf8"),
-      sourceLineCount: countLines(options.source),
-      helperApiVersion: "1",
-      helperProfile: helperProfile.profile,
-      helpersIncluded: helperProfile.helpersIncluded,
-      targetPageId: options.targetPageId,
-      expectedSurface: options.expectedSurface,
-      diagnosticsCount: diagnostics.length,
-    },
-  };
-}
-
-function resolveFigmaReplHelperProfile(
-  value: unknown,
-  source: string,
-): { profile: FigmaReplHelperProfile; includeImageAsset: boolean; includeCloneNodeTree: boolean; helpersIncluded: string[] } {
-  const requested = asOptionalString(value) as FigmaReplHelperProfile | undefined;
-  const profile: FigmaReplHelperProfile = requested && ["auto", "minimal", "asset", "clone", "full"].includes(requested)
-    ? requested
-    : "auto";
-  const includeImageAsset = profile === "full" || profile === "asset" || (profile === "auto" && /\$\.imageAsset\b/u.test(source));
-  const includeCloneNodeTree = profile === "full" || profile === "clone" || (profile === "auto" && /\$\.cloneNodeTree\b/u.test(source));
-  return {
-    profile,
-    includeImageAsset,
-    includeCloneNodeTree,
-    helpersIncluded: [
-      "$",
-      "$.find",
-      "$.findAll",
-      "$.text",
-      "$.layout",
-      "$.create",
-      "$.select",
-      "$.inspect",
-      "$.screenshot",
-      "$.checkpoint",
-      includeImageAsset ? "$.imageAsset" : undefined,
-      includeCloneNodeTree ? "$.cloneNodeTree" : undefined,
-    ].filter((item): item is string => item !== undefined),
-  };
-}
-
-function createFigmaReplScriptHelperBootstrap(options: {
-  includeImageAsset: boolean;
-  includeCloneNodeTree: boolean;
-}): string {
-  let bootstrap = `const __figmaReplScriptCheckpoints = [];
-$.handles = __figmaRepl.handles;
-$.remember = remember;
-$.forget = forget;
-$.resolveId = resolveHandleId;
-$.node = $;
-$.select = async function select(targets = "$selection", options = {}) {
-  const input = Array.isArray(targets) ? targets : [targets];
-  const nodes = [];
-  for (const target of input) {
-    const resolved = target && typeof target === "object" && "type" in target ? target : await $(target);
-    const list = Array.isArray(resolved) ? resolved : [resolved];
-    for (const node of list) {
-      if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
-        throw new Error("$.select targets must resolve to selectable scene nodes.");
-      }
-      nodes.push(node);
-    }
-  }
-  if (nodes.length === 0 && options.allowEmpty !== true) {
-    throw new Error("$.select resolved no nodes; pass { allowEmpty: true } to intentionally clear selection.");
-  }
-  if (nodes.length === 0) {
-    figma.currentPage.selection = [];
-    return { selectedNodeIds: [], summaries: [] };
-  }
-  const targetPage = pageForNode(nodes[0]);
-  if (!targetPage) {
-    throw new Error("$.select target is not attached to a page.");
-  }
-  for (const node of nodes) {
-    const page = pageForNode(node);
-    if (!page || page.id !== targetPage.id) {
-      throw new Error("$.select cannot select nodes from multiple pages at once.");
-    }
-  }
-  if (figma.currentPage.id !== targetPage.id) {
-    await figma.setCurrentPageAsync(targetPage);
-  }
-  figma.currentPage.selection = nodes;
-  if (nodes.length > 0 && options.zoom !== false) figma.viewport.scrollAndZoomIntoView(nodes);
-  return {
-    selectedNodeIds: nodes.map((node) => node.id),
-    summaries: nodes.map((node) => summarizeNode(node, options.depth || 0)),
-  };
-};
-$.findAll = async function findAll(criteria = {}) {
-  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
-  const root = input.within ? await $(input.within) : figma.currentPage;
-  const matches = queryNodes(root, {
-    name: input.name,
-    type: input.type,
-    includeInvisible: input.includeInvisible,
-    limit: input.limit || 50,
-  });
-  if (input.as && matches[0]) remember(input.as, matches[0]);
-  return matches;
-};
-$.find = async function find(criteria = {}) {
-  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
-  const matches = await $.findAll({ ...input, limit: input.limit || 1 });
-  const node = matches[0] || null;
-  if (!node && input.required !== false) {
-    throw new Error("No Figma node matched $.find criteria.");
-  }
-  if (node && input.as) remember(input.as, node);
-  return node;
-};
-$.text = async function text(targetOrOptions, textValue, options = {}) {
-  const input = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions)
-    ? targetOrOptions
-    : { target: targetOrOptions, text: textValue, ...options };
-  let node;
-  if (input.target) {
-    node = await $(input.target);
-    if (node.type !== "TEXT") throw new Error("$.text target must resolve to a TEXT node.");
-  } else {
-    node = figma.createText();
-    if (input.parent) {
-      const parent = await $(input.parent);
-      parent.appendChild(node);
-    } else {
-      figma.currentPage.appendChild(node);
-    }
-  }
-  const font = input.font || (input.fontFamily || input.fontStyle ? { family: input.fontFamily || "Inter", style: input.fontStyle || "Regular" } : undefined);
-  if (font) {
-    const fontName = fontFromHelperInput(font);
-    await loadFont(fontName);
-    node.fontName = fontName;
-    if (font.size !== undefined) node.fontSize = readFiniteNumber(font.size, "font.size");
-  } else {
-    await loadNodeFont(node);
-  }
-  if (input.text !== undefined) node.characters = String(input.text);
-  if (input.name !== undefined) node.name = String(input.name);
-  if (input.appearance !== undefined) applyAppearance(node, input.appearance);
-  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
-  if (input.size !== undefined) setNodeSizeFromInput(node, input.size);
-  if (input.as) remember(input.as, node);
-  return node;
-};
-$.layout = async function layout(target, layoutOptions = {}) {
-  const node = await $(target);
-  applyAutoLayout(node, layoutOptions);
-  return node;
-};
-$.create = async function create(options = {}) {
-  const type = String(options.type || "FRAME").toUpperCase();
-  const node = createHelperNode(type);
-  if (options.name !== undefined) node.name = String(options.name);
-  if (type === "TEXT") {
-    await applyTextHelper(node, { text: options.text || "", font: options.font, style: options.style });
-    if (options.appearance !== undefined) applyAppearance(node, options.appearance);
-  } else if (options.size !== undefined) {
-    setNodeSizeFromInput(node, options.size);
-  }
-  if (options.layout !== undefined) applyAutoLayout(node, options.layout);
-  if (options.appearance !== undefined && type !== "TEXT") applyAppearance(node, options.appearance);
-  if (options.parent) {
-    const parent = await $(options.parent);
-    parent.appendChild(node);
-  } else {
-    figma.currentPage.appendChild(node);
-  }
-  if (options.as) remember(options.as, node);
-  return node;
-};
-function __figmaReplDecodeBase64(input) {
-  const source = String(input || "").replace(/^data:[^,]+,/u, "").replace(/\\s+/gu, "");
-  if (!source) throw new Error("$.imageAsset requires a non-empty base64 string or bytes array.");
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  const clean = source.replace(/=+$/u, "");
-  const bytes = [];
-  let buffer = 0;
-  let bits = 0;
-  for (const char of clean) {
-    const value = alphabet.indexOf(char);
-    if (value < 0) throw new Error("$.imageAsset received invalid base64 data.");
-    buffer = (buffer << 6) | value;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes.push((buffer >> bits) & 0xff);
-    }
-  }
-  return new Uint8Array(bytes);
-}
-$.imageAsset = async function imageAsset(options = {}) {
-  const input = typeof options === "string" ? { base64: options } : (options || {});
-  const bytes = input.bytes instanceof Uint8Array
-    ? input.bytes
-    : Array.isArray(input.bytes)
-      ? new Uint8Array(input.bytes)
-      : __figmaReplDecodeBase64(input.base64);
-  const image = figma.createImage(bytes);
-  const node = input.target ? await $(input.target) : figma.createRectangle();
-  if (!("fills" in node)) throw new Error("$.imageAsset target must support fills.");
-  if (!input.target) {
-    if (input.parent) {
-      const parent = await $(input.parent);
-      parent.appendChild(node);
-    } else {
-      figma.currentPage.appendChild(node);
-    }
-  }
-  if (input.name !== undefined) node.name = String(input.name);
-  if (input.size !== undefined) {
-    setNodeSizeFromInput(node, input.size);
-  } else if (!input.target) {
-    node.resize(160, 160);
-  }
-  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
-  const scaleMode = String(input.scaleMode || input.fit || "FILL").toUpperCase();
-  if (!["FILL", "FIT", "CROP", "TILE"].includes(scaleMode)) {
-    throw new Error("$.imageAsset scaleMode must be FILL, FIT, CROP, or TILE.");
-  }
-  const paint = { type: "IMAGE", scaleMode, imageHash: image.hash };
-  if (input.opacity !== undefined) paint.opacity = readFiniteNumber(input.opacity, "opacity");
-  node.fills = [paint];
-  if (input.as) remember(input.as, node);
-  return node;
-};
-$.inspect = async function inspect(target, depth = 1) {
-  const node = await $(target);
-  return summarizeNode(node, depth);
-};
-$.screenshot = async function screenshot(target, options = {}) {
-  const node = await $(target);
-  if (!node || typeof node.screenshot !== "function") {
-    throw new Error("$.screenshot target does not support node.screenshot().");
-  }
-  return await node.screenshot(options);
-};
-$.cloneNodeTree = async function cloneNodeTree(targetOrOptions, maybeOptions = {}) {
-  const looksLikeOptions = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions) && !("type" in targetOrOptions);
-  const input = looksLikeOptions ? targetOrOptions : { source: targetOrOptions, ...maybeOptions };
-  const sourceValue = input.source || input.target;
-  const source = sourceValue && typeof sourceValue === "object" && "type" in sourceValue ? sourceValue : await $(sourceValue);
-  if (!source || source.type === "DOCUMENT" || source.type === "PAGE") {
-    throw new Error("$.cloneNodeTree source must resolve to a scene node.");
-  }
-  const parent = input.parent ? await $(input.parent) : source.parent;
-  if (!parent || !("appendChild" in parent)) {
-    throw new Error("$.cloneNodeTree requires a writable parent.");
-  }
-  const cloneLog = [];
-  const fallbackWholeSubtrees = [];
-  const preserveInstanceSubtrees = input.preserveInstanceSubtrees !== false;
-  function getChildren(node) {
-    return "children" in node ? Array.from(node.children) : [];
-  }
-  function cloneOuterToInner(sourceNode, depth = 0) {
-    const clone = sourceNode.clone();
-    clone.name = sourceNode.name;
-    cloneLog.push({
-      depth,
-      sourceId: sourceNode.id,
-      sourceName: sourceNode.name,
-      sourceType: sourceNode.type,
-      cloneId: clone.id,
-    });
-    if (preserveInstanceSubtrees && sourceNode.type === "INSTANCE") {
-      fallbackWholeSubtrees.push({
-        sourceId: sourceNode.id,
-        sourceName: sourceNode.name,
-        sourceType: sourceNode.type,
-        cloneId: clone.id,
-        reason: "Preserved instance subtree whole; Figma does not allow safe rebuild of internal instance children.",
-      });
-      return clone;
-    }
-    if ("children" in clone) {
-      try {
-        for (const child of Array.from(clone.children)) child.remove();
-      } catch (error) {
-        fallbackWholeSubtrees.push({
-          sourceId: sourceNode.id,
-          sourceName: sourceNode.name,
-          sourceType: sourceNode.type,
-          cloneId: clone.id,
-          reason: error instanceof Error ? error.message : String(error),
-        });
-        return clone;
-      }
-    }
-    if ("appendChild" in clone) {
-      for (const sourceChild of getChildren(sourceNode)) {
-        clone.appendChild(cloneOuterToInner(sourceChild, depth + 1));
-      }
-    }
-    return clone;
-  }
-  const rootClone = cloneOuterToInner(source, 0);
-  parent.appendChild(rootClone);
-  if (input.name !== undefined) rootClone.name = String(input.name);
-  if (input.position !== undefined) {
-    setNodePositionFromInput(rootClone, input.position);
-  } else if (input.offset !== undefined && "x" in rootClone && "y" in rootClone) {
-    rootClone.x = source.x + readFiniteNumber(input.offset.x || 0, "offset.x");
-    rootClone.y = source.y + readFiniteNumber(input.offset.y || 0, "offset.y");
-  } else if (input.placement !== "none" && "x" in rootClone && "y" in rootClone) {
-    const gap = input.gap === undefined ? 80 : readFiniteNumber(input.gap, "gap");
-    const placement = input.placement || "right";
-    if (placement === "left") {
-      rootClone.x = source.x - rootClone.width - gap;
-      rootClone.y = source.y;
-    } else if (placement === "below") {
-      rootClone.x = source.x;
-      rootClone.y = source.y + source.height + gap;
-    } else if (placement === "above") {
-      rootClone.x = source.x;
-      rootClone.y = source.y - rootClone.height - gap;
-    } else {
-      rootClone.x = source.x + source.width + gap;
-      rootClone.y = source.y;
-    }
-  }
-  if (input.as) remember(input.as, rootClone);
-  const selection = input.select === false ? undefined : await $.select([rootClone], { zoom: input.zoom !== false, depth: 0 });
-  return {
-    source: summarizeNode(source, input.depth || 0),
-    clone: summarizeNode(rootClone, input.depth || 0),
-    copiedNodeCount: cloneLog.length,
-    order: cloneLog,
-    fallbackWholeSubtrees,
-    selectedNodeIds: selection ? selection.selectedNodeIds : [],
-    handle: input.as,
-  };
-};
-$.checkpoint = async function checkpoint(name, targets = [], options = {}) {
-  const list = Array.isArray(targets) ? targets : [targets];
-  const summaries = [];
-  for (const target of list) {
-    const node = await $(target);
-    summaries.push({ target, summary: summarizeNode(node, options.depth || 1) });
-  }
-  const checkpoint = {
-    name: String(name || "checkpoint"),
-    handles: { ...__figmaRepl.handles },
-    summaries,
-  };
-  __figmaReplScriptCheckpoints.push(checkpoint);
-  return checkpoint;
-};
-$.checkpoints = __figmaReplScriptCheckpoints;`;
-  if (!options.includeImageAsset) {
-    bootstrap = replaceHelperBootstrapBlock(
-      bootstrap,
-      "function __figmaReplDecodeBase64(input) {",
-      "$.inspect = async function inspect",
-      '$.imageAsset = async function imageAsset() { throw new Error("$.imageAsset helper was not injected. Use helperProfile: \\"asset\\" or \\"full\\", or keep helperProfile:auto and include $.imageAsset in the script source."); };\n',
-    );
-  }
-  if (!options.includeCloneNodeTree) {
-    bootstrap = replaceHelperBootstrapBlock(
-      bootstrap,
-      "$.cloneNodeTree = async function cloneNodeTree",
-      "$.checkpoint = async function checkpoint",
-      '$.cloneNodeTree = async function cloneNodeTree() { throw new Error("$.cloneNodeTree helper was not injected. Use helperProfile: \\"clone\\" or \\"full\\", or keep helperProfile:auto and include $.cloneNodeTree in the script source."); };\n',
-    );
-  }
-  return bootstrap;
-}
-
-function replaceHelperBootstrapBlock(
-  source: string,
-  startMarker: string,
-  endMarker: string,
-  replacement: string,
-): string {
-  const start = source.indexOf(startMarker);
-  const end = source.indexOf(endMarker);
-  if (start < 0 || end < 0 || end <= start) {
-    return source;
-  }
-  return `${source.slice(0, start)}${replacement}${source.slice(end)}`;
 }
 
 function createFigmaReplPrelude(
@@ -3175,437 +2461,6 @@ function summarizeNode(node, depth = 1) {
   }
   return summary;
 }`;
-}
-
-export function assertSafeFigmaReplCode(
-  code: string,
-  options: FigmaReplDiagnosticsOptions = {},
-): void {
-  throwIfFatalDiagnostics(diagnoseFigmaReplCode(code, options));
-}
-
-export function diagnoseFigmaReplCode(
-  code: string,
-  options: FigmaReplDiagnosticsOptions = {},
-): FigmaReplDiagnostic[] {
-  const diagnostics: FigmaReplDiagnostic[] = [];
-  const add = (diagnostic: FigmaReplDiagnostic) => {
-    diagnostics.push(options.strict && diagnostic.severity === "warning"
-      ? { ...diagnostic, severity: "fatal" }
-      : diagnostic);
-  };
-  const dangerousPatterns = options.generatedCode
-    ? GENERATED_CODE_DANGEROUS_PATTERNS
-    : RAW_CODE_DANGEROUS_PATTERNS;
-  if (!options.allowDangerousOperations) {
-    for (const pattern of dangerousPatterns) {
-      if (pattern.re.test(code)) {
-        add(createDiagnostic(pattern.code, "fatal", pattern.message, pattern.suggestion, pattern.docsHint));
-      }
-    }
-  }
-  for (const pattern of API_CONTRACT_PATTERNS) {
-    if (pattern.re.test(code)) {
-      add(createDiagnostic(pattern.code, "fatal", pattern.message, pattern.suggestion, pattern.docsHint));
-    }
-  }
-  if ((code.match(/\bfigma\.setCurrentPageAsync\s*\(/gu) ?? []).length > 1) {
-    add(createDiagnostic(
-      "FIGMA_REPL_MULTIPLE_PAGE_SWITCH",
-      "fatal",
-      "Multiple figma.setCurrentPageAsync() calls in one transaction are error-prone.",
-      "Use one targetPageId on figma_repl_run_script_file or split page changes into separate script files.",
-      "figma-repl://safety#page-context",
-    ));
-  }
-  if (!options.generatedCode && /\bfigma\.currentPage\.selection\b/u.test(code)) {
-    add(createDiagnostic(
-      "FIGMA_REPL_DIRECT_SELECTION_ACCESS",
-      "warning",
-      "Direct figma.currentPage.selection access is brittle in agent scripts.",
-      "Use $.select([...]) for writes, $.inspect('$selection') for summaries, or resolve explicit node ids/handles.",
-      "figma-repl://scripts#helpers",
-    ));
-  }
-  if (options.mode === "read") {
-    for (const pattern of READ_MODE_WRITE_PATTERNS) {
-      if (pattern.re.test(code)) {
-        add(createDiagnostic(pattern.code, "fatal", pattern.message, pattern.suggestion, pattern.docsHint));
-      }
-    }
-  }
-  if (TEXT_MUTATION_PATTERN.test(code) && !/\bfigma\.loadFontAsync\s*\(/u.test(code)) {
-    add(createDiagnostic(
-      "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT",
-      "warning",
-      "Text mutation usually requires figma.loadFontAsync() before changing characters or fontName.",
-      "Use $.text, or await figma.loadFontAsync({ family, style }) before changing text.",
-      "figma-repl://patterns#text",
-    ));
-  }
-  for (const diagnostic of diagnoseInlineImageAssetSize(code)) {
-    add(diagnostic);
-  }
-  if (CHECKPOINT_HANDLE_AS_NAME_PATTERN.test(code)) {
-    add(createDiagnostic(
-      "FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME",
-      "warning",
-      "$.checkpoint() appears to receive a handle as its first argument, but the first argument is the checkpoint name.",
-      "Use $.checkpoint('meaningful-name', ['$handleOrNodeId'], { depth: 1 }).",
-      "figma-repl://scripts#helpers",
-    ));
-  }
-  for (const diagnostic of diagnoseSurfaceCode(code, options.expectedSurface)) {
-    add(diagnostic);
-  }
-  return dedupeDiagnostics(diagnostics);
-}
-
-function diagnoseInlineImageAssetSize(code: string): FigmaReplDiagnostic[] {
-  if (!code.includes("$.imageAsset")) {
-    return [];
-  }
-  const diagnostics: FigmaReplDiagnostic[] = [];
-  for (const match of code.matchAll(INLINE_IMAGE_ASSET_BASE64_PATTERN)) {
-    const base64Length = String(match[2] || "").replace(/\s+/gu, "").length;
-    if (base64Length > MAX_INLINE_IMAGE_ASSET_BASE64_CHARS) {
-      diagnostics.push(createDiagnostic(
-        "FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE",
-        "warning",
-        `Inline $.imageAsset base64 is ${base64Length} characters and may exceed upstream MCP payload limits.`,
-        "For large generated PNG/JPEG assets, create target rectangles in .figma.js and use the official upload_assets/upstream asset workflow to fill them.",
-        "figma-repl://scripts#helpers",
-      ));
-      break;
-    }
-  }
-  return diagnostics;
-}
-
-function diagnoseWrappedScriptSize(
-  scriptPath: string,
-  wrappedScript: string,
-  strict: boolean,
-): FigmaReplFileDiagnostic[] {
-  const byteLength = Buffer.byteLength(wrappedScript, "utf8");
-  if (byteLength < UPSTREAM_EVAL_CODE_WARNING_BYTES) {
-    return [];
-  }
-  const overLimit = byteLength > UPSTREAM_EVAL_CODE_LIMIT_BYTES;
-  return [{
-    code: "FIGMA_REPL_SCRIPT_PAYLOAD_TOO_LARGE",
-    severity: overLimit || strict ? "fatal" : "warning",
-    message: `Compiled Figma script payload is ${byteLength} bytes; upstream use_figma accepts at most about ${UPSTREAM_EVAL_CODE_LIMIT_BYTES} characters.`,
-    suggestion: "Split the work into smaller .figma.js files, for example skeleton, asset targets, upload fills, and visual fixes.",
-    docsHint: "figma-repl://scripts#file-workflow",
-    source: { scriptPath },
-  }];
-}
-
-function throwIfFatalDiagnostics(diagnostics: FigmaReplDiagnostic[]): void {
-  const fatal = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
-  if (fatal.length === 0) {
-    return;
-  }
-  throw new Error(
-    `Figma REPL diagnostics blocked execution: ${fatal.map((item) => item.code).join(", ")}. ${fatal[0]?.suggestion ?? ""}`,
-  );
-}
-
-const RAW_CODE_DANGEROUS_PATTERNS = [
-  {
-    code: "FIGMA_REPL_DYNAMIC_EVAL",
-    re: /\b(?:eval|Function)\s*\(/u,
-    message: "Dynamic JavaScript evaluation is disabled by default.",
-    suggestion: "Pass allowDangerousOperations=true only after reviewing the exact script.",
-    docsHint: "figma-repl://safety#dynamic-code",
-  },
-  {
-    code: "FIGMA_REPL_NETWORK_ACCESS",
-    re: /\b(?:fetch|XMLHttpRequest|WebSocket)\b/u,
-    message: "Network access from REPL code is disabled by default.",
-    suggestion: "Fetch data outside Figma or pass allowDangerousOperations=true after review.",
-    docsHint: "figma-repl://safety#network",
-  },
-  {
-    code: "FIGMA_REPL_DYNAMIC_IMPORT",
-    re: /\bimport\s*\(/u,
-    message: "Dynamic import is disabled by default.",
-    suggestion: "Inline the required logic or pass allowDangerousOperations=true after review.",
-    docsHint: "figma-repl://safety#dynamic-code",
-  },
-  {
-    code: "FIGMA_REPL_NODE_REMOVAL",
-    re: /\.remove\s*\(/u,
-    message: "Direct remove() is destructive and can break clone rebuilds, especially inside instance subtrees.",
-    suggestion: "Use $.cloneNodeTree for copy/rebuild workflows; pass allowDangerousOperations=true only after reviewing exact cleanup semantics.",
-    docsHint: "figma-repl://safety#destructive",
-  },
-  {
-    code: "FIGMA_REPL_FIGMA_DELETE",
-    re: /\bdelete\s+figma\./u,
-    message: "Deleting properties on the figma object is not supported.",
-    suggestion: "Use documented Plugin API calls only.",
-    docsHint: "figma-repl://safety#api-contract",
-  },
-  {
-    code: "FIGMA_REPL_DESTRUCTIVE_OPERATION",
-    re: /\.(?:detachInstance|flatten)\s*\(/u,
-    message: "Destructive Figma operation is disabled by default.",
-    suggestion: "Pass allowDangerousOperations=true only after reviewing the exact effect.",
-    docsHint: "figma-repl://safety#destructive",
-  },
-];
-
-const GENERATED_CODE_DANGEROUS_PATTERNS = RAW_CODE_DANGEROUS_PATTERNS.filter(
-  (pattern) => pattern.code !== "FIGMA_REPL_NODE_REMOVAL",
-);
-
-const READ_MODE_WRITE_PATTERNS = [
-  {
-    code: "FIGMA_REPL_READ_MODE_CREATE",
-    re: /figma\.create[A-Z]/u,
-    message: "read mode rejected node creation.",
-    suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
-    docsHint: "figma-repl://safety#read-mode",
-  },
-  {
-    code: "FIGMA_REPL_READ_MODE_APPEND",
-    re: /\.(?:appendChild|insertChild)\s*\(/u,
-    message: "read mode rejected child insertion.",
-    suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
-    docsHint: "figma-repl://safety#read-mode",
-  },
-  {
-    code: "FIGMA_REPL_READ_MODE_REMOVE",
-    re: /\.remove\s*\(/u,
-    message: "read mode rejected node removal.",
-    suggestion: "Use mode=write with allowDangerousOperations only after review.",
-    docsHint: "figma-repl://safety#read-mode",
-  },
-  {
-    code: "FIGMA_REPL_READ_MODE_ASSIGNMENT",
-    re: /\.(?:name|fills|strokes|characters|layoutMode|itemSpacing|paddingLeft|paddingRight|paddingTop|paddingBottom)\s*=/u,
-    message: "read mode rejected a likely property assignment.",
-    suggestion: "Use mode=write or a .figma.js script when mutation is intended.",
-    docsHint: "figma-repl://safety#read-mode",
-  },
-  {
-    code: "FIGMA_REPL_READ_MODE_RESIZE",
-    re: /\.resize(?:WithoutConstraints)?\s*\(/u,
-    message: "read mode rejected resize.",
-    suggestion: "Use mode=write or a .figma.js script when mutation is intended.",
-    docsHint: "figma-repl://safety#read-mode",
-  },
-];
-
-const API_CONTRACT_PATTERNS = [
-  {
-    code: "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT",
-    re: /\bfigma\.currentPage\s*=/u,
-    message: "figma.currentPage is not assigned directly in the Plugin API.",
-    suggestion: "Use await figma.setCurrentPageAsync(page) or figma_repl_run_script_file targetPageId.",
-    docsHint: "figma-repl://safety#page-context",
-  },
-  {
-    code: "FIGMA_REPL_ROOT_FIND_ALL",
-    re: /\bfigma\.root\.findAll\s*\(/u,
-    message: "figma.root.findAll() can scan the whole file and is not allowed through this layer.",
-    suggestion: "Use $.find or $.findAll scoped to currentPage or a handle.",
-    docsHint: "figma-repl://patterns#query",
-  },
-  {
-    code: "FIGMA_REPL_PLUGIN_DATA",
-    re: /\.(?:getPluginData|setPluginData|getSharedPluginData|setSharedPluginData)\s*\(/u,
-    message: "Plugin data APIs are not a reliable agent-facing persistence layer for this REPL.",
-    suggestion: "Use local handles/session metadata or a dedicated upstream workflow.",
-    docsHint: "figma-repl://safety#facade-routing-delegation-boundaries",
-  },
-  {
-    code: "FIGMA_REPL_IMAGE_CREATION",
-    re: /\bfigma\.createImage(?:Async)?\s*\(/u,
-    message: "Raw image creation is outside the supported script-file asset workflow.",
-    suggestion: "Use $.imageAsset({ base64, parent, size, position, as }) in .figma.js, or route unusual asset uploads through an upstream official tool.",
-    docsHint: "figma-repl://scripts#helpers",
-  },
-];
-
-const TEXT_MUTATION_PATTERN = /(?:\.characters\s*=|\.fontName\s*=|figma\.createText\s*\()/u;
-const MAX_INLINE_IMAGE_ASSET_BASE64_CHARS = 96 * 1024;
-const INLINE_IMAGE_ASSET_BASE64_PATTERN = /\$\.imageAsset\s*\([\s\S]*?\bbase64\s*:\s*(["'`])([A-Za-z0-9+/=\s]+)\1/gu;
-const CHECKPOINT_HANDLE_AS_NAME_PATTERN = /\$\.checkpoint\s*\(\s*(["'`])\$/u;
-const UPSTREAM_EVAL_CODE_LIMIT_BYTES = 50_000;
-const UPSTREAM_EVAL_CODE_WARNING_BYTES = 49_000;
-
-function toFileDiagnostics(
-  scriptPath: string,
-  source: string,
-  diagnostics: FigmaReplDiagnostic[],
-): FigmaReplFileDiagnostic[] {
-  return diagnostics.map((diagnostic) => ({
-    ...diagnostic,
-    source: {
-      scriptPath,
-      ...locateDiagnosticSource(source, diagnostic.code),
-    },
-  }));
-}
-
-function locateDiagnosticSource(
-  source: string,
-  code: string,
-): { line?: number; column?: number } {
-  const pattern = diagnosticPatternForCode(code);
-  if (!pattern) {
-    return {};
-  }
-  const match = pattern.exec(source);
-  if (!match || match.index < 0) {
-    return {};
-  }
-  return offsetToLineColumn(source, match.index);
-}
-
-function diagnosticPatternForCode(code: string): RegExp | undefined {
-  const allPatterns = [
-    ...RAW_CODE_DANGEROUS_PATTERNS,
-    ...READ_MODE_WRITE_PATTERNS,
-    ...API_CONTRACT_PATTERNS,
-  ];
-  const pattern = allPatterns.find((item) => item.code === code)?.re;
-  if (pattern) {
-    return new RegExp(pattern.source, pattern.flags.replace("g", ""));
-  }
-  if (code === "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT") {
-    return new RegExp(TEXT_MUTATION_PATTERN.source, TEXT_MUTATION_PATTERN.flags.replace("g", ""));
-  }
-  if (code === "FIGMA_REPL_MULTIPLE_PAGE_SWITCH") {
-    return /\bfigma\.setCurrentPageAsync\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_DIRECT_SELECTION_ACCESS") {
-    return /\bfigma\.currentPage\.selection\b/u;
-  }
-  if (code === "FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE") {
-    return /\$\.imageAsset\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME") {
-    return /\$\.checkpoint\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN") {
-    return /\bfigma\.create(?:Sticky|Connector|ShapeWithText|CodeBlock|Table)\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM") {
-    return /\bfigma\.create(?:Frame|Component|ComponentSet|Instance)\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES") {
-    return /\bfigma\.create(?:Frame|Component|Sticky|Connector|ShapeWithText)\s*\(/u;
-  }
-  return undefined;
-}
-
-function offsetToLineColumn(source: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let column = 1;
-  for (let index = 0; index < offset; index += 1) {
-    if (source[index] === "\n") {
-      line += 1;
-      column = 1;
-    } else {
-      column += 1;
-    }
-  }
-  return { line, column };
-}
-
-function countLines(source: string): number {
-  if (source.length === 0) {
-    return 0;
-  }
-  return source.split(/\r?\n/u).length;
-}
-
-function diagnoseSurfaceCode(
-  code: string,
-  expectedSurface: FigmaReplSurface | undefined,
-): FigmaReplDiagnostic[] {
-  if (!expectedSurface) {
-    return [];
-  }
-  const diagnostics: FigmaReplDiagnostic[] = [];
-  if (expectedSurface === "design" && /\bfigma\.create(?:Sticky|Connector|ShapeWithText|CodeBlock|Table)\s*\(/u.test(code)) {
-    diagnostics.push(createDiagnostic(
-      "FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN",
-      "fatal",
-      "FigJam creation APIs were used while the session expects a Design file.",
-      "Use a FigJam-specific workflow or open the session with expectedSurface='figjam'.",
-      "figma-repl://safety#surface",
-    ));
-  }
-  if (expectedSurface === "figjam" && /\bfigma\.create(?:Frame|Component|ComponentSet|Instance)\s*\(/u.test(code)) {
-    diagnostics.push(createDiagnostic(
-      "FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM",
-      "fatal",
-      "Design canvas APIs were used while the session expects a FigJam board.",
-      "Use FigJam-specific helpers for boards or open the session with expectedSurface='design'.",
-      "figma-repl://safety#surface",
-    ));
-  }
-  if (expectedSurface === "slides" && /\bfigma\.create(?:Frame|Component|Sticky|Connector|ShapeWithText)\s*\(/u.test(code)) {
-    diagnostics.push(createDiagnostic(
-      "FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES",
-      "fatal",
-      "Canvas mutation APIs were used while the session expects Slides.",
-      "Use the official Slides workflow rather than the REPL mutation layer.",
-      "figma-repl://safety#surface",
-    ));
-  }
-  return diagnostics;
-}
-
-function diagnoseFigmaReplContext(options: {
-  expectedSurface?: FigmaReplSurface;
-  derivedSurface?: FigmaReplSurface;
-  fileUrl?: string;
-}): FigmaReplDiagnostic[] {
-  if (
-    options.expectedSurface &&
-    options.derivedSurface &&
-    options.expectedSurface !== options.derivedSurface
-  ) {
-    return [
-      createDiagnostic(
-        "FIGMA_REPL_SURFACE_MISMATCH",
-        "fatal",
-        `Open expected ${options.expectedSurface} but the Figma URL looks like ${options.derivedSurface}.`,
-        "Check the file URL or expectedSurface before running mutations.",
-        "figma-repl://safety#surface",
-      ),
-    ];
-  }
-  return [];
-}
-
-function createDiagnostic(
-  code: string,
-  severity: FigmaReplDiagnosticSeverity,
-  message: string,
-  suggestion: string,
-  docsHint: string,
-): FigmaReplDiagnostic {
-  return { code, severity, message, suggestion, docsHint };
-}
-
-function dedupeDiagnostics(diagnostics: FigmaReplDiagnostic[]): FigmaReplDiagnostic[] {
-  const seen = new Set<string>();
-  const result: FigmaReplDiagnostic[] = [];
-  for (const diagnostic of diagnostics) {
-    const key = `${diagnostic.code}:${diagnostic.severity}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push(diagnostic);
-    }
-  }
-  return result;
 }
 
 function createScriptOutputWriter(args: FigmaReplRunScriptFileArguments, session?: FigmaReplSession): {
@@ -4403,24 +3258,28 @@ async function runTaskPlanStep(options: {
   const session = options.runtime.sessions.getOrCreate(commonArgs.sessionId);
   const stepArgs = withTaskPlanDefaultFiles(rawStepArgs, options.type, options.id, session);
   if (options.type === "script-file") {
-    return parseJsonToolResult(
-      await handleRunScriptFile(asRunScriptFileArgs({ ...commonArgs, ...stepArgs }), options.runtime),
-    ) as Record<string, unknown>;
+    return executeRunScriptFile(
+      asRunScriptFileArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime,
+    );
   }
   if (options.type === "asset-manifest") {
-    return parseJsonToolResult(
-      await handleApplyAssetManifest(asApplyAssetManifestArgs({ ...commonArgs, ...stepArgs }), options.runtime),
-    ) as Record<string, unknown>;
+    return executeApplyAssetManifest(
+      asApplyAssetManifestArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime,
+    );
   }
   if (options.type === "screenshot-capture") {
-    return parseJsonToolResult(
-      await handleCaptureNode(asCaptureNodeArgs({ ...commonArgs, ...stepArgs }), options.runtime),
-    ) as Record<string, unknown>;
+    return executeCaptureNode(
+      asCaptureNodeArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime,
+    );
   }
   if (options.type === "upstream-tool") {
-    return parseJsonToolResult(
-      await handleCallUpstreamTool(asCallUpstreamToolArgs({ ...commonArgs, ...stepArgs }), options.runtime),
-    ) as Record<string, unknown>;
+    return executeCallUpstreamTool(
+      asCallUpstreamToolArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime,
+    );
   }
   throw new Error(`Unsupported figma_repl_run_task_plan step type "${options.type}".`);
 }
@@ -4474,30 +3333,7 @@ function taskPlanStepArguments(step: FigmaReplTaskPlanStep): Record<string, unkn
 
 function normalizeTaskPlanStepType(step: FigmaReplTaskPlanStep): string {
   const value = asOptionalString(step.type) ?? asOptionalString(step.tool);
-  switch (value) {
-    case "figma_repl_run_script_file":
-    case "run_script_file":
-    case "script":
-    case "script-file":
-      return "script-file";
-    case "figma_repl_apply_asset_manifest":
-    case "apply_asset_manifest":
-    case "asset_manifest":
-    case "asset-manifest":
-      return "asset-manifest";
-    case "figma_repl_capture_node":
-    case "capture_node":
-    case "screenshot":
-    case "screenshot-capture":
-      return "screenshot-capture";
-    case "figma_repl_call_upstream_tool":
-    case "call_upstream_tool":
-    case "upstream":
-    case "upstream-tool":
-      return "upstream-tool";
-    default:
-      return value ?? "script-file";
-  }
+  return normalizeTaskPlanStepTypeAlias(value);
 }
 
 function taskPlanStepSucceeded(result: Record<string, unknown>): boolean {
@@ -5011,53 +3847,32 @@ function createFileWorkflowPayload(): Record<string, unknown> {
   };
 }
 
-function searchApiCards(query: string, maxCards: number): FigmaReplApiCard[] {
-  const tokens = tokenizeQuery(query);
-  return FIGMA_REPL_API_CARDS
-    .map((card) => ({
-      card,
-      score: scoreApiCard(card, tokens, query.toLowerCase()),
-    }))
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score || left.card.id.localeCompare(right.card.id))
-    .slice(0, maxCards)
-    .map((entry) => entry.card);
-}
-
-function chooseApiCardsForIntent(intent: string, maxCards: number): FigmaReplApiCard[] {
-  const cards = searchApiCards(intent, maxCards);
-  return cards.length > 0 ? cards : FIGMA_REPL_API_CARDS.slice(0, maxCards);
-}
-
-function scoreApiCard(card: FigmaReplApiCard, tokens: string[], lowerQuery: string): number {
-  const haystack = [
-    card.id,
-    card.title,
-    card.surface,
-    ...card.intents,
-    ...card.helpers,
-    ...card.pluginApi,
-    ...card.pitfalls,
-  ].join(" ").toLowerCase();
-  return (
-    (haystack.includes(lowerQuery) ? 50 : 0) +
-    tokens.filter((token) => haystack.includes(token)).length * 10
-  );
-}
-
-function createIntentSuggestions(intent: string, maxCards: number): Record<string, unknown> {
+function createIntentSuggestions(
+  intent: string,
+  maxCards: number,
+  referenceContext: ReferenceSearchResult[] = [],
+): Record<string, unknown> {
   const cards = chooseApiCardsForIntent(intent, maxCards);
+  const recommendedCards = cards.map((card) => card.id);
   return {
     cards,
+    recommendedCards,
+    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
+    apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
+    avoid: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    matchType: cards.length > 0 ? "api-card" : "bm25",
+    confidence: cards.length > 0 ? "high" : "medium",
+    referenceContext,
     workflow: createFileWorkflowPayload(),
     toolOrder: [
       "figma_repl_prepare_task",
       "figma_repl_api_card",
+      "figma_repl_api_lookup",
       "figma_repl_run_script_file(dryRun=true)",
       "figma_repl_run_script_file",
       "figma_repl_inspect",
     ],
-    fallback: "Use figma_repl_docs_search or figma_repl_api_lookup when the curated card is insufficient.",
+    referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_repl_api_lookup when exact API details are still missing.",
   };
 }
 
@@ -5075,7 +3890,7 @@ function slugifyTaskName(value: unknown): string {
 function createCapabilitiesPayload(): Record<string, unknown> {
   return {
     guide: {
-      purpose: "Unified Figma-facing MCP facade for agents after OAuth registration. Stay inside figma-repl-mcp first; it keeps local session metadata/handles and delegates to upstream official Figma MCP tools when the file workflow is not enough.",
+      purpose: "Unified Figma-facing MCP facade for agents after OAuth registration. Stay inside figma-repl-mcp; it keeps local session metadata/handles and can bridge to upstream Figma MCP tools through explicit REPL tools.",
       preferredFlow: [
         "figma_repl_capabilities to choose the facade path",
         "figma_repl_init_workspace with an absolute cwd, fileUrl or fileKey, and an intent",
@@ -5087,18 +3902,18 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through a manifest",
         "figma_repl_capture_node for final visual QA captures saved to local files",
         "figma_repl_run_task_plan for sequential file plans that combine script dry-runs/exec, asset manifests, captures, and upstream tool calls",
-        "figma_repl_call_upstream_tool for official capabilities not covered by the file workflow",
+        "figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool",
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
-      upstreamDelegation: "The REPL can call upstream official tools through figma_repl_call_upstream_tool or return compact routing guidance from docs/API lookup.",
+      upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma-repl-mcp interface.",
     },
     patterns: {
       text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
       createUi: "Use $.create for common Design nodes and native Plugin API calls for advanced construction.",
       transaction: "Use dryRun=true first, then execute the same .figma.js file; add $.checkpoint calls before/after meaningful batches to return handle and node summaries.",
       clone: "Use $.cloneNodeTree to copy a node to the side; it clones outer-to-inner and preserves instance subtrees whole when children cannot be rebuilt.",
-      designSystem: "Use native Plugin API calls in .figma.js for variables/styles/components; route full library publishing, FigJam, and Slides workflows through upstream tools.",
-      query: "Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
+      designSystem: "Use native Plugin API calls in .figma.js for variables/styles/components; use explicit REPL upstream calls only when a task requires them.",
+      query: "Use figma_repl_suggest_api first for natural-language tasks; it returns recommendedCards, queryHints, apiSymbols, avoid, and compact referenceContext. Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
       pages: "Use targetPageId or one setCurrentPageAsync call; direct figma.currentPage assignment is blocked.",
       selection: "Use $.select instead of direct figma.currentPage.selection access in repairable scripts.",
       validation: "Use figma_repl_validate_handles before mutating cached handles from an earlier call.",
@@ -5168,6 +3983,20 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         result: "Writes a compact plan result JSON and returns per-step status summaries. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, and <step-id>.png plus <step-id>.capture.result.json.",
       },
     },
+    queryStrategy: {
+      tool: "figma_repl_suggest_api",
+      resource: "figma-repl://intents",
+      searchAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
+      flow: [
+        "Describe the user task in task or intent.",
+        "Use recommendedCards to choose compact cards before broad docs lookup.",
+        "Use queryHints as narrower follow-up searches when card guidance is insufficient.",
+        "Use apiSymbols for exact figma_repl_api_lookup calls.",
+        "Treat avoid as task-specific guardrails before writing .figma.js.",
+      ],
+      commonCards: FIGMA_REPL_API_CARDS.map((card) => card.id),
+      outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
+    },
     apiCards: {
       tool: "figma_repl_api_card",
       resource: "figma-repl://api-cards",
@@ -5176,18 +4005,21 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         title: card.title,
         intents: card.intents,
         surface: card.surface,
+        queryHints: card.queryHints,
+        apiSymbols: card.apiSymbols,
       })),
     },
     intents: {
       tool: "figma_repl_suggest_api",
       resource: "figma-repl://intents",
       examples: ["create responsive card UI", "update text styles", "make component variants", "validate stale handles"],
+      returns: ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"],
     },
     facadeRoutingDelegationBoundaries: [
-      "Keep the agent on figma-repl-mcp; for new-file or generation workflows, call the appropriate upstream official tool through figma_repl_call_upstream_tool or return compact routing guidance.",
+      "Keep the agent on figma-repl-mcp; use figma_repl_call_upstream_tool only for explicit upstream-tool calls.",
       "For small generated local PNG/JPEG assets in .figma.js, use $.imageAsset({ base64, parent, size, position, as }); for large assets, create target rectangles then route through an upstream official upload_assets workflow when available.",
       "Do not use PluginData APIs for agent state; use local session handles or a dedicated storage workflow.",
-      "For FigJam, Slides, Code Connect, or design-system generation semantics, keep the facade entrypoint and delegate to upstream official tools or compact docs/API lookup rather than asking agents to read the full reference tree.",
+      "Use compact docs/API lookup as the exposed documentation surface; bundled corpus files stay internal.",
     ],
     docsLookup: {
       docsTool: "figma_repl_docs_search",
@@ -5196,7 +4028,8 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       apiResource: "figma-repl://api",
       compactCardTool: "figma_repl_api_card",
       intentTool: "figma_repl_suggest_api",
-      guardrail: "All lookup output is capped and line-evidenced; the facade does not dump plugin-api-standalone.d.ts.",
+      ranking: "Internal corpus files are chunked by Markdown headings/windows or d.ts symbol-ish blocks, then ranked with BM25; API lookup boosts exact symbols.",
+      guardrail: "All lookup output is capped and confidence-labeled; bundled corpus files are not returned as agent-readable documents.",
     },
     examples: [
       {
@@ -5235,16 +4068,15 @@ function readStaticReplResource(uri: string): Record<string, unknown> | undefine
     "figma-repl://api-cards": {
       tool: "figma_repl_api_card",
       cards: FIGMA_REPL_API_CARDS,
-      guidance: "Curated compact cards for common .figma.js tasks; use figma_repl_api_lookup only when exact API details are missing.",
+      queryStrategy: payload.queryStrategy,
+      guidance: "Curated compact cards for common .figma.js tasks; use figma_repl_suggest_api to map natural-language intent to recommendedCards, queryHints, apiSymbols, and avoid before broader lookup.",
     },
     "figma-repl://intents": {
       tool: "figma_repl_suggest_api",
+      queryStrategy: payload.queryStrategy,
       workflow: createFileWorkflowPayload(),
-      examples: [
-        createIntentSuggestions("create UI card with auto layout and text", 3),
-        createIntentSuggestions("make component variants", 3),
-        createIntentSuggestions("update color token", 3),
-      ],
+      commonTasks: FIGMA_REPL_COMMON_TASK_LABELS,
+      examples: FIGMA_REPL_INTENT_EXAMPLE_QUERIES.map((query) => createIntentSuggestions(query, 3)),
     },
     "figma-repl://safety": {
       safety: payload.safety,
@@ -5261,26 +4093,28 @@ function readStaticReplResource(uri: string): Record<string, unknown> | undefine
       ],
     },
     "figma-repl://docs": {
-      purpose: "Compact searchable facade guidance for bundled Figma router skill/reference snippets.",
+      purpose: "Compact searchable facade guidance from the internal Figma corpus.",
       tool: "figma_repl_docs_search",
       workflow: [
         "Search with a narrow query.",
-        "Use file/line evidence from capped snippets.",
-        "Run a narrower search instead of reading the full references tree.",
+        "Use matchType, confidence, and capped BM25 snippets.",
+        "Run a narrower search instead of reading bundled corpus files.",
       ],
+      ranking: "Markdown references are chunked by headings and compact windows before BM25 scoring.",
       allowlistSize: DOCS_SEARCH_ALLOWLIST.length,
       maxResults: MAX_DOCS_SEARCH_RESULTS,
       maxSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES,
     },
     "figma-repl://api": {
-      purpose: "Targeted Figma Plugin API symbol lookup without dumping the bundled declaration file.",
+      purpose: "Targeted Figma Plugin API symbol lookup from the internal corpus.",
       tool: "figma_repl_api_lookup",
       workflow: [
         "Search exact symbols such as createFrame, loadFontAsync, VariableCollection, or SceneNode.",
-        "Use snippets with file/line evidence.",
+        "Use snippets with matchType and confidence.",
         "For broader usage guidance, use figma_repl_docs_search.",
       ],
-      guardrail: "The full plugin-api-standalone.d.ts file is never returned as one response.",
+      ranking: "API references are chunked by Markdown headings/windows and d.ts symbol-ish blocks; exact symbols are boosted over broad token matches.",
+      guardrail: "Bundled declaration files are internal corpus and are never returned as full documents.",
       maxResults: MAX_DOCS_SEARCH_RESULTS,
       maxSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES,
     },
@@ -5298,312 +4132,6 @@ function readStaticReplResource(uri: string): Record<string, unknown> | undefine
       },
     ],
   };
-}
-
-function createReplToolDescriptions(): Record<string, unknown>[] {
-  return [
-    {
-      name: "figma_repl_capabilities",
-      description:
-        "Return the compact unified facade guide, file workflow, docs/API lookup workflow, safety policy, routing/delegation boundaries, and examples for figma-repl-mcp.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_open",
-      description:
-        "Create or update a local Figma REPL session. Records fileKey/surface/page context, local handles, and upstream use_figma settings.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
-        label: stringProperty("Human-readable session label."),
-        fileUrl: stringProperty("Optional Figma file URL stored in local session metadata."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface; blocks mismatched Design/FigJam/Slides usage later."),
-        currentPageId: stringProperty("Optional current Figma page id stored in local session metadata."),
-        reset: booleanProperty("Reset local handles and history for this session before opening."),
-        connect: booleanProperty("Connect to upstream Figma MCP during open. Defaults to true."),
-        refresh: booleanProperty("Refresh cached upstream tool list."),
-        upstreamTool: stringProperty("Override upstream eval tool name. Defaults to use_figma."),
-        upstreamArgument: stringProperty("Override upstream JavaScript argument name. Usually code."),
-        upstreamArguments: objectProperty("Extra arguments merged into every upstream eval call for this session."),
-        handles: objectProperty("Initial local handles, for example {\"$header\": \"12:34\"}."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_eval",
-      description:
-        "Run one batched JavaScript transaction through upstream use_figma. Diagnostics block unsafe API-contract/read-mode/surface mistakes before dispatch.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
-        code: stringProperty("JavaScript body executed inside an async function in the Figma Plugin API context. Use return to send structured output."),
-        mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
-        returnMode: enumProperty(["auto", "json", "text", "raw"], "Controls how much parsed/text upstream output is returned."),
-        allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
-        upstreamTool: stringProperty("Override upstream eval tool name for this call."),
-        upstreamArgument: stringProperty("Override upstream JavaScript argument name for this call."),
-        upstreamArguments: objectProperty("Extra arguments sent to the upstream tool for this call."),
-        handleUpdates: objectProperty("Local handle updates merged before running code."),
-        includeRawUpstream: booleanProperty("Include raw upstream MCP result in the response."),
-      }, ["title", "code"]),
-    },
-    {
-      name: "figma_repl_run_script_file",
-      description:
-        "Primary file-based JavaScript workflow for Figma REPL. Reads an absolute scriptPath or a session-workspace inputFile, injects $ helpers, writes output files, and optionally executes through upstream use_figma.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
-        scriptPath: stringProperty("Absolute path to a local JavaScript file. Prefer inputFile after figma_repl_init_workspace."),
-        inputFile: stringProperty("File name inside the initialized file-context directory. Defaults are created by figma_repl_prepare_task."),
-        helperProfile: enumProperty(["auto", "minimal", "asset", "clone", "full"], "Controls injected $ helper size. auto injects heavy $.imageAsset/$.cloneNodeTree only when the script source uses them."),
-        dryRun: booleanProperty("Read, diagnose, inject helpers, and return compiledScript/script metadata without calling upstream Figma."),
-        strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
-        targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
-        allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
-        upstreamTool: stringProperty("Override upstream eval tool name for this call."),
-        upstreamArgument: stringProperty("Override upstream JavaScript argument name for this call."),
-        upstreamArguments: objectProperty("Extra arguments sent to the upstream tool for this call."),
-        includeRawUpstream: booleanProperty("Include raw upstream MCP result in the response."),
-        outputDir: stringProperty("Advanced absolute directory escape hatch for split result.json, diagnostics.json, and summary.md output files."),
-        outputFile: stringProperty("File name inside the initialized file-context directory. Defaults to the input script basename plus .result.json."),
-        resultFile: stringProperty("Advanced absolute file path, outputDir-relative JSON path, or file-context file name for full result output."),
-        diagnosticsFile: stringProperty("Advanced optional absolute file path or outputDir-relative JSON path when diagnostics should be split out of the paired result file."),
-        summaryFile: stringProperty("Advanced optional absolute file path or outputDir-relative Markdown path when a separate summary is needed."),
-        inlineResultLimit: numberProperty("Non-negative byte cap for large inline result fields. Use the paired result file for full payloads."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_apply_asset_manifest",
-      description:
-        "Apply a local asset manifest to Figma target nodes through configurable upstream asset/upload tools. Use for large generated images after .figma.js creates target rectangles.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
-        manifestPath: stringProperty("Path to a JSON manifest. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of assets or an object with assets/toolName/argumentsTemplate."),
-        assets: {
-          type: "array",
-          description: "Inline asset entries: { path|filePath|localPath, targetNodeId|nodeId, name?, metadata?, toolName?, arguments? }.",
-          items: { type: "object", additionalProperties: true },
-        },
-        toolName: stringProperty("Default upstream asset/upload/fill tool. If omitted, the REPL selects an advertised asset-like tool and infers args only from recognizable schema fields."),
-        arguments: objectProperty("Default upstream arguments template. Use {{path}}, {{targetNodeId}}, {{name}}, {{metadata.foo}}, or {{asset}} placeholders."),
-        argumentsTemplate: objectProperty("Alias for arguments. Prefer this when mirroring fake or upstream schemas explicitly."),
-        validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        resultFile: stringProperty("Optional compact manifest result JSON. Accepts an absolute path or a file name inside the initialized file-context workspace."),
-        outputFile: stringProperty("Alias for resultFile."),
-        inlineResultLimit: numberProperty("Reserved for compatibility with compact-result workflows; manifest responses are already compact."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_capture_node",
-      description:
-        "Capture one Figma node through a configurable upstream screenshot tool and save image bytes, screenshot URL payloads, or text responses to a local outputFile for final visual QA.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
-        nodeId: stringProperty("Figma node id to capture."),
-        targetNodeId: stringProperty("Alias for nodeId."),
-        outputFile: stringProperty("Local file path where the screenshot image, downloaded URL payload, or text response is written. Accepts an absolute path or a file name inside the initialized file-context workspace."),
-        resultFile: stringProperty("Optional compact capture metadata JSON. Accepts an absolute path or a file name inside the initialized file-context workspace."),
-        toolName: stringProperty("Upstream screenshot/capture tool. If omitted, the REPL selects an advertised screenshot-like tool and infers node id only from recognizable schema fields."),
-        arguments: objectProperty("Upstream arguments template. Use {{nodeId}} or {{targetNodeId}} placeholders."),
-        argumentsTemplate: objectProperty("Alias for arguments."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: numberProperty("Reserved for compatibility with compact-result workflows; capture responses return only file metadata."),
-      }, ["title", "outputFile"]),
-    },
-    {
-      name: "figma_repl_run_task_plan",
-      description:
-        "Run a sequential local JSON task plan: script-file dryRun/execute, asset manifest application, screenshot capture, and generic upstream tool calls. Stops on first failure by default.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
-        planPath: stringProperty("JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of steps or an object with steps."),
-        steps: {
-          type: "array",
-          description: "Inline steps. Supported type/tool values: script-file, asset-manifest, screenshot-capture, upstream-tool.",
-          items: { type: "object", additionalProperties: true },
-        },
-        stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true."),
-        resultFile: stringProperty("JSON result file. Accepts an absolute path or a file name inside the initialized file-context workspace. Defaults to <planPath>.result.json for file plans; required for inline plans."),
-        outputFile: stringProperty("Alias for resultFile."),
-        inlineResultLimit: numberProperty("Reserved for compatibility with compact-result workflows; plan responses are compact per-step statuses."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_init_workspace",
-      description:
-        "Initialize a file-context workspace at <cwd>/<dirName>/<fileKey-or-fileSlug>. Input .figma.js files and paired .result.json outputs live in that same folder.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local REPL session id. Used as an intent fallback after intent/task/title."),
-        intent: stringProperty("Human intent used to derive <intentSlug>.figma.js and <intentSlug>.result.json."),
-        task: stringProperty("Alias for intent."),
-        fileUrl: stringProperty("Figma file URL used to derive fileKey and surface/file context."),
-        fileKey: stringProperty("Explicit Figma file key used as the file-context directory name."),
-        fileSlug: stringProperty("Fallback file-context slug when no fileKey is available."),
-        cwd: stringProperty("Absolute project directory where the figma-mcp workspace directory will be created."),
-        dirName: stringProperty("Workspace directory name under cwd. Defaults to figma-mcp."),
-        overwrite: booleanProperty("Reserved for compatibility; directories are created idempotently."),
-      }, ["title", "cwd"]),
-    },
-    {
-      name: "figma_repl_prepare_task",
-      description:
-        "Create or reuse an intent-specific .figma.js script and paired .result.json file in the file-context workspace.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
-        intent: stringProperty("Human intent used to derive <intentSlug>.figma.js and <intentSlug>.result.json."),
-        task: stringProperty("Alias for intent."),
-        fileUrl: stringProperty("Figma file URL used to derive fileKey/file context when preparing a workspace."),
-        fileKey: stringProperty("Explicit Figma file key used as the file-context directory name."),
-        fileSlug: stringProperty("Fallback file-context slug when no fileKey is available."),
-        goal: stringProperty("Task goal copied into the generated .figma.js file and pending .result.json metadata."),
-        taskSlug: stringProperty("Stable slug for the task directory. Defaults from taskName/title."),
-        taskName: stringProperty("Human-readable task name used to derive a slug when taskSlug is omitted."),
-        taskDir: stringProperty("Absolute task directory override. Preferred public name for workspaceDir."),
-        fileName: stringProperty("File name ending in .figma.js. Preferred public name for scriptName."),
-        taskRoot: stringProperty(`Absolute task root. Defaults to ${TASK_WORKSPACE_ROOT_ENV}, then OS temp figma-repl-mcp/tasks.`),
-        workspaceDir: stringProperty("Alias for taskDir. Absolute workspace directory override."),
-        scriptName: stringProperty("Alias for fileName. File name ending in .figma.js. Defaults to <slug>.figma.js."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface persisted on the session and copied into generated guidance."),
-        targetPageId: stringProperty("Optional target page id copied into generated guidance."),
-        template: stringProperty("Template hint copied into the generated .figma.js comments. V1 templates are curated guidance only."),
-        overwrite: booleanProperty("Overwrite existing script/result pair. Defaults false."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_plan_task",
-      description:
-        "Return compact planning guidance for the preferred .figma.js file workflow without reading or writing files.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        goal: stringProperty("Natural-language task goal. Preferred public name for task/intent."),
-        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface. Preferred public name for expectedSurface."),
-        workflow: stringProperty("Preferred workflow. Defaults to script-file."),
-        task: stringProperty("Short task description."),
-        intent: stringProperty("Intent phrase used to suggest compact API cards."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_api_card",
-      description:
-        "Return curated compact API cards for common .figma.js workflow needs before broader docs/API lookup.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        card: stringProperty("Card id or topic, for example text, auto-layout, components, variables, pages."),
-        query: stringProperty("Search query when card id is not known."),
-        maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 3."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_suggest_api",
-      description:
-        "Map a natural-language intent to compact API cards, helper choices, and the preferred file workflow.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        task: stringProperty("Natural-language task intent. Preferred public name for intent."),
-        intent: stringProperty("Natural-language task intent, for example 'create a card with text and auto layout'."),
-        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface. Preferred public name for expectedSurface."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
-        maxCards: numberProperty("Maximum suggested cards, capped at 8. Defaults to 4."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_inspect",
-      description:
-        "Inspect $selection, $currentPage, a stored handle, or a Figma node id through one read-mode use_figma call.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
-        target: stringProperty("$selection, $currentPage, a stored handle like $header, or a raw node id. Defaults to $selection."),
-        depth: numberProperty("Child summary depth. Defaults to 2."),
-        upstreamTool: stringProperty("Override upstream eval tool name for this call."),
-        upstreamArgument: stringProperty("Override upstream JavaScript argument name for this call."),
-        upstreamArguments: objectProperty("Extra arguments sent to the upstream tool for this call."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_cache_get",
-      description:
-        "Return local REPL sessions, handles, recent command history, fileKey/surface/page context, and last diagnostics without calling Figma.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Optional session id to return."),
-        includeHistory: booleanProperty("Include command history. Defaults to true."),
-        historyLimit: numberProperty("Maximum history entries to return."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_validate_handles",
-      description:
-        "Resolve cached handles or raw node ids through one read-mode upstream eval and report valid, missing, or stale handles.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
-        handles: {
-          type: "array",
-          description: "Optional handle names or raw node ids to validate. Defaults to all cached handles.",
-          items: { type: "string" },
-        },
-        upstreamTool: stringProperty("Override upstream eval tool name for this call."),
-        upstreamArgument: stringProperty("Override upstream JavaScript argument name for this call."),
-        upstreamArguments: objectProperty("Extra arguments sent to the upstream tool for this call."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_list_upstream_tools",
-      description:
-        "List tools exposed by the upstream official Figma MCP server through the shared OAuth-backed remote client.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        refresh: booleanProperty("Refresh cached upstream tool list."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_call_upstream_tool",
-      description:
-        "Proxy one official upstream Figma MCP tool call through figma-repl-mcp so agents can stay on the unified REPL facade for capabilities not covered by the file workflow.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
-        toolName: stringProperty("Official upstream Figma MCP tool name to call. Local figma_repl_* tools are rejected."),
-        arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        includeRawUpstream: booleanProperty("Include the raw upstream MCP result as raw."),
-      }, ["title", "toolName", "arguments"]),
-    },
-    {
-      name: "figma_repl_docs_search",
-      description:
-        "Search compact, capped snippets from the local Figma router reference tree. Use before reading large bundled docs directly.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        query: stringProperty("Keyword query, for example 'component properties' or 'Slides lifecycle'."),
-        maxResults: numberProperty(`Maximum results, capped at ${MAX_DOCS_SEARCH_RESULTS}. Defaults to ${DEFAULT_DOCS_SEARCH_MAX_RESULTS}.`),
-        maxSnippetLines: numberProperty(`Lines per snippet, capped at ${MAX_DOCS_SEARCH_SNIPPET_LINES}. Defaults to ${DEFAULT_DOCS_SEARCH_SNIPPET_LINES}.`),
-      }, ["title", "query"]),
-    },
-    {
-      name: "figma_repl_api_lookup",
-      description:
-        "Look up a targeted Figma Plugin API symbol in the local API index/reference/d.ts snippets without dumping the full declaration file.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        symbol: stringProperty("Figma Plugin API symbol or method name, for example createFrame, loadFontAsync, VariableCollection."),
-        maxResults: numberProperty(`Maximum results, capped at ${MAX_DOCS_SEARCH_RESULTS}. Defaults to 5.`),
-        maxSnippetLines: numberProperty(`Lines per snippet, capped at ${MAX_DOCS_SEARCH_SNIPPET_LINES}. Defaults to 5.`),
-      }, ["title", "symbol"]),
-    },
-  ];
 }
 
 function readReplResource(uri: string, sessions: FigmaReplSessionStore): Record<string, unknown> {
@@ -5642,158 +4170,9 @@ function readReplResource(uri: string, sessions: FigmaReplSessionStore): Record<
   throw new Error(`Unknown figma-repl resource URI: ${uri}`);
 }
 
-async function searchReferenceFiles(options: {
-  query: string;
-  files: string[];
-  maxResults: number;
-  maxSnippetLines: number;
-  exactSymbol?: boolean;
-}): Promise<{
-  searchRoot: string;
-  maxResults: number;
-  maxSnippetLines: number;
-  results: ReferenceSearchResult[];
-}> {
-  const searchRoot = await resolveReferenceRoot();
-  const queryTokens = tokenizeQuery(options.query);
-  const results: ReferenceSearchResult[] = [];
-  for (const file of options.files) {
-    const path = resolve(searchRoot, file);
-    if (!isPathInside(searchRoot, path)) {
-      continue;
-    }
-    let text: string;
-    try {
-      text = await readFile(path, "utf8");
-    } catch {
-      continue;
-    }
-    results.push(...searchReferenceText({
-      file,
-      text,
-      query: options.query,
-      queryTokens,
-      maxSnippetLines: options.maxSnippetLines,
-      exactSymbol: Boolean(options.exactSymbol),
-    }));
-  }
-  results.sort((left, right) => right.score - left.score || left.file.localeCompare(right.file) || left.lineStart - right.lineStart);
-  return {
-    searchRoot,
-    maxResults: options.maxResults,
-    maxSnippetLines: options.maxSnippetLines,
-    results: results.slice(0, options.maxResults),
-  };
-}
-
-function searchReferenceText(options: {
-  file: string;
-  text: string;
-  query: string;
-  queryTokens: string[];
-  maxSnippetLines: number;
-  exactSymbol: boolean;
-}): ReferenceSearchResult[] {
-  const lines = options.text.split(/\r?\n/u);
-  const results: ReferenceSearchResult[] = [];
-  const symbolPattern = options.exactSymbol
-    ? new RegExp(`\\b${escapeRegExp(options.query)}\\b`, "u")
-    : undefined;
-  const lowerQuery = options.query.toLowerCase();
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const lower = line.toLowerCase();
-    const tokenHits = options.queryTokens.filter((token) => lower.includes(token)).length;
-    const exactHit = symbolPattern?.test(line) ?? false;
-    const phraseHit = lower.includes(lowerQuery);
-    if (!exactHit && !phraseHit && tokenHits === 0) {
-      continue;
-    }
-    const contextBefore = Math.floor((options.maxSnippetLines - 1) / 2);
-    const start = Math.max(0, index - contextBefore);
-    const end = Math.min(lines.length, start + options.maxSnippetLines);
-    const snippetLines = lines.slice(start, end);
-    results.push({
-      file: options.file,
-      lineStart: start + 1,
-      lineEnd: end,
-      score:
-        (exactHit ? 100 : 0) +
-        (phraseHit ? 50 : 0) +
-        tokenHits * 10 +
-        (options.file.endsWith(".d.ts") ? 5 : 0),
-      snippet: snippetLines.join("\n").slice(0, 2400),
-    });
-  }
-  return collapseOverlappingResults(results);
-}
-
-function collapseOverlappingResults(results: ReferenceSearchResult[]): ReferenceSearchResult[] {
-  const collapsed: ReferenceSearchResult[] = [];
-  for (const result of results) {
-    const previous = collapsed.at(-1);
-    if (previous && previous.file === result.file && result.lineStart <= previous.lineEnd) {
-      previous.lineEnd = Math.max(previous.lineEnd, result.lineEnd);
-      previous.score = Math.max(previous.score, result.score);
-      continue;
-    }
-    collapsed.push(result);
-  }
-  return collapsed;
-}
-
-function tokenizeQuery(query: string): string[] {
-  return query
-    .toLowerCase()
-    .split(/[^a-z0-9_$:.-]+/u)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2);
-}
-
-function normalizeLookupQuery(value: unknown, name: string): string {
-  if (typeof value !== "string") {
-    throw new Error(`Tool argument "${name}" is required and must be a string.`);
-  }
-  const query = value.trim();
-  if (!query) {
-    throw new Error(`Tool argument "${name}" must not be empty.`);
-  }
-  if (query.length > MAX_LOOKUP_QUERY_LENGTH) {
-    throw new Error(`Tool argument "${name}" must be ${MAX_LOOKUP_QUERY_LENGTH} characters or fewer.`);
-  }
-  return query;
-}
-
-async function resolveReferenceRoot(): Promise<string> {
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    resolve(moduleDir, "../skills/figma-router/references"),
-    resolve(moduleDir, "../../skills/figma-router/references"),
-    resolve(moduleDir, "../../../skills/figma-router/references"),
-    resolve(process.cwd(), "skills/figma-router/references"),
-    resolve(process.cwd(), "plugins/figma-mcp-bridge/skills/figma-router/references"),
-    resolve(process.cwd(), "../skills/figma-router/references"),
-  ];
-  for (const candidate of candidates) {
-    try {
-      await readFile(resolve(candidate, "figma-use.md"), "utf8");
-      return candidate;
-    } catch {
-      // Try the next runtime layout.
-    }
-  }
-  throw new Error(
-    "Unable to locate local Figma reference tree for figma-repl-mcp docs/API lookup.",
-  );
-}
-
 function isPathInside(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 function parseUpstreamToolResult(value: unknown): ParsedUpstreamToolResult {
@@ -6076,106 +4455,12 @@ function touchSession(session: FigmaReplSession): void {
   session.updatedAt = new Date().toISOString();
 }
 
-function asEvalArgs(args: Record<string, unknown>): FigmaReplEvalArguments {
-  return args as unknown as FigmaReplEvalArguments;
-}
-
-function asRunScriptFileArgs(args: Record<string, unknown>): FigmaReplRunScriptFileArguments {
-  return args as unknown as FigmaReplRunScriptFileArguments;
-}
-
-function asApplyAssetManifestArgs(args: Record<string, unknown>): FigmaReplApplyAssetManifestArguments {
-  return args as unknown as FigmaReplApplyAssetManifestArguments;
-}
-
-function asCaptureNodeArgs(args: Record<string, unknown>): FigmaReplCaptureNodeArguments {
-  return args as unknown as FigmaReplCaptureNodeArguments;
-}
-
-function asRunTaskPlanArgs(args: Record<string, unknown>): FigmaReplRunTaskPlanArguments {
-  return args as unknown as FigmaReplRunTaskPlanArguments;
-}
-
-function asInitWorkspaceArgs(args: Record<string, unknown>): FigmaReplInitWorkspaceArguments {
-  return args as unknown as FigmaReplInitWorkspaceArguments;
-}
-
-function asPrepareTaskArgs(args: Record<string, unknown>): FigmaReplPrepareTaskArguments {
-  return args as unknown as FigmaReplPrepareTaskArguments;
-}
-
-function asPlanTaskArgs(args: Record<string, unknown>): FigmaReplPlanTaskArguments {
-  return args as unknown as FigmaReplPlanTaskArguments;
-}
-
-function asApiCardArgs(args: Record<string, unknown>): FigmaReplApiCardArguments {
-  return args as unknown as FigmaReplApiCardArguments;
-}
-
-function asSuggestApiArgs(args: Record<string, unknown>): FigmaReplSuggestApiArguments {
-  return args as unknown as FigmaReplSuggestApiArguments;
-}
-
-function asCallUpstreamToolArgs(args: Record<string, unknown>): FigmaReplCallUpstreamToolArguments {
-  return args as unknown as FigmaReplCallUpstreamToolArguments;
-}
-
-function asDocsSearchArgs(args: Record<string, unknown>): FigmaReplDocsSearchArguments {
-  return args as unknown as FigmaReplDocsSearchArguments;
-}
-
-function asApiLookupArgs(args: Record<string, unknown>): FigmaReplApiLookupArguments {
-  return args as unknown as FigmaReplApiLookupArguments;
-}
-
 function sanitizeSessionId(sessionId: string): string {
   const value = sessionId.trim();
   if (!value) {
     return FIGMA_REPL_DEFAULT_SESSION_ID;
   }
   return value.slice(0, 120);
-}
-
-function assertRequiredTitleArgument(args: Record<string, unknown>): void {
-  if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
-    throw new Error('Tool argument "title" is required and must be a string.');
-  }
-}
-
-function objectSchema(
-  properties: Record<string, unknown>,
-  required: string[] = [],
-): Record<string, unknown> {
-  return {
-    type: "object",
-    properties,
-    required,
-    additionalProperties: false,
-  };
-}
-
-function titleProperty(): Record<string, unknown> {
-  return stringProperty("Human-readable title used when presenting output to the user.");
-}
-
-function stringProperty(description: string): Record<string, unknown> {
-  return { type: "string", description };
-}
-
-function booleanProperty(description: string): Record<string, unknown> {
-  return { type: "boolean", description };
-}
-
-function numberProperty(description: string): Record<string, unknown> {
-  return { type: "number", description };
-}
-
-function objectProperty(description: string): Record<string, unknown> {
-  return { type: "object", description, additionalProperties: true };
-}
-
-function enumProperty(values: string[], description: string): Record<string, unknown> {
-  return { type: "string", enum: values, description };
 }
 
 function makeJsonToolResult(value: unknown): Record<string, unknown> {
@@ -6198,16 +4483,6 @@ function parseJsonToolResult(result: Record<string, unknown>): unknown {
     return result;
   }
   return JSON.parse(firstText);
-}
-
-function withDefaultTitle<T extends Record<string, unknown>>(
-  args: T,
-  title: string,
-): T & { title: string } {
-  return {
-    ...args,
-    title: typeof args.title === "string" ? args.title : title,
-  };
 }
 
 function normalizeOAuthCachePath(oauthCachePath: string): string {

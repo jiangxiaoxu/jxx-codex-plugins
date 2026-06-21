@@ -1,55 +1,59 @@
 ---
 name: figma-router
-description: Unified routing entry for official Figma MCP skill workflows, Figma REPL MCP workflows, and Figma MCP login. Use for Figma design, FigJam, Slides, Make, Code Connect, design systems, tokens, components, use_figma, figma_repl_run_script_file, figma_repl_eval, create_new_file, generate_diagram, generate_figma_design, Plugin API lookup, Figma MCP login/auth refresh, or any task that needs choosing the correct official Figma skill, MCP resource, or local Figma reference before tool use.
+description: Unified routing entry for Figma MCP login, figma-repl-mcp file workflows, and compact Figma Plugin API lookup. Use for Figma design, FigJam, Slides, design systems, tokens, components, use_figma, figma_repl_run_script_file, Plugin API lookup, or Figma MCP auth repair.
 ---
 
 # Figma Router
 
-Use this skill as the lightweight entry point for Figma MCP tasks, including Figma MCP login for the bundled bridge and choosing the future single Figma-facing facade path through stateful `figma-repl-mcp` whenever possible. Do not copy, rewrite, delete, or reorganize the official Figma plugin cache.
+Use this skill as the lightweight router for Figma MCP work. After OAuth registration, use `figma-repl-mcp` as the agent-facing entrypoint. Bundled reference files are internal lookup corpus; do not read or route agents to them directly.
 
-## Route
+## Default Route
 
-1. Identify the task type before reading a large Figma skill.
-2. If the user asks for Figma MCP login, auth setup, credential refresh, or auth repair, use the Figma MCP Login section below.
-3. Otherwise, use the route table below to choose the reader input and the local lightweight reference.
-4. Read exactly the most relevant local reference from `references/`.
-5. Resolve the official Figma skill document with `python <skill_dir>/scripts/figma_skill_reader.py <reader-input>`. The helper returns only the bundled file path and file size, not file content.
-6. Use MCP resources only as tool/runtime identities, not as the documentation source. Bundled official skill entry files are named `SKILL.source.md` so they are not discovered as live skills.
-7. For `use_figma`, `figma_repl_run_script_file`, `figma_repl_eval`, `figma_repl_inspect`, `create_new_file`, or `generate_diagram`, preserve the original mandatory prerequisite semantics. When using `figma-repl-mcp`, prefer `figma_repl_capabilities`, `figma_repl_docs_search`, and `figma_repl_api_lookup` before reading large bundled references directly; use `figma_repl_apply_asset_manifest` for large local generated assets after target rectangles exist, `figma_repl_capture_node` for final visual QA saved to a local file, including upstream screenshot URL payloads, `figma_repl_run_task_plan` for sequential file plans, and `figma_repl_call_upstream_tool` for official capabilities not covered by the file workflow. If the plugin is not installed in the current Codex environment and direct `figma_repl_*` tools are not discoverable, use the package-local Node fallback `createFigmaReplClient` instead of reporting missing direct tools as an MCP bug.
+1. If the user asks for login, auth setup, credential refresh, or auth repair, run the Figma MCP Login flow below.
+2. Start with `figma_repl_capabilities`, then use the file workflow.
+3. If direct `figma_repl_*` tools are not installed in the active Codex environment, use the package-local Node API `createFigmaReplClient` against the same OAuth cache.
+4. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
+5. Use `figma_repl_suggest_api`, `figma_repl_api_card`, `figma_repl_docs_search`, and `figma_repl_api_lookup` for guidance. Treat their snippets as the exposed documentation surface.
 
-For deterministic resolution from a `skill://figma/...` URI or a short skill name such as `figma-use`, run the bundled helper at `<skill_dir>/scripts/figma_skill_reader.py`, where `<skill_dir>` is the directory containing this `SKILL.md`. The command prints `path=<resolved-file>` and `size_bytes=<bytes>` to stdout.
+## Primary File Workflow
 
-After this `SKILL.md` is loaded, use the loaded skill instructions from the current context. Do not reread this file only because the Figma Router skill activates again. Likewise, after a routed official skill `SKILL.source.md` or reference document is progressively loaded, use the loaded text from the current context. Reread a skill or reference document only when the current context does not contain the needed text.
+- Initialize context: `figma_repl_init_workspace({ cwd, fileUrl|fileKey, intent })`.
+- Prepare a repairable intent file: `figma_repl_prepare_task({ sessionId, intent|title|goal })`.
+- Edit the generated `<intent>.figma.js`; use native Figma Plugin API plus the injected `$` helpers.
+- Dry-run: `figma_repl_run_script_file({ sessionId, inputFile, dryRun: true, strict: true, expectedSurface })`.
+- Execute: `figma_repl_run_script_file({ sessionId, inputFile, outputFile })`.
+- For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest`.
+- For visual QA, call `figma_repl_capture_node` and inspect the local image/result files.
+- For repeatable multi-step workflows, use `figma_repl_run_task_plan`.
 
-## Route Table
+Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls can use simple `inputFile` and `outputFile` names after workspace initialization. Absolute paths remain escape hatches.
 
-| Task | Reader input | Local reference | Required before tool call |
-| --- | --- | --- | --- |
-| Code Connect templates, component mapping, `.figma.ts`, `.figma.js` | `figma-code-connect` | `references/figma-code-connect.md` | Read before Code Connect work. |
-| Create a new design, FigJam, or Slides file | `figma-create-new-file` | `references/figma-create-new-file.md` | Mandatory before every `create_new_file` call. |
-| App/page/view/modal/drawer/panel to Figma | `figma-generate-design` | `references/figma-generate-design.md` | Read alongside `figma-use` guidance when writing to Figma. |
-| Diagram, Mermaid, flowchart, ERD, sequence, state, Gantt, timeline, architecture | `figma-generate-diagram` | `references/figma-generate-diagram.md` | Mandatory before every `generate_diagram` call. |
-| Design system, tokens, variables, component library, component creation | `figma-generate-library` | `references/figma-generate-library.md` | Read with `figma-use` before Figma library writes. |
-| Figma Plugin API execution, canvas writes, programmatic inspection | `figma-use` | `references/figma-use.md` | Mandatory before every `use_figma` call. |
-| Stateful unified facade work through `figma-repl-mcp`, including `figma_repl_run_script_file`, `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, `figma_repl_run_task_plan`, `figma_repl_init_workspace`, `figma_repl_prepare_task`, `figma_repl_plan_task`, `figma_repl_api_card`, `figma_repl_suggest_api`, `figma_repl_eval`, `figma_repl_inspect`, `figma_repl_validate_handles`, `figma_repl_docs_search`, `figma_repl_api_lookup`, `figma_repl_call_upstream_tool`, or Node REPL use of `createFigmaReplClient` | `figma-use` when executing Plugin API code; facade lookup tools when only searching docs/API | `references/figma-use.md` | For Plugin API execution, preserve `figma-use` prerequisites. Prefer `figma_repl_init_workspace` once, then local `.figma.js` files with `inputFile`/`outputFile` names for non-trivial work. For large generated assets, create target rectangles in script and apply local files through `figma_repl_apply_asset_manifest` with explicit upstream `toolName`/`argumentsTemplate` when needed. For final visual QA, use `figma_repl_capture_node` to write a screenshot/capture to a local file. For repeatable workflows, use `figma_repl_run_task_plan` with `script-file`, `asset-manifest`, `screenshot-capture`, and `upstream-tool` steps. For guidance, prefer `figma_repl_capabilities`, `figma-repl://file-workflow`, `figma-repl://workflow-tools`, `figma-repl://api-cards`, `figma-repl://intents`, `figma_repl_api_card`, `figma_repl_suggest_api`, `figma_repl_docs_search`, and `figma_repl_api_lookup`; for official capabilities not covered by the file workflow, stay on the facade and call `figma_repl_call_upstream_tool`. |
-| FigJam board inspection, board scaffolds, FigJam nodes, image upload routing | `figma-use-figjam` | `references/figma-use-figjam.md` | Read with `figma-use` for FigJam boards; route image uploads to asset upload guidance. |
-| Slides deck organization, speaker notes, themes, slide grids, lifecycle, properties | `figma-use-slides` | `references/figma-use-slides.md` | Read with `figma-use` for Slides files. |
-| Exact Plugin API type lookup | Prefer `figma_repl_api_lookup`; fallback to `figma-use/references/plugin-api-standalone.index.md` and targeted `.d.ts` search only when the facade result is insufficient | `references/plugin-api-lookup.md` and `references/plugin-api-standalone.md` | Do not read or dump the full bundled `.d.ts`; use targeted symbol lookup with file/line evidence. |
+## Script Contract
 
-## Official Skill Summaries
+- Write ordinary async JavaScript in `.figma.js`: native Figma Plugin API for advanced work, injected `$` helpers for common agent tasks.
+- Keep each transaction small and repairable. Use `dryRun: true`, then fix diagnostics by file line before executing.
+- Return compact JSON with changed node ids, handles, and validation notes. Write large results to the paired `outputFile` instead of relying on inline MCP output.
+- Common helpers: `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`.
+- Prefer `$.select` over direct selection mutation. Use `figma_repl_validate_handles` before reusing old handles.
+- For generated assets, use `$.imageAsset` only for small inline PNG/JPEG data; for larger local assets, create target rectangles and use `figma_repl_apply_asset_manifest`.
+- Use `figma_repl_capture_node` for final visual QA and `figma_repl_run_task_plan` for repeatable script, asset, capture, and upstream-tool sequences.
 
-- `figma-use`: Mandatory prerequisite before every direct `use_figma` call and before REPL calls that execute Plugin API code (`figma_repl_run_script_file`, `figma_repl_eval`, `figma_repl_inspect`, `figma_repl_validate_handles`). Use `figma_repl_apply_asset_manifest` for large local assets after target rectangles exist, `figma_repl_capture_node` for final capture-to-file QA, including upstream screenshot URL payloads, and `figma_repl_run_task_plan` for sequential file workflows. Use `figma_repl_api_card`/`figma_repl_suggest_api`/`figma_repl_docs_search`/`figma_repl_api_lookup` for compact guidance before opening large reference files.
-- `figma-create-new-file`: Mandatory prerequisite before every `create_new_file` call. Use for new blank Figma design, FigJam, or Slides files and plan/project resolution.
-- `figma-generate-diagram`: Mandatory prerequisite before every `generate_diagram` call. Use for Mermaid, FigJam diagrams, flowcharts, architecture diagrams, ERD, sequence, state, Gantt, timeline, dependency graph, schema, and pipeline visuals.
-- `figma-code-connect`: Use for Figma Code Connect template files that map published Figma components to code snippets, especially `.figma.ts` and `.figma.js`.
-- `figma-generate-design`: Use alongside `figma-use` for composed app pages, screens, modals, drawers, sidebars, panels, and multi-section views in Figma.
-- `figma-generate-library`: Use with `figma-use` for design systems, tokens, variables, styles, component libraries, variants, theming, documentation, and even single production-quality component creation.
-- `figma-use-figjam`: Use with `figma-use` for FigJam board workflows, existing-board inspection, board-content planning, stickies, sections, connectors, labels, tables, and FigJam-specific layout behavior.
-- `figma-use-slides`: Use with `figma-use` for Figma Slides workflows, deck organization, speaker notes, themes, slide lifecycle, slide grids, slide properties, and Slides-specific gotchas.
+## Lookup Order
 
-## API Lookup
+- Use `figma_repl_capabilities` or resources such as `figma-repl://file-workflow`, `figma-repl://workflow-tools`, `figma-repl://api-cards`, `figma-repl://intents`, `figma-repl://safety`, `figma-repl://docs`, and `figma-repl://api` for self-explaining workflow guidance.
+- Use `figma_repl_suggest_api` for task-to-helper routing.
+- Use `figma_repl_api_card` for curated short cards.
+- Use `figma_repl_docs_search` for BM25-ranked workflow snippets.
+- Use `figma_repl_api_lookup` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 
-The full `plugin-api-standalone.d.ts` is bundled at `references/official-figma-skills/figma-use/references/plugin-api-standalone.d.ts`, but agents should use `figma_repl_api_lookup` for targeted symbol snippets before reading it directly. Treat the plugin-local copy as the source-of-truth document only when facade lookup is insufficient; use [references/plugin-api-standalone.md](references/plugin-api-standalone.md) for its path and access rules. The bundled official Figma 2.0.9 skill copy contains eight skill folders; do not add routes for skills that are not present there.
+Use `figma_repl_call_upstream_tool` when a required official capability is not covered by the file workflow. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
+
+## Query Strategy
+
+- For natural-language tasks, call `figma_repl_suggest_api` first and use its `recommendedCards`, `queryHints`, `apiSymbols`, and `avoid` fields before writing `.figma.js`.
+- Use `recommendedCards` with `figma_repl_api_card` for compact patterns, then use `apiSymbols` with `figma_repl_api_lookup` only when exact Plugin API details are still missing.
+- Treat `avoid` as task-specific guardrails, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
+- Prefer these anchors when narrowing a query: text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, FigJam/Slides.
 
 ## Figma MCP Login
 
@@ -70,36 +74,7 @@ USERPROFILE/.codex/.figma-mcp-bridge-oauth.json
 
 Do not add persistent `figma-http`; the plugin's persistent MCP servers are `figma-stdio` and `figma-repl-mcp`.
 
-## Bundled MCP Servers
+## Bundled Servers
 
-- `figma-stdio`: transparent stdio bridge to the official remote Figma MCP server. Keep for raw upstream debugging and bridge parity checks.
-- `figma-repl-mcp`: stateful local MCP facade that can call upstream `use_figma` and other official tools, runs file-based Plugin API scripts, stores in-process session handles/history/diagnostics, and exposes tools such as `figma_repl_capabilities`, `figma_repl_open`, `figma_repl_run_script_file`, `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, `figma_repl_run_task_plan`, `figma_repl_init_workspace`, `figma_repl_prepare_task`, `figma_repl_plan_task`, `figma_repl_api_card`, `figma_repl_suggest_api`, `figma_repl_eval`, `figma_repl_inspect`, `figma_repl_cache_get`, `figma_repl_validate_handles`, `figma_repl_list_upstream_tools`, `figma_repl_call_upstream_tool`, `figma_repl_docs_search`, and `figma_repl_api_lookup`. Prefer it as the agent-facing entrypoint after OAuth registration; if these tools are not installed into the active Codex environment, use `createFigmaReplClient` as the expected local fallback.
-
-When using `figma-repl-mcp`, do not treat local handles as durable storage: they are process-local and can go stale when nodes are deleted or the MCP process restarts. Use `figma_repl_cache_get`, `figma_repl_validate_handles`, or `figma_repl_inspect` to verify state before relying on old handles. `figma_repl_run_script_file` is the primary path for non-trivial Plugin API JavaScript; initialize a workspace with `figma_repl_init_workspace` so later calls can use `inputFile` and `outputFile` names under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`, with paired `<intentSlug>.figma.js` and `<intentSlug>.result.json` files. Raw `figma_repl_eval` still runs Plugin API JavaScript in Figma; read `figma-use` guidance first and pass `allowDangerousOperations: true` only after reviewing destructive code. `allowDangerousOperations` does not bypass API contract, read-mode, or Design/FigJam/Slides surface diagnostics.
-
-## Scripts
-
-Resolve the helper script as `<skill_dir>/scripts/figma_skill_reader.py`, with `<skill_dir>` equal to the directory containing this `SKILL.md`. Do not resolve `scripts/figma_skill_reader.py` from the current working directory, plugin root, repository root, installed cache root, or any hard-coded local path. Before the first helper command in a session, verify that `<skill_dir>/scripts/figma_skill_reader.py` exists; if it does not, search only the current `figma-router` skill bundle for `scripts/figma_skill_reader.py`, use the discovered absolute path, and report the path mismatch briefly.
-
-Run the helper directly with Python. It does not print file content; it prints the resolved plugin-local path and file size.
-
-`python <skill_dir>/scripts/figma_skill_reader.py <uri-or-name>`
-
-Examples:
-
-```bash
-python <skill_dir>/scripts/figma_skill_reader.py figma-use
-python <skill_dir>/scripts/figma_skill_reader.py figma-use/references/api-reference.md
-python <skill_dir>/scripts/figma_skill_reader.py skill://figma/figma-code-connect/SKILL.md
-python <skill_dir>/scripts/figma_skill_reader.py figma-use/references/plugin-api-standalone.d.ts
-python <skill_dir>/scripts/figma_skill_reader.py -h
-```
-
-Output shape:
-
-```text
-path=<absolute-plugin-local-path>
-size_bytes=<file-size>
-```
-
-The resolver accepts `skill://figma/...` URIs, relative Figma skill document paths such as `figma-use/references/api-reference.md`, or short skill names. Inputs ending in `SKILL.md` are mapped to bundled `SKILL.source.md` files. It only returns files inside `references/official-figma-skills/`.
+- `figma-repl-mcp`: primary agent-facing facade after OAuth registration. It runs local `.figma.js` files, writes local output files, exposes compact docs/API lookup, stores process-local handles, can capture screenshots, applies generated assets, and delegates uncovered official capabilities.
+- `figma-stdio`: transparent stdio bridge to the official remote Figma MCP server. Keep for upstream debugging and parity checks.

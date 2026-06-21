@@ -1,30 +1,12 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type RemoteMcpClientOptions } from "./client.js";
+import { assertSafeFigmaReplCode, diagnoseFigmaReplCode, type FigmaReplDiagnostic, type FigmaReplDiagnosticsOptions, type FigmaReplDiagnosticSeverity, type FigmaReplFileDiagnostic, type FigmaReplHelperProfile, type FigmaReplSurface } from "./repl-script-runner.js";
+import type { FigmaReplApiCardArguments, FigmaReplApiLookupArguments, FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDocsSearchArguments, FigmaReplEvalArguments, FigmaReplInitWorkspaceArguments, FigmaReplOpenArguments, FigmaReplPlanTaskArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSuggestApiArguments } from "./repl-tool-args.js";
 import type { FigmaMcpProxyClient } from "./stdio-server.js";
 export declare const FIGMA_REPL_DEFAULT_SESSION_ID = "default";
-export type FigmaReplSurface = "design" | "figjam" | "slides";
-export type FigmaReplDiagnosticSeverity = "fatal" | "warning";
-export interface FigmaReplDiagnostic {
-    code: string;
-    severity: FigmaReplDiagnosticSeverity;
-    message: string;
-    suggestion: string;
-    docsHint: string;
-}
-export interface FigmaReplFileDiagnostic extends FigmaReplDiagnostic {
-    source: {
-        scriptPath: string;
-        line?: number;
-        column?: number;
-    };
-}
-export interface FigmaReplDiagnosticsOptions {
-    allowDangerousOperations?: boolean;
-    mode?: "read" | "write";
-    generatedCode?: boolean;
-    expectedSurface?: FigmaReplSurface;
-    strict?: boolean;
-}
+export { assertSafeFigmaReplCode, diagnoseFigmaReplCode, };
+export type { FigmaReplDiagnostic, FigmaReplDiagnosticsOptions, FigmaReplDiagnosticSeverity, FigmaReplFileDiagnostic, FigmaReplHelperProfile, FigmaReplSurface, };
+export type { FigmaReplApiCardArguments, FigmaReplApiLookupArguments, FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDocsSearchArguments, FigmaReplEvalArguments, FigmaReplInitWorkspaceArguments, FigmaReplOpenArguments, FigmaReplPlanTaskArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSuggestApiArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
 export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
     client?: FigmaMcpProxyClient;
     name?: string;
@@ -42,22 +24,6 @@ export interface FigmaReplClientOptions extends FigmaReplMcpServerOptions {
      * This is a Node REPL-friendly alias for statePath.
      */
     oauthCachePath?: string;
-}
-export interface FigmaReplOpenArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    label?: string;
-    fileUrl?: string;
-    expectedSurface?: FigmaReplSurface;
-    currentPageId?: string;
-    reset?: boolean;
-    connect?: boolean;
-    refresh?: boolean;
-    upstreamTool?: string;
-    upstreamArgument?: string;
-    upstreamArguments?: Record<string, unknown>;
-    handles?: Record<string, string>;
 }
 export interface FigmaReplClient {
     readonly client: FigmaMcpProxyClient;
@@ -137,189 +103,6 @@ export interface FigmaReplSessionStore {
     reset(sessionId?: string): FigmaReplSession;
     rememberHistory(session: FigmaReplSession, entry: FigmaReplHistoryEntry): void;
 }
-export interface FigmaReplEvalArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    code: string;
-    mode?: "read" | "write";
-    expectedSurface?: FigmaReplSurface;
-    returnMode?: "auto" | "json" | "text" | "raw";
-    allowDangerousOperations?: boolean;
-    upstreamTool?: string;
-    upstreamArgument?: string;
-    upstreamArguments?: Record<string, unknown>;
-    handleUpdates?: Record<string, string>;
-    includeRawUpstream?: boolean;
-}
-export interface FigmaReplRunScriptFileArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    scriptPath?: string;
-    inputFile?: string;
-    helperProfile?: FigmaReplHelperProfile;
-    dryRun?: boolean;
-    strict?: boolean;
-    expectedSurface?: FigmaReplSurface;
-    targetPageId?: string;
-    allowDangerousOperations?: boolean;
-    upstreamTool?: string;
-    upstreamArgument?: string;
-    upstreamArguments?: Record<string, unknown>;
-    includeRawUpstream?: boolean;
-    outputDir?: string;
-    outputFile?: string;
-    resultFile?: string;
-    diagnosticsFile?: string;
-    summaryFile?: string;
-    inlineResultLimit?: number;
-}
-export interface FigmaReplAssetManifestAsset {
-    [key: string]: unknown;
-    path?: string;
-    filePath?: string;
-    localPath?: string;
-    targetNodeId?: string;
-    nodeId?: string;
-    name?: string;
-    metadata?: Record<string, unknown>;
-    toolName?: string;
-    arguments?: Record<string, unknown>;
-}
-export interface FigmaReplApplyAssetManifestArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    assets?: FigmaReplAssetManifestAsset[];
-    manifestPath?: string;
-    toolName?: string;
-    arguments?: Record<string, unknown>;
-    argumentsTemplate?: Record<string, unknown>;
-    validateTargets?: boolean;
-    refresh?: boolean;
-    resultFile?: string;
-    outputFile?: string;
-    inlineResultLimit?: number;
-}
-export interface FigmaReplCaptureNodeArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    nodeId?: string;
-    targetNodeId?: string;
-    outputFile?: string;
-    resultFile?: string;
-    toolName?: string;
-    arguments?: Record<string, unknown>;
-    argumentsTemplate?: Record<string, unknown>;
-    refresh?: boolean;
-    inlineResultLimit?: number;
-}
-export interface FigmaReplTaskPlanStep {
-    [key: string]: unknown;
-    id?: string;
-    type?: string;
-    tool?: string;
-    args?: Record<string, unknown>;
-    arguments?: Record<string, unknown>;
-}
-export interface FigmaReplRunTaskPlanArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    planPath?: string;
-    steps?: FigmaReplTaskPlanStep[];
-    stopOnFailure?: boolean;
-    resultFile?: string;
-    outputFile?: string;
-    inlineResultLimit?: number;
-}
-export interface FigmaReplInitWorkspaceArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    intent?: string;
-    task?: string;
-    fileUrl?: string;
-    fileKey?: string;
-    fileSlug?: string;
-    cwd: string;
-    dirName?: string;
-    overwrite?: boolean;
-}
-export interface FigmaReplCallUpstreamToolArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    toolName: string;
-    arguments?: Record<string, unknown>;
-    refresh?: boolean;
-    includeRawUpstream?: boolean;
-}
-export interface FigmaReplDocsSearchArguments {
-    [key: string]: unknown;
-    title?: string;
-    query: string;
-    maxResults?: number;
-    maxSnippetLines?: number;
-}
-export interface FigmaReplApiLookupArguments {
-    [key: string]: unknown;
-    title?: string;
-    symbol: string;
-    maxResults?: number;
-    maxSnippetLines?: number;
-}
-export interface FigmaReplPrepareTaskArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    intent?: string;
-    task?: string;
-    fileUrl?: string;
-    fileKey?: string;
-    fileSlug?: string;
-    goal?: string;
-    taskSlug?: string;
-    taskName?: string;
-    taskDir?: string;
-    fileName?: string;
-    taskRoot?: string;
-    workspaceDir?: string;
-    scriptName?: string;
-    expectedSurface?: FigmaReplSurface;
-    targetPageId?: string;
-    template?: string;
-    overwrite?: boolean;
-}
-export interface FigmaReplPlanTaskArguments {
-    [key: string]: unknown;
-    title?: string;
-    goal?: string;
-    surface?: FigmaReplSurface;
-    workflow?: string;
-    task?: string;
-    expectedSurface?: FigmaReplSurface;
-    intent?: string;
-}
-export interface FigmaReplApiCardArguments {
-    [key: string]: unknown;
-    title?: string;
-    card?: string;
-    query?: string;
-    maxCards?: number;
-}
-export interface FigmaReplSuggestApiArguments {
-    [key: string]: unknown;
-    title?: string;
-    task?: string;
-    intent: string;
-    surface?: FigmaReplSurface;
-    expectedSurface?: FigmaReplSurface;
-    maxCards?: number;
-}
-export type FigmaReplHelperProfile = "auto" | "minimal" | "asset" | "clone" | "full";
 export declare function createFigmaReplSessionStore(options?: {
     defaultSessionId?: string;
     historyLimit?: number;
@@ -335,5 +118,3 @@ export declare function buildFigmaEvalScript(options: {
     code: string;
     mode?: "read" | "write";
 }): string;
-export declare function assertSafeFigmaReplCode(code: string, options?: FigmaReplDiagnosticsOptions): void;
-export declare function diagnoseFigmaReplCode(code: string, options?: FigmaReplDiagnosticsOptions): FigmaReplDiagnostic[];
