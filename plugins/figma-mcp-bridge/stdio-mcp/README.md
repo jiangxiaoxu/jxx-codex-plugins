@@ -2,8 +2,8 @@
 
 Node package for two Figma MCP frontends:
 
-- `figma-stdio`: transparent stdio bridge to `https://mcp.figma.com/mcp`;
-- `figma-repl-mcp`: agent-friendly facade for local `.figma.js` workflows, output files, compact lookup, asset manifests, capture, and task plans.
+- `figma-repl-mcp`: agent-friendly facade for local `.figma.js` workflows, output files, compact lookup, asset manifests, capture, and task plans;
+- `figma-stdio`: optional transparent bridge to `https://mcp.figma.com/mcp` for CLI, parity checks, and Node/node_repl debugging.
 
 Both reuse the OAuth cache created by `figma-mcp-bridge`.
 
@@ -27,7 +27,10 @@ The shared cache must already contain valid OAuth state. Use the bridge login he
 ## Package API
 
 ```ts
-import { createFigmaStdioMcpServer } from "@jxx-codex-plugins/figma-mcp-stdio";
+import {
+  createFigmaStdioMcpServer,
+  createRemoteMcpClient,
+} from "@jxx-codex-plugins/figma-mcp-stdio";
 import {
   createFigmaReplClient,
   diagnoseFigmaReplCode,
@@ -50,6 +53,19 @@ await figma.close();
 ```
 
 `oauthCachePath` must be absolute. CLI/MCP usage can select the same file with `FIGMA_MCP_OAUTH_CACHE_PATH`.
+
+For direct raw upstream access from Node or `node_repl`, prefer `createRemoteMcpClient` instead of installing `figma-stdio` as a persistent MCP server:
+
+```js
+const { createRemoteMcpClient } = await import("./dist/node-repl.js");
+
+const upstream = createRemoteMcpClient({
+  oauthCachePath: "C:/Users/you/.codex/.figma-mcp-bridge-oauth.json",
+});
+await upstream.connect();
+const tools = await upstream.listTools();
+await upstream.close();
+```
 
 ## REPL File Workflow
 

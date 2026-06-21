@@ -20,6 +20,11 @@
       "types": "./dist/repl-server.d.ts",
       "import": "./dist/repl-server.js",
       "default": "./dist/repl-server.js"
+    },
+    "./node-repl": {
+      "types": "./dist/node-repl.d.ts",
+      "import": "./dist/node-repl.js",
+      "default": "./dist/node-repl.js"
     }
   },
   "bin": {

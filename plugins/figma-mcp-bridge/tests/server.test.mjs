@@ -31,16 +31,12 @@ test("createBridgeConfig applies defaults and normalizes path", () => {
   assert.equal(config.oauthCacheEnabled, true);
 });
 
-test(".mcp.json registers stdio and REPL MCP servers", async () => {
+test(".mcp.json registers the default REPL MCP server only", async () => {
   const manifest = JSON.parse(
     await readFile(new URL("../.mcp.json", import.meta.url), "utf8"),
   );
 
-  assert.deepEqual(manifest.mcpServers["figma-stdio"], {
-    command: "node",
-    cwd: ".",
-    args: ["./stdio-mcp/dist/stdio-cli.js"],
-  });
+  assert.deepEqual(Object.keys(manifest.mcpServers), ["figma-repl-mcp"]);
   assert.deepEqual(manifest.mcpServers["figma-repl-mcp"], {
     command: "node",
     cwd: ".",
