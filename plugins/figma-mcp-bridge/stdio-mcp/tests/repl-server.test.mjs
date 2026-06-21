@@ -297,6 +297,15 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
       `${tool.name} outputSchema stays concise`,
     );
   }
+  const guidanceTool = tools.tools.find((tool) => tool.name === "figma_repl_guidance");
+  assert.match(guidanceTool.inputSchema.properties.task.description, /Trimmed and capped to 120 characters/);
+  assert.match(guidanceTool.inputSchema.properties.intent.description, /Trimmed and capped to 120 characters/);
+  assert.match(guidanceTool.inputSchema.properties.goal.description, /Trimmed and capped to 120 characters/);
+  assert.match(guidanceTool.inputSchema.properties.card.description, /Hard limit 120 characters/);
+  assert.match(guidanceTool.inputSchema.properties.query.description, /Hard limit 120 characters/);
+  const lookupTool = tools.tools.find((tool) => tool.name === "figma_repl_lookup");
+  assert.match(lookupTool.inputSchema.properties.query.description, /Hard limit 120 characters/);
+  assert.match(lookupTool.inputSchema.properties.symbol.description, /Hard limit 120 characters/);
 
   const resources = await mcpClient.listResources();
   const uris = resources.resources.map((resource) => resource.uri);
@@ -586,6 +595,37 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
       },
     }),
     /Tool argument "query" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_guidance",
+      arguments: {
+        title: "Reject blank task",
+        task: "   ",
+      },
+    }),
+    /Tool argument "task" must not be empty\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_guidance",
+      arguments: {
+        title: "Reject long guidance query",
+        query: "component properties ".repeat(8),
+      },
+    }),
+    /Tool argument "card or query" must be 120 characters or fewer\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_lookup",
+      arguments: {
+        title: "Reject long lookup query",
+        kind: "docs",
+        query: "component properties ".repeat(8),
+      },
+    }),
+    /Tool argument "query" must be 120 characters or fewer\./,
   );
   await assert.rejects(
     mcpClient.callTool({
@@ -2216,6 +2256,20 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   assert.ok(planJson.recommendedTools.includes("figma_repl_guidance"));
   assert.ok(planJson.suggestedCards.length > 0);
 
+  const longPlanResult = await mcpClient.callTool({
+    name: "figma_repl_guidance",
+    arguments: {
+      title: "Plan long goal",
+      mode: "plan",
+      goal: `Create a settings card with title and button ${"using polished layout details ".repeat(8)}`,
+      surface: "design",
+    },
+  });
+  const longPlanJson = structuredToolResult(longPlanResult);
+  assert.equal(longPlanJson.ok, true);
+  assert.equal(longPlanJson.mode, "plan");
+  assert.ok(longPlanJson.suggestedCards.length > 0);
+
   const suggestResult = await mcpClient.callTool({
     name: "figma_repl_guidance",
     arguments: {
@@ -2242,6 +2296,20 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   assert.ok(suggestJson.suggestions.referenceContext.every((item) => ["exact-symbol", "phrase", "token"].includes(item.matchType)));
   assert.ok(suggestJson.suggestions.referenceContext.every((item) => item.snippet.split("\n").length <= 4));
   assert.equal(suggestJson.suggestions.workflow.primaryTool, "figma_repl_run_script_file");
+
+  const longTaskResult = await mcpClient.callTool({
+    name: "figma_repl_guidance",
+    arguments: {
+      title: "Suggest long task",
+      task: `create component variants with text ${"and polish interaction states ".repeat(8)}`,
+      surface: "design",
+    },
+  });
+  const longTaskJson = structuredToolResult(longTaskResult);
+  assert.equal(longTaskJson.ok, true);
+  assert.equal(longTaskJson.mode, "guidance");
+  assert.ok(longTaskJson.recommendedCards.includes("components.variants"));
+  assert.ok(longTaskJson.suggestions.apiSymbols.includes("figma.combineAsVariants"));
 
   const commonTaskExpectations = [
     ["bind a color variable to a button fill", "variables.bind", "VariablesAPI.setBoundVariableForPaint"],

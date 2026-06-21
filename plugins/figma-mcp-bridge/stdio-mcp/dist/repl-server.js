@@ -18440,6 +18440,16 @@ function normalizeLookupQuery(value, name) {
   }
   return query;
 }
+function normalizeLookupRankingQuery(value, name) {
+  if (typeof value !== "string") {
+    throw new Error(`Tool argument "${name}" is required and must be a string.`);
+  }
+  const query = value.trim();
+  if (!query) {
+    throw new Error(`Tool argument "${name}" must not be empty.`);
+  }
+  return query.slice(0, MAX_LOOKUP_QUERY_LENGTH).trimEnd();
+}
 function tokenizeQuery(query) {
   return query.toLowerCase().split(/[^a-z0-9_$:.-]+/u).map((token) => token.trim()).filter((token) => token.length >= 2);
 }
@@ -20203,11 +20213,11 @@ function createReplToolDescriptions(options) {
       inputSchema: objectSchema({
         title: titleProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
-        card: stringProperty("Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides."),
-        query: stringProperty("Search query when card id is not known."),
-        task: stringProperty("Natural-language task intent. Preferred public name for intent."),
-        intent: stringProperty("Natural-language task intent, for example 'create a card with text and auto layout'."),
-        goal: stringProperty("Natural-language goal used by guidance or plan mode."),
+        card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
+        query: stringProperty(`Search query when card id is not known. Hard limit ${options.maxLookupQueryLength} characters.`),
+        task: stringProperty(`Natural-language task intent. Preferred public name for intent. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        intent: stringProperty(`Natural-language task intent, for example 'create a card with text and auto layout'. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        goal: stringProperty(`Natural-language goal used by guidance or plan mode. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface. Preferred public name for expectedSurface."),
         workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
         expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
@@ -20250,8 +20260,8 @@ function createReplToolDescriptions(options) {
       inputSchema: objectSchema({
         title: titleProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
-        query: stringProperty("Keyword query, for example 'component properties' or 'Slides lifecycle'."),
-        symbol: stringProperty("API symbol for kind=api, for example createFrame, loadFontAsync, VariableCollection."),
+        query: stringProperty(`Keyword query, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
+        symbol: stringProperty(`API symbol for kind=api, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
         maxResults: numberProperty(`Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
         maxSnippetLines: numberProperty(`Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`)
       }, ["title", "kind"])
@@ -21180,7 +21190,8 @@ function createFigmaReplMcpServer(options = {}) {
       defaultDocsSearchMaxResults: DEFAULT_DOCS_SEARCH_MAX_RESULTS,
       maxDocsSearchResults: MAX_DOCS_SEARCH_RESULTS,
       defaultDocsSearchSnippetLines: DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
-      maxDocsSearchSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES
+      maxDocsSearchSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES,
+      maxLookupQueryLength: MAX_LOOKUP_QUERY_LENGTH
     })
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -22007,12 +22018,12 @@ function resolvePrepareTaskWorkspace(args, intentSlug, fileSlug, session) {
 }
 async function handleGuidance(args) {
   assertRequiredTitleArgument(args);
-  const intentSource = args.intent ?? args.task ?? args.goal;
+  const intentSource = guidanceIntentSource(args);
   const cardSource = args.card ?? args.query;
   const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
   const mode = args.mode ?? (cardSource ? "card" : intentSource ? "guidance" : "catalog");
   if (mode === "plan") {
-    const planIntent = typeof intentSource === "string" ? normalizeLookupQuery(intentSource, "intent") : "figma file task";
+    const planIntent = intentSource ? normalizeLookupRankingQuery(intentSource.value, intentSource.name) : "figma file task";
     return makeJsonToolResult({
       ok: true,
       mode: "plan",
@@ -22033,7 +22044,7 @@ async function handleGuidance(args) {
       suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id)
     });
   }
-  const intent = typeof intentSource === "string" ? normalizeLookupQuery(intentSource, "intent") : void 0;
+  const intent = intentSource ? normalizeLookupRankingQuery(intentSource.value, intentSource.name) : void 0;
   const cardQuery = typeof cardSource === "string" ? normalizeLookupQuery(cardSource, "card or query") : void 0;
   const cards = mode === "catalog" ? FIGMA_REPL_API_CARDS.slice(0, maxCards) : cardQuery ? searchApiCards(cardQuery, maxCards) : intent ? chooseApiCardsForIntent(intent, maxCards) : FIGMA_REPL_API_CARDS.slice(0, maxCards);
   const context = intent ? await searchReferenceFiles({
@@ -22056,6 +22067,18 @@ async function handleGuidance(args) {
     avoid: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
     suggestions
   });
+}
+function guidanceIntentSource(args) {
+  if (typeof args.intent === "string") {
+    return { name: "intent", value: args.intent };
+  }
+  if (typeof args.task === "string") {
+    return { name: "task", value: args.task };
+  }
+  if (typeof args.goal === "string") {
+    return { name: "goal", value: args.goal };
+  }
+  return void 0;
 }
 async function handleInspect(args, runtime) {
   assertRequiredTitleArgument(args);

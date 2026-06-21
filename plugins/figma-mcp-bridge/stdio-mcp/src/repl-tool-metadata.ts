@@ -10,6 +10,7 @@ export type ReplToolDescriptionOptions = {
   maxDocsSearchResults: number;
   defaultDocsSearchSnippetLines: number;
   maxDocsSearchSnippetLines: number;
+  maxLookupQueryLength: number;
 };
 
 export function createReplToolDescriptions(
@@ -174,11 +175,11 @@ export function createReplToolDescriptions(
       inputSchema: objectSchema({
         title: titleProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
-        card: stringProperty("Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides."),
-        query: stringProperty("Search query when card id is not known."),
-        task: stringProperty("Natural-language task intent. Preferred public name for intent."),
-        intent: stringProperty("Natural-language task intent, for example 'create a card with text and auto layout'."),
-        goal: stringProperty("Natural-language goal used by guidance or plan mode."),
+        card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
+        query: stringProperty(`Search query when card id is not known. Hard limit ${options.maxLookupQueryLength} characters.`),
+        task: stringProperty(`Natural-language task intent. Preferred public name for intent. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        intent: stringProperty(`Natural-language task intent, for example 'create a card with text and auto layout'. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        goal: stringProperty(`Natural-language goal used by guidance or plan mode. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface. Preferred public name for expectedSurface."),
         workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
         expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
@@ -224,8 +225,8 @@ export function createReplToolDescriptions(
       inputSchema: objectSchema({
         title: titleProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
-        query: stringProperty("Keyword query, for example 'component properties' or 'Slides lifecycle'."),
-        symbol: stringProperty("API symbol for kind=api, for example createFrame, loadFontAsync, VariableCollection."),
+        query: stringProperty(`Keyword query, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
+        symbol: stringProperty(`API symbol for kind=api, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
         maxResults: numberProperty(`Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
         maxSnippetLines: numberProperty(`Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`),
       }, ["title", "kind"]),
