@@ -209,7 +209,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_call_upstream_tool",
       description:
-        "Proxy one official upstream Figma MCP tool call through figma-repl-mcp so agents can stay on the unified REPL facade for capabilities not covered by the file workflow.",
+        "Proxy one official upstream Figma MCP tool call through figma_repl_mcp so agents can stay on the unified REPL facade for capabilities not covered by the file workflow.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
@@ -329,11 +329,11 @@ function assertLocalReplToolDescriptions(tools: Record<string, unknown>[]): Reco
   const describedTools: Record<string, unknown>[] = [];
   for (const tool of tools) {
     if (typeof tool.name !== "string") {
-      throw new Error("Local figma-repl-mcp tool description is missing a string name.");
+      throw new Error("Local figma_repl_mcp tool description is missing a string name.");
     }
     descriptionNames.add(tool.name);
     if (!isLocalReplToolName(tool.name)) {
-      throw new Error(`Local figma-repl-mcp tool description is not in the registry: ${tool.name}`);
+      throw new Error(`Local figma_repl_mcp tool description is not in the registry: ${tool.name}`);
     }
     describedTools.push({
       ...tool,
@@ -342,7 +342,7 @@ function assertLocalReplToolDescriptions(tools: Record<string, unknown>[]): Reco
   }
   for (const name of LOCAL_REPL_TOOL_NAMES) {
     if (!descriptionNames.has(name)) {
-      throw new Error(`Local figma-repl-mcp registry tool is missing a description: ${name}`);
+      throw new Error(`Local figma_repl_mcp registry tool is missing a description: ${name}`);
     }
   }
   return describedTools;

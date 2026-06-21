@@ -2,7 +2,7 @@
 
 Node package for two Figma MCP frontends:
 
-- `figma-repl-mcp`: agent-friendly facade for local `.figma.js` workflows, output files, compact lookup, asset manifests, capture, and task plans;
+- `figma_repl_mcp`: agent-friendly facade for local `.figma.js` workflows, output files, compact lookup, asset manifests, capture, and task plans;
 - `figma-stdio`: optional transparent bridge to `https://mcp.figma.com/mcp` for CLI, parity checks, and Node/node_repl debugging.
 
 Both reuse the OAuth cache created by `figma-mcp-bridge`.
@@ -23,6 +23,8 @@ USERPROFILE/.codex/.figma-mcp-bridge-oauth.json
 ```
 
 The shared cache must already contain valid OAuth state. Use the bridge login helper before starting stdio tools.
+
+If upgrading from the old persistent server id `figma-repl-mcp`, reload or reinstall the plugin, or restart the MCP server, before schema checks. Otherwise the old cached server id can still expose stale tool schemas.
 
 ## Package API
 

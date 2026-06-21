@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "figma-repl-mcp": {
+    "figma_repl_mcp": {
       "command": "node",
       "cwd": ".",
       "args": [

@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-bridge",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Figma REPL MCP frontend with local Figma MCP login support.",
   "author": {
     "name": "Local developer"
@@ -10,7 +10,7 @@
   "interface": {
     "displayName": "Figma MCP Bridge",
     "shortDescription": "Use Figma MCP through a stateful REPL proxy with local Figma MCP login.",
-    "longDescription": "Provides the persistent figma-repl-mcp MCP server for the official Figma remote MCP endpoint, plus a local HTTP bridge used for Figma MCP login and credential caching. The transparent figma-stdio bridge remains available as an optional CLI and Node library surface for debugging.",
+    "longDescription": "Provides the persistent figma_repl_mcp MCP server for the official Figma remote MCP endpoint, plus a local HTTP bridge used for Figma MCP login and credential caching. The transparent figma-stdio bridge remains available as an optional CLI and Node library surface for debugging.",
     "developerName": "jiangxiaoxu",
     "category": "Developer Tools",
     "capabilities": [

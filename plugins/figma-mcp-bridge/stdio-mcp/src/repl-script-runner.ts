@@ -1,3 +1,5 @@
+import { parse } from "acorn";
+
 export type FigmaReplSurface = "design" | "figjam" | "slides";
 
 export type FigmaReplDiagnosticSeverity = "fatal" | "warning";
@@ -54,15 +56,17 @@ export function compileFigmaReplScriptFile(options: {
   helperProfile?: unknown;
 }): CompiledFigmaReplScriptFile {
   const helperProfile = resolveFigmaReplHelperProfile(options.helperProfile, options.source);
+  const diagnosticOptions: FigmaReplDiagnosticsOptions = {
+    allowDangerousOperations: options.allowDangerousOperations,
+    expectedSurface: options.expectedSurface,
+    mode: "write",
+    strict: options.strict,
+  };
   const diagnostics = toFileDiagnostics(
     options.scriptPath,
     options.source,
-    diagnoseFigmaReplCode(options.source, {
-      allowDangerousOperations: options.allowDangerousOperations,
-      expectedSurface: options.expectedSurface,
-      mode: "write",
-      strict: options.strict,
-    }),
+    diagnoseFigmaReplCode(options.source, diagnosticOptions),
+    diagnosticOptions,
   );
   const lines = [createFigmaReplScriptHelperBootstrap(helperProfile)];
   if (options.targetPageId) {
@@ -478,22 +482,30 @@ export function diagnoseFigmaReplCode(
       ? { ...diagnostic, severity: "fatal" }
       : diagnostic);
   };
-  const dangerousPatterns = options.generatedCode
-    ? GENERATED_CODE_DANGEROUS_PATTERNS
-    : RAW_CODE_DANGEROUS_PATTERNS;
+  const parsed = parseFigmaReplCodeForDiagnostics(code);
+  if (!parsed.ast) {
+    if (parsed.diagnostic) {
+      add(parsed.diagnostic);
+    }
+    return dedupeDiagnostics(diagnostics);
+  }
+  const analysis = analyzeFigmaReplAst(parsed.ast, options, code.length);
   if (!options.allowDangerousOperations) {
-    for (const pattern of dangerousPatterns) {
-      if (pattern.re.test(code)) {
-        add(createDiagnostic(pattern.code, "fatal", pattern.message, pattern.suggestion, pattern.docsHint));
+    for (const diagnostic of DANGEROUS_DIAGNOSTICS) {
+      if (options.generatedCode && diagnostic.code === "FIGMA_REPL_NODE_REMOVAL") {
+        continue;
+      }
+      if (analysis.codes.has(diagnostic.code)) {
+        add(createDiagnostic(diagnostic.code, "fatal", diagnostic.message, diagnostic.suggestion, diagnostic.docsHint));
       }
     }
   }
-  for (const pattern of API_CONTRACT_PATTERNS) {
-    if (pattern.re.test(code)) {
-      add(createDiagnostic(pattern.code, "fatal", pattern.message, pattern.suggestion, pattern.docsHint));
+  for (const diagnostic of API_CONTRACT_DIAGNOSTICS) {
+    if (analysis.codes.has(diagnostic.code)) {
+      add(createDiagnostic(diagnostic.code, "fatal", diagnostic.message, diagnostic.suggestion, diagnostic.docsHint));
     }
   }
-  if ((code.match(/\bfigma\.setCurrentPageAsync\s*\(/gu) ?? []).length > 1) {
+  if (analysis.setCurrentPageAsyncCalls > 1) {
     add(createDiagnostic(
       "FIGMA_REPL_MULTIPLE_PAGE_SWITCH",
       "fatal",
@@ -502,7 +514,7 @@ export function diagnoseFigmaReplCode(
       "figma-repl://safety#page-context",
     ));
   }
-  if (!options.generatedCode && /\bfigma\.currentPage\.selection\b/u.test(code)) {
+  if (!options.generatedCode && analysis.codes.has("FIGMA_REPL_DIRECT_SELECTION_ACCESS")) {
     add(createDiagnostic(
       "FIGMA_REPL_DIRECT_SELECTION_ACCESS",
       "warning",
@@ -512,13 +524,22 @@ export function diagnoseFigmaReplCode(
     ));
   }
   if (options.mode === "read") {
-    for (const pattern of READ_MODE_WRITE_PATTERNS) {
-      if (pattern.re.test(code)) {
-        add(createDiagnostic(pattern.code, "fatal", pattern.message, pattern.suggestion, pattern.docsHint));
+    for (const diagnostic of READ_MODE_WRITE_DIAGNOSTICS) {
+      if (analysis.codes.has(diagnostic.code)) {
+        add(createDiagnostic(diagnostic.code, "fatal", diagnostic.message, diagnostic.suggestion, diagnostic.docsHint));
       }
     }
+    if (analysis.codes.has("FIGMA_REPL_READ_MODE_ASSIGNMENT")) {
+      add(createDiagnostic(
+        "FIGMA_REPL_READ_MODE_ASSIGNMENT",
+        "fatal",
+        "read mode rejected a likely property assignment.",
+        "Use mode=write or a .figma.js script when mutation is intended.",
+        "figma-repl://safety#read-mode",
+      ));
+    }
   }
-  if (TEXT_MUTATION_PATTERN.test(code) && !/\bfigma\.loadFontAsync\s*\(/u.test(code)) {
+  if (analysis.codes.has("FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT")) {
     add(createDiagnostic(
       "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT",
       "warning",
@@ -527,10 +548,16 @@ export function diagnoseFigmaReplCode(
       "figma-repl://patterns#text",
     ));
   }
-  for (const diagnostic of diagnoseInlineImageAssetSize(code)) {
-    add(diagnostic);
+  if (analysis.oversizedImageAssetBase64Length !== undefined) {
+    add(createDiagnostic(
+      "FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE",
+      "warning",
+      `Inline $.imageAsset base64 is ${analysis.oversizedImageAssetBase64Length} characters and may exceed upstream MCP payload limits.`,
+      "For large generated PNG/JPEG assets, create target rectangles in .figma.js and use the official upload_assets/upstream asset workflow to fill them.",
+      "figma-repl://scripts#helpers",
+    ));
   }
-  if (CHECKPOINT_HANDLE_AS_NAME_PATTERN.test(code)) {
+  if (analysis.codes.has("FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME")) {
     add(createDiagnostic(
       "FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME",
       "warning",
@@ -539,31 +566,10 @@ export function diagnoseFigmaReplCode(
       "figma-repl://scripts#helpers",
     ));
   }
-  for (const diagnostic of diagnoseSurfaceCode(code, options.expectedSurface)) {
+  for (const diagnostic of diagnoseSurfaceCode(analysis, options.expectedSurface)) {
     add(diagnostic);
   }
   return dedupeDiagnostics(diagnostics);
-}
-
-function diagnoseInlineImageAssetSize(code: string): FigmaReplDiagnostic[] {
-  if (!code.includes("$.imageAsset")) {
-    return [];
-  }
-  const diagnostics: FigmaReplDiagnostic[] = [];
-  for (const match of code.matchAll(INLINE_IMAGE_ASSET_BASE64_PATTERN)) {
-    const base64Length = String(match[2] || "").replace(/\s+/gu, "").length;
-    if (base64Length > MAX_INLINE_IMAGE_ASSET_BASE64_CHARS) {
-      diagnostics.push(createDiagnostic(
-        "FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE",
-        "warning",
-        `Inline $.imageAsset base64 is ${base64Length} characters and may exceed upstream MCP payload limits.`,
-        "For large generated PNG/JPEG assets, create target rectangles in .figma.js and use the official upload_assets/upstream asset workflow to fill them.",
-        "figma-repl://scripts#helpers",
-      ));
-      break;
-    }
-  }
-  return diagnostics;
 }
 
 export function diagnoseWrappedScriptSize(
@@ -596,143 +602,541 @@ export function throwIfFatalDiagnostics(diagnostics: FigmaReplDiagnostic[]): voi
   );
 }
 
-const RAW_CODE_DANGEROUS_PATTERNS = [
+const DANGEROUS_DIAGNOSTICS = [
   {
     code: "FIGMA_REPL_DYNAMIC_EVAL",
-    re: /\b(?:eval|Function)\s*\(/u,
     message: "Dynamic JavaScript evaluation is disabled by default.",
     suggestion: "Pass allowDangerousOperations=true only after reviewing the exact script.",
     docsHint: "figma-repl://safety#dynamic-code",
   },
   {
     code: "FIGMA_REPL_NETWORK_ACCESS",
-    re: /\b(?:fetch|XMLHttpRequest|WebSocket)\b/u,
     message: "Network access from REPL code is disabled by default.",
     suggestion: "Fetch data outside Figma or pass allowDangerousOperations=true after review.",
     docsHint: "figma-repl://safety#network",
   },
   {
     code: "FIGMA_REPL_DYNAMIC_IMPORT",
-    re: /\bimport\s*\(/u,
     message: "Dynamic import is disabled by default.",
     suggestion: "Inline the required logic or pass allowDangerousOperations=true after review.",
     docsHint: "figma-repl://safety#dynamic-code",
   },
   {
     code: "FIGMA_REPL_NODE_REMOVAL",
-    re: /\.remove\s*\(/u,
     message: "Direct remove() is destructive and can break clone rebuilds, especially inside instance subtrees.",
     suggestion: "Use $.cloneNodeTree for copy/rebuild workflows; pass allowDangerousOperations=true only after reviewing exact cleanup semantics.",
     docsHint: "figma-repl://safety#destructive",
   },
   {
     code: "FIGMA_REPL_FIGMA_DELETE",
-    re: /\bdelete\s+figma\./u,
     message: "Deleting properties on the figma object is not supported.",
     suggestion: "Use documented Plugin API calls only.",
     docsHint: "figma-repl://safety#api-contract",
   },
   {
     code: "FIGMA_REPL_DESTRUCTIVE_OPERATION",
-    re: /\.(?:detachInstance|flatten)\s*\(/u,
     message: "Destructive Figma operation is disabled by default.",
     suggestion: "Pass allowDangerousOperations=true only after reviewing the exact effect.",
     docsHint: "figma-repl://safety#destructive",
   },
 ];
 
-const GENERATED_CODE_DANGEROUS_PATTERNS = RAW_CODE_DANGEROUS_PATTERNS.filter(
-  (pattern) => pattern.code !== "FIGMA_REPL_NODE_REMOVAL",
-);
-
-const READ_MODE_WRITE_PATTERNS = [
+const READ_MODE_WRITE_DIAGNOSTICS = [
   {
     code: "FIGMA_REPL_READ_MODE_CREATE",
-    re: /figma\.create[A-Z]/u,
     message: "read mode rejected node creation.",
     suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
     docsHint: "figma-repl://safety#read-mode",
   },
   {
     code: "FIGMA_REPL_READ_MODE_APPEND",
-    re: /\.(?:appendChild|insertChild)\s*\(/u,
     message: "read mode rejected child insertion.",
     suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
     docsHint: "figma-repl://safety#read-mode",
   },
   {
     code: "FIGMA_REPL_READ_MODE_REMOVE",
-    re: /\.remove\s*\(/u,
     message: "read mode rejected node removal.",
     suggestion: "Use mode=write with allowDangerousOperations only after review.",
     docsHint: "figma-repl://safety#read-mode",
   },
   {
-    code: "FIGMA_REPL_READ_MODE_ASSIGNMENT",
-    re: /\.(?:name|fills|strokes|characters|layoutMode|itemSpacing|paddingLeft|paddingRight|paddingTop|paddingBottom)\s*=/u,
-    message: "read mode rejected a likely property assignment.",
-    suggestion: "Use mode=write or a .figma.js script when mutation is intended.",
-    docsHint: "figma-repl://safety#read-mode",
-  },
-  {
     code: "FIGMA_REPL_READ_MODE_RESIZE",
-    re: /\.resize(?:WithoutConstraints)?\s*\(/u,
     message: "read mode rejected resize.",
     suggestion: "Use mode=write or a .figma.js script when mutation is intended.",
     docsHint: "figma-repl://safety#read-mode",
   },
 ];
 
-const API_CONTRACT_PATTERNS = [
+const READ_MODE_ASSIGNMENT_PROPERTIES = new Set([
+  "name",
+  "fills",
+  "strokes",
+  "characters",
+  "layoutMode",
+  "itemSpacing",
+  "paddingLeft",
+  "paddingRight",
+  "paddingTop",
+  "paddingBottom",
+]);
+
+interface AstRecord {
+  type?: unknown;
+  [key: string]: unknown;
+}
+
+interface ParsedDiagnosticAst {
+  ast?: AstRecord;
+  diagnostic?: FigmaReplDiagnostic;
+}
+
+interface FigmaReplAstAnalysis {
+  codes: Set<string>;
+  codeOffsets: Map<string, number>;
+  setCurrentPageAsyncCalls: number;
+  oversizedImageAssetBase64Length?: number;
+}
+
+const DIAGNOSTIC_PROBE_PREFIX = "async function __figmaReplDiagnosticsProbe() {\n";
+
+function parseFigmaReplCodeForDiagnostics(code: string): ParsedDiagnosticAst {
+  try {
+    const ast = parse(`${DIAGNOSTIC_PROBE_PREFIX}${code}\n}`, {
+      ecmaVersion: "latest",
+      sourceType: "script",
+    });
+    return isAstRecord(ast)
+      ? { ast }
+      : {
+          diagnostic: createDiagnostic(
+            "FIGMA_REPL_PARSE_ERROR",
+            "fatal",
+            "Script could not be parsed as JavaScript.",
+            "Fix JavaScript syntax before running the Figma REPL script.",
+            "figma-repl://safety#diagnostics",
+          ),
+        };
+  } catch (error) {
+    const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
+    return {
+      diagnostic: createDiagnostic(
+        "FIGMA_REPL_PARSE_ERROR",
+        "fatal",
+        `Script could not be parsed as JavaScript.${detail}`,
+        "Fix JavaScript syntax before running the Figma REPL script.",
+        "figma-repl://safety#diagnostics",
+      ),
+    };
+  }
+}
+
+function analyzeFigmaReplAst(
+  ast: AstRecord,
+  options: FigmaReplDiagnosticsOptions,
+  sourceLength: number,
+): FigmaReplAstAnalysis {
+  const codes = new Set<string>();
+  const codeOffsets = new Map<string, number>();
+  let setCurrentPageAsyncCalls = 0;
+  let hasTextMutation = false;
+  let firstTextMutationNode: unknown;
+  let hasLoadFontAsyncCall = false;
+  let oversizedImageAssetBase64Length: number | undefined;
+  const recordCode = (code: string, node?: unknown) => {
+    codes.add(code);
+    const offset = astNodeSourceOffset(node, sourceLength);
+    if (offset !== undefined && !codeOffsets.has(code)) {
+      codeOffsets.set(code, offset);
+    }
+  };
+  const recordTextMutation = (node: unknown) => {
+    hasTextMutation = true;
+    firstTextMutationNode ??= node;
+  };
+  visitAst(ast, (node) => {
+    if (node.type === "CallExpression" || node.type === "NewExpression") {
+      const callee = node.callee;
+      const calleePath = getMemberPath(callee);
+      const calleeName = calleePath?.at(-1) ?? getIdentifierName(callee);
+      if (calleeName === "eval" || calleeName === "Function" || (node.type === "NewExpression" && calleeName === "Function")) {
+        recordCode("FIGMA_REPL_DYNAMIC_EVAL", callee);
+      }
+      if (calleeName === "fetch" || calleeName === "XMLHttpRequest" || calleeName === "WebSocket") {
+        recordCode("FIGMA_REPL_NETWORK_ACCESS", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "setCurrentPageAsync"])) {
+        setCurrentPageAsyncCalls += 1;
+        recordCode("FIGMA_REPL_MULTIPLE_PAGE_SWITCH", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "root", "findAll"])) {
+        recordCode("FIGMA_REPL_ROOT_FIND_ALL", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "loadFontAsync"])) {
+        hasLoadFontAsyncCall = true;
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "createText"])) {
+        recordTextMutation(callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "createImage"])) {
+        recordCode("FIGMA_REPL_IMAGE_CREATION", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "createImageAsync"])) {
+        recordCode("FIGMA_REPL_IMAGE_CREATION", callee);
+      }
+      if (calleePath?.[0] === "figma" && calleePath.length === 2 && isReadModeCreateMethod(calleePath[1])) {
+        recordCode("FIGMA_REPL_READ_MODE_CREATE", callee);
+      }
+      if (calleeName === "appendChild" || calleeName === "insertChild") {
+        recordCode("FIGMA_REPL_READ_MODE_APPEND", callee);
+      }
+      if (calleeName === "remove") {
+        recordCode("FIGMA_REPL_NODE_REMOVAL", callee);
+        recordCode("FIGMA_REPL_READ_MODE_REMOVE", callee);
+      }
+      if (calleeName === "resize" || calleeName === "resizeWithoutConstraints") {
+        recordCode("FIGMA_REPL_READ_MODE_RESIZE", callee);
+      }
+      if (calleeName === "detachInstance" || calleeName === "flatten") {
+        recordCode("FIGMA_REPL_DESTRUCTIVE_OPERATION", callee);
+      }
+      if (
+        calleeName === "getPluginData" ||
+        calleeName === "setPluginData" ||
+        calleeName === "getSharedPluginData" ||
+        calleeName === "setSharedPluginData"
+      ) {
+        recordCode("FIGMA_REPL_PLUGIN_DATA", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["$", "checkpoint"]) && isHandleString(readCallArgument(node, 0))) {
+        recordCode("FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["$", "imageAsset"])) {
+        const base64 = readImageAssetBase64Argument(node);
+        const base64Length = base64?.replace(/\s+/gu, "").length;
+        if (
+          base64Length !== undefined &&
+          base64Length > MAX_INLINE_IMAGE_ASSET_BASE64_CHARS &&
+          oversizedImageAssetBase64Length === undefined
+        ) {
+          oversizedImageAssetBase64Length = base64Length;
+          recordCode("FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE", callee);
+        }
+      }
+      recordSurfaceCall(recordCode, calleePath, options.expectedSurface, callee);
+    }
+    if (node.type === "ImportExpression" || node.type === "Import") {
+      recordCode("FIGMA_REPL_DYNAMIC_IMPORT", node);
+    }
+    if (node.type === "AssignmentExpression") {
+      const leftPath = getMemberPath(node.left);
+      if (leftPath && pathEquals(leftPath, ["figma", "currentPage"])) {
+        recordCode("FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT", node.left);
+      }
+      if (isReadModeMutableMember(node.left)) {
+        recordCode("FIGMA_REPL_READ_MODE_ASSIGNMENT", node.left);
+      }
+      if (isTextMutationMember(node.left)) {
+        recordTextMutation(node.left);
+      }
+    }
+    if (node.type === "UpdateExpression" && isReadModeMutableMember(node.argument)) {
+      recordCode("FIGMA_REPL_READ_MODE_ASSIGNMENT", node.argument);
+    }
+    if (node.type === "UnaryExpression" && node.operator === "delete") {
+      const argumentPath = getMemberPath(node.argument);
+      if (argumentPath?.[0] === "figma") {
+        recordCode("FIGMA_REPL_FIGMA_DELETE", node);
+      }
+    }
+    if (node.type === "MemberExpression") {
+      const memberPath = getMemberPath(node);
+      if (memberPath && pathEquals(memberPath, ["figma", "currentPage", "selection"])) {
+        recordCode("FIGMA_REPL_DIRECT_SELECTION_ACCESS", node);
+      }
+    }
+  });
+  if (hasTextMutation && !hasLoadFontAsyncCall) {
+    recordCode("FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT", firstTextMutationNode);
+  }
+  return { codes, codeOffsets, setCurrentPageAsyncCalls, oversizedImageAssetBase64Length };
+}
+
+function visitAst(value: unknown, visitor: (node: AstRecord) => void): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      visitAst(item, visitor);
+    }
+    return;
+  }
+  if (!isAstRecord(value)) {
+    return;
+  }
+  visitor(value);
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "type" || key === "start" || key === "end" || key === "loc" || key === "range") {
+      continue;
+    }
+    visitAst(child, visitor);
+  }
+}
+
+function recordSurfaceCall(
+  recordCode: (code: string, node?: unknown) => void,
+  calleePath: string[] | undefined,
+  expectedSurface: FigmaReplSurface | undefined,
+  node?: unknown,
+): void {
+  if (!expectedSurface || !calleePath || calleePath[0] !== "figma" || calleePath.length !== 2) {
+    return;
+  }
+  const method = calleePath[1];
+  if (expectedSurface === "design" && FIGJAM_CREATION_METHODS.has(method)) {
+    recordCode("FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN", node);
+  }
+  if (expectedSurface === "figjam" && DESIGN_CREATION_METHODS.has(method)) {
+    recordCode("FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM", node);
+  }
+  if (expectedSurface === "slides" && SLIDES_BLOCKED_CREATION_METHODS.has(method)) {
+    recordCode("FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES", node);
+  }
+}
+
+function isReadModeCreateMethod(name: string): boolean {
+  const suffixStart = "create".length;
+  const firstSuffix = name.at(suffixStart);
+  return name.startsWith("create") && firstSuffix !== undefined && firstSuffix >= "A" && firstSuffix <= "Z";
+}
+
+function isTextMutationMember(value: unknown): boolean {
+  const path = getMemberPath(value);
+  const property = path?.at(-1);
+  return property === "characters" || property === "fontName";
+}
+
+function readImageAssetBase64Argument(callExpression: AstRecord): string | undefined {
+  const firstArgument = readCallArgument(callExpression, 0);
+  const directBase64 = readStringLiteral(firstArgument);
+  if (directBase64 !== undefined) {
+    return directBase64;
+  }
+  if (!isAstRecord(firstArgument) || firstArgument.type !== "ObjectExpression") {
+    return undefined;
+  }
+  return readStringLiteral(readObjectPropertyValue(firstArgument, "base64"));
+}
+
+function readCallArgument(callExpression: AstRecord, index: number): unknown {
+  return Array.isArray(callExpression.arguments) ? callExpression.arguments[index] : undefined;
+}
+
+function readObjectPropertyValue(objectExpression: AstRecord, propertyName: string): unknown {
+  if (!Array.isArray(objectExpression.properties)) {
+    return undefined;
+  }
+  for (const property of objectExpression.properties) {
+    if (!isAstRecord(property) || property.type !== "Property") {
+      continue;
+    }
+    const key = readPropertyKeyName(property);
+    if (key === propertyName) {
+      return property.value;
+    }
+  }
+  return undefined;
+}
+
+function readPropertyKeyName(property: AstRecord): string | undefined {
+  const key = property.key;
+  if (!isAstRecord(key)) {
+    return undefined;
+  }
+  if (key.type === "Identifier" && typeof key.name === "string" && property.computed !== true) {
+    return key.name;
+  }
+  if (key.type === "Literal" && typeof key.value === "string") {
+    return key.value;
+  }
+  return undefined;
+}
+
+function readStringLiteral(value: unknown): string | undefined {
+  if (!isAstRecord(value)) {
+    return undefined;
+  }
+  if (value.type === "Literal" && typeof value.value === "string") {
+    return value.value;
+  }
+  if (value.type === "TemplateLiteral" && Array.isArray(value.expressions) && value.expressions.length === 0) {
+    const quasi = Array.isArray(value.quasis) ? value.quasis[0] : undefined;
+    if (isAstRecord(quasi) && isAstRecord(quasi.value) && typeof quasi.value.cooked === "string") {
+      return quasi.value.cooked;
+    }
+  }
+  return undefined;
+}
+
+function isHandleString(value: unknown): boolean {
+  return readStringLiteral(value)?.startsWith("$") === true;
+}
+
+function getMemberPath(value: unknown): string[] | undefined {
+  if (!isAstRecord(value)) {
+    return undefined;
+  }
+  if (value.type === "Identifier" && typeof value.name === "string") {
+    return [value.name];
+  }
+  if (value.type !== "MemberExpression") {
+    return undefined;
+  }
+  const objectPath = getMemberPath(value.object);
+  const propertyName = readMemberPropertyName(value);
+  return objectPath && propertyName ? [...objectPath, propertyName] : undefined;
+}
+
+function getIdentifierName(value: unknown): string | undefined {
+  return isAstRecord(value) && value.type === "Identifier" && typeof value.name === "string"
+    ? value.name
+    : undefined;
+}
+
+function pathEquals(actual: string[], expected: string[]): boolean {
+  return actual.length === expected.length && actual.every((part, index) => part === expected[index]);
+}
+
+function isReadModeMutableMember(value: unknown): boolean {
+  if (!isAstRecord(value) || value.type !== "MemberExpression") {
+    return false;
+  }
+  const property = readMemberPropertyName(value);
+  return property !== undefined && READ_MODE_ASSIGNMENT_PROPERTIES.has(property);
+}
+
+function readMemberPropertyName(memberExpression: AstRecord): string | undefined {
+  const property = memberExpression.property;
+  if (!isAstRecord(property)) {
+    return undefined;
+  }
+  if (property.type === "Identifier" && typeof property.name === "string" && memberExpression.computed !== true) {
+    return property.name;
+  }
+  if (property.type === "Literal" && typeof property.value === "string") {
+    return property.value;
+  }
+  return undefined;
+}
+
+function isAstRecord(value: unknown): value is AstRecord {
+  return Boolean(value && typeof value === "object");
+}
+
+function astNodeSourceOffset(value: unknown, sourceLength: number): number | undefined {
+  if (!isAstRecord(value) || typeof value.start !== "number") {
+    return undefined;
+  }
+  const offset = value.start - DIAGNOSTIC_PROBE_PREFIX.length;
+  return Number.isInteger(offset) && offset >= 0 && offset < sourceLength
+    ? offset
+    : undefined;
+}
+
+const API_CONTRACT_DIAGNOSTICS = [
   {
     code: "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT",
-    re: /\bfigma\.currentPage\s*=/u,
     message: "figma.currentPage is not assigned directly in the Plugin API.",
     suggestion: "Use await figma.setCurrentPageAsync(page) or figma_repl_run_script_file targetPageId.",
     docsHint: "figma-repl://safety#page-context",
   },
   {
     code: "FIGMA_REPL_ROOT_FIND_ALL",
-    re: /\bfigma\.root\.findAll\s*\(/u,
     message: "figma.root.findAll() can scan the whole file and is not allowed through this layer.",
     suggestion: "Use $.find or $.findAll scoped to currentPage or a handle.",
     docsHint: "figma-repl://patterns#query",
   },
   {
     code: "FIGMA_REPL_PLUGIN_DATA",
-    re: /\.(?:getPluginData|setPluginData|getSharedPluginData|setSharedPluginData)\s*\(/u,
     message: "Plugin data APIs are not a reliable agent-facing persistence layer for this REPL.",
     suggestion: "Use local handles/session metadata or a dedicated upstream workflow.",
     docsHint: "figma-repl://safety#facade-routing-delegation-boundaries",
   },
   {
     code: "FIGMA_REPL_IMAGE_CREATION",
-    re: /\bfigma\.createImage(?:Async)?\s*\(/u,
     message: "Raw image creation is outside the supported script-file asset workflow.",
     suggestion: "Use $.imageAsset({ base64, parent, size, position, as }) in .figma.js, or route unusual asset uploads through an upstream official tool.",
     docsHint: "figma-repl://scripts#helpers",
   },
 ];
 
-const TEXT_MUTATION_PATTERN = /(?:\.characters\s*=|\.fontName\s*=|figma\.createText\s*\()/u;
+const FIGJAM_CREATION_METHODS = new Set(["createSticky", "createConnector", "createShapeWithText", "createCodeBlock", "createTable"]);
+const DESIGN_CREATION_METHODS = new Set(["createFrame", "createComponent", "createComponentSet", "createInstance"]);
+const SLIDES_BLOCKED_CREATION_METHODS = new Set(["createFrame", "createComponent", "createSticky", "createConnector", "createShapeWithText"]);
 const MAX_INLINE_IMAGE_ASSET_BASE64_CHARS = 96 * 1024;
-const INLINE_IMAGE_ASSET_BASE64_PATTERN = /\$\.imageAsset\s*\([\s\S]*?\bbase64\s*:\s*(["'`])([A-Za-z0-9+/=\s]+)\1/gu;
-const CHECKPOINT_HANDLE_AS_NAME_PATTERN = /\$\.checkpoint\s*\(\s*(["'`])\$/u;
 const UPSTREAM_EVAL_CODE_LIMIT_BYTES = 50_000;
 const UPSTREAM_EVAL_CODE_WARNING_BYTES = 49_000;
+const DIAGNOSTIC_SOURCE_PATTERNS = [
+  { code: "FIGMA_REPL_DYNAMIC_EVAL", re: /\b(?:eval|Function)\s*\(/u },
+  { code: "FIGMA_REPL_NETWORK_ACCESS", re: /\b(?:fetch|XMLHttpRequest|WebSocket)\b/u },
+  { code: "FIGMA_REPL_DYNAMIC_IMPORT", re: /\bimport\s*\(/u },
+  { code: "FIGMA_REPL_NODE_REMOVAL", re: /\.remove\s*\(/u },
+  { code: "FIGMA_REPL_FIGMA_DELETE", re: /\bdelete\s+figma\./u },
+  { code: "FIGMA_REPL_DESTRUCTIVE_OPERATION", re: /\.(?:detachInstance|flatten)\s*\(/u },
+  { code: "FIGMA_REPL_READ_MODE_CREATE", re: /figma\.create[A-Z]/u },
+  { code: "FIGMA_REPL_READ_MODE_APPEND", re: /\.(?:appendChild|insertChild)\s*\(/u },
+  { code: "FIGMA_REPL_READ_MODE_REMOVE", re: /\.remove\s*\(/u },
+  { code: "FIGMA_REPL_READ_MODE_ASSIGNMENT", re: /\.(?:name|fills|strokes|characters|layoutMode|itemSpacing|paddingLeft|paddingRight|paddingTop|paddingBottom)\s*(?:=|\+\+|--)/u },
+  { code: "FIGMA_REPL_READ_MODE_RESIZE", re: /\.resize(?:WithoutConstraints)?\s*\(/u },
+  { code: "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT", re: /\bfigma\.currentPage\s*=/u },
+  { code: "FIGMA_REPL_ROOT_FIND_ALL", re: /\bfigma\.root\.findAll\s*\(/u },
+  { code: "FIGMA_REPL_PLUGIN_DATA", re: /\.(?:getPluginData|setPluginData|getSharedPluginData|setSharedPluginData)\s*\(/u },
+  { code: "FIGMA_REPL_IMAGE_CREATION", re: /\bfigma\.createImage(?:Async)?\s*\(/u },
+  { code: "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT", re: /(?:\.characters\s*=|\.fontName\s*=|figma\.createText\s*\()/u },
+  { code: "FIGMA_REPL_MULTIPLE_PAGE_SWITCH", re: /\bfigma\.setCurrentPageAsync\s*\(/u },
+  { code: "FIGMA_REPL_DIRECT_SELECTION_ACCESS", re: /\bfigma\.currentPage\.selection\b/u },
+  { code: "FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE", re: /\$\.imageAsset\s*\(/u },
+  { code: "FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME", re: /\$\.checkpoint\s*\(/u },
+  { code: "FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN", re: /\bfigma\.create(?:Sticky|Connector|ShapeWithText|CodeBlock|Table)\s*\(/u },
+  { code: "FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM", re: /\bfigma\.create(?:Frame|Component|ComponentSet|Instance)\s*\(/u },
+  { code: "FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES", re: /\bfigma\.create(?:Frame|Component|Sticky|Connector|ShapeWithText)\s*\(/u },
+];
 
 function toFileDiagnostics(
   scriptPath: string,
   source: string,
   diagnostics: FigmaReplDiagnostic[],
+  options: FigmaReplDiagnosticsOptions,
 ): FigmaReplFileDiagnostic[] {
+  const astSources = locateAstDiagnosticSources(source, diagnostics, options);
   return diagnostics.map((diagnostic) => ({
     ...diagnostic,
     source: {
       scriptPath,
-      ...locateDiagnosticSource(source, diagnostic.code),
+      ...(astSources.get(diagnostic.code) ?? locateDiagnosticSource(source, diagnostic.code)),
     },
   }));
+}
+
+function locateAstDiagnosticSources(
+  source: string,
+  diagnostics: FigmaReplDiagnostic[],
+  options: FigmaReplDiagnosticsOptions,
+): Map<string, { line: number; column: number }> {
+  if (diagnostics.length === 0) {
+    return new Map();
+  }
+  const parsed = parseFigmaReplCodeForDiagnostics(source);
+  if (!parsed.ast) {
+    return new Map();
+  }
+  const analysis = analyzeFigmaReplAst(parsed.ast, options, source.length);
+  const located = new Map<string, { line: number; column: number }>();
+  for (const diagnostic of diagnostics) {
+    const offset = analysis.codeOffsets.get(diagnostic.code);
+    if (offset !== undefined) {
+      located.set(diagnostic.code, offsetToLineColumn(source, offset));
+    }
+  }
+  return located;
 }
 
 function locateDiagnosticSource(
@@ -751,40 +1155,7 @@ function locateDiagnosticSource(
 }
 
 function diagnosticPatternForCode(code: string): RegExp | undefined {
-  const allPatterns = [
-    ...RAW_CODE_DANGEROUS_PATTERNS,
-    ...READ_MODE_WRITE_PATTERNS,
-    ...API_CONTRACT_PATTERNS,
-  ];
-  const pattern = allPatterns.find((item) => item.code === code)?.re;
-  if (pattern) {
-    return new RegExp(pattern.source, pattern.flags.replace("g", ""));
-  }
-  if (code === "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT") {
-    return new RegExp(TEXT_MUTATION_PATTERN.source, TEXT_MUTATION_PATTERN.flags.replace("g", ""));
-  }
-  if (code === "FIGMA_REPL_MULTIPLE_PAGE_SWITCH") {
-    return /\bfigma\.setCurrentPageAsync\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_DIRECT_SELECTION_ACCESS") {
-    return /\bfigma\.currentPage\.selection\b/u;
-  }
-  if (code === "FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE") {
-    return /\$\.imageAsset\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME") {
-    return /\$\.checkpoint\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN") {
-    return /\bfigma\.create(?:Sticky|Connector|ShapeWithText|CodeBlock|Table)\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM") {
-    return /\bfigma\.create(?:Frame|Component|ComponentSet|Instance)\s*\(/u;
-  }
-  if (code === "FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES") {
-    return /\bfigma\.create(?:Frame|Component|Sticky|Connector|ShapeWithText)\s*\(/u;
-  }
-  return undefined;
+  return DIAGNOSTIC_SOURCE_PATTERNS.find((item) => item.code === code)?.re;
 }
 
 function offsetToLineColumn(source: string, offset: number): { line: number; column: number } {
@@ -809,14 +1180,14 @@ function countLines(source: string): number {
 }
 
 function diagnoseSurfaceCode(
-  code: string,
+  analysis: FigmaReplAstAnalysis,
   expectedSurface: FigmaReplSurface | undefined,
 ): FigmaReplDiagnostic[] {
   if (!expectedSurface) {
     return [];
   }
   const diagnostics: FigmaReplDiagnostic[] = [];
-  if (expectedSurface === "design" && /\bfigma\.create(?:Sticky|Connector|ShapeWithText|CodeBlock|Table)\s*\(/u.test(code)) {
+  if (analysis.codes.has("FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN")) {
     diagnostics.push(createDiagnostic(
       "FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN",
       "fatal",
@@ -825,7 +1196,7 @@ function diagnoseSurfaceCode(
       "figma-repl://safety#surface",
     ));
   }
-  if (expectedSurface === "figjam" && /\bfigma\.create(?:Frame|Component|ComponentSet|Instance)\s*\(/u.test(code)) {
+  if (analysis.codes.has("FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM")) {
     diagnostics.push(createDiagnostic(
       "FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM",
       "fatal",
@@ -834,7 +1205,7 @@ function diagnoseSurfaceCode(
       "figma-repl://safety#surface",
     ));
   }
-  if (expectedSurface === "slides" && /\bfigma\.create(?:Frame|Component|Sticky|Connector|ShapeWithText)\s*\(/u.test(code)) {
+  if (analysis.codes.has("FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES")) {
     diagnostics.push(createDiagnostic(
       "FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES",
       "fatal",

@@ -481,7 +481,7 @@ export function createFigmaReplMcpServer(
 
   const server = new Server(
     {
-      name: options.name ?? "figma-repl-mcp",
+      name: options.name ?? "figma_repl_mcp",
       version: options.version ?? "0.1.0",
     },
     {
@@ -559,7 +559,7 @@ export function createFigmaReplMcpServer(
       case "figma_repl_lookup":
         return handleLookup(asLookupArgs(rawArgs));
       default:
-        throw new Error(`Unknown figma-repl-mcp tool: ${request.params.name}`);
+        throw new Error(`Unknown figma_repl_mcp tool: ${request.params.name}`);
     }
   });
 
@@ -1170,6 +1170,7 @@ async function executeCaptureNode(
   });
   const upstreamArguments = buildCaptureUpstreamArguments({
     nodeId,
+    fileKey: session.fileKey ?? extractFigmaFileKey(session.fileUrl),
     template: args.arguments ?? args.argumentsTemplate,
     tool,
   });
@@ -1658,7 +1659,7 @@ async function executeCallUpstreamTool(
   }
   if (isLocalReplToolName(args.toolName)) {
     throw new Error(
-      `Refusing to proxy local figma-repl-mcp tool "${args.toolName}". Call it directly instead.`,
+      `Refusing to proxy local figma_repl_mcp tool "${args.toolName}". Call it directly instead.`,
     );
   }
   const upstreamArgs = isRecord(args.arguments) ? args.arguments : {};
@@ -1913,6 +1914,9 @@ async function getNodeById(id) {
 async function $(nameOrId) {
   if (nameOrId === "$currentPage") return figma.currentPage;
   if (nameOrId === "$selection") return figma.currentPage.selection;
+  if (nameOrId && typeof nameOrId === "object" && "type" in nameOrId && "id" in nameOrId) {
+    return nameOrId;
+  }
   const key = typeof nameOrId === "string" && nameOrId.startsWith("$")
     ? nameOrId
     : undefined;
@@ -2765,20 +2769,26 @@ function buildAssetManifestUpstreamArguments(options: {
 
 function buildCaptureUpstreamArguments(options: {
   nodeId: string;
+  fileKey?: string;
   template?: Record<string, unknown>;
   tool: UpstreamToolInfo;
 }): Record<string, unknown> {
   const context = {
     nodeId: options.nodeId,
     targetNodeId: options.nodeId,
+    fileKey: options.fileKey,
   };
-  if (options.template) {
-    return expandTemplateObject(options.template, context);
-  }
   const properties = inputSchemaProperties(options.tool.inputSchema);
+  if (options.template) {
+    const expanded = expandTemplateObject(options.template, context);
+    assignFirstKnownMissingProperty(expanded, properties, ["fileKey", "key", "file_key"], options.fileKey);
+    return expanded;
+  }
   const result: Record<string, unknown> = {};
   assignFirstKnownProperty(result, properties, ["nodeId", "targetNodeId", "target", "id"], options.nodeId);
-  if (Object.keys(result).length > 0) {
+  const hasNodeArgument = Object.keys(result).length > 0;
+  assignFirstKnownMissingProperty(result, properties, ["fileKey", "key", "file_key"], options.fileKey);
+  if (hasNodeArgument) {
     return result;
   }
   throw new Error(
@@ -2860,6 +2870,19 @@ function assignFirstKnownProperty(
   if (name) {
     target[name] = value;
   }
+}
+
+function assignFirstKnownMissingProperty(
+  target: Record<string, unknown>,
+  properties: Record<string, unknown>,
+  names: string[],
+  value: unknown,
+): void {
+  const name = names.find((candidate) => properties[candidate] !== undefined);
+  if (!name || target[name] !== undefined) {
+    return;
+  }
+  assignFirstKnownProperty(target, properties, [name], value);
 }
 
 async function validateAssetManifestTargetsIfAvailable(options: {
@@ -3445,7 +3468,7 @@ function slugifyTaskName(value: unknown): string {
 function createCapabilitiesPayload(): Record<string, unknown> {
   return {
     guide: {
-      purpose: "Unified Figma-facing MCP facade for agents after OAuth registration. Stay inside figma-repl-mcp; it keeps local session metadata/handles and can bridge to upstream Figma MCP tools through explicit REPL tools.",
+      purpose: "Unified Figma-facing MCP facade for agents after OAuth registration. Stay inside figma_repl_mcp; it keeps local session metadata/handles and can bridge to upstream Figma MCP tools through explicit REPL tools.",
       preferredFlow: [
         "Read figma-repl://capabilities to choose the facade path",
         "figma_repl_prepare_task with an absolute cwd, fileUrl or fileKey, and an intent for repairable .figma.js workspaces",
@@ -3459,7 +3482,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         "figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool",
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
-      upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma-repl-mcp interface.",
+      upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma_repl_mcp interface.",
       responseShape: "Fixed structured payloads without session.history; parsed upstream JSON is returned as result, text is returned only when JSON is unavailable, and raw upstream payloads are written only to output/result files with metadata pointers.",
     },
     patterns: {
@@ -3558,7 +3581,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       returns: ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"],
     },
     facadeRoutingDelegationBoundaries: [
-      "Keep the agent on figma-repl-mcp; use figma_repl_call_upstream_tool only for explicit upstream-tool calls.",
+      "Keep the agent on figma_repl_mcp; use figma_repl_call_upstream_tool only for explicit upstream-tool calls.",
       "For small generated local PNG/JPEG assets in .figma.js, use $.imageAsset({ base64, parent, size, position, as }); for large assets, create target rectangles then route through an upstream official upload_assets workflow when available.",
       "Do not use PluginData APIs for agent state; use local session handles or a dedicated storage workflow.",
       "Use compact docs/API lookup as the exposed documentation surface; bundled corpus files stay internal.",

@@ -4,7 +4,7 @@ This document is for AI agents maintaining `figma-mcp-bridge`. It is not the use
 
 ## Current Direction
 
-- `figma-repl-mcp` is the primary agent-facing Figma workflow after OAuth.
+- `figma_repl_mcp` is the primary agent-facing Figma workflow after OAuth.
 - `figma-stdio` stays as a transparent upstream bridge for parity checks and raw official MCP debugging.
 - Local `.figma.js` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, and compact docs/API lookup are the supported REPL path.
 - DSL, `$.ops`, `figma_repl_apply_ops`, `compileFigmaReplOps`, `FigmaReplOp`, and `FigmaReplApplyOpsArguments` are not part of the public or runtime contract.
@@ -25,7 +25,7 @@ Runtime payloads are canonical for the agent-facing router contract:
 Pin these facts when changing the router surface:
 
 - agents start by reading `figma-repl://capabilities`;
-- `figma-repl-mcp` is the primary agent-facing entrypoint;
+- `figma_repl_mcp` is the primary agent-facing entrypoint;
 - exposed resources include the `figma-repl://capabilities`, `guide`, `file-workflow`, `workflow-tools`, `scripts`, `patterns`, `api-cards`, `intents`, `docs`, `api`, `safety`, `upstream-tools`, and `sessions` family;
 - `figma_repl_guidance` returns `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`;
 - public `figma_repl_*` tools are exactly `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, `figma_repl_run_task_plan`, `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_inspect`, `figma_repl_call_upstream_tool`, and `figma_repl_lookup`;

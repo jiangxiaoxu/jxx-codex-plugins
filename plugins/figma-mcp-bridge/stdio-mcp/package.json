@@ -41,11 +41,12 @@
     "test": "npm run build && node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "acorn": "^8.17.0"
   },
   "devDependencies": {
-    "esbuild": "^0.27.0",
     "@types/node": "^20.14.0",
+    "esbuild": "^0.27.0",
     "typescript": "^5.5.0"
   },
   "engines": {

@@ -5,7 +5,7 @@ Local bridge and plugin bundle for using the official Figma MCP server from Code
 The plugin provides:
 
 - an HTTP OAuth bridge for initial login and standalone debugging;
-- `figma-repl-mcp`, the preferred agent-facing facade for file-based Figma Plugin API work;
+- `figma_repl_mcp`, the preferred agent-facing facade for file-based Figma Plugin API work;
 - optional Node/CLI plumbing for a transparent upstream bridge when debugging official MCP behavior.
 
 ## OAuth Cache
@@ -37,7 +37,7 @@ Run the transient login helper from this plugin root:
 npm run login:figma-http
 ```
 
-The helper adds a temporary `figma-http` Codex MCP entry, runs browser OAuth through `http://127.0.0.1:18766/mcp`, then removes that temporary entry. Do not install `figma-http` as a persistent MCP server; the persistent plugin server is `figma-repl-mcp`.
+The helper adds a temporary `figma-http` Codex MCP entry, runs browser OAuth through `http://127.0.0.1:18766/mcp`, then removes that temporary entry. Do not install `figma-http` as a persistent MCP server; the persistent plugin server is `figma_repl_mcp`.
 
 ## Bundled MCP Servers
 
@@ -46,7 +46,7 @@ The plugin's `.mcp.json` installs:
 ```json
 {
   "mcpServers": {
-    "figma-repl-mcp": {
+    "figma_repl_mcp": {
       "command": "node",
       "cwd": ".",
       "args": ["./stdio-mcp/dist/repl-stdio-cli.js"]
@@ -55,15 +55,17 @@ The plugin's `.mcp.json` installs:
 }
 ```
 
-`figma-repl-mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.js` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, screenshot/capture output, task plans, process-local handles, and explicit delegated upstream official tools for uncovered capabilities.
+`figma_repl_mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.js` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, screenshot/capture output, task plans, process-local handles, and explicit delegated upstream official tools for uncovered capabilities.
+
+Upgrade note: the persistent MCP server id changed from `figma-repl-mcp` to `figma_repl_mcp`. Reload or reinstall the plugin, or restart the MCP server, so old cached `figma-repl-mcp` tool schemas are not exposed.
 
 Local `figma_repl_*` tools return a fixed structured shape. Parsed upstream JSON stays in `result`, non-JSON upstream output falls back to `text`, diagnostics are arrays, session payloads omit history, and large data points to `outputFiles` entries shaped as `{ path, bytes, lineCount }`, with `rawBytes` when a result file contains a raw upstream payload. Raw upstream payloads are written only to output/result files, not returned inline in MCP structuredContent.
 
-`figma-stdio` is not installed as a persistent plugin server by default. Keep using `figma-repl-mcp` for agent work; use `figma-stdio` only through the package CLI or Node API for parity checks and raw official MCP debugging.
+`figma-stdio` is not installed as a persistent plugin server by default. Keep using `figma_repl_mcp` for agent work; use `figma-stdio` only through the package CLI or Node API for parity checks and raw official MCP debugging.
 
 ## Agent Workflow
 
-Agents should use `figma-repl-mcp` first:
+Agents should use `figma_repl_mcp` first:
 
 1. read `figma-repl://capabilities`
 2. `figma_repl_prepare_task({ cwd, fileUrl|fileKey, intent })`
