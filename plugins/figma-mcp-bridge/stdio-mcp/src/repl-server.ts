@@ -846,8 +846,9 @@ async function executeRunScriptFile(
     ...diagnoseWrappedScriptSize(scriptPath, wrappedScript, Boolean(args.strict)),
   ];
   session.lastDiagnostics = diagnostics;
-  throwIfFatalDiagnostics(diagnostics);
   const outputWriter = createScriptOutputWriter(args, session, formatScriptRunSummaryMarkdown);
+  await outputWriter.cleanupCompiledScriptFile();
+  throwIfFatalDiagnostics(diagnostics);
   const inlineResultLimit = effectiveInlineResultLimit(args.inlineResultLimit, outputWriter.files, DEFAULT_INLINE_RESULT_LIMIT);
   const scriptMetadata = {
     ...compiled.metadata,
@@ -3396,7 +3397,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use <intentSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
       "Responses use the fixed structured shape: parsed upstream JSON stays in result, non-JSON upstream output falls back to text, diagnostics are arrays, and file pointers stay in outputFiles.",
-      "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to the compiled JavaScript wrapper for line-aware repair; normal dry-runs and successful executions do not return compiledScript.",
+      "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
     ],
   };
 }

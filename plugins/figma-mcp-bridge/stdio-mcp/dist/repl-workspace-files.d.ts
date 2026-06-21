@@ -48,6 +48,7 @@ interface ParsedCaptureResult {
 }
 export declare function createScriptOutputWriter(args: FigmaReplRunScriptFileArguments, session: FigmaReplWorkspaceFileSession | undefined, formatSummaryMarkdown: (summary: Record<string, unknown>) => string): {
     files: ScriptOutputFilePaths;
+    cleanupCompiledScriptFile(): Promise<void>;
     write(payload: {
         result: unknown;
         diagnostics: FigmaReplDiagnostic[];
