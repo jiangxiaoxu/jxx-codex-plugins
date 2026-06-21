@@ -113,19 +113,6 @@ export interface FigmaReplRunTaskPlanArguments {
     outputFile?: string;
     inlineResultLimit?: number;
 }
-export interface FigmaReplInitWorkspaceArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    intent?: string;
-    task?: string;
-    fileUrl?: string;
-    fileKey?: string;
-    fileSlug?: string;
-    cwd: string;
-    dirName?: string;
-    overwrite?: boolean;
-}
 export interface FigmaReplCallUpstreamToolArguments {
     [key: string]: unknown;
     title?: string;
@@ -135,17 +122,12 @@ export interface FigmaReplCallUpstreamToolArguments {
     refresh?: boolean;
     includeRawUpstream?: boolean;
 }
-export interface FigmaReplDocsSearchArguments {
+export interface FigmaReplLookupArguments {
     [key: string]: unknown;
     title?: string;
-    query: string;
-    maxResults?: number;
-    maxSnippetLines?: number;
-}
-export interface FigmaReplApiLookupArguments {
-    [key: string]: unknown;
-    title?: string;
-    symbol: string;
+    kind?: "docs" | "api";
+    query?: string;
+    symbol?: string;
     maxResults?: number;
     maxSnippetLines?: number;
 }
@@ -158,6 +140,8 @@ export interface FigmaReplPrepareTaskArguments {
     fileUrl?: string;
     fileKey?: string;
     fileSlug?: string;
+    cwd?: string;
+    dirName?: string;
     goal?: string;
     taskSlug?: string;
     taskName?: string;
@@ -171,39 +155,42 @@ export interface FigmaReplPrepareTaskArguments {
     template?: string;
     overwrite?: boolean;
 }
-export interface FigmaReplPlanTaskArguments {
-    [key: string]: unknown;
-    title?: string;
-    goal?: string;
-    surface?: FigmaReplSurface;
-    workflow?: string;
-    task?: string;
-    expectedSurface?: FigmaReplSurface;
-    intent?: string;
-}
 export interface FigmaReplGuidanceArguments {
     [key: string]: unknown;
     title?: string;
+    mode?: "guidance" | "plan" | "card" | "catalog";
     card?: string;
     query?: string;
     task?: string;
     intent?: string;
+    goal?: string;
     surface?: FigmaReplSurface;
+    workflow?: string;
     expectedSurface?: FigmaReplSurface;
     maxCards?: number;
+}
+export interface FigmaReplInspectArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    mode?: "inspect" | "validate";
+    target?: string;
+    depth?: number;
+    handles?: string[];
+    upstreamTool?: string;
+    upstreamArgument?: string;
+    upstreamArguments?: Record<string, unknown>;
 }
 export declare function asEvalArgs(args: unknown): FigmaReplEvalArguments;
 export declare function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArguments;
 export declare function asApplyAssetManifestArgs(args: unknown): FigmaReplApplyAssetManifestArguments;
 export declare function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments;
 export declare function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments;
-export declare function asInitWorkspaceArgs(args: unknown): FigmaReplInitWorkspaceArguments;
 export declare function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments;
-export declare function asPlanTaskArgs(args: unknown): FigmaReplPlanTaskArguments;
 export declare function asGuidanceArgs(args: unknown): FigmaReplGuidanceArguments;
+export declare function asInspectArgs(args: unknown): FigmaReplInspectArguments;
 export declare function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments;
-export declare function asDocsSearchArgs(args: unknown): FigmaReplDocsSearchArguments;
-export declare function asApiLookupArgs(args: unknown): FigmaReplApiLookupArguments;
+export declare function asLookupArgs(args: unknown): FigmaReplLookupArguments;
 export declare function assertRequiredTitleArgument(args: Record<string, unknown>): void;
 export declare function withDefaultTitle<T extends Record<string, unknown>>(args: T, title: string): T & {
     title: string;

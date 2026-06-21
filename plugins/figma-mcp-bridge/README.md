@@ -63,15 +63,14 @@ The plugin's `.mcp.json` installs:
 
 Agents should use `figma-repl-mcp` first:
 
-1. `figma_repl_capabilities`
-2. `figma_repl_init_workspace`
-3. `figma_repl_prepare_task`
-4. edit local `.figma.js`
-5. `figma_repl_run_script_file({ dryRun: true, strict: true })`
-6. `figma_repl_run_script_file`
-7. `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, or `figma_repl_run_task_plan` when needed
+1. read `figma-repl://capabilities`
+2. `figma_repl_prepare_task({ cwd, fileUrl|fileKey, intent })`
+3. edit local `.figma.js`
+4. `figma_repl_run_script_file({ dryRun: true, strict: true })`
+5. `figma_repl_run_script_file`
+6. `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, or `figma_repl_run_task_plan` when needed
 
-For API guidance, use `figma_repl_guidance`, `figma_repl_docs_search`, and `figma_repl_api_lookup`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
+For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 
 Programmatic Node usage with an explicit OAuth cache:
 
