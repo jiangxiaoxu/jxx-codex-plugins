@@ -9,6 +9,7 @@ export { assertSafeFigmaReplCode, diagnoseFigmaReplCode, };
 export type { FigmaReplDiagnostic, FigmaReplDiagnosticsOptions, FigmaReplDiagnosticSeverity, FigmaReplFileDiagnostic, FigmaReplHelperProfile, FigmaReplSurface, };
 export type { FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 export type { FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplEvalArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
+export declare const FIGMA_REPL_EVAL_COMMON_HELPER_NAMES: readonly ["remember", "forget", "resolveId", "node", "select", "cloneNodeTree", "findAll", "find", "text", "layout", "create", "inspect", "screenshot", "imageAsset", "checkpoint"];
 export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
     client?: FigmaMcpProxyClient;
     name?: string;
@@ -94,4 +95,5 @@ export declare function buildFigmaEvalScript(options: {
     session: Pick<FigmaReplSession, "id" | "handles" | "currentPageId" | "fileUrl" | "fileKey" | "surface" | "knownPages">;
     code: string;
     mode?: "read" | "write";
+    includeEvalHelpers?: boolean;
 }): string;

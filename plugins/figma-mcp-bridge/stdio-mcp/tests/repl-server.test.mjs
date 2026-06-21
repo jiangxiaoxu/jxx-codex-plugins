@@ -12,6 +12,10 @@ import {
   createFigmaReplMcpServer,
   diagnoseFigmaReplCode,
 } from "../dist/index.js";
+import {
+  FIGMA_REPL_EVAL_COMMON_HELPER_NAMES,
+  buildFigmaEvalScript,
+} from "../dist/repl-server.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const expectedStaticResourceUris = [
@@ -170,6 +174,226 @@ test("figma REPL eval wraps code and persists returned handles", async () => {
   await mcpClient.close();
 });
 
+test("figma REPL eval supports direct async node lookup followed by $.select", async () => {
+  const zoomedNodes = [];
+  const page = {
+    id: "0:1",
+    type: "PAGE",
+    name: "Page 1",
+    selection: [],
+    children: [],
+  };
+  const menu = {
+    id: "12:34",
+    type: "FRAME",
+    name: "Generated menu",
+    parent: page,
+    visible: true,
+    x: 10,
+    y: 20,
+    width: 240,
+    height: 160,
+    children: [],
+  };
+  page.children.push(menu);
+  const nodesById = new Map([
+    [page.id, page],
+    [menu.id, menu],
+  ]);
+  const figma = {
+    currentPage: page,
+    root: { children: [page] },
+    getNodeByIdAsync: async (id) => nodesById.get(id) ?? null,
+    getNodeById: () => {
+      throw new Error("sync lookup should not be used when getNodeByIdAsync exists");
+    },
+    setCurrentPageAsync: async (nextPage) => {
+      figma.currentPage = nextPage;
+    },
+    viewport: {
+      scrollAndZoomIntoView: (nodes) => {
+        zoomedNodes.push(...nodes);
+      },
+    },
+  };
+  const script = buildFigmaEvalScript({
+    session: {
+      id: "main",
+      handles: {},
+      currentPageId: page.id,
+      fileUrl: undefined,
+      fileKey: undefined,
+      surface: "design",
+      knownPages: { [page.id]: page.name },
+    },
+    code: [
+      'const menu = await figma.getNodeByIdAsync("12:34");',
+      'const selection = await $.select(menu.id, { zoom: true });',
+      "return { directId: menu.id, selectedNodeIds: selection.selectedNodeIds };",
+    ].join("\n"),
+  });
+  const runScript = new Function("figma", `return (async () => {\n${script}\n})();`);
+  const result = await runScript(figma);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.result.directId, menu.id);
+  assert.deepEqual(result.result.selectedNodeIds, [menu.id]);
+  assert.deepEqual(page.selection, [menu]);
+  assert.deepEqual(zoomedNodes, [menu]);
+});
+
+test("figma REPL eval exposes and executes the common $ helper surface", async () => {
+  let nextId = 1;
+  const loadedFonts = [];
+  const nodesById = new Map();
+  const page = {
+    id: "0:1",
+    type: "PAGE",
+    name: "Page 1",
+    selection: [],
+    children: [],
+    appendChild(node) {
+      appendChild(this, node);
+    },
+  };
+  nodesById.set(page.id, page);
+
+  function appendChild(parent, node) {
+    if (node.parent?.children) {
+      node.parent.children = node.parent.children.filter((child) => child !== node);
+    }
+    node.parent = parent;
+    parent.children.push(node);
+  }
+
+  function createNode(type) {
+    const node = {
+      id: `90:${nextId++}`,
+      type,
+      name: type.charAt(0) + type.slice(1).toLowerCase(),
+      parent: null,
+      visible: true,
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      fills: [],
+      resize(width, height) {
+        this.width = width;
+        this.height = height;
+      },
+      resizeWithoutConstraints(width, height) {
+        this.resize(width, height);
+      },
+      remove() {
+        if (this.parent?.children) {
+          this.parent.children = this.parent.children.filter((child) => child !== this);
+        }
+        this.parent = null;
+      },
+      clone() {
+        const clone = createNode(this.type);
+        clone.name = this.name;
+        clone.visible = this.visible;
+        clone.x = this.x;
+        clone.y = this.y;
+        clone.width = this.width;
+        clone.height = this.height;
+        clone.fills = [...this.fills];
+        return clone;
+      },
+      screenshot: async () => new Uint8Array([7, 8, 9]),
+    };
+    if (type === "FRAME") {
+      node.children = [];
+      node.appendChild = function appendFrameChild(child) {
+        appendChild(this, child);
+      };
+    }
+    if (type === "TEXT") {
+      node.characters = "";
+      node.fontName = { family: "Inter", style: "Regular" };
+    }
+    nodesById.set(node.id, node);
+    return node;
+  }
+
+  const figma = {
+    currentPage: page,
+    root: { children: [page] },
+    getNodeByIdAsync: async (id) => nodesById.get(id) ?? null,
+    createFrame: () => createNode("FRAME"),
+    createText: () => createNode("TEXT"),
+    createRectangle: () => createNode("RECTANGLE"),
+    createEllipse: () => createNode("ELLIPSE"),
+    createLine: () => createNode("LINE"),
+    createImage: (bytes) => ({ hash: `hash-${Array.from(bytes).join("-")}` }),
+    loadFontAsync: async (font) => {
+      loadedFonts.push(font);
+    },
+    setCurrentPageAsync: async (nextPage) => {
+      figma.currentPage = nextPage;
+    },
+    viewport: {
+      scrollAndZoomIntoView: () => {},
+    },
+  };
+  const expectedFunctionHelpers = [...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES];
+  const script = buildFigmaEvalScript({
+    session: {
+      id: "main",
+      handles: {},
+      currentPageId: page.id,
+      fileUrl: undefined,
+      fileKey: undefined,
+      surface: "design",
+      knownPages: { [page.id]: page.name },
+    },
+    code: [
+      `const expected = ${JSON.stringify(expectedFunctionHelpers)};`,
+      "const helperTypes = Object.fromEntries(expected.map((name) => [name, typeof $[name]]));",
+      "for (const [name, type] of Object.entries(helperTypes)) {",
+      "  if (type !== 'function') throw new Error(`$.${name} is not a function`);",
+      "}",
+      "if (typeof $.handles !== 'object') throw new Error('$.handles is not an object');",
+      "if (!Array.isArray($.checkpoints)) throw new Error('$.checkpoints is not an array');",
+      "const root = await $.create({ type: 'FRAME', as: '$root', name: 'Eval helper root', size: { width: 120, height: 80 }, layout: { layoutMode: 'VERTICAL' } });",
+      "await $.layout('$root', { itemSpacing: 4 });",
+      "const title = await $.text({ parent: '$root', as: '$title', name: 'Eval helper title', text: 'Hello', font: { family: 'Inter', style: 'Regular', size: 12 } });",
+      "const allText = await $.findAll({ type: 'TEXT' });",
+      "const found = await $.find({ name: 'Eval helper title' });",
+      "const selected = await $.select('$title', { zoom: false });",
+      "const inspected = await $.inspect('$title', 0);",
+      "const screenshotBytes = Array.from(await $.screenshot('$root', { format: 'PNG' }));",
+      "const asset = await $.imageAsset({ parent: '$root', as: '$asset', name: 'Eval helper asset', base64: 'AQIDBA==', size: { width: 16, height: 16 } });",
+      "const clone = await $.cloneNodeTree({ source: '$asset', parent: '$root', as: '$clone', select: false, placement: 'none' });",
+      "const viaNode = await $.node('$clone');",
+      "const resolvedCloneId = $.resolveId('$clone');",
+      "$.forget('$clone');",
+      "const checkpoint = await $.checkpoint('eval-helper-surface', ['$root', '$title'], { depth: 0 });",
+      "return { helperTypes, handles: { ...$.handles }, checkpoints: $.checkpoints.length, root: root.id, title: title.id, allText: allText.length, found: found.id, selected: selected.selectedNodeIds, inspected, screenshotBytes, assetFill: asset.fills[0], cloneId: clone.clone.id, viaNode: viaNode.id, resolvedCloneId, cloneForgotten: !('$clone' in $.handles), checkpointName: checkpoint.name };",
+    ].join("\n"),
+  });
+  const runScript = new Function("figma", `return (async () => {\n${script}\n})();`);
+  const result = await runScript(figma);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.result.helperTypes, Object.fromEntries(expectedFunctionHelpers.map((name) => [name, "function"])));
+  assert.equal(result.result.handles.$root, result.result.root);
+  assert.equal(result.result.handles.$title, result.result.title);
+  assert.equal(result.result.allText, 1);
+  assert.equal(result.result.found, result.result.title);
+  assert.deepEqual(result.result.selected, [result.result.title]);
+  assert.equal(result.result.inspected.name, "Eval helper title");
+  assert.deepEqual(result.result.screenshotBytes, [7, 8, 9]);
+  assert.equal(result.result.assetFill.imageHash, "hash-1-2-3-4");
+  assert.equal(result.result.viaNode, result.result.resolvedCloneId);
+  assert.equal(result.result.cloneForgotten, true);
+  assert.equal(result.result.checkpointName, "eval-helper-surface");
+  assert.equal(result.result.checkpoints, 1);
+  assert.deepEqual(loadedFonts, [{ family: "Inter", style: "Regular" }]);
+});
+
 test("figma REPL exposes self-explaining capabilities and resources", async () => {
   const calls = [];
   const { server } = createFigmaReplMcpServer({
@@ -225,20 +449,10 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.scriptWorkflow.helpers["$.imageAsset"], /image-fill rectangle/);
   assert.match(capabilities.scriptWorkflow.helpers["$.screenshot"], /final QA/);
   assert.match(capabilities.scriptWorkflow.helpers["$.checkpoint"], /summaries/);
-  assert.deepEqual(Object.keys(capabilities.scriptWorkflow.helpers).sort(), [
-    "$",
-    "$.checkpoint",
-    "$.cloneNodeTree",
-    "$.create",
-    "$.find",
-    "$.findAll",
-    "$.imageAsset",
-    "$.inspect",
-    "$.layout",
-    "$.screenshot",
-    "$.select",
-    "$.text",
-  ]);
+  assert.deepEqual(
+    Object.keys(capabilities.scriptWorkflow.helpers).sort(),
+    ["$", ...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES.map((name) => `$.${name}`)].sort(),
+  );
   assert.ok(capabilities.examples);
   assert.ok(capabilities.examples.every((example) => JSON.stringify(example)));
 
@@ -338,20 +552,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const workflowResource = await mcpClient.readResource({ uri: "figma-repl://file-workflow" });
   const workflow = JSON.parse(workflowResource.contents[0].text);
   assert.equal(workflow.prepareTool, "figma_repl_prepare_task");
-  assert.deepEqual(workflow.helpers, [
-    "$",
-    "$.find",
-    "$.findAll",
-    "$.create",
-    "$.text",
-    "$.layout",
-    "$.imageAsset",
-    "$.screenshot",
-    "$.select",
-    "$.cloneNodeTree",
-    "$.checkpoint",
-    "$.inspect",
-  ]);
+  assert.deepEqual(workflow.helpers, ["$", ...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES.map((name) => `$.${name}`)]);
   assert.deepEqual(workflow.workflowTools, [
     "figma_repl_apply_asset_manifest",
     "figma_repl_capture_node",
