@@ -866,7 +866,6 @@ async function executeRunScriptFile(
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
       script: responseScript,
-      compiledScript: wrappedScript,
     };
     const outputFiles = await outputWriter.write({
       result: resultPayload,
@@ -880,7 +879,7 @@ async function executeRunScriptFile(
       }),
     });
     return {
-      ...limitInlineScriptResult(resultPayload, inlineResultLimit, ["compiledScript"]),
+      ...limitInlineScriptResult(resultPayload, inlineResultLimit, []),
       outputFiles,
     };
   }
@@ -905,6 +904,7 @@ async function executeRunScriptFile(
     const outputFiles = await outputWriter.write({
       result: resultPayload,
       diagnostics,
+      compiledScript: wrappedScript,
       summary: createScriptRunSummary({
         ok: false,
         dryRun: false,
@@ -944,6 +944,7 @@ async function executeRunScriptFile(
     const outputFiles = await outputWriter.write({
       result: withResultFileRaw(resultPayload, parsed),
       diagnostics,
+      compiledScript: wrappedScript,
       summary: createScriptRunSummary({
         ok: false,
         dryRun: false,
@@ -3395,6 +3396,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use <intentSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
       "Responses use the fixed structured shape: parsed upstream JSON stays in result, non-JSON upstream output falls back to text, diagnostics are arrays, and file pointers stay in outputFiles.",
+      "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to the compiled JavaScript wrapper for line-aware repair; normal dry-runs and successful executions do not return compiledScript.",
     ],
   };
 }
@@ -3484,7 +3486,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       options: {
         scriptPath: "Absolute path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
         inputFile: "File name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
-        dryRun: "Read, diagnose, inject helpers, and return compiledScript without calling upstream Figma.",
+        dryRun: "Read, diagnose, inject helpers, and return script metadata without calling upstream Figma.",
         strict: "Promote warnings to fatal diagnostics.",
         expectedSurface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
         targetPageId: "Switch once to a known page before the script body runs.",

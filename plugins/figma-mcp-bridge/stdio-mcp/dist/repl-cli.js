@@ -20191,7 +20191,7 @@ function createReplToolDescriptions(options) {
         scriptPath: stringProperty("Absolute path to a local JavaScript file. Prefer inputFile after figma_repl_prepare_task creates a file-context workspace."),
         inputFile: stringProperty("File name inside the initialized file-context directory. Defaults are created by figma_repl_prepare_task."),
         helperProfile: enumProperty(["auto", "minimal", "asset", "clone", "full"], "Controls injected $ helper size. auto injects heavy $.imageAsset/$.cloneNodeTree only when the script source uses them."),
-        dryRun: booleanProperty("Read, diagnose, inject helpers, and return compiledScript/script metadata without calling upstream Figma."),
+        dryRun: booleanProperty("Read, diagnose, inject helpers, and return script metadata without calling upstream Figma."),
         strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
         expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
@@ -20372,7 +20372,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Public local REPL session metadata."),
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
     script: objectProperty("Compiled script metadata."),
-    outputFiles: objectProperty("Files written for complete result, diagnostics, or summary."),
+    outputFiles: objectProperty("Files written for complete result, diagnostics, summary, or failure-only compiled script."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     result: jsonProperty("Parsed upstream JSON output when available."),
@@ -20534,6 +20534,9 @@ function createScriptOutputWriter(args, session, formatSummaryMarkdown) {
       }
       if (files.summaryFile) {
         written.summaryFile = await writeMarkdownFile(files.summaryFile, formatSummaryMarkdown(payload.summary));
+      }
+      if (payload.compiledScript && files.compiledScriptFile) {
+        written.compiledScriptFile = await writeTextFile(files.compiledScriptFile, payload.compiledScript);
       }
       return written;
     }
@@ -20808,18 +20811,31 @@ function resolveScriptOutputFiles(args, session) {
     const sessionDir = session.workspace.sessionDir;
     const inputFile = asOptionalString2(args.inputFile);
     const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
+    const resultFile2 = resolveWorkspaceOutputFile(args.resultFile ?? args.outputFile, sessionDir, defaultResult, "resultFile/outputFile");
     return {
-      resultFile: resolveWorkspaceOutputFile(args.resultFile ?? args.outputFile, sessionDir, defaultResult, "resultFile/outputFile"),
+      resultFile: resultFile2,
       diagnosticsFile: args.diagnosticsFile ? resolveWorkspaceOutputFile(args.diagnosticsFile, sessionDir, "diagnostics.json", "diagnosticsFile") : void 0,
-      summaryFile: args.summaryFile ? resolveWorkspaceOutputFile(args.summaryFile, sessionDir, "summary.md", "summaryFile") : void 0
+      summaryFile: args.summaryFile ? resolveWorkspaceOutputFile(args.summaryFile, sessionDir, "summary.md", "summaryFile") : void 0,
+      compiledScriptFile: compiledFilePathForResultFile(resultFile2)
     };
   }
   const hasOutputDir = Boolean(outputDir);
+  const resultFile = resolveOptionalOutputFile(args.resultFile ?? args.outputFile, outputDir, hasOutputDir ? "result.json" : void 0, "resultFile/outputFile");
   return {
-    resultFile: resolveOptionalOutputFile(args.resultFile ?? args.outputFile, outputDir, hasOutputDir ? "result.json" : void 0, "resultFile/outputFile"),
+    resultFile,
     diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, hasOutputDir ? "diagnostics.json" : void 0, "diagnosticsFile"),
-    summaryFile: resolveOptionalOutputFile(args.summaryFile, outputDir, hasOutputDir ? "summary.md" : void 0, "summaryFile")
+    summaryFile: resolveOptionalOutputFile(args.summaryFile, outputDir, hasOutputDir ? "summary.md" : void 0, "summaryFile"),
+    compiledScriptFile: resultFile ? compiledFilePathForResultFile(resultFile) : void 0
   };
+}
+function compiledFilePathForResultFile(resultFile) {
+  if (resultFile.endsWith(".result.json")) {
+    return `${resultFile.slice(0, -".result.json".length)}.compiled.js`;
+  }
+  if (resultFile.endsWith(".json")) {
+    return `${resultFile.slice(0, -".json".length)}.compiled.js`;
+  }
+  return `${resultFile}.compiled.js`;
 }
 function resolveWorkspaceOutputFile(value, baseDir, fallbackName, argumentName) {
   const raw = asOptionalString2(value) ?? fallbackName;
@@ -20846,6 +20862,11 @@ async function writeMarkdownFile(path, value) {
   await mkdir2(dirname4(path), { recursive: true });
   const content = value.endsWith("\n") ? value : `${value}
 `;
+  await writeFile2(path, content, "utf8");
+  return textFileMetadata(path, content);
+}
+async function writeTextFile(path, content) {
+  await mkdir2(dirname4(path), { recursive: true });
   await writeFile2(path, content, "utf8");
   return textFileMetadata(path, content);
 }
@@ -21558,8 +21579,7 @@ async function executeRunScriptFile(args, runtime) {
       dryRun: true,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
-      script: responseScript,
-      compiledScript: wrappedScript
+      script: responseScript
     };
     const outputFiles2 = await outputWriter.write({
       result: resultPayload2,
@@ -21573,7 +21593,7 @@ async function executeRunScriptFile(args, runtime) {
       })
     });
     return {
-      ...limitInlineScriptResult(resultPayload2, inlineResultLimit, ["compiledScript"]),
+      ...limitInlineScriptResult(resultPayload2, inlineResultLimit, []),
       outputFiles: outputFiles2
     };
   }
@@ -21597,6 +21617,7 @@ async function executeRunScriptFile(args, runtime) {
     const outputFiles2 = await outputWriter.write({
       result: resultPayload2,
       diagnostics,
+      compiledScript: wrappedScript,
       summary: createScriptRunSummary({
         ok: false,
         dryRun: false,
@@ -21636,6 +21657,7 @@ async function executeRunScriptFile(args, runtime) {
     const outputFiles2 = await outputWriter.write({
       result: withResultFileRaw(resultPayload2, parsed),
       diagnostics,
+      compiledScript: wrappedScript,
       summary: createScriptRunSummary({
         ok: false,
         dryRun: false,
@@ -23776,7 +23798,8 @@ function createFileWorkflowPayload() {
       "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest application, captures, and upstream calls; initialized workspaces get default step output files.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use <intentSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
-      "Responses use the fixed structured shape: parsed upstream JSON stays in result, non-JSON upstream output falls back to text, diagnostics are arrays, and file pointers stay in outputFiles."
+      "Responses use the fixed structured shape: parsed upstream JSON stays in result, non-JSON upstream output falls back to text, diagnostics are arrays, and file pointers stay in outputFiles.",
+      "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to the compiled JavaScript wrapper for line-aware repair; normal dry-runs and successful executions do not return compiledScript."
     ]
   };
 }
@@ -23854,7 +23877,7 @@ function createCapabilitiesPayload() {
       options: {
         scriptPath: "Absolute path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
         inputFile: "File name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
-        dryRun: "Read, diagnose, inject helpers, and return compiledScript without calling upstream Figma.",
+        dryRun: "Read, diagnose, inject helpers, and return script metadata without calling upstream Figma.",
         strict: "Promote warnings to fatal diagnostics.",
         expectedSurface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
         targetPageId: "Switch once to a known page before the script body runs.",
