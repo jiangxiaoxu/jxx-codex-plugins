@@ -25,6 +25,16 @@ export interface ScriptOutputFilePaths {
     diagnosticsFile?: string;
     summaryFile?: string;
 }
+export interface FilePointerMetadata {
+    path: string;
+    bytes: number;
+    lineCount: number;
+}
+export interface ScriptOutputFileMetadata {
+    resultFile?: FilePointerMetadata;
+    diagnosticsFile?: FilePointerMetadata;
+    summaryFile?: FilePointerMetadata;
+}
 export interface FigmaReplWorkspaceFileSession {
     workspace?: FigmaReplSessionWorkspace;
     fileKey?: string;
@@ -39,7 +49,7 @@ export declare function createScriptOutputWriter(args: FigmaReplRunScriptFileArg
         result: unknown;
         diagnostics: FigmaReplDiagnostic[];
         summary: Record<string, unknown>;
-    }): Promise<ScriptOutputFilePaths>;
+    }): Promise<ScriptOutputFileMetadata>;
 };
 export declare function resolveScriptInputPath(args: FigmaReplRunScriptFileArguments, session: FigmaReplWorkspaceFileSession): string;
 export declare function resolveRequiredWorkspaceAwareFile(value: unknown, session: FigmaReplWorkspaceFileSession, argumentName: string): string;
@@ -48,6 +58,7 @@ export declare function writeCaptureOutputFile(outputFile: string, upstream: unk
     kind: "image" | "text";
     mimeType: string;
     bytes: number;
+    lineCount: number;
     width?: number;
     height?: number;
     sourceUrl?: string;
@@ -59,7 +70,7 @@ export declare function loadTaskPlan(args: FigmaReplRunTaskPlanArguments, sessio
 export declare function resolveTaskPlanResultFile(args: FigmaReplRunTaskPlanArguments, planPath: string | undefined, session: FigmaReplWorkspaceFileSession): string;
 export declare function withTaskPlanDefaultFiles(stepArgs: Record<string, unknown>, type: string, id: string, session: FigmaReplWorkspaceFileSession): Record<string, unknown>;
 export declare function effectiveInlineResultLimit(value: unknown, files: ScriptOutputFilePaths, defaultInlineResultLimit: number): unknown;
-export declare function writeJsonFile(path: string, value: unknown): Promise<void>;
+export declare function writeJsonFile(path: string, value: unknown): Promise<FilePointerMetadata>;
 export declare function createSessionWorkspace(options: {
     cwd: string;
     dirName?: unknown;
@@ -81,5 +92,5 @@ export declare function resolvePreparedTaskWorkspace(options: {
 export declare function resolveWorkspaceFile(baseDir: string, fileName: string, argumentName: string): string;
 export declare function normalizeTaskScriptName(value: unknown, taskSlug: string): string;
 export declare function resultFileNameForScript(scriptName: string): string;
-export declare function writeTaskFile(path: string, content: string, overwrite: boolean): Promise<void>;
+export declare function writeTaskFile(path: string, content: string, overwrite: boolean): Promise<FilePointerMetadata>;
 export {};

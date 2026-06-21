@@ -22,6 +22,7 @@ export function createReplToolDescriptions(
         "Create or update a local Figma REPL session. Records fileKey/surface/page context, local handles, and upstream use_figma settings.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
         label: stringProperty("Human-readable session label."),
         fileUrl: stringProperty("Optional Figma file URL stored in local session metadata."),
@@ -42,11 +43,11 @@ export function createReplToolDescriptions(
         "Run one batched JavaScript transaction through upstream use_figma. Diagnostics block unsafe API-contract/read-mode/surface mistakes before dispatch.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
         code: stringProperty("JavaScript body executed inside an async function in the Figma Plugin API context. Use return to send structured output."),
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
         expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
-        returnMode: enumProperty(["auto", "json", "text", "raw"], "Controls how much parsed/text upstream output is returned."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
         upstreamTool: stringProperty("Override upstream eval tool name for this call."),
         upstreamArgument: stringProperty("Override upstream JavaScript argument name for this call."),
@@ -61,6 +62,7 @@ export function createReplToolDescriptions(
         "Primary file-based JavaScript workflow for Figma REPL. Reads an absolute scriptPath or a session-workspace inputFile, injects $ helpers, writes output files, and optionally executes through upstream use_figma.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
         scriptPath: stringProperty("Absolute path to a local JavaScript file. Prefer inputFile after figma_repl_prepare_task creates a file-context workspace."),
         inputFile: stringProperty("File name inside the initialized file-context directory. Defaults are created by figma_repl_prepare_task."),
@@ -88,6 +90,7 @@ export function createReplToolDescriptions(
         "Apply a local asset manifest to Figma target nodes through configurable upstream asset/upload tools. Use for large generated images after .figma.js creates target rectangles.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         manifestPath: stringProperty("Path to a JSON manifest. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of assets or an object with assets/toolName/argumentsTemplate."),
         assets: {
@@ -111,6 +114,7 @@ export function createReplToolDescriptions(
         "Capture one Figma node through a configurable upstream screenshot tool and save image bytes, screenshot URL payloads, or text responses to a local outputFile for final visual QA.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         nodeId: stringProperty("Figma node id to capture."),
         targetNodeId: stringProperty("Alias for nodeId."),
@@ -129,6 +133,7 @@ export function createReplToolDescriptions(
         "Run a sequential local JSON task plan: script-file dryRun/execute, asset manifest application, screenshot capture, and generic upstream tool calls. Stops on first failure by default.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
         planPath: stringProperty("JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of steps or an object with steps."),
         steps: {
@@ -148,6 +153,7 @@ export function createReplToolDescriptions(
         "Create or reuse an intent-specific .figma.js script and paired .result.json file. With cwd or file context, initializes <cwd>/figma-mcp/<fileKey-or-fileSlug>/ for inputFile/outputFile workflows.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
         intent: stringProperty("Human intent used to derive <intentSlug>.figma.js and <intentSlug>.result.json."),
         task: stringProperty("Alias for intent."),
@@ -176,6 +182,7 @@ export function createReplToolDescriptions(
         "Return compact guidance, file-workflow planning, curated API cards, or catalog metadata before broader lookup.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
         card: stringProperty("Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides."),
         query: stringProperty("Search query when card id is not known."),
@@ -194,6 +201,7 @@ export function createReplToolDescriptions(
         "Inspect $selection, $currentPage, a stored handle, or validate cached handles through one read-mode use_figma call.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
         mode: enumProperty(["inspect", "validate"], "Use inspect for target summaries or validate for cached handle status. Defaults to inspect."),
         target: stringProperty("$selection, $currentPage, a stored handle like $header, or a raw node id. Defaults to $selection."),
@@ -214,6 +222,7 @@ export function createReplToolDescriptions(
         "Proxy one official upstream Figma MCP tool call through figma-repl-mcp so agents can stay on the unified REPL facade for capabilities not covered by the file workflow.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
         toolName: stringProperty("Official upstream Figma MCP tool name to call. Local figma_repl_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
@@ -227,6 +236,7 @@ export function createReplToolDescriptions(
         "Look up compact docs snippets or targeted Figma Plugin API symbols from the internal corpus.",
       inputSchema: objectSchema({
         title: titleProperty(),
+        responseMode: responseModeProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
         query: stringProperty("Keyword query, for example 'component properties' or 'Slides lifecycle'."),
         symbol: stringProperty("API symbol for kind=api, for example createFrame, loadFontAsync, VariableCollection."),
@@ -249,8 +259,9 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamTool: stringProperty("Upstream eval tool name used."),
     upstreamArgument: stringProperty("Upstream eval argument name used."),
     diagnostics: arrayProperty("Preflight diagnostics."),
-    parsed: jsonProperty("Parsed upstream JSON output when available."),
+    result: jsonProperty("Parsed upstream JSON output when available."),
     text: stringProperty("Raw upstream text output when available."),
+    raw: jsonProperty("Raw upstream MCP result for debug responses."),
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
@@ -260,13 +271,14 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     outputFiles: objectProperty("Files written for full result, diagnostics, or summary."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    parsed: jsonProperty("Parsed upstream JSON output when available."),
+    result: jsonProperty("Parsed upstream JSON output when available."),
     text: stringProperty("Raw upstream text output when available."),
+    raw: jsonProperty("Raw upstream MCP result for debug responses."),
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
     assets: arrayProperty("Per-asset upstream upload/fill results."),
     validation: objectProperty("Optional target validation result."),
-    files: objectProperty("Files written for compact result output."),
+    outputFiles: objectProperty("Files written for result output."),
     failures: arrayProperty("Per-asset or validation failures."),
   }),
   figma_repl_capture_node: toolOutputSchema({
@@ -278,13 +290,13 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     bytes: numberProperty("Saved output byte count."),
     qa: objectProperty("Compact capture QA hints."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
-    files: objectProperty("Files written for compact result output."),
+    outputFiles: objectProperty("Files written for result output."),
   }),
   figma_repl_run_task_plan: toolOutputSchema({
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     stopOnFailure: booleanProperty("Whether the plan was configured to stop on first failure."),
     steps: arrayProperty("Compact per-step execution summaries."),
-    files: objectProperty("Files written for plan result output."),
+    outputFiles: objectProperty("Files written for plan result output."),
     failures: arrayProperty("Failed task-plan steps."),
   }),
   figma_repl_prepare_task: toolOutputSchema({
@@ -308,14 +320,15 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_inspect: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
     diagnostics: arrayProperty("Read-mode diagnostics."),
-    parsed: jsonProperty("Parsed upstream JSON output when available."),
+    result: jsonProperty("Parsed upstream JSON output when available."),
     text: stringProperty("Raw upstream text output when available."),
+    raw: jsonProperty("Raw upstream MCP result for debug responses."),
   }),
   figma_repl_call_upstream_tool: toolOutputSchema({
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
     result: jsonProperty("Parsed upstream JSON output when available."),
     text: stringProperty("Raw upstream text output when available."),
-    raw: jsonProperty("Raw upstream MCP result when requested."),
+    raw: jsonProperty("Raw upstream MCP result for debug responses or explicit full-mode raw requests."),
   }),
   figma_repl_lookup: toolOutputSchema({
     kind: stringProperty("Lookup kind: docs or api."),
@@ -366,6 +379,13 @@ function objectSchema(
 
 function titleProperty(): Record<string, unknown> {
   return stringProperty("Human-readable title used when presenting output to the user.");
+}
+
+function responseModeProperty(): Record<string, unknown> {
+  return enumProperty(
+    ["compact", "full", "debug"],
+    "Controls response detail. Defaults to compact; use full for expanded payloads or debug for session history and raw upstream data.",
+  );
 }
 
 function stringProperty(description: string): Record<string, unknown> {

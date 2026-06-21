@@ -36,6 +36,18 @@ export interface ScriptOutputFilePaths {
   summaryFile?: string;
 }
 
+export interface FilePointerMetadata {
+  path: string;
+  bytes: number;
+  lineCount: number;
+}
+
+export interface ScriptOutputFileMetadata {
+  resultFile?: FilePointerMetadata;
+  diagnosticsFile?: FilePointerMetadata;
+  summaryFile?: FilePointerMetadata;
+}
+
 export interface FigmaReplWorkspaceFileSession {
   workspace?: FigmaReplSessionWorkspace;
   fileKey?: string;
@@ -56,27 +68,24 @@ export function createScriptOutputWriter(
     result: unknown;
     diagnostics: FigmaReplDiagnostic[];
     summary: Record<string, unknown>;
-  }): Promise<ScriptOutputFilePaths>;
+  }): Promise<ScriptOutputFileMetadata>;
 } {
   const files = resolveScriptOutputFiles(args, session);
   return {
     files,
     async write(payload) {
-      const written: ScriptOutputFilePaths = {};
+      const written: ScriptOutputFileMetadata = {};
       if (files.resultFile) {
-        await writeJsonFile(files.resultFile, payload.result);
-        written.resultFile = files.resultFile;
+        written.resultFile = await writeJsonFile(files.resultFile, payload.result);
       }
       if (files.diagnosticsFile) {
-        await writeJsonFile(files.diagnosticsFile, {
+        written.diagnosticsFile = await writeJsonFile(files.diagnosticsFile, {
           diagnostics: payload.diagnostics,
           count: payload.diagnostics.length,
         });
-        written.diagnosticsFile = files.diagnosticsFile;
       }
       if (files.summaryFile) {
-        await writeMarkdownFile(files.summaryFile, formatSummaryMarkdown(payload.summary));
-        written.summaryFile = files.summaryFile;
+        written.summaryFile = await writeMarkdownFile(files.summaryFile, formatSummaryMarkdown(payload.summary));
       }
       return written;
     },
@@ -140,7 +149,7 @@ export async function writeCaptureOutputFile(
   outputFile: string,
   upstream: unknown,
   parsed: ParsedCaptureResult,
-): Promise<{ kind: "image" | "text"; mimeType: string; bytes: number; width?: number; height?: number; sourceUrl?: string }> {
+): Promise<{ kind: "image" | "text"; mimeType: string; bytes: number; lineCount: number; width?: number; height?: number; sourceUrl?: string }> {
   const rawContent = asRecord(upstream).content;
   const content = Array.isArray(rawContent)
     ? rawContent.filter(isRecord)
@@ -155,6 +164,7 @@ export async function writeCaptureOutputFile(
       kind: "image",
       mimeType: asOptionalString(image.mimeType) ?? "image/png",
       bytes: buffer.byteLength,
+      lineCount: 0,
       ...dimensions,
     };
   }
@@ -174,6 +184,7 @@ export async function writeCaptureOutputFile(
       kind: "image",
       mimeType,
       bytes: buffer.byteLength,
+      lineCount: 0,
       ...dimensions,
       sourceUrl,
     };
@@ -187,6 +198,7 @@ export async function writeCaptureOutputFile(
     kind: "text",
     mimeType: "text/plain",
     bytes: Buffer.byteLength(text, "utf8"),
+    lineCount: countTextLines(text),
   };
 }
 
@@ -287,9 +299,11 @@ export function effectiveInlineResultLimit(
     : undefined;
 }
 
-export async function writeJsonFile(path: string, value: unknown): Promise<void> {
+export async function writeJsonFile(path: string, value: unknown): Promise<FilePointerMetadata> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(removeUndefined(value), null, 2)}\n`, "utf8");
+  const content = `${JSON.stringify(removeUndefined(value), null, 2)}\n`;
+  await writeFile(path, content, "utf8");
+  return textFileMetadata(path, content);
 }
 
 export function createSessionWorkspace(options: {
@@ -394,7 +408,7 @@ export function resultFileNameForScript(scriptName: string): string {
   return `${slugifyTaskName(scriptName)}.result.json`;
 }
 
-export async function writeTaskFile(path: string, content: string, overwrite: boolean): Promise<void> {
+export async function writeTaskFile(path: string, content: string, overwrite: boolean): Promise<FilePointerMetadata> {
   if (!overwrite) {
     try {
       await readFile(path, "utf8");
@@ -406,6 +420,7 @@ export async function writeTaskFile(path: string, content: string, overwrite: bo
     }
   }
   await writeFile(path, content, "utf8");
+  return textFileMetadata(path, content);
 }
 
 function resolveScriptOutputFiles(
@@ -467,9 +482,27 @@ function resolveOptionalOutputFile(
   return resolved;
 }
 
-async function writeMarkdownFile(path: string, value: string): Promise<void> {
+async function writeMarkdownFile(path: string, value: string): Promise<FilePointerMetadata> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, value.endsWith("\n") ? value : `${value}\n`, "utf8");
+  const content = value.endsWith("\n") ? value : `${value}\n`;
+  await writeFile(path, content, "utf8");
+  return textFileMetadata(path, content);
+}
+
+function textFileMetadata(path: string, content: string): FilePointerMetadata {
+  return {
+    path,
+    bytes: Buffer.byteLength(content, "utf8"),
+    lineCount: countTextLines(content),
+  };
+}
+
+function countTextLines(content: string): number {
+  if (content.length === 0) {
+    return 0;
+  }
+  const newlineCount = content.match(/\n/gu)?.length ?? 0;
+  return content.endsWith("\n") ? newlineCount : newlineCount + 1;
 }
 
 function resolveTaskWorkspace(options: {
