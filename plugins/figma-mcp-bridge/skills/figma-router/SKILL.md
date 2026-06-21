@@ -13,7 +13,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 2. Start with `figma_repl_capabilities`, then use the file workflow.
 3. If direct `figma_repl_*` tools are not installed in the active Codex environment, use the package-local Node API `createFigmaReplClient` against the same OAuth cache.
 4. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
-5. Use `figma_repl_suggest_api`, `figma_repl_api_card`, `figma_repl_docs_search`, and `figma_repl_api_lookup` for guidance. Treat their snippets as the exposed documentation surface.
+5. Use `figma_repl_guidance`, `figma_repl_docs_search`, and `figma_repl_api_lookup` for guidance. Treat their snippets as the exposed documentation surface.
 
 ## Primary File Workflow
 
@@ -41,8 +41,7 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls can u
 ## Lookup Order
 
 - Use `figma_repl_capabilities` or resources such as `figma-repl://guide`, `figma-repl://patterns`, `figma-repl://scripts`, `figma-repl://file-workflow`, `figma-repl://workflow-tools`, `figma-repl://api-cards`, `figma-repl://intents`, `figma-repl://safety`, `figma-repl://docs`, and `figma-repl://api` for self-explaining workflow guidance.
-- Use `figma_repl_suggest_api` for task-to-helper routing.
-- Use `figma_repl_api_card` for curated short cards.
+- Use `figma_repl_guidance` for task-to-helper routing and curated short cards.
 - Use `figma_repl_docs_search` for BM25-ranked workflow snippets.
 - Use `figma_repl_api_lookup` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 
@@ -50,8 +49,8 @@ Use `figma_repl_call_upstream_tool` only when a required official capability is 
 
 ## Query Strategy
 
-- For natural-language tasks, call `figma_repl_suggest_api` first and use its `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext` fields before writing `.figma.js`.
-- Use `recommendedCards` with `figma_repl_api_card` for compact patterns, then use `apiSymbols` with `figma_repl_api_lookup` only when exact Plugin API details are still missing.
+- For natural-language tasks, call `figma_repl_guidance` first and use its `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext` fields before writing `.figma.js`.
+- Use `figma_repl_guidance` for compact patterns, then use `apiSymbols` with `figma_repl_api_lookup` only when exact Plugin API details are still missing.
 - Treat `avoid` as task-specific guardrails, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
 - Prefer these anchors when narrowing a query: text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, FigJam/Slides.
 

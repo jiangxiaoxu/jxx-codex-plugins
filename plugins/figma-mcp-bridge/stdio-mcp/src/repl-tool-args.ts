@@ -201,19 +201,13 @@ export interface FigmaReplPlanTaskArguments {
   intent?: string;
 }
 
-export interface FigmaReplApiCardArguments {
+export interface FigmaReplGuidanceArguments {
   [key: string]: unknown;
   title?: string;
   card?: string;
   query?: string;
-  maxCards?: number;
-}
-
-export interface FigmaReplSuggestApiArguments {
-  [key: string]: unknown;
-  title?: string;
   task?: string;
-  intent: string;
+  intent?: string;
   surface?: FigmaReplSurface;
   expectedSurface?: FigmaReplSurface;
   maxCards?: number;
@@ -355,15 +349,9 @@ export function asPlanTaskArgs(args: unknown): FigmaReplPlanTaskArguments {
   return record;
 }
 
-export function asApiCardArgs(args: unknown): FigmaReplApiCardArguments {
-  const record = parseToolArgs<FigmaReplApiCardArguments>(args);
-  assertOptionalStringFields(record, ["card", "query"]);
-  return record;
-}
-
-export function asSuggestApiArgs(args: unknown): FigmaReplSuggestApiArguments {
-  const record = parseToolArgs<FigmaReplSuggestApiArguments>(args);
-  assertOptionalStringFields(record, ["task", "intent"]);
+export function asGuidanceArgs(args: unknown): FigmaReplGuidanceArguments {
+  const record = parseToolArgs<FigmaReplGuidanceArguments>(args);
+  assertOptionalStringFields(record, ["card", "query", "task", "intent"]);
   assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
   assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
   return record;

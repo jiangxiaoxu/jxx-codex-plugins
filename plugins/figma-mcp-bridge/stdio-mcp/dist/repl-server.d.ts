@@ -1,14 +1,14 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type RemoteMcpClientOptions } from "./client.js";
 import { assertSafeFigmaReplCode, diagnoseFigmaReplCode, type FigmaReplDiagnostic, type FigmaReplDiagnosticsOptions, type FigmaReplDiagnosticSeverity, type FigmaReplFileDiagnostic, type FigmaReplHelperProfile, type FigmaReplSurface } from "./repl-script-runner.js";
-import type { FigmaReplApiCardArguments, FigmaReplApiLookupArguments, FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDocsSearchArguments, FigmaReplEvalArguments, FigmaReplInitWorkspaceArguments, FigmaReplOpenArguments, FigmaReplPlanTaskArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSuggestApiArguments } from "./repl-tool-args.js";
+import type { FigmaReplApiLookupArguments, FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDocsSearchArguments, FigmaReplEvalArguments, FigmaReplGuidanceArguments, FigmaReplInitWorkspaceArguments, FigmaReplOpenArguments, FigmaReplPlanTaskArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments } from "./repl-tool-args.js";
 import { type FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 import type { FigmaMcpProxyClient } from "./stdio-server.js";
 export declare const FIGMA_REPL_DEFAULT_SESSION_ID = "default";
 export { assertSafeFigmaReplCode, diagnoseFigmaReplCode, };
 export type { FigmaReplDiagnostic, FigmaReplDiagnosticsOptions, FigmaReplDiagnosticSeverity, FigmaReplFileDiagnostic, FigmaReplHelperProfile, FigmaReplSurface, };
 export type { FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
-export type { FigmaReplApiCardArguments, FigmaReplApiLookupArguments, FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDocsSearchArguments, FigmaReplEvalArguments, FigmaReplInitWorkspaceArguments, FigmaReplOpenArguments, FigmaReplPlanTaskArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSuggestApiArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
+export type { FigmaReplApiLookupArguments, FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDocsSearchArguments, FigmaReplEvalArguments, FigmaReplGuidanceArguments, FigmaReplInitWorkspaceArguments, FigmaReplOpenArguments, FigmaReplPlanTaskArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
 export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
     client?: FigmaMcpProxyClient;
     name?: string;
@@ -41,8 +41,7 @@ export interface FigmaReplClient {
     initWorkspace(args: FigmaReplInitWorkspaceArguments): Promise<unknown>;
     prepareTask(args: FigmaReplPrepareTaskArguments): Promise<unknown>;
     planTask(args: FigmaReplPlanTaskArguments): Promise<unknown>;
-    apiCard(args: FigmaReplApiCardArguments): Promise<unknown>;
-    suggestApi(args: FigmaReplSuggestApiArguments): Promise<unknown>;
+    guidance(args: FigmaReplGuidanceArguments): Promise<unknown>;
     inspect(args?: Record<string, unknown>): Promise<unknown>;
     cacheGet(args?: Record<string, unknown>): Promise<unknown>;
     validateHandles(args?: Record<string, unknown>): Promise<unknown>;

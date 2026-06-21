@@ -54,36 +54,34 @@ import {
 } from "./repl-script-runner.js";
 import {
   assertRequiredTitleArgument,
-  asApiCardArgs,
   asApiLookupArgs,
   asApplyAssetManifestArgs,
   asCallUpstreamToolArgs,
   asCaptureNodeArgs,
   asDocsSearchArgs,
   asEvalArgs,
+  asGuidanceArgs,
   asInitWorkspaceArgs,
   asPlanTaskArgs,
   asPrepareTaskArgs,
   asRunScriptFileArgs,
   asRunTaskPlanArgs,
-  asSuggestApiArgs,
   withDefaultTitle,
 } from "./repl-tool-args.js";
 import type {
-  FigmaReplApiCardArguments,
   FigmaReplApiLookupArguments,
   FigmaReplApplyAssetManifestArguments,
   FigmaReplCallUpstreamToolArguments,
   FigmaReplCaptureNodeArguments,
   FigmaReplDocsSearchArguments,
   FigmaReplEvalArguments,
+  FigmaReplGuidanceArguments,
   FigmaReplInitWorkspaceArguments,
   FigmaReplOpenArguments,
   FigmaReplPlanTaskArguments,
   FigmaReplPrepareTaskArguments,
   FigmaReplRunScriptFileArguments,
   FigmaReplRunTaskPlanArguments,
-  FigmaReplSuggestApiArguments,
   FigmaReplTaskPlanStep,
 } from "./repl-tool-args.js";
 import { createReplToolDescriptions } from "./repl-tool-metadata.js";
@@ -131,7 +129,6 @@ export type {
 };
 export type { FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 export type {
-  FigmaReplApiCardArguments,
   FigmaReplApiLookupArguments,
   FigmaReplApplyAssetManifestArguments,
   FigmaReplAssetManifestAsset,
@@ -139,13 +136,13 @@ export type {
   FigmaReplCaptureNodeArguments,
   FigmaReplDocsSearchArguments,
   FigmaReplEvalArguments,
+  FigmaReplGuidanceArguments,
   FigmaReplInitWorkspaceArguments,
   FigmaReplOpenArguments,
   FigmaReplPlanTaskArguments,
   FigmaReplPrepareTaskArguments,
   FigmaReplRunScriptFileArguments,
   FigmaReplRunTaskPlanArguments,
-  FigmaReplSuggestApiArguments,
   FigmaReplTaskPlanStep,
 } from "./repl-tool-args.js";
 
@@ -206,8 +203,7 @@ export interface FigmaReplClient {
   initWorkspace(args: FigmaReplInitWorkspaceArguments): Promise<unknown>;
   prepareTask(args: FigmaReplPrepareTaskArguments): Promise<unknown>;
   planTask(args: FigmaReplPlanTaskArguments): Promise<unknown>;
-  apiCard(args: FigmaReplApiCardArguments): Promise<unknown>;
-  suggestApi(args: FigmaReplSuggestApiArguments): Promise<unknown>;
+  guidance(args: FigmaReplGuidanceArguments): Promise<unknown>;
   inspect(args?: Record<string, unknown>): Promise<unknown>;
   cacheGet(args?: Record<string, unknown>): Promise<unknown>;
   validateHandles(args?: Record<string, unknown>): Promise<unknown>;
@@ -451,13 +447,9 @@ export function createFigmaReplClient(
       parseJsonToolResult(
         handlePlanTask(asPlanTaskArgs(withDefaultTitle(args, "Plan Figma REPL task"))),
       ),
-    apiCard: async (args) =>
+    guidance: async (args) =>
       parseJsonToolResult(
-        handleApiCard(asApiCardArgs(withDefaultTitle(args, "Read Figma REPL API card"))),
-      ),
-    suggestApi: async (args) =>
-      parseJsonToolResult(
-        await handleSuggestApi(asSuggestApiArgs(withDefaultTitle(args, "Suggest Figma REPL API"))),
+        await handleGuidance(asGuidanceArgs(withDefaultTitle(args, "Read Figma REPL guidance"))),
       ),
     inspect: async (args = {}) =>
       parseJsonToolResult(
@@ -581,10 +573,8 @@ export function createFigmaReplMcpServer(
         return handlePrepareTask(asPrepareTaskArgs(rawArgs), { sessions });
       case "figma_repl_plan_task":
         return handlePlanTask(asPlanTaskArgs(rawArgs));
-      case "figma_repl_api_card":
-        return handleApiCard(asApiCardArgs(rawArgs));
-      case "figma_repl_suggest_api":
-        return handleSuggestApi(asSuggestApiArgs(rawArgs));
+      case "figma_repl_guidance":
+        return handleGuidance(asGuidanceArgs(rawArgs));
       case "figma_repl_inspect":
         return handleInspect(args, { client, sessions, upstreamToolCache, config });
       case "figma_repl_cache_get":
@@ -1433,8 +1423,7 @@ function handlePlanTask(args: FigmaReplPlanTaskArguments): Record<string, unknow
       ],
       recommendedTools: [
         "figma_repl_prepare_task",
-        "figma_repl_api_card",
-        "figma_repl_suggest_api",
+        "figma_repl_guidance",
         "figma_repl_run_script_file",
         "figma_repl_inspect",
       ],
@@ -1443,37 +1432,43 @@ function handlePlanTask(args: FigmaReplPlanTaskArguments): Record<string, unknow
   });
 }
 
-function handleApiCard(args: FigmaReplApiCardArguments): Record<string, unknown> {
+async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
-  const query = typeof args.card === "string" ? args.card : typeof args.query === "string" ? args.query : "";
-  const maxCards = normalizeBoundedInteger(args.maxCards, 3, 8);
-  const cards = query
-    ? searchApiCards(query, maxCards)
-    : FIGMA_REPL_API_CARDS.slice(0, maxCards);
+  const intentSource = args.intent ?? args.task;
+  const cardSource = args.card ?? args.query;
+  const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
+  const intent = typeof intentSource === "string"
+    ? normalizeLookupQuery(intentSource, "intent")
+    : undefined;
+  const cardQuery = typeof cardSource === "string"
+    ? normalizeLookupQuery(cardSource, "card or query")
+    : undefined;
+  const cards = cardQuery
+    ? searchApiCards(cardQuery, maxCards)
+    : intent
+      ? chooseApiCardsForIntent(intent, maxCards)
+      : FIGMA_REPL_API_CARDS.slice(0, maxCards);
+  const context = intent
+    ? await searchReferenceFiles({
+        query: intent,
+        files: DOCS_SEARCH_ALLOWLIST,
+        maxResults: DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
+        maxSnippetLines: 4,
+        exactSymbol: false,
+      })
+    : { results: [] };
+  const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
   return makeJsonToolResult({
     ok: true,
+    mode: intent ? "intent" : cardQuery ? "card" : "catalog",
     cards,
     catalogSize: FIGMA_REPL_API_CARDS.length,
-    guidance: "Use these compact cards before broader docs/API lookup; each card exposes queryHints, apiSymbols, avoid, and pitfalls for .figma.js file workflows.",
-  });
-}
-
-async function handleSuggestApi(args: FigmaReplSuggestApiArguments): Promise<Record<string, unknown>> {
-  assertRequiredTitleArgument(args);
-  const intent = normalizeLookupQuery(args.intent ?? args.task, "intent");
-  const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
-  const context = await searchReferenceFiles({
-    query: intent,
-    files: DOCS_SEARCH_ALLOWLIST,
-    maxResults: DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
-    maxSnippetLines: 4,
-    exactSymbol: false,
-  });
-  return makeJsonToolResult({
-    ok: true,
-    intent,
-    expectedSurface: normalizeSurface(args.surface ?? args.expectedSurface),
-    suggestions: createIntentSuggestions(intent, maxCards, context.results),
+    guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, avoid, and pitfalls for .figma.js file workflows.",
+    recommendedCards: cards.map((card) => card.id),
+    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
+    apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
+    avoid: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    suggestions,
   });
 }
 
@@ -3234,7 +3229,7 @@ function createIntentSuggestions(
     workflow: createFileWorkflowPayload(),
     toolOrder: [
       "figma_repl_prepare_task",
-      "figma_repl_api_card",
+      "figma_repl_guidance",
       "figma_repl_api_lookup",
       "figma_repl_run_script_file(dryRun=true)",
       "figma_repl_run_script_file",
@@ -3263,7 +3258,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         "figma_repl_capabilities to choose the facade path",
         "figma_repl_init_workspace with an absolute cwd, fileUrl or fileKey, and an intent",
         "figma_repl_prepare_task or figma_repl_plan_task for repairable .figma.js workspaces",
-        "figma_repl_api_card or figma_repl_suggest_api for compact local guidance when needed",
+        "figma_repl_guidance for compact local intent routing and API cards when needed",
         "figma_repl_open with fileUrl and expectedSurface for stateful Plugin API work",
         "figma_repl_inspect or figma_repl_validate_handles before mutation",
         "figma_repl_run_script_file with inputFile and dryRun=true for primary .figma.js workflows, output files, and line-aware repair",
@@ -3281,7 +3276,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       transaction: "Use dryRun=true first, then execute the same .figma.js file; add $.checkpoint calls before/after meaningful batches to return handle and node summaries.",
       clone: "Use $.cloneNodeTree to copy a node to the side; it clones outer-to-inner and preserves instance subtrees whole when children cannot be rebuilt.",
       designSystem: "Use native Plugin API calls in .figma.js for variables/styles/components; use explicit REPL upstream calls only when a task requires them.",
-      query: "Use figma_repl_suggest_api first for natural-language tasks; it returns recommendedCards, queryHints, apiSymbols, avoid, and compact referenceContext. Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
+      query: "Use figma_repl_guidance first for natural-language tasks; it returns recommendedCards, queryHints, apiSymbols, avoid, and compact referenceContext. Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
       pages: "Use targetPageId or one setCurrentPageAsync call; direct figma.currentPage assignment is blocked.",
       selection: "Use $.select instead of direct figma.currentPage.selection access in repairable scripts.",
       validation: "Use figma_repl_validate_handles before mutating cached handles from an earlier call.",
@@ -3352,7 +3347,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       },
     },
     queryStrategy: {
-      tool: "figma_repl_suggest_api",
+      tool: "figma_repl_guidance",
       resource: "figma-repl://intents",
       searchAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
       flow: [
@@ -3366,7 +3361,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
     },
     apiCards: {
-      tool: "figma_repl_api_card",
+      tool: "figma_repl_guidance",
       resource: "figma-repl://api-cards",
       cards: FIGMA_REPL_API_CARDS.map((card) => ({
         id: card.id,
@@ -3378,7 +3373,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       })),
     },
     intents: {
-      tool: "figma_repl_suggest_api",
+      tool: "figma_repl_guidance",
       resource: "figma-repl://intents",
       examples: ["create responsive card UI", "update text styles", "make component variants", "validate stale handles"],
       returns: ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"],
@@ -3394,8 +3389,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       apiTool: "figma_repl_api_lookup",
       docsResource: "figma-repl://docs",
       apiResource: "figma-repl://api",
-      compactCardTool: "figma_repl_api_card",
-      intentTool: "figma_repl_suggest_api",
+      guidanceTool: "figma_repl_guidance",
       ranking: "Internal corpus files are chunked by Markdown headings/windows or d.ts symbol-ish blocks, then ranked with BM25; API lookup boosts exact symbols.",
       guardrail: "All lookup output is capped and confidence-labeled; bundled corpus files are not returned as agent-readable documents.",
     },
@@ -3434,13 +3428,13 @@ function readStaticReplResource(uri: string): Record<string, unknown> | undefine
     "figma-repl://file-workflow": payload.fileWorkflow,
     "figma-repl://workflow-tools": payload.workflowTools,
     "figma-repl://api-cards": {
-      tool: "figma_repl_api_card",
+      tool: "figma_repl_guidance",
       cards: FIGMA_REPL_API_CARDS,
       queryStrategy: payload.queryStrategy,
-      guidance: "Curated compact cards for common .figma.js tasks; use figma_repl_suggest_api to map natural-language intent to recommendedCards, queryHints, apiSymbols, and avoid before broader lookup.",
+      guidance: "Curated compact cards for common .figma.js tasks; use figma_repl_guidance to map natural-language intent to recommendedCards, queryHints, apiSymbols, and avoid before broader lookup.",
     },
     "figma-repl://intents": {
-      tool: "figma_repl_suggest_api",
+      tool: "figma_repl_guidance",
       queryStrategy: payload.queryStrategy,
       workflow: createFileWorkflowPayload(),
       commonTasks: FIGMA_REPL_COMMON_TASK_LABELS,
@@ -3832,17 +3826,22 @@ function sanitizeSessionId(sessionId: string): string {
 }
 
 function makeJsonToolResult(value: unknown): Record<string, unknown> {
+  const structuredContent = removeUndefined(value);
   return {
+    structuredContent,
     content: [
       {
         type: "text",
-        text: JSON.stringify(removeUndefined(value), null, 2),
+        text: summarizeToolResult(structuredContent),
       },
     ],
   };
 }
 
 function parseJsonToolResult(result: Record<string, unknown>): unknown {
+  if (result.structuredContent !== undefined) {
+    return result.structuredContent;
+  }
   const content = Array.isArray(result.content) ? result.content : [];
   const firstText = content
     .map((item) => asRecord(item).text)
@@ -3851,6 +3850,14 @@ function parseJsonToolResult(result: Record<string, unknown>): unknown {
     return result;
   }
   return JSON.parse(firstText);
+}
+
+function summarizeToolResult(value: unknown): string {
+  const record = asRecord(value);
+  if (record.ok === false) {
+    return "Figma REPL tool failed; see structuredContent.";
+  }
+  return "Figma REPL tool completed; see structuredContent.";
 }
 
 function normalizeOAuthCachePath(oauthCachePath: string): string {

@@ -207,27 +207,18 @@ export function createReplToolDescriptions(
       }, ["title"]),
     },
     {
-      name: "figma_repl_api_card",
+      name: "figma_repl_guidance",
       description:
-        "Return curated compact API cards for common .figma.js workflow needs before broader docs/API lookup.",
+        "Combine natural-language intent routing with curated compact API card lookup before broader docs/API search.",
       inputSchema: objectSchema({
         title: titleProperty(),
         card: stringProperty("Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides."),
         query: stringProperty("Search query when card id is not known."),
-        maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 3."),
-      }, ["title"]),
-    },
-    {
-      name: "figma_repl_suggest_api",
-      description:
-        "Map a natural-language intent to compact API cards, queryHints, apiSymbols, avoid guardrails, helper choices, and the preferred file workflow.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
         task: stringProperty("Natural-language task intent. Preferred public name for intent."),
         intent: stringProperty("Natural-language task intent, for example 'create a card with text and auto layout'."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface. Preferred public name for expectedSurface."),
         expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
-        maxCards: numberProperty("Maximum suggested cards, capped at 8. Defaults to 4."),
+        maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4."),
       }, ["title"]),
     },
     {
