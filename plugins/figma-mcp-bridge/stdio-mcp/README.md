@@ -120,7 +120,7 @@ The REPL facade exposes compact self-explaining resources and tools:
 - upstream bridge: `figma_repl_list_upstream_tools`, `figma_repl_call_upstream_tool`;
 - references: `figma_repl_docs_search`, `figma_repl_api_lookup`.
 
-Use `figma_repl_suggest_api` and `figma_repl_api_card` first for common intents. Use `figma_repl_docs_search` for BM25-ranked workflow snippets and `figma_repl_api_lookup` for exact Plugin API symbols. Lookup output is capped and confidence-labeled; bundled corpus files are internal and are not an agent-facing documentation path.
+Use `figma_repl_suggest_api` and `figma_repl_api_card` first for common intents. Use `figma_repl_docs_search` for BM25-ranked workflow snippets and `figma_repl_api_lookup` for exact Plugin API symbols. Use `figma_repl_call_upstream_tool` only for an explicit uncovered upstream capability. Lookup output is capped and confidence-labeled; bundled corpus files are internal and are not an agent-facing documentation path.
 
 ## Diagnostics
 

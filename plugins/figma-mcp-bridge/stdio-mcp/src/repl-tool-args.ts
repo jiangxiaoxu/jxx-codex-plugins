@@ -219,56 +219,294 @@ export interface FigmaReplSuggestApiArguments {
   maxCards?: number;
 }
 
-export function asEvalArgs(args: Record<string, unknown>): FigmaReplEvalArguments {
-  return args as unknown as FigmaReplEvalArguments;
+const FIGMA_REPL_SURFACES = ["design", "figjam", "slides"] as const satisfies readonly FigmaReplSurface[];
+const FIGMA_REPL_EVAL_MODES = ["read", "write"] as const;
+const FIGMA_REPL_RETURN_MODES = ["auto", "json", "text", "raw"] as const;
+const FIGMA_REPL_HELPER_PROFILES = ["auto", "minimal", "asset", "clone", "full"] as const satisfies readonly FigmaReplHelperProfile[];
+
+export function asEvalArgs(args: unknown): FigmaReplEvalArguments {
+  const record = parseToolArgs<FigmaReplEvalArguments>(args);
+  assertOptionalStringFields(record, [
+    "code",
+    "sessionId",
+    "upstreamTool",
+    "upstreamArgument",
+  ]);
+  assertOptionalEnum(record, "mode", FIGMA_REPL_EVAL_MODES);
+  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record, "returnMode", FIGMA_REPL_RETURN_MODES);
+  assertOptionalRecord(record, "upstreamArguments");
+  assertOptionalRecord(record, "handleUpdates");
+  return record;
 }
 
-export function asRunScriptFileArgs(args: Record<string, unknown>): FigmaReplRunScriptFileArguments {
-  return args as unknown as FigmaReplRunScriptFileArguments;
+export function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArguments {
+  const record = parseToolArgs<FigmaReplRunScriptFileArguments>(args);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "scriptPath",
+    "inputFile",
+    "targetPageId",
+    "upstreamTool",
+    "upstreamArgument",
+    "outputDir",
+    "outputFile",
+    "resultFile",
+    "diagnosticsFile",
+    "summaryFile",
+  ]);
+  assertOptionalEnum(record, "helperProfile", FIGMA_REPL_HELPER_PROFILES);
+  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalRecord(record, "upstreamArguments");
+  return record;
 }
 
-export function asApplyAssetManifestArgs(args: Record<string, unknown>): FigmaReplApplyAssetManifestArguments {
-  return args as unknown as FigmaReplApplyAssetManifestArguments;
+export function asApplyAssetManifestArgs(args: unknown): FigmaReplApplyAssetManifestArguments {
+  const record = parseToolArgs<FigmaReplApplyAssetManifestArguments>(args);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "manifestPath",
+    "toolName",
+    "resultFile",
+    "outputFile",
+  ]);
+  assertOptionalRecord(record, "arguments");
+  assertOptionalRecord(record, "argumentsTemplate");
+  assertOptionalAssets(record);
+  return record;
 }
 
-export function asCaptureNodeArgs(args: Record<string, unknown>): FigmaReplCaptureNodeArguments {
-  return args as unknown as FigmaReplCaptureNodeArguments;
+export function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments {
+  const record = parseToolArgs<FigmaReplCaptureNodeArguments>(args);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "nodeId",
+    "targetNodeId",
+    "outputFile",
+    "resultFile",
+    "toolName",
+  ]);
+  assertOptionalRecord(record, "arguments");
+  assertOptionalRecord(record, "argumentsTemplate");
+  return record;
 }
 
-export function asRunTaskPlanArgs(args: Record<string, unknown>): FigmaReplRunTaskPlanArguments {
-  return args as unknown as FigmaReplRunTaskPlanArguments;
+export function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments {
+  const record = parseToolArgs<FigmaReplRunTaskPlanArguments>(args);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "planPath",
+    "resultFile",
+    "outputFile",
+  ]);
+  assertOptionalTaskPlanSteps(record);
+  return record;
 }
 
-export function asInitWorkspaceArgs(args: Record<string, unknown>): FigmaReplInitWorkspaceArguments {
-  return args as unknown as FigmaReplInitWorkspaceArguments;
+export function asInitWorkspaceArgs(args: unknown): FigmaReplInitWorkspaceArguments {
+  const record = parseToolArgs<FigmaReplInitWorkspaceArguments>(args);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "intent",
+    "task",
+    "fileUrl",
+    "fileKey",
+    "fileSlug",
+    "cwd",
+    "dirName",
+  ]);
+  return record;
 }
 
-export function asPrepareTaskArgs(args: Record<string, unknown>): FigmaReplPrepareTaskArguments {
-  return args as unknown as FigmaReplPrepareTaskArguments;
+export function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments {
+  const record = parseToolArgs<FigmaReplPrepareTaskArguments>(args);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "intent",
+    "task",
+    "fileUrl",
+    "fileKey",
+    "fileSlug",
+    "goal",
+    "taskSlug",
+    "taskName",
+    "taskDir",
+    "workspaceDir",
+    "fileName",
+    "scriptName",
+    "taskRoot",
+    "targetPageId",
+    "template",
+  ]);
+  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
+  return record;
 }
 
-export function asPlanTaskArgs(args: Record<string, unknown>): FigmaReplPlanTaskArguments {
-  return args as unknown as FigmaReplPlanTaskArguments;
+export function asPlanTaskArgs(args: unknown): FigmaReplPlanTaskArguments {
+  const record = parseToolArgs<FigmaReplPlanTaskArguments>(args);
+  assertOptionalStringFields(record, [
+    "goal",
+    "workflow",
+    "task",
+    "intent",
+  ]);
+  assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
+  return record;
 }
 
-export function asApiCardArgs(args: Record<string, unknown>): FigmaReplApiCardArguments {
-  return args as unknown as FigmaReplApiCardArguments;
+export function asApiCardArgs(args: unknown): FigmaReplApiCardArguments {
+  const record = parseToolArgs<FigmaReplApiCardArguments>(args);
+  assertOptionalStringFields(record, ["card", "query"]);
+  return record;
 }
 
-export function asSuggestApiArgs(args: Record<string, unknown>): FigmaReplSuggestApiArguments {
-  return args as unknown as FigmaReplSuggestApiArguments;
+export function asSuggestApiArgs(args: unknown): FigmaReplSuggestApiArguments {
+  const record = parseToolArgs<FigmaReplSuggestApiArguments>(args);
+  assertOptionalStringFields(record, ["task", "intent"]);
+  assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
+  return record;
 }
 
-export function asCallUpstreamToolArgs(args: Record<string, unknown>): FigmaReplCallUpstreamToolArguments {
-  return args as unknown as FigmaReplCallUpstreamToolArguments;
+export function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments {
+  const record = parseToolArgs<FigmaReplCallUpstreamToolArguments>(args);
+  assertOptionalStringFields(record, ["sessionId", "toolName"]);
+  assertOptionalRecord(record, "arguments");
+  return record;
 }
 
-export function asDocsSearchArgs(args: Record<string, unknown>): FigmaReplDocsSearchArguments {
-  return args as unknown as FigmaReplDocsSearchArguments;
+export function asDocsSearchArgs(args: unknown): FigmaReplDocsSearchArguments {
+  const record = parseToolArgs<FigmaReplDocsSearchArguments>(args);
+  assertOptionalStringFields(record, ["query"]);
+  return record;
 }
 
-export function asApiLookupArgs(args: Record<string, unknown>): FigmaReplApiLookupArguments {
-  return args as unknown as FigmaReplApiLookupArguments;
+export function asApiLookupArgs(args: unknown): FigmaReplApiLookupArguments {
+  const record = parseToolArgs<FigmaReplApiLookupArguments>(args);
+  assertOptionalStringFields(record, ["symbol"]);
+  return record;
+}
+
+function parseToolArgs<T extends Record<string, unknown>>(value: unknown): T {
+  if (value === undefined) {
+    return {} as T;
+  }
+  if (!isRecord(value)) {
+    throw new Error("Tool arguments must be an object.");
+  }
+  return { ...value } as T;
+}
+
+function assertOptionalEnum(
+  record: Record<string, unknown>,
+  key: string,
+  values: readonly string[],
+): void {
+  const value = record[key];
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "string" || !values.includes(value)) {
+    throw new Error(`Tool argument "${key}" must be one of: ${values.join(", ")}.`);
+  }
+}
+
+function assertOptionalRecord(
+  record: Record<string, unknown>,
+  key: string,
+  displayName = key,
+): void {
+  const value = record[key];
+  if (value === undefined) {
+    return;
+  }
+  if (!isRecord(value)) {
+    throw new Error(`Tool argument "${displayName}" must be an object.`);
+  }
+}
+
+function assertOptionalArray(record: Record<string, unknown>, key: string): unknown[] | undefined {
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`Tool argument "${key}" must be an array.`);
+  }
+  return value;
+}
+
+function assertOptionalStringFields(record: Record<string, unknown>, keys: readonly string[]): void {
+  for (const key of keys) {
+    const value = record[key];
+    if (value === undefined) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      throw new Error(`Tool argument "${key}" must be a string.`);
+    }
+  }
+}
+
+function assertOptionalAssets(record: Record<string, unknown>): void {
+  const assets = assertOptionalArray(record, "assets");
+  if (!assets) {
+    return;
+  }
+  assets.forEach((asset, index) => {
+    const assetName = `assets[${index}]`;
+    if (!isRecord(asset)) {
+      throw new Error(`Tool argument "${assetName}" must be an object.`);
+    }
+    assertOptionalStringFieldsWithPrefix(asset, assetName, [
+      "path",
+      "filePath",
+      "localPath",
+      "targetNodeId",
+      "nodeId",
+      "name",
+      "toolName",
+    ]);
+    assertOptionalRecord(asset, "metadata", `${assetName}.metadata`);
+    assertOptionalRecord(asset, "arguments", `${assetName}.arguments`);
+  });
+}
+
+function assertOptionalTaskPlanSteps(record: Record<string, unknown>): void {
+  const steps = assertOptionalArray(record, "steps");
+  if (!steps) {
+    return;
+  }
+  steps.forEach((step, index) => {
+    const stepName = `steps[${index}]`;
+    if (!isRecord(step)) {
+      throw new Error(`Tool argument "${stepName}" must be an object.`);
+    }
+    assertOptionalStringFieldsWithPrefix(step, stepName, ["id", "type", "tool"]);
+    assertOptionalRecord(step, "args", `${stepName}.args`);
+    assertOptionalRecord(step, "arguments", `${stepName}.arguments`);
+  });
+}
+
+function assertOptionalStringFieldsWithPrefix(
+  record: Record<string, unknown>,
+  prefix: string,
+  keys: readonly string[],
+): void {
+  for (const key of keys) {
+    const value = record[key];
+    if (value === undefined) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      throw new Error(`Tool argument "${prefix}.${key}" must be a string.`);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function assertRequiredTitleArgument(args: Record<string, unknown>): void {
@@ -281,6 +519,9 @@ export function withDefaultTitle<T extends Record<string, unknown>>(
   args: T,
   title: string,
 ): T & { title: string } {
+  if (!isRecord(args)) {
+    throw new Error("Tool arguments must be an object.");
+  }
   return {
     ...args,
     title: typeof args.title === "string" ? args.title : title,

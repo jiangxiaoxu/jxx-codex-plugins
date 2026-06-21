@@ -40,17 +40,17 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls can u
 
 ## Lookup Order
 
-- Use `figma_repl_capabilities` or resources such as `figma-repl://file-workflow`, `figma-repl://workflow-tools`, `figma-repl://api-cards`, `figma-repl://intents`, `figma-repl://safety`, `figma-repl://docs`, and `figma-repl://api` for self-explaining workflow guidance.
+- Use `figma_repl_capabilities` or resources such as `figma-repl://guide`, `figma-repl://patterns`, `figma-repl://scripts`, `figma-repl://file-workflow`, `figma-repl://workflow-tools`, `figma-repl://api-cards`, `figma-repl://intents`, `figma-repl://safety`, `figma-repl://docs`, and `figma-repl://api` for self-explaining workflow guidance.
 - Use `figma_repl_suggest_api` for task-to-helper routing.
 - Use `figma_repl_api_card` for curated short cards.
 - Use `figma_repl_docs_search` for BM25-ranked workflow snippets.
 - Use `figma_repl_api_lookup` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 
-Use `figma_repl_call_upstream_tool` when a required official capability is not covered by the file workflow. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
+Use `figma_repl_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
 
 ## Query Strategy
 
-- For natural-language tasks, call `figma_repl_suggest_api` first and use its `recommendedCards`, `queryHints`, `apiSymbols`, and `avoid` fields before writing `.figma.js`.
+- For natural-language tasks, call `figma_repl_suggest_api` first and use its `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext` fields before writing `.figma.js`.
 - Use `recommendedCards` with `figma_repl_api_card` for compact patterns, then use `apiSymbols` with `figma_repl_api_lookup` only when exact Plugin API details are still missing.
 - Treat `avoid` as task-specific guardrails, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
 - Prefer these anchors when narrowing a query: text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, FigJam/Slides.

@@ -197,19 +197,19 @@ export interface FigmaReplSuggestApiArguments {
     expectedSurface?: FigmaReplSurface;
     maxCards?: number;
 }
-export declare function asEvalArgs(args: Record<string, unknown>): FigmaReplEvalArguments;
-export declare function asRunScriptFileArgs(args: Record<string, unknown>): FigmaReplRunScriptFileArguments;
-export declare function asApplyAssetManifestArgs(args: Record<string, unknown>): FigmaReplApplyAssetManifestArguments;
-export declare function asCaptureNodeArgs(args: Record<string, unknown>): FigmaReplCaptureNodeArguments;
-export declare function asRunTaskPlanArgs(args: Record<string, unknown>): FigmaReplRunTaskPlanArguments;
-export declare function asInitWorkspaceArgs(args: Record<string, unknown>): FigmaReplInitWorkspaceArguments;
-export declare function asPrepareTaskArgs(args: Record<string, unknown>): FigmaReplPrepareTaskArguments;
-export declare function asPlanTaskArgs(args: Record<string, unknown>): FigmaReplPlanTaskArguments;
-export declare function asApiCardArgs(args: Record<string, unknown>): FigmaReplApiCardArguments;
-export declare function asSuggestApiArgs(args: Record<string, unknown>): FigmaReplSuggestApiArguments;
-export declare function asCallUpstreamToolArgs(args: Record<string, unknown>): FigmaReplCallUpstreamToolArguments;
-export declare function asDocsSearchArgs(args: Record<string, unknown>): FigmaReplDocsSearchArguments;
-export declare function asApiLookupArgs(args: Record<string, unknown>): FigmaReplApiLookupArguments;
+export declare function asEvalArgs(args: unknown): FigmaReplEvalArguments;
+export declare function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArguments;
+export declare function asApplyAssetManifestArgs(args: unknown): FigmaReplApplyAssetManifestArguments;
+export declare function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments;
+export declare function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments;
+export declare function asInitWorkspaceArgs(args: unknown): FigmaReplInitWorkspaceArguments;
+export declare function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments;
+export declare function asPlanTaskArgs(args: unknown): FigmaReplPlanTaskArguments;
+export declare function asApiCardArgs(args: unknown): FigmaReplApiCardArguments;
+export declare function asSuggestApiArgs(args: unknown): FigmaReplSuggestApiArguments;
+export declare function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments;
+export declare function asDocsSearchArgs(args: unknown): FigmaReplDocsSearchArguments;
+export declare function asApiLookupArgs(args: unknown): FigmaReplApiLookupArguments;
 export declare function assertRequiredTitleArgument(args: Record<string, unknown>): void;
 export declare function withDefaultTitle<T extends Record<string, unknown>>(args: T, title: string): T & {
     title: string;

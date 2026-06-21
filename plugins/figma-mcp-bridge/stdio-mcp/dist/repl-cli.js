@@ -2979,7 +2979,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve6.call(this, root, ref);
+      let _sch = resolve7.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3006,7 +3006,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve6(root, ref) {
+    function resolve7(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3637,55 +3637,55 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve6(baseURI, relativeURI, options) {
+    function resolve7(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative3 = parse3(serialize(relative3, options), options);
+        relative4 = parse3(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3693,7 +3693,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -3895,7 +3895,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve6,
+      resolve: resolve7,
       resolveComponent,
       equal,
       serialize,
@@ -13889,26 +13889,25 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve6) => {
+    return new Promise((resolve7) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve6();
+        resolve7();
       } else {
-        this._stdout.once("drain", resolve6);
+        this._stdout.once("drain", resolve7);
       }
     });
   }
 };
 
 // src/repl-cli.ts
-import { resolve as resolve5 } from "node:path";
+import { resolve as resolve6 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/repl-server.ts
 import { randomUUID } from "node:crypto";
-import { mkdir as mkdir2, readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname as dirname4, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve4 } from "node:path";
+import { readFile as readFile4 } from "node:fs/promises";
+import { dirname as dirname5, isAbsolute as isAbsolute3, relative as relative3, resolve as resolve5 } from "node:path";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
 function isZ4Schema(s) {
@@ -14502,7 +14501,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve6) => setTimeout(resolve6, pollInterval));
+        await new Promise((resolve7) => setTimeout(resolve7, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -14519,7 +14518,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve6, reject) => {
+    return new Promise((resolve7, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -14597,7 +14596,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve6(parseResult.data);
+            resolve7(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -14858,12 +14857,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve6, reject) => {
+    return new Promise((resolve7, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve6, interval);
+      const timeoutId = setTimeout(resolve7, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -17801,16 +17800,16 @@ async function openBrowser(url2) {
   const os = platform();
   const command = os === "darwin" ? "open" : os === "win32" ? "cmd.exe" : "xdg-open";
   const args = os === "win32" ? ["/c", "start", "", href] : [href];
-  return new Promise((resolve6) => {
+  return new Promise((resolve7) => {
     const child = spawn(command, args, {
       detached: true,
       stdio: "ignore",
       windowsHide: true
     });
-    child.on("error", () => resolve6(false));
+    child.on("error", () => resolve7(false));
     child.on("spawn", () => {
       child.unref();
-      resolve6(true);
+      resolve7(true);
     });
   });
 }
@@ -18073,8 +18072,8 @@ async function closeServer(server) {
   if (!server.listening) {
     return;
   }
-  await new Promise((resolve6, reject) => {
-    server.close((error2) => error2 ? reject(error2) : resolve6());
+  await new Promise((resolve7, reject) => {
+    server.close((error2) => error2 ? reject(error2) : resolve7());
   });
 }
 async function startOAuthCallbackServer(options) {
@@ -18084,8 +18083,8 @@ async function startOAuthCallbackServer(options) {
   let closePromise;
   let resolveCode;
   let rejectCode;
-  const codePromise = new Promise((resolve6, reject) => {
-    resolveCode = resolve6;
+  const codePromise = new Promise((resolve7, reject) => {
+    resolveCode = resolve7;
     rejectCode = reject;
   });
   codePromise.catch(() => void 0);
@@ -18164,11 +18163,11 @@ async function startOAuthCallbackServer(options) {
     rejectCode(error2);
     requestClose().catch(() => void 0);
   };
-  await new Promise((resolve6, reject) => {
+  await new Promise((resolve7, reject) => {
     server.once("error", reject);
     server.listen(options.port, options.host, () => {
       server.off("error", reject);
-      resolve6();
+      resolve7();
     });
   });
   timeout = setTimeout(() => {
@@ -19847,44 +19846,260 @@ function literal2(value) {
 
 // src/repl-tool-args.ts
 var TOOL_TITLE_ARGUMENT = "title";
+var FIGMA_REPL_SURFACES = ["design", "figjam", "slides"];
+var FIGMA_REPL_EVAL_MODES = ["read", "write"];
+var FIGMA_REPL_RETURN_MODES = ["auto", "json", "text", "raw"];
+var FIGMA_REPL_HELPER_PROFILES = ["auto", "minimal", "asset", "clone", "full"];
 function asEvalArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, [
+    "code",
+    "sessionId",
+    "upstreamTool",
+    "upstreamArgument"
+  ]);
+  assertOptionalEnum(record2, "mode", FIGMA_REPL_EVAL_MODES);
+  assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record2, "returnMode", FIGMA_REPL_RETURN_MODES);
+  assertOptionalRecord(record2, "upstreamArguments");
+  assertOptionalRecord(record2, "handleUpdates");
+  return record2;
 }
 function asRunScriptFileArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "scriptPath",
+    "inputFile",
+    "targetPageId",
+    "upstreamTool",
+    "upstreamArgument",
+    "outputDir",
+    "outputFile",
+    "resultFile",
+    "diagnosticsFile",
+    "summaryFile"
+  ]);
+  assertOptionalEnum(record2, "helperProfile", FIGMA_REPL_HELPER_PROFILES);
+  assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalRecord(record2, "upstreamArguments");
+  return record2;
 }
 function asApplyAssetManifestArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "manifestPath",
+    "toolName",
+    "resultFile",
+    "outputFile"
+  ]);
+  assertOptionalRecord(record2, "arguments");
+  assertOptionalRecord(record2, "argumentsTemplate");
+  assertOptionalAssets(record2);
+  return record2;
 }
 function asCaptureNodeArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "nodeId",
+    "targetNodeId",
+    "outputFile",
+    "resultFile",
+    "toolName"
+  ]);
+  assertOptionalRecord(record2, "arguments");
+  assertOptionalRecord(record2, "argumentsTemplate");
+  return record2;
 }
 function asRunTaskPlanArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "planPath",
+    "resultFile",
+    "outputFile"
+  ]);
+  assertOptionalTaskPlanSteps(record2);
+  return record2;
 }
 function asInitWorkspaceArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "intent",
+    "task",
+    "fileUrl",
+    "fileKey",
+    "fileSlug",
+    "cwd",
+    "dirName"
+  ]);
+  return record2;
 }
 function asPrepareTaskArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "intent",
+    "task",
+    "fileUrl",
+    "fileKey",
+    "fileSlug",
+    "goal",
+    "taskSlug",
+    "taskName",
+    "taskDir",
+    "workspaceDir",
+    "fileName",
+    "scriptName",
+    "taskRoot",
+    "targetPageId",
+    "template"
+  ]);
+  assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
+  return record2;
 }
 function asPlanTaskArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, [
+    "goal",
+    "workflow",
+    "task",
+    "intent"
+  ]);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
+  return record2;
 }
 function asApiCardArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, ["card", "query"]);
+  return record2;
 }
 function asSuggestApiArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, ["task", "intent"]);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
+  return record2;
 }
 function asCallUpstreamToolArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, ["sessionId", "toolName"]);
+  assertOptionalRecord(record2, "arguments");
+  return record2;
 }
 function asDocsSearchArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, ["query"]);
+  return record2;
 }
 function asApiLookupArgs(args) {
-  return args;
+  const record2 = parseToolArgs(args);
+  assertOptionalStringFields(record2, ["symbol"]);
+  return record2;
+}
+function parseToolArgs(value) {
+  if (value === void 0) {
+    return {};
+  }
+  if (!isRecord2(value)) {
+    throw new Error("Tool arguments must be an object.");
+  }
+  return { ...value };
+}
+function assertOptionalEnum(record2, key, values) {
+  const value = record2[key];
+  if (value === void 0) {
+    return;
+  }
+  if (typeof value !== "string" || !values.includes(value)) {
+    throw new Error(`Tool argument "${key}" must be one of: ${values.join(", ")}.`);
+  }
+}
+function assertOptionalRecord(record2, key, displayName = key) {
+  const value = record2[key];
+  if (value === void 0) {
+    return;
+  }
+  if (!isRecord2(value)) {
+    throw new Error(`Tool argument "${displayName}" must be an object.`);
+  }
+}
+function assertOptionalArray(record2, key) {
+  const value = record2[key];
+  if (value === void 0) {
+    return void 0;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`Tool argument "${key}" must be an array.`);
+  }
+  return value;
+}
+function assertOptionalStringFields(record2, keys) {
+  for (const key of keys) {
+    const value = record2[key];
+    if (value === void 0) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      throw new Error(`Tool argument "${key}" must be a string.`);
+    }
+  }
+}
+function assertOptionalAssets(record2) {
+  const assets = assertOptionalArray(record2, "assets");
+  if (!assets) {
+    return;
+  }
+  assets.forEach((asset, index) => {
+    const assetName = `assets[${index}]`;
+    if (!isRecord2(asset)) {
+      throw new Error(`Tool argument "${assetName}" must be an object.`);
+    }
+    assertOptionalStringFieldsWithPrefix(asset, assetName, [
+      "path",
+      "filePath",
+      "localPath",
+      "targetNodeId",
+      "nodeId",
+      "name",
+      "toolName"
+    ]);
+    assertOptionalRecord(asset, "metadata", `${assetName}.metadata`);
+    assertOptionalRecord(asset, "arguments", `${assetName}.arguments`);
+  });
+}
+function assertOptionalTaskPlanSteps(record2) {
+  const steps = assertOptionalArray(record2, "steps");
+  if (!steps) {
+    return;
+  }
+  steps.forEach((step, index) => {
+    const stepName = `steps[${index}]`;
+    if (!isRecord2(step)) {
+      throw new Error(`Tool argument "${stepName}" must be an object.`);
+    }
+    assertOptionalStringFieldsWithPrefix(step, stepName, ["id", "type", "tool"]);
+    assertOptionalRecord(step, "args", `${stepName}.args`);
+    assertOptionalRecord(step, "arguments", `${stepName}.arguments`);
+  });
+}
+function assertOptionalStringFieldsWithPrefix(record2, prefix, keys) {
+  for (const key of keys) {
+    const value = record2[key];
+    if (value === void 0) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      throw new Error(`Tool argument "${prefix}.${key}" must be a string.`);
+    }
+  }
+}
+function isRecord2(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function assertRequiredTitleArgument(args) {
   if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
@@ -20273,6 +20488,568 @@ function enumProperty(values, description) {
   return { type: "string", enum: values, description };
 }
 
+// src/repl-workspace-files.ts
+import { mkdir as mkdir2, readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname as dirname4, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve4 } from "node:path";
+var TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
+var DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
+function createScriptOutputWriter(args, session, formatSummaryMarkdown) {
+  const files = resolveScriptOutputFiles(args, session);
+  return {
+    files,
+    async write(payload) {
+      const written = {};
+      if (files.resultFile) {
+        await writeJsonFile(files.resultFile, payload.result);
+        written.resultFile = files.resultFile;
+      }
+      if (files.diagnosticsFile) {
+        await writeJsonFile(files.diagnosticsFile, {
+          diagnostics: payload.diagnostics,
+          count: payload.diagnostics.length
+        });
+        written.diagnosticsFile = files.diagnosticsFile;
+      }
+      if (files.summaryFile) {
+        await writeMarkdownFile(files.summaryFile, formatSummaryMarkdown(payload.summary));
+        written.summaryFile = files.summaryFile;
+      }
+      return written;
+    }
+  };
+}
+function resolveScriptInputPath(args, session) {
+  const scriptPath = asOptionalString2(args.scriptPath);
+  if (scriptPath) {
+    if (!isAbsolute2(scriptPath)) {
+      throw new Error('Tool argument "scriptPath" must be an absolute path. Use inputFile after figma_repl_init_workspace for workspace-relative files.');
+    }
+    return scriptPath;
+  }
+  const inputFile = asOptionalString2(args.inputFile);
+  if (!inputFile) {
+    throw new Error('Tool argument "scriptPath" or "inputFile" is required.');
+  }
+  if (!session.workspace) {
+    throw new Error("inputFile requires an initialized file-context workspace. Call figma_repl_init_workspace first.");
+  }
+  return resolveWorkspaceFile(session.workspace.sessionDir, inputFile, "inputFile");
+}
+function resolveRequiredWorkspaceAwareFile(value, session, argumentName) {
+  const resolved = resolveWorkspaceAwareFile(value, session, argumentName);
+  if (!resolved) {
+    throw new Error(`Tool argument "${argumentName}" is required.`);
+  }
+  return resolved;
+}
+function resolveWorkspaceAwareFile(value, session, argumentName) {
+  const raw = asOptionalString2(value);
+  if (!raw) {
+    return void 0;
+  }
+  if (isAbsolute2(raw)) {
+    return raw;
+  }
+  if (!session.workspace) {
+    throw new Error(
+      `Tool argument "${argumentName}" must be an absolute path unless the session has an initialized file-context workspace.`
+    );
+  }
+  return resolveWorkspaceFile(session.workspace.sessionDir, raw, argumentName);
+}
+async function writeCaptureOutputFile(outputFile, upstream, parsed) {
+  const rawContent = asRecord(upstream).content;
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord3) : [];
+  const image = content.find((item) => item.type === "image" && typeof item.data === "string");
+  await mkdir2(dirname4(outputFile), { recursive: true });
+  if (image && typeof image.data === "string") {
+    const buffer = Buffer.from(image.data, "base64");
+    await writeFile2(outputFile, buffer);
+    const dimensions = imageDimensions(buffer, asOptionalString2(image.mimeType) ?? "image/png");
+    return {
+      kind: "image",
+      mimeType: asOptionalString2(image.mimeType) ?? "image/png",
+      bytes: buffer.byteLength,
+      ...dimensions
+    };
+  }
+  const sourceUrl = extractCaptureImageUrl(upstream, parsed);
+  if (sourceUrl) {
+    const response = await fetch(sourceUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Unable to download captured node image from ${sourceUrl}: ${response.status} ${response.statusText}`
+      );
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await writeFile2(outputFile, buffer);
+    const mimeType = response.headers.get("content-type") ?? "image/png";
+    const dimensions = imageDimensions(buffer, mimeType);
+    return {
+      kind: "image",
+      mimeType,
+      bytes: buffer.byteLength,
+      ...dimensions,
+      sourceUrl
+    };
+  }
+  const textItem = content.find((item) => item.type === "text" && typeof item.text === "string");
+  const text = typeof textItem?.text === "string" ? textItem.text : parsed.text || JSON.stringify(removeUndefined(parsed.json ?? upstream), null, 2);
+  await writeFile2(outputFile, text, "utf8");
+  return {
+    kind: "text",
+    mimeType: "text/plain",
+    bytes: Buffer.byteLength(text, "utf8")
+  };
+}
+async function loadTaskPlan(args, session) {
+  const planPath = resolveWorkspaceAwareFile(args.planPath, session, "planPath");
+  const planValue = planPath ? JSON.parse(await readFile3(planPath, "utf8")) : void 0;
+  const planRecord = asRecord(planValue);
+  const steps = Array.isArray(args.steps) ? args.steps : Array.isArray(planValue) ? planValue : Array.isArray(planRecord.steps) ? planRecord.steps : void 0;
+  if (!steps || steps.length === 0) {
+    throw new Error('Tool argument "steps" or "planPath" with steps is required.');
+  }
+  return {
+    planPath,
+    steps: steps.map((step) => asRecord(step))
+  };
+}
+function resolveTaskPlanResultFile(args, planPath, session) {
+  const explicit = resolveWorkspaceAwareFile(args.resultFile ?? args.outputFile, session, "resultFile/outputFile");
+  if (explicit) return explicit;
+  if (planPath) {
+    return planPath.replace(/\.json$/iu, ".result.json");
+  }
+  if (session.workspace) {
+    return resolveWorkspaceFile(
+      session.workspace.sessionDir,
+      `${slugifyTaskName(args.title)}.plan.result.json`,
+      "resultFile/outputFile"
+    );
+  }
+  throw new Error('Tool argument "resultFile" or "outputFile" is required for inline task plans.');
+}
+function withTaskPlanDefaultFiles(stepArgs, type, id, session) {
+  if (!session.workspace) {
+    return stepArgs;
+  }
+  const stepSlug = slugifyTaskName(id || type || "step");
+  const next = { ...stepArgs };
+  const hasResultFile = asOptionalString2(next.resultFile ?? next.outputFile) !== void 0;
+  if (type === "script-file") {
+    if (!hasResultFile) {
+      next.resultFile = `${stepSlug}.result.json`;
+    }
+    return next;
+  }
+  if (type === "asset-manifest") {
+    if (!hasResultFile) {
+      next.resultFile = `${stepSlug}.assets.result.json`;
+    }
+    return next;
+  }
+  if (type === "screenshot-capture") {
+    if (!asOptionalString2(next.outputFile)) {
+      next.outputFile = `${stepSlug}.png`;
+    }
+    if (!asOptionalString2(next.resultFile)) {
+      next.resultFile = `${stepSlug}.capture.result.json`;
+    }
+    return next;
+  }
+  return next;
+}
+function effectiveInlineResultLimit(value, files, defaultInlineResultLimit) {
+  if (value !== void 0 && value !== null) {
+    return value;
+  }
+  return files.resultFile || files.diagnosticsFile || files.summaryFile ? defaultInlineResultLimit : void 0;
+}
+async function writeJsonFile(path, value) {
+  await mkdir2(dirname4(path), { recursive: true });
+  await writeFile2(path, `${JSON.stringify(removeUndefined(value), null, 2)}
+`, "utf8");
+}
+function createSessionWorkspace(options) {
+  const dirName = asOptionalString2(options.dirName) ?? DEFAULT_WORKSPACE_DIR_NAME;
+  if (isAbsolute2(dirName) || dirName.includes("/") || dirName.includes("\\") || dirName.includes("..")) {
+    throw new Error('Tool argument "dirName" must be a simple directory name.');
+  }
+  const root = resolve4(options.cwd, dirName);
+  const fileContext = normalizeFileContextDirectory(options.fileKey, options.fileSlug);
+  const fileDir = resolve4(root, fileContext);
+  if (!isPathInside2(root, fileDir)) {
+    throw new Error("Resolved file workspace must stay inside the workspace root.");
+  }
+  const script = `${options.intentSlug}.figma.js`;
+  const result = `${options.intentSlug}.result.json`;
+  return {
+    root,
+    fileDir,
+    fileContext,
+    fileKey: options.fileKey,
+    fileSlug: options.fileSlug,
+    intentSlug: options.intentSlug,
+    sessionDir: fileDir,
+    scriptPath: resolve4(fileDir, script),
+    resultFile: resolve4(fileDir, result),
+    files: {
+      script,
+      result
+    }
+  };
+}
+async function ensureWorkspaceDirectories(workspace) {
+  await mkdir2(workspace.sessionDir, { recursive: true });
+}
+function resolvePreparedTaskWorkspace(options) {
+  if (options.session?.workspace && !options.args.taskDir && !options.args.workspaceDir && !options.args.taskRoot) {
+    return createWorkspaceFromFileDir({
+      root: options.session.workspace.root,
+      fileDir: resolve4(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
+      fileKey: options.session.fileKey,
+      fileSlug: options.fileSlug,
+      intentSlug: options.taskSlug
+    });
+  }
+  const explicitWorkspaceDir = asOptionalString2(options.args.taskDir ?? options.args.workspaceDir);
+  if (explicitWorkspaceDir) {
+    if (!isAbsolute2(explicitWorkspaceDir)) {
+      throw new Error('Tool argument "taskDir/workspaceDir" must be an absolute path.');
+    }
+    return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskSlug);
+  }
+  const workspaceDir = resolveTaskWorkspace({
+    taskSlug: options.taskSlug,
+    taskRoot: options.args.taskRoot,
+    workspaceDir: void 0
+  });
+  return createWorkspaceFromSessionDir(workspaceDir, options.taskSlug);
+}
+function resolveWorkspaceFile(baseDir, fileName, argumentName) {
+  if (isAbsolute2(fileName) || fileName.includes("..") || /^[A-Za-z]:/u.test(fileName) || fileName.startsWith("\\\\")) {
+    throw new Error(`Tool argument "${argumentName}" must be a workspace-relative file name.`);
+  }
+  const resolved = resolve4(baseDir, fileName);
+  if (!isPathInside2(baseDir, resolved)) {
+    throw new Error(`Tool argument "${argumentName}" must stay inside the file-context workspace.`);
+  }
+  return resolved;
+}
+function normalizeTaskScriptName(value, taskSlug) {
+  const scriptName = asOptionalString2(value) ?? `${taskSlug}.figma.js`;
+  if (isAbsolute2(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
+    throw new Error('Tool argument "fileName/scriptName" must be a file name, not a path.');
+  }
+  if (!scriptName.endsWith(".figma.js")) {
+    throw new Error('Tool argument "fileName/scriptName" must end with ".figma.js".');
+  }
+  return scriptName;
+}
+function resultFileNameForScript(scriptName) {
+  if (scriptName.endsWith(".figma.js")) {
+    return `${scriptName.slice(0, -".figma.js".length)}.result.json`;
+  }
+  if (scriptName.endsWith(".js")) {
+    return `${scriptName.slice(0, -".js".length)}.result.json`;
+  }
+  return `${slugifyTaskName(scriptName)}.result.json`;
+}
+async function writeTaskFile(path, content, overwrite) {
+  if (!overwrite) {
+    try {
+      await readFile3(path, "utf8");
+      throw new Error(`Refusing to overwrite existing file without overwrite=true: ${path}`);
+    } catch (error2) {
+      if (error2 instanceof Error && error2.message.startsWith("Refusing to overwrite")) {
+        throw error2;
+      }
+    }
+  }
+  await writeFile2(path, content, "utf8");
+}
+function resolveScriptOutputFiles(args, session) {
+  const outputDir = asOptionalString2(args.outputDir);
+  if (outputDir && !isAbsolute2(outputDir)) {
+    throw new Error('Tool argument "outputDir" must be an absolute path.');
+  }
+  if (!outputDir && session?.workspace) {
+    const sessionDir = session.workspace.sessionDir;
+    const inputFile = asOptionalString2(args.inputFile);
+    const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
+    return {
+      resultFile: resolveWorkspaceOutputFile(args.resultFile ?? args.outputFile, sessionDir, defaultResult, "resultFile/outputFile"),
+      diagnosticsFile: args.diagnosticsFile ? resolveWorkspaceOutputFile(args.diagnosticsFile, sessionDir, "diagnostics.json", "diagnosticsFile") : void 0,
+      summaryFile: args.summaryFile ? resolveWorkspaceOutputFile(args.summaryFile, sessionDir, "summary.md", "summaryFile") : void 0
+    };
+  }
+  const hasOutputDir = Boolean(outputDir);
+  return {
+    resultFile: resolveOptionalOutputFile(args.resultFile ?? args.outputFile, outputDir, hasOutputDir ? "result.json" : void 0, "resultFile/outputFile"),
+    diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, hasOutputDir ? "diagnostics.json" : void 0, "diagnosticsFile"),
+    summaryFile: resolveOptionalOutputFile(args.summaryFile, outputDir, hasOutputDir ? "summary.md" : void 0, "summaryFile")
+  };
+}
+function resolveWorkspaceOutputFile(value, baseDir, fallbackName, argumentName) {
+  const raw = asOptionalString2(value) ?? fallbackName;
+  return isAbsolute2(raw) ? raw : resolveWorkspaceFile(baseDir, raw, argumentName);
+}
+function resolveOptionalOutputFile(value, outputDir, fallbackName, name) {
+  const raw = asOptionalString2(value) ?? fallbackName;
+  if (!raw) {
+    return void 0;
+  }
+  if (isAbsolute2(raw)) {
+    return raw;
+  }
+  if (!outputDir) {
+    throw new Error(`Tool argument "${name}" must be absolute unless outputDir is provided.`);
+  }
+  const resolved = resolve4(outputDir, raw);
+  if (!isPathInside2(outputDir, resolved)) {
+    throw new Error(`Tool argument "${name}" must stay inside outputDir when relative.`);
+  }
+  return resolved;
+}
+async function writeMarkdownFile(path, value) {
+  await mkdir2(dirname4(path), { recursive: true });
+  await writeFile2(path, value.endsWith("\n") ? value : `${value}
+`, "utf8");
+}
+function resolveTaskWorkspace(options) {
+  const explicitWorkspace = asOptionalString2(options.workspaceDir);
+  if (explicitWorkspace) {
+    if (!isAbsolute2(explicitWorkspace)) {
+      throw new Error('Tool argument "taskDir/workspaceDir" must be an absolute path.');
+    }
+    return explicitWorkspace;
+  }
+  const explicitRoot = asOptionalString2(options.taskRoot);
+  const root = explicitRoot ?? process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve4(tmpdir(), "figma-repl-mcp", "tasks");
+  if (!isAbsolute2(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve4(root, options.taskSlug);
+}
+function createWorkspaceFromSessionDir(sessionDir, taskSlug) {
+  return createWorkspaceFromFileDir({
+    root: dirname4(sessionDir),
+    fileDir: sessionDir,
+    fileSlug: slugifyTaskName(basename(sessionDir)),
+    intentSlug: taskSlug
+  });
+}
+function createWorkspaceFromFileDir(options) {
+  const script = `${options.intentSlug}.figma.js`;
+  const result = `${options.intentSlug}.result.json`;
+  if (!isPathInside2(options.root, options.fileDir)) {
+    throw new Error("Resolved file workspace must stay inside the workspace root.");
+  }
+  return {
+    root: options.root,
+    fileDir: options.fileDir,
+    fileContext: normalizeFileContextDirectory(options.fileKey, options.fileSlug),
+    fileKey: options.fileKey,
+    fileSlug: options.fileSlug,
+    intentSlug: options.intentSlug,
+    sessionDir: options.fileDir,
+    scriptPath: resolve4(options.fileDir, script),
+    resultFile: resolve4(options.fileDir, result),
+    files: {
+      script,
+      result
+    }
+  };
+}
+function normalizeFileContextDirectory(fileKey, fileSlug) {
+  if (fileKey) {
+    if (isAbsolute2(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
+      throw new Error('Tool argument "fileKey" must be a simple Figma file key.');
+    }
+    return fileKey;
+  }
+  return fileSlug;
+}
+function imageDimensions(buffer, mimeType) {
+  const lower = mimeType.toLowerCase();
+  if ((lower.includes("png") || hasPngSignature(buffer)) && buffer.byteLength >= 24 && hasPngSignature(buffer)) {
+    return {
+      width: buffer.readUInt32BE(16),
+      height: buffer.readUInt32BE(20)
+    };
+  }
+  if ((lower.includes("jpeg") || lower.includes("jpg") || hasJpegSignature(buffer)) && hasJpegSignature(buffer)) {
+    return jpegDimensions(buffer);
+  }
+  return {};
+}
+function hasPngSignature(buffer) {
+  return buffer.byteLength >= 8 && buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71 && buffer[4] === 13 && buffer[5] === 10 && buffer[6] === 26 && buffer[7] === 10;
+}
+function hasJpegSignature(buffer) {
+  return buffer.byteLength >= 2 && buffer[0] === 255 && buffer[1] === 216;
+}
+function jpegDimensions(buffer) {
+  let offset = 2;
+  while (offset + 9 < buffer.byteLength) {
+    if (buffer[offset] !== 255) {
+      offset += 1;
+      continue;
+    }
+    const marker = buffer[offset + 1];
+    const length = buffer.readUInt16BE(offset + 2);
+    if (length < 2) return {};
+    if (marker >= 192 && marker <= 195) {
+      return {
+        height: buffer.readUInt16BE(offset + 5),
+        width: buffer.readUInt16BE(offset + 7)
+      };
+    }
+    offset += 2 + length;
+  }
+  return {};
+}
+function extractCaptureImageUrl(upstream, parsed) {
+  const rawContent = asRecord(upstream).content;
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord3) : [];
+  for (const item of content) {
+    if (item.type === "image") {
+      const imageUrl = firstHttpUrl([
+        item.url,
+        item.imageUrl,
+        item.image_url,
+        item.screenshotUrl,
+        item.downloadUrl
+      ]);
+      if (imageUrl) return imageUrl;
+    }
+  }
+  const candidates = [parsed.json, upstream];
+  for (const item of content) {
+    const text = asOptionalString2(item.text);
+    if (!text) continue;
+    const textUrl = firstHttpUrl([text]);
+    if (textUrl) return textUrl;
+    candidates.push(parseJsonLenient(text));
+  }
+  return findCaptureImageUrl(candidates);
+}
+function findCaptureImageUrl(values) {
+  for (const value of values) {
+    const found = findCaptureImageUrlInValue(value, 0);
+    if (found) return found;
+  }
+  return void 0;
+}
+function findCaptureImageUrlInValue(value, depth) {
+  if (depth > 6) {
+    return void 0;
+  }
+  if (typeof value === "string") {
+    return firstHttpUrl([value]);
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findCaptureImageUrlInValue(item, depth + 1);
+      if (found) return found;
+    }
+    return void 0;
+  }
+  if (!isRecord3(value)) {
+    return void 0;
+  }
+  const priorityKeys = [
+    "url",
+    "imageUrl",
+    "image_url",
+    "screenshotUrl",
+    "screenshot_url",
+    "downloadUrl",
+    "download_url",
+    "src"
+  ];
+  const priorityUrl = firstHttpUrl(priorityKeys.map((key) => value[key]));
+  if (priorityUrl) {
+    return priorityUrl;
+  }
+  for (const item of Object.values(value)) {
+    const found = findCaptureImageUrlInValue(item, depth + 1);
+    if (found) return found;
+  }
+  return void 0;
+}
+function firstHttpUrl(values) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const direct = normalizeHttpUrl(trimmed);
+    if (direct) return direct;
+    const match = /https?:\/\/[^\s"'<>]+/u.exec(trimmed);
+    const matched = match ? normalizeHttpUrl(match[0]) : void 0;
+    if (matched) return matched;
+  }
+  return void 0;
+}
+function normalizeHttpUrl(value) {
+  try {
+    const url2 = new URL(value);
+    return url2.protocol === "http:" || url2.protocol === "https:" ? url2.toString() : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function parseJsonLenient(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+      } catch {
+        return void 0;
+      }
+    }
+    return void 0;
+  }
+}
+function slugifyTaskName(value) {
+  const source = typeof value === "string" ? value : "figma-task";
+  const slug = source.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
+  return slug || "figma-task";
+}
+function isPathInside2(root, path) {
+  const rel = relative2(root, path);
+  return rel === "" || !rel.startsWith("..") && !isAbsolute2(rel);
+}
+function removeUndefined(value) {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefined);
+  }
+  if (!isRecord3(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== void 0).map(([key, item]) => [key, removeUndefined(item)])
+  );
+}
+function asRecord(value) {
+  if (isRecord3(value)) {
+    return value;
+  }
+  return {};
+}
+function isRecord3(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function asOptionalString2(value) {
+  return typeof value === "string" && value.length > 0 ? value : void 0;
+}
+
 // src/repl-server.ts
 var FIGMA_REPL_DEFAULT_SESSION_ID = "default";
 var DEFAULT_EVAL_TOOL_NAME = "use_figma";
@@ -20286,8 +21063,6 @@ var DEFAULT_EVAL_ARGUMENT_CANDIDATES = [
 var DEFAULT_HISTORY_LIMIT = 50;
 var DEFAULT_INLINE_RESULT_LIMIT = 4e3;
 var MAX_INLINE_RESULT_LIMIT = 1e6;
-var TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
-var DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
 var DEFAULT_ASSET_TOOL_CANDIDATES = [
   "upload_assets",
   "upload_asset",
@@ -20311,7 +21086,7 @@ function createFigmaReplSessionStore(options = {}) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const session = {
       id,
-      slug: slugifyTaskName(id),
+      slug: slugifyTaskName2(id),
       createdAt: now,
       updatedAt: now,
       knownPages: {},
@@ -20398,50 +21173,51 @@ function createFigmaReplMcpServer(options = {}) {
     })
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const args = asRecord(request.params.arguments);
+    const rawArgs = request.params.arguments;
+    const args = asRecord2(rawArgs);
     switch (request.params.name) {
       case "figma_repl_open":
         return handleOpen(args, { sessions, upstreamToolCache, config: config2 });
       case "figma_repl_eval":
-        return handleEval(asEvalArgs(args), { client, sessions, upstreamToolCache, config: config2 });
+        return handleEval(asEvalArgs(rawArgs), { client, sessions, upstreamToolCache, config: config2 });
       case "figma_repl_run_script_file":
-        return handleRunScriptFile(asRunScriptFileArgs(args), {
+        return handleRunScriptFile(asRunScriptFileArgs(rawArgs), {
           client,
           sessions,
           upstreamToolCache,
           config: config2
         });
       case "figma_repl_apply_asset_manifest":
-        return handleApplyAssetManifest(asApplyAssetManifestArgs(args), {
+        return handleApplyAssetManifest(asApplyAssetManifestArgs(rawArgs), {
           client,
           sessions,
           upstreamToolCache,
           config: config2
         });
       case "figma_repl_capture_node":
-        return handleCaptureNode(asCaptureNodeArgs(args), {
+        return handleCaptureNode(asCaptureNodeArgs(rawArgs), {
           client,
           sessions,
           upstreamToolCache,
           config: config2
         });
       case "figma_repl_run_task_plan":
-        return handleRunTaskPlan(asRunTaskPlanArgs(args), {
+        return handleRunTaskPlan(asRunTaskPlanArgs(rawArgs), {
           client,
           sessions,
           upstreamToolCache,
           config: config2
         });
       case "figma_repl_init_workspace":
-        return handleInitWorkspace(asInitWorkspaceArgs(args), { sessions });
+        return handleInitWorkspace(asInitWorkspaceArgs(rawArgs), { sessions });
       case "figma_repl_prepare_task":
-        return handlePrepareTask(asPrepareTaskArgs(args), { sessions });
+        return handlePrepareTask(asPrepareTaskArgs(rawArgs), { sessions });
       case "figma_repl_plan_task":
-        return handlePlanTask(asPlanTaskArgs(args));
+        return handlePlanTask(asPlanTaskArgs(rawArgs));
       case "figma_repl_api_card":
-        return handleApiCard(asApiCardArgs(args));
+        return handleApiCard(asApiCardArgs(rawArgs));
       case "figma_repl_suggest_api":
-        return handleSuggestApi(asSuggestApiArgs(args));
+        return handleSuggestApi(asSuggestApiArgs(rawArgs));
       case "figma_repl_inspect":
         return handleInspect(args, { client, sessions, upstreamToolCache, config: config2 });
       case "figma_repl_cache_get":
@@ -20453,15 +21229,15 @@ function createFigmaReplMcpServer(options = {}) {
       case "figma_repl_list_upstream_tools":
         return handleListUpstreamTools(args, { upstreamToolCache });
       case "figma_repl_call_upstream_tool":
-        return handleCallUpstreamTool(asCallUpstreamToolArgs(args), {
+        return handleCallUpstreamTool(asCallUpstreamToolArgs(rawArgs), {
           client,
           sessions,
           upstreamToolCache
         });
       case "figma_repl_docs_search":
-        return handleDocsSearch(asDocsSearchArgs(args));
+        return handleDocsSearch(asDocsSearchArgs(rawArgs));
       case "figma_repl_api_lookup":
-        return handleApiLookup(asApiLookupArgs(args));
+        return handleApiLookup(asApiLookupArgs(rawArgs));
       default:
         throw new Error(`Unknown figma-repl-mcp tool: ${request.params.name}`);
     }
@@ -20541,7 +21317,7 @@ function createFigmaReplMcpServer(options = {}) {
 }
 async function handleOpen(args, runtime) {
   assertRequiredTitleArgument(args);
-  const session = truthy(args.reset) ? runtime.sessions.reset(asOptionalString2(args.sessionId)) : runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
+  const session = truthy(args.reset) ? runtime.sessions.reset(asOptionalString3(args.sessionId)) : runtime.sessions.getOrCreate(asOptionalString3(args.sessionId));
   assignOptionalString(session, "label", args.label);
   assignOptionalString(session, "fileUrl", args.fileUrl);
   assignOptionalString(session, "currentPageId", args.currentPageId);
@@ -20564,7 +21340,7 @@ async function handleOpen(args, runtime) {
     fileUrl: session.fileUrl
   });
   session.lastDiagnostics = openDiagnostics;
-  if (isRecord2(args.upstreamArguments)) {
+  if (isRecord4(args.upstreamArguments)) {
     session.upstreamArguments = {
       ...session.upstreamArguments,
       ...args.upstreamArguments
@@ -20641,7 +21417,7 @@ async function executeRunScriptFile(args, runtime) {
   assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const scriptPath = resolveScriptInputPath(args, session);
-  const source = await readFile3(scriptPath, "utf8");
+  const source = await readFile4(scriptPath, "utf8");
   const expectedSurface = normalizeSurface(args.expectedSurface) ?? session.surface;
   if (expectedSurface) {
     session.surface = expectedSurface;
@@ -20669,8 +21445,8 @@ async function executeRunScriptFile(args, runtime) {
   ];
   session.lastDiagnostics = diagnostics;
   throwIfFatalDiagnostics(diagnostics);
-  const outputWriter = createScriptOutputWriter(args, session);
-  const inlineResultLimit = effectiveInlineResultLimit(args.inlineResultLimit, outputWriter.files);
+  const outputWriter = createScriptOutputWriter(args, session, formatScriptRunSummaryMarkdown);
+  const inlineResultLimit = effectiveInlineResultLimit(args.inlineResultLimit, outputWriter.files, DEFAULT_INLINE_RESULT_LIMIT);
   const scriptMetadata = {
     ...compiled.metadata,
     diagnosticsCount: diagnostics.length,
@@ -20937,7 +21713,7 @@ async function executeApplyAssetManifest(args, runtime) {
     title: args.title,
     mode: "upstream-assets",
     summary: `Applied ${assetResults.length} asset manifest entries with ${failures.length} failures.`,
-    nodeIds: assetResults.map((asset) => asOptionalString2(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
+    nodeIds: assetResults.map((asset) => asOptionalString3(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
   });
   return payload;
 }
@@ -20946,7 +21722,7 @@ async function handleCaptureNode(args, runtime) {
 }
 async function executeCaptureNode(args, runtime) {
   assertRequiredTitleArgument(args);
-  const nodeId = asOptionalString2(args.nodeId) ?? asOptionalString2(args.targetNodeId);
+  const nodeId = asOptionalString3(args.nodeId) ?? asOptionalString3(args.targetNodeId);
   if (!nodeId) {
     throw new Error('Tool argument "nodeId" or "targetNodeId" is required and must be a string.');
   }
@@ -21025,7 +21801,7 @@ async function executeRunTaskPlan(args, runtime) {
   let stopped = false;
   for (const [index, step] of plan.steps.entries()) {
     const startedAt = (/* @__PURE__ */ new Date()).toISOString();
-    const id = asOptionalString2(step.id) ?? `step-${index + 1}`;
+    const id = asOptionalString3(step.id) ?? `step-${index + 1}`;
     const type = normalizeTaskPlanStepType2(step);
     try {
       const result = await runTaskPlanStep({
@@ -21098,7 +21874,12 @@ async function handlePrepareTask(args, runtime) {
   const session = runtime?.sessions.getOrCreate(args.sessionId);
   applyWorkspaceFileContextArgs(session, args);
   const intentSlug = deriveIntentSlug(args, "figma-task");
-  const workspace = resolvePreparedTaskWorkspace(args, intentSlug, session);
+  const workspace = resolvePreparedTaskWorkspace({
+    args,
+    taskSlug: intentSlug,
+    fileSlug: deriveFileSlug(args, session),
+    session
+  });
   if (session) {
     session.workspace = workspace;
     touchSession(session);
@@ -21145,7 +21926,7 @@ async function handleInitWorkspace(args, runtime) {
   if (!args.cwd || typeof args.cwd !== "string") {
     throw new Error('Tool argument "cwd" is required and must be a string.');
   }
-  if (!isAbsolute2(args.cwd)) {
+  if (!isAbsolute3(args.cwd)) {
     throw new Error('Tool argument "cwd" must be an absolute path.');
   }
   const session = runtime.sessions.getOrCreate(args.sessionId);
@@ -21233,8 +22014,8 @@ async function handleSuggestApi(args) {
 }
 async function handleInspect(args, runtime) {
   assertRequiredTitleArgument(args);
-  const session = runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
-  const target = asOptionalString2(args.target) ?? "$selection";
+  const session = runtime.sessions.getOrCreate(asOptionalString3(args.sessionId));
+  const target = asOptionalString3(args.target) ?? "$selection";
   const depth = normalizePositiveInteger(args.depth, 2);
   const code = [
     `const __target = ${literal3(target)};`,
@@ -21265,7 +22046,7 @@ async function handleInspect(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_inspect",
-    title: asOptionalString2(args.title),
+    title: asOptionalString3(args.title),
     mode: "read",
     summary: `Inspected ${target}.`,
     nodeIds: collectNodeIds(parsed.json)
@@ -21280,7 +22061,7 @@ async function handleInspect(args, runtime) {
 }
 function handleCacheGet(args, runtime) {
   assertRequiredTitleArgument(args);
-  const session = runtime.sessions.get(asOptionalString2(args.sessionId));
+  const session = runtime.sessions.get(asOptionalString3(args.sessionId));
   const includeHistory = args.includeHistory !== false;
   const historyLimit = normalizePositiveInteger(args.historyLimit, DEFAULT_HISTORY_LIMIT);
   return makeJsonToolResult({
@@ -21292,7 +22073,7 @@ function handleCacheGet(args, runtime) {
 }
 async function handleValidateHandles(args, runtime) {
   assertRequiredTitleArgument(args);
-  const session = runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
+  const session = runtime.sessions.getOrCreate(asOptionalString3(args.sessionId));
   const requested = Array.isArray(args.handles) ? args.handles.filter((item) => typeof item === "string" && item.length > 0) : Object.keys(session.handles);
   const code = [
     `const __requestedHandles = ${literal3(requested)};`,
@@ -21332,7 +22113,7 @@ async function handleValidateHandles(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_validate_handles",
-    title: asOptionalString2(args.title),
+    title: asOptionalString3(args.title),
     mode: "read",
     summary: `Validated ${requested.length} Figma REPL handle(s).`,
     nodeIds: collectNodeIds(parsed.json)
@@ -21373,7 +22154,7 @@ async function executeCallUpstreamTool(args, runtime) {
       `Refusing to proxy local figma-repl-mcp tool "${args.toolName}". Call it directly instead.`
     );
   }
-  const upstreamArgs = isRecord2(args.arguments) ? args.arguments : {};
+  const upstreamArgs = isRecord4(args.arguments) ? args.arguments : {};
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = tools.find((item) => item.name === args.toolName);
   if (!tool) {
@@ -21462,11 +22243,11 @@ function createUpstreamToolCache(client) {
         return cached2;
       }
       await client.connect();
-      const result = asRecord(await client.listTools());
+      const result = asRecord2(await client.listTools());
       const tools = Array.isArray(result.tools) ? result.tools : [];
-      cached2 = tools.filter(isRecord2).map((tool) => ({
+      cached2 = tools.filter(isRecord4).map((tool) => ({
         name: String(tool.name ?? ""),
-        description: asOptionalString2(tool.description),
+        description: asOptionalString3(tool.description),
         inputSchema: tool.inputSchema
       })).filter((tool) => tool.name.length > 0);
       return cached2;
@@ -21474,7 +22255,7 @@ function createUpstreamToolCache(client) {
   };
 }
 async function resolveEvalSettings(session, args, runtime) {
-  const toolName = asOptionalString2(args.upstreamTool) ?? session.evalToolName ?? runtime.config.evalToolName;
+  const toolName = asOptionalString3(args.upstreamTool) ?? session.evalToolName ?? runtime.config.evalToolName;
   const tools = await runtime.upstreamToolCache.list(false);
   const tool = tools.find((item) => item.name === toolName);
   if (!tool) {
@@ -21482,10 +22263,10 @@ async function resolveEvalSettings(session, args, runtime) {
       `Upstream Figma MCP tool "${toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
     );
   }
-  const argumentName = asOptionalString2(args.upstreamArgument) ?? session.evalToolArgument ?? runtime.config.evalToolArgument ?? inferEvalArgumentName(tool) ?? "code";
+  const argumentName = asOptionalString3(args.upstreamArgument) ?? session.evalToolArgument ?? runtime.config.evalToolArgument ?? inferEvalArgumentName(tool) ?? "code";
   const upstreamArguments = {
     ...session.upstreamArguments,
-    ...isRecord2(args.upstreamArguments) ? args.upstreamArguments : {}
+    ...isRecord4(args.upstreamArguments) ? args.upstreamArguments : {}
   };
   if (typeof upstreamArguments.fileKey !== "string" || upstreamArguments.fileKey.length === 0) {
     const fileKey = extractFigmaFileKey(session.fileUrl);
@@ -21494,7 +22275,7 @@ async function resolveEvalSettings(session, args, runtime) {
     }
   }
   if (typeof upstreamArguments.description !== "string" || upstreamArguments.description.length === 0) {
-    const title = asOptionalString2(args.title);
+    const title = asOptionalString3(args.title);
     if (title) {
       upstreamArguments.description = title;
     }
@@ -21506,8 +22287,8 @@ async function resolveEvalSettings(session, args, runtime) {
   return { toolName, argumentName, upstreamArguments };
 }
 function inferEvalArgumentName(tool) {
-  const schema = isRecord2(tool.inputSchema) ? tool.inputSchema : void 0;
-  const properties = isRecord2(schema?.properties) ? schema?.properties : void 0;
+  const schema = isRecord4(tool.inputSchema) ? tool.inputSchema : void 0;
+  const properties = isRecord4(schema?.properties) ? schema?.properties : void 0;
   if (!properties) {
     return void 0;
   }
@@ -21517,7 +22298,7 @@ function inferEvalArgumentName(tool) {
     }
   }
   const stringProperty2 = Object.entries(properties).find(([, value]) => {
-    const schemaValue = isRecord2(value) ? value : void 0;
+    const schemaValue = isRecord4(value) ? value : void 0;
     return schemaValue?.type === "string";
   });
   return stringProperty2?.[0];
@@ -22124,70 +22905,45 @@ function summarizeNode(node, depth = 1) {
   return summary;
 }`;
 }
-function createScriptOutputWriter(args, session) {
-  const files = resolveScriptOutputFiles(args, session);
-  return {
-    files,
-    async write(payload) {
-      const written = {};
-      if (files.resultFile) {
-        await writeJsonFile(files.resultFile, payload.result);
-        written.resultFile = files.resultFile;
-      }
-      if (files.diagnosticsFile) {
-        await writeJsonFile(files.diagnosticsFile, {
-          diagnostics: payload.diagnostics,
-          count: payload.diagnostics.length
-        });
-        written.diagnosticsFile = files.diagnosticsFile;
-      }
-      if (files.summaryFile) {
-        await writeMarkdownFile(files.summaryFile, formatScriptRunSummaryMarkdown(payload.summary));
-        written.summaryFile = files.summaryFile;
-      }
-      return written;
-    }
-  };
-}
 async function loadAssetManifest(args, session) {
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
-  const manifestValue = manifestPath ? JSON.parse(await readFile3(manifestPath, "utf8")) : void 0;
-  const manifestRecord = asRecord(manifestValue);
+  const manifestValue = manifestPath ? JSON.parse(await readFile4(manifestPath, "utf8")) : void 0;
+  const manifestRecord = asRecord2(manifestValue);
   const manifestAssets = Array.isArray(manifestValue) ? manifestValue : Array.isArray(manifestRecord.assets) ? manifestRecord.assets : void 0;
   const inlineAssets = Array.isArray(args.assets) ? args.assets : void 0;
   const rawAssets = inlineAssets ?? manifestAssets;
   if (!rawAssets || rawAssets.length === 0) {
     throw new Error('Tool argument "assets" or "manifestPath" with assets is required.');
   }
-  const baseDir = manifestPath ? dirname4(manifestPath) : session.workspace?.sessionDir;
+  const baseDir = manifestPath ? dirname5(manifestPath) : session.workspace?.sessionDir;
   return {
     assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir)),
-    toolName: asOptionalString2(args.toolName) ?? asOptionalString2(manifestRecord.toolName),
+    toolName: asOptionalString3(args.toolName) ?? asOptionalString3(manifestRecord.toolName),
     argumentsTemplate: recordFromUnknown(
       args.argumentsTemplate ?? args.arguments ?? manifestRecord.argumentsTemplate ?? manifestRecord.arguments
     )
   };
 }
 function normalizeManifestAsset(value, index, baseDir) {
-  const record2 = asRecord(value);
-  const rawPath = asOptionalString2(record2.path) ?? asOptionalString2(record2.filePath) ?? asOptionalString2(record2.localPath);
+  const record2 = asRecord2(value);
+  const rawPath = asOptionalString3(record2.path) ?? asOptionalString3(record2.filePath) ?? asOptionalString3(record2.localPath);
   if (!rawPath) {
     throw new Error(`Asset manifest entry ${index} requires path, filePath, or localPath.`);
   }
-  const path = isAbsolute2(rawPath) ? rawPath : baseDir ? resolve4(baseDir, rawPath) : void 0;
+  const path = isAbsolute3(rawPath) ? rawPath : baseDir ? resolve5(baseDir, rawPath) : void 0;
   if (!path) {
     throw new Error(`Asset manifest entry ${index} path must be absolute unless manifestPath is used.`);
   }
-  const targetNodeId = asOptionalString2(record2.targetNodeId) ?? asOptionalString2(record2.nodeId);
+  const targetNodeId = asOptionalString3(record2.targetNodeId) ?? asOptionalString3(record2.nodeId);
   if (!targetNodeId) {
     throw new Error(`Asset manifest entry ${index} requires targetNodeId or nodeId.`);
   }
   return {
     path,
     targetNodeId,
-    name: asOptionalString2(record2.name),
+    name: asOptionalString3(record2.name),
     metadata: recordFromUnknown(record2.metadata),
-    toolName: asOptionalString2(record2.toolName),
+    toolName: asOptionalString3(record2.toolName),
     arguments: recordFromUnknown(record2.arguments)
   };
 }
@@ -22291,7 +23047,7 @@ function expandTemplateValue(value, context) {
   if (Array.isArray(value)) {
     return value.map((item) => expandTemplateValue(item, context));
   }
-  if (isRecord2(value)) {
+  if (isRecord4(value)) {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, expandTemplateValue(item, context)])
     );
@@ -22302,7 +23058,7 @@ function readTemplatePath(context, path) {
   const parts = path.split(".").filter(Boolean);
   let current = context;
   for (const part of parts) {
-    if (!isRecord2(current)) {
+    if (!isRecord4(current)) {
       return void 0;
     }
     current = current[part];
@@ -22310,7 +23066,7 @@ function readTemplatePath(context, path) {
   return current;
 }
 function inputSchemaProperties(inputSchema) {
-  return asRecord(asRecord(inputSchema).properties);
+  return asRecord2(asRecord2(inputSchema).properties);
 }
 function assignFirstKnownProperty(target, properties, names, value) {
   if (value === void 0) {
@@ -22337,7 +23093,7 @@ async function validateAssetManifestTargetsIfAvailable(options) {
     return { ok: void 0, skipped: true, reason: "validateTargets=false" };
   }
   const targetNodeIds = Array.from(new Set(
-    options.assetResults.map((asset) => asOptionalString2(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
+    options.assetResults.map((asset) => asOptionalString3(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
   ));
   if (targetNodeIds.length === 0) {
     return { ok: void 0, skipped: true, reason: "no targetNodeIds" };
@@ -22399,11 +23155,11 @@ return {
         primaryFix: parsed.primaryFix
       };
     }
-    const result = asRecord(asRecord(parsed.json).result);
-    const validations = Array.isArray(result.validations) ? result.validations.filter(isRecord2) : [];
+    const result = asRecord2(asRecord2(parsed.json).result);
+    const validations = Array.isArray(result.validations) ? result.validations.filter(isRecord4) : [];
     const invalidCount = Number(result.invalidCount ?? validations.filter((item) => item.status !== "valid").length);
     for (const asset of options.assetResults) {
-      const targetNodeId = asOptionalString2(asset.targetNodeId);
+      const targetNodeId = asOptionalString3(asset.targetNodeId);
       const validation = validations.find((item) => item.targetNodeId === targetNodeId);
       if (validation) {
         asset.validation = validation;
@@ -22427,7 +23183,7 @@ async function submitLocalAssetUploadIfAvailable(asset, parsed) {
   if (!submitUrl) {
     return void 0;
   }
-  const bytes = await readFile3(asset.path);
+  const bytes = await readFile4(asset.path);
   const mimeType = mimeTypeForAssetPath(asset.path);
   const response = await fetch(submitUrl, {
     method: "POST",
@@ -22435,7 +23191,7 @@ async function submitLocalAssetUploadIfAvailable(asset, parsed) {
     body: bytes
   });
   const text = await response.text();
-  const json = parseJsonLenient(text);
+  const json = parseJsonLenient2(text);
   if (!response.ok) {
     return {
       ok: false,
@@ -22456,11 +23212,11 @@ async function submitLocalAssetUploadIfAvailable(asset, parsed) {
   };
 }
 function extractAssetSubmitUrl(value) {
-  const record2 = asRecord(value);
+  const record2 = asRecord2(value);
   const uploads = Array.isArray(record2.uploads) ? record2.uploads : [];
   for (const upload of uploads) {
-    const uploadRecord = asRecord(upload);
-    const submitUrl = asOptionalString2(uploadRecord.submitUrl) ?? asOptionalString2(uploadRecord.uploadUrl) ?? asOptionalString2(uploadRecord.url);
+    const uploadRecord = asRecord2(upload);
+    const submitUrl = asOptionalString3(uploadRecord.submitUrl) ?? asOptionalString3(uploadRecord.uploadUrl) ?? asOptionalString3(uploadRecord.url);
     if (submitUrl) {
       return submitUrl;
     }
@@ -22486,73 +23242,6 @@ function summarizeUploadResponse(text, json) {
   }
   return text.slice(0, 500);
 }
-function resolveRequiredWorkspaceAwareFile(value, session, argumentName) {
-  const resolved = resolveWorkspaceAwareFile(value, session, argumentName);
-  if (!resolved) {
-    throw new Error(`Tool argument "${argumentName}" is required.`);
-  }
-  return resolved;
-}
-function resolveWorkspaceAwareFile(value, session, argumentName) {
-  const raw = asOptionalString2(value);
-  if (!raw) {
-    return void 0;
-  }
-  if (isAbsolute2(raw)) {
-    return raw;
-  }
-  if (!session.workspace) {
-    throw new Error(
-      `Tool argument "${argumentName}" must be an absolute path unless the session has an initialized file-context workspace.`
-    );
-  }
-  return resolveWorkspaceFile(session.workspace.sessionDir, raw, argumentName);
-}
-async function writeCaptureOutputFile(outputFile, upstream, parsed) {
-  const rawContent = asRecord(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord2) : [];
-  const image = content.find((item) => item.type === "image" && typeof item.data === "string");
-  await mkdir2(dirname4(outputFile), { recursive: true });
-  if (image && typeof image.data === "string") {
-    const buffer = Buffer.from(image.data, "base64");
-    await writeFile2(outputFile, buffer);
-    const dimensions = imageDimensions(buffer, asOptionalString2(image.mimeType) ?? "image/png");
-    return {
-      kind: "image",
-      mimeType: asOptionalString2(image.mimeType) ?? "image/png",
-      bytes: buffer.byteLength,
-      ...dimensions
-    };
-  }
-  const sourceUrl = extractCaptureImageUrl(upstream, parsed);
-  if (sourceUrl) {
-    const response = await fetch(sourceUrl);
-    if (!response.ok) {
-      throw new Error(
-        `Unable to download captured node image from ${sourceUrl}: ${response.status} ${response.statusText}`
-      );
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    await writeFile2(outputFile, buffer);
-    const mimeType = response.headers.get("content-type") ?? "image/png";
-    const dimensions = imageDimensions(buffer, mimeType);
-    return {
-      kind: "image",
-      mimeType,
-      bytes: buffer.byteLength,
-      ...dimensions,
-      sourceUrl
-    };
-  }
-  const textItem = content.find((item) => item.type === "text" && typeof item.text === "string");
-  const text = typeof textItem?.text === "string" ? textItem.text : parsed.text || JSON.stringify(removeUndefined(parsed.json ?? upstream), null, 2);
-  await writeFile2(outputFile, text, "utf8");
-  return {
-    kind: "text",
-    mimeType: "text/plain",
-    bytes: Buffer.byteLength(text, "utf8")
-  };
-}
 function createCaptureQa(saved) {
   const warnings = [];
   if (saved.bytes === 0) {
@@ -22575,168 +23264,11 @@ function createCaptureQa(saved) {
     warnings
   };
 }
-function imageDimensions(buffer, mimeType) {
-  const lower = mimeType.toLowerCase();
-  if ((lower.includes("png") || hasPngSignature(buffer)) && buffer.byteLength >= 24 && hasPngSignature(buffer)) {
-    return {
-      width: buffer.readUInt32BE(16),
-      height: buffer.readUInt32BE(20)
-    };
-  }
-  if ((lower.includes("jpeg") || lower.includes("jpg") || hasJpegSignature(buffer)) && hasJpegSignature(buffer)) {
-    return jpegDimensions(buffer);
-  }
-  return {};
-}
-function hasPngSignature(buffer) {
-  return buffer.byteLength >= 8 && buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71 && buffer[4] === 13 && buffer[5] === 10 && buffer[6] === 26 && buffer[7] === 10;
-}
-function hasJpegSignature(buffer) {
-  return buffer.byteLength >= 2 && buffer[0] === 255 && buffer[1] === 216;
-}
-function jpegDimensions(buffer) {
-  let offset = 2;
-  while (offset + 9 < buffer.byteLength) {
-    if (buffer[offset] !== 255) {
-      offset += 1;
-      continue;
-    }
-    const marker = buffer[offset + 1];
-    const length = buffer.readUInt16BE(offset + 2);
-    if (length < 2) return {};
-    if (marker >= 192 && marker <= 195) {
-      return {
-        height: buffer.readUInt16BE(offset + 5),
-        width: buffer.readUInt16BE(offset + 7)
-      };
-    }
-    offset += 2 + length;
-  }
-  return {};
-}
-function extractCaptureImageUrl(upstream, parsed) {
-  const rawContent = asRecord(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord2) : [];
-  for (const item of content) {
-    if (item.type === "image") {
-      const imageUrl = firstHttpUrl([
-        item.url,
-        item.imageUrl,
-        item.image_url,
-        item.screenshotUrl,
-        item.downloadUrl
-      ]);
-      if (imageUrl) return imageUrl;
-    }
-  }
-  const candidates = [parsed.json, upstream];
-  for (const item of content) {
-    const text = asOptionalString2(item.text);
-    if (!text) continue;
-    const textUrl = firstHttpUrl([text]);
-    if (textUrl) return textUrl;
-    candidates.push(parseJsonLenient(text));
-  }
-  return findCaptureImageUrl(candidates);
-}
-function findCaptureImageUrl(values) {
-  for (const value of values) {
-    const found = findCaptureImageUrlInValue(value, 0);
-    if (found) return found;
-  }
-  return void 0;
-}
-function findCaptureImageUrlInValue(value, depth) {
-  if (depth > 6) {
-    return void 0;
-  }
-  if (typeof value === "string") {
-    return firstHttpUrl([value]);
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findCaptureImageUrlInValue(item, depth + 1);
-      if (found) return found;
-    }
-    return void 0;
-  }
-  if (!isRecord2(value)) {
-    return void 0;
-  }
-  const priorityKeys = [
-    "url",
-    "imageUrl",
-    "image_url",
-    "screenshotUrl",
-    "screenshot_url",
-    "downloadUrl",
-    "download_url",
-    "src"
-  ];
-  const priorityUrl = firstHttpUrl(priorityKeys.map((key) => value[key]));
-  if (priorityUrl) {
-    return priorityUrl;
-  }
-  for (const item of Object.values(value)) {
-    const found = findCaptureImageUrlInValue(item, depth + 1);
-    if (found) return found;
-  }
-  return void 0;
-}
-function firstHttpUrl(values) {
-  for (const value of values) {
-    if (typeof value !== "string") continue;
-    const trimmed = value.trim();
-    if (!trimmed) continue;
-    const direct = normalizeHttpUrl(trimmed);
-    if (direct) return direct;
-    const match = /https?:\/\/[^\s"'<>]+/u.exec(trimmed);
-    const matched = match ? normalizeHttpUrl(match[0]) : void 0;
-    if (matched) return matched;
-  }
-  return void 0;
-}
-function normalizeHttpUrl(value) {
-  try {
-    const url2 = new URL(value);
-    return url2.protocol === "http:" || url2.protocol === "https:" ? url2.toString() : void 0;
-  } catch {
-    return void 0;
-  }
-}
-async function loadTaskPlan(args, session) {
-  const planPath = resolveWorkspaceAwareFile(args.planPath, session, "planPath");
-  const planValue = planPath ? JSON.parse(await readFile3(planPath, "utf8")) : void 0;
-  const planRecord = asRecord(planValue);
-  const steps = Array.isArray(args.steps) ? args.steps : Array.isArray(planValue) ? planValue : Array.isArray(planRecord.steps) ? planRecord.steps : void 0;
-  if (!steps || steps.length === 0) {
-    throw new Error('Tool argument "steps" or "planPath" with steps is required.');
-  }
-  return {
-    planPath,
-    steps: steps.map((step) => asRecord(step))
-  };
-}
-function resolveTaskPlanResultFile(args, planPath, session) {
-  const explicit = resolveWorkspaceAwareFile(args.resultFile ?? args.outputFile, session, "resultFile/outputFile");
-  if (explicit) return explicit;
-  if (planPath) {
-    return planPath.replace(/\.json$/iu, ".result.json");
-  }
-  if (session.workspace) {
-    return resolveWorkspaceFile(
-      session.workspace.sessionDir,
-      `${slugifyTaskName(args.title)}.plan.result.json`,
-      "resultFile/outputFile"
-    );
-  }
-  throw new Error('Tool argument "resultFile" or "outputFile" is required for inline task plans.');
-}
 async function runTaskPlanStep(options) {
   const rawStepArgs = taskPlanStepArguments(options.step);
   const commonArgs = {
-    title: asOptionalString2(rawStepArgs.title) ?? options.title,
-    sessionId: asOptionalString2(rawStepArgs.sessionId) ?? options.sessionId
+    title: asOptionalString3(rawStepArgs.title) ?? options.title,
+    sessionId: asOptionalString3(rawStepArgs.sessionId) ?? options.sessionId
   };
   const session = options.runtime.sessions.getOrCreate(commonArgs.sessionId);
   const stepArgs = withTaskPlanDefaultFiles(rawStepArgs, options.type, options.id, session);
@@ -22766,36 +23298,6 @@ async function runTaskPlanStep(options) {
   }
   throw new Error(`Unsupported figma_repl_run_task_plan step type "${options.type}".`);
 }
-function withTaskPlanDefaultFiles(stepArgs, type, id, session) {
-  if (!session.workspace) {
-    return stepArgs;
-  }
-  const stepSlug = slugifyTaskName(id || type || "step");
-  const next = { ...stepArgs };
-  const hasResultFile = asOptionalString2(next.resultFile ?? next.outputFile) !== void 0;
-  if (type === "script-file") {
-    if (!hasResultFile) {
-      next.resultFile = `${stepSlug}.result.json`;
-    }
-    return next;
-  }
-  if (type === "asset-manifest") {
-    if (!hasResultFile) {
-      next.resultFile = `${stepSlug}.assets.result.json`;
-    }
-    return next;
-  }
-  if (type === "screenshot-capture") {
-    if (!asOptionalString2(next.outputFile)) {
-      next.outputFile = `${stepSlug}.png`;
-    }
-    if (!asOptionalString2(next.resultFile)) {
-      next.resultFile = `${stepSlug}.capture.result.json`;
-    }
-    return next;
-  }
-  return next;
-}
 function taskPlanStepArguments(step) {
   return {
     ...Object.fromEntries(
@@ -22803,18 +23305,18 @@ function taskPlanStepArguments(step) {
         ([key]) => !["id", "type", "tool", "args"].includes(key)
       )
     ),
-    ...asRecord(step.args)
+    ...asRecord2(step.args)
   };
 }
 function normalizeTaskPlanStepType2(step) {
-  const value = asOptionalString2(step.type) ?? asOptionalString2(step.tool);
+  const value = asOptionalString3(step.type) ?? asOptionalString3(step.tool);
   return normalizeTaskPlanStepType(value);
 }
 function taskPlanStepSucceeded(result) {
   if (result.ok === false) {
     return false;
   }
-  const nestedResult = asRecord(result.result);
+  const nestedResult = asRecord2(result.result);
   if (nestedResult.ok === false) {
     return false;
   }
@@ -22830,82 +23332,6 @@ function summarizeTaskPlanStepResult(result) {
     failures: Array.isArray(result.failures) ? result.failures.length : void 0,
     diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics.length : void 0
   };
-}
-function resolveScriptOutputFiles(args, session) {
-  const outputDir = asOptionalString2(args.outputDir);
-  if (outputDir && !isAbsolute2(outputDir)) {
-    throw new Error('Tool argument "outputDir" must be an absolute path.');
-  }
-  if (!outputDir && session?.workspace) {
-    const sessionDir = session.workspace.sessionDir;
-    const inputFile = asOptionalString2(args.inputFile);
-    const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
-    return {
-      resultFile: resolveWorkspaceOutputFile(args.resultFile ?? args.outputFile, sessionDir, defaultResult, "resultFile/outputFile"),
-      diagnosticsFile: args.diagnosticsFile ? resolveWorkspaceOutputFile(args.diagnosticsFile, sessionDir, "diagnostics.json", "diagnosticsFile") : void 0,
-      summaryFile: args.summaryFile ? resolveWorkspaceOutputFile(args.summaryFile, sessionDir, "summary.md", "summaryFile") : void 0
-    };
-  }
-  const hasOutputDir = Boolean(outputDir);
-  return {
-    resultFile: resolveOptionalOutputFile(args.resultFile ?? args.outputFile, outputDir, hasOutputDir ? "result.json" : void 0, "resultFile/outputFile"),
-    diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, hasOutputDir ? "diagnostics.json" : void 0, "diagnosticsFile"),
-    summaryFile: resolveOptionalOutputFile(args.summaryFile, outputDir, hasOutputDir ? "summary.md" : void 0, "summaryFile")
-  };
-}
-function resolveScriptInputPath(args, session) {
-  const scriptPath = asOptionalString2(args.scriptPath);
-  if (scriptPath) {
-    if (!isAbsolute2(scriptPath)) {
-      throw new Error('Tool argument "scriptPath" must be an absolute path. Use inputFile after figma_repl_init_workspace for workspace-relative files.');
-    }
-    return scriptPath;
-  }
-  const inputFile = asOptionalString2(args.inputFile);
-  if (!inputFile) {
-    throw new Error('Tool argument "scriptPath" or "inputFile" is required.');
-  }
-  if (!session.workspace) {
-    throw new Error("inputFile requires an initialized file-context workspace. Call figma_repl_init_workspace first.");
-  }
-  return resolveWorkspaceFile(session.workspace.sessionDir, inputFile, "inputFile");
-}
-function resolveWorkspaceOutputFile(value, baseDir, fallbackName, argumentName) {
-  const raw = asOptionalString2(value) ?? fallbackName;
-  return isAbsolute2(raw) ? raw : resolveWorkspaceFile(baseDir, raw, argumentName);
-}
-function resolveOptionalOutputFile(value, outputDir, fallbackName, name) {
-  const raw = asOptionalString2(value) ?? fallbackName;
-  if (!raw) {
-    return void 0;
-  }
-  if (isAbsolute2(raw)) {
-    return raw;
-  }
-  if (!outputDir) {
-    throw new Error(`Tool argument "${name}" must be absolute unless outputDir is provided.`);
-  }
-  const resolved = resolve4(outputDir, raw);
-  if (!isPathInside2(outputDir, resolved)) {
-    throw new Error(`Tool argument "${name}" must stay inside outputDir when relative.`);
-  }
-  return resolved;
-}
-async function writeJsonFile(path, value) {
-  await mkdir2(dirname4(path), { recursive: true });
-  await writeFile2(path, `${JSON.stringify(removeUndefined(value), null, 2)}
-`, "utf8");
-}
-async function writeMarkdownFile(path, value) {
-  await mkdir2(dirname4(path), { recursive: true });
-  await writeFile2(path, value.endsWith("\n") ? value : `${value}
-`, "utf8");
-}
-function effectiveInlineResultLimit(value, files) {
-  if (value !== void 0 && value !== null) {
-    return value;
-  }
-  return files.resultFile || files.diagnosticsFile || files.summaryFile ? DEFAULT_INLINE_RESULT_LIMIT : void 0;
 }
 function createScriptRunSummary(options) {
   return {
@@ -22941,7 +23367,7 @@ function formatScriptRunSummaryMarkdown(summary) {
   if (summary.resultSummary) {
     lines.push(`- resultSummary: ${String(summary.resultSummary)}`);
   }
-  if (isRecord2(summary.upstreamError)) {
+  if (isRecord4(summary.upstreamError)) {
     lines.push(`- upstreamError: ${String(summary.upstreamError.message ?? "")}`);
   }
   if (summary.primaryFix) {
@@ -22964,7 +23390,7 @@ function limitInlineScriptResult(payload, limitValue, fields) {
     if (result[field] === void 0) {
       continue;
     }
-    const bytes = Buffer.byteLength(JSON.stringify(removeUndefined(result[field])), "utf8");
+    const bytes = Buffer.byteLength(JSON.stringify(removeUndefined2(result[field])), "utf8");
     if (bytes > limit) {
       delete result[field];
       omitted.push({ field, bytes, limit });
@@ -22988,108 +23414,6 @@ function normalizeInlineResultLimit(value) {
     throw new Error('Tool argument "inlineResultLimit" must be a non-negative number.');
   }
   return Math.min(Math.floor(number4), MAX_INLINE_RESULT_LIMIT);
-}
-function resolveTaskWorkspace(options) {
-  const explicitWorkspace = asOptionalString2(options.workspaceDir);
-  if (explicitWorkspace) {
-    if (!isAbsolute2(explicitWorkspace)) {
-      throw new Error('Tool argument "taskDir/workspaceDir" must be an absolute path.');
-    }
-    return explicitWorkspace;
-  }
-  const explicitRoot = asOptionalString2(options.taskRoot);
-  const root = explicitRoot ?? process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve4(tmpdir(), "figma-repl-mcp", "tasks");
-  if (!isAbsolute2(root)) {
-    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
-  }
-  return resolve4(root, options.taskSlug);
-}
-function createSessionWorkspace(options) {
-  const dirName = asOptionalString2(options.dirName) ?? DEFAULT_WORKSPACE_DIR_NAME;
-  if (isAbsolute2(dirName) || dirName.includes("/") || dirName.includes("\\") || dirName.includes("..")) {
-    throw new Error('Tool argument "dirName" must be a simple directory name.');
-  }
-  const root = resolve4(options.cwd, dirName);
-  const fileContext = normalizeFileContextDirectory(options.fileKey, options.fileSlug);
-  const fileDir = resolve4(root, fileContext);
-  if (!isPathInside2(root, fileDir)) {
-    throw new Error("Resolved file workspace must stay inside the workspace root.");
-  }
-  const script = `${options.intentSlug}.figma.js`;
-  const result = `${options.intentSlug}.result.json`;
-  return {
-    root,
-    fileDir,
-    fileContext,
-    fileKey: options.fileKey,
-    fileSlug: options.fileSlug,
-    intentSlug: options.intentSlug,
-    sessionDir: fileDir,
-    scriptPath: resolve4(fileDir, script),
-    resultFile: resolve4(fileDir, result),
-    files: {
-      script,
-      result
-    }
-  };
-}
-async function ensureWorkspaceDirectories(workspace) {
-  await mkdir2(workspace.sessionDir, { recursive: true });
-}
-function resolvePreparedTaskWorkspace(args, taskSlug, session) {
-  if (session?.workspace && !args.taskDir && !args.workspaceDir && !args.taskRoot) {
-    const fileSlug = deriveFileSlug(args, session);
-    return createWorkspaceFromFileDir({
-      root: session.workspace.root,
-      fileDir: resolve4(session.workspace.root, normalizeFileContextDirectory(session.fileKey, fileSlug)),
-      fileKey: session.fileKey,
-      fileSlug,
-      intentSlug: taskSlug
-    });
-  }
-  const explicitWorkspaceDir = asOptionalString2(args.taskDir ?? args.workspaceDir);
-  if (explicitWorkspaceDir) {
-    if (!isAbsolute2(explicitWorkspaceDir)) {
-      throw new Error('Tool argument "taskDir/workspaceDir" must be an absolute path.');
-    }
-    return createWorkspaceFromSessionDir(explicitWorkspaceDir, taskSlug);
-  }
-  const workspaceDir = resolveTaskWorkspace({
-    taskSlug,
-    taskRoot: args.taskRoot,
-    workspaceDir: void 0
-  });
-  return createWorkspaceFromSessionDir(workspaceDir, taskSlug);
-}
-function createWorkspaceFromSessionDir(sessionDir, taskSlug) {
-  return createWorkspaceFromFileDir({
-    root: dirname4(sessionDir),
-    fileDir: sessionDir,
-    fileSlug: slugifyTaskName(basename(sessionDir)),
-    intentSlug: taskSlug
-  });
-}
-function createWorkspaceFromFileDir(options) {
-  const script = `${options.intentSlug}.figma.js`;
-  const result = `${options.intentSlug}.result.json`;
-  if (!isPathInside2(options.root, options.fileDir)) {
-    throw new Error("Resolved file workspace must stay inside the workspace root.");
-  }
-  return {
-    root: options.root,
-    fileDir: options.fileDir,
-    fileContext: normalizeFileContextDirectory(options.fileKey, options.fileSlug),
-    fileKey: options.fileKey,
-    fileSlug: options.fileSlug,
-    intentSlug: options.intentSlug,
-    sessionDir: options.fileDir,
-    scriptPath: resolve4(options.fileDir, script),
-    resultFile: resolve4(options.fileDir, result),
-    files: {
-      script,
-      result
-    }
-  };
 }
 function applyWorkspaceFileContextArgs(session, args) {
   if (!session) {
@@ -23115,65 +23439,14 @@ function applyWorkspaceFileContextArgs(session, args) {
   });
 }
 function deriveFileSlug(args, session) {
-  return slugifyTaskName(
+  return slugifyTaskName2(
     args.fileSlug ?? args.fileKey ?? extractFigmaFileKey(args.fileUrl) ?? session?.fileKey ?? extractFigmaFileSlug(args.fileUrl ?? session?.fileUrl) ?? session?.slug ?? "figma-file"
   );
 }
 function deriveIntentSlug(args, fallback) {
-  return slugifyTaskName(
+  return slugifyTaskName2(
     args.intent ?? args.task ?? args.taskSlug ?? args.taskName ?? args.title ?? args.sessionId ?? args.goal ?? fallback
   );
-}
-function normalizeFileContextDirectory(fileKey, fileSlug) {
-  if (fileKey) {
-    if (isAbsolute2(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
-      throw new Error('Tool argument "fileKey" must be a simple Figma file key.');
-    }
-    return fileKey;
-  }
-  return fileSlug;
-}
-function resultFileNameForScript(scriptName) {
-  if (scriptName.endsWith(".figma.js")) {
-    return `${scriptName.slice(0, -".figma.js".length)}.result.json`;
-  }
-  if (scriptName.endsWith(".js")) {
-    return `${scriptName.slice(0, -".js".length)}.result.json`;
-  }
-  return `${slugifyTaskName(scriptName)}.result.json`;
-}
-function resolveWorkspaceFile(baseDir, fileName, argumentName) {
-  if (isAbsolute2(fileName) || fileName.includes("..") || /^[A-Za-z]:/u.test(fileName) || fileName.startsWith("\\\\")) {
-    throw new Error(`Tool argument "${argumentName}" must be a workspace-relative file name.`);
-  }
-  const resolved = resolve4(baseDir, fileName);
-  if (!isPathInside2(baseDir, resolved)) {
-    throw new Error(`Tool argument "${argumentName}" must stay inside the file-context workspace.`);
-  }
-  return resolved;
-}
-function normalizeTaskScriptName(value, taskSlug) {
-  const scriptName = asOptionalString2(value) ?? `${taskSlug}.figma.js`;
-  if (isAbsolute2(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
-    throw new Error('Tool argument "fileName/scriptName" must be a file name, not a path.');
-  }
-  if (!scriptName.endsWith(".figma.js")) {
-    throw new Error('Tool argument "fileName/scriptName" must end with ".figma.js".');
-  }
-  return scriptName;
-}
-async function writeTaskFile(path, content, overwrite) {
-  if (!overwrite) {
-    try {
-      await readFile3(path, "utf8");
-      throw new Error(`Refusing to overwrite existing file without overwrite=true: ${path}`);
-    } catch (error2) {
-      if (error2 instanceof Error && error2.message.startsWith("Refusing to overwrite")) {
-        throw error2;
-      }
-    }
-  }
-  await writeFile2(path, content, "utf8");
 }
 function createTaskScriptTemplate(taskSlug, args) {
   return [
@@ -23241,7 +23514,7 @@ function createIntentSuggestions(intent, maxCards, referenceContext = []) {
     referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_repl_api_lookup when exact API details are still missing."
   };
 }
-function slugifyTaskName(value) {
+function slugifyTaskName2(value) {
   const source = typeof value === "string" ? value : "figma-task";
   const slug = source.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
   return slug || "figma-task";
@@ -23526,18 +23799,14 @@ function readReplResource(uri, sessions) {
   }
   throw new Error(`Unknown figma-repl resource URI: ${uri}`);
 }
-function isPathInside2(root, path) {
-  const rel = relative2(root, path);
-  return rel === "" || !rel.startsWith("..") && !isAbsolute2(rel);
-}
 function parseUpstreamToolResult(value) {
-  const record2 = asRecord(value);
+  const record2 = asRecord2(value);
   const structured = record2.structuredContent;
   if (structured !== void 0) {
     return annotateParsedUpstreamToolResult(JSON.stringify(structured), structured);
   }
-  const text = Array.isArray(record2.content) ? record2.content.map((item) => asRecord(item).text).filter((item) => typeof item === "string").join("\n") : JSON.stringify(value);
-  return annotateParsedUpstreamToolResult(text, parseJsonLenient(text));
+  const text = Array.isArray(record2.content) ? record2.content.map((item) => asRecord2(item).text).filter((item) => typeof item === "string").join("\n") : JSON.stringify(value);
+  return annotateParsedUpstreamToolResult(text, parseJsonLenient2(text));
 }
 function annotateParsedUpstreamToolResult(text, json) {
   const upstreamError = extractParsedUpstreamError(text, json);
@@ -23549,7 +23818,7 @@ function annotateParsedUpstreamToolResult(text, json) {
   };
 }
 function extractParsedUpstreamError(text, json) {
-  const record2 = asRecord(json);
+  const record2 = asRecord2(json);
   if (record2.ok !== false) {
     const trimmed = text.trim();
     if (!/^Error:/u.test(trimmed) && !/Figma Debug UUID:/u.test(trimmed)) {
@@ -23563,11 +23832,11 @@ function extractParsedUpstreamError(text, json) {
       parsed: json
     };
   }
-  const errorRecord = asRecord(record2.error);
-  const message = stringFromUnknown(record2.error) ?? asOptionalString2(errorRecord.message) ?? asOptionalString2(record2.message) ?? text.slice(0, 1e3) ?? "Upstream Figma execution failed.";
+  const errorRecord = asRecord2(record2.error);
+  const message = stringFromUnknown(record2.error) ?? asOptionalString3(errorRecord.message) ?? asOptionalString3(record2.message) ?? text.slice(0, 1e3) ?? "Upstream Figma execution failed.";
   return {
     message,
-    code: asOptionalString2(record2.code) ?? asOptionalString2(errorRecord.code),
+    code: asOptionalString3(record2.code) ?? asOptionalString3(errorRecord.code),
     details: record2.details ?? errorRecord.details,
     text,
     parsed: json
@@ -23607,13 +23876,13 @@ function stringFromUnknown(value) {
   if (typeof value === "string" && value.length > 0) {
     return value;
   }
-  if (isRecord2(value)) {
-    const message = asOptionalString2(value.message);
+  if (isRecord4(value)) {
+    const message = asOptionalString3(value.message);
     if (message) return message;
   }
   return void 0;
 }
-function parseJsonLenient(text) {
+function parseJsonLenient2(text) {
   try {
     return JSON.parse(text);
   } catch {
@@ -23662,9 +23931,9 @@ function firstBalancedJsonSlice(text) {
   return void 0;
 }
 function updateSessionFromParsedResult(session, value) {
-  const record2 = asRecord(value);
-  const repl = asRecord(record2.__figmaRepl);
-  const result = asRecord(record2.result);
+  const record2 = asRecord2(value);
+  const repl = asRecord2(record2.__figmaRepl);
+  const result = asRecord2(record2.result);
   if (isStringRecord(repl.handles)) {
     mergeHandles(session, repl.handles);
   }
@@ -23698,7 +23967,7 @@ function collectNodeIds(value) {
       item.forEach(visit);
       return;
     }
-    if (isRecord2(item)) {
+    if (isRecord4(item)) {
       if (typeof item.id === "string") ids.add(item.id);
       for (const child of Object.values(item)) visit(child);
     }
@@ -23707,9 +23976,9 @@ function collectNodeIds(value) {
   return [...ids];
 }
 function summarizeParsedResult(parsed) {
-  const record2 = asRecord(parsed.json);
+  const record2 = asRecord2(parsed.json);
   const result = record2.result;
-  if (isRecord2(result)) {
+  if (isRecord4(result)) {
     if (typeof result.summary === "string") return result.summary;
     if (typeof result.opCount === "number") return `Returned opCount=${result.opCount}.`;
   }
@@ -23783,44 +24052,44 @@ function makeJsonToolResult(value) {
     content: [
       {
         type: "text",
-        text: JSON.stringify(removeUndefined(value), null, 2)
+        text: JSON.stringify(removeUndefined2(value), null, 2)
       }
     ]
   };
 }
 function normalizeOAuthCachePath(oauthCachePath) {
-  if (!isAbsolute2(oauthCachePath)) {
+  if (!isAbsolute3(oauthCachePath)) {
     throw new Error("oauthCachePath must be an absolute path.");
   }
   return oauthCachePath;
 }
-function removeUndefined(value) {
+function removeUndefined2(value) {
   if (Array.isArray(value)) {
-    return value.map(removeUndefined);
+    return value.map(removeUndefined2);
   }
-  if (!isRecord2(value)) {
+  if (!isRecord4(value)) {
     return value;
   }
   return Object.fromEntries(
-    Object.entries(value).filter(([, item]) => item !== void 0).map(([key, item]) => [key, removeUndefined(item)])
+    Object.entries(value).filter(([, item]) => item !== void 0).map(([key, item]) => [key, removeUndefined2(item)])
   );
 }
-function asRecord(value) {
-  if (isRecord2(value)) {
+function asRecord2(value) {
+  if (isRecord4(value)) {
     return value;
   }
   return {};
 }
 function recordFromUnknown(value) {
-  return isRecord2(value) ? value : void 0;
+  return isRecord4(value) ? value : void 0;
 }
-function isRecord2(value) {
+function isRecord4(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function isStringRecord(value) {
-  return isRecord2(value) && Object.values(value).every((item) => typeof item === "string");
+  return isRecord4(value) && Object.values(value).every((item) => typeof item === "string");
 }
-function asOptionalString2(value) {
+function asOptionalString3(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
 }
 function truthy(value) {
@@ -23857,7 +24126,7 @@ function extractFigmaFileSlug(fileUrl) {
       (part) => ["design", "board", "slides"].includes(part)
     );
     const name = kindIndex >= 0 ? parts[kindIndex + 2] : void 0;
-    return name ? slugifyTaskName(decodeURIComponent(name)) : void 0;
+    return name ? slugifyTaskName2(decodeURIComponent(name)) : void 0;
   } catch {
     return void 0;
   }
@@ -23970,7 +24239,7 @@ function isDirectRun(importMetaUrl, argv = process.argv) {
   if (!script) {
     return false;
   }
-  return resolve5(fileURLToPath3(importMetaUrl)) === resolve5(script);
+  return resolve6(fileURLToPath3(importMetaUrl)) === resolve6(script);
 }
 function closeTransportWhenStdinEnds(transport, onCloseError) {
   let closeRequested = false;
