@@ -7,6 +7,7 @@ import type {
   FigmaReplRunTaskPlanArguments,
   FigmaReplTaskPlanStep,
 } from "./repl-tool-args.js";
+import { asTaskPlanSteps } from "./repl-tool-args.js";
 
 export const TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 export const DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
@@ -230,18 +231,18 @@ export async function loadTaskPlan(
     : undefined;
   const planRecord = asRecord(planValue);
   const steps = Array.isArray(args.steps)
-    ? args.steps
+    ? asTaskPlanSteps(args.steps)
     : Array.isArray(planValue)
-      ? planValue
+      ? asTaskPlanSteps(planValue, "plan")
       : Array.isArray(planRecord.steps)
-        ? planRecord.steps
+        ? asTaskPlanSteps(planRecord.steps, "plan.steps")
         : undefined;
   if (!steps || steps.length === 0) {
     throw new Error('Tool argument "steps" or "planPath" with steps is required.');
   }
   return {
     planPath,
-    steps: steps.map((step) => asRecord(step) as FigmaReplTaskPlanStep),
+    steps,
   };
 }
 

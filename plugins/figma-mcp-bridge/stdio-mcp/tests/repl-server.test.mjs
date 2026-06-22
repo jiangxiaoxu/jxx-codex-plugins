@@ -763,6 +763,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(prepareTaskTool.inputSchema.properties.surface.description, /Recommended expected Figma surface/);
   assert.match(prepareTaskTool.inputSchema.properties.taskRoot.description, /Advanced absolute task root/);
   assert.match(prepareTaskTool.inputSchema.properties.overwrite.description, /Advanced destructive/);
+  assert.ok(prepareTaskTool.outputSchema.properties.outputFiles);
   const inspectTool = tools.tools.find((tool) => tool.name === "figma_repl_inspect");
   assert.ok(inspectTool);
   assert.match(inspectTool.description, /upstream overrides are debug-only/);
@@ -1263,6 +1264,45 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
     }),
     /Tool argument "steps" must be an array\./,
   );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_run_task_plan",
+      arguments: {
+        title: "Reject step top-level args",
+        steps: [{ type: "screenshot-capture", target: "12:34" }],
+      },
+    }),
+    /Tool argument "steps\[0\]\.target" is not supported\. Put step tool inputs under "args"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_run_task_plan",
+      arguments: {
+        title: "Reject step arguments alias",
+        steps: [{ type: "upstream-tool", arguments: { toolName: "fake" } }],
+      },
+    }),
+    /Tool argument "steps\[0\]\.arguments" was removed\. Use "args"\./,
+  );
+  const badPlanDir = await mkdtemp(resolve(tmpdir(), "figma-repl-bad-plan-"));
+  const badPlanPath = resolve(badPlanDir, "bad-plan.json");
+  await writeFile(
+    badPlanPath,
+    JSON.stringify([{ type: "screenshot-capture", target: "12:34" }]),
+    "utf8",
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_run_task_plan",
+      arguments: {
+        title: "Reject plan file step top-level args",
+        planPath: badPlanPath,
+        outputFile: resolve(badPlanDir, "bad-plan.result.json"),
+      },
+    }),
+    /Tool argument "plan\[0\]\.target" is not supported\. Put step tool inputs under "args"\./,
+  );
+  await rm(badPlanDir, { recursive: true, force: true });
   await assert.rejects(
     mcpClient.callTool({
       name: "figma_repl_apply_asset_manifest",
@@ -3273,16 +3313,22 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     assert.equal(initJson.session.fileKey, "ExampleFigmaFileKey012");
     assert.equal(initJson.session.surface, "design");
     assert.equal(initJson.task.fileContext, "ExampleFigmaFileKey012");
-    assert.equal(initJson.task.intentSlug, "settings-panel-polish");
+    assert.equal(initJson.task.taskSlug, "settings-panel-polish");
+    assert.equal(initJson.task.intentSlug, undefined);
     assert.equal(initJson.task.inputFile, "settings-panel-polish.figma.js");
     assert.equal(initJson.task.outputFile, "settings-panel-polish.result.json");
+    assert.equal(initJson.task.resultFile, undefined);
     assert.equal(initJson.task.fileDir, undefined);
     assert.equal(initJson.task.workspaceDir, undefined);
     assert.equal(initJson.task.taskDir, undefined);
     assert.equal(initJson.task.workspace.fileDir, resolve(tempDir, "figma-mcp", "ExampleFigmaFileKey012"));
     assert.equal(initJson.task.workspace.sessionDir, initJson.task.workspace.fileDir);
-    assert.equal(initJson.task.workspace.files.script, "settings-panel-polish.figma.js");
-    assert.equal(initJson.task.workspace.files.result, "settings-panel-polish.result.json");
+    assert.equal(initJson.task.workspace.taskSlug, "settings-panel-polish");
+    assert.equal(initJson.task.workspace.intentSlug, undefined);
+    assert.equal(initJson.task.workspace.resultFile, undefined);
+    assert.equal(initJson.task.workspace.files.inputFile, "settings-panel-polish.figma.js");
+    assert.equal(initJson.task.workspace.files.outputFile, "settings-panel-polish.result.json");
+    assertFilePointer(initJson.outputFiles.outputFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
 
     await writeFile(
       resolve(initJson.task.workspace.fileDir, "settings-panel-polish.figma.js"),
@@ -3305,6 +3351,8 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     assert.equal(json.session.workspace.fileContext, "ExampleFigmaFileKey012");
     assert.deepEqual(json.session.workspace.files, initJson.task.workspace.files);
     assert.equal(json.session.workspace.sessionDir, initJson.task.workspace.sessionDir);
+    assert.equal(json.session.workspace.intentSlug, undefined);
+    assert.equal(json.session.workspace.resultFile, undefined);
     assert.equal(json.session.surface, "design");
     assertFilePointer(json.outputFiles.outputFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
     assert.equal(json.result, undefined);
@@ -3355,13 +3403,15 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     const preparedJson = structuredToolResult(prepared);
     assert.equal(preparedJson.task.fileContext, "ExampleFigmaFileKey012");
     assert.equal(preparedJson.task.workspace.fileKey, "ExampleFigmaFileKey012");
-    assert.equal(preparedJson.task.intentSlug, "token-audit");
+    assert.equal(preparedJson.task.taskSlug, "token-audit");
+    assert.equal(preparedJson.task.intentSlug, undefined);
     assert.equal(preparedJson.task.inputFile, "token-audit.figma.js");
     assert.equal(preparedJson.task.outputFile, "token-audit.result.json");
     assert.equal(preparedJson.task.workspaceDir, undefined);
     assert.equal(preparedJson.task.taskDir, undefined);
     assert.equal(preparedJson.task.scriptPath, resolve(initJson.task.workspace.fileDir, "token-audit.figma.js"));
-    assertFilePointer(preparedJson.task.resultFile, resolve(initJson.task.workspace.fileDir, "token-audit.result.json"));
+    assert.equal(preparedJson.task.resultFile, undefined);
+    assertFilePointer(preparedJson.outputFiles.outputFile, resolve(initJson.task.workspace.fileDir, "token-audit.result.json"));
 
     await assert.rejects(
       mcpClient.callTool({
@@ -3427,7 +3477,10 @@ test("figma REPL open accepts unified file input and auto-binds a workspace", as
     result.session.workspace.fileDir,
     resolve(process.cwd(), "figma-mcp", "ExampleFigmaFileKey012"),
   );
-  assert.equal(result.session.workspace.files.script, "open-file-workspace.figma.js");
+  assert.equal(result.session.workspace.files.inputFile, "open-file-workspace.figma.js");
+  assert.equal(result.session.workspace.files.outputFile, "open-file-workspace.result.json");
+  assert.equal(result.session.workspace.intentSlug, undefined);
+  assert.equal(result.session.workspace.resultFile, undefined);
   await repl.close();
 });
 
@@ -3471,11 +3524,20 @@ test("figma REPL prepare_task creates .figma.js workspace and enforces overwrite
     assert.equal(json.task.inputFile, "settings-panel.figma.js");
     assert.equal(json.task.outputFile, "settings-panel.result.json");
     assert.equal(json.task.scriptPath, resolve(workspaceDir, "settings-panel.figma.js"));
-    assertFilePointer(json.task.resultFile, resolve(workspaceDir, "settings-panel.result.json"));
+    assert.equal(json.task.intentSlug, undefined);
+    assert.equal(json.task.resultFile, undefined);
+    assert.equal(json.task.workspace.taskSlug, "settings-panel");
+    assert.equal(json.task.workspace.intentSlug, undefined);
+    assert.equal(json.task.workspace.resultFile, undefined);
+    assertFilePointer(json.outputFiles.outputFile, resolve(workspaceDir, "settings-panel.result.json"));
     assert.match(await readFile(json.task.scriptPath, "utf8"), /\$\.checkpoint/);
     assert.match(await readFile(json.task.scriptPath, "utf8"), /Task: Create a settings panel/);
-    const pendingResult = await readPrettyJsonPointer(json.task.resultFile, resolve(workspaceDir, "settings-panel.result.json"));
+    const pendingResult = await readPrettyJsonPointer(json.outputFiles.outputFile, resolve(workspaceDir, "settings-panel.result.json"));
     assert.equal(pendingResult.status, "pending");
+    assert.equal(pendingResult.taskSlug, "settings-panel");
+    assert.equal(pendingResult.intentSlug, undefined);
+    assert.equal(pendingResult.inputFile, "settings-panel.figma.js");
+    assert.equal(pendingResult.outputFile, "settings-panel.result.json");
 
     await assert.rejects(
       mcpClient.callTool({
@@ -3902,9 +3964,15 @@ test("figma REPL programmatic client returns typed output contracts", async () =
       task: "Typed Task",
     });
     assert.equal(preparedResult.ok, true);
+    assert.equal(preparedResult.task.taskSlug, "typed-task");
+    assert.equal(preparedResult.task.intentSlug, undefined);
     assert.equal(preparedResult.task.inputFile, "typed-task.figma.js");
     assert.equal(preparedResult.task.outputFile, "typed-task.result.json");
     assert.equal(preparedResult.task.workspace.fileDir, workspaceDir);
+    assert.equal(preparedResult.task.workspace.files.inputFile, "typed-task.figma.js");
+    assert.equal(preparedResult.task.workspace.files.outputFile, "typed-task.result.json");
+    assert.equal(preparedResult.task.resultFile, undefined);
+    assertFilePointer(preparedResult.outputFiles.outputFile, resolve(workspaceDir, "typed-task.result.json"));
     assert.equal(preparedResult.task.workspaceDir, undefined);
     assert.equal(preparedResult.task.taskDir, undefined);
 

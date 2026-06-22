@@ -248,6 +248,23 @@ export interface FigmaReplOutputFiles {
   metadataFile?: FigmaReplFilePointer;
 }
 
+export interface FigmaReplPublicWorkspace {
+  [key: string]: unknown;
+  root: string;
+  fileDir: string;
+  fileContext: string;
+  fileKey?: string;
+  fileSlug: string;
+  taskSlug: string;
+  sessionDir: string;
+  scriptPath: string;
+  outputFilePath: string;
+  files: {
+    inputFile: string;
+    outputFile: string;
+  };
+}
+
 export interface FigmaReplPublicSession {
   [key: string]: unknown;
   id: string;
@@ -265,7 +282,7 @@ export interface FigmaReplPublicSession {
   upstreamArguments: Record<string, unknown>;
   handles: Record<string, string>;
   lastDiagnostics: FigmaReplDiagnostic[];
-  workspace?: FigmaReplSessionWorkspace;
+  workspace?: FigmaReplPublicWorkspace;
 }
 
 export interface FigmaReplToolResultBase {
@@ -393,19 +410,18 @@ export interface FigmaReplRunTaskPlanResult extends FigmaReplToolResultBase {
 
 export interface FigmaReplPreparedTask {
   [key: string]: unknown;
-  slug: string;
-  intentSlug: string;
+  taskSlug: string;
   fileContext: string;
   inputFile: string;
   outputFile: string;
-  workspace: FigmaReplSessionWorkspace;
+  workspace: FigmaReplPublicWorkspace;
   scriptPath: string;
-  resultFile: FigmaReplFilePointer;
   overwritten: boolean;
 }
 
 export interface FigmaReplPrepareTaskResult extends FigmaReplToolResultBase {
   task: FigmaReplPreparedTask;
+  outputFiles: FigmaReplOutputFiles;
   next: string[];
 }
 
@@ -1651,43 +1667,44 @@ async function handlePrepareTask(
   assertRequiredTitleArgument(args);
   const session = runtime?.sessions.getOrCreate(args.sessionId);
   applyWorkspaceFileContextArgs(session, args);
-  const intentSlug = deriveIntentSlug(args, "figma-task");
+  const taskSlug = deriveTaskSlug(args, "figma-task");
   const fileSlug = deriveFileSlug(args, session);
-  const workspace = resolvePrepareTaskWorkspace(args, intentSlug, fileSlug, session);
+  const workspace = resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session);
   if (session) {
     session.workspace = workspace;
     touchSession(session);
   }
-  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, intentSlug);
+  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskSlug);
   const outputFile = resultFileNameForScript(scriptName);
   const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
   const resultFile = resolveWorkspaceFile(workspace.sessionDir, outputFile, "outputFile");
 
   await ensureWorkspaceDirectories(workspace);
-  await writeTaskFile(scriptPath, createTaskScriptTemplate(intentSlug, args), Boolean(args.overwrite));
-  const resultFileMetadata = await writeTaskFile(resultFile, JSON.stringify({
+  await writeTaskFile(scriptPath, createTaskScriptTemplate(taskSlug, args), Boolean(args.overwrite));
+  const outputFilePointer = await writeTaskFile(resultFile, JSON.stringify({
     ok: null,
     status: "pending",
     sessionId: session?.id,
     fileKey: session?.fileKey ?? workspace.fileKey,
     fileContext: workspace.fileContext,
-    intentSlug,
-    scriptFile: scriptName,
+    taskSlug,
+    inputFile: scriptName,
+    outputFile,
   }, null, 2) + "\n", Boolean(args.overwrite));
+  const outputFiles = { outputFile: outputFilePointer };
   return makeJsonToolResult({
     ok: true,
     session: session ? responseSession(session) : undefined,
     task: {
-      slug: intentSlug,
-      intentSlug,
+      taskSlug,
       fileContext: workspace.fileContext,
       inputFile: scriptName,
       outputFile,
-      workspace,
+      workspace: responseWorkspace(workspace),
       scriptPath,
-      resultFile: resultFileMetadata,
       overwritten: Boolean(args.overwrite),
     },
+    outputFiles,
     next: [
       "Edit the .figma.js file in this task folder.",
       "Dry-run with figma_repl_run_script_file before upstream execution.",
@@ -1698,7 +1715,7 @@ async function handlePrepareTask(
 
 function resolvePrepareTaskWorkspace(
   args: FigmaReplPrepareTaskArguments,
-  intentSlug: string,
+  taskSlug: string,
   fileSlug: string,
   session: FigmaReplSession | undefined,
 ): FigmaReplSessionWorkspace {
@@ -1713,7 +1730,7 @@ function resolvePrepareTaskWorkspace(
       dirName: args.dirName,
       fileKey,
       fileSlug,
-      intentSlug,
+      intentSlug: taskSlug,
     });
   }
   const hasFileContext = Boolean(args.file || args.fileSlug || args.dirName);
@@ -1724,12 +1741,12 @@ function resolvePrepareTaskWorkspace(
       dirName: args.dirName,
       fileKey,
       fileSlug,
-      intentSlug,
+      intentSlug: taskSlug,
     });
   }
   return resolvePreparedTaskWorkspace({
     args,
-    taskSlug: intentSlug,
+    taskSlug,
     fileSlug,
     session,
   });
@@ -3846,14 +3863,7 @@ async function runTaskPlanStep(options: {
 }
 
 function taskPlanStepArguments(step: FigmaReplTaskPlanStep): Record<string, unknown> {
-  return {
-    ...Object.fromEntries(
-      Object.entries(step).filter(([key]) =>
-        !["id", "type", "args"].includes(key),
-      ),
-    ),
-    ...asRecord(step.args),
-  };
+  return asRecord(step.args);
 }
 
 function expandTaskPlanStepReferences(
@@ -4184,7 +4194,7 @@ function bindOpenWorkspaceIfAvailable(
   });
 }
 
-function deriveIntentSlug(
+function deriveTaskSlug(
   args: {
     task?: string;
     title?: string;
@@ -4412,6 +4422,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       advancedArguments: ["steps"],
       avoidUnless: {
         steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans.",
+        stepArgs: "Each step must use { type, args }; put tool-specific fields inside args, not at the step top level.",
       },
     },
     guidance: {
@@ -4998,6 +5009,24 @@ function responseSession(session: FigmaReplSession): Record<string, unknown> {
   return publicSession(session, { includeHistory: false });
 }
 
+function responseWorkspace(workspace: FigmaReplSessionWorkspace): FigmaReplPublicWorkspace {
+  return {
+    root: workspace.root,
+    fileDir: workspace.fileDir,
+    fileContext: workspace.fileContext,
+    fileKey: workspace.fileKey,
+    fileSlug: workspace.fileSlug,
+    taskSlug: workspace.intentSlug,
+    sessionDir: workspace.sessionDir,
+    scriptPath: workspace.scriptPath,
+    outputFilePath: workspace.resultFile,
+    files: {
+      inputFile: workspace.files.script,
+      outputFile: workspace.files.result,
+    },
+  };
+}
+
 function responseScriptMetadata(
   metadata: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -5093,7 +5122,7 @@ function publicSession(
     evalToolArgument: session.evalToolArgument,
     upstreamArguments: session.upstreamArguments,
     handles: session.handles,
-    workspace: session.workspace,
+    workspace: session.workspace ? responseWorkspace(session.workspace) : undefined,
     lastDiagnostics: session.lastDiagnostics,
     history: includeHistory ? session.history.slice(-historyLimit) : undefined,
   };

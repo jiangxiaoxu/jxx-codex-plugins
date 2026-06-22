@@ -94,7 +94,6 @@ export interface FigmaReplCaptureNodeArguments {
 }
 
 export interface FigmaReplTaskPlanStep {
-  [key: string]: unknown;
   id?: string;
   type?: string;
   args?: Record<string, unknown>;
@@ -294,7 +293,10 @@ export function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments 
     "planPath",
     "outputFile",
   ]);
-  assertOptionalTaskPlanSteps(record);
+  const steps = assertOptionalTaskPlanSteps(record);
+  if (steps) {
+    record.steps = steps;
+  }
   return record;
 }
 
@@ -478,21 +480,49 @@ function assertOptionalTargetValue(value: unknown, displayName: string): void {
   assertOptionalStringFieldsWithPrefix(value, displayName, ["handle"]);
 }
 
-function assertOptionalTaskPlanSteps(record: Record<string, unknown>): void {
+export function asTaskPlanSteps(value: unknown, displayName = "steps"): FigmaReplTaskPlanStep[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Tool argument "${displayName}" must be an array.`);
+  }
+  return value.map((step, index) => asTaskPlanStep(step, `${displayName}[${index}]`));
+}
+
+function assertOptionalTaskPlanSteps(record: Record<string, unknown>): FigmaReplTaskPlanStep[] | undefined {
   const steps = assertOptionalArray(record, "steps");
   if (!steps) {
-    return;
+    return undefined;
   }
-  steps.forEach((step, index) => {
-    const stepName = `steps[${index}]`;
-    if (!isRecord(step)) {
-      throw new Error(`Tool argument "${stepName}" must be an object.`);
+  return asTaskPlanSteps(steps);
+}
+
+function asTaskPlanStep(value: unknown, displayName: string): FigmaReplTaskPlanStep {
+  if (!isRecord(value)) {
+    throw new Error(`Tool argument "${displayName}" must be an object.`);
+  }
+  assertRemovedArguments(value, ["tool"], "type", `${displayName}.tool`);
+  assertRemovedArguments(value, ["arguments"], "args", `${displayName}.arguments`);
+  assertOnlyTaskPlanStepFields(value, displayName);
+  assertOptionalStringFieldsWithPrefix(value, displayName, ["id", "type"]);
+  assertOptionalRecord(value, "args", `${displayName}.args`);
+  const step: FigmaReplTaskPlanStep = {};
+  if (value.id !== undefined) {
+    step.id = value.id as string;
+  }
+  if (value.type !== undefined) {
+    step.type = value.type as string;
+  }
+  if (value.args !== undefined) {
+    step.args = value.args as Record<string, unknown>;
+  }
+  return step;
+}
+
+function assertOnlyTaskPlanStepFields(record: Record<string, unknown>, displayName: string): void {
+  for (const key of Object.keys(record)) {
+    if (!["id", "type", "args"].includes(key)) {
+      throw new Error(`Tool argument "${displayName}.${key}" is not supported. Put step tool inputs under "args".`);
     }
-    assertRemovedArguments(step, ["tool"], "type", `${stepName}.tool`);
-    assertRemovedArguments(step, ["arguments"], "args", `${stepName}.arguments`);
-    assertOptionalStringFieldsWithPrefix(step, stepName, ["id", "type"]);
-    assertOptionalRecord(step, "args", `${stepName}.args`);
-  });
+  }
 }
 
 function assertOptionalStringFieldsWithPrefix(
