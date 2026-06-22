@@ -160,6 +160,9 @@ test("figma REPL eval wraps code and persists returned handles", async () => {
   assert.equal(evalJson.result.result.id, "12:34");
   assert.equal(evalJson.parsed, undefined);
   assert.equal(evalJson.text, undefined);
+  assert.equal(evalJson.script, undefined);
+  assert.equal(evalJson.metadata, undefined);
+  assert.equal(evalJson.injectedHelpers, undefined);
   assert.equal(evalJson.upstreamTool, "use_figma");
   assert.equal(evalJson.upstreamArgument, "code");
   assert.equal(evalJson.session.handles.$card, "12:34");

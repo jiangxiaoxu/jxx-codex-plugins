@@ -49,6 +49,8 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.match(replDeclarations, /applyAssetManifest\(args: FigmaReplApplyAssetManifestArguments\)/);
   assert.match(replDeclarations, /captureNode\(args: FigmaReplCaptureNodeArguments\)/);
   assert.match(replDeclarations, /runTaskPlan\(args: FigmaReplRunTaskPlanArguments\)/);
+  assert.match(replDeclarations, /@internal[\s\S]*Internal wrapper builder[\s\S]*buildFigmaEvalScript/);
+  assert.match(replDeclarations, /@internal[\s\S]*Internal-facing helper-selection utility[\s\S]*resolveFigmaReplScriptHelperSelection/);
   assert.equal(distFiles.includes("node-repl.js"), true);
   assert.equal(distFiles.includes("repl-cli.js"), true);
   assert.equal(distFiles.includes("repl-server.js"), true);
