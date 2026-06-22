@@ -26,13 +26,13 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 
 - Prepare a repairable workspace and task file: `figma_repl_prepare_task({ title, file, task, surface })`. The `file` value accepts a Figma URL or raw file key; `cwd` is optional and defaults to the MCP server process cwd.
 - Edit the generated `<task>.figma.js`; use native Figma Plugin API plus the injected `$` helpers.
-- Dry-run: `figma_repl_run_script_file({ sessionId, inputFile, dryRun: true, strict: true, surface })`.
-- Execute: `figma_repl_run_script_file({ sessionId, inputFile, outputFile })`.
+- Dry-run: `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, surface })`.
+- Execute: `figma_repl_run_script_file({ title, sessionId, inputFile, outputFile })`.
 - For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath, outputFile })`.
 - For visual QA, call `figma_repl_capture_node({ title, sessionId, target, outputFile })` and inspect the local image/result files.
 - For repeatable multi-step workflows, use `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })`.
 
-Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `file`, `task`, `inputFile`, `outputFile`, `manifestPath`, `target`, and `planPath` defaults after workspace initialization. Inline assets/steps, custom upstream templates, absolute `scriptPath`, upstream overrides, split output files, `metadataFile`, and `refresh` are advanced/debug escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
+Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `title`, `file`, `task`, `inputFile`, `outputFile`, `manifestPath`, `target`, and `planPath` defaults after workspace initialization. `title` is optional but recommended for UI/log clarity; omitted titles use runtime defaults. Inline assets/steps, custom upstream templates, absolute `scriptPath`, upstream overrides, split output files, `metadataFile`, and `refresh` are advanced/debug escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
 
 ## Script Contract
 

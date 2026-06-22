@@ -26443,9 +26443,12 @@ function withDefaultTitle(args, title) {
   if (!isRecord2(args)) {
     throw new Error("Tool arguments must be an object.");
   }
+  if (args.title !== void 0 && typeof args.title !== "string") {
+    throw new Error('Tool argument "title" must be a string.');
+  }
   return {
     ...args,
-    title: typeof args.title === "string" ? args.title : title
+    title: args.title ?? title
   };
 }
 
@@ -26512,7 +26515,7 @@ function createReplToolDescriptions(options) {
         upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override. Usually code; ordinary agents should not set this."),
         upstreamArguments: objectProperty("Advanced extra upstream arguments for routing debug, merged into every upstream eval call for this session; ordinary agents should not set this."),
         handles: objectProperty('Advanced bootstrap/import only: initial local handles, for example {"$header": "12:34"}.')
-      }, ["title"])
+      })
     },
     {
       name: "figma_repl_eval",
@@ -26528,7 +26531,7 @@ function createReplToolDescriptions(options) {
         upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
         upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this."),
         handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code.")
-      }, ["title", "code"])
+      }, ["code"])
     },
     {
       name: "figma_repl_run_script_file",
@@ -26551,7 +26554,7 @@ function createReplToolDescriptions(options) {
         diagnosticsFile: stringProperty("Advanced opt-in split diagnostics JSON file. Leave unset for normal agent workflows."),
         summaryFile: stringProperty("Advanced opt-in split Markdown summary file. Leave unset for normal agent workflows."),
         inlineResultLimit: numberProperty("Advanced payload-size control for inline upstream.payload/upstream.text only; complete payloads stay in outputFile.")
-      }, ["title"])
+      })
     },
     {
       name: "figma_repl_apply_asset_manifest",
@@ -26570,7 +26573,7 @@ function createReplToolDescriptions(options) {
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload."),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
         outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace.")
-      }, ["title"])
+      })
     },
     {
       name: "figma_repl_capture_node",
@@ -26586,7 +26589,7 @@ function createReplToolDescriptions(options) {
         toolName: stringProperty("Advanced upstream screenshot/capture tool override. Leave unset so the REPL selects an advertised screenshot-like tool and infers node id from recognizable schema fields."),
         arguments: objectProperty("Advanced upstream arguments template. Use {{target}} only when adapting a custom upstream schema."),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch.")
-      }, ["title", "outputFile"])
+      }, ["outputFile"])
     },
     {
       name: "figma_repl_run_task_plan",
@@ -26602,7 +26605,7 @@ function createReplToolDescriptions(options) {
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true."),
         outputFile: stringProperty("Recommended plan result JSON file name inside the initialized file-context workspace.")
-      }, ["title"])
+      })
     },
     {
       name: "figma_repl_prepare_task",
@@ -26623,7 +26626,7 @@ function createReplToolDescriptions(options) {
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
         template: stringProperty("Template hint copied into the generated .figma.js comments. V1 templates are curated guidance only."),
         overwrite: booleanProperty("Advanced destructive overwrite of an existing script/result pair. Defaults false.")
-      }, ["title"])
+      })
     },
     {
       name: "figma_repl_guidance",
@@ -26637,7 +26640,7 @@ function createReplToolDescriptions(options) {
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
         workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
         maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4.")
-      }, ["title"])
+      })
     },
     {
       name: "figma_repl_inspect",
@@ -26656,7 +26659,7 @@ function createReplToolDescriptions(options) {
         upstreamTool: stringProperty("Advanced upstream-routing debug override for this call; ordinary agents should not set this."),
         upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
         upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this.")
-      }, ["title"])
+      })
     },
     {
       name: "figma_repl_call_upstream_tool",
@@ -26667,7 +26670,7 @@ function createReplToolDescriptions(options) {
         toolName: stringProperty("Official upstream Figma MCP tool name to call. Local figma_repl_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch.")
-      }, ["title", "toolName", "arguments"])
+      }, ["toolName", "arguments"])
     },
     {
       name: "figma_repl_lookup",
@@ -26679,7 +26682,7 @@ function createReplToolDescriptions(options) {
         symbol: stringProperty(`Recommended for kind=api exact Plugin API lookup, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
         maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
         maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`)
-      }, ["title", "kind"])
+      }, ["kind"])
     }
   ];
   return assertLocalReplToolDescriptions(tools);
@@ -26813,7 +26816,7 @@ function objectSchema(properties, required2 = []) {
   };
 }
 function titleProperty() {
-  return stringProperty("Human-readable title used when presenting output to the user.");
+  return stringProperty("One concise sentence-style line for UI/log display.");
 }
 function stringProperty(description) {
   return { type: "string", description };
@@ -27656,6 +27659,12 @@ function createFigmaReplClient(options = {}) {
     )
   };
 }
+function withMcpDefaultTitle(args, title) {
+  if (args === void 0) {
+    return { title };
+  }
+  return withDefaultTitle(args, title);
+}
 function createFigmaReplMcpServer(options = {}) {
   const runtime = createFigmaReplRuntime(options);
   const { client, sessions, upstreamToolCache, config: config2 } = runtime;
@@ -27688,54 +27697,65 @@ function createFigmaReplMcpServer(options = {}) {
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const rawArgs = request.params.arguments;
-    const args = asRecord2(rawArgs);
     switch (request.params.name) {
       case "figma_repl_open":
-        return handleOpen(asOpenArgs(rawArgs), { sessions, upstreamToolCache, config: config2 });
+        return handleOpen(
+          asOpenArgs(withMcpDefaultTitle(rawArgs, "Open Figma REPL session")),
+          { sessions, upstreamToolCache, config: config2 }
+        );
       case "figma_repl_eval":
-        return handleEval(asEvalArgs(rawArgs), { client, sessions, upstreamToolCache, config: config2 });
+        return handleEval(
+          asEvalArgs(withMcpDefaultTitle(rawArgs, "Run Figma REPL JavaScript")),
+          { client, sessions, upstreamToolCache, config: config2 }
+        );
       case "figma_repl_run_script_file":
-        return handleRunScriptFile(asRunScriptFileArgs(rawArgs), {
+        return handleRunScriptFile(asRunScriptFileArgs(withMcpDefaultTitle(rawArgs, "Run Figma JavaScript file")), {
           client,
           sessions,
           upstreamToolCache,
           config: config2
         });
       case "figma_repl_apply_asset_manifest":
-        return handleApplyAssetManifest(asApplyAssetManifestArgs(rawArgs), {
+        return handleApplyAssetManifest(asApplyAssetManifestArgs(withMcpDefaultTitle(rawArgs, "Apply Figma asset manifest")), {
           client,
           sessions,
           upstreamToolCache,
           config: config2
         });
       case "figma_repl_capture_node":
-        return handleCaptureNode(asCaptureNodeArgs(rawArgs), {
+        return handleCaptureNode(asCaptureNodeArgs(withMcpDefaultTitle(rawArgs, "Capture Figma node")), {
           client,
           sessions,
           upstreamToolCache,
           config: config2
         });
       case "figma_repl_run_task_plan":
-        return handleRunTaskPlan(asRunTaskPlanArgs(rawArgs), {
+        return handleRunTaskPlan(asRunTaskPlanArgs(withMcpDefaultTitle(rawArgs, "Run Figma REPL task plan")), {
           client,
           sessions,
           upstreamToolCache,
           config: config2
         });
       case "figma_repl_prepare_task":
-        return handlePrepareTask(asPrepareTaskArgs(rawArgs), { sessions });
+        return handlePrepareTask(
+          asPrepareTaskArgs(withMcpDefaultTitle(rawArgs, "Prepare Figma REPL task")),
+          { sessions }
+        );
       case "figma_repl_guidance":
-        return handleGuidance(asGuidanceArgs(rawArgs));
+        return handleGuidance(asGuidanceArgs(withMcpDefaultTitle(rawArgs, "Read Figma REPL guidance")));
       case "figma_repl_inspect":
-        return handleInspect(asInspectArgs(rawArgs), { client, sessions, upstreamToolCache, config: config2 });
+        return handleInspect(
+          asInspectArgs(withMcpDefaultTitle(rawArgs, "Inspect Figma REPL target")),
+          { client, sessions, upstreamToolCache, config: config2 }
+        );
       case "figma_repl_call_upstream_tool":
-        return handleCallUpstreamTool(asCallUpstreamToolArgs(rawArgs), {
+        return handleCallUpstreamTool(asCallUpstreamToolArgs(withMcpDefaultTitle(rawArgs, "Call upstream Figma MCP tool")), {
           client,
           sessions,
           upstreamToolCache
         });
       case "figma_repl_lookup":
-        return handleLookup(asLookupArgs(rawArgs));
+        return handleLookup(asLookupArgs(withMcpDefaultTitle(rawArgs, "Look up Figma REPL reference")));
       default:
         throw new Error(`Unknown figma_repl_mcp tool: ${request.params.name}`);
     }
@@ -30837,10 +30857,21 @@ function slugifyTaskName2(value) {
 }
 function createToolArgumentGuidancePayload() {
   return {
+    title: {
+      optional: true,
+      preferSupplying: true,
+      schemaDescription: "One concise sentence-style line for UI/log display.",
+      guidance: "Prefer supplying title on normal calls. Describe what this call is doing in plain language; keep it specific and avoid bare labels or tool names. If omitted, the runtime uses a generic default title.",
+      examples: [
+        "Capture the hero variant for visual QA",
+        "Dry-run the token audit script",
+        "Apply generated assets to product cards"
+      ]
+    },
     prepareTask: {
       tool: "figma_repl_prepare_task",
       recommendedCalls: {
-        workspaceFromFile: { title: "Prepare task", file: "<figma file URL or file key>", task: "<task>", surface: "design" }
+        workspaceFromFile: { title: "Prepare the token audit workspace", file: "<figma file URL or file key>", task: "<task>", surface: "design" }
       },
       advancedArguments: ["cwd", "fileSlug", "dirName", "taskSlug", "workspaceDir", "fileName", "taskRoot", "template", "overwrite"],
       avoidUnless: {
@@ -30853,7 +30884,7 @@ function createToolArgumentGuidancePayload() {
     open: {
       tool: "figma_repl_open",
       recommendedCalls: {
-        session: { title: "Open session", sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" }
+        session: { title: "Open the design file session", sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" }
       },
       advancedArguments: ["cwd", "dirName", "connect", "refresh", "upstreamTool", "upstreamArgument", "upstreamArguments", "handles"],
       avoidUnless: {
@@ -30868,8 +30899,8 @@ function createToolArgumentGuidancePayload() {
     eval: {
       tool: "figma_repl_eval",
       recommendedCalls: {
-        read: { title: "Inspect with eval", sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
-        write: { title: "Run eval transaction", sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" }
+        read: { title: "Inspect selected layout metadata", sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
+        write: { title: "Apply the selected node updates", sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" }
       },
       advancedArguments: ["allowDangerousOperations", "upstreamTool", "upstreamArgument", "upstreamArguments", "handleUpdates"],
       avoidUnless: {
@@ -30881,8 +30912,8 @@ function createToolArgumentGuidancePayload() {
     inspect: {
       tool: "figma_repl_inspect",
       recommendedCalls: {
-        inspectTarget: { title: "Inspect node", sessionId: "<session>", target: "$selection" },
-        validateHandles: { title: "Validate handles", sessionId: "<session>", mode: "validate" }
+        inspectTarget: { title: "Inspect the current selection", sessionId: "<session>", target: "$selection" },
+        validateHandles: { title: "Validate cached node handles", sessionId: "<session>", mode: "validate" }
       },
       advancedArguments: ["handles", "upstreamTool", "upstreamArgument", "upstreamArguments"],
       avoidUnless: {
@@ -30893,7 +30924,7 @@ function createToolArgumentGuidancePayload() {
     assetManifest: {
       tool: "figma_repl_apply_asset_manifest",
       recommendedCalls: {
-        applyManifest: { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" }
+        applyManifest: { title: "Apply generated assets to target rectangles", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" }
       },
       advancedArguments: ["assets", "toolName", "arguments", "refresh"],
       avoidUnless: {
@@ -30905,7 +30936,7 @@ function createToolArgumentGuidancePayload() {
     captureNode: {
       tool: "figma_repl_capture_node",
       recommendedCalls: {
-        capture: { title: "Capture node", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" }
+        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" }
       },
       advancedArguments: ["metadataFile", "toolName", "arguments", "refresh"],
       avoidUnless: {
@@ -30917,7 +30948,7 @@ function createToolArgumentGuidancePayload() {
     taskPlan: {
       tool: "figma_repl_run_task_plan",
       recommendedCalls: {
-        filePlan: { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" }
+        filePlan: { title: "Run the repeatable asset QA plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" }
       },
       advancedArguments: ["steps"],
       avoidUnless: {
@@ -30938,7 +30969,7 @@ function createToolArgumentGuidancePayload() {
       tool: "figma_repl_call_upstream_tool",
       guidance: "Explicit upstream escape hatch only; use when a required official Figma MCP capability is not covered by the REPL workflow tools.",
       recommendedCalls: {
-        explicit: { title: "Call upstream tool", sessionId: "<session>", toolName: "<official upstream tool>", arguments: {} }
+        explicit: { title: "Call the upstream-only Figma tool", sessionId: "<session>", toolName: "<official upstream tool>", arguments: {} }
       },
       advancedArguments: ["refresh"],
       avoidUnless: {
@@ -30989,10 +31020,10 @@ function createCapabilitiesPayload() {
     scriptWorkflow: {
       primaryTool: "figma_repl_run_script_file",
       scriptShape: "Write an async function body in a local .figma.js file. The runner injects Figma REPL prelude plus $ helpers before upstream use_figma execution.",
-      requiredArguments: ["title", "inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
+      requiredArguments: ["inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
       recommendedCalls: {
-        dryRun: { title: "Dry-run script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
-        execute: { title: "Execute script", sessionId: "<session>", inputFile: "<task>.figma.js", outputFile: "<task>.result.json" }
+        dryRun: { title: "Dry-run the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
+        execute: { title: "Execute the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js", outputFile: "<task>.result.json" }
       },
       advancedArguments: [
         "scriptPath",

@@ -37,7 +37,7 @@ export function createReplToolDescriptions(
         upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override. Usually code; ordinary agents should not set this."),
         upstreamArguments: objectProperty("Advanced extra upstream arguments for routing debug, merged into every upstream eval call for this session; ordinary agents should not set this."),
         handles: objectProperty("Advanced bootstrap/import only: initial local handles, for example {\"$header\": \"12:34\"}."),
-      }, ["title"]),
+      }),
     },
     {
       name: "figma_repl_eval",
@@ -54,7 +54,7 @@ export function createReplToolDescriptions(
         upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
         upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this."),
         handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code."),
-      }, ["title", "code"]),
+      }, ["code"]),
     },
     {
       name: "figma_repl_run_script_file",
@@ -78,7 +78,7 @@ export function createReplToolDescriptions(
         diagnosticsFile: stringProperty("Advanced opt-in split diagnostics JSON file. Leave unset for normal agent workflows."),
         summaryFile: stringProperty("Advanced opt-in split Markdown summary file. Leave unset for normal agent workflows."),
         inlineResultLimit: numberProperty("Advanced payload-size control for inline upstream.payload/upstream.text only; complete payloads stay in outputFile."),
-      }, ["title"]),
+      }),
     },
     {
       name: "figma_repl_apply_asset_manifest",
@@ -98,7 +98,7 @@ export function createReplToolDescriptions(
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload."),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
         outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace."),
-      }, ["title"]),
+      }),
     },
     {
       name: "figma_repl_capture_node",
@@ -115,7 +115,7 @@ export function createReplToolDescriptions(
         toolName: stringProperty("Advanced upstream screenshot/capture tool override. Leave unset so the REPL selects an advertised screenshot-like tool and infers node id from recognizable schema fields."),
         arguments: objectProperty("Advanced upstream arguments template. Use {{target}} only when adapting a custom upstream schema."),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
-      }, ["title", "outputFile"]),
+      }, ["outputFile"]),
     },
     {
       name: "figma_repl_run_task_plan",
@@ -132,7 +132,7 @@ export function createReplToolDescriptions(
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true."),
         outputFile: stringProperty("Recommended plan result JSON file name inside the initialized file-context workspace."),
-      }, ["title"]),
+      }),
     },
     {
       name: "figma_repl_prepare_task",
@@ -154,7 +154,7 @@ export function createReplToolDescriptions(
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
         template: stringProperty("Template hint copied into the generated .figma.js comments. V1 templates are curated guidance only."),
         overwrite: booleanProperty("Advanced destructive overwrite of an existing script/result pair. Defaults false."),
-      }, ["title"]),
+      }),
     },
     {
       name: "figma_repl_guidance",
@@ -169,7 +169,7 @@ export function createReplToolDescriptions(
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
         workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
         maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4."),
-      }, ["title"]),
+      }),
     },
     {
       name: "figma_repl_inspect",
@@ -189,7 +189,7 @@ export function createReplToolDescriptions(
         upstreamTool: stringProperty("Advanced upstream-routing debug override for this call; ordinary agents should not set this."),
         upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
         upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this."),
-      }, ["title"]),
+      }),
     },
     {
       name: "figma_repl_call_upstream_tool",
@@ -201,7 +201,7 @@ export function createReplToolDescriptions(
         toolName: stringProperty("Official upstream Figma MCP tool name to call. Local figma_repl_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-      }, ["title", "toolName", "arguments"]),
+      }, ["toolName", "arguments"]),
     },
     {
       name: "figma_repl_lookup",
@@ -214,7 +214,7 @@ export function createReplToolDescriptions(
         symbol: stringProperty(`Recommended for kind=api exact Plugin API lookup, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
         maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
         maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`),
-      }, ["title", "kind"]),
+      }, ["kind"]),
     },
   ];
   return assertLocalReplToolDescriptions(tools);
@@ -355,7 +355,7 @@ function objectSchema(
 }
 
 function titleProperty(): Record<string, unknown> {
-  return stringProperty("Human-readable title used when presenting output to the user.");
+  return stringProperty("One concise sentence-style line for UI/log display.");
 }
 
 function stringProperty(description: string): Record<string, unknown> {

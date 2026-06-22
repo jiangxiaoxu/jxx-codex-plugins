@@ -18470,12 +18470,12 @@ function createFigmaStdioMcpServer(options = {}) {
   );
   server.setRequestHandler(ListToolsRequestSchema, async (_request) => {
     await client.connect();
-    return injectRequiredTitleArgument(asMcpResult(await client.listTools()));
+    return injectOptionalTitleArgument(asMcpResult(await client.listTools()));
   });
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     await client.connect();
     const args = asRecord(request.params.arguments);
-    assertRequiredTitleArgument(args);
+    assertOptionalTitleArgument(args);
     return asMcpResult(
       await client.callTool(
         request.params.name,
@@ -18511,7 +18511,7 @@ function asMcpResult(value) {
   }
   throw new Error("Upstream MCP server returned a non-object result.");
 }
-function injectRequiredTitleArgument(result) {
+function injectOptionalTitleArgument(result) {
   if (!Array.isArray(result.tools)) {
     return result;
   }
@@ -18539,15 +18539,15 @@ function injectTitleIntoInputSchema(inputSchema) {
       ...properties,
       [TOOL_TITLE_ARGUMENT]: {
         type: "string",
-        description: "Human-readable title used when presenting output to the user."
+        description: "One concise sentence-style line for UI/log display."
       }
     },
-    required: required2.includes(TOOL_TITLE_ARGUMENT) ? required2 : [...required2, TOOL_TITLE_ARGUMENT]
+    required: required2.filter((name) => name !== TOOL_TITLE_ARGUMENT)
   };
 }
-function assertRequiredTitleArgument(args) {
-  if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
-    throw new Error('Tool argument "title" is required and must be a string.');
+function assertOptionalTitleArgument(args) {
+  if (args[TOOL_TITLE_ARGUMENT] !== void 0 && typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
+    throw new Error('Tool argument "title" must be a string.');
   }
 }
 function stripTitleArgument(args) {

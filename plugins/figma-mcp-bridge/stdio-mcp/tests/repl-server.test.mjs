@@ -574,13 +574,22 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.queryStrategy.commonCards.includes("surface.slides"));
   assert.equal(capabilities.scriptWorkflow.primaryTool, "figma_repl_run_script_file");
   assert.equal(capabilities.fileWorkflow.primaryTool, "figma_repl_run_script_file");
+  assert.equal(capabilities.toolArgumentGuidance.title.optional, true);
+  assert.equal(capabilities.toolArgumentGuidance.title.preferSupplying, true);
+  assert.equal(
+    capabilities.toolArgumentGuidance.title.schemaDescription,
+    "One concise sentence-style line for UI/log display.",
+  );
+  assert.match(capabilities.toolArgumentGuidance.title.guidance, /Prefer supplying title/);
+  assert.match(capabilities.toolArgumentGuidance.title.guidance, /avoid bare labels or tool names/);
+  assert.ok(capabilities.toolArgumentGuidance.title.examples.includes("Capture the hero variant for visual QA"));
   assert.deepEqual(
     capabilities.scriptWorkflow.recommendedCalls.dryRun,
-    { title: "Dry-run script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
+    { title: "Dry-run the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
   );
   assert.deepEqual(
     capabilities.scriptWorkflow.recommendedCalls.execute,
-    { title: "Execute script", sessionId: "<session>", inputFile: "<task>.figma.js", outputFile: "<task>.result.json" },
+    { title: "Execute the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js", outputFile: "<task>.result.json" },
   );
   assert.ok(capabilities.scriptWorkflow.advancedArguments.includes("scriptPath"));
   assert.ok(capabilities.scriptWorkflow.advancedArguments.includes("upstreamTool"));
@@ -588,14 +597,14 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.scriptWorkflow.avoidUnless.upstreamOverrides, /routing debug/);
   assert.deepEqual(
     capabilities.toolArgumentGuidance.prepareTask.recommendedCalls.workspaceFromFile,
-    { title: "Prepare task", file: "<figma file URL or file key>", task: "<task>", surface: "design" },
+    { title: "Prepare the token audit workspace", file: "<figma file URL or file key>", task: "<task>", surface: "design" },
   );
   assert.ok(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("taskRoot"));
   assert.equal(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("taskDir"), false);
   assert.equal(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("scriptName"), false);
   assert.deepEqual(
     capabilities.toolArgumentGuidance.assetManifest.recommendedCalls.applyManifest,
-    { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" },
+    { title: "Apply generated assets to target rectangles", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" },
   );
   assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("argumentsTemplate"), false);
   assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("resultFile"), false);
@@ -603,7 +612,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.toolArgumentGuidance.assetManifest.avoidUnless.upstreamTemplates, /custom or fake upstream asset schema/i);
   assert.deepEqual(
     capabilities.toolArgumentGuidance.captureNode.recommendedCalls.capture,
-    { title: "Capture node", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
+    { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
   );
   assert.ok(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("metadataFile"));
   assert.equal(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("targetNodeId"), false);
@@ -611,7 +620,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("inlineResultLimit"), false);
   assert.deepEqual(
     capabilities.toolArgumentGuidance.taskPlan.recommendedCalls.filePlan,
-    { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" },
+    { title: "Run the repeatable asset QA plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" },
   );
   assert.ok(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("steps"));
   assert.equal(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("resultFile"), false);
@@ -685,6 +694,18 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     "figma_repl_run_task_plan",
   ]);
   assert.equal(tools.tools.length, 11);
+  for (const tool of tools.tools) {
+    assert.equal(
+      tool.inputSchema.properties.title.description,
+      "One concise sentence-style line for UI/log display.",
+      `${tool.name} keeps title description concise`,
+    );
+    assert.equal(
+      (tool.inputSchema.required ?? []).includes("title"),
+      false,
+      `${tool.name} does not require title`,
+    );
+  }
   const runScriptFileTool = tools.tools.find((tool) => tool.name === "figma_repl_run_script_file");
   assert.ok(runScriptFileTool);
   assert.match(runScriptFileTool.description, /dry-run with \{ title, sessionId, inputFile/);
@@ -1078,6 +1099,23 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
   await server.connect(serverTransport);
   await mcpClient.connect(clientTransport);
 
+  const noTitleOpenResult = await mcpClient.callTool({
+    name: "figma_repl_open",
+    arguments: {
+      sessionId: "no-title-open",
+      connect: false,
+    },
+  });
+  assert.equal(structuredToolResult(noTitleOpenResult).ok, true);
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_guidance",
+      arguments: {
+        title: 123,
+      },
+    }),
+    /Tool argument "title" must be a string\./,
+  );
   await assert.rejects(
     mcpClient.callTool({
       name: "figma_repl_eval",

@@ -91,10 +91,10 @@ test("stdio MCP server proxies tools and resources to the Figma client", async (
             title: {
               type: "string",
               description:
-                "Human-readable title used when presenting output to the user.",
+                "One concise sentence-style line for UI/log display.",
             },
           },
-          required: ["verbose", "title"],
+          required: ["verbose"],
         },
       },
     ],
@@ -114,12 +114,27 @@ test("stdio MCP server proxies tools and resources to the Figma client", async (
       },
     ],
   });
+  assert.deepEqual(await mcpClient.callTool({
+    name: "whoami",
+    arguments: { verbose: false },
+  }), {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          name: "whoami",
+          args: { verbose: false },
+        }),
+      },
+    ],
+  });
   await assert.rejects(
     mcpClient.callTool({
       name: "whoami",
-      arguments: { verbose: true },
+      arguments: { verbose: true, title: 123 },
     }),
-    /Tool argument "title" is required and must be a string\./,
+    /Tool argument "title" must be a string\./,
   );
   assert.deepEqual(await mcpClient.listResources(), {
     resources: [{ uri: "figma://doc", name: "doc" }],
@@ -139,6 +154,7 @@ test("stdio MCP server proxies tools and resources to the Figma client", async (
     ["connect"],
     ["listTools"],
     ["callTool", "whoami", { verbose: true }],
+    ["callTool", "whoami", { verbose: false }],
     ["listResources"],
     ["readResource", "figma://doc"],
   ]);
