@@ -40,7 +40,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_eval",
       description:
-        "Run one batched JavaScript transaction through upstream use_figma. Diagnostics block unsafe API-contract/read-mode/surface mistakes before dispatch.",
+        "Run one batched JavaScript transaction through upstream use_figma. Diagnostics block unsafe API-contract/read-mode/surface mistakes before dispatch. The eval wrapper injects only AST-referenced $ helpers; read figma-repl://capabilities for disabled dynamic helper syntax.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -57,13 +57,12 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_run_script_file",
       description:
-        "Primary file-based JavaScript workflow for Figma REPL. Reads an absolute scriptPath or a session-workspace inputFile, injects $ helpers, writes output files, and optionally executes through upstream use_figma.",
+        "Primary file-based JavaScript workflow for Figma REPL. Reads an absolute scriptPath or a session-workspace inputFile, injects only AST-referenced $ helpers, writes output files, and optionally executes through upstream use_figma. Read figma-repl://capabilities for disabled dynamic helper syntax.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
         scriptPath: stringProperty("Absolute path to a local JavaScript file. Prefer inputFile after figma_repl_prepare_task creates a file-context workspace."),
         inputFile: stringProperty("File name inside the initialized file-context directory. Defaults are created by figma_repl_prepare_task."),
-        helperProfile: enumProperty(["auto", "minimal", "asset", "clone", "full"], "Controls injected $ helper size. auto injects heavy $.imageAsset/$.cloneNodeTree only when the script source uses them."),
         dryRun: booleanProperty("Read, diagnose, inject helpers, and return script metadata without calling upstream Figma."),
         strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
         expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),

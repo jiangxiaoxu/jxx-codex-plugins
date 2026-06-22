@@ -48,12 +48,12 @@ import {
   diagnoseFigmaReplCode,
   diagnoseFigmaReplContext,
   diagnoseWrappedScriptSize,
+  resolveFigmaReplScriptHelperSelection,
   throwIfFatalDiagnostics,
   type FigmaReplDiagnostic,
   type FigmaReplDiagnosticsOptions,
   type FigmaReplDiagnosticSeverity,
   type FigmaReplFileDiagnostic,
-  type FigmaReplHelperProfile,
   type FigmaReplSurface,
 } from "./repl-script-runner.js";
 import {
@@ -118,13 +118,13 @@ export const FIGMA_REPL_DEFAULT_SESSION_ID = "default";
 export {
   assertSafeFigmaReplCode,
   diagnoseFigmaReplCode,
+  resolveFigmaReplScriptHelperSelection,
 };
 export type {
   FigmaReplDiagnostic,
   FigmaReplDiagnosticsOptions,
   FigmaReplDiagnosticSeverity,
   FigmaReplFileDiagnostic,
-  FigmaReplHelperProfile,
   FigmaReplSurface,
 };
 export type { FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
@@ -846,13 +846,13 @@ async function executeRunScriptFile(
     expectedSurface,
     allowDangerousOperations: Boolean(args.allowDangerousOperations),
     strict: Boolean(args.strict),
-    helperProfile: args.helperProfile,
   });
   const wrappedScript = buildFigmaEvalScript({
     session,
     code: compiled.code,
     mode: "write",
     includeEvalHelpers: false,
+    scriptInjectedHelpers: compiled.metadata.injectedHelpers,
   });
   const diagnostics = [
     ...compiled.diagnostics,
@@ -1909,8 +1909,19 @@ export function buildFigmaEvalScript(options: {
   code: string;
   mode?: "read" | "write";
   includeEvalHelpers?: boolean;
+  scriptInjectedHelpers?: readonly string[];
 }): string {
-  return `${createFigmaReplPrelude(options.session, options.mode ?? "write", options.includeEvalHelpers !== false)}
+  const includeEvalHelpers = options.includeEvalHelpers !== false;
+  const evalInjectedHelpers = includeEvalHelpers
+    ? resolveFigmaReplScriptHelperSelection(options.code).injectedHelpers
+    : undefined;
+  return `${createFigmaReplPrelude(
+    options.session,
+    options.mode ?? "write",
+    includeEvalHelpers,
+    options.scriptInjectedHelpers,
+    evalInjectedHelpers,
+  )}
 async function __figmaReplUserMain() {
 ${options.code}
 }
@@ -1934,8 +1945,10 @@ function createFigmaReplPrelude(
   session: Pick<FigmaReplSession, "id" | "handles" | "currentPageId" | "fileUrl" | "fileKey" | "surface" | "knownPages">,
   mode: "read" | "write",
   includeEvalHelpers: boolean,
+  scriptInjectedHelpers?: readonly string[],
+  evalInjectedHelpers?: readonly string[],
 ): string {
-  return `const __figmaRepl = {
+  let prelude = `const __figmaRepl = {
   sessionId: ${literal(session.id)},
   mode: ${literal(mode)},
   fileUrl: ${literal(session.fileUrl)},
@@ -2816,6 +2829,154 @@ $.checkpoint = async function checkpoint(name, targets = [], options = {}) {
   return entry;
 };
 $.checkpoints = __figmaReplEvalCheckpoints;`;
+  if (!includeEvalHelpers) {
+    prelude = stripFigmaReplPreludeEvalHelperAssignments(prelude);
+    if (scriptInjectedHelpers) {
+      prelude = stripFigmaReplPreludeForScriptHelpers(prelude, new Set(scriptInjectedHelpers));
+    }
+  } else if (evalInjectedHelpers) {
+    prelude = stripFigmaReplPreludeForEvalHelpers(prelude, new Set(evalInjectedHelpers));
+  }
+  return prelude;
+}
+
+function stripFigmaReplPreludeEvalHelperAssignments(source: string): string {
+  return replaceDelimitedSource(
+    source,
+    "const __figmaReplEvalCheckpoints = [];",
+    "$.checkpoints = __figmaReplEvalCheckpoints;",
+    "",
+    { includeEndMarker: true },
+  );
+}
+
+function stripFigmaReplPreludeForEvalHelpers(source: string, injectedHelpers: Set<string>): string {
+  let prelude = source;
+  const has = (helper: string) => injectedHelpers.has(`$.${helper}`);
+  const removeLine = (line: string) => {
+    prelude = prelude.replace(`${line}\n`, "");
+  };
+  const needsSelect = has("select") || has("cloneNodeTree") || has("replaceGeneratedFrame");
+  const needsPlacement = has("findFreeSlot") || has("placeNode") || has("replaceGeneratedFrame");
+  const needsPlaceNode = has("placeNode") || has("replaceGeneratedFrame");
+  const needsReplaceGeneratedFrame = has("replaceGeneratedFrame");
+  const needsClone = has("cloneNodeTree");
+  const needsReadFiniteNumber = has("text") || has("create") || has("imageAsset") || needsPlacement || needsClone;
+  const needsSizeInput = has("text") || has("create") || has("imageAsset") || needsReplaceGeneratedFrame;
+  const needsPositionInput = has("text") || has("imageAsset") || needsReplaceGeneratedFrame || needsClone;
+  const needsAppearance = has("text") || has("create");
+  const needsText = has("text") || has("create");
+  const needsAutoLayout = has("layout") || has("create");
+  const needsQuery = has("find") || has("findAll");
+  const needsResolveHandleId = has("resolveId") || needsText;
+
+  if (!needsSelect) prelude = replaceDelimitedSource(prelude, "async function selectNodesForRepl", "function resolveSceneNodeForPlacement", "");
+  if (!needsPlacement) {
+    prelude = replaceDelimitedSource(prelude, "function resolveSceneNodeForPlacement", "async function cloneNodeTreeForRepl", "");
+  } else {
+    if (!needsPlaceNode) prelude = replaceDelimitedSource(prelude, "async function placeNodeForRepl", "async function replaceGeneratedFrameForRepl", "");
+    if (!needsReplaceGeneratedFrame) prelude = replaceDelimitedSource(prelude, "async function replaceGeneratedFrameForRepl", "async function cloneNodeTreeForRepl", "");
+  }
+  if (!needsClone) prelude = replaceDelimitedSource(prelude, "async function cloneNodeTreeForRepl", "function solidPaint", "");
+  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function solidPaint", "function resolveHandleId", "");
+  else prelude = replaceDelimitedSource(prelude, "function normalizeRgba", "function resolveHandleId", "");
+  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function createHelperNode", "");
+  if (!has("create")) prelude = replaceDelimitedSource(prelude, "function createHelperNode", "function readFiniteNumber", "");
+  if (!needsReadFiniteNumber) prelude = replaceDelimitedSource(prelude, "function readFiniteNumber", "function setNodeSizeFromInput", "");
+  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSizeFromInput", "function setNodePositionFromInput", "");
+  if (!needsPositionInput) prelude = replaceDelimitedSource(prelude, "function setNodePositionFromInput", "function applyAppearance", "");
+  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function applyAppearance", "function applyConstraints", "");
+  prelude = replaceDelimitedSource(prelude, "function applyConstraints", "function fontFromHelperInput", "");
+  if (!needsText) {
+    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function applyAutoLayout", "");
+  } else if (!has("create")) {
+    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function applyAutoLayout", "");
+  }
+  if (!needsAutoLayout) prelude = replaceDelimitedSource(prelude, "function applyAutoLayout", "function queryNodes", "");
+  if (!needsQuery) prelude = replaceDelimitedSource(prelude, "function queryNodes", "function setNodeProperties", "");
+  prelude = replaceDelimitedSource(prelude, "function setNodeProperties", "function setNodeSize", "");
+  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSize", "async function loadFont", "");
+  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function loadFont", "function applyCollectionModes", "");
+  prelude = replaceDelimitedSource(prelude, "function applyCollectionModes", "async function applyStyleReference", "");
+  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function applyStyleReference", "function summarizeNode", "");
+
+  if (!has("handles")) removeLine("$.handles = __figmaRepl.handles;");
+  if (!has("remember")) removeLine("$.remember = remember;");
+  if (!has("forget")) removeLine("$.forget = forget;");
+  if (!has("resolveId")) removeLine("$.resolveId = resolveHandleId;");
+  if (!has("node")) removeLine("$.node = $;");
+  if (!has("select")) removeLine("$.select = selectNodesForRepl;");
+  if (!has("cloneNodeTree")) removeLine("$.cloneNodeTree = cloneNodeTreeForRepl;");
+  if (!has("findFreeSlot")) removeLine("$.findFreeSlot = findFreeSlotForRepl;");
+  if (!has("placeNode")) removeLine("$.placeNode = placeNodeForRepl;");
+  if (!has("replaceGeneratedFrame")) removeLine("$.replaceGeneratedFrame = replaceGeneratedFrameForRepl;");
+  if (!has("findAll")) prelude = replaceDelimitedSource(prelude, "$.findAll = async function findAll", "$.find = async function find", "");
+  if (!has("find")) prelude = replaceDelimitedSource(prelude, "$.find = async function find", "$.text = async function text", "");
+  if (!has("text")) prelude = replaceDelimitedSource(prelude, "$.text = async function text", "$.layout = async function layout", "");
+  if (!has("layout")) prelude = replaceDelimitedSource(prelude, "$.layout = async function layout", "$.create = async function create", "");
+  if (!has("create")) prelude = replaceDelimitedSource(prelude, "$.create = async function create", "function __figmaReplDecodeBase64", "");
+  if (!has("imageAsset")) prelude = replaceDelimitedSource(prelude, "function __figmaReplDecodeBase64", "$.inspect = async function inspect", "");
+  if (!has("inspect")) prelude = replaceDelimitedSource(prelude, "$.inspect = async function inspect", "$.screenshot = async function screenshot", "");
+  if (!has("screenshot")) prelude = replaceDelimitedSource(prelude, "$.screenshot = async function screenshot", "$.checkpoint = async function checkpoint", "");
+  if (!has("checkpoint")) {
+    prelude = prelude.replace("const __figmaReplEvalCheckpoints = [];\n", "");
+    prelude = replaceDelimitedSource(prelude, "$.checkpoint = async function checkpoint", "$.checkpoints = __figmaReplEvalCheckpoints;", "", { includeEndMarker: true });
+  }
+  return prelude;
+}
+
+function stripFigmaReplPreludeForScriptHelpers(source: string, injectedHelpers: Set<string>): string {
+  let prelude = source;
+  const has = (helper: string) => injectedHelpers.has(`$.${helper}`);
+  const needsSummary = has("select") || has("inspect") || has("cloneNodeTree") || has("checkpoint") || has("replaceGeneratedFrame");
+  const needsReadFiniteNumber = has("text") || has("create") || has("imageAsset") || has("cloneNodeTree") || has("placeNode") || has("findFreeSlot") || has("replaceGeneratedFrame");
+  const needsSizeInput = has("text") || has("create") || has("imageAsset") || has("replaceGeneratedFrame");
+  const needsPositionInput = has("text") || has("imageAsset") || has("cloneNodeTree") || has("replaceGeneratedFrame");
+  const needsAppearance = has("text") || has("create");
+  const needsText = has("text") || has("create");
+  const needsAutoLayout = has("layout") || has("create");
+  const needsQuery = has("find") || has("findAll");
+  const needsResolveHandleId = injectedHelpers.has("$.resolveId") || needsText;
+
+  prelude = replaceDelimitedSource(prelude, "async function selectNodesForRepl", "function solidPaint", "");
+  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function solidPaint", "function resolveHandleId", "");
+  else prelude = replaceDelimitedSource(prelude, "function normalizeRgba", "function resolveHandleId", "");
+  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function createHelperNode", "");
+  if (!has("create")) prelude = replaceDelimitedSource(prelude, "function createHelperNode", "function readFiniteNumber", "");
+  if (!needsReadFiniteNumber) prelude = replaceDelimitedSource(prelude, "function readFiniteNumber", "function setNodeSizeFromInput", "");
+  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSizeFromInput", "function setNodePositionFromInput", "");
+  if (!needsPositionInput) prelude = replaceDelimitedSource(prelude, "function setNodePositionFromInput", "function applyAppearance", "");
+  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function applyAppearance", "function applyConstraints", "");
+  prelude = replaceDelimitedSource(prelude, "function applyConstraints", "function fontFromHelperInput", "");
+  if (!needsText) {
+    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function applyAutoLayout", "");
+  } else if (!has("create")) {
+    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function applyAutoLayout", "");
+  }
+  if (!needsAutoLayout) prelude = replaceDelimitedSource(prelude, "function applyAutoLayout", "function queryNodes", "");
+  if (!needsQuery) prelude = replaceDelimitedSource(prelude, "function queryNodes", "function setNodeProperties", "");
+  prelude = replaceDelimitedSource(prelude, "function setNodeProperties", "function setNodeSize", "");
+  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSize", "async function loadFont", "");
+  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function loadFont", "function applyCollectionModes", "");
+  prelude = replaceDelimitedSource(prelude, "function applyCollectionModes", "async function applyStyleReference", "");
+  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function applyStyleReference", "function summarizeNode", "");
+  if (!needsSummary) prelude = replaceDelimitedSource(prelude, "function summarizeNode", "", "", { removeToEnd: true });
+  return prelude;
+}
+
+function replaceDelimitedSource(
+  source: string,
+  startMarker: string,
+  endMarker: string,
+  replacement: string,
+  options: { includeEndMarker?: boolean; removeToEnd?: boolean } = {},
+): string {
+  const start = source.indexOf(startMarker);
+  if (start < 0) return source;
+  const end = options.removeToEnd ? source.length : source.indexOf(endMarker, start + startMarker.length);
+  if (end < 0 || end < start) return source;
+  const endOffset = options.includeEndMarker ? endMarker.length : 0;
+  return `${source.slice(0, start)}${replacement}${source.slice(end + endOffset)}`;
 }
 
 async function loadAssetManifest(
@@ -3771,7 +3932,8 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Initialize a file workspace once, then keep intent script/result pairs in that file-context folder.",
       "Run dryRun first for file-aware diagnostics without upstream calls.",
       "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "helperProfile defaults to auto: common helpers are always available, while heavy $.imageAsset and $.cloneNodeTree helpers are injected only when the script source uses them.",
+      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime.",
+      "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
@@ -3877,7 +4039,6 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         expectedSurface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
         targetPageId: "Switch once to a known page before the script body runs.",
         allowDangerousOperations: "Bypasses only dynamic/destructive guards after exact file review.",
-        helperProfile: "auto, minimal, asset, clone, or full. Defaults to auto to keep upstream payloads smaller while injecting heavy helpers only when source uses them.",
         outputFile: "File name inside the initialized file-context folder. Defaults to the input script basename plus .result.json.",
         outputDir: "Advanced absolute directory escape hatch for split output files.",
         resultFile: "Advanced absolute file path, outputDir-relative JSON path, or file-context-folder file name for complete structured result output.",

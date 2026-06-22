@@ -15,6 +15,7 @@ import {
 import {
   FIGMA_REPL_EVAL_COMMON_HELPER_NAMES,
   buildFigmaEvalScript,
+  resolveFigmaReplScriptHelperSelection,
 } from "../dist/repl-server.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -112,6 +113,9 @@ test("figma REPL eval wraps code and persists returned handles", async () => {
     assert.equal(typeof args.code, "string");
     assert.match(args.code, /async function \$\(nameOrId\)/);
     assert.match(args.code, /const read = \(key\) => key in node/);
+    assert.doesNotMatch(args.code, /\$\.findAll = async function findAll/);
+    assert.doesNotMatch(args.code, /\$\.create = async function create/);
+    assert.doesNotMatch(args.code, /const __figmaReplEvalCheckpoints = \[\]/);
     assert.match(args.code, /remember\('\$card', frame\)/);
     return {
       content: [
@@ -174,6 +178,37 @@ test("figma REPL eval wraps code and persists returned handles", async () => {
   await mcpClient.close();
 });
 
+test("figma REPL eval rejects dynamic helper access before upstream execution", async () => {
+  const calls = [];
+  const { server } = createFigmaReplMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_eval",
+      arguments: {
+        title: "Reject dynamic helper access",
+        sessionId: "main",
+        code: "const helperName = 'find';\nreturn await $[helperName]({ name: 'Card' });",
+      },
+    }),
+    /FIGMA_REPL_DYNAMIC_HELPER_ACCESS/,
+  );
+  assert.deepEqual(calls.map((call) => call[0]), []);
+  await mcpClient.close();
+});
+
 test("figma REPL eval supports direct async node lookup followed by $.select", async () => {
   const zoomedNodes = [];
   const page = {
@@ -232,6 +267,9 @@ test("figma REPL eval supports direct async node lookup followed by $.select", a
       "return { directId: menu.id, selectedNodeIds: selection.selectedNodeIds };",
     ].join("\n"),
   });
+  assert.match(script, /\$\.select = selectNodesForRepl/);
+  assert.doesNotMatch(script, /\$\.create = async function create/);
+  assert.doesNotMatch(script, /\$\.findAll = async function findAll/);
   const runScript = new Function("figma", `return (async () => {\n${script}\n})();`);
   const result = await runScript(figma);
 
@@ -240,6 +278,65 @@ test("figma REPL eval supports direct async node lookup followed by $.select", a
   assert.deepEqual(result.result.selectedNodeIds, [menu.id]);
   assert.deepEqual(page.selection, [menu]);
   assert.deepEqual(zoomedNodes, [menu]);
+});
+
+test("figma REPL eval helper selection rejects ambiguous $ binding syntax", () => {
+  const aliasDiagnostics = diagnoseFigmaReplCode(
+    "const helper = $;\nreturn await helper.find({ name: 'Card' });",
+  );
+  assert.deepEqual(aliasDiagnostics.map((item) => item.code), ["FIGMA_REPL_DYNAMIC_HELPER_ACCESS"]);
+
+  const assignmentDiagnostics = diagnoseFigmaReplCode("let helper;\nhelper = $;\nreturn helper;");
+  assert.deepEqual(assignmentDiagnostics.map((item) => item.code), ["FIGMA_REPL_DYNAMIC_HELPER_ACCESS"]);
+
+  const shadowCode = "const $ = { find() { return null; } };\nreturn $.find();";
+  const shadowDiagnostics = diagnoseFigmaReplCode(shadowCode);
+  assert.deepEqual(shadowDiagnostics.map((item) => item.code), ["FIGMA_REPL_DYNAMIC_HELPER_ACCESS"]);
+
+  const script = buildFigmaEvalScript({
+    session: {
+      id: "main",
+      handles: {},
+      currentPageId: undefined,
+      fileUrl: undefined,
+      fileKey: undefined,
+      surface: "design",
+      knownPages: {},
+    },
+    code: shadowCode,
+  });
+  assert.doesNotMatch(script, /\$\.find = async function find/);
+  assert.doesNotMatch(script, /\$\.findAll = async function findAll/);
+});
+
+test("figma REPL helper selector reports injected helpers and dependencies", () => {
+  const findSelection = resolveFigmaReplScriptHelperSelection("return await $.find({ name: 'Card' });");
+  assert.deepEqual(findSelection.injectedHelpers, [
+    "$",
+    "$.forget",
+    "$.handles",
+    "$.node",
+    "$.remember",
+    "$.resolveId",
+    "$.findAll",
+    "$.find",
+  ]);
+
+  const createSelection = resolveFigmaReplScriptHelperSelection("return await $.create('FRAME');");
+  assert.ok(createSelection.injectedHelpers.includes("$.create"));
+  assert.ok(createSelection.injectedHelpers.includes("$.findFreeSlot"));
+  assert.ok(createSelection.injectedHelpers.includes("$.placeNode"));
+  assert.equal(createSelection.injectedHelpers.includes("$.find"), false);
+
+  const literalSelection = resolveFigmaReplScriptHelperSelection("return await $['find']({ name: 'Card' });");
+  assert.ok(literalSelection.injectedHelpers.includes("$.find"));
+  assert.ok(literalSelection.injectedHelpers.includes("$.findAll"));
+
+  const baseSelection = resolveFigmaReplScriptHelperSelection("return await $('$selection');");
+  assert.deepEqual(baseSelection.injectedHelpers, ["$"]);
+
+  const shadowSelection = resolveFigmaReplScriptHelperSelection("const $ = { find() { return null; } };\nreturn $.find();");
+  assert.deepEqual(shadowSelection.injectedHelpers, []);
 });
 
 test("figma REPL eval exposes and executes the common $ helper surface", async () => {
@@ -339,6 +436,9 @@ test("figma REPL eval exposes and executes the common $ helper surface", async (
     },
   };
   const expectedFunctionHelpers = [...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES];
+  const helperTypeProperties = expectedFunctionHelpers
+    .map((name) => `${JSON.stringify(name)}: typeof $.${name}`)
+    .join(", ");
   const script = buildFigmaEvalScript({
     session: {
       id: "main",
@@ -350,8 +450,7 @@ test("figma REPL eval exposes and executes the common $ helper surface", async (
       knownPages: { [page.id]: page.name },
     },
     code: [
-      `const expected = ${JSON.stringify(expectedFunctionHelpers)};`,
-      "const helperTypes = Object.fromEntries(expected.map((name) => [name, typeof $[name]]));",
+      `const helperTypes = { ${helperTypeProperties} };`,
       "for (const [name, type] of Object.entries(helperTypes)) {",
       "  if (type !== 'function') throw new Error(`$.${name} is not a function`);",
       "}",
@@ -444,6 +543,15 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.queryStrategy.commonCards.includes("surface.slides"));
   assert.equal(capabilities.scriptWorkflow.primaryTool, "figma_repl_run_script_file");
   assert.equal(capabilities.fileWorkflow.primaryTool, "figma_repl_run_script_file");
+  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("eval wrapper")));
+  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("Dynamic $ helper access")));
+  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("$[name] / $name-style")));
+  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("const { ...rest } = $")));
+  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("aliasing $")));
+  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("declaring a local $")));
+  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("$.helper(...)")));
+  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("$['helper'](...)")));
+  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("const { helper } = $")));
   assert.deepEqual(
     capabilities.fileWorkflow.workflowTools,
     ["figma_repl_apply_asset_manifest", "figma_repl_capture_node", "figma_repl_run_task_plan"],
@@ -485,6 +593,15 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     "figma_repl_run_task_plan",
   ]);
   assert.equal(tools.tools.length, 11);
+  const runScriptFileTool = tools.tools.find((tool) => tool.name === "figma_repl_run_script_file");
+  assert.ok(runScriptFileTool);
+  assert.match(runScriptFileTool.description, /figma-repl:\/\/capabilities/);
+  assert.doesNotMatch(runScriptFileTool.description, /\$\[name\]/);
+  const evalTool = tools.tools.find((tool) => tool.name === "figma_repl_eval");
+  assert.ok(evalTool);
+  assert.match(evalTool.description, /AST-referenced \$ helpers/);
+  assert.match(evalTool.description, /figma-repl:\/\/capabilities/);
+  assert.doesNotMatch(evalTool.description, /\$\[name\]/);
   await assert.rejects(
     () => mcpClient.callTool({
       name: "figma_repl_capabilities",
@@ -1071,6 +1188,9 @@ test("figma REPL validates asset manifest targets when upstream eval is availabl
         assert.equal(typeof args.code, "string");
         assert.match(args.code, /targetNodeIds/);
         assert.match(args.code, /12:34/);
+        assert.doesNotMatch(args.code, /\$\.create = async function create/);
+        assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
+        assert.doesNotMatch(args.code, /const __figmaReplEvalCheckpoints = \[\]/);
         return {
           content: [
             {
@@ -2009,7 +2129,7 @@ test("figma REPL run_script_file blocks oversized compiled script payloads befor
     scriptPath,
     [
       "const marker = 'oversized';",
-      `const large = '${"A".repeat(30_000)}';`,
+      `const large = '${"A".repeat(60_000)}';`,
       "return { marker, length: large.length };",
     ].join("\n"),
     "utf8",
@@ -2069,14 +2189,18 @@ test("figma REPL run_script_file executes helper-backed scripts through upstream
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
     assert.equal(name, "use_figma");
-    assert.match(args.code, /\$\.findAll = async function findAll/);
-    assert.match(args.code, /\$\.select = async function select/);
+    assert.doesNotMatch(args.code, /\$\.findAll = async function findAll/);
+    assert.doesNotMatch(args.code, /\$\.select = async function select/);
     assert.doesNotMatch(args.code, /figma\.createImage\(bytes\)/);
-    assert.match(args.code, /\$\.screenshot = async function screenshot/);
+    assert.doesNotMatch(args.code, /\$\.screenshot = async function screenshot/);
     assert.match(args.code, /\$\.text = async function text/);
+    assert.match(args.code, /\$\.create = async function create/);
+    assert.match(args.code, /\$\.findFreeSlot = __figmaReplFindFreeSlot/);
+    assert.match(args.code, /\$\.placeNode = async function placeNode/);
+    assert.doesNotMatch(args.code, /\$\.replaceGeneratedFrame = async function replaceGeneratedFrame/);
     assert.doesNotMatch(args.code, /\$\.ops = async function ops/);
     assert.match(args.code, /\$\.checkpoint = async function checkpoint/);
-    assert.match(args.code, /\$\.inspect = async function inspect/);
+    assert.doesNotMatch(args.code, /\$\.inspect = async function inspect/);
     assert.match(args.code, /figma\.setCurrentPageAsync/);
     assert.match(args.code, /Script frame/);
     return {
@@ -2130,13 +2254,237 @@ test("figma REPL run_script_file executes helper-backed scripts through upstream
     assert.equal(json.ok, true);
     assert.equal(json.script.executed, true);
     assert.equal(json.script.targetPageId, "0:1");
-    assert.ok(json.script.helpersIncluded.includes("$.checkpoint"));
+    assert.ok(json.script.injectedHelpers.includes("$.checkpoint"));
+    assert.ok(json.script.injectedHelpers.includes("$.create"));
+    assert.ok(json.script.injectedHelpers.includes("$.text"));
+    assert.ok(json.script.injectedHelpers.includes("$.layout"));
+    assert.equal(json.script.injectedHelpers.includes("$.find"), false);
     assert.equal(json.result.result.resized.width, 360);
     assert.equal(json.parsed, undefined);
     assert.equal(json.text, undefined);
     assert.equal(json.session.handles.$scriptTitle, "20:2");
     assert.equal(json.session.history, undefined);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL run_script_file avoids helper injection for native Plugin API scripts", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-native-"));
+  const scriptPath = resolve(tempDir, "native-script.figma.js");
+  await writeFile(
+    scriptPath,
+    [
+      "const frame = figma.createFrame();",
+      "frame.name = 'Native frame';",
+      "frame.resize(240, 120);",
+      "return { id: frame.id, name: frame.name };",
+    ].join("\n"),
+    "utf8",
+  );
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
+    assert.doesNotMatch(args.code, /\$\.findAll = async function findAll/);
+    assert.doesNotMatch(args.code, /\$\.create = async function create/);
+    assert.doesNotMatch(args.code, /const __figmaReplEvalCheckpoints = \[\]/);
+    assert.match(args.code, /Native frame/);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            __figmaRepl: { sessionId: "main", handles: {} },
+            result: { id: "50:1", name: "Native frame" },
+          }),
+        },
+      ],
+    };
+  });
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        title: "Run native script",
+        sessionId: "main",
+        scriptPath,
+        expectedSurface: "design",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.deepEqual(json.script.injectedHelpers, []);
+    assert.ok(json.script.compiledScriptBytes < 15_000);
+    assert.equal(json.result.result.name, "Native frame");
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL run_script_file injects helper dependencies from AST usage", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-find-helper-"));
+  const scriptPath = resolve(tempDir, "find-script.figma.js");
+  await writeFile(scriptPath, "return await $.find({ name: 'Card', type: 'FRAME' });", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.match(args.code, /\$\.find = async function find/);
+    assert.match(args.code, /\$\.findAll = async function findAll/);
+    assert.doesNotMatch(args.code, /\$\.text = async function text/);
+    assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            __figmaRepl: { sessionId: "main", handles: {} },
+            result: { id: "60:1", name: "Card" },
+          }),
+        },
+      ],
+    };
+  });
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        title: "Run find helper script",
+        sessionId: "main",
+        scriptPath,
+        expectedSurface: "design",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.ok(json.script.injectedHelpers.includes("$.find"));
+    assert.ok(json.script.injectedHelpers.includes("$.findAll"));
+    assert.equal(json.script.injectedHelpers.includes("$.text"), false);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL run_script_file rejects dynamic helper access instead of full injection fallback", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-dynamic-helper-"));
+  const scriptPath = resolve(tempDir, "dynamic-helper.figma.js");
+  await writeFile(
+    scriptPath,
+    [
+      "const helperName = 'find';",
+      "return await $[helperName]({ name: 'Card', type: 'FRAME' });",
+    ].join("\n"),
+    "utf8",
+  );
+  const calls = [];
+  const { server } = createFigmaReplMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+
+    await assert.rejects(
+      mcpClient.callTool({
+        name: "figma_repl_run_script_file",
+        arguments: {
+          title: "Run dynamic helper script",
+          sessionId: "main",
+          scriptPath,
+          expectedSurface: "design",
+        },
+      }),
+      /FIGMA_REPL_DYNAMIC_HELPER_ACCESS/,
+    );
+    assert.deepEqual(calls.map((call) => call[0]), []);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL run_script_file allows literal computed helper access", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-literal-helper-"));
+  const scriptPath = resolve(tempDir, "literal-helper.figma.js");
+  await writeFile(scriptPath, "return await $['find']({ name: 'Card', type: 'FRAME' });", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.match(args.code, /\$\.find = async function find/);
+    assert.match(args.code, /\$\.findAll = async function findAll/);
+    assert.doesNotMatch(args.code, /\$\.text = async function text/);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            __figmaRepl: { sessionId: "main", handles: {} },
+            result: { id: "61:1", name: "Card" },
+          }),
+        },
+      ],
+    };
+  });
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        title: "Run literal helper script",
+        sessionId: "main",
+        scriptPath,
+        expectedSurface: "design",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.ok(json.script.injectedHelpers.includes("$.find"));
+    assert.ok(json.script.injectedHelpers.includes("$.findAll"));
+    assert.equal(json.script.injectedHelpers.includes("$.text"), false);
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -2161,7 +2509,7 @@ test("figma REPL run_script_file supports generated image asset helper without r
     assert.match(args.code, /\$\.imageAsset = async function imageAsset/);
     assert.match(args.code, /\$\.findFreeSlot = __figmaReplFindFreeSlot/);
     assert.match(args.code, /\$\.placeNode = async function placeNode/);
-    assert.match(args.code, /\$\.replaceGeneratedFrame = async function replaceGeneratedFrame/);
+    assert.doesNotMatch(args.code, /\$\.replaceGeneratedFrame = async function replaceGeneratedFrame/);
     assert.match(args.code, /figma\.createImage\(bytes\)/);
     assert.match(args.code, /Generated icon asset/);
     return {
@@ -2203,7 +2551,7 @@ test("figma REPL run_script_file supports generated image asset helper without r
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.deepEqual(json.diagnostics, []);
-    assert.equal(json.script.helpersIncluded.includes("$.imageAsset"), true);
+    assert.equal(json.script.injectedHelpers.includes("$.imageAsset"), true);
     assert.equal(json.session.handles.$icon, "40:2");
     await mcpClient.close();
   } finally {
@@ -2839,6 +3187,9 @@ test("figma REPL inspect mode=validate reports valid, missing, and stale", async
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.match(args.code, /__requestedHandles/);
+    assert.doesNotMatch(args.code, /\$\.create = async function create/);
+    assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
+    assert.doesNotMatch(args.code, /const __figmaReplEvalCheckpoints = \[\]/);
     return {
       content: [
         {
