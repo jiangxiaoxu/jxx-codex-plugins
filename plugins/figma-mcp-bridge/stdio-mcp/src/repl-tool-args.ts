@@ -1,7 +1,4 @@
-import type {
-  FigmaReplHelperProfile,
-  FigmaReplSurface,
-} from "./repl-script-runner.js";
+import type { FigmaReplSurface } from "./repl-script-runner.js";
 
 const TOOL_TITLE_ARGUMENT = "title";
 
@@ -42,7 +39,6 @@ export interface FigmaReplRunScriptFileArguments {
   sessionId?: string;
   scriptPath?: string;
   inputFile?: string;
-  helperProfile?: FigmaReplHelperProfile;
   dryRun?: boolean;
   strict?: boolean;
   expectedSurface?: FigmaReplSurface;
@@ -205,7 +201,6 @@ export interface FigmaReplInspectArguments {
 
 const FIGMA_REPL_SURFACES = ["design", "figjam", "slides"] as const satisfies readonly FigmaReplSurface[];
 const FIGMA_REPL_EVAL_MODES = ["read", "write"] as const;
-const FIGMA_REPL_HELPER_PROFILES = ["auto", "minimal", "asset", "clone", "full"] as const satisfies readonly FigmaReplHelperProfile[];
 const FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as const;
 const FIGMA_REPL_INSPECT_MODES = ["inspect", "validate"] as const;
 const FIGMA_REPL_LOOKUP_KINDS = ["docs", "api"] as const;
@@ -240,7 +235,6 @@ export function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArgume
     "diagnosticsFile",
     "summaryFile",
   ]);
-  assertOptionalEnum(record, "helperProfile", FIGMA_REPL_HELPER_PROFILES);
   assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
   assertOptionalRecord(record, "upstreamArguments");
   return record;

@@ -28,7 +28,27 @@ export interface FigmaReplDiagnosticsOptions {
   strict?: boolean;
 }
 
-export type FigmaReplHelperProfile = "auto" | "minimal" | "asset" | "clone" | "full";
+export type FigmaReplScriptHelperName =
+  | "select"
+  | "findAll"
+  | "find"
+  | "text"
+  | "layout"
+  | "create"
+  | "findFreeSlot"
+  | "placeNode"
+  | "replaceGeneratedFrame"
+  | "imageAsset"
+  | "inspect"
+  | "screenshot"
+  | "cloneNodeTree"
+  | "checkpoint";
+
+export interface FigmaReplScriptHelperSelection {
+  helperNames: Set<FigmaReplScriptHelperName>;
+  baseProperties: Set<string>;
+  injectedHelpers: string[];
+}
 
 export interface CompiledFigmaReplScriptFile {
   code: string;
@@ -38,8 +58,7 @@ export interface CompiledFigmaReplScriptFile {
     sourceBytes: number;
     sourceLineCount: number;
     helperApiVersion: string;
-    helperProfile: FigmaReplHelperProfile;
-    helpersIncluded: string[];
+    injectedHelpers: string[];
     targetPageId?: string;
     expectedSurface?: FigmaReplSurface;
     diagnosticsCount: number;
@@ -53,9 +72,8 @@ export function compileFigmaReplScriptFile(options: {
   expectedSurface?: FigmaReplSurface;
   allowDangerousOperations?: boolean;
   strict?: boolean;
-  helperProfile?: unknown;
 }): CompiledFigmaReplScriptFile {
-  const helperProfile = resolveFigmaReplHelperProfile(options.helperProfile, options.source);
+  const helperSelection = resolveFigmaReplScriptHelperSelection(options.source);
   const diagnosticOptions: FigmaReplDiagnosticsOptions = {
     allowDangerousOperations: options.allowDangerousOperations,
     expectedSurface: options.expectedSurface,
@@ -68,7 +86,7 @@ export function compileFigmaReplScriptFile(options: {
     diagnoseFigmaReplCode(options.source, diagnosticOptions),
     diagnosticOptions,
   );
-  const lines = [createFigmaReplScriptHelperBootstrap(helperProfile)];
+  const lines = [createFigmaReplScriptHelperBootstrap(helperSelection)];
   if (options.targetPageId) {
     lines.push(`{ const __targetPage = await getNodeById(${literal(options.targetPageId)}); if (__targetPage.type !== "PAGE") throw new Error("targetPageId must resolve to a PAGE node."); await figma.setCurrentPageAsync(__targetPage); }`);
   }
@@ -82,8 +100,7 @@ export function compileFigmaReplScriptFile(options: {
       sourceBytes: Buffer.byteLength(options.source, "utf8"),
       sourceLineCount: countLines(options.source),
       helperApiVersion: "1",
-      helperProfile: helperProfile.profile,
-      helpersIncluded: helperProfile.helpersIncluded,
+      injectedHelpers: helperSelection.injectedHelpers,
       targetPageId: options.targetPageId,
       expectedSurface: options.expectedSurface,
       diagnosticsCount: diagnostics.length,
@@ -91,44 +108,222 @@ export function compileFigmaReplScriptFile(options: {
   };
 }
 
-function resolveFigmaReplHelperProfile(
-  value: unknown,
+export function resolveFigmaReplScriptHelperSelection(
   source: string,
-): { profile: FigmaReplHelperProfile; includeImageAsset: boolean; includeCloneNodeTree: boolean; helpersIncluded: string[] } {
-  const requested = asOptionalString(value) as FigmaReplHelperProfile | undefined;
-  const profile: FigmaReplHelperProfile = requested && ["auto", "minimal", "asset", "clone", "full"].includes(requested)
-    ? requested
-    : "auto";
-  const includeImageAsset = profile === "full" || profile === "asset" || (profile === "auto" && /\$\.imageAsset\b/u.test(source));
-  const includeCloneNodeTree = profile === "full" || profile === "clone" || (profile === "auto" && /\$\.cloneNodeTree\b/u.test(source));
+): FigmaReplScriptHelperSelection {
+  const usage = analyzeFigmaReplScriptHelperUsage(source);
+  const helperNames = new Set(usage.helperNames);
+  expandFigmaReplScriptHelperDependencies(helperNames);
+  const baseProperties = new Set(usage.baseProperties);
+  if (helperNames.size > 0) {
+    for (const property of FIGMA_REPL_BASE_HELPER_PROPERTIES) baseProperties.add(property);
+  }
+  const injectedHelpers = [
+    helperNames.size > 0 || baseProperties.size > 0 || usage.usesDollarFunction ? "$" : undefined,
+    ...Array.from(baseProperties).sort().map((property) => `$.${property}`),
+    ...FIGMA_REPL_SCRIPT_HELPERS.filter((helper) => helperNames.has(helper)).map((helper) => `$.${helper}`),
+  ].filter((item): item is string => item !== undefined);
   return {
-    profile,
-    includeImageAsset,
-    includeCloneNodeTree,
-    helpersIncluded: [
-      "$",
-      "$.find",
-      "$.findAll",
-      "$.text",
-      "$.layout",
-      "$.create",
-      "$.findFreeSlot",
-      "$.placeNode",
-      "$.replaceGeneratedFrame",
-      "$.select",
-      "$.inspect",
-      "$.screenshot",
-      "$.checkpoint",
-      includeImageAsset ? "$.imageAsset" : undefined,
-      includeCloneNodeTree ? "$.cloneNodeTree" : undefined,
-    ].filter((item): item is string => item !== undefined),
+    helperNames,
+    baseProperties,
+    injectedHelpers,
   };
 }
 
+const FIGMA_REPL_SCRIPT_HELPERS: readonly FigmaReplScriptHelperName[] = [
+  "select",
+  "findAll",
+  "find",
+  "text",
+  "layout",
+  "create",
+  "findFreeSlot",
+  "placeNode",
+  "replaceGeneratedFrame",
+  "imageAsset",
+  "inspect",
+  "screenshot",
+  "cloneNodeTree",
+  "checkpoint",
+];
+
+const FIGMA_REPL_SCRIPT_HELPER_SET = new Set<string>(FIGMA_REPL_SCRIPT_HELPERS);
+
+const FIGMA_REPL_BASE_HELPER_PROPERTIES = new Set(["handles", "remember", "forget", "resolveId", "node"]);
+
+interface FigmaReplScriptHelperUsage {
+  helperNames: Set<FigmaReplScriptHelperName>;
+  baseProperties: Set<string>;
+  dynamicHelperAccess: boolean;
+  usesDollarFunction: boolean;
+}
+
+function analyzeFigmaReplScriptHelperUsage(source: string): FigmaReplScriptHelperUsage {
+  const parsed = parseFigmaReplCodeForDiagnostics(source);
+  const helperNames = new Set<FigmaReplScriptHelperName>();
+  const baseProperties = new Set<string>();
+  let dynamicHelperAccess = false;
+  let usesDollarFunction = false;
+  if (!parsed.ast) {
+    return { helperNames, baseProperties, dynamicHelperAccess: true, usesDollarFunction };
+  }
+  if (astContainsBindingIdentifier(parsed.ast, "$")) {
+    return { helperNames, baseProperties, dynamicHelperAccess: true, usesDollarFunction };
+  }
+  const recordProperty = (property: string | undefined, dynamic = false) => {
+    if (dynamic) {
+      dynamicHelperAccess = true;
+      return;
+    }
+    if (!property) return;
+    if (property === "checkpoints") {
+      helperNames.add("checkpoint");
+      return;
+    }
+    if (FIGMA_REPL_SCRIPT_HELPER_SET.has(property)) {
+      helperNames.add(property as FigmaReplScriptHelperName);
+      return;
+    }
+    if (FIGMA_REPL_BASE_HELPER_PROPERTIES.has(property)) {
+      baseProperties.add(property);
+    }
+  };
+  visitAst(parsed.ast, (node) => {
+    if ((node.type === "CallExpression" || node.type === "NewExpression") && getIdentifierName(node.callee) === "$") {
+      usesDollarFunction = true;
+    }
+    if (node.type === "MemberExpression" && getIdentifierName(node.object) === "$") {
+      recordProperty(readMemberPropertyName(node), node.computed === true && readMemberPropertyName(node) === undefined);
+    }
+    if (node.type === "VariableDeclarator" && getIdentifierName(node.init) === "$") {
+      if (!isAstRecord(node.id) || node.id.type !== "ObjectPattern") {
+        dynamicHelperAccess = true;
+      } else {
+        for (const property of Array.isArray(node.id.properties) ? node.id.properties : []) {
+          if (!isAstRecord(property)) continue;
+          if (property.type === "RestElement") {
+            dynamicHelperAccess = true;
+            continue;
+          }
+          recordProperty(readObjectPatternPropertyName(property));
+        }
+      }
+    }
+    if (node.type === "AssignmentExpression" && getIdentifierName(node.right) === "$") {
+      dynamicHelperAccess = true;
+    }
+  });
+  return { helperNames, baseProperties, dynamicHelperAccess, usesDollarFunction };
+}
+
+function expandFigmaReplScriptHelperDependencies(helperNames: Set<FigmaReplScriptHelperName>): void {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const add = (name: FigmaReplScriptHelperName) => {
+      if (!helperNames.has(name)) {
+        helperNames.add(name);
+        changed = true;
+      }
+    };
+    if (helperNames.has("find")) add("findAll");
+    if (helperNames.has("create")) {
+      add("placeNode");
+      add("findFreeSlot");
+    }
+    if (helperNames.has("placeNode")) add("findFreeSlot");
+    if (helperNames.has("replaceGeneratedFrame")) {
+      add("placeNode");
+      add("findFreeSlot");
+      add("select");
+    }
+    if (helperNames.has("cloneNodeTree")) add("select");
+  }
+}
+
+function readObjectPatternPropertyName(property: AstRecord): string | undefined {
+  const key = property.key;
+  if (!isAstRecord(key)) return undefined;
+  if (key.type === "Identifier" && typeof key.name === "string") return key.name;
+  if (key.type === "Literal" && typeof key.value === "string") return key.value;
+  return undefined;
+}
+
+function astContainsBindingIdentifier(ast: AstRecord, name: string): boolean {
+  let found = false;
+  visitAst(ast, (node) => {
+    if (!found && findDeclaredBindingIdentifier(node, name)) {
+      found = true;
+    }
+  });
+  return found;
+}
+
+function findDeclaredBindingIdentifier(node: AstRecord, name: string): AstRecord | undefined {
+  if (node.type === "VariableDeclarator") {
+    return findBindingIdentifier(node.id, name);
+  }
+  if (node.type === "FunctionDeclaration" || node.type === "FunctionExpression") {
+    return findBindingIdentifier(node.id, name) ?? findFirstBindingIdentifier(node.params, name);
+  }
+  if (node.type === "ArrowFunctionExpression") {
+    return findFirstBindingIdentifier(node.params, name);
+  }
+  if (node.type === "ClassDeclaration" || node.type === "ClassExpression") {
+    return findBindingIdentifier(node.id, name);
+  }
+  if (node.type === "CatchClause") {
+    return findBindingIdentifier(node.param, name);
+  }
+  return undefined;
+}
+
+function findFirstBindingIdentifier(values: unknown, name: string): AstRecord | undefined {
+  if (!Array.isArray(values)) {
+    return undefined;
+  }
+  for (const value of values) {
+    const found = findBindingIdentifier(value, name);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function findBindingIdentifier(value: unknown, name: string): AstRecord | undefined {
+  if (!isAstRecord(value)) {
+    return undefined;
+  }
+  if (value.type === "Identifier") {
+    return value.name === name ? value : undefined;
+  }
+  if (value.type === "RestElement") {
+    return findBindingIdentifier(value.argument, name);
+  }
+  if (value.type === "AssignmentPattern") {
+    return findBindingIdentifier(value.left, name);
+  }
+  if (value.type === "ArrayPattern") {
+    return findFirstBindingIdentifier(value.elements, name);
+  }
+  if (value.type === "ObjectPattern" && Array.isArray(value.properties)) {
+    for (const property of value.properties) {
+      if (!isAstRecord(property)) continue;
+      const found = property.type === "RestElement"
+        ? findBindingIdentifier(property.argument, name)
+        : findBindingIdentifier(property.value, name);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
 function createFigmaReplScriptHelperBootstrap(options: {
-  includeImageAsset: boolean;
-  includeCloneNodeTree: boolean;
+  helperNames: Set<FigmaReplScriptHelperName>;
+  baseProperties: Set<string>;
 }): string {
+  if (options.helperNames.size === 0 && options.baseProperties.size === 0) {
+    return "";
+  }
   let bootstrap = `const __figmaReplScriptCheckpoints = [];
 $.handles = __figmaRepl.handles;
 $.remember = remember;
@@ -558,21 +753,59 @@ $.checkpoint = async function checkpoint(name, targets = [], options = {}) {
   return checkpoint;
 };
 $.checkpoints = __figmaReplScriptCheckpoints;`;
-  if (!options.includeImageAsset) {
+  if (!options.helperNames.has("select")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.select = async function select", "$.findAll = async function findAll", "");
+  }
+  if (!options.helperNames.has("findAll")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.findAll = async function findAll", "$.find = async function find", "");
+  }
+  if (!options.helperNames.has("find")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.find = async function find", "$.text = async function text", "");
+  }
+  if (!options.helperNames.has("text")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.text = async function text", "$.layout = async function layout", "");
+  }
+  if (!options.helperNames.has("layout")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.layout = async function layout", "$.create = async function create", "");
+  }
+  if (!options.helperNames.has("create")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.create = async function create", "function __figmaReplResolveSceneNodeForPlacement", "");
+  }
+  if (!options.helperNames.has("findFreeSlot")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "function __figmaReplResolveSceneNodeForPlacement(value, name) {", "$.placeNode = async function placeNode", "");
+  }
+  if (!options.helperNames.has("placeNode")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.placeNode = async function placeNode", "$.replaceGeneratedFrame = async function replaceGeneratedFrame", "");
+  }
+  if (!options.helperNames.has("replaceGeneratedFrame")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.replaceGeneratedFrame = async function replaceGeneratedFrame", "function __figmaReplDecodeBase64(input) {", "");
+  }
+  if (!options.helperNames.has("imageAsset")) {
     bootstrap = replaceHelperBootstrapBlock(
       bootstrap,
       "function __figmaReplDecodeBase64(input) {",
       "$.inspect = async function inspect",
-      '$.imageAsset = async function imageAsset() { throw new Error("$.imageAsset helper was not injected. Use helperProfile: \\"asset\\" or \\"full\\", or keep helperProfile:auto and include $.imageAsset in the script source."); };\n',
+      "",
     );
   }
-  if (!options.includeCloneNodeTree) {
+  if (!options.helperNames.has("inspect")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.inspect = async function inspect", "$.screenshot = async function screenshot", "");
+  }
+  if (!options.helperNames.has("screenshot")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.screenshot = async function screenshot", "$.cloneNodeTree = async function cloneNodeTree", "");
+  }
+  if (!options.helperNames.has("cloneNodeTree")) {
     bootstrap = replaceHelperBootstrapBlock(
       bootstrap,
       "$.cloneNodeTree = async function cloneNodeTree",
       "$.checkpoint = async function checkpoint",
-      '$.cloneNodeTree = async function cloneNodeTree() { throw new Error("$.cloneNodeTree helper was not injected. Use helperProfile: \\"clone\\" or \\"full\\", or keep helperProfile:auto and include $.cloneNodeTree in the script source."); };\n',
+      "",
     );
+  }
+  if (!options.helperNames.has("checkpoint")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.checkpoint = async function checkpoint", "$.checkpoints = __figmaReplScriptCheckpoints;", "");
+    bootstrap = bootstrap.replace("const __figmaReplScriptCheckpoints = [];\n", "");
+    bootstrap = bootstrap.replace("$.checkpoints = __figmaReplScriptCheckpoints;", "");
   }
   return bootstrap;
 }
@@ -881,6 +1114,10 @@ function analyzeFigmaReplAst(
     firstTextMutationNode ??= node;
   };
   visitAst(ast, (node) => {
+    const dollarBinding = findDeclaredBindingIdentifier(node, "$");
+    if (dollarBinding) {
+      recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", dollarBinding);
+    }
     if (node.type === "CallExpression" || node.type === "NewExpression") {
       const callee = node.callee;
       const calleePath = getMemberPath(callee);
@@ -951,6 +1188,20 @@ function analyzeFigmaReplAst(
       }
       recordSurfaceCall(recordCode, calleePath, options.expectedSurface, callee);
     }
+    if (node.type === "VariableDeclarator" && getIdentifierName(node.init) === "$") {
+      if (!isAstRecord(node.id) || node.id.type !== "ObjectPattern") {
+        recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", node);
+      } else {
+        for (const property of Array.isArray(node.id.properties) ? node.id.properties : []) {
+          if (isAstRecord(property) && property.type === "RestElement") {
+            recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", property);
+          }
+        }
+      }
+    }
+    if (node.type === "AssignmentExpression" && getIdentifierName(node.right) === "$") {
+      recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", node);
+    }
     if (node.type === "ImportExpression" || node.type === "Import") {
       recordCode("FIGMA_REPL_DYNAMIC_IMPORT", node);
     }
@@ -979,6 +1230,9 @@ function analyzeFigmaReplAst(
       const memberPath = getMemberPath(node);
       if (memberPath && pathEquals(memberPath, ["figma", "currentPage", "selection"])) {
         recordCode("FIGMA_REPL_DIRECT_SELECTION_ACCESS", node);
+      }
+      if (getIdentifierName(node.object) === "$" && node.computed === true && readMemberPropertyName(node) === undefined) {
+        recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", node);
       }
     }
   });
@@ -1192,6 +1446,12 @@ const API_CONTRACT_DIAGNOSTICS = [
     suggestion: "Use $.imageAsset({ base64, parent, size, position, as }) in .figma.js, or route unusual asset uploads through an upstream official tool.",
     docsHint: "figma-repl://scripts#helpers",
   },
+  {
+    code: "FIGMA_REPL_DYNAMIC_HELPER_ACCESS",
+    message: "Dynamic $ helper access cannot be statically analyzed for on-demand helper injection.",
+    suggestion: "Use a literal helper access such as $.find(...) or $[\"find\"](...); avoid $[name](...), object rest destructuring, aliasing $, or declaring a local $.",
+    docsHint: "figma-repl://scripts#helpers",
+  },
 ];
 
 const FIGJAM_CREATION_METHODS = new Set(["createSticky", "createConnector", "createShapeWithText", "createCodeBlock", "createTable"]);
@@ -1387,10 +1647,6 @@ function dedupeDiagnostics(diagnostics: FigmaReplDiagnostic[]): FigmaReplDiagnos
     }
   }
   return result;
-}
-
-function asOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function literal(value: unknown): string {

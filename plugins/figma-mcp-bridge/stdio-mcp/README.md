@@ -119,7 +119,7 @@ await $.text({
 return await $.checkpoint("section-created", ["$section"], { depth: 1 });
 ```
 
-Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`. `helperProfile` defaults to `auto`; use `helperProfile: "full"` only for debugging compatibility.
+Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`. Script files and eval wrapper calls are parsed with AST analysis, and the runner injects only referenced `$` helpers plus required dependencies. Read `figma-repl://capabilities` for helper syntax rules.
 
 ## Assets, Capture, and Plans
 

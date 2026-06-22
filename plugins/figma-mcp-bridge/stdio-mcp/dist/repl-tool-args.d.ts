@@ -1,4 +1,4 @@
-import type { FigmaReplHelperProfile, FigmaReplSurface } from "./repl-script-runner.js";
+import type { FigmaReplSurface } from "./repl-script-runner.js";
 export interface FigmaReplOpenArguments {
     [key: string]: unknown;
     title?: string;
@@ -34,7 +34,6 @@ export interface FigmaReplRunScriptFileArguments {
     sessionId?: string;
     scriptPath?: string;
     inputFile?: string;
-    helperProfile?: FigmaReplHelperProfile;
     dryRun?: boolean;
     strict?: boolean;
     expectedSurface?: FigmaReplSurface;

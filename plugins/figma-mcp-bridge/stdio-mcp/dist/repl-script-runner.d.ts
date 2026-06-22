@@ -21,7 +21,12 @@ export interface FigmaReplDiagnosticsOptions {
     expectedSurface?: FigmaReplSurface;
     strict?: boolean;
 }
-export type FigmaReplHelperProfile = "auto" | "minimal" | "asset" | "clone" | "full";
+export type FigmaReplScriptHelperName = "select" | "findAll" | "find" | "text" | "layout" | "create" | "findFreeSlot" | "placeNode" | "replaceGeneratedFrame" | "imageAsset" | "inspect" | "screenshot" | "cloneNodeTree" | "checkpoint";
+export interface FigmaReplScriptHelperSelection {
+    helperNames: Set<FigmaReplScriptHelperName>;
+    baseProperties: Set<string>;
+    injectedHelpers: string[];
+}
 export interface CompiledFigmaReplScriptFile {
     code: string;
     diagnostics: FigmaReplFileDiagnostic[];
@@ -30,8 +35,7 @@ export interface CompiledFigmaReplScriptFile {
         sourceBytes: number;
         sourceLineCount: number;
         helperApiVersion: string;
-        helperProfile: FigmaReplHelperProfile;
-        helpersIncluded: string[];
+        injectedHelpers: string[];
         targetPageId?: string;
         expectedSurface?: FigmaReplSurface;
         diagnosticsCount: number;
@@ -44,8 +48,8 @@ export declare function compileFigmaReplScriptFile(options: {
     expectedSurface?: FigmaReplSurface;
     allowDangerousOperations?: boolean;
     strict?: boolean;
-    helperProfile?: unknown;
 }): CompiledFigmaReplScriptFile;
+export declare function resolveFigmaReplScriptHelperSelection(source: string): FigmaReplScriptHelperSelection;
 export declare function assertSafeFigmaReplCode(code: string, options?: FigmaReplDiagnosticsOptions): void;
 export declare function diagnoseFigmaReplCode(code: string, options?: FigmaReplDiagnosticsOptions): FigmaReplDiagnostic[];
 export declare function diagnoseWrappedScriptSize(scriptPath: string, wrappedScript: string, strict: boolean): FigmaReplFileDiagnostic[];
