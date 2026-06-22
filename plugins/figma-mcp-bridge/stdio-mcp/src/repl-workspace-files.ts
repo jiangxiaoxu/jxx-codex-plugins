@@ -41,7 +41,6 @@ export interface FilePointerMetadata {
   path: string;
   bytes: number;
   lineCount: number;
-  rawBytes?: number;
 }
 
 export interface ScriptOutputFileMetadata {
@@ -319,10 +318,7 @@ export async function writeJsonFile(path: string, value: unknown): Promise<FileP
   await mkdir(dirname(path), { recursive: true });
   const content = `${JSON.stringify(removeUndefined(value), null, 2)}\n`;
   await writeFile(path, content, "utf8");
-  return {
-    ...textFileMetadata(path, content),
-    rawBytes: topLevelRawBytes(value),
-  };
+  return textFileMetadata(path, content);
 }
 
 export function createSessionWorkspace(options: {
@@ -466,8 +462,8 @@ function resolveScriptOutputFiles(
   const resultFile = resolveOptionalOutputFile(args.resultFile ?? args.outputFile, outputDir, hasOutputDir ? "result.json" : undefined, "resultFile/outputFile");
   return {
     resultFile,
-    diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, hasOutputDir ? "diagnostics.json" : undefined, "diagnosticsFile"),
-    summaryFile: resolveOptionalOutputFile(args.summaryFile, outputDir, hasOutputDir ? "summary.md" : undefined, "summaryFile"),
+    diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, undefined, "diagnosticsFile"),
+    summaryFile: resolveOptionalOutputFile(args.summaryFile, outputDir, undefined, "summaryFile"),
     compiledScriptFile: resultFile ? compiledFilePathForResultFile(resultFile) : undefined,
   };
 }
@@ -576,14 +572,6 @@ function textFileMetadata(path: string, content: string): FilePointerMetadata {
     bytes: Buffer.byteLength(content, "utf8"),
     lineCount: countTextLines(content),
   };
-}
-
-function topLevelRawBytes(value: unknown): number | undefined {
-  if (!isRecord(value) || value.raw === undefined) {
-    return undefined;
-  }
-  const rawContent = typeof value.raw === "string" ? value.raw : JSON.stringify(removeUndefined(value.raw));
-  return Buffer.byteLength(rawContent ?? "", "utf8");
 }
 
 function countTextLines(content: string): number {

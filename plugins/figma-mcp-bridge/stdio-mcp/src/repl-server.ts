@@ -913,11 +913,12 @@ async function executeRunScriptFile(
     const upstreamError = normalizeCaughtUpstreamError(error);
     const resultPayload = {
       ok: false,
+      dryRun: false,
       session: responseSession(session),
       ...responseEvalSettingsFields(evalSettings),
       diagnostics: diagnosticsForResponse(diagnostics),
       script: responseScript,
-      upstreamError,
+      upstreamError: responseUpstreamError(upstreamError),
       primaryFix: primaryFixForUpstreamError(upstreamError),
     };
     const outputFiles = await outputWriter.write({
@@ -943,25 +944,23 @@ async function executeRunScriptFile(
           outputFiles,
         },
         inlineResultLimit,
-        ["upstreamError"],
+        [],
       ),
     };
   }
   if (parsed.upstreamError) {
     const resultPayload = {
       ok: false,
+      dryRun: false,
       session: responseSession(session),
       ...responseEvalSettingsFields(evalSettings),
       diagnostics: diagnosticsForResponse(diagnostics),
       script: responseScript,
-      ...upstreamResultFields({
-        parsed,
-        upstream,
-      }),
-      ...upstreamFailureFields(parsed),
+      ...runScriptUpstreamFields(parsed),
+      ...runScriptUpstreamFailureFields(parsed),
     };
     const outputFiles = await outputWriter.write({
-      result: withResultFileRaw(resultPayload, parsed),
+      result: resultPayload,
       diagnostics,
       compiledScript: wrappedScript,
       summary: createScriptRunSummary({
@@ -984,7 +983,7 @@ async function executeRunScriptFile(
           outputFiles,
         },
         inlineResultLimit,
-        ["result", "text", "upstreamError"],
+        ["upstream.payload", "upstream.text"],
       ),
     };
   }
@@ -1001,17 +1000,15 @@ async function executeRunScriptFile(
 
   const resultPayload = {
     ok: true,
+    dryRun: false,
     session: responseSession(session),
     ...responseEvalSettingsFields(evalSettings),
     diagnostics: diagnosticsForResponse(diagnostics),
     script: responseScript,
-    ...upstreamResultFields({
-      parsed,
-      upstream,
-    }),
+    ...runScriptUpstreamFields(parsed),
   };
   const outputFiles = await outputWriter.write({
-    result: withResultFileRaw(resultPayload, parsed),
+    result: resultPayload,
     diagnostics,
     summary: createScriptRunSummary({
       ok: true,
@@ -1031,7 +1028,7 @@ async function executeRunScriptFile(
         outputFiles,
       },
       inlineResultLimit,
-      ["result", "text"],
+      ["upstream.payload", "upstream.text"],
     ),
   };
 }
@@ -3643,6 +3640,11 @@ function isTaskPlanReferencePath(path: string): boolean {
   return /^(?:outputs|steps|last)(?:\.|$)/u.test(path);
 }
 
+function runScriptUpstreamPayload(result: Record<string, unknown>): unknown {
+  const upstream = asRecord(result.upstream);
+  return upstream.kind === "json" ? upstream.payload : undefined;
+}
+
 function createTaskPlanStepReference(options: {
   id: string;
   index: number;
@@ -3652,7 +3654,9 @@ function createTaskPlanStepReference(options: {
   result: Record<string, unknown>;
 }): Record<string, unknown> {
   const outputFiles = asRecord(options.result.outputFiles);
-  const result = asRecord(options.result.result);
+  const upstream = asRecord(options.result.upstream);
+  const upstreamPayload = runScriptUpstreamPayload(options.result);
+  const result = asRecord(options.type === "script-file" ? upstreamPayload : options.result.result);
   const nestedResult = isRecord(result.result) ? asRecord(result.result) : result;
   const session = asRecord(options.result.session);
   const handles =
@@ -3667,7 +3671,8 @@ function createTaskPlanStepReference(options: {
     status: options.status,
     ok: options.ok,
     file: options.result.file,
-    result: Object.keys(result).length > 0 ? result : undefined,
+    upstream: Object.keys(upstream).length > 0 ? upstream : undefined,
+    result: options.type !== "script-file" && Object.keys(result).length > 0 ? result : undefined,
     nodeIds: collectNodeIds(options.result),
     handles,
     assetTargets: nestedResult.assetTargets,
@@ -3688,7 +3693,7 @@ function taskPlanStepSucceeded(result: Record<string, unknown>): boolean {
   if (result.ok === false) {
     return false;
   }
-  const nestedResult = asRecord(result.result);
+  const nestedResult = asRecord(runScriptUpstreamPayload(result) ?? result.result);
   if (nestedResult.ok === false) {
     return false;
   }
@@ -3729,7 +3734,7 @@ function createScriptRunSummary(options: {
     warningDiagnostics: options.diagnostics.filter((item) => item.severity === "warning").length,
     upstreamTool: options.upstreamTool,
     upstreamArgument: options.upstreamArgument,
-    upstreamError: options.upstreamError,
+    upstreamError: options.upstreamError ? responseUpstreamError(options.upstreamError) : undefined,
     primaryFix: options.primaryFix,
     resultSummary: options.parsed ? summarizeParsedResult(options.parsed) : undefined,
     nodeIds: options.parsed ? collectNodeIds(options.parsed.json) : [],
@@ -3778,12 +3783,13 @@ function limitInlineScriptResult(
   const result: Record<string, unknown> = { ...payload };
   const omitted: Array<{ field: string; bytes: number; limit: number }> = [];
   for (const field of fields) {
-    if (result[field] === undefined) {
+    const target = inlineResultLimitTarget(result, field);
+    if (!target || target.value === undefined) {
       continue;
     }
-    const bytes = Buffer.byteLength(JSON.stringify(removeUndefined(result[field])), "utf8");
+    const bytes = Buffer.byteLength(JSON.stringify(removeUndefined(target.value)), "utf8");
     if (bytes > limit) {
-      delete result[field];
+      delete target.parent[target.key];
       omitted.push({ field, bytes, limit });
     }
   }
@@ -3795,6 +3801,28 @@ function limitInlineScriptResult(
     };
   }
   return result;
+}
+
+function inlineResultLimitTarget(
+  payload: Record<string, unknown>,
+  field: string,
+): { parent: Record<string, unknown>; key: string; value: unknown } | undefined {
+  const parts = field.split(".");
+  let parent = payload;
+  for (const part of parts.slice(0, -1)) {
+    const next = parent[part];
+    if (!isRecord(next)) {
+      return undefined;
+    }
+    const cloned = { ...next };
+    parent[part] = cloned;
+    parent = cloned;
+  }
+  const key = parts[parts.length - 1];
+  if (!key) {
+    return undefined;
+  }
+  return { parent, key, value: parent[key] };
 }
 
 function normalizeInlineResultLimit(value: unknown): number | undefined {
@@ -3951,7 +3979,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Use <intentSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
-      "Responses use the fixed structured shape: parsed upstream JSON stays in result, non-JSON upstream output falls back to text, diagnostics are arrays, and file pointers stay in outputFiles.",
+      "File-script responses use a fixed structured shape: parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, and file pointers stay in outputFiles.",
       "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
     ],
   };
@@ -4015,7 +4043,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma_repl_mcp interface.",
-      responseShape: "Fixed structured payloads without session.history; parsed upstream JSON is returned as result, text is returned only when JSON is unavailable, and raw upstream payloads are written only to output/result files with metadata pointers.",
+      responseShape: "Fixed structured payloads without session.history; file-script upstream JSON is returned as upstream.payload, file-script text is returned as upstream.text, and other upstream-backed tools keep parsed JSON in result with text as the non-JSON fallback.",
     },
     patterns: {
       text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
@@ -4034,26 +4062,62 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       warningsReturnWithResult: true,
       allowDangerousOperations: "Bypasses only dynamic/destructive guards. It does not bypass API contract, surface, or read-mode guards.",
       diagnosticShape: "{ code, severity, message, suggestion, docsHint }",
-      upstreamFailureShape: "{ ok:false, upstreamError:{ message, code?, details?, text?, parsed? }, primaryFix }",
+      upstreamFailureShape: "{ ok:false, upstreamError:{ message, code?, details? }, primaryFix }",
     },
     scriptWorkflow: {
       primaryTool: "figma_repl_run_script_file",
       scriptShape: "Write an async function body in a local .figma.js file. The runner injects Figma REPL prelude plus $ helpers before upstream use_figma execution.",
-      requiredArguments: ["title", "scriptPath or inputFile"],
+      requiredArguments: ["title", "inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
+      recommendedCalls: {
+        dryRun: { title: "Dry-run script", sessionId: "<session>", inputFile: "<intent>.figma.js", dryRun: true, strict: true, expectedSurface: "design" },
+        execute: { title: "Execute script", sessionId: "<session>", inputFile: "<intent>.figma.js", outputFile: "<intent>.result.json" },
+      },
+      advancedArguments: [
+        "scriptPath",
+        "resultFile",
+        "outputDir",
+        "diagnosticsFile",
+        "summaryFile",
+        "inlineResultLimit",
+        "upstreamTool",
+        "upstreamArgument",
+        "upstreamArguments",
+      ],
+      avoidUnless: {
+        scriptPath: "Use only for absolute-path escape hatches outside an initialized workspace; prefer inputFile.",
+        resultFile: "Use only for absolute or outputDir-relative advanced output; prefer outputFile in workspaces.",
+        outputDir: "Use only when writing outside the workspace file-context folder.",
+        diagnosticsFile: "Use only when a separate diagnostics JSON file is explicitly needed.",
+        summaryFile: "Use only when a separate Markdown summary file is explicitly needed.",
+        inlineResultLimit: "Use only for inline payload-size control; it does not change the result shape.",
+        upstreamOverrides: "Use upstreamTool/upstreamArgument/upstreamArguments only for upstream routing debug.",
+      },
       options: {
-        scriptPath: "Absolute path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
-        inputFile: "File name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
+        scriptPath: "Advanced absolute-path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
+        inputFile: "Recommended file name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
         dryRun: "Read, diagnose, inject helpers, and return script metadata without calling upstream Figma.",
         strict: "Promote warnings to fatal diagnostics.",
         expectedSurface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
         targetPageId: "Switch once to a known page before the script body runs.",
         allowDangerousOperations: "Bypasses only dynamic/destructive guards after exact file review.",
-        outputFile: "File name inside the initialized file-context folder. Defaults to the input script basename plus .result.json.",
-        outputDir: "Advanced absolute directory escape hatch for split output files.",
-        resultFile: "Advanced absolute file path, outputDir-relative JSON path, or file-context-folder file name for complete structured result output.",
-        diagnosticsFile: "Advanced optional JSON file when diagnostics must be split out of the paired result file.",
-        summaryFile: "Advanced optional Markdown file when a separate summary is required.",
-        inlineResultLimit: "Non-negative byte cap for large inline fields; omitted fields stay available in the paired result file.",
+        outputFile: "Recommended normal result file name inside the initialized file-context folder. Defaults to the input script basename plus .result.json.",
+        outputDir: "Advanced absolute directory escape hatch. Defaults to result.json only; pass diagnosticsFile or summaryFile for split files.",
+        resultFile: "Advanced output alias/escape hatch for absolute or outputDir-relative complete structured result output. Prefer outputFile in workspaces.",
+        diagnosticsFile: "Advanced opt-in JSON file when diagnostics must be split out of the paired result file.",
+        summaryFile: "Advanced opt-in Markdown file when a separate summary is required.",
+        inlineResultLimit: "Advanced payload-size control for large inline fields; omitted fields stay available in the paired result file.",
+      },
+      responseExamples: {
+        jsonSuccess: { ok: true, dryRun: false, upstream: { kind: "json", ok: true, payload: { ok: true, result: {} } } },
+        textOutput: { ok: true, dryRun: false, upstream: { kind: "text", ok: true, text: "..." } },
+        inlinePayloadOmitted: {
+          ok: true,
+          dryRun: false,
+          upstream: { kind: "json", ok: true },
+          inlineResultLimit: {
+            omitted: [{ field: "upstream.payload", bytes: 123456, limit: 40000 }],
+          },
+        },
       },
       helpers: createEvalHelperDescriptionsPayload(),
     },
@@ -4077,7 +4141,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         tool: "figma_repl_run_task_plan",
         stepTypes: ["script-file", "asset-manifest", "upload_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
-        references: "Later step arguments can reference prior outputs with {{outputs.stepId.resultFile.path}} or {{steps.stepId.outputFiles.resultFile.path}}.",
+        references: "Later step arguments can reference prior outputs with {{outputs.stepId.resultFile.path}} or {{steps.stepId.outputFiles.resultFile.path}}; script-step upstream JSON is available at {{steps.stepId.upstream.payload}}.",
         result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, and <step-id>.png plus <step-id>.capture.result.json.",
       },
     },
@@ -4526,7 +4590,13 @@ function responseSession(session: FigmaReplSession): Record<string, unknown> {
 function responseScriptMetadata(
   metadata: Record<string, unknown>,
 ): Record<string, unknown> {
-  return metadata;
+  return removeUndefined({
+    scriptPath: metadata.scriptPath,
+    targetPageId: metadata.targetPageId,
+    expectedSurface: metadata.expectedSurface,
+    injectedHelpers: metadata.injectedHelpers,
+    compiledScriptBytes: metadata.compiledScriptBytes,
+  }) as Record<string, unknown>;
 }
 
 function responseEvalSettingsFields(
@@ -4552,13 +4622,27 @@ function upstreamResultFields(options: {
   return fields;
 }
 
-function withResultFileRaw(
-  payload: Record<string, unknown>,
-  parsed: ParsedUpstreamToolResult,
-): Record<string, unknown> {
+function runScriptUpstreamFields(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
+  const ok = !parsed.upstreamError;
   return {
-    ...payload,
-    raw: parsed.json !== undefined ? parsed.json : parsed.text,
+    upstream: parsed.json !== undefined
+      ? { kind: "json", ok, payload: parsed.json }
+      : { kind: "text", ok, text: parsed.text || undefined },
+  };
+}
+
+function runScriptUpstreamFailureFields(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
+  return {
+    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined,
+    primaryFix: parsed.primaryFix,
+  };
+}
+
+function responseUpstreamError(error: FigmaReplUpstreamError): Record<string, unknown> {
+  return {
+    message: error.message,
+    code: error.code,
+    details: error.details,
   };
 }
 
