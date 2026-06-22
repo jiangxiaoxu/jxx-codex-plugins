@@ -3643,33 +3643,72 @@ test("figma REPL programmatic client can call eval without MCP transport", async
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
 });
 
-test("figma REPL programmatic client returns typed script and upstream payloads", async () => {
+test("figma REPL programmatic client returns typed output contracts", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-client-typed-"));
   const scriptPath = resolve(tempDir, "typed-client.figma.js");
+  const assetPath = resolve(tempDir, "asset.png");
+  const capturePath = resolve(tempDir, "capture.png");
+  const taskDir = resolve(tempDir, "task");
   await writeFile(scriptPath, "return { summary: 'typed dry run' };", "utf8");
+  await writeFile(assetPath, "fake asset bytes", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(
     calls,
     ({ name, args }) => {
-      assert.equal(name, "fake_upstream");
-      assert.deepEqual(args, { marker: "typed" });
+      if (name === "fake_upstream") {
+        assert.deepEqual(args, { marker: "typed" });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                result: {
+                  summary: "typed upstream",
+                },
+              }),
+            },
+          ],
+        };
+      }
+      if (name === "fake_asset") {
+        assert.deepEqual(args, { file: assetPath, nodeId: "12:34" });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ ok: true, result: { summary: "asset filled" } }),
+            },
+          ],
+        };
+      }
+      if (name === "fake_screenshot") {
+        assert.deepEqual(args, { id: "12:35" });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                error: {
+                  code: "CAPTURE_FAILED",
+                  message: "Capture failed before writing.",
+                },
+              }),
+            },
+          ],
+        };
+      }
+      assert.fail(`unexpected tool ${name}`);
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              ok: true,
-              result: {
-                summary: "typed upstream",
-              },
-            }),
-          },
-        ],
+        content: [],
       };
     },
     {
       tools: [
         { name: "fake_upstream", inputSchema: { type: "object", properties: {} } },
+        { name: "fake_asset", inputSchema: { type: "object", properties: {} } },
+        { name: "fake_screenshot", inputSchema: { type: "object", properties: {} } },
       ],
     },
   );
@@ -3693,7 +3732,53 @@ test("figma REPL programmatic client returns typed script and upstream payloads"
     assert.equal(upstreamResult.result, undefined);
     assert.equal(upstreamResult.text, undefined);
     assert.equal("content" in upstreamResult, false);
-    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+
+    const assetResult = await repl.applyAssetManifest({
+      assets: [{ path: assetPath, targetNodeId: "12:34", name: "Asset" }],
+      toolName: "fake_asset",
+      argumentsTemplate: { file: "{{path}}", nodeId: "{{targetNodeId}}" },
+      validateTargets: false,
+    });
+    assert.equal(assetResult.ok, true);
+    assert.equal(assetResult.assets[0].upstreamSummary, "asset filled");
+    assert.equal(assetResult.assets[0].arguments, undefined);
+    assert.equal(assetResult.assets[0].result, undefined);
+    assert.equal(assetResult.assets[0].upstream, undefined);
+
+    const captureResult = await repl.captureNode({
+      nodeId: "12:35",
+      outputFile: capturePath,
+      toolName: "fake_screenshot",
+      argumentsTemplate: { id: "{{nodeId}}" },
+    });
+    assert.equal(captureResult.ok, false);
+    assert.equal(captureResult.outputFile, undefined);
+    assert.equal(captureResult.plannedOutputFile, capturePath);
+    assert.equal(captureResult.upstream.kind, "json");
+    assert.equal(captureResult.upstream.ok, false);
+    assert.equal(captureResult.upstream.payload, undefined);
+    assert.equal(captureResult.upstreamError.code, "CAPTURE_FAILED");
+    assert.equal(captureResult.upstreamError.parsed, undefined);
+    assert.equal(captureResult.upstreamError.text, undefined);
+    await assert.rejects(
+      readFile(capturePath, "utf8"),
+      /ENOENT/,
+    );
+
+    const preparedResult = await repl.prepareTask({
+      taskSlug: "typed-task",
+      taskDir,
+      fileName: "typed-task.figma.js",
+      intent: "Typed Task",
+    });
+    assert.equal(preparedResult.ok, true);
+    assert.equal(preparedResult.task.inputFile, "typed-task.figma.js");
+    assert.equal(preparedResult.task.outputFile, "typed-task.result.json");
+    assert.equal(preparedResult.task.workspace.fileDir, taskDir);
+    assert.equal(preparedResult.task.workspaceDir, undefined);
+    assert.equal(preparedResult.task.taskDir, undefined);
+
+    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool", "callTool"]);
   } finally {
     await repl.close();
     await rm(tempDir, { recursive: true, force: true });

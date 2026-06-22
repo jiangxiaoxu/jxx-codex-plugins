@@ -96,6 +96,18 @@ await figma.runScriptFile({
   strict: true,
   expectedSurface: "design",
 });
+const run = await figma.runScriptFile({
+  sessionId: "ui-work",
+  inputFile: "edit-panel.figma.js",
+  outputFile: "edit-panel.result.json",
+});
+const payload = run.upstream?.payload;
+const capture = await figma.captureNode({
+  sessionId: "ui-work",
+  nodeId: "$target",
+  outputFile: "qa.png",
+});
+if (!capture.ok) console.log(capture.plannedOutputFile);
 await figma.close();
 ```
 
