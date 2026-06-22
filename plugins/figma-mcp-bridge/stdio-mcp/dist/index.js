@@ -18991,22 +18991,22 @@ var FIGMA_REPL_API_CARDS = [
     title: "FigJam board APIs",
     intents: ["figjam", "board", "sticky", "connector", "shape with text", "brainstorm"],
     surface: "figjam",
-    helpers: ["figma_repl_open(expectedSurface=figjam)", "figma_repl_lookup(kind=api)"],
+    helpers: ["figma_repl_open(surface=figjam)", "figma_repl_lookup(kind=api)"],
     pluginApi: ["figma.createSticky", "figma.createConnector", "figma.createShapeWithText"],
     apiSymbols: ["figma.createSticky", "figma.createConnector", "figma.createShapeWithText", "StickyNode", "ConnectorNode"],
-    queryHints: ["create sticky notes", "connect FigJam nodes", "expectedSurface figjam"],
-    avoid: ["Running Design-only frame/component APIs in FigJam sessions", "Opening a FigJam board with expectedSurface design"],
-    pitfalls: ["Open with expectedSurface='figjam'.", "FigJam creation APIs are surface-specific."]
+    queryHints: ["create sticky notes", "connect FigJam nodes", "surface figjam"],
+    avoid: ["Running Design-only frame/component APIs in FigJam sessions", "Opening a FigJam board with surface design"],
+    pitfalls: ["Open with surface='figjam'.", "FigJam creation APIs are surface-specific."]
   },
   {
     id: "surface.slides",
     title: "Slides deck APIs",
     intents: ["slides", "slide", "deck", "presentation", "speaker notes", "slide row"],
     surface: "slides",
-    helpers: ["figma_repl_open(expectedSurface=slides)", "figma_repl_lookup(kind=api)", "figma_repl_capture_node"],
+    helpers: ["figma_repl_open(surface=slides)", "figma_repl_lookup(kind=api)", "figma_repl_capture_node"],
     pluginApi: ["figma.createSlide", "figma.createSlideRow", "figma.getSlideGrid", "figma.setSlideGrid"],
     apiSymbols: ["figma.createSlide", "figma.createSlideRow", "figma.getSlideGrid", "figma.setSlideGrid", "SlideNode", "SlideRowNode"],
-    queryHints: ["create slide", "organize slide grid", "expectedSurface slides"],
+    queryHints: ["create slide", "organize slide grid", "surface slides"],
     avoid: ["Calling figma.createPage in Slides", "Using figma.createImage as a Slides upload entrypoint"],
     pitfalls: ["Slides use slide grid APIs instead of createPage.", "Use upload/capture tooling for images and visual review."]
   },
@@ -26154,7 +26154,7 @@ function diagnoseSurfaceCode(analysis, expectedSurface) {
       "FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN",
       "fatal",
       "FigJam creation APIs were used while the session expects a Design file.",
-      "Use a FigJam-specific workflow or open the session with expectedSurface='figjam'.",
+      "Use a FigJam-specific workflow or open the session with surface='figjam'.",
       "figma-repl://safety#surface"
     ));
   }
@@ -26163,7 +26163,7 @@ function diagnoseSurfaceCode(analysis, expectedSurface) {
       "FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM",
       "fatal",
       "Design canvas APIs were used while the session expects a FigJam board.",
-      "Use FigJam-specific helpers for boards or open the session with expectedSurface='design'.",
+      "Use FigJam-specific helpers for boards or open the session with surface='design'.",
       "figma-repl://safety#surface"
     ));
   }
@@ -26185,7 +26185,7 @@ function diagnoseFigmaReplContext(options) {
         "FIGMA_REPL_SURFACE_MISMATCH",
         "fatal",
         `Open expected ${options.expectedSurface} but the Figma URL looks like ${options.derivedSurface}.`,
-        "Check the file URL or expectedSurface before running mutations.",
+        "Check the file URL or surface before running mutations.",
         "figma-repl://safety#surface"
       )
     ];
@@ -26218,8 +26218,40 @@ var FIGMA_REPL_EVAL_MODES = ["read", "write"];
 var FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"];
 var FIGMA_REPL_INSPECT_MODES = ["inspect", "validate"];
 var FIGMA_REPL_LOOKUP_KINDS = ["docs", "api"];
+function assertRemovedFileReferenceFields(record2) {
+  const removed = ["fileUrl", "fileKey"].filter((field) => record2[field] !== void 0);
+  if (removed.length > 0) {
+    throw new Error(`Tool argument "${removed.join("/")}" was removed. Use "file" with a Figma URL or file key.`);
+  }
+}
+function assertRemovedArguments(record2, fields, replacement, displayName) {
+  const removed = fields.filter((field) => record2[field] !== void 0);
+  if (removed.length > 0) {
+    throw new Error(`Tool argument "${displayName ?? removed.join("/")}" was removed. Use "${replacement}".`);
+  }
+}
+function asOpenArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedFileReferenceFields(record2);
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "label",
+    "file",
+    "cwd",
+    "dirName",
+    "currentPageId",
+    "upstreamTool",
+    "upstreamArgument"
+  ]);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
+  assertOptionalRecord(record2, "upstreamArguments");
+  assertOptionalRecord(record2, "handles");
+  return record2;
+}
 function asEvalArgs(args) {
   const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
   assertOptionalStringFields(record2, [
     "code",
     "sessionId",
@@ -26227,13 +26259,15 @@ function asEvalArgs(args) {
     "upstreamArgument"
   ]);
   assertOptionalEnum(record2, "mode", FIGMA_REPL_EVAL_MODES);
-  assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
   assertOptionalRecord(record2, "upstreamArguments");
   assertOptionalRecord(record2, "handleUpdates");
   return record2;
 }
 function asRunScriptFileArgs(args) {
   const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
+  assertRemovedArguments(record2, ["resultFile"], "outputFile");
   assertOptionalStringFields(record2, [
     "sessionId",
     "scriptPath",
@@ -26243,52 +26277,48 @@ function asRunScriptFileArgs(args) {
     "upstreamArgument",
     "outputDir",
     "outputFile",
-    "resultFile",
     "diagnosticsFile",
     "summaryFile"
   ]);
-  assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
   assertOptionalRecord(record2, "upstreamArguments");
   return record2;
 }
 function asApplyAssetManifestArgs(args) {
   const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["argumentsTemplate"], "arguments");
+  assertRemovedArguments(record2, ["resultFile"], "outputFile");
   assertOptionalStringFields(record2, [
     "sessionId",
     "manifestPath",
     "toolName",
-    "resultFile",
     "outputFile"
   ]);
   assertOptionalRecord(record2, "arguments");
-  assertOptionalRecord(record2, "argumentsTemplate");
   assertOptionalAssets(record2);
   return record2;
 }
 function asCaptureNodeArgs(args) {
   const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["nodeId", "targetNodeId", "handle"], "target");
+  assertRemovedArguments(record2, ["resultFile"], "metadataFile");
+  assertRemovedArguments(record2, ["argumentsTemplate"], "arguments");
   assertOptionalStringFields(record2, [
     "sessionId",
-    "nodeId",
-    "targetNodeId",
-    "handle",
     "outputFile",
-    "resultFile",
+    "metadataFile",
     "toolName"
   ]);
   assertOptionalRecord(record2, "arguments");
-  assertOptionalRecord(record2, "argumentsTemplate");
-  if (record2.target !== void 0 && typeof record2.target !== "string" && !isRecord3(record2.target)) {
-    throw new Error('Tool argument "target" must be a string or object.');
-  }
+  assertOptionalTargetValue(record2.target, "target");
   return record2;
 }
 function asRunTaskPlanArgs(args) {
   const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["resultFile"], "outputFile");
   assertOptionalStringFields(record2, [
     "sessionId",
     "planPath",
-    "resultFile",
     "outputFile"
   ]);
   assertOptionalTaskPlanSteps(record2);
@@ -26296,35 +26326,35 @@ function asRunTaskPlanArgs(args) {
 }
 function asPrepareTaskArgs(args) {
   const record2 = parseToolArgs(args);
+  assertRemovedFileReferenceFields(record2);
+  assertRemovedArguments(record2, ["intent", "goal", "taskName"], "task");
+  assertRemovedArguments(record2, ["taskDir"], "workspaceDir");
+  assertRemovedArguments(record2, ["scriptName"], "fileName");
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
   assertOptionalStringFields(record2, [
     "sessionId",
-    "intent",
     "task",
-    "fileUrl",
-    "fileKey",
+    "file",
     "fileSlug",
     "cwd",
     "dirName",
-    "goal",
     "taskSlug",
-    "taskName",
-    "taskDir",
     "workspaceDir",
     "fileName",
-    "scriptName",
     "taskRoot",
     "targetPageId",
     "template"
   ]);
-  assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
   return record2;
 }
 function asGuidanceArgs(args) {
   const record2 = parseToolArgs(args);
-  assertOptionalStringFields(record2, ["card", "query", "task", "intent", "goal", "workflow"]);
+  assertRemovedArguments(record2, ["intent", "goal"], "task");
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
+  assertOptionalStringFields(record2, ["card", "query", "task", "workflow"]);
   assertOptionalEnum(record2, "mode", FIGMA_REPL_GUIDANCE_MODES);
   assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
-  assertOptionalEnum(record2, "expectedSurface", FIGMA_REPL_SURFACES);
   return record2;
 }
 function asInspectArgs(args) {
@@ -26417,25 +26447,42 @@ function assertOptionalAssets(record2) {
     }
     assertOptionalStringFieldsWithPrefix(asset, assetName, [
       "path",
-      "filePath",
-      "localPath",
-      "targetNodeId",
-      "nodeId",
-      "targetHandle",
-      "targetId",
       "nodeUrl",
       "url",
       "scaleMode",
       "name",
       "toolName"
     ]);
+    assertRemovedArguments(asset, ["filePath", "localPath"], "path", `${assetName}.filePath/localPath`);
+    assertRemovedArguments(
+      asset,
+      ["targetNodeId", "nodeId", "targetHandle", "targetId"],
+      "target",
+      `${assetName}.targetNodeId/nodeId/targetHandle/targetId`
+    );
     const target = asset.target;
-    if (target !== void 0 && typeof target !== "string" && !isRecord3(target)) {
-      throw new Error(`Tool argument "${assetName}.target" must be a string or object.`);
-    }
+    assertOptionalTargetValue(target, `${assetName}.target`);
     assertOptionalRecord(asset, "metadata", `${assetName}.metadata`);
     assertOptionalRecord(asset, "arguments", `${assetName}.arguments`);
   });
+}
+function assertOptionalTargetValue(value, displayName) {
+  if (value === void 0) {
+    return;
+  }
+  if (typeof value === "string") {
+    return;
+  }
+  if (!isRecord3(value)) {
+    throw new Error(`Tool argument "${displayName}" must be a string or object.`);
+  }
+  assertRemovedArguments(
+    value,
+    ["nodeId", "targetNodeId", "targetHandle", "targetId"],
+    "handle",
+    `${displayName}.nodeId/targetNodeId/targetHandle/targetId`
+  );
+  assertOptionalStringFieldsWithPrefix(value, displayName, ["handle"]);
 }
 function assertOptionalTaskPlanSteps(record2) {
   const steps = assertOptionalArray(record2, "steps");
@@ -26447,9 +26494,10 @@ function assertOptionalTaskPlanSteps(record2) {
     if (!isRecord3(step)) {
       throw new Error(`Tool argument "${stepName}" must be an object.`);
     }
-    assertOptionalStringFieldsWithPrefix(step, stepName, ["id", "type", "tool"]);
+    assertRemovedArguments(step, ["tool"], "type", `${stepName}.tool`);
+    assertRemovedArguments(step, ["arguments"], "args", `${stepName}.arguments`);
+    assertOptionalStringFieldsWithPrefix(step, stepName, ["id", "type"]);
     assertOptionalRecord(step, "args", `${stepName}.args`);
-    assertOptionalRecord(step, "arguments", `${stepName}.arguments`);
   });
 }
 function assertOptionalStringFieldsWithPrefix(record2, prefix, keys) {
@@ -26527,13 +26575,15 @@ function createReplToolDescriptions(options) {
   const tools = [
     {
       name: "figma_repl_open",
-      description: "Create or update a local Figma REPL session. Recommended call: { title, sessionId, fileUrl, expectedSurface }. Records file/surface/page context and local handles; use upstream overrides only for routing debug.",
+      description: "Create or update a local Figma REPL session. Recommended call: { title, sessionId, file, surface }. Records file/surface/page/workspace context and local handles; use upstream overrides only for routing debug.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
         label: stringProperty("Human-readable session label."),
-        fileUrl: stringProperty("Optional Figma file URL stored in local session metadata."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface; blocks mismatched Design/FigJam/Slides usage later."),
+        file: stringProperty("Optional Figma file URL or raw file key stored in local session metadata. When present, open auto-binds a file-context workspace."),
+        cwd: stringProperty("Optional absolute project directory for the auto-bound workspace. Defaults to the MCP server process cwd."),
+        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-mcp."),
+        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface; blocks mismatched Design/FigJam/Slides usage later."),
         currentPageId: stringProperty("Optional current Figma page id stored in local session metadata."),
         reset: booleanProperty("Reset local handles and history for this session before opening."),
         connect: booleanProperty("Connect to upstream Figma MCP during open. Defaults to true."),
@@ -26546,13 +26596,13 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_eval",
-      description: "Run one batched JavaScript transaction through upstream use_figma. Recommended call: { title, sessionId, code, mode, expectedSurface }. The eval wrapper injects only AST-referenced $ helpers; read figma-repl://capabilities for disabled dynamic helper syntax and argument guidance.",
+      description: "Run one batched JavaScript transaction through upstream use_figma. Recommended call: { title, sessionId, code, mode, surface }. The eval wrapper injects only AST-referenced $ helpers; read figma-repl://capabilities for disabled dynamic helper syntax and argument guidance.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
         code: stringProperty("JavaScript body executed inside an async function in the Figma Plugin API context. Use return to send structured output."),
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
+        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
         upstreamTool: stringProperty("Advanced upstream-routing debug override for this call; ordinary agents should not set this."),
         upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
@@ -26562,7 +26612,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_run_script_file",
-      description: "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, expectedSurface }, then execute with { title, sessionId, inputFile, outputFile }. Use scriptPath, upstream overrides, split output files, and inlineResultLimit only for advanced/debug workflows. Read figma-repl://capabilities for disabled dynamic helper syntax.",
+      description: "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile, outputFile }. Use scriptPath, upstream overrides, split output files, and inlineResultLimit only for advanced/debug workflows. Read figma-repl://capabilities for disabled dynamic helper syntax.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
@@ -26570,7 +26620,7 @@ function createReplToolDescriptions(options) {
         inputFile: stringProperty("Recommended workspace script file name after figma_repl_prepare_task; preferred over scriptPath for agents."),
         dryRun: booleanProperty("Read, diagnose, inject helpers, and return script metadata without calling upstream Figma."),
         strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
+        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
         upstreamTool: stringProperty("Advanced upstream-routing debug override; ordinary agents should not set this."),
@@ -26578,92 +26628,78 @@ function createReplToolDescriptions(options) {
         upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this."),
         outputDir: stringProperty("Advanced absolute directory escape hatch. Defaults to result.json only; pass diagnosticsFile or summaryFile for split files."),
         outputFile: stringProperty("Recommended normal result file name inside the initialized file-context directory. Defaults to the input script basename plus .result.json."),
-        resultFile: stringProperty("Advanced output alias/escape hatch for absolute or outputDir-relative complete result output. Prefer outputFile in workspaces."),
         diagnosticsFile: stringProperty("Advanced opt-in split diagnostics JSON file. Leave unset for normal agent workflows."),
         summaryFile: stringProperty("Advanced opt-in split Markdown summary file. Leave unset for normal agent workflows."),
-        inlineResultLimit: numberProperty("Advanced payload-size control for inline upstream.payload/upstream.text only; not a return-shape selector. Use resultFile/outputFile for complete payloads.")
+        inlineResultLimit: numberProperty("Advanced payload-size control for inline upstream.payload/upstream.text only; complete payloads stay in outputFile.")
       }, ["title"])
     },
     {
       name: "figma_repl_apply_asset_manifest",
-      description: "Apply local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, refresh, and resultFile are advanced/debug only.",
+      description: "Apply local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, and refresh are advanced/debug only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
-        manifestPath: stringProperty("Recommended manifest file path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of assets or an object with assets/toolName/argumentsTemplate."),
+        manifestPath: stringProperty("Recommended manifest file path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of assets or an object with assets/toolName/arguments."),
         assets: {
           type: "array",
-          description: "Advanced inline asset entries. Prefer manifestPath. Compatibility aliases are accepted: path|filePath|localPath and targetNodeId|nodeId|target|targetHandle|targetId; target fields accept local handles like $hero.",
+          description: 'Advanced inline asset entries. Prefer manifestPath. Each entry uses { path, target }; target accepts a node id, node URL, local handle like $hero, or { handle: "$hero" }.',
           items: { type: "object", additionalProperties: true }
         },
         toolName: stringProperty("Advanced upstream-tool override. Leave unset so the REPL selects an advertised asset-like tool such as upload_assets and infers recognizable args."),
-        arguments: objectProperty("Advanced upstream arguments template. Use {{path}}, {{targetNodeId}}, {{name}}, {{metadata.foo}}, or {{asset}} placeholders only when adapting a custom upstream schema."),
-        argumentsTemplate: objectProperty("Advanced alias for arguments. Use only when mirroring fake or upstream schemas explicitly."),
+        arguments: objectProperty("Advanced upstream arguments template. Use {{path}}, {{target}}, {{name}}, {{metadata.foo}}, or {{asset}} placeholders only when adapting a custom upstream schema."),
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload."),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
-        resultFile: stringProperty("Advanced output alias/escape hatch for manifest result JSON. Prefer outputFile in workspaces."),
         outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace.")
       }, ["title"])
     },
     {
       name: "figma_repl_capture_node",
-      description: "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, nodeId, outputFile }. targetNodeId/target/handle aliases, custom upstream templates, refresh, and resultFile are advanced/debug only.",
+      description: "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, target, outputFile }. metadataFile, custom upstream templates, and refresh are advanced/debug only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
-        nodeId: stringProperty("Recommended target to capture: Figma node id, node URL, or local handle like $hero."),
-        targetNodeId: stringProperty("Compatibility alias for nodeId. Prefer nodeId for direct tool calls."),
         target: {
-          description: 'Advanced alias for handle-aware workflow plans. Prefer nodeId for direct tool calls; accepts a string or object like { handle: "$hero" }.'
+          description: 'Recommended target to capture. Accepts a Figma node id, node URL, local handle like $hero, or object like { handle: "$hero" }.'
         },
-        handle: stringProperty("Compatibility alias for nodeId when passing a local handle like $hero. Prefer nodeId."),
         outputFile: stringProperty("Recommended local output file for screenshot image, downloaded URL payload, or text response. Accepts an absolute path or a file name inside the initialized file-context workspace."),
-        resultFile: stringProperty("Advanced optional capture metadata JSON. Prefer outputFile unless separate metadata is explicitly needed."),
+        metadataFile: stringProperty("Advanced optional capture metadata JSON. Use only when separate metadata is explicitly needed."),
         toolName: stringProperty("Advanced upstream screenshot/capture tool override. Leave unset so the REPL selects an advertised screenshot-like tool and infers node id from recognizable schema fields."),
-        arguments: objectProperty("Advanced upstream arguments template. Use {{nodeId}} or {{targetNodeId}} placeholders only when adapting a custom upstream schema."),
-        argumentsTemplate: objectProperty("Advanced alias for arguments."),
+        arguments: objectProperty("Advanced upstream arguments template. Use {{target}} only when adapting a custom upstream schema."),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch.")
       }, ["title", "outputFile"])
     },
     {
       name: "figma_repl_run_task_plan",
-      description: "Run a sequential local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Inline steps and resultFile are advanced/compat only. Later steps can reference prior outputs with templates like {{outputs.stepId.resultFile.path}}.",
+      description: "Run a sequential local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Inline steps are advanced only. Later steps use { type, args } and can reference prior output files with templates.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
         planPath: stringProperty("Recommended JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of steps or an object with steps."),
         steps: {
           type: "array",
-          description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type/tool values: script-file, asset-manifest/upload_assets, screenshot-capture, upstream-tool.",
+          description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type values: script-file, asset-manifest/upload_assets, screenshot-capture, upstream-tool. Step arguments go under args.",
           items: { type: "object", additionalProperties: true }
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true."),
-        resultFile: stringProperty("Advanced output alias/escape hatch for JSON result file. Prefer outputFile in workspaces; required only when using inline steps without a file plan."),
         outputFile: stringProperty("Recommended plan result JSON file name inside the initialized file-context workspace.")
       }, ["title"])
     },
     {
       name: "figma_repl_prepare_task",
-      description: "Create or reuse an intent-specific .figma.js script and paired .result.json file. Recommended workspace call: { title, cwd, fileUrl|fileKey, intent, expectedSurface }. Alias and override fields are compatibility/advanced only.",
+      description: "Create or reuse a task-specific .figma.js script and paired .result.json file. Recommended workspace call: { title, file, task, surface }. cwd is an optional override; taskSlug, workspaceDir, fileName, taskRoot, template, and overwrite are advanced only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
-        intent: stringProperty("Recommended human intent used to derive <intentSlug>.figma.js and <intentSlug>.result.json."),
-        task: stringProperty("Compatibility alias for intent. Prefer intent."),
-        goal: stringProperty("Compatibility alias for intent when deriving script/result names. Prefer intent."),
-        fileUrl: stringProperty("Recommended Figma file URL used to derive fileKey/file context when preparing a workspace."),
-        fileKey: stringProperty("Recommended explicit Figma file key when fileUrl is not available; used as the file-context directory name."),
-        fileSlug: stringProperty("Advanced file-context slug override to use when no fileKey is available."),
-        cwd: stringProperty("Recommended absolute project directory where the figma-mcp workspace directory will be created."),
+        task: stringProperty("Recommended human task used to derive <taskSlug>.figma.js and <taskSlug>.result.json."),
+        file: stringProperty("Recommended Figma file URL or raw file key used to derive the file context when preparing a workspace."),
+        fileSlug: stringProperty("Advanced file-context slug override to use when file cannot derive a key."),
+        cwd: stringProperty("Optional absolute project directory where the figma-mcp workspace directory will be created. Defaults to the MCP server process cwd when file context is present."),
         dirName: stringProperty("Advanced workspace directory name under cwd. Defaults to figma-mcp."),
-        taskSlug: stringProperty("Advanced stable slug override for the task directory. Defaults from taskName/title."),
-        taskName: stringProperty("Advanced human-readable task name used to derive a slug when taskSlug is omitted."),
-        taskDir: stringProperty("Advanced absolute task directory override. Preferred public name for workspaceDir."),
-        fileName: stringProperty("Advanced script file-name override ending in .figma.js. Preferred public name for scriptName."),
+        taskSlug: stringProperty("Advanced stable slug override for the task files. Defaults from task/title."),
+        fileName: stringProperty("Advanced script file-name override ending in .figma.js."),
         taskRoot: stringProperty(`Advanced absolute task root for temp task workspaces. Defaults to ${options.taskWorkspaceRootEnv}, then OS temp figma-repl-mcp/tasks.`),
-        workspaceDir: stringProperty("Compatibility alias for taskDir. Prefer taskDir only when an absolute workspace override is needed."),
-        scriptName: stringProperty("Compatibility alias for fileName. Prefer fileName only when overriding the generated script file name."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Recommended expected Figma surface persisted on the session and copied into generated guidance."),
+        workspaceDir: stringProperty("Advanced absolute workspace directory override."),
+        surface: enumProperty(["design", "figjam", "slides"], "Recommended expected Figma surface persisted on the session and copied into generated guidance."),
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
         template: stringProperty("Template hint copied into the generated .figma.js comments. V1 templates are curated guidance only."),
         overwrite: booleanProperty("Advanced destructive overwrite of an existing script/result pair. Defaults false.")
@@ -26671,18 +26707,15 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_guidance",
-      description: "Return compact guidance, file-workflow planning, curated API cards, or catalog metadata before broader lookup. Prefer task for natural-language intent; intent and goal are aliases.",
+      description: "Return compact guidance, file-workflow planning, curated API cards, or catalog metadata before broader lookup. Use task for the natural-language request.",
       inputSchema: objectSchema({
         title: titleProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
         card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
         query: stringProperty(`Search query when card id is not known. Hard limit ${options.maxLookupQueryLength} characters.`),
-        task: stringProperty(`Natural-language task intent. Preferred public name for intent. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
-        intent: stringProperty(`Alias for task. Natural-language task intent. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
-        goal: stringProperty(`Alias for task in guidance or plan mode. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
-        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface. Preferred public name for expectedSurface."),
+        task: stringProperty(`Natural-language task request. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
         workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
         maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4.")
       }, ["title"])
     },
@@ -26772,7 +26805,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     kind: stringProperty("Saved output kind."),
     mimeType: stringProperty("Detected output MIME type."),
     qa: objectProperty("Compact capture QA hints."),
-    upstream: objectProperty("Upstream output envelope, compact inline and complete in resultFile when requested."),
+    upstream: objectProperty("Upstream output envelope, compact inline and complete in outputFile when requested."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
     outputFiles: objectProperty("Files written for result output.")
   }),
@@ -26801,7 +26834,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     queryHints: stringArrayProperty("Suggested docs/API search hints."),
     apiSymbols: stringArrayProperty("Suggested exact API symbols."),
     avoid: stringArrayProperty("Common mistakes to avoid."),
-    suggestions: objectProperty("Ranked intent/card suggestions with compact context.")
+    suggestions: objectProperty("Ranked task/card suggestions with compact context.")
   }),
   figma_repl_inspect: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
@@ -26912,7 +26945,7 @@ function createScriptOutputWriter(args, session, formatSummaryMarkdown) {
     async write(payload) {
       const written = {};
       if (files.resultFile) {
-        written.resultFile = await writeJsonFile(files.resultFile, payload.result);
+        written.outputFile = await writeJsonFile(files.resultFile, payload.result);
       }
       if (files.diagnosticsFile) {
         written.diagnosticsFile = await writeJsonFile(files.diagnosticsFile, {
@@ -27034,7 +27067,7 @@ async function loadTaskPlan(args, session) {
   };
 }
 function resolveTaskPlanResultFile(args, planPath, session) {
-  const explicit = resolveWorkspaceAwareFile(args.resultFile ?? args.outputFile, session, "resultFile/outputFile");
+  const explicit = resolveWorkspaceAwareFile(args.outputFile, session, "outputFile");
   if (explicit) return explicit;
   if (planPath) {
     return planPath.replace(/\.json$/iu, ".result.json");
@@ -27043,10 +27076,10 @@ function resolveTaskPlanResultFile(args, planPath, session) {
     return resolveWorkspaceFile(
       session.workspace.sessionDir,
       `${slugifyTaskName(args.title)}.plan.result.json`,
-      "resultFile/outputFile"
+      "outputFile"
     );
   }
-  throw new Error('Tool argument "resultFile" or "outputFile" is required for inline task plans.');
+  throw new Error('Tool argument "outputFile" is required for inline task plans.');
 }
 function withTaskPlanDefaultFiles(stepArgs, type, id, session) {
   if (!session.workspace) {
@@ -27054,16 +27087,16 @@ function withTaskPlanDefaultFiles(stepArgs, type, id, session) {
   }
   const stepSlug = slugifyTaskName(id || type || "step");
   const next = { ...stepArgs };
-  const hasResultFile = asOptionalString(next.resultFile ?? next.outputFile) !== void 0;
+  const hasOutputFile = asOptionalString(next.outputFile) !== void 0;
   if (type === "script-file") {
-    if (!hasResultFile) {
-      next.resultFile = `${stepSlug}.result.json`;
+    if (!hasOutputFile) {
+      next.outputFile = `${stepSlug}.result.json`;
     }
     return next;
   }
   if (type === "asset-manifest") {
-    if (!hasResultFile) {
-      next.resultFile = `${stepSlug}.assets.result.json`;
+    if (!hasOutputFile) {
+      next.outputFile = `${stepSlug}.assets.result.json`;
     }
     return next;
   }
@@ -27071,8 +27104,8 @@ function withTaskPlanDefaultFiles(stepArgs, type, id, session) {
     if (!asOptionalString(next.outputFile)) {
       next.outputFile = `${stepSlug}.png`;
     }
-    if (!asOptionalString(next.resultFile)) {
-      next.resultFile = `${stepSlug}.capture.result.json`;
+    if (!asOptionalString(next.metadataFile)) {
+      next.metadataFile = `${stepSlug}.capture.result.json`;
     }
     return next;
   }
@@ -27124,7 +27157,7 @@ async function ensureWorkspaceDirectories(workspace) {
   await mkdir2(workspace.sessionDir, { recursive: true });
 }
 function resolvePreparedTaskWorkspace(options) {
-  if (options.session?.workspace && !options.args.taskDir && !options.args.workspaceDir && !options.args.taskRoot) {
+  if (options.session?.workspace && !options.args.workspaceDir && !options.args.taskRoot) {
     return createWorkspaceFromFileDir({
       root: options.session.workspace.root,
       fileDir: resolve4(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
@@ -27133,10 +27166,10 @@ function resolvePreparedTaskWorkspace(options) {
       intentSlug: options.taskSlug
     });
   }
-  const explicitWorkspaceDir = asOptionalString(options.args.taskDir ?? options.args.workspaceDir);
+  const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
   if (explicitWorkspaceDir) {
     if (!isAbsolute2(explicitWorkspaceDir)) {
-      throw new Error('Tool argument "taskDir/workspaceDir" must be an absolute path.');
+      throw new Error('Tool argument "workspaceDir" must be an absolute path.');
     }
     return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskSlug);
   }
@@ -27160,10 +27193,10 @@ function resolveWorkspaceFile(baseDir, fileName, argumentName) {
 function normalizeTaskScriptName(value, taskSlug) {
   const scriptName = asOptionalString(value) ?? `${taskSlug}.figma.js`;
   if (isAbsolute2(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
-    throw new Error('Tool argument "fileName/scriptName" must be a file name, not a path.');
+    throw new Error('Tool argument "fileName" must be a file name, not a path.');
   }
   if (!scriptName.endsWith(".figma.js")) {
-    throw new Error('Tool argument "fileName/scriptName" must end with ".figma.js".');
+    throw new Error('Tool argument "fileName" must end with ".figma.js".');
   }
   return scriptName;
 }
@@ -27199,7 +27232,7 @@ function resolveScriptOutputFiles(args, session) {
     const sessionDir = session.workspace.sessionDir;
     const inputFile = asOptionalString(args.inputFile);
     const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
-    const resultFile2 = resolveWorkspaceOutputFile(args.resultFile ?? args.outputFile, sessionDir, defaultResult, "resultFile/outputFile");
+    const resultFile2 = resolveWorkspaceOutputFile(args.outputFile, sessionDir, defaultResult, "outputFile");
     return {
       resultFile: resultFile2,
       diagnosticsFile: args.diagnosticsFile ? resolveWorkspaceOutputFile(args.diagnosticsFile, sessionDir, "diagnostics.json", "diagnosticsFile") : void 0,
@@ -27208,7 +27241,7 @@ function resolveScriptOutputFiles(args, session) {
     };
   }
   const hasOutputDir = Boolean(outputDir);
-  const resultFile = resolveOptionalOutputFile(args.resultFile ?? args.outputFile, outputDir, hasOutputDir ? "result.json" : void 0, "resultFile/outputFile");
+  const resultFile = resolveOptionalOutputFile(args.outputFile, outputDir, hasOutputDir ? "result.json" : void 0, "outputFile");
   return {
     resultFile,
     diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, void 0, "diagnosticsFile"),
@@ -27307,7 +27340,7 @@ function resolveTaskWorkspace(options) {
   const explicitWorkspace = asOptionalString(options.workspaceDir);
   if (explicitWorkspace) {
     if (!isAbsolute2(explicitWorkspace)) {
-      throw new Error('Tool argument "taskDir/workspaceDir" must be an absolute path.');
+      throw new Error('Tool argument "workspaceDir" must be an absolute path.');
     }
     return explicitWorkspace;
   }
@@ -27351,7 +27384,7 @@ function createWorkspaceFromFileDir(options) {
 function normalizeFileContextDirectory(fileKey, fileSlug) {
   if (fileKey) {
     if (isAbsolute2(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
-      throw new Error('Tool argument "fileKey" must be a simple Figma file key.');
+      throw new Error("Derived Figma file key must be a simple file key.");
     }
     return fileKey;
   }
@@ -27657,7 +27690,7 @@ function createFigmaReplClient(options = {}) {
     connect: () => runtime.client.connect(),
     close: () => runtime.client.close(),
     open: async (args = {}) => parseJsonToolResult(
-      await handleOpen(withDefaultTitle(args, "Open Figma REPL session"), runtime)
+      await handleOpen(asOpenArgs(withDefaultTitle(args, "Open Figma REPL session")), runtime)
     ),
     eval: async (args) => parseJsonToolResult(
       await handleEval(
@@ -27737,7 +27770,7 @@ function createFigmaReplMcpServer(options = {}) {
     const args = asRecord3(rawArgs);
     switch (request.params.name) {
       case "figma_repl_open":
-        return handleOpen(args, { sessions, upstreamToolCache, config: config2 });
+        return handleOpen(asOpenArgs(rawArgs), { sessions, upstreamToolCache, config: config2 });
       case "figma_repl_eval":
         return handleEval(asEvalArgs(rawArgs), { client, sessions, upstreamToolCache, config: config2 });
       case "figma_repl_run_script_file":
@@ -27903,7 +27936,7 @@ async function handleOpen(args, runtime) {
   assertRequiredTitleArgument2(args);
   const session = truthy(args.reset) ? runtime.sessions.reset(asOptionalString2(args.sessionId)) : runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
   assignOptionalString(session, "label", args.label);
-  assignOptionalString(session, "fileUrl", args.fileUrl);
+  applySessionFileReference(session, args.file);
   assignOptionalString(session, "currentPageId", args.currentPageId);
   assignOptionalString(session, "evalToolName", args.upstreamTool);
   assignOptionalString(session, "evalToolArgument", args.upstreamArgument);
@@ -27911,7 +27944,7 @@ async function handleOpen(args, runtime) {
   if (fileKey) {
     session.fileKey = fileKey;
   }
-  const expectedSurface = normalizeSurface(args.expectedSurface);
+  const expectedSurface = normalizeSurface(args.surface);
   const derivedSurface = inferFigmaSurface(session.fileUrl);
   if (expectedSurface) {
     session.surface = expectedSurface;
@@ -27933,6 +27966,7 @@ async function handleOpen(args, runtime) {
   if (isStringRecord(args.handles)) {
     mergeHandles(session, args.handles);
   }
+  bindOpenWorkspaceIfAvailable(session, args);
   touchSession(session);
   let upstreamTools;
   if (args.connect !== false) {
@@ -27961,7 +27995,7 @@ async function handleEval(args, runtime) {
   const diagnostics = diagnoseFigmaReplCode(args.code, {
     allowDangerousOperations: Boolean(args.allowDangerousOperations),
     mode,
-    expectedSurface: normalizeSurface(args.expectedSurface) ?? session.surface
+    expectedSurface: normalizeSurface(args.surface) ?? session.surface
   });
   session.lastDiagnostics = diagnostics;
   throwIfFatalDiagnostics(diagnostics);
@@ -28003,7 +28037,7 @@ async function executeRunScriptFile(args, runtime) {
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const scriptPath = resolveScriptInputPath(args, session);
   const source = await readFile4(scriptPath, "utf8");
-  const expectedSurface = normalizeSurface(args.expectedSurface) ?? session.surface;
+  const expectedSurface = normalizeSurface(args.surface) ?? session.surface;
   if (expectedSurface) {
     session.surface = expectedSurface;
   }
@@ -28217,7 +28251,7 @@ async function executeApplyAssetManifest(args, runtime) {
     const upstreamArguments = buildAssetManifestUpstreamArguments({
       asset,
       tool,
-      template: asset.arguments ?? manifest.argumentsTemplate
+      template: asset.arguments ?? manifest.arguments
     });
     const startedAt = (/* @__PURE__ */ new Date()).toISOString();
     try {
@@ -28291,7 +28325,7 @@ async function executeApplyAssetManifest(args, runtime) {
       });
     }
   }
-  const resultFile = resolveWorkspaceAwareFile(args.resultFile ?? args.outputFile, session, "resultFile/outputFile");
+  const resultFile = resolveWorkspaceAwareFile(args.outputFile, session, "outputFile");
   const files = {};
   const validation = await validateAssetManifestTargetsIfAvailable({
     args,
@@ -28316,7 +28350,7 @@ async function executeApplyAssetManifest(args, runtime) {
     failures: failures.length > 0 ? failures : void 0
   };
   if (resultFile) {
-    files.resultFile = await writeJsonFile(resultFile, {
+    files.outputFile = await writeJsonFile(resultFile, {
       ...payload,
       assetDetails
     });
@@ -28341,16 +28375,13 @@ async function handleCaptureNode(args, runtime) {
 async function executeCaptureNode(args, runtime) {
   assertRequiredTitleArgument2(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
-  const targetResolution = resolveSessionTargetInput(
-    args.nodeId ?? args.targetNodeId ?? args.target ?? args.handle,
-    session
-  );
+  const targetResolution = resolveSessionTargetInput(args.target, session);
   const nodeId = targetResolution.nodeId;
   if (!nodeId) {
-    throw new Error('Tool argument "nodeId", "targetNodeId", "target", or "handle" is required.');
+    throw new Error('Tool argument "target" is required.');
   }
   const outputFile = resolveRequiredWorkspaceAwareFile(args.outputFile, session, "outputFile");
-  const resultFile = resolveWorkspaceAwareFile(args.resultFile, session, "resultFile");
+  const metadataFile = resolveWorkspaceAwareFile(args.metadataFile, session, "metadataFile");
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = selectUpstreamTool({
     tools,
@@ -28361,7 +28392,7 @@ async function executeCaptureNode(args, runtime) {
   const upstreamArguments = buildCaptureUpstreamArguments({
     nodeId,
     fileKey: session.fileKey ?? extractFigmaFileKey(session.fileUrl),
-    template: args.arguments ?? args.argumentsTemplate,
+    template: args.arguments,
     tool
   });
   await runtime.client.connect();
@@ -28379,8 +28410,8 @@ async function executeCaptureNode(args, runtime) {
       upstream: upstreamEnvelope(parsed, { includePayload: false }),
       ...upstreamFailureFields(parsed)
     };
-    if (resultFile) {
-      outputFiles2.resultFile = await writeJsonFile(resultFile, {
+    if (metadataFile) {
+      outputFiles2.metadataFile = await writeJsonFile(metadataFile, {
         ...payload2,
         upstream: upstreamEnvelope(parsed)
       });
@@ -28425,8 +28456,8 @@ async function executeCaptureNode(args, runtime) {
     qa: createCaptureQa(saved),
     upstream: upstreamEnvelope(parsed, { includePayload: false })
   };
-  if (resultFile) {
-    outputFiles.resultFile = await writeJsonFile(resultFile, {
+  if (metadataFile) {
+    outputFiles.metadataFile = await writeJsonFile(metadataFile, {
       ...payload,
       upstream: upstreamEnvelope(parsed)
     });
@@ -28533,7 +28564,7 @@ async function executeRunTaskPlan(args, runtime) {
     failures: failures.length > 0 ? failures : void 0
   };
   const outputFiles = {
-    resultFile: await writeJsonFile(resultFile, payload)
+    outputFile: await writeJsonFile(resultFile, payload)
   };
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
@@ -28560,10 +28591,10 @@ async function handlePrepareTask(args, runtime) {
     session.workspace = workspace;
     touchSession(session);
   }
-  const scriptName = normalizeTaskScriptName(args.fileName ?? args.scriptName ?? workspace.files.script, intentSlug);
+  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, intentSlug);
   const outputFile = resultFileNameForScript(scriptName);
-  const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName/scriptName");
-  const resultFile = resolveWorkspaceFile(workspace.sessionDir, outputFile, "resultFile");
+  const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
+  const resultFile = resolveWorkspaceFile(workspace.sessionDir, outputFile, "outputFile");
   await ensureWorkspaceDirectories(workspace);
   await writeTaskFile(scriptPath, createTaskScriptTemplate(intentSlug, args), Boolean(args.overwrite));
   const resultFileMetadata = await writeTaskFile(resultFile, JSON.stringify({
@@ -28573,8 +28604,7 @@ async function handlePrepareTask(args, runtime) {
     fileKey: session?.fileKey ?? workspace.fileKey,
     fileContext: workspace.fileContext,
     intentSlug,
-    scriptFile: scriptName,
-    goal: args.goal
+    scriptFile: scriptName
   }, null, 2) + "\n", Boolean(args.overwrite));
   return makeJsonToolResult({
     ok: true,
@@ -28598,6 +28628,8 @@ async function handlePrepareTask(args, runtime) {
   });
 }
 function resolvePrepareTaskWorkspace(args, intentSlug, fileSlug, session) {
+  const parsedFile = parseFigmaFileReference(args.file);
+  const fileKey = session?.fileKey ?? parsedFile.fileKey;
   if (typeof args.cwd === "string" && args.cwd.length > 0) {
     if (!isAbsolute3(args.cwd)) {
       throw new Error('Tool argument "cwd" must be an absolute path.');
@@ -28605,18 +28637,18 @@ function resolvePrepareTaskWorkspace(args, intentSlug, fileSlug, session) {
     return createSessionWorkspace({
       cwd: args.cwd,
       dirName: args.dirName,
-      fileKey: session?.fileKey ?? args.fileKey,
+      fileKey,
       fileSlug,
       intentSlug
     });
   }
-  const hasFileContext = Boolean(args.fileUrl || args.fileKey || args.fileSlug || args.dirName);
-  const hasExplicitTaskWorkspace = Boolean(args.taskDir || args.workspaceDir || args.taskRoot);
+  const hasFileContext = Boolean(args.file || args.fileSlug || args.dirName);
+  const hasExplicitTaskWorkspace = Boolean(args.workspaceDir || args.taskRoot);
   if (hasFileContext && !session?.workspace && !hasExplicitTaskWorkspace) {
     return createSessionWorkspace({
       cwd: process.cwd(),
       dirName: args.dirName,
-      fileKey: session?.fileKey ?? args.fileKey,
+      fileKey,
       fileSlug,
       intentSlug
     });
@@ -28643,7 +28675,7 @@ async function handleGuidance(args) {
       steps: [
         "Prepare or reuse a task workspace with figma_repl_prepare_task.",
         "Write the transaction in a local .figma.js file using $ helpers and native Figma Plugin API calls.",
-        "Call figma_repl_run_script_file with dryRun=true, strict=true, expectedSurface, inputFile, and inlineResultLimit.",
+        "Call figma_repl_run_script_file with dryRun=true, strict=true, surface, inputFile, and inlineResultLimit.",
         "Repair local file/line diagnostics, then execute the same script file against upstream Figma.",
         "Inspect the paired .result.json file first when inline results are capped."
       ],
@@ -28681,14 +28713,8 @@ async function handleGuidance(args) {
   });
 }
 function guidanceIntentSource(args) {
-  if (typeof args.intent === "string") {
-    return { name: "intent", value: args.intent };
-  }
   if (typeof args.task === "string") {
     return { name: "task", value: args.task };
-  }
-  if (typeof args.goal === "string") {
-    return { name: "goal", value: args.goal };
   }
   return void 0;
 }
@@ -30030,31 +30056,30 @@ async function loadAssetManifest(args, session) {
     throw new Error('Tool argument "assets" or "manifestPath" with assets is required.');
   }
   const baseDir = manifestPath ? dirname5(manifestPath) : session.workspace?.sessionDir;
+  if (manifestRecord.argumentsTemplate !== void 0) {
+    throw new Error('Asset manifest field "argumentsTemplate" was removed. Use "arguments".');
+  }
   return {
     assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir, session)),
     toolName: asOptionalString2(args.toolName) ?? asOptionalString2(manifestRecord.toolName),
-    argumentsTemplate: recordFromUnknown(
-      args.argumentsTemplate ?? args.arguments ?? manifestRecord.argumentsTemplate ?? manifestRecord.arguments
-    )
+    arguments: recordFromUnknown(args.arguments ?? manifestRecord.arguments)
   };
 }
 function normalizeManifestAsset(value, index, baseDir, session) {
   const record2 = asRecord3(value);
-  const rawPath = asOptionalString2(record2.path) ?? asOptionalString2(record2.filePath) ?? asOptionalString2(record2.localPath);
+  assertRemovedManifestAssetFields(record2, index);
+  const rawPath = asOptionalString2(record2.path);
   if (!rawPath) {
-    throw new Error(`Asset manifest entry ${index} requires path, filePath, or localPath.`);
+    throw new Error(`Asset manifest entry ${index} requires path.`);
   }
   const path = isAbsolute3(rawPath) ? rawPath : baseDir ? resolve5(baseDir, rawPath) : void 0;
   if (!path) {
     throw new Error(`Asset manifest entry ${index} path must be absolute unless manifestPath is used.`);
   }
-  const targetResolution = resolveSessionTargetInput(
-    record2.targetNodeId ?? record2.nodeId ?? record2.target ?? record2.targetHandle ?? record2.targetId,
-    session
-  );
+  const targetResolution = resolveSessionTargetInput(record2.target, session);
   const resolvedTargetNodeId = targetResolution.nodeId;
   if (!resolvedTargetNodeId) {
-    throw new Error(`Asset manifest entry ${index} requires targetNodeId, nodeId, target, targetHandle, or targetId.`);
+    throw new Error(`Asset manifest entry ${index} requires target.`);
   }
   return {
     path,
@@ -30068,6 +30093,23 @@ function normalizeManifestAsset(value, index, baseDir, session) {
     toolName: asOptionalString2(record2.toolName),
     arguments: recordFromUnknown(record2.arguments)
   };
+}
+function assertRemovedManifestAssetFields(record2, index) {
+  const pathAliases = ["filePath", "localPath"].filter((field) => record2[field] !== void 0);
+  if (pathAliases.length > 0) {
+    throw new Error(`Asset manifest entry ${index} field "${pathAliases.join("/")}" was removed. Use "path".`);
+  }
+  const targetAliases = ["targetNodeId", "nodeId", "targetHandle", "targetId"].filter((field) => record2[field] !== void 0);
+  if (targetAliases.length > 0) {
+    throw new Error(`Asset manifest entry ${index} field "${targetAliases.join("/")}" was removed. Use "target".`);
+  }
+  const targetRecord = isRecord5(record2.target) ? record2.target : void 0;
+  if (targetRecord) {
+    const nestedAliases = ["nodeId", "targetNodeId", "targetHandle", "targetId"].filter((field) => targetRecord[field] !== void 0);
+    if (nestedAliases.length > 0) {
+      throw new Error(`Asset manifest entry ${index} target field "${nestedAliases.join("/")}" was removed. Use "handle".`);
+    }
+  }
 }
 function selectUpstreamTool(options) {
   if (options.explicitToolName) {
@@ -30134,7 +30176,7 @@ function buildAssetManifestUpstreamArguments(options) {
 function buildUploadAssetsArguments(asset, properties) {
   if (!asset.fileKey) {
     throw new Error(
-      `Asset manifest entry for "${asset.path}" needs a fileKey for upload_assets. Open the session with fileUrl/fileKey or pass argumentsTemplate: { fileKey: "<fileKey>", count: 1, nodeId: "{{targetNodeId}}", scaleMode: "FILL" }.`
+      `Asset manifest entry for "${asset.path}" needs a fileKey for upload_assets. Open the session with file or pass arguments: { fileKey: "<fileKey>", count: 1, nodeId: "{{target}}", scaleMode: "FILL" }.`
     );
   }
   const scaleMode = normalizeImageScaleMode(asset.scaleMode ?? "FILL", "scaleMode");
@@ -30178,6 +30220,7 @@ function buildUploadAssetsArguments(asset, properties) {
 }
 function buildCaptureUpstreamArguments(options) {
   const context = {
+    target: options.nodeId,
     nodeId: options.nodeId,
     targetNodeId: options.nodeId,
     fileKey: options.fileKey
@@ -30204,6 +30247,7 @@ function createAssetTemplateContext(asset) {
     path: asset.path,
     filePath: asset.path,
     localPath: asset.path,
+    target: asset.targetNodeId,
     targetNodeId: asset.targetNodeId,
     nodeId: asset.targetNodeId,
     name: asset.name,
@@ -30498,7 +30542,7 @@ function taskPlanStepArguments(step) {
   return {
     ...Object.fromEntries(
       Object.entries(step).filter(
-        ([key]) => !["id", "type", "tool", "args"].includes(key)
+        ([key]) => !["id", "type", "args"].includes(key)
       )
     ),
     ...asRecord3(step.args)
@@ -30575,12 +30619,11 @@ function createTaskPlanStepReference(options) {
     outputFile: options.result.outputFile,
     plannedOutputFile: options.result.plannedOutputFile,
     outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0,
-    resultFile: asRecord3(outputFiles.resultFile).path,
     outputFilePath: asRecord3(outputFiles.outputFile).path
   };
 }
 function normalizeTaskPlanStepType2(step) {
-  const value = asOptionalString2(step.type) ?? asOptionalString2(step.tool);
+  const value = asOptionalString2(step.type);
   return normalizeTaskPlanStepType(value);
 }
 function taskPlanStepSucceeded(result) {
@@ -30673,7 +30716,7 @@ function limitInlineScriptResult(payload, limitValue, fields) {
     result.inlineResultLimit = {
       limit,
       omitted,
-      guidance: "Read the paired result file or resultFile output when inline fields are omitted."
+      guidance: "Read the paired outputFile result when inline fields are omitted."
     };
   }
   return result;
@@ -30710,13 +30753,12 @@ function applyWorkspaceFileContextArgs(session, args) {
   if (!session) {
     return;
   }
-  assignOptionalString(session, "fileUrl", args.fileUrl);
-  assignOptionalString(session, "fileKey", args.fileKey);
+  applySessionFileReference(session, args.file);
   const derivedFileKey = extractFigmaFileKey(session.fileUrl);
   if (!session.fileKey && derivedFileKey) {
     session.fileKey = derivedFileKey;
   }
-  const expectedSurface = normalizeSurface(args.expectedSurface);
+  const expectedSurface = normalizeSurface(args.surface);
   const derivedSurface = inferFigmaSurface(session.fileUrl);
   if (expectedSurface) {
     session.surface = expectedSurface;
@@ -30730,13 +30772,46 @@ function applyWorkspaceFileContextArgs(session, args) {
   });
 }
 function deriveFileSlug(args, session) {
+  const parsedFile = parseFigmaFileReference(args.file);
   return slugifyTaskName2(
-    args.fileSlug ?? args.fileKey ?? extractFigmaFileKey(args.fileUrl) ?? session?.fileKey ?? extractFigmaFileSlug(args.fileUrl ?? session?.fileUrl) ?? session?.slug ?? "figma-file"
+    args.fileSlug ?? parsedFile.fileKey ?? session?.fileKey ?? parsedFile.fileSlug ?? extractFigmaFileSlug(session?.fileUrl) ?? session?.slug ?? "figma-file"
   );
+}
+function applySessionFileReference(session, file) {
+  const parsed = parseFigmaFileReference(asOptionalString2(file));
+  if (!parsed.fileUrl && !parsed.fileKey) {
+    return;
+  }
+  if (parsed.fileUrl) {
+    session.fileUrl = parsed.fileUrl;
+  } else {
+    delete session.fileUrl;
+  }
+  if (parsed.fileKey) {
+    session.fileKey = parsed.fileKey;
+  }
+}
+function bindOpenWorkspaceIfAvailable(session, args) {
+  if (!session.fileKey && !session.fileUrl) {
+    return;
+  }
+  if (typeof args.cwd === "string" && args.cwd.length > 0 && !isAbsolute3(args.cwd)) {
+    throw new Error('Tool argument "cwd" must be an absolute path.');
+  }
+  const fileSlug = slugifyTaskName2(
+    session.fileKey ?? extractFigmaFileSlug(session.fileUrl) ?? session.slug ?? "figma-file"
+  );
+  session.workspace = createSessionWorkspace({
+    cwd: typeof args.cwd === "string" && args.cwd.length > 0 ? args.cwd : process.cwd(),
+    dirName: args.dirName,
+    fileKey: session.fileKey,
+    fileSlug,
+    intentSlug: session.slug
+  });
 }
 function deriveIntentSlug(args, fallback) {
   return slugifyTaskName2(
-    args.intent ?? args.task ?? args.taskSlug ?? args.taskName ?? args.title ?? args.sessionId ?? args.goal ?? fallback
+    args.taskSlug ?? args.task ?? args.title ?? args.sessionId ?? fallback
   );
 }
 function createTaskScriptTemplate(taskSlug, args) {
@@ -30744,8 +30819,8 @@ function createTaskScriptTemplate(taskSlug, args) {
     `// ${taskSlug}.figma.js`,
     "// Async Figma Plugin API body for figma_repl_run_script_file.",
     "// Use $ helpers plus native Figma Plugin API calls and return compact JSON.",
-    args.goal ? `// Goal: ${String(args.goal)}` : void 0,
-    args.expectedSurface ? `// Expected surface: ${String(args.expectedSurface)}` : void 0,
+    args.task ? `// Task: ${String(args.task)}` : void 0,
+    args.surface ? `// Surface: ${String(args.surface)}` : void 0,
     args.targetPageId ? `// Suggested targetPageId: ${String(args.targetPageId)}` : void 0,
     "",
     "const checkpoint = await $.checkpoint('start', ['$currentPage'], { depth: 0 });",
@@ -30791,14 +30866,14 @@ function createFileWorkflowPayload() {
     fileExtension: ".figma.js",
     prepareTool: "figma_repl_prepare_task",
     planTool: "figma_repl_guidance",
-    workspaceLayout: "<cwd>/figma-mcp/<fileKey-or-fileSlug>/<intentSlug>.figma.js + <intentSlug>.result.json",
+    workspaceLayout: "<cwd>/figma-mcp/<fileKey-or-fileSlug>/<taskSlug>.figma.js + <taskSlug>.result.json",
     outputFiles: ["inputFile", "outputFile", "inlineResultLimit"],
     workflowTools: ["figma_repl_apply_asset_manifest", "figma_repl_capture_node", "figma_repl_run_task_plan"],
     helpers: createEvalHelperPathList(),
     defaultTaskRoot: `${TASK_WORKSPACE_ROOT_ENV}, then OS temp figma-repl-mcp/tasks/<slug>`,
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.js files.",
-      "Initialize a file workspace once, then keep intent script/result pairs in that file-context folder.",
+      "Initialize a file workspace once, then keep task script/result pairs in that file-context folder.",
       "Run dryRun first for file-aware diagnostics without upstream calls.",
       "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
       "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime.",
@@ -30807,10 +30882,10 @@ function createFileWorkflowPayload() {
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
       "Use figma_repl_capture_node to write final visual QA captures to a local file; it returns bytes, MIME, dimensions when detectable, sourceUrl, and QA warnings.",
-      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.resultFile.path}}.",
+      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.outputFile.path}}.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
-      "Use <intentSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
+      "Use <taskSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
       "File-script responses use a fixed structured shape: parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, and file pointers stay in outputFiles.",
       "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing."
     ]
@@ -30850,24 +30925,25 @@ function createToolArgumentGuidancePayload() {
     prepareTask: {
       tool: "figma_repl_prepare_task",
       recommendedCalls: {
-        workspaceFromUrl: { title: "Prepare task", cwd: "<absolute project cwd>", fileUrl: "<figma file URL>", intent: "<intent>", expectedSurface: "design" },
-        workspaceFromKey: { title: "Prepare task", cwd: "<absolute project cwd>", fileKey: "<figma file key>", intent: "<intent>", expectedSurface: "design" }
+        workspaceFromFile: { title: "Prepare task", file: "<figma file URL or file key>", task: "<task>", surface: "design" }
       },
-      advancedArguments: ["task", "goal", "fileSlug", "dirName", "taskSlug", "taskName", "taskDir", "workspaceDir", "fileName", "scriptName", "taskRoot", "template", "overwrite"],
+      advancedArguments: ["cwd", "fileSlug", "dirName", "taskSlug", "workspaceDir", "fileName", "taskRoot", "template", "overwrite"],
       avoidUnless: {
-        taskAliases: "Use task/goal only for compatibility; prefer intent.",
-        workspaceOverrides: "Use taskDir/workspaceDir/taskRoot only when deliberately bypassing the default <cwd>/figma-mcp/<fileKey-or-fileSlug> layout.",
-        fileNameAliases: "Use fileName/scriptName only when the generated <intentSlug>.figma.js name is unsuitable.",
+        cwd: "Omit cwd for the MCP server process cwd; pass it only when the server cwd is not the intended project directory.",
+        workspaceOverrides: "Use workspaceDir/taskRoot only when deliberately bypassing the default <cwd>/figma-mcp/<fileKey-or-fileSlug> layout.",
+        fileName: "Use fileName only when the generated <taskSlug>.figma.js name is unsuitable.",
         overwrite: "Use only after deciding that replacing an existing script/result pair is intended."
       }
     },
     open: {
       tool: "figma_repl_open",
       recommendedCalls: {
-        session: { title: "Open session", sessionId: "<session>", fileUrl: "<figma file URL>", expectedSurface: "design" }
+        session: { title: "Open session", sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" }
       },
-      advancedArguments: ["connect", "refresh", "upstreamTool", "upstreamArgument", "upstreamArguments", "handles"],
+      advancedArguments: ["cwd", "dirName", "connect", "refresh", "upstreamTool", "upstreamArgument", "upstreamArguments", "handles"],
       avoidUnless: {
+        cwd: "Omit cwd for the MCP server process cwd; pass it only when the server cwd is not the intended project directory.",
+        dirName: "Omit dirName for the default figma-mcp workspace directory.",
         connect: "Leave at the default true unless intentionally updating only local metadata.",
         refresh: "Use only for upstream tool-cache debug.",
         upstreamOverrides: "Use upstreamTool/upstreamArgument/upstreamArguments only for upstream routing debug.",
@@ -30877,8 +30953,8 @@ function createToolArgumentGuidancePayload() {
     eval: {
       tool: "figma_repl_eval",
       recommendedCalls: {
-        read: { title: "Inspect with eval", sessionId: "<session>", code: "<return compact JSON>", mode: "read", expectedSurface: "design" },
-        write: { title: "Run eval transaction", sessionId: "<session>", code: "<return compact JSON>", mode: "write", expectedSurface: "design" }
+        read: { title: "Inspect with eval", sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
+        write: { title: "Run eval transaction", sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" }
       },
       advancedArguments: ["allowDangerousOperations", "upstreamTool", "upstreamArgument", "upstreamArguments", "handleUpdates"],
       avoidUnless: {
@@ -30904,26 +30980,23 @@ function createToolArgumentGuidancePayload() {
       recommendedCalls: {
         applyManifest: { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" }
       },
-      advancedArguments: ["assets", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile"],
+      advancedArguments: ["assets", "toolName", "arguments", "refresh"],
       avoidUnless: {
         assets: "Prefer manifestPath for repeatable local-file workflows; inline assets are for generated one-off plans.",
-        assetAliases: "Use path/targetNodeId as the preferred asset fields; other path/target aliases are compatibility only.",
-        upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom or fake upstream asset schema.",
-        refresh: "Use only for upstream tool-cache debug.",
-        resultFile: "Prefer outputFile in initialized workspaces."
+        upstreamTemplates: "Use toolName/arguments only when adapting a custom or fake upstream asset schema.",
+        refresh: "Use only for upstream tool-cache debug."
       }
     },
     captureNode: {
       tool: "figma_repl_capture_node",
       recommendedCalls: {
-        capture: { title: "Capture node", sessionId: "<session>", nodeId: "$target", outputFile: "<capture>.png" }
+        capture: { title: "Capture node", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" }
       },
-      advancedArguments: ["targetNodeId", "target", "handle", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile"],
+      advancedArguments: ["metadataFile", "toolName", "arguments", "refresh"],
       avoidUnless: {
-        targetAliases: "Prefer nodeId for direct calls; target/handle aliases are mainly for plan templates and compatibility.",
-        upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom screenshot upstream schema.",
+        upstreamTemplates: "Use toolName/arguments only when adapting a custom screenshot upstream schema.",
         refresh: "Use only for upstream tool-cache debug.",
-        resultFile: "Use only when separate capture metadata JSON is explicitly needed."
+        metadataFile: "Use only when separate capture metadata JSON is explicitly needed."
       }
     },
     taskPlan: {
@@ -30931,16 +31004,14 @@ function createToolArgumentGuidancePayload() {
       recommendedCalls: {
         filePlan: { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" }
       },
-      advancedArguments: ["steps", "resultFile"],
+      advancedArguments: ["steps"],
       avoidUnless: {
-        steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans.",
-        resultFile: "Prefer outputFile in initialized workspaces."
+        steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans."
       }
     },
     guidance: {
       tool: "figma_repl_guidance",
-      preferredArguments: ["task", "mode", "surface"],
-      aliases: { intent: "Alias for task.", goal: "Alias for task." }
+      preferredArguments: ["task", "mode", "surface"]
     },
     lookup: {
       tool: "figma_repl_lookup",
@@ -30966,9 +31037,9 @@ function createCapabilitiesPayload() {
       purpose: "Unified Figma-facing MCP facade for agents after OAuth registration. Stay inside figma_repl_mcp; it keeps local session metadata/handles and can bridge to upstream Figma MCP tools through explicit REPL tools.",
       preferredFlow: [
         "Read figma-repl://capabilities to choose the facade path",
-        "figma_repl_prepare_task with an absolute cwd, fileUrl or fileKey, and an intent for repairable .figma.js workspaces",
+        "figma_repl_prepare_task with file and task for repairable .figma.js workspaces; cwd is an optional override",
         "figma_repl_guidance with mode=plan for workflow planning or mode=guidance/card/catalog for compact local API cards",
-        "figma_repl_open with fileUrl and expectedSurface for stateful Plugin API work",
+        "figma_repl_open with file and surface for stateful Plugin API work",
         "figma_repl_inspect with mode=inspect or mode=validate before mutation",
         "figma_repl_run_script_file with inputFile and dryRun=true for primary .figma.js workflows, output files, and line-aware repair",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through a manifest or official upload_assets",
@@ -31004,12 +31075,11 @@ function createCapabilitiesPayload() {
       scriptShape: "Write an async function body in a local .figma.js file. The runner injects Figma REPL prelude plus $ helpers before upstream use_figma execution.",
       requiredArguments: ["title", "inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
       recommendedCalls: {
-        dryRun: { title: "Dry-run script", sessionId: "<session>", inputFile: "<intent>.figma.js", dryRun: true, strict: true, expectedSurface: "design" },
-        execute: { title: "Execute script", sessionId: "<session>", inputFile: "<intent>.figma.js", outputFile: "<intent>.result.json" }
+        dryRun: { title: "Dry-run script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
+        execute: { title: "Execute script", sessionId: "<session>", inputFile: "<task>.figma.js", outputFile: "<task>.result.json" }
       },
       advancedArguments: [
         "scriptPath",
-        "resultFile",
         "outputDir",
         "diagnosticsFile",
         "summaryFile",
@@ -31020,7 +31090,6 @@ function createCapabilitiesPayload() {
       ],
       avoidUnless: {
         scriptPath: "Use only for absolute-path escape hatches outside an initialized workspace; prefer inputFile.",
-        resultFile: "Use only for absolute or outputDir-relative advanced output; prefer outputFile in workspaces.",
         outputDir: "Use only when writing outside the workspace file-context folder.",
         diagnosticsFile: "Use only when a separate diagnostics JSON file is explicitly needed.",
         summaryFile: "Use only when a separate Markdown summary file is explicitly needed.",
@@ -31032,12 +31101,11 @@ function createCapabilitiesPayload() {
         inputFile: "Recommended file name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
         dryRun: "Read, diagnose, inject helpers, and return script metadata without calling upstream Figma.",
         strict: "Promote warnings to fatal diagnostics.",
-        expectedSurface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
+        surface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
         targetPageId: "Switch once to a known page before the script body runs.",
         allowDangerousOperations: "Bypasses only dynamic/destructive guards after exact file review.",
         outputFile: "Recommended normal result file name inside the initialized file-context folder. Defaults to the input script basename plus .result.json.",
         outputDir: "Advanced absolute directory escape hatch. Defaults to result.json only; pass diagnosticsFile or summaryFile for split files.",
-        resultFile: "Advanced output alias/escape hatch for absolute or outputDir-relative complete structured result output. Prefer outputFile in workspaces.",
         diagnosticsFile: "Advanced opt-in JSON file when diagnostics must be split out of the paired result file.",
         summaryFile: "Advanced opt-in Markdown file when a separate summary is required.",
         inlineResultLimit: "Advanced payload-size control for large inline fields; omitted fields stay available in the paired result file."
@@ -31063,22 +31131,22 @@ function createCapabilitiesPayload() {
       assetManifest: {
         tool: "figma_repl_apply_asset_manifest",
         purpose: "Apply local generated image files to pre-created target nodes through configurable upstream asset/upload tools including official upload_assets.",
-        assetShape: "{ path|filePath|localPath, targetNodeId|nodeId|target|targetId, nodeUrl?, name?, metadata?, toolName?, arguments? }",
+        assetShape: "{ path, target, nodeUrl?, name?, metadata?, toolName?, arguments? }",
         defaults: "Uses explicit toolName/arguments templates when provided; otherwise selects an advertised asset-like upstream tool, resolves target handles, and adapts upload_assets with file, MIME, node id, and node URL fields.",
-        result: "Inline assets are compact: ok, path, targetNodeId, handle, name, toolName, upload, validation, error, upstreamSummary. Explicit outputFile/resultFile writes assetDetails with full per-asset upstream envelopes and arguments.",
+        result: "Inline assets are compact: ok, path, targetNodeId, handle, name, toolName, upload, validation, error, upstreamSummary. Explicit outputFile writes assetDetails with full per-asset upstream envelopes and arguments.",
         validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload."
       },
       capture: {
         tool: "figma_repl_capture_node",
         purpose: "Call an upstream screenshot/capture tool and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
         defaulting: "Uses explicit toolName/arguments templates when provided; otherwise selects an advertised screenshot-like upstream tool and infers node id only from recognizable schema fields.",
-        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, mimeType, bytes, width/height when detectable, sourceUrl when downloaded, qa warnings, compact inline upstream, and optional resultFile metadata with full upstream."
+        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, mimeType, bytes, width/height when detectable, sourceUrl when downloaded, qa warnings, compact inline upstream, and optional metadataFile with full upstream."
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",
         stepTypes: ["script-file", "asset-manifest", "upload_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
-        references: "Later step arguments can reference prior outputs with {{outputs.stepId.resultFile.path}} or {{steps.stepId.outputFiles.resultFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
+        references: "Later step arguments can reference prior outputs with {{outputs.stepId.outputFile.path}} or {{steps.stepId.outputFiles.outputFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
         result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, and <step-id>.png plus <step-id>.capture.result.json."
       }
     },
@@ -31087,7 +31155,7 @@ function createCapabilitiesPayload() {
       resource: "figma-repl://intents",
       searchAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
       flow: [
-        "Describe the user task in task or intent.",
+        "Describe the user task in task.",
         "Use recommendedCards to choose compact cards before broad docs lookup.",
         "Use queryHints as narrower follow-up searches when card guidance is insufficient.",
         "Use apiSymbols for exact figma_repl_lookup kind=api calls.",
@@ -31709,6 +31777,30 @@ function assignOptionalString(target, key, value) {
     target[String(key)] = value;
   }
 }
+var FIGMA_FILE_URL_KINDS = ["design", "file", "figjam", "board", "slides"];
+function parseFigmaFileReference(file) {
+  if (!file) {
+    return {};
+  }
+  const value = file.trim();
+  if (value.length === 0) {
+    return {};
+  }
+  try {
+    const url2 = new URL(value);
+    return {
+      fileUrl: value,
+      fileKey: extractFigmaFileKey(value),
+      fileSlug: extractFigmaFileSlug(value),
+      surface: inferFigmaSurface(value)
+    };
+  } catch {
+    if (isAbsolute3(value) || value.includes("/") || value.includes("\\") || value.includes("..")) {
+      throw new Error('Tool argument "file" must be a Figma URL or a simple Figma file key.');
+    }
+    return { fileKey: value };
+  }
+}
 function extractFigmaFileKey(fileUrl) {
   if (!fileUrl) {
     return void 0;
@@ -31716,9 +31808,7 @@ function extractFigmaFileKey(fileUrl) {
   try {
     const url2 = new URL(fileUrl);
     const parts = url2.pathname.split("/").filter(Boolean);
-    const kindIndex = parts.findIndex(
-      (part) => ["design", "board", "slides"].includes(part)
-    );
+    const kindIndex = parts.findIndex((part) => FIGMA_FILE_URL_KINDS.includes(part));
     return kindIndex >= 0 ? parts[kindIndex + 1] : void 0;
   } catch {
     return void 0;
@@ -31743,9 +31833,7 @@ function extractFigmaFileSlug(fileUrl) {
   try {
     const url2 = new URL(fileUrl);
     const parts = url2.pathname.split("/").filter(Boolean);
-    const kindIndex = parts.findIndex(
-      (part) => ["design", "board", "slides"].includes(part)
-    );
+    const kindIndex = parts.findIndex((part) => FIGMA_FILE_URL_KINDS.includes(part));
     const name = kindIndex >= 0 ? parts[kindIndex + 2] : void 0;
     return name ? slugifyTaskName2(decodeURIComponent(name)) : void 0;
   } catch {
@@ -31759,8 +31847,8 @@ function inferFigmaSurface(fileUrl) {
   try {
     const url2 = new URL(fileUrl);
     const first = url2.pathname.split("/").filter(Boolean)[0];
-    if (first === "design") return "design";
-    if (first === "board") return "figjam";
+    if (first === "design" || first === "file") return "design";
+    if (first === "figjam" || first === "board") return "figjam";
     if (first === "slides") return "slides";
     return void 0;
   } catch {

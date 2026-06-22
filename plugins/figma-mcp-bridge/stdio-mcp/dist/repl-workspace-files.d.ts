@@ -32,7 +32,7 @@ export interface FilePointerMetadata {
     lineCount: number;
 }
 export interface ScriptOutputFileMetadata {
-    resultFile?: FilePointerMetadata;
+    outputFile?: FilePointerMetadata;
     diagnosticsFile?: FilePointerMetadata;
     summaryFile?: FilePointerMetadata;
     compiledScriptFile?: FilePointerMetadata;
@@ -85,7 +85,6 @@ export declare function createSessionWorkspace(options: {
 export declare function ensureWorkspaceDirectories(workspace: FigmaReplSessionWorkspace): Promise<void>;
 export declare function resolvePreparedTaskWorkspace(options: {
     args: {
-        taskDir?: unknown;
         workspaceDir?: unknown;
         taskRoot?: unknown;
     };

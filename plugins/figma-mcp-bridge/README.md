@@ -68,13 +68,13 @@ Local `figma_repl_*` tools return a fixed structured shape. Upstream-backed sing
 Agents should use `figma_repl_mcp` first:
 
 1. read `figma-repl://capabilities`
-2. `figma_repl_prepare_task({ title, cwd, fileUrl|fileKey, intent, expectedSurface })`
+2. `figma_repl_prepare_task({ title, file, task, surface })`
 3. edit local `.figma.js`
-4. `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, expectedSurface })`
+4. `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, surface })`
 5. `figma_repl_run_script_file({ title, sessionId, inputFile, outputFile })`
-6. `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath, outputFile })`, `figma_repl_capture_node({ title, sessionId, nodeId, outputFile })`, or `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })` when needed
+6. `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath, outputFile })`, `figma_repl_capture_node({ title, sessionId, target, outputFile })`, or `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })` when needed
 
-In workspace workflows, prefer `intent`, `inputFile`, `outputFile`, `manifestPath`, `nodeId`, and `planPath`. Alias fields, inline assets/steps, custom upstream templates, `resultFile`, `scriptPath`, split output files, upstream overrides, and `refresh` are advanced/debug/compat escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
+In workspace workflows, prefer `task`, `inputFile`, `outputFile`, `manifestPath`, `target`, and `planPath`. Inline assets/steps, custom upstream templates, `scriptPath`, split output files, upstream overrides, `metadataFile`, and `refresh` are advanced/debug escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
 
 For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 
@@ -87,14 +87,14 @@ const figma = createFigmaReplClient({
   oauthCachePath: "C:/Users/you/.codex/.figma-mcp-bridge-oauth.json",
 });
 await figma.open({
-  fileUrl: "https://www.figma.com/design/<fileKey>/<fileName>?node-id=<nodeId>",
+  file: "https://www.figma.com/design/<fileKey>/<fileName>?node-id=<nodeId>",
 });
 await figma.runScriptFile({
   sessionId: "ui-work",
   inputFile: "edit-panel.figma.js",
   dryRun: true,
   strict: true,
-  expectedSurface: "design",
+  surface: "design",
 });
 const run = await figma.runScriptFile({
   sessionId: "ui-work",
@@ -104,7 +104,7 @@ const run = await figma.runScriptFile({
 const payload = run.upstream?.payload;
 const capture = await figma.captureNode({
   sessionId: "ui-work",
-  nodeId: "$target",
+  target: "$target",
   outputFile: "qa.png",
 });
 if (!capture.ok) console.log(capture.plannedOutputFile);

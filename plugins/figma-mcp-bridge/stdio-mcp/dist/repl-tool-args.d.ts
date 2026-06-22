@@ -4,8 +4,10 @@ export interface FigmaReplOpenArguments {
     title?: string;
     sessionId?: string;
     label?: string;
-    fileUrl?: string;
-    expectedSurface?: FigmaReplSurface;
+    file?: string;
+    cwd?: string;
+    dirName?: string;
+    surface?: FigmaReplSurface;
     currentPageId?: string;
     reset?: boolean;
     connect?: boolean;
@@ -21,7 +23,7 @@ export interface FigmaReplEvalArguments {
     sessionId?: string;
     code: string;
     mode?: "read" | "write";
-    expectedSurface?: FigmaReplSurface;
+    surface?: FigmaReplSurface;
     allowDangerousOperations?: boolean;
     upstreamTool?: string;
     upstreamArgument?: string;
@@ -36,7 +38,7 @@ export interface FigmaReplRunScriptFileArguments {
     inputFile?: string;
     dryRun?: boolean;
     strict?: boolean;
-    expectedSurface?: FigmaReplSurface;
+    surface?: FigmaReplSurface;
     targetPageId?: string;
     allowDangerousOperations?: boolean;
     upstreamTool?: string;
@@ -44,7 +46,6 @@ export interface FigmaReplRunScriptFileArguments {
     upstreamArguments?: Record<string, unknown>;
     outputDir?: string;
     outputFile?: string;
-    resultFile?: string;
     diagnosticsFile?: string;
     summaryFile?: string;
     inlineResultLimit?: number;
@@ -52,13 +53,7 @@ export interface FigmaReplRunScriptFileArguments {
 export interface FigmaReplAssetManifestAsset {
     [key: string]: unknown;
     path?: string;
-    filePath?: string;
-    localPath?: string;
-    targetNodeId?: string;
-    nodeId?: string;
     target?: unknown;
-    targetHandle?: string;
-    targetId?: string;
     nodeUrl?: string;
     url?: string;
     name?: string;
@@ -74,34 +69,26 @@ export interface FigmaReplApplyAssetManifestArguments {
     manifestPath?: string;
     toolName?: string;
     arguments?: Record<string, unknown>;
-    argumentsTemplate?: Record<string, unknown>;
     validateTargets?: boolean;
     refresh?: boolean;
-    resultFile?: string;
     outputFile?: string;
 }
 export interface FigmaReplCaptureNodeArguments {
     [key: string]: unknown;
     title?: string;
     sessionId?: string;
-    nodeId?: string;
-    targetNodeId?: string;
     target?: unknown;
-    handle?: string;
     outputFile?: string;
-    resultFile?: string;
+    metadataFile?: string;
     toolName?: string;
     arguments?: Record<string, unknown>;
-    argumentsTemplate?: Record<string, unknown>;
     refresh?: boolean;
 }
 export interface FigmaReplTaskPlanStep {
     [key: string]: unknown;
     id?: string;
     type?: string;
-    tool?: string;
     args?: Record<string, unknown>;
-    arguments?: Record<string, unknown>;
 }
 export interface FigmaReplRunTaskPlanArguments {
     [key: string]: unknown;
@@ -110,7 +97,6 @@ export interface FigmaReplRunTaskPlanArguments {
     planPath?: string;
     steps?: FigmaReplTaskPlanStep[];
     stopOnFailure?: boolean;
-    resultFile?: string;
     outputFile?: string;
 }
 export interface FigmaReplCallUpstreamToolArguments {
@@ -134,22 +120,16 @@ export interface FigmaReplPrepareTaskArguments {
     [key: string]: unknown;
     title?: string;
     sessionId?: string;
-    intent?: string;
     task?: string;
-    fileUrl?: string;
-    fileKey?: string;
+    file?: string;
     fileSlug?: string;
     cwd?: string;
     dirName?: string;
-    goal?: string;
     taskSlug?: string;
-    taskName?: string;
-    taskDir?: string;
     fileName?: string;
     taskRoot?: string;
     workspaceDir?: string;
-    scriptName?: string;
-    expectedSurface?: FigmaReplSurface;
+    surface?: FigmaReplSurface;
     targetPageId?: string;
     template?: string;
     overwrite?: boolean;
@@ -161,11 +141,8 @@ export interface FigmaReplGuidanceArguments {
     card?: string;
     query?: string;
     task?: string;
-    intent?: string;
-    goal?: string;
     surface?: FigmaReplSurface;
     workflow?: string;
-    expectedSurface?: FigmaReplSurface;
     maxCards?: number;
 }
 export interface FigmaReplInspectArguments {
@@ -180,6 +157,7 @@ export interface FigmaReplInspectArguments {
     upstreamArgument?: string;
     upstreamArguments?: Record<string, unknown>;
 }
+export declare function asOpenArgs(args: unknown): FigmaReplOpenArguments;
 export declare function asEvalArgs(args: unknown): FigmaReplEvalArguments;
 export declare function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArguments;
 export declare function asApplyAssetManifestArgs(args: unknown): FigmaReplApplyAssetManifestArguments;

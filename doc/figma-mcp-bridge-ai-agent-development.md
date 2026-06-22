@@ -17,7 +17,7 @@ Runtime payloads are canonical for the agent-facing router contract:
 - `figma-repl://capabilities`
 - static resources under `figma-repl://*`
 - tool metadata from `stdio-mcp/src/repl-tool-metadata.ts`
-- intent/API guidance from `stdio-mcp/src/repl-guidance-catalog.ts`
+- task/API guidance from `stdio-mcp/src/repl-guidance-catalog.ts`
 - docs/API snippets from `stdio-mcp/src/repl-doc-search.ts`
 
 `SKILL.md`, `openai.yaml`, and README files are secondary summaries. Keep them short and aligned with the runtime-owned contract. Prefer narrow parity tests over generated markdown or large copied prose.
@@ -43,15 +43,15 @@ Pin these facts when changing the router surface:
 - `stdio-mcp/src/repl-tool-args.ts`: tool argument interfaces, default title helper, and explicit low-risk runtime parsers.
 - `stdio-mcp/src/repl-tool-metadata.ts`: canonical local tool descriptions and input schemas.
 - `stdio-mcp/src/repl-tool-registry.ts`: local tool names and task-plan step aliases.
-- `stdio-mcp/src/repl-guidance-catalog.ts`: API cards, intent buckets, query anchors, and pure guidance helpers.
+- `stdio-mcp/src/repl-guidance-catalog.ts`: API cards, task buckets, query anchors, and pure guidance helpers.
 - `stdio-mcp/src/repl-doc-search.ts`: corpus allowlists, reference-root resolution, chunking, ranking, opaque `sourceId`, and lookup shaping.
 - `skills/figma-router/SKILL.md`: lightweight user-task router, not the canonical schema source.
 - `skills/figma-router/agents/openai.yaml`: thin metadata that points agents at `$figma-router`; do not expand it into a second contract.
 
 ## Change Rules
 
-- Keep public tool names, resource URIs, result shapes, session semantics, and typed client signatures stable unless the task explicitly requests a breaking change.
-- Preserve compatibility in runtime parsers: do not reject unknown extra keys, do not change Boolean-style flag behavior, and do not duplicate path/workspace validation outside `repl-workspace-files.ts`.
+- Breaking changes to public tool names, resource URIs, result shapes, session semantics, and typed client signatures are allowed by default when they simplify the active contract; update runtime schemas, capabilities, docs, tests, and generated output in the same change.
+- Runtime parsers may reject removed or ambiguous public arguments. Keep parser behavior explicit, and do not duplicate path/workspace validation outside `repl-workspace-files.ts`.
 - Keep generated `dist` outputs in sync when `npm run build` changes them.
 - Do not reintroduce wrapper reference docs under `skills/figma-router/references/`; keep only `official-figma-skills/**` there.
 - Do not make docs canonical by copying large runtime payloads into markdown. Add or adjust narrow tests instead.
