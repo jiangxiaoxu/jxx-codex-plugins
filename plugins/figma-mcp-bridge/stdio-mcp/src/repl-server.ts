@@ -4025,6 +4025,125 @@ function slugifyTaskName(value: unknown): string {
   return slug || "figma-task";
 }
 
+function createToolArgumentGuidancePayload(): Record<string, unknown> {
+  return {
+    prepareTask: {
+      tool: "figma_repl_prepare_task",
+      recommendedCalls: {
+        workspaceFromUrl: { title: "Prepare task", cwd: "<absolute project cwd>", fileUrl: "<figma file URL>", intent: "<intent>", expectedSurface: "design" },
+        workspaceFromKey: { title: "Prepare task", cwd: "<absolute project cwd>", fileKey: "<figma file key>", intent: "<intent>", expectedSurface: "design" },
+      },
+      advancedArguments: ["task", "goal", "fileSlug", "dirName", "taskSlug", "taskName", "taskDir", "workspaceDir", "fileName", "scriptName", "taskRoot", "template", "overwrite"],
+      avoidUnless: {
+        taskAliases: "Use task/goal only for compatibility; prefer intent.",
+        workspaceOverrides: "Use taskDir/workspaceDir/taskRoot only when deliberately bypassing the default <cwd>/figma-mcp/<fileKey-or-fileSlug> layout.",
+        fileNameAliases: "Use fileName/scriptName only when the generated <intentSlug>.figma.js name is unsuitable.",
+        overwrite: "Use only after deciding that replacing an existing script/result pair is intended.",
+      },
+    },
+    open: {
+      tool: "figma_repl_open",
+      recommendedCalls: {
+        session: { title: "Open session", sessionId: "<session>", fileUrl: "<figma file URL>", expectedSurface: "design" },
+      },
+      advancedArguments: ["connect", "refresh", "upstreamTool", "upstreamArgument", "upstreamArguments", "handles"],
+      avoidUnless: {
+        connect: "Leave at the default true unless intentionally updating only local metadata.",
+        refresh: "Use only for upstream tool-cache debug.",
+        upstreamOverrides: "Use upstreamTool/upstreamArgument/upstreamArguments only for upstream routing debug.",
+        handles: "Use only when importing known node ids into a new session; prefer $.remember from scripts.",
+      },
+    },
+    eval: {
+      tool: "figma_repl_eval",
+      recommendedCalls: {
+        read: { title: "Inspect with eval", sessionId: "<session>", code: "<return compact JSON>", mode: "read", expectedSurface: "design" },
+        write: { title: "Run eval transaction", sessionId: "<session>", code: "<return compact JSON>", mode: "write", expectedSurface: "design" },
+      },
+      advancedArguments: ["allowDangerousOperations", "upstreamTool", "upstreamArgument", "upstreamArguments", "handleUpdates"],
+      avoidUnless: {
+        allowDangerousOperations: "Use only after reviewing the exact code; it does not bypass API contract, surface, or read-mode guards.",
+        upstreamOverrides: "Use upstreamTool/upstreamArgument/upstreamArguments only for upstream routing debug.",
+        handleUpdates: "Use only for handle import/repair; prefer $.remember inside code.",
+      },
+    },
+    inspect: {
+      tool: "figma_repl_inspect",
+      recommendedCalls: {
+        inspectTarget: { title: "Inspect node", sessionId: "<session>", target: "$selection" },
+        validateHandles: { title: "Validate handles", sessionId: "<session>", mode: "validate" },
+      },
+      advancedArguments: ["handles", "upstreamTool", "upstreamArgument", "upstreamArguments"],
+      avoidUnless: {
+        handles: "Pass handles only to validate a subset; omit to validate all cached handles.",
+        upstreamOverrides: "Use upstreamTool/upstreamArgument/upstreamArguments only for upstream routing debug.",
+      },
+    },
+    assetManifest: {
+      tool: "figma_repl_apply_asset_manifest",
+      recommendedCalls: {
+        applyManifest: { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" },
+      },
+      advancedArguments: ["assets", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile", "inlineResultLimit"],
+      avoidUnless: {
+        assets: "Prefer manifestPath for repeatable local-file workflows; inline assets are for generated one-off plans.",
+        assetAliases: "Use path/targetNodeId as the preferred asset fields; other path/target aliases are compatibility only.",
+        upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom or fake upstream asset schema.",
+        refresh: "Use only for upstream tool-cache debug.",
+        resultFile: "Prefer outputFile in initialized workspaces.",
+        inlineResultLimit: "Compatibility-only; manifest responses are already concise.",
+      },
+    },
+    captureNode: {
+      tool: "figma_repl_capture_node",
+      recommendedCalls: {
+        capture: { title: "Capture node", sessionId: "<session>", nodeId: "$target", outputFile: "<capture>.png" },
+      },
+      advancedArguments: ["targetNodeId", "target", "handle", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile", "inlineResultLimit"],
+      avoidUnless: {
+        targetAliases: "Prefer nodeId for direct calls; target/handle aliases are mainly for plan templates and compatibility.",
+        upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom screenshot upstream schema.",
+        refresh: "Use only for upstream tool-cache debug.",
+        resultFile: "Use only when separate capture metadata JSON is explicitly needed.",
+        inlineResultLimit: "Compatibility-only; capture responses return file metadata.",
+      },
+    },
+    taskPlan: {
+      tool: "figma_repl_run_task_plan",
+      recommendedCalls: {
+        filePlan: { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" },
+      },
+      advancedArguments: ["steps", "resultFile", "inlineResultLimit"],
+      avoidUnless: {
+        steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans.",
+        resultFile: "Prefer outputFile in initialized workspaces.",
+        inlineResultLimit: "Compatibility-only; plan responses return per-step statuses.",
+      },
+    },
+    guidance: {
+      tool: "figma_repl_guidance",
+      preferredArguments: ["task", "mode", "surface"],
+      aliases: { intent: "Alias for task.", goal: "Alias for task." },
+    },
+    lookup: {
+      tool: "figma_repl_lookup",
+      preferredArguments: { docs: ["kind=docs", "query"], api: ["kind=api", "symbol"] },
+      resultSizeControls: ["maxResults", "maxSnippetLines"],
+    },
+    callUpstreamTool: {
+      tool: "figma_repl_call_upstream_tool",
+      guidance: "Explicit upstream escape hatch only; use when a required official Figma MCP capability is not covered by the REPL workflow tools.",
+      recommendedCalls: {
+        explicit: { title: "Call upstream tool", sessionId: "<session>", toolName: "<official upstream tool>", arguments: {} },
+      },
+      advancedArguments: ["refresh"],
+      avoidUnless: {
+        refresh: "Use only for upstream tool-cache debug.",
+      },
+    },
+  };
+}
+
 function createCapabilitiesPayload(): Record<string, unknown> {
   return {
     guide: {
@@ -4121,6 +4240,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       },
       helpers: createEvalHelperDescriptionsPayload(),
     },
+    toolArgumentGuidance: createToolArgumentGuidancePayload(),
     fileWorkflow: createFileWorkflowPayload(),
     workflowTools: {
       resource: "figma-repl://workflow-tools",

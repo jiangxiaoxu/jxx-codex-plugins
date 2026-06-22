@@ -68,13 +68,13 @@ Local `figma_repl_*` tools return a fixed structured shape. `figma_repl_run_scri
 Agents should use `figma_repl_mcp` first:
 
 1. read `figma-repl://capabilities`
-2. `figma_repl_prepare_task({ cwd, fileUrl|fileKey, intent })`
+2. `figma_repl_prepare_task({ title, cwd, fileUrl|fileKey, intent, expectedSurface })`
 3. edit local `.figma.js`
 4. `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, expectedSurface })`
 5. `figma_repl_run_script_file({ title, sessionId, inputFile, outputFile })`
-6. `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, or `figma_repl_run_task_plan` when needed
+6. `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath, outputFile })`, `figma_repl_capture_node({ title, sessionId, nodeId, outputFile })`, or `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })` when needed
 
-In workspace workflows, prefer `inputFile` and `outputFile`. Absolute `scriptPath`, `resultFile`, upstream overrides, split output files, and `inlineResultLimit` are advanced/debug escape hatches.
+In workspace workflows, prefer `intent`, `inputFile`, `outputFile`, `manifestPath`, `nodeId`, and `planPath`. Alias fields, inline assets/steps, custom upstream templates, `resultFile`, `scriptPath`, split output files, upstream overrides, `refresh`, and `inlineResultLimit` are advanced/debug/compat escape hatches; `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
 
 For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 

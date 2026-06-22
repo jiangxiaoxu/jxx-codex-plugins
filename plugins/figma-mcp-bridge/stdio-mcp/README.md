@@ -101,7 +101,7 @@ await figma.runScriptFile({
 });
 ```
 
-`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `cwd` or file context is supplied. A task normally uses `<intentSlug>.figma.js` and `<intentSlug>.result.json` in that folder, then calls `runScriptFile` with `inputFile` and `outputFile`. Absolute `scriptPath`, `outputDir`, `resultFile`, split files, upstream overrides, and `inlineResultLimit` remain advanced/debug escape hatches.
+`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `cwd` plus `fileUrl` or `fileKey` is supplied. A task normally uses `intent`, `<intentSlug>.figma.js`, and `<intentSlug>.result.json` in that folder, then calls `runScriptFile` with `inputFile` and `outputFile`. Absolute `scriptPath`, `outputDir`, `resultFile`, split files, upstream overrides, and `inlineResultLimit` remain advanced/debug escape hatches.
 
 Write ordinary async JavaScript in `.figma.js` files. Use native Figma Plugin API calls for advanced work and injected `$` helpers for common agent tasks:
 
@@ -127,9 +127,9 @@ Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, 
 
 ## Assets, Capture, and Plans
 
-- `figma_repl_apply_asset_manifest`: apply generated image assets to target nodes. In an initialized workspace, `manifestPath`, asset paths, `resultFile`, and `outputFile` can be simple file names. The tool validates image fills when upstream eval is available.
-- `figma_repl_capture_node`: call a screenshot/capture upstream tool, write image bytes or downloaded URL payloads to a local file, and return compact QA metadata.
-- `figma_repl_run_task_plan`: run sequential `script-file`, `asset-manifest`, `screenshot-capture`, and `upstream-tool` steps. Missing workspace step outputs default to `<step-id>.result.json`, `<step-id>.assets.result.json`, `<step-id>.png`, and `<step-id>.capture.result.json`.
+- `figma_repl_apply_asset_manifest`: recommended call is `{ title, sessionId, manifestPath, outputFile }`; inline assets, custom upstream templates, `refresh`, `resultFile`, and `inlineResultLimit` are advanced/debug/compat fields.
+- `figma_repl_capture_node`: recommended call is `{ title, sessionId, nodeId, outputFile }`; target aliases, custom upstream templates, `refresh`, `resultFile`, and `inlineResultLimit` are advanced/debug/compat fields.
+- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath, outputFile }`; inline `steps`, `resultFile`, and `inlineResultLimit` are advanced/compat fields.
 
 Keep `.figma.js` transactions small enough for upstream `use_figma` payload limits. Split dense work into skeleton, asset targets, upload fills, and visual fixes when payload diagnostics appear.
 
