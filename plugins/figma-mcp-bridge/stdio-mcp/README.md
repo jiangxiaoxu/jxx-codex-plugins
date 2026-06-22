@@ -71,7 +71,7 @@ await upstream.close();
 
 ## REPL Response Shape
 
-Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and file pointers are under `outputFiles` as `{ path, bytes, lineCount }`. `figma_repl_run_script_file` returns upstream JSON as `upstream.payload` and non-JSON upstream output as `upstream.text`; other upstream-backed tools keep parsed JSON in `result` with `text` as the non-JSON fallback.
+Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and file pointers are under `outputFiles` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return upstream JSON as `upstream.payload` and non-JSON upstream output as `upstream.text`; asset manifests keep compact inline asset entries and write full per-asset upstream details only to explicit result files.
 
 Executed `figma_repl_run_script_file` result files use the same `upstream` envelope and do not duplicate upstream JSON into `raw`.
 
@@ -101,7 +101,7 @@ await figma.runScriptFile({
 });
 ```
 
-`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `cwd` plus `fileUrl` or `fileKey` is supplied. A task normally uses `intent`, `<intentSlug>.figma.js`, and `<intentSlug>.result.json` in that folder, then calls `runScriptFile` with `inputFile` and `outputFile`. Absolute `scriptPath`, `outputDir`, `resultFile`, split files, upstream overrides, and `inlineResultLimit` remain advanced/debug escape hatches.
+`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `cwd` plus `fileUrl` or `fileKey` is supplied. A task normally uses `intent`, `<intentSlug>.figma.js`, and `<intentSlug>.result.json` in that folder, then calls `runScriptFile` with `inputFile` and `outputFile`. Absolute `scriptPath`, `outputDir`, `resultFile`, split files, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
 
 Write ordinary async JavaScript in `.figma.js` files. Use native Figma Plugin API calls for advanced work and injected `$` helpers for common agent tasks:
 
@@ -127,9 +127,9 @@ Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, 
 
 ## Assets, Capture, and Plans
 
-- `figma_repl_apply_asset_manifest`: recommended call is `{ title, sessionId, manifestPath, outputFile }`; inline assets, custom upstream templates, `refresh`, `resultFile`, and `inlineResultLimit` are advanced/debug/compat fields.
-- `figma_repl_capture_node`: recommended call is `{ title, sessionId, nodeId, outputFile }`; target aliases, custom upstream templates, `refresh`, `resultFile`, and `inlineResultLimit` are advanced/debug/compat fields.
-- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath, outputFile }`; inline `steps`, `resultFile`, and `inlineResultLimit` are advanced/compat fields.
+- `figma_repl_apply_asset_manifest`: recommended call is `{ title, sessionId, manifestPath, outputFile }`; inline assets, custom upstream templates, `refresh`, and `resultFile` are advanced/debug/compat fields.
+- `figma_repl_capture_node`: recommended call is `{ title, sessionId, nodeId, outputFile }`; target aliases, custom upstream templates, `refresh`, and `resultFile` are advanced/debug/compat fields.
+- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath, outputFile }`; inline `steps` and `resultFile` are advanced/compat fields.
 
 Keep `.figma.js` transactions small enough for upstream `use_figma` payload limits. Split dense work into skeleton, asset targets, upload fills, and visual fixes when payload diagnostics appear.
 

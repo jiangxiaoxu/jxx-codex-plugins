@@ -1050,6 +1050,7 @@ async function executeApplyAssetManifest(
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const failures: Array<Record<string, unknown>> = [];
   const assetResults: Array<Record<string, unknown>> = [];
+  const assetDetails: Array<Record<string, unknown>> = [];
   await runtime.client.connect();
 
   for (const asset of manifest.assets) {
@@ -1059,68 +1060,82 @@ async function executeApplyAssetManifest(
       candidates: DEFAULT_ASSET_TOOL_CANDIDATES,
       kind: "asset upload/fill",
     });
-      const upstreamArguments = buildAssetManifestUpstreamArguments({
-        asset,
-        tool,
-        template: asset.arguments ?? manifest.argumentsTemplate,
-      });
-      const startedAt = new Date().toISOString();
-      try {
-        const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
-        const parsed = parseUpstreamToolResult(upstream);
-        const fullResult = {
-          ...upstreamResultFields({ parsed, upstream }),
-          ...upstreamFailureFields(parsed),
-        };
-        const upload = parsed.upstreamError
-          ? undefined
-          : await submitLocalAssetUploadIfAvailable(asset, parsed);
-        const ok = !parsed.upstreamError && upload?.ok !== false;
-        const entry = {
-          ok,
-          path: asset.path,
-          targetNodeId: asset.targetNodeId,
-          handle: asset.handle,
-          name: asset.name,
-          metadata: asset.metadata,
-          toolName: tool.name,
-          arguments: upstreamArguments,
-          result: upload ? { ...fullResult, upload } : fullResult,
-          startedAt,
-          finishedAt: new Date().toISOString(),
-        };
+    const upstreamArguments = buildAssetManifestUpstreamArguments({
+      asset,
+      tool,
+      template: asset.arguments ?? manifest.argumentsTemplate,
+    });
+    const startedAt = new Date().toISOString();
+    try {
+      const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+      const parsed = parseUpstreamToolResult(upstream);
+      const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined;
+      const upload = parsed.upstreamError
+        ? undefined
+        : await submitLocalAssetUploadIfAvailable(asset, parsed);
+      const ok = !parsed.upstreamError && upload?.ok !== false;
+      const entry = {
+        ok,
+        path: asset.path,
+        targetNodeId: asset.targetNodeId,
+        handle: asset.handle,
+        name: asset.name,
+        toolName: tool.name,
+        upload,
+        error: upstreamError,
+        upstreamSummary: parsed.upstreamError ? parsed.upstreamError.message : summarizeParsedResult(parsed),
+      };
+      const detail = {
+        ...entry,
+        metadata: asset.metadata,
+        arguments: upstreamArguments,
+        upstream: upstreamEnvelope(parsed),
+        upstreamError,
+        primaryFix: parsed.primaryFix,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+      };
       assetResults.push(entry);
+      assetDetails.push(detail);
       if (!ok) {
         failures.push({
           path: asset.path,
           targetNodeId: asset.targetNodeId,
           handle: asset.handle,
           toolName: tool.name,
-          error: parsed.upstreamError,
+          error: upstreamError,
         });
       }
     } catch (error) {
       const upstreamError = normalizeCaughtUpstreamError(error);
+      const responseError = responseUpstreamError(upstreamError);
       const entry = {
         ok: false,
         path: asset.path,
         targetNodeId: asset.targetNodeId,
         handle: asset.handle,
         name: asset.name,
-        metadata: asset.metadata,
         toolName: tool.name,
+        error: responseError,
+        upstreamSummary: upstreamError.message,
+      };
+      const detail = {
+        ...entry,
+        metadata: asset.metadata,
         arguments: upstreamArguments,
-        error: upstreamError,
+        upstreamError: responseError,
+        primaryFix: primaryFixForUpstreamError(upstreamError),
         startedAt,
         finishedAt: new Date().toISOString(),
       };
       assetResults.push(entry);
+      assetDetails.push(detail);
       failures.push({
         path: asset.path,
         targetNodeId: asset.targetNodeId,
         handle: asset.handle,
         toolName: tool.name,
-        error: upstreamError,
+        error: responseError,
       });
     }
   }
@@ -1135,14 +1150,25 @@ async function executeApplyAssetManifest(
     assetResults,
   });
   const ok = failures.length === 0 && validation.ok !== false;
+  for (const detail of assetDetails) {
+    const targetNodeId = asOptionalString(detail.targetNodeId);
+    const asset = assetResults.find((item) => item.targetNodeId === targetNodeId);
+    if (asset?.validation !== undefined) {
+      detail.validation = asset.validation;
+    }
+  }
   const payload = {
     ok,
+    session: responseSession(session),
     assets: assetResults,
     validation,
     failures: failures.length > 0 ? failures : undefined,
   };
   if (resultFile) {
-    files.resultFile = await writeJsonFile(resultFile, payload);
+    files.resultFile = await writeJsonFile(resultFile, {
+      ...payload,
+      assetDetails,
+    });
   }
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
@@ -1204,15 +1230,19 @@ async function executeCaptureNode(
     const outputFiles: Record<string, unknown> = {};
     const payload = {
       ok: false,
-      file: outputFile,
+      session: responseSession(session),
+      plannedOutputFile: outputFile,
       nodeId,
       handle: targetResolution.handle,
       toolName: tool.name,
-      ...upstreamResultFields({ parsed, upstream }),
+      upstream: upstreamEnvelope(parsed, { includePayload: false }),
       ...upstreamFailureFields(parsed),
     };
     if (resultFile) {
-      outputFiles.resultFile = await writeJsonFile(resultFile, payload);
+      outputFiles.resultFile = await writeJsonFile(resultFile, {
+        ...payload,
+        upstream: upstreamEnvelope(parsed),
+      });
     }
     return {
       ...payload,
@@ -1239,7 +1269,8 @@ async function executeCaptureNode(
   });
   const payload = {
     ok: true,
-    file: outputFile,
+    session: responseSession(session),
+    outputFile,
     nodeId,
     handle: targetResolution.handle,
     toolName: tool.name,
@@ -1251,10 +1282,13 @@ async function executeCaptureNode(
     height: saved.height,
     sourceUrl: saved.sourceUrl,
     qa: createCaptureQa(saved),
-    ...upstreamResultFields({ parsed, upstream }),
+    upstream: upstreamEnvelope(parsed, { includePayload: false }),
   };
   if (resultFile) {
-    outputFiles.resultFile = await writeJsonFile(resultFile, payload);
+    outputFiles.resultFile = await writeJsonFile(resultFile, {
+      ...payload,
+      upstream: upstreamEnvelope(parsed),
+    });
   }
   return {
     ...payload,
@@ -1360,6 +1394,7 @@ async function executeRunTaskPlan(
   const failures = steps.filter((step) => step.ok === false);
   const payload = {
     ok: failures.length === 0,
+    session: responseSession(session),
     stopped,
     stopOnFailure,
     steps,
@@ -1398,10 +1433,10 @@ async function handlePrepareTask(
     session.workspace = workspace;
     touchSession(session);
   }
-  const workspaceDir = workspace.fileDir;
   const scriptName = normalizeTaskScriptName(args.fileName ?? args.scriptName ?? workspace.files.script, intentSlug);
+  const outputFile = resultFileNameForScript(scriptName);
   const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName/scriptName");
-  const resultFile = resolveWorkspaceFile(workspace.sessionDir, resultFileNameForScript(scriptName), "resultFile");
+  const resultFile = resolveWorkspaceFile(workspace.sessionDir, outputFile, "resultFile");
 
   await ensureWorkspaceDirectories(workspace);
   await writeTaskFile(scriptPath, createTaskScriptTemplate(intentSlug, args), Boolean(args.overwrite));
@@ -1422,9 +1457,8 @@ async function handlePrepareTask(
       slug: intentSlug,
       intentSlug,
       fileContext: workspace.fileContext,
-      fileDir: workspace.fileDir,
-      workspaceDir,
-      taskDir: workspaceDir,
+      inputFile: scriptName,
+      outputFile,
       workspace,
       scriptPath,
       resultFile: resultFileMetadata,
@@ -1739,6 +1773,7 @@ async function executeCallUpstreamTool(
   });
   return {
     ok: !parsed.upstreamError,
+    session: responseSession(session),
     toolName: args.toolName,
     ...upstreamResultFields({
       parsed,
@@ -3383,7 +3418,7 @@ return {
     if (parsed.upstreamError) {
       return {
         ok: false,
-        error: parsed.upstreamError,
+        error: responseUpstreamError(parsed.upstreamError),
         primaryFix: parsed.primaryFix,
       };
     }
@@ -3408,7 +3443,7 @@ return {
   } catch (error) {
     return {
       ok: false,
-      error: normalizeCaughtUpstreamError(error),
+      error: responseUpstreamError(normalizeCaughtUpstreamError(error)),
     };
   }
 }
@@ -3656,7 +3691,7 @@ function createTaskPlanStepReference(options: {
   const outputFiles = asRecord(options.result.outputFiles);
   const upstream = asRecord(options.result.upstream);
   const upstreamPayload = runScriptUpstreamPayload(options.result);
-  const result = asRecord(options.type === "script-file" ? upstreamPayload : options.result.result);
+  const result = asRecord(upstreamPayload);
   const nestedResult = isRecord(result.result) ? asRecord(result.result) : result;
   const session = asRecord(options.result.session);
   const handles =
@@ -3670,17 +3705,19 @@ function createTaskPlanStepReference(options: {
     type: options.type,
     status: options.status,
     ok: options.ok,
-    file: options.result.file,
     upstream: Object.keys(upstream).length > 0 ? upstream : undefined,
-    result: options.type !== "script-file" && Object.keys(result).length > 0 ? result : undefined,
     nodeIds: collectNodeIds(options.result),
     handles,
+    assets: options.result.assets,
+    validation: options.result.validation,
     assetTargets: nestedResult.assetTargets,
     captureTarget: nestedResult.captureTarget,
     createdNodeId: nestedResult.createdNodeId,
+    outputFile: options.result.outputFile,
+    plannedOutputFile: options.result.plannedOutputFile,
     outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
     resultFile: asRecord(outputFiles.resultFile).path,
-    outputFile: asRecord(outputFiles.outputFile).path,
+    outputFilePath: asRecord(outputFiles.outputFile).path,
   };
 }
 
@@ -3693,7 +3730,7 @@ function taskPlanStepSucceeded(result: Record<string, unknown>): boolean {
   if (result.ok === false) {
     return false;
   }
-  const nestedResult = asRecord(runScriptUpstreamPayload(result) ?? result.result);
+  const nestedResult = asRecord(runScriptUpstreamPayload(result));
   if (nestedResult.ok === false) {
     return false;
   }
@@ -3703,7 +3740,8 @@ function taskPlanStepSucceeded(result: Record<string, unknown>): boolean {
 function summarizeTaskPlanStepResult(result: Record<string, unknown>): Record<string, unknown> {
   return {
     ok: result.ok !== false,
-    file: result.file,
+    outputFile: result.outputFile,
+    plannedOutputFile: result.plannedOutputFile,
     files: result.files ?? result.outputFiles,
     toolName: result.toolName,
     upstreamTool: result.upstreamTool,
@@ -4084,14 +4122,13 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       recommendedCalls: {
         applyManifest: { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" },
       },
-      advancedArguments: ["assets", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile", "inlineResultLimit"],
+      advancedArguments: ["assets", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile"],
       avoidUnless: {
         assets: "Prefer manifestPath for repeatable local-file workflows; inline assets are for generated one-off plans.",
         assetAliases: "Use path/targetNodeId as the preferred asset fields; other path/target aliases are compatibility only.",
         upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom or fake upstream asset schema.",
         refresh: "Use only for upstream tool-cache debug.",
         resultFile: "Prefer outputFile in initialized workspaces.",
-        inlineResultLimit: "Compatibility-only; manifest responses are already concise.",
       },
     },
     captureNode: {
@@ -4099,13 +4136,12 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       recommendedCalls: {
         capture: { title: "Capture node", sessionId: "<session>", nodeId: "$target", outputFile: "<capture>.png" },
       },
-      advancedArguments: ["targetNodeId", "target", "handle", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile", "inlineResultLimit"],
+      advancedArguments: ["targetNodeId", "target", "handle", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile"],
       avoidUnless: {
         targetAliases: "Prefer nodeId for direct calls; target/handle aliases are mainly for plan templates and compatibility.",
         upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom screenshot upstream schema.",
         refresh: "Use only for upstream tool-cache debug.",
         resultFile: "Use only when separate capture metadata JSON is explicitly needed.",
-        inlineResultLimit: "Compatibility-only; capture responses return file metadata.",
       },
     },
     taskPlan: {
@@ -4113,11 +4149,10 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       recommendedCalls: {
         filePlan: { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" },
       },
-      advancedArguments: ["steps", "resultFile", "inlineResultLimit"],
+      advancedArguments: ["steps", "resultFile"],
       avoidUnless: {
         steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans.",
         resultFile: "Prefer outputFile in initialized workspaces.",
-        inlineResultLimit: "Compatibility-only; plan responses return per-step statuses.",
       },
     },
     guidance: {
@@ -4162,7 +4197,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma_repl_mcp interface.",
-      responseShape: "Fixed structured payloads without session.history; file-script upstream JSON is returned as upstream.payload, file-script text is returned as upstream.text, and other upstream-backed tools keep parsed JSON in result with text as the non-JSON fallback.",
+      responseShape: "Fixed structured payloads without session.history. Upstream-backed single-call tools return JSON in upstream.payload or non-JSON output in upstream.text. Asset manifests keep compact inline assets and complete per-asset upstream envelopes in explicit result files.",
     },
     patterns: {
       text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
@@ -4249,19 +4284,20 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         purpose: "Apply local generated image files to pre-created target nodes through configurable upstream asset/upload tools including official upload_assets.",
         assetShape: "{ path|filePath|localPath, targetNodeId|nodeId|target|targetId, nodeUrl?, name?, metadata?, toolName?, arguments? }",
         defaults: "Uses explicit toolName/arguments templates when provided; otherwise selects an advertised asset-like upstream tool, resolves target handles, and adapts upload_assets with file, MIME, node id, and node URL fields.",
+        result: "Inline assets are compact: ok, path, targetNodeId, handle, name, toolName, upload, validation, error, upstreamSummary. Explicit outputFile/resultFile writes assetDetails with full per-asset upstream envelopes and arguments.",
         validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload.",
       },
       capture: {
         tool: "figma_repl_capture_node",
         purpose: "Call an upstream screenshot/capture tool and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
         defaulting: "Uses explicit toolName/arguments templates when provided; otherwise selects an advertised screenshot-like upstream tool and infers node id only from recognizable schema fields.",
-        metadata: "Returns kind, mimeType, bytes, width/height when detectable, sourceUrl when downloaded, qa warnings, and optional resultFile metadata.",
+        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, mimeType, bytes, width/height when detectable, sourceUrl when downloaded, qa warnings, compact inline upstream, and optional resultFile metadata with full upstream.",
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",
         stepTypes: ["script-file", "asset-manifest", "upload_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
-        references: "Later step arguments can reference prior outputs with {{outputs.stepId.resultFile.path}} or {{steps.stepId.outputFiles.resultFile.path}}; script-step upstream JSON is available at {{steps.stepId.upstream.payload}}.",
+        references: "Later step arguments can reference prior outputs with {{outputs.stepId.resultFile.path}} or {{steps.stepId.outputFiles.resultFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
         result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, and <step-id>.png plus <step-id>.capture.result.json.",
       },
     },
@@ -4732,22 +4768,14 @@ function upstreamResultFields(options: {
   parsed: ParsedUpstreamToolResult;
   upstream?: unknown;
 }): Record<string, unknown> {
-  const fields: Record<string, unknown> = {};
-  if (options.parsed.json !== undefined) {
-    fields.result = options.parsed.json;
-  }
-  if (options.parsed.json === undefined) {
-    fields.text = options.parsed.text || undefined;
-  }
-  return fields;
+  return {
+    upstream: upstreamEnvelope(options.parsed),
+  };
 }
 
 function runScriptUpstreamFields(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
-  const ok = !parsed.upstreamError;
   return {
-    upstream: parsed.json !== undefined
-      ? { kind: "json", ok, payload: parsed.json }
-      : { kind: "text", ok, text: parsed.text || undefined },
+    upstream: upstreamEnvelope(parsed),
   };
 }
 
@@ -4768,9 +4796,25 @@ function responseUpstreamError(error: FigmaReplUpstreamError): Record<string, un
 
 function upstreamFailureFields(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
   return {
-    upstreamError: parsed.upstreamError,
+    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined,
     primaryFix: parsed.primaryFix,
   };
+}
+
+function upstreamEnvelope(
+  parsed: ParsedUpstreamToolResult,
+  options: { includePayload?: boolean } = {},
+): Record<string, unknown> {
+  const includePayload = options.includePayload ?? true;
+  const ok = !parsed.upstreamError;
+  if (parsed.json !== undefined) {
+    return includePayload
+      ? { kind: "json", ok, payload: parsed.json }
+      : { kind: "json", ok };
+  }
+  return includePayload
+    ? { kind: "text", ok, text: parsed.text || undefined }
+    : { kind: "text", ok };
 }
 
 function publicSession(
