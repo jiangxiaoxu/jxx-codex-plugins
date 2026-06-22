@@ -202,6 +202,27 @@ test("figma REPL eval rejects dynamic helper access before upstream execution", 
 
   await assert.rejects(
     mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Reject removed open field",
+        fileUrl: "https://www.figma.com/design/file123/Test",
+      },
+    }),
+    /Tool argument "fileUrl" was removed\. Use "file"/,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_prepare_task",
+      arguments: {
+        title: "Reject removed prepare field",
+        fileKey: "file123",
+      },
+    }),
+    /Tool argument "fileKey" was removed\. Use "file"/,
+  );
+
+  await assert.rejects(
+    mcpClient.callTool({
       name: "figma_repl_eval",
       arguments: {
         title: "Reject dynamic helper access",
@@ -555,41 +576,45 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(capabilities.fileWorkflow.primaryTool, "figma_repl_run_script_file");
   assert.deepEqual(
     capabilities.scriptWorkflow.recommendedCalls.dryRun,
-    { title: "Dry-run script", sessionId: "<session>", inputFile: "<intent>.figma.js", dryRun: true, strict: true, expectedSurface: "design" },
+    { title: "Dry-run script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
   );
   assert.deepEqual(
     capabilities.scriptWorkflow.recommendedCalls.execute,
-    { title: "Execute script", sessionId: "<session>", inputFile: "<intent>.figma.js", outputFile: "<intent>.result.json" },
+    { title: "Execute script", sessionId: "<session>", inputFile: "<task>.figma.js", outputFile: "<task>.result.json" },
   );
   assert.ok(capabilities.scriptWorkflow.advancedArguments.includes("scriptPath"));
   assert.ok(capabilities.scriptWorkflow.advancedArguments.includes("upstreamTool"));
   assert.match(capabilities.scriptWorkflow.avoidUnless.scriptPath, /prefer inputFile/i);
   assert.match(capabilities.scriptWorkflow.avoidUnless.upstreamOverrides, /routing debug/);
   assert.deepEqual(
-    capabilities.toolArgumentGuidance.prepareTask.recommendedCalls.workspaceFromUrl,
-    { title: "Prepare task", cwd: "<absolute project cwd>", fileUrl: "<figma file URL>", intent: "<intent>", expectedSurface: "design" },
+    capabilities.toolArgumentGuidance.prepareTask.recommendedCalls.workspaceFromFile,
+    { title: "Prepare task", file: "<figma file URL or file key>", task: "<task>", surface: "design" },
   );
   assert.ok(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("taskRoot"));
-  assert.match(capabilities.toolArgumentGuidance.prepareTask.avoidUnless.taskAliases, /prefer intent/i);
+  assert.equal(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("taskDir"), false);
+  assert.equal(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("scriptName"), false);
   assert.deepEqual(
     capabilities.toolArgumentGuidance.assetManifest.recommendedCalls.applyManifest,
     { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" },
   );
-  assert.ok(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("argumentsTemplate"));
+  assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("argumentsTemplate"), false);
+  assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("resultFile"), false);
   assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("inlineResultLimit"), false);
   assert.match(capabilities.toolArgumentGuidance.assetManifest.avoidUnless.upstreamTemplates, /custom or fake upstream asset schema/i);
   assert.deepEqual(
     capabilities.toolArgumentGuidance.captureNode.recommendedCalls.capture,
-    { title: "Capture node", sessionId: "<session>", nodeId: "$target", outputFile: "<capture>.png" },
+    { title: "Capture node", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
   );
-  assert.ok(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("targetNodeId"));
+  assert.ok(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("metadataFile"));
+  assert.equal(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("targetNodeId"), false);
+  assert.equal(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("argumentsTemplate"), false);
   assert.equal(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("inlineResultLimit"), false);
-  assert.match(capabilities.toolArgumentGuidance.captureNode.avoidUnless.targetAliases, /Prefer nodeId/i);
   assert.deepEqual(
     capabilities.toolArgumentGuidance.taskPlan.recommendedCalls.filePlan,
     { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" },
   );
   assert.ok(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("steps"));
+  assert.equal(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("resultFile"), false);
   assert.equal(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("inlineResultLimit"), false);
   assert.match(capabilities.toolArgumentGuidance.open.avoidUnless.upstreamOverrides, /routing debug/);
   assert.match(capabilities.toolArgumentGuidance.eval.avoidUnless.upstreamOverrides, /routing debug/);
@@ -671,13 +696,14 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(runScriptFileTool.inputSchema.properties.inputFile.description, /preferred over scriptPath/);
   assert.match(runScriptFileTool.inputSchema.properties.scriptPath.description, /escape hatch/);
   assert.match(runScriptFileTool.inputSchema.properties.outputFile.description, /Recommended normal result file/);
-  assert.match(runScriptFileTool.inputSchema.properties.resultFile.description, /Advanced output alias/);
+  assert.equal(runScriptFileTool.inputSchema.properties.resultFile, undefined);
+  assert.match(runScriptFileTool.inputSchema.properties.surface.description, /Expected Figma surface/);
   assert.match(runScriptFileTool.inputSchema.properties.upstreamTool.description, /routing debug/);
   assert.match(runScriptFileTool.inputSchema.properties.upstreamArgument.description, /debug override/);
   assert.match(runScriptFileTool.inputSchema.properties.upstreamArguments.description, /routing\/debug/);
   assert.match(runScriptFileTool.inputSchema.properties.diagnosticsFile.description, /Advanced opt-in/);
   assert.match(runScriptFileTool.inputSchema.properties.summaryFile.description, /Advanced opt-in/);
-  assert.match(runScriptFileTool.inputSchema.properties.inlineResultLimit.description, /not a return-shape selector/);
+  assert.match(runScriptFileTool.inputSchema.properties.inlineResultLimit.description, /complete payloads stay in outputFile/);
   const evalTool = tools.tools.find((tool) => tool.name === "figma_repl_eval");
   assert.ok(evalTool);
   assert.match(evalTool.description, /AST-referenced \$ helpers/);
@@ -687,7 +713,11 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(evalTool.inputSchema.properties.handleUpdates.description, /handle-import escape hatch/);
   const openTool = tools.tools.find((tool) => tool.name === "figma_repl_open");
   assert.ok(openTool);
-  assert.match(openTool.description, /Recommended call: \{ title, sessionId, fileUrl, expectedSurface \}/);
+  assert.match(openTool.description, /Recommended call: \{ title, sessionId, file, surface \}/);
+  assert.match(openTool.inputSchema.properties.file.description, /Figma file URL or raw file key/);
+  assert.equal(openTool.inputSchema.properties.fileUrl, undefined);
+  assert.equal(openTool.inputSchema.properties.fileKey, undefined);
+  assert.equal(openTool.inputSchema.properties.expectedSurface, undefined);
   assert.match(openTool.inputSchema.properties.upstreamArguments.description, /routing debug/);
   const assetManifestTool = tools.tools.find((tool) => tool.name === "figma_repl_apply_asset_manifest");
   assert.ok(assetManifestTool);
@@ -695,16 +725,18 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(assetManifestTool.inputSchema.properties.manifestPath.description, /Recommended manifest file path/);
   assert.match(assetManifestTool.inputSchema.properties.assets.description, /Advanced inline asset entries/);
   assert.match(assetManifestTool.inputSchema.properties.toolName.description, /Advanced upstream-tool override/);
-  assert.match(assetManifestTool.inputSchema.properties.argumentsTemplate.description, /Advanced alias/);
-  assert.match(assetManifestTool.inputSchema.properties.resultFile.description, /Advanced output alias/);
+  assert.equal(assetManifestTool.inputSchema.properties.argumentsTemplate, undefined);
+  assert.equal(assetManifestTool.inputSchema.properties.resultFile, undefined);
   assert.match(assetManifestTool.inputSchema.properties.outputFile.description, /Recommended manifest result JSON/);
   assert.equal(assetManifestTool.inputSchema.properties.inlineResultLimit, undefined);
   const captureNodeTool = tools.tools.find((tool) => tool.name === "figma_repl_capture_node");
   assert.ok(captureNodeTool);
-  assert.match(captureNodeTool.description, /Recommended call: \{ title, sessionId, nodeId, outputFile \}/);
-  assert.match(captureNodeTool.inputSchema.properties.nodeId.description, /Recommended target/);
-  assert.match(captureNodeTool.inputSchema.properties.targetNodeId.description, /Compatibility alias/);
-  assert.match(captureNodeTool.inputSchema.properties.target.description, /Advanced alias/);
+  assert.match(captureNodeTool.description, /Recommended call: \{ title, sessionId, target, outputFile \}/);
+  assert.equal(captureNodeTool.inputSchema.properties.nodeId, undefined);
+  assert.equal(captureNodeTool.inputSchema.properties.targetNodeId, undefined);
+  assert.equal(captureNodeTool.inputSchema.properties.handle, undefined);
+  assert.match(captureNodeTool.inputSchema.properties.target.description, /Recommended target/);
+  assert.match(captureNodeTool.inputSchema.properties.metadataFile.description, /metadata JSON/);
   assert.match(captureNodeTool.inputSchema.properties.toolName.description, /Advanced upstream/);
   assert.equal(captureNodeTool.inputSchema.properties.inlineResultLimit, undefined);
   const taskPlanTool = tools.tools.find((tool) => tool.name === "figma_repl_run_task_plan");
@@ -712,14 +744,23 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(taskPlanTool.description, /Recommended file-plan call: \{ title, sessionId, planPath, outputFile \}/);
   assert.match(taskPlanTool.inputSchema.properties.planPath.description, /Recommended JSON plan path/);
   assert.match(taskPlanTool.inputSchema.properties.steps.description, /Advanced inline steps/);
-  assert.match(taskPlanTool.inputSchema.properties.resultFile.description, /Advanced output alias/);
+  assert.equal(taskPlanTool.inputSchema.properties.resultFile, undefined);
   assert.equal(taskPlanTool.inputSchema.properties.inlineResultLimit, undefined);
   const prepareTaskTool = tools.tools.find((tool) => tool.name === "figma_repl_prepare_task");
   assert.ok(prepareTaskTool);
-  assert.match(prepareTaskTool.description, /Recommended workspace call: \{ title, cwd, fileUrl\|fileKey, intent, expectedSurface \}/);
-  assert.match(prepareTaskTool.inputSchema.properties.intent.description, /Recommended human intent/);
-  assert.match(prepareTaskTool.inputSchema.properties.task.description, /Compatibility alias/);
-  assert.match(prepareTaskTool.inputSchema.properties.workspaceDir.description, /Compatibility alias/);
+  assert.match(prepareTaskTool.description, /Recommended workspace call: \{ title, file, task, surface \}/);
+  assert.match(prepareTaskTool.inputSchema.properties.file.description, /Figma file URL or raw file key/);
+  assert.equal(prepareTaskTool.inputSchema.properties.fileUrl, undefined);
+  assert.equal(prepareTaskTool.inputSchema.properties.fileKey, undefined);
+  assert.equal(prepareTaskTool.inputSchema.properties.intent, undefined);
+  assert.equal(prepareTaskTool.inputSchema.properties.goal, undefined);
+  assert.equal(prepareTaskTool.inputSchema.properties.taskName, undefined);
+  assert.equal(prepareTaskTool.inputSchema.properties.taskDir, undefined);
+  assert.equal(prepareTaskTool.inputSchema.properties.scriptName, undefined);
+  assert.equal(prepareTaskTool.inputSchema.properties.expectedSurface, undefined);
+  assert.match(prepareTaskTool.inputSchema.properties.task.description, /Recommended human task/);
+  assert.match(prepareTaskTool.inputSchema.properties.workspaceDir.description, /Advanced absolute workspace/);
+  assert.match(prepareTaskTool.inputSchema.properties.surface.description, /Recommended expected Figma surface/);
   assert.match(prepareTaskTool.inputSchema.properties.taskRoot.description, /Advanced absolute task root/);
   assert.match(prepareTaskTool.inputSchema.properties.overwrite.description, /Advanced destructive/);
   const inspectTool = tools.tools.find((tool) => tool.name === "figma_repl_inspect");
@@ -728,8 +769,10 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(inspectTool.inputSchema.properties.upstreamArguments.description, /routing\/debug/);
   const guidanceMetadataTool = tools.tools.find((tool) => tool.name === "figma_repl_guidance");
   assert.ok(guidanceMetadataTool);
-  assert.match(guidanceMetadataTool.description, /Prefer task/);
-  assert.match(guidanceMetadataTool.inputSchema.properties.intent.description, /Alias for task/);
+  assert.match(guidanceMetadataTool.description, /Use task/);
+  assert.equal(guidanceMetadataTool.inputSchema.properties.intent, undefined);
+  assert.equal(guidanceMetadataTool.inputSchema.properties.goal, undefined);
+  assert.equal(guidanceMetadataTool.inputSchema.properties.expectedSurface, undefined);
   const lookupMetadataTool = tools.tools.find((tool) => tool.name === "figma_repl_lookup");
   assert.ok(lookupMetadataTool);
   assert.match(lookupMetadataTool.description, /kind=docs use query/);
@@ -779,8 +822,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   }
   const guidanceTool = tools.tools.find((tool) => tool.name === "figma_repl_guidance");
   assert.match(guidanceTool.inputSchema.properties.task.description, /Trimmed and capped to 120 characters/);
-  assert.match(guidanceTool.inputSchema.properties.intent.description, /Trimmed and capped to 120 characters/);
-  assert.match(guidanceTool.inputSchema.properties.goal.description, /Trimmed and capped to 120 characters/);
+  assert.equal(guidanceTool.inputSchema.properties.intent, undefined);
+  assert.equal(guidanceTool.inputSchema.properties.goal, undefined);
   assert.match(guidanceTool.inputSchema.properties.card.description, /Hard limit 120 characters/);
   assert.match(guidanceTool.inputSchema.properties.query.description, /Hard limit 120 characters/);
   const lookupTool = tools.tools.find((tool) => tool.name === "figma_repl_lookup");
@@ -1162,6 +1205,26 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
   );
   await assert.rejects(
     mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        title: "Reject run resultFile alias",
+        resultFile: "result.json",
+      },
+    }),
+    /Tool argument "resultFile" was removed\. Use "outputFile"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Reject open expectedSurface alias",
+        expectedSurface: "design",
+      },
+    }),
+    /Tool argument "expectedSurface" was removed\. Use "surface"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
       name: "figma_repl_apply_asset_manifest",
       arguments: {
         title: "Reject assets",
@@ -1182,6 +1245,16 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
   );
   await assert.rejects(
     mcpClient.callTool({
+      name: "figma_repl_apply_asset_manifest",
+      arguments: {
+        title: "Reject manifest argumentsTemplate alias",
+        argumentsTemplate: {},
+      },
+    }),
+    /Tool argument "argumentsTemplate" was removed\. Use "arguments"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
       name: "figma_repl_run_task_plan",
       arguments: {
         title: "Reject steps",
@@ -1195,40 +1268,60 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
       name: "figma_repl_apply_asset_manifest",
       arguments: {
         title: "Reject asset aliases",
-        assets: [{ filePath: 123, targetNodeId: "12:34" }],
+        assets: [{ filePath: "asset.png", target: "12:34" }],
       },
     }),
-    /Tool argument "assets\[0\]\.filePath" must be a string\./,
+    /Tool argument "assets\[0\]\.filePath\/localPath" was removed\. Use "path"\./,
   );
   await assert.rejects(
     mcpClient.callTool({
       name: "figma_repl_capture_node",
       arguments: {
         title: "Reject capture alias",
-        nodeId: 123,
+        nodeId: "12:34",
       },
     }),
-    /Tool argument "nodeId" must be a string\./,
+    /Tool argument "nodeId" was removed\. Use "target"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_capture_node",
+      arguments: {
+        title: "Reject capture resultFile alias",
+        resultFile: "capture.json",
+      },
+    }),
+    /Tool argument "resultFile" was removed\. Use "metadataFile"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_guidance",
+      arguments: {
+        title: "Reject guidance intent alias",
+        intent: "make a card",
+      },
+    }),
+    /Tool argument "intent" was removed\. Use "task"\./,
   );
   await assert.rejects(
     mcpClient.callTool({
       name: "figma_repl_prepare_task",
       arguments: {
         title: "Reject prepare taskDir alias",
-        taskDir: 123,
+        taskDir: "/tmp/task",
       },
     }),
-    /Tool argument "taskDir" must be a string\./,
+    /Tool argument "taskDir" was removed\. Use "workspaceDir"\./,
   );
   await assert.rejects(
     mcpClient.callTool({
       name: "figma_repl_prepare_task",
       arguments: {
         title: "Reject prepare scriptName alias",
-        scriptName: 123,
+        scriptName: "task.figma.js",
       },
     }),
-    /Tool argument "scriptName" must be a string\./,
+    /Tool argument "scriptName" was removed\. Use "fileName"\./,
   );
   await assert.rejects(
     mcpClient.callTool({
@@ -1305,19 +1398,19 @@ test("figma REPL applies asset manifests through explicit fake upstream schemas"
         assets: [
           {
             path: assetPath,
-            targetNodeId: "12:34",
+            target: "12:34",
             name: "Hero art",
             metadata: { role: "background" },
           },
         ],
         toolName: "fake_upload_asset",
-        argumentsTemplate: {
+        arguments: {
           file: "{{path}}",
-          target: "{{targetNodeId}}",
+          target: "{{target}}",
           label: "{{name}}",
           meta: "{{metadata}}",
         },
-        resultFile,
+        outputFile: resultFile,
       },
     });
     const json = structuredToolResult(result);
@@ -1329,8 +1422,8 @@ test("figma REPL applies asset manifests through explicit fake upstream schemas"
     assert.equal(json.assets[0].arguments, undefined);
     assert.equal(json.assets[0].upstream, undefined);
     assert.equal(json.failures, undefined);
-    assertFilePointer(json.outputFiles.resultFile, resultFile);
-    const fileJson = await readPrettyJsonPointer(json.outputFiles.resultFile, resultFile);
+    assertFilePointer(json.outputFiles.outputFile, resultFile);
+    const fileJson = await readPrettyJsonPointer(json.outputFiles.outputFile, resultFile);
     assert.equal(fileJson.outputFiles, undefined);
     assert.equal(fileJson.assets[0].result, undefined);
     assert.equal(fileJson.assetDetails[0].upstream.kind, "json");
@@ -1421,9 +1514,9 @@ test("figma REPL validates asset manifest targets when upstream eval is availabl
       name: "figma_repl_apply_asset_manifest",
       arguments: {
         title: "Apply and validate assets",
-        assets: [{ path: assetPath, targetNodeId: "12:34" }],
+        assets: [{ path: assetPath, target: "12:34" }],
         toolName: "fake_upload_asset",
-        argumentsTemplate: { file: "{{path}}", target: "{{targetNodeId}}" },
+        arguments: { file: "{{path}}", target: "{{target}}" },
       },
     });
     const json = structuredToolResult(result);
@@ -1503,7 +1596,7 @@ test("figma REPL submits local bytes when upload_assets returns a submit URL", a
         title: "Open upload file context",
         sessionId: "upload",
         connect: false,
-        fileUrl: "https://www.figma.com/design/file123/Test",
+        file: "https://www.figma.com/design/file123/Test",
         handles: { "$iconTarget": "12:34" },
       },
     });
@@ -1512,7 +1605,7 @@ test("figma REPL submits local bytes when upload_assets returns a submit URL", a
       arguments: {
         title: "Apply upload asset",
         sessionId: "upload",
-        assets: [{ path: assetPath, targetHandle: "$iconTarget", name: "Icon" }],
+        assets: [{ path: assetPath, target: "$iconTarget", name: "Icon" }],
         toolName: "upload_assets",
       },
     });
@@ -1579,11 +1672,11 @@ test("figma REPL captures node screenshot responses to a local file", async () =
       name: "figma_repl_capture_node",
       arguments: {
         title: "Capture node",
-        nodeId: "22:7",
+        target: "22:7",
         outputFile,
         toolName: "fake_screenshot",
-        argumentsTemplate: {
-          id: "{{nodeId}}",
+        arguments: {
+          id: "{{target}}",
           scale: 2,
         },
       },
@@ -1607,7 +1700,7 @@ test("figma REPL captures node screenshot responses to a local file", async () =
 test("figma REPL capture node reports planned output on upstream failure", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-failure-"));
   const outputFile = resolve(tempDir, "node.png");
-  const resultFile = resolve(tempDir, "capture.result.json");
+  const metadataFile = resolve(tempDir, "capture.result.json");
   const calls = [];
   const fakeClient = createFakeFigmaClient(
     calls,
@@ -1654,12 +1747,12 @@ test("figma REPL capture node reports planned output on upstream failure", async
       name: "figma_repl_capture_node",
       arguments: {
         title: "Capture node failure",
-        nodeId: "22:70",
+        target: "22:70",
         outputFile,
-        resultFile,
+        metadataFile,
         toolName: "fake_screenshot",
-        argumentsTemplate: {
-          id: "{{nodeId}}",
+        arguments: {
+          id: "{{target}}",
         },
       },
     });
@@ -1675,8 +1768,8 @@ test("figma REPL capture node reports planned output on upstream failure", async
     assert.match(json.upstreamError.message, /Capture failed/);
     assert.equal(json.upstreamError.text, undefined);
     assert.equal(json.upstreamError.parsed, undefined);
-    assertFilePointer(json.outputFiles.resultFile, resultFile);
-    const fileJson = await readPrettyJsonPointer(json.outputFiles.resultFile, resultFile);
+    assertFilePointer(json.outputFiles.metadataFile, metadataFile);
+    const fileJson = await readPrettyJsonPointer(json.outputFiles.metadataFile, metadataFile);
     assert.equal(fileJson.plannedOutputFile, outputFile);
     assert.equal(fileJson.outputFile, undefined);
     assert.equal(fileJson.file, undefined);
@@ -1764,11 +1857,11 @@ test("figma REPL downloads node screenshot URL responses to a local file", async
       name: "figma_repl_capture_node",
       arguments: {
         title: "Capture node",
-        nodeId: "22:8",
+        target: "22:8",
         outputFile,
         toolName: "fake_screenshot",
-        argumentsTemplate: {
-          id: "{{nodeId}}",
+        arguments: {
+          id: "{{target}}",
         },
       },
     });
@@ -1850,7 +1943,7 @@ test("figma REPL capture node injects session file key when upstream schema need
         title: "Open file context",
         sessionId: "capture-filekey",
         connect: false,
-        fileUrl: "https://www.figma.com/design/EctrdKKdR3c8JTPl55qn3r/Untitled",
+        file: "https://www.figma.com/design/EctrdKKdR3c8JTPl55qn3r/Untitled",
         handles: { "$hero": "22:9" },
       },
     });
@@ -1922,31 +2015,39 @@ test("figma REPL task plans run steps in order and stop on failure by default", 
       name: "figma_repl_run_task_plan",
       arguments: {
         title: "Run plan",
-        resultFile,
+        outputFile: resultFile,
         steps: [
           {
             id: "dry-run",
             type: "figma_repl_run_script_file",
-            scriptPath,
-            dryRun: true,
+            args: {
+              scriptPath,
+              dryRun: true,
+            },
           },
           {
             id: "upstream-ok",
             type: "upstream",
-            toolName: "fake_upstream_ok",
-            arguments: { marker: "ok" },
+            args: {
+              toolName: "fake_upstream_ok",
+              arguments: { marker: "ok" },
+            },
           },
           {
             id: "upstream-fail",
             type: "figma_repl_call_upstream_tool",
-            toolName: "fake_upstream_fail",
-            arguments: { marker: "fail" },
+            args: {
+              toolName: "fake_upstream_fail",
+              arguments: { marker: "fail" },
+            },
           },
           {
             id: "after-stop",
             type: "upstream-tool",
-            toolName: "fake_after_stop",
-            arguments: {},
+            args: {
+              toolName: "fake_after_stop",
+              arguments: {},
+            },
           },
         ],
       },
@@ -2047,9 +2148,9 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
         title: "Initialize workspace",
         sessionId: "workspace-plan",
         cwd: tempDir,
-        fileKey: "file123",
-        intent: "Workspace Plan",
-        expectedSurface: "design",
+        file: "file123",
+        task: "Workspace Plan",
+        surface: "design",
         overwrite: true,
       },
     });
@@ -2067,29 +2168,37 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
           {
             id: "script",
             type: "script-file",
-            inputFile: "workspace-plan.figma.js",
+            args: {
+              inputFile: "workspace-plan.figma.js",
+            },
           },
           {
             id: "asset",
             type: "asset-manifest",
-            assets: [{ path: "asset.png", targetNodeId: "{{steps.script.upstream.payload.result.assetTargets.central}}" }],
-            toolName: "fake_asset",
-            argumentsTemplate: { path: "{{path}}", nodeId: "{{targetNodeId}}" },
+            args: {
+              assets: [{ path: "asset.png", target: "{{steps.script.upstream.payload.result.assetTargets.central}}" }],
+              toolName: "fake_asset",
+              arguments: { path: "{{path}}", nodeId: "{{target}}" },
+            },
           },
           {
             id: "capture",
             type: "screenshot-capture",
-            nodeId: "{{steps.script.upstream.payload.result.captureTarget}}",
-            toolName: "fake_screenshot",
-            argumentsTemplate: { id: "{{nodeId}}" },
+            args: {
+              target: "{{steps.script.upstream.payload.result.captureTarget}}",
+              toolName: "fake_screenshot",
+              arguments: { id: "{{target}}" },
+            },
           },
           {
             id: "reference",
             type: "upstream-tool",
-            toolName: "fake_reference",
-            arguments: {
-              assetResult: "{{outputs.asset.resultFile.path}}",
-              captureOutput: "{{steps.capture.outputFiles.outputFile.path}}",
+            args: {
+              toolName: "fake_reference",
+              arguments: {
+                assetResult: "{{outputs.asset.outputFile.path}}",
+                captureOutput: "{{steps.capture.outputFiles.outputFile.path}}",
+              },
             },
           },
         ],
@@ -2097,11 +2206,11 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assertFilePointer(json.outputFiles.resultFile, resolve(fileDir, "run-workspace-plan.plan.result.json"));
-    const planFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(fileDir, "run-workspace-plan.plan.result.json"));
+    assertFilePointer(json.outputFiles.outputFile, resolve(fileDir, "run-workspace-plan.plan.result.json"));
+    const planFile = await readPrettyJsonPointer(json.outputFiles.outputFile, resolve(fileDir, "run-workspace-plan.plan.result.json"));
     assert.equal(planFile.outputFiles, undefined);
     assert.deepEqual(json.steps.map((step) => step.status), ["completed", "completed", "completed", "completed"]);
-    assert.match(json.outputReferences.asset.resultFile.path, /asset\.assets\.result\.json$/u);
+    assert.match(json.outputReferences.asset.outputFile.path, /asset\.assets\.result\.json$/u);
     assert.match(json.outputReferences.capture.outputFile.path, /capture\.png$/u);
     assert.equal(JSON.parse(await readFile(resolve(fileDir, "script.result.json"), "utf8")).upstream.payload.result.assetTargets.central, "11:22");
     assert.equal(JSON.parse(await readFile(resolve(fileDir, "asset.assets.result.json"), "utf8")).ok, true);
@@ -2363,7 +2472,7 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics without c
         sessionId: "main",
         scriptPath,
         dryRun: true,
-        expectedSurface: "design",
+        surface: "design",
         outputDir,
         diagnosticsFile: "diagnostics.json",
         summaryFile: "summary.md",
@@ -2385,7 +2494,7 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics without c
     assert.equal(json.diagnostics[0].source.scriptPath, scriptPath);
     assert.equal(json.diagnostics[0].source.line, 2);
     assert.equal(json.diagnostics[0].source.column, 1);
-    const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(outputDir, "result.json"));
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.outputFile, resolve(outputDir, "result.json"));
     const diagnosticsFile = await readPrettyJsonPointer(json.outputFiles.diagnosticsFile, resolve(outputDir, "diagnostics.json"));
     const summaryFile = await readTextPointer(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
     assert.equal(resultFile.dryRun, true);
@@ -2530,7 +2639,7 @@ test("figma REPL run_script_file executes helper-backed scripts through upstream
         sessionId: "main",
         scriptPath,
         targetPageId: "0:1",
-        expectedSurface: "design",
+        surface: "design",
       },
     });
     const json = structuredToolResult(result);
@@ -2611,7 +2720,7 @@ test("figma REPL run_script_file avoids helper injection for native Plugin API s
         title: "Run native script",
         sessionId: "main",
         scriptPath,
-        expectedSurface: "design",
+        surface: "design",
       },
     });
     const json = structuredToolResult(result);
@@ -2667,7 +2776,7 @@ test("figma REPL run_script_file injects helper dependencies from AST usage", as
         title: "Run find helper script",
         sessionId: "main",
         scriptPath,
-        expectedSurface: "design",
+        surface: "design",
       },
     });
     const json = structuredToolResult(result);
@@ -2715,7 +2824,7 @@ test("figma REPL run_script_file rejects dynamic helper access instead of full i
           title: "Run dynamic helper script",
           sessionId: "main",
           scriptPath,
-          expectedSurface: "design",
+          surface: "design",
         },
       }),
       /FIGMA_REPL_DYNAMIC_HELPER_ACCESS/,
@@ -2767,7 +2876,7 @@ test("figma REPL run_script_file allows literal computed helper access", async (
         title: "Run literal helper script",
         sessionId: "main",
         scriptPath,
-        expectedSurface: "design",
+        surface: "design",
       },
     });
     const json = structuredToolResult(result);
@@ -2835,7 +2944,7 @@ test("figma REPL run_script_file supports generated image asset helper without r
         title: "Run image helper script",
         sessionId: "main",
         scriptPath,
-        expectedSurface: "design",
+        surface: "design",
       },
     });
     const json = structuredToolResult(result);
@@ -2914,7 +3023,7 @@ test("figma REPL run_script_file structures upstream ok false errors", async () 
     assert.match(json.primaryFix, /\$\.cloneNodeTree/);
     assert.equal(json.compiledScript, undefined);
     assert.equal(json.raw, undefined);
-    const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(outputDir, "result.json"));
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.outputFile, resolve(outputDir, "result.json"));
     const compiledFilePath = resolve(outputDir, "result.failure.compiled.js");
     const compiledFile = await readTextPointer(json.outputFiles.compiledScriptFile, compiledFilePath);
     const summaryFile = await readTextPointer(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
@@ -3068,7 +3177,7 @@ test("figma REPL run_script_file writes output files and limits inline result fi
         title: "Run script with output files",
         scriptPath,
         outputDir,
-        resultFile: "full-result.json",
+        outputFile: "full-result.json",
         inlineResultLimit: 40,
       },
     });
@@ -3085,7 +3194,7 @@ test("figma REPL run_script_file writes output files and limits inline result fi
       json.inlineResultLimit.omitted.map((item) => item.field),
       ["upstream.payload"],
     );
-    const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(outputDir, "full-result.json"));
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.outputFile, resolve(outputDir, "full-result.json"));
     assert.equal(json.outputFiles.diagnosticsFile, undefined);
     assert.equal(json.outputFiles.summaryFile, undefined);
     assert.equal(resultFile.upstream.kind, "json");
@@ -3152,8 +3261,8 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
       arguments: {
         title: "Init workspace",
         sessionId: "settings-workspace",
-        intent: "Settings Panel Polish",
-        fileUrl: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
+        task: "Settings Panel Polish",
+        file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
         cwd: tempDir,
         overwrite: true,
       },
@@ -3197,7 +3306,7 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     assert.deepEqual(json.session.workspace.files, initJson.task.workspace.files);
     assert.equal(json.session.workspace.sessionDir, initJson.task.workspace.sessionDir);
     assert.equal(json.session.surface, "design");
-    assertFilePointer(json.outputFiles.resultFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
+    assertFilePointer(json.outputFiles.outputFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
     assert.equal(json.result, undefined);
     assert.equal(json.upstream.kind, "json");
     assert.equal(json.upstream.ok, true);
@@ -3206,7 +3315,7 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
       json.inlineResultLimit.omitted.map((item) => item.field),
       ["upstream.payload"],
     );
-    const resultFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.outputFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
     assert.equal(resultFile.upstream.payload.result.payload.length, 160);
 
     await writeFile(
@@ -3236,11 +3345,10 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     const prepared = await mcpClient.callTool({
       name: "figma_repl_prepare_task",
       arguments: {
-        title: "Prepare another intent",
+        title: "Prepare another task",
         sessionId: "settings-workspace",
-        intent: "Token Audit",
-        goal: "Audit local color tokens",
-        expectedSurface: "design",
+        task: "Token Audit",
+        surface: "design",
         overwrite: true,
       },
     });
@@ -3301,6 +3409,28 @@ test("figma REPL run_script_file rejects relative script paths", async () => {
   await mcpClient.close();
 });
 
+test("figma REPL open accepts unified file input and auto-binds a workspace", async () => {
+  const repl = createFigmaReplClient({
+    client: createFakeFigmaClient([], () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const result = await repl.open({
+    sessionId: "open-file-workspace",
+    file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
+    connect: false,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.session.fileKey, "ExampleFigmaFileKey012");
+  assert.equal(result.session.surface, "design");
+  assert.equal(
+    result.session.workspace.fileDir,
+    resolve(process.cwd(), "figma-mcp", "ExampleFigmaFileKey012"),
+  );
+  assert.equal(result.session.workspace.files.script, "open-file-workspace.figma.js");
+  await repl.close();
+});
+
 test("figma REPL prepare_task creates .figma.js workspace and enforces overwrite and path rules", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-task-"));
   const workspaceDir = resolve(tempDir, "workspace");
@@ -3325,10 +3455,10 @@ test("figma REPL prepare_task creates .figma.js workspace and enforces overwrite
       arguments: {
         title: "Prepare task",
         taskSlug: "settings-panel",
-        taskDir: workspaceDir,
+        workspaceDir,
         fileName: "settings-panel.figma.js",
-        goal: "Create a settings panel",
-        expectedSurface: "design",
+        task: "Create a settings panel",
+        surface: "design",
         targetPageId: "0:1",
       },
     });
@@ -3343,7 +3473,7 @@ test("figma REPL prepare_task creates .figma.js workspace and enforces overwrite
     assert.equal(json.task.scriptPath, resolve(workspaceDir, "settings-panel.figma.js"));
     assertFilePointer(json.task.resultFile, resolve(workspaceDir, "settings-panel.result.json"));
     assert.match(await readFile(json.task.scriptPath, "utf8"), /\$\.checkpoint/);
-    assert.match(await readFile(json.task.scriptPath, "utf8"), /Goal: Create a settings panel/);
+    assert.match(await readFile(json.task.scriptPath, "utf8"), /Task: Create a settings panel/);
     const pendingResult = await readPrettyJsonPointer(json.task.resultFile, resolve(workspaceDir, "settings-panel.result.json"));
     assert.equal(pendingResult.status, "pending");
 
@@ -3353,7 +3483,7 @@ test("figma REPL prepare_task creates .figma.js workspace and enforces overwrite
         arguments: {
           title: "Refuse overwrite",
           taskSlug: "settings-panel",
-          taskDir: workspaceDir,
+          workspaceDir,
         },
       }),
       /Refusing to overwrite/,
@@ -3363,21 +3493,21 @@ test("figma REPL prepare_task creates .figma.js workspace and enforces overwrite
         name: "figma_repl_prepare_task",
         arguments: {
           title: "Reject relative workspace",
-          taskDir: "relative-workspace",
+          workspaceDir: "relative-workspace",
         },
       }),
-      /taskDir\/workspaceDir" must be an absolute path/,
+      /workspaceDir" must be an absolute path/,
     );
     await assert.rejects(
       mcpClient.callTool({
         name: "figma_repl_prepare_task",
         arguments: {
           title: "Reject absolute script name",
-          taskDir: resolve(tempDir, "other"),
+          workspaceDir: resolve(tempDir, "other"),
           fileName: resolve(tempDir, "bad.figma.js"),
         },
       }),
-      /fileName\/scriptName" must be a file name/,
+      /fileName" must be a file name/,
     );
     assert.deepEqual(calls.map((call) => call[0]), []);
     await mcpClient.close();
@@ -3423,7 +3553,7 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
     arguments: {
       title: "Plan file workflow",
       mode: "plan",
-      goal: "Create a settings card with title and button",
+      task: "Create a settings card with title and button",
       surface: "design",
       workflow: "script-file",
     },
@@ -3440,9 +3570,9 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   const longPlanResult = await mcpClient.callTool({
     name: "figma_repl_guidance",
     arguments: {
-      title: "Plan long goal",
+      title: "Plan long task",
       mode: "plan",
-      goal: `Create a settings card with title and button ${"using polished layout details ".repeat(8)}`,
+      task: `Create a settings card with title and button ${"using polished layout details ".repeat(8)}`,
       surface: "design",
     },
   });
@@ -3625,7 +3755,7 @@ test("figma REPL programmatic client can call eval without MCP transport", async
   const repl = createFigmaReplClient({ client: fakeClient });
   await repl.open({
     sessionId: "main",
-    fileUrl: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
+    file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
     connect: false,
   });
   const result = await repl.eval({
@@ -3648,7 +3778,7 @@ test("figma REPL programmatic client returns typed output contracts", async () =
   const scriptPath = resolve(tempDir, "typed-client.figma.js");
   const assetPath = resolve(tempDir, "asset.png");
   const capturePath = resolve(tempDir, "capture.png");
-  const taskDir = resolve(tempDir, "task");
+  const workspaceDir = resolve(tempDir, "task");
   await writeFile(scriptPath, "return { summary: 'typed dry run' };", "utf8");
   await writeFile(assetPath, "fake asset bytes", "utf8");
   const calls = [];
@@ -3734,9 +3864,9 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal("content" in upstreamResult, false);
 
     const assetResult = await repl.applyAssetManifest({
-      assets: [{ path: assetPath, targetNodeId: "12:34", name: "Asset" }],
+      assets: [{ path: assetPath, target: "12:34", name: "Asset" }],
       toolName: "fake_asset",
-      argumentsTemplate: { file: "{{path}}", nodeId: "{{targetNodeId}}" },
+      arguments: { file: "{{path}}", nodeId: "{{target}}" },
       validateTargets: false,
     });
     assert.equal(assetResult.ok, true);
@@ -3746,10 +3876,10 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(assetResult.assets[0].upstream, undefined);
 
     const captureResult = await repl.captureNode({
-      nodeId: "12:35",
+      target: "12:35",
       outputFile: capturePath,
       toolName: "fake_screenshot",
-      argumentsTemplate: { id: "{{nodeId}}" },
+      arguments: { id: "{{target}}" },
     });
     assert.equal(captureResult.ok, false);
     assert.equal(captureResult.outputFile, undefined);
@@ -3767,14 +3897,14 @@ test("figma REPL programmatic client returns typed output contracts", async () =
 
     const preparedResult = await repl.prepareTask({
       taskSlug: "typed-task",
-      taskDir,
+      workspaceDir,
       fileName: "typed-task.figma.js",
-      intent: "Typed Task",
+      task: "Typed Task",
     });
     assert.equal(preparedResult.ok, true);
     assert.equal(preparedResult.task.inputFile, "typed-task.figma.js");
     assert.equal(preparedResult.task.outputFile, "typed-task.result.json");
-    assert.equal(preparedResult.task.workspace.fileDir, taskDir);
+    assert.equal(preparedResult.task.workspace.fileDir, workspaceDir);
     assert.equal(preparedResult.task.workspaceDir, undefined);
     assert.equal(preparedResult.task.taskDir, undefined);
 

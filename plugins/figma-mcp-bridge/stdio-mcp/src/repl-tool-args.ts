@@ -7,8 +7,10 @@ export interface FigmaReplOpenArguments {
   title?: string;
   sessionId?: string;
   label?: string;
-  fileUrl?: string;
-  expectedSurface?: FigmaReplSurface;
+  file?: string;
+  cwd?: string;
+  dirName?: string;
+  surface?: FigmaReplSurface;
   currentPageId?: string;
   reset?: boolean;
   connect?: boolean;
@@ -25,7 +27,7 @@ export interface FigmaReplEvalArguments {
   sessionId?: string;
   code: string;
   mode?: "read" | "write";
-  expectedSurface?: FigmaReplSurface;
+  surface?: FigmaReplSurface;
   allowDangerousOperations?: boolean;
   upstreamTool?: string;
   upstreamArgument?: string;
@@ -41,7 +43,7 @@ export interface FigmaReplRunScriptFileArguments {
   inputFile?: string;
   dryRun?: boolean;
   strict?: boolean;
-  expectedSurface?: FigmaReplSurface;
+  surface?: FigmaReplSurface;
   targetPageId?: string;
   allowDangerousOperations?: boolean;
   upstreamTool?: string;
@@ -49,7 +51,6 @@ export interface FigmaReplRunScriptFileArguments {
   upstreamArguments?: Record<string, unknown>;
   outputDir?: string;
   outputFile?: string;
-  resultFile?: string;
   diagnosticsFile?: string;
   summaryFile?: string;
   inlineResultLimit?: number;
@@ -58,13 +59,7 @@ export interface FigmaReplRunScriptFileArguments {
 export interface FigmaReplAssetManifestAsset {
   [key: string]: unknown;
   path?: string;
-  filePath?: string;
-  localPath?: string;
-  targetNodeId?: string;
-  nodeId?: string;
   target?: unknown;
-  targetHandle?: string;
-  targetId?: string;
   nodeUrl?: string;
   url?: string;
   name?: string;
@@ -81,10 +76,8 @@ export interface FigmaReplApplyAssetManifestArguments {
   manifestPath?: string;
   toolName?: string;
   arguments?: Record<string, unknown>;
-  argumentsTemplate?: Record<string, unknown>;
   validateTargets?: boolean;
   refresh?: boolean;
-  resultFile?: string;
   outputFile?: string;
 }
 
@@ -92,15 +85,11 @@ export interface FigmaReplCaptureNodeArguments {
   [key: string]: unknown;
   title?: string;
   sessionId?: string;
-  nodeId?: string;
-  targetNodeId?: string;
   target?: unknown;
-  handle?: string;
   outputFile?: string;
-  resultFile?: string;
+  metadataFile?: string;
   toolName?: string;
   arguments?: Record<string, unknown>;
-  argumentsTemplate?: Record<string, unknown>;
   refresh?: boolean;
 }
 
@@ -108,9 +97,7 @@ export interface FigmaReplTaskPlanStep {
   [key: string]: unknown;
   id?: string;
   type?: string;
-  tool?: string;
   args?: Record<string, unknown>;
-  arguments?: Record<string, unknown>;
 }
 
 export interface FigmaReplRunTaskPlanArguments {
@@ -120,7 +107,6 @@ export interface FigmaReplRunTaskPlanArguments {
   planPath?: string;
   steps?: FigmaReplTaskPlanStep[];
   stopOnFailure?: boolean;
-  resultFile?: string;
   outputFile?: string;
 }
 
@@ -147,22 +133,16 @@ export interface FigmaReplPrepareTaskArguments {
   [key: string]: unknown;
   title?: string;
   sessionId?: string;
-  intent?: string;
   task?: string;
-  fileUrl?: string;
-  fileKey?: string;
+  file?: string;
   fileSlug?: string;
   cwd?: string;
   dirName?: string;
-  goal?: string;
   taskSlug?: string;
-  taskName?: string;
-  taskDir?: string;
   fileName?: string;
   taskRoot?: string;
   workspaceDir?: string;
-  scriptName?: string;
-  expectedSurface?: FigmaReplSurface;
+  surface?: FigmaReplSurface;
   targetPageId?: string;
   template?: string;
   overwrite?: boolean;
@@ -175,11 +155,8 @@ export interface FigmaReplGuidanceArguments {
   card?: string;
   query?: string;
   task?: string;
-  intent?: string;
-  goal?: string;
   surface?: FigmaReplSurface;
   workflow?: string;
-  expectedSurface?: FigmaReplSurface;
   maxCards?: number;
 }
 
@@ -202,8 +179,48 @@ const FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as con
 const FIGMA_REPL_INSPECT_MODES = ["inspect", "validate"] as const;
 const FIGMA_REPL_LOOKUP_KINDS = ["docs", "api"] as const;
 
+function assertRemovedFileReferenceFields(record: Record<string, unknown>): void {
+  const removed = ["fileUrl", "fileKey"].filter((field) => record[field] !== undefined);
+  if (removed.length > 0) {
+    throw new Error(`Tool argument "${removed.join("/")}" was removed. Use "file" with a Figma URL or file key.`);
+  }
+}
+
+function assertRemovedArguments(
+  record: Record<string, unknown>,
+  fields: readonly string[],
+  replacement: string,
+  displayName?: string,
+): void {
+  const removed = fields.filter((field) => record[field] !== undefined);
+  if (removed.length > 0) {
+    throw new Error(`Tool argument "${displayName ?? removed.join("/")}" was removed. Use "${replacement}".`);
+  }
+}
+
+export function asOpenArgs(args: unknown): FigmaReplOpenArguments {
+  const record = parseToolArgs<FigmaReplOpenArguments>(args);
+  assertRemovedFileReferenceFields(record);
+  assertRemovedArguments(record, ["expectedSurface"], "surface");
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "label",
+    "file",
+    "cwd",
+    "dirName",
+    "currentPageId",
+    "upstreamTool",
+    "upstreamArgument",
+  ]);
+  assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
+  assertOptionalRecord(record, "upstreamArguments");
+  assertOptionalRecord(record, "handles");
+  return record;
+}
+
 export function asEvalArgs(args: unknown): FigmaReplEvalArguments {
   const record = parseToolArgs<FigmaReplEvalArguments>(args);
+  assertRemovedArguments(record, ["expectedSurface"], "surface");
   assertOptionalStringFields(record, [
     "code",
     "sessionId",
@@ -211,7 +228,7 @@ export function asEvalArgs(args: unknown): FigmaReplEvalArguments {
     "upstreamArgument",
   ]);
   assertOptionalEnum(record, "mode", FIGMA_REPL_EVAL_MODES);
-  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
   assertOptionalRecord(record, "upstreamArguments");
   assertOptionalRecord(record, "handleUpdates");
   return record;
@@ -219,6 +236,8 @@ export function asEvalArgs(args: unknown): FigmaReplEvalArguments {
 
 export function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArguments {
   const record = parseToolArgs<FigmaReplRunScriptFileArguments>(args);
+  assertRemovedArguments(record, ["expectedSurface"], "surface");
+  assertRemovedArguments(record, ["resultFile"], "outputFile");
   assertOptionalStringFields(record, [
     "sessionId",
     "scriptPath",
@@ -228,59 +247,51 @@ export function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArgume
     "upstreamArgument",
     "outputDir",
     "outputFile",
-    "resultFile",
     "diagnosticsFile",
     "summaryFile",
   ]);
-  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
   assertOptionalRecord(record, "upstreamArguments");
   return record;
 }
 
 export function asApplyAssetManifestArgs(args: unknown): FigmaReplApplyAssetManifestArguments {
   const record = parseToolArgs<FigmaReplApplyAssetManifestArguments>(args);
+  assertRemovedArguments(record, ["argumentsTemplate"], "arguments");
+  assertRemovedArguments(record, ["resultFile"], "outputFile");
   assertOptionalStringFields(record, [
     "sessionId",
     "manifestPath",
     "toolName",
-    "resultFile",
     "outputFile",
   ]);
   assertOptionalRecord(record, "arguments");
-  assertOptionalRecord(record, "argumentsTemplate");
   assertOptionalAssets(record);
   return record;
 }
 
 export function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments {
   const record = parseToolArgs<FigmaReplCaptureNodeArguments>(args);
+  assertRemovedArguments(record, ["nodeId", "targetNodeId", "handle"], "target");
+  assertRemovedArguments(record, ["resultFile"], "metadataFile");
+  assertRemovedArguments(record, ["argumentsTemplate"], "arguments");
   assertOptionalStringFields(record, [
     "sessionId",
-    "nodeId",
-    "targetNodeId",
-    "handle",
     "outputFile",
-    "resultFile",
+    "metadataFile",
     "toolName",
   ]);
   assertOptionalRecord(record, "arguments");
-  assertOptionalRecord(record, "argumentsTemplate");
-  if (
-    record.target !== undefined &&
-    typeof record.target !== "string" &&
-    !isRecord(record.target)
-  ) {
-    throw new Error('Tool argument "target" must be a string or object.');
-  }
+  assertOptionalTargetValue(record.target, "target");
   return record;
 }
 
 export function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments {
   const record = parseToolArgs<FigmaReplRunTaskPlanArguments>(args);
+  assertRemovedArguments(record, ["resultFile"], "outputFile");
   assertOptionalStringFields(record, [
     "sessionId",
     "planPath",
-    "resultFile",
     "outputFile",
   ]);
   assertOptionalTaskPlanSteps(record);
@@ -289,36 +300,36 @@ export function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments 
 
 export function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments {
   const record = parseToolArgs<FigmaReplPrepareTaskArguments>(args);
+  assertRemovedFileReferenceFields(record);
+  assertRemovedArguments(record, ["intent", "goal", "taskName"], "task");
+  assertRemovedArguments(record, ["taskDir"], "workspaceDir");
+  assertRemovedArguments(record, ["scriptName"], "fileName");
+  assertRemovedArguments(record, ["expectedSurface"], "surface");
   assertOptionalStringFields(record, [
     "sessionId",
-    "intent",
     "task",
-    "fileUrl",
-    "fileKey",
+    "file",
     "fileSlug",
     "cwd",
     "dirName",
-    "goal",
     "taskSlug",
-    "taskName",
-    "taskDir",
     "workspaceDir",
     "fileName",
-    "scriptName",
     "taskRoot",
     "targetPageId",
     "template",
   ]);
-  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
+  assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
   return record;
 }
 
 export function asGuidanceArgs(args: unknown): FigmaReplGuidanceArguments {
   const record = parseToolArgs<FigmaReplGuidanceArguments>(args);
-  assertOptionalStringFields(record, ["card", "query", "task", "intent", "goal", "workflow"]);
+  assertRemovedArguments(record, ["intent", "goal"], "task");
+  assertRemovedArguments(record, ["expectedSurface"], "surface");
+  assertOptionalStringFields(record, ["card", "query", "task", "workflow"]);
   assertOptionalEnum(record, "mode", FIGMA_REPL_GUIDANCE_MODES);
   assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
-  assertOptionalEnum(record, "expectedSurface", FIGMA_REPL_SURFACES);
   return record;
 }
 
@@ -428,29 +439,43 @@ function assertOptionalAssets(record: Record<string, unknown>): void {
     }
     assertOptionalStringFieldsWithPrefix(asset, assetName, [
       "path",
-      "filePath",
-      "localPath",
-      "targetNodeId",
-      "nodeId",
-      "targetHandle",
-      "targetId",
       "nodeUrl",
       "url",
       "scaleMode",
       "name",
       "toolName",
     ]);
+    assertRemovedArguments(asset, ["filePath", "localPath"], "path", `${assetName}.filePath/localPath`);
+    assertRemovedArguments(
+      asset,
+      ["targetNodeId", "nodeId", "targetHandle", "targetId"],
+      "target",
+      `${assetName}.targetNodeId/nodeId/targetHandle/targetId`,
+    );
     const target = asset.target;
-    if (
-      target !== undefined &&
-      typeof target !== "string" &&
-      !isRecord(target)
-    ) {
-      throw new Error(`Tool argument "${assetName}.target" must be a string or object.`);
-    }
+    assertOptionalTargetValue(target, `${assetName}.target`);
     assertOptionalRecord(asset, "metadata", `${assetName}.metadata`);
     assertOptionalRecord(asset, "arguments", `${assetName}.arguments`);
   });
+}
+
+function assertOptionalTargetValue(value: unknown, displayName: string): void {
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value === "string") {
+    return;
+  }
+  if (!isRecord(value)) {
+    throw new Error(`Tool argument "${displayName}" must be a string or object.`);
+  }
+  assertRemovedArguments(
+    value,
+    ["nodeId", "targetNodeId", "targetHandle", "targetId"],
+    "handle",
+    `${displayName}.nodeId/targetNodeId/targetHandle/targetId`,
+  );
+  assertOptionalStringFieldsWithPrefix(value, displayName, ["handle"]);
 }
 
 function assertOptionalTaskPlanSteps(record: Record<string, unknown>): void {
@@ -463,9 +488,10 @@ function assertOptionalTaskPlanSteps(record: Record<string, unknown>): void {
     if (!isRecord(step)) {
       throw new Error(`Tool argument "${stepName}" must be an object.`);
     }
-    assertOptionalStringFieldsWithPrefix(step, stepName, ["id", "type", "tool"]);
+    assertRemovedArguments(step, ["tool"], "type", `${stepName}.tool`);
+    assertRemovedArguments(step, ["arguments"], "args", `${stepName}.arguments`);
+    assertOptionalStringFieldsWithPrefix(step, stepName, ["id", "type"]);
     assertOptionalRecord(step, "args", `${stepName}.args`);
-    assertOptionalRecord(step, "arguments", `${stepName}.arguments`);
   });
 }
 

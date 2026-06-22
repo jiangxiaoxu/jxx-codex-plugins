@@ -48,8 +48,8 @@ const figma = createFigmaReplClient({
   oauthCachePath: "C:/Users/you/.codex/.figma-mcp-bridge-oauth.json",
 });
 await figma.open({
-  fileUrl: "https://www.figma.com/design/<fileKey>/<fileName>?node-id=<nodeId>",
-  expectedSurface: "design",
+  file: "https://www.figma.com/design/<fileKey>/<fileName>?node-id=<nodeId>",
+  surface: "design",
 });
 const evalResult = await figma.eval({
   code: "return { page: figma.currentPage.name };",
@@ -57,7 +57,7 @@ const evalResult = await figma.eval({
 });
 const payload = evalResult.upstream.payload;
 const capture = await figma.captureNode({
-  nodeId: "$target",
+  target: "$target",
   outputFile: "qa.png",
 });
 if (!capture.ok) console.log(capture.plannedOutputFile);
@@ -92,10 +92,8 @@ Executed `figma_repl_run_script_file` result files use the same `upstream` envel
 ```js
 await figma.prepareTask({
   sessionId: "settings workspace",
-  fileUrl: "https://www.figma.com/design/ExampleFigmaFileKey012/UI",
-  intent: "settings panel polish",
-  goal: "Update the settings panel",
-  cwd: "G:/Project/my-app",
+  file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI",
+  task: "settings panel polish",
   overwrite: true,
 });
 await figma.runScriptFile({
@@ -111,7 +109,7 @@ await figma.runScriptFile({
 });
 ```
 
-`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `cwd` plus `fileUrl` or `fileKey` is supplied. A task normally uses `intent`, `<intentSlug>.figma.js`, and `<intentSlug>.result.json` in that folder, then calls `runScriptFile` with `inputFile` and `outputFile`. Absolute `scriptPath`, `outputDir`, `resultFile`, split files, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
+`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `file` is supplied. `cwd` is optional and defaults to the MCP server process cwd. A task normally uses `task`, `<taskSlug>.figma.js`, and `<taskSlug>.result.json` in that folder, then calls `runScriptFile` with `inputFile` and `outputFile`. Absolute `scriptPath`, `outputDir`, split files, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
 
 Write ordinary async JavaScript in `.figma.js` files. Use native Figma Plugin API calls for advanced work and injected `$` helpers for common agent tasks:
 
@@ -137,9 +135,9 @@ Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, 
 
 ## Assets, Capture, and Plans
 
-- `figma_repl_apply_asset_manifest`: recommended call is `{ title, sessionId, manifestPath, outputFile }`; inline assets, custom upstream templates, `refresh`, and `resultFile` are advanced/debug/compat fields.
-- `figma_repl_capture_node`: recommended call is `{ title, sessionId, nodeId, outputFile }`; target aliases, custom upstream templates, `refresh`, and `resultFile` are advanced/debug/compat fields.
-- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath, outputFile }`; inline `steps` and `resultFile` are advanced/compat fields.
+- `figma_repl_apply_asset_manifest`: recommended call is `{ title, sessionId, manifestPath, outputFile }`; inline assets, custom upstream templates, and `refresh` are advanced/debug fields.
+- `figma_repl_capture_node`: recommended call is `{ title, sessionId, target, outputFile }`; `metadataFile`, custom upstream templates, and `refresh` are advanced/debug fields.
+- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath, outputFile }`; inline `steps` are advanced fields.
 
 Keep `.figma.js` transactions small enough for upstream `use_figma` payload limits. Split dense work into skeleton, asset targets, upload fills, and visual fixes when payload diagnostics appear.
 

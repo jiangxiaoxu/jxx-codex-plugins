@@ -1582,7 +1582,7 @@ function diagnoseSurfaceCode(
       "FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN",
       "fatal",
       "FigJam creation APIs were used while the session expects a Design file.",
-      "Use a FigJam-specific workflow or open the session with expectedSurface='figjam'.",
+      "Use a FigJam-specific workflow or open the session with surface='figjam'.",
       "figma-repl://safety#surface",
     ));
   }
@@ -1591,7 +1591,7 @@ function diagnoseSurfaceCode(
       "FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM",
       "fatal",
       "Design canvas APIs were used while the session expects a FigJam board.",
-      "Use FigJam-specific helpers for boards or open the session with expectedSurface='design'.",
+      "Use FigJam-specific helpers for boards or open the session with surface='design'.",
       "figma-repl://safety#surface",
     ));
   }
@@ -1622,7 +1622,7 @@ export function diagnoseFigmaReplContext(options: {
         "FIGMA_REPL_SURFACE_MISMATCH",
         "fatal",
         `Open expected ${options.expectedSurface} but the Figma URL looks like ${options.derivedSurface}.`,
-        "Check the file URL or expectedSurface before running mutations.",
+        "Check the file URL or surface before running mutations.",
         "figma-repl://safety#surface",
       ),
     ];

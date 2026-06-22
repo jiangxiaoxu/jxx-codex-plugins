@@ -44,7 +44,7 @@ export interface FilePointerMetadata {
 }
 
 export interface ScriptOutputFileMetadata {
-  resultFile?: FilePointerMetadata;
+  outputFile?: FilePointerMetadata;
   diagnosticsFile?: FilePointerMetadata;
   summaryFile?: FilePointerMetadata;
   compiledScriptFile?: FilePointerMetadata;
@@ -85,7 +85,7 @@ export function createScriptOutputWriter(
     async write(payload) {
       const written: ScriptOutputFileMetadata = {};
       if (files.resultFile) {
-        written.resultFile = await writeJsonFile(files.resultFile, payload.result);
+        written.outputFile = await writeJsonFile(files.resultFile, payload.result);
       }
       if (files.diagnosticsFile) {
         written.diagnosticsFile = await writeJsonFile(files.diagnosticsFile, {
@@ -250,7 +250,7 @@ export function resolveTaskPlanResultFile(
   planPath: string | undefined,
   session: FigmaReplWorkspaceFileSession,
 ): string {
-  const explicit = resolveWorkspaceAwareFile(args.resultFile ?? args.outputFile, session, "resultFile/outputFile");
+  const explicit = resolveWorkspaceAwareFile(args.outputFile, session, "outputFile");
   if (explicit) return explicit;
   if (planPath) {
     return planPath.replace(/\.json$/iu, ".result.json");
@@ -259,10 +259,10 @@ export function resolveTaskPlanResultFile(
     return resolveWorkspaceFile(
       session.workspace.sessionDir,
       `${slugifyTaskName(args.title)}.plan.result.json`,
-      "resultFile/outputFile",
+      "outputFile",
     );
   }
-  throw new Error('Tool argument "resultFile" or "outputFile" is required for inline task plans.');
+  throw new Error('Tool argument "outputFile" is required for inline task plans.');
 }
 
 export function withTaskPlanDefaultFiles(
@@ -276,16 +276,16 @@ export function withTaskPlanDefaultFiles(
   }
   const stepSlug = slugifyTaskName(id || type || "step");
   const next = { ...stepArgs };
-  const hasResultFile = asOptionalString(next.resultFile ?? next.outputFile) !== undefined;
+  const hasOutputFile = asOptionalString(next.outputFile) !== undefined;
   if (type === "script-file") {
-    if (!hasResultFile) {
-      next.resultFile = `${stepSlug}.result.json`;
+    if (!hasOutputFile) {
+      next.outputFile = `${stepSlug}.result.json`;
     }
     return next;
   }
   if (type === "asset-manifest") {
-    if (!hasResultFile) {
-      next.resultFile = `${stepSlug}.assets.result.json`;
+    if (!hasOutputFile) {
+      next.outputFile = `${stepSlug}.assets.result.json`;
     }
     return next;
   }
@@ -293,8 +293,8 @@ export function withTaskPlanDefaultFiles(
     if (!asOptionalString(next.outputFile)) {
       next.outputFile = `${stepSlug}.png`;
     }
-    if (!asOptionalString(next.resultFile)) {
-      next.resultFile = `${stepSlug}.capture.result.json`;
+    if (!asOptionalString(next.metadataFile)) {
+      next.metadataFile = `${stepSlug}.capture.result.json`;
     }
     return next;
   }
@@ -362,12 +362,12 @@ export async function ensureWorkspaceDirectories(workspace: FigmaReplSessionWork
 }
 
 export function resolvePreparedTaskWorkspace(options: {
-  args: { taskDir?: unknown; workspaceDir?: unknown; taskRoot?: unknown };
+  args: { workspaceDir?: unknown; taskRoot?: unknown };
   taskSlug: string;
   fileSlug: string;
   session?: FigmaReplWorkspaceFileSession;
 }): FigmaReplSessionWorkspace {
-  if (options.session?.workspace && !options.args.taskDir && !options.args.workspaceDir && !options.args.taskRoot) {
+  if (options.session?.workspace && !options.args.workspaceDir && !options.args.taskRoot) {
     return createWorkspaceFromFileDir({
       root: options.session.workspace.root,
       fileDir: resolve(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
@@ -376,10 +376,10 @@ export function resolvePreparedTaskWorkspace(options: {
       intentSlug: options.taskSlug,
     });
   }
-  const explicitWorkspaceDir = asOptionalString(options.args.taskDir ?? options.args.workspaceDir);
+  const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
   if (explicitWorkspaceDir) {
     if (!isAbsolute(explicitWorkspaceDir)) {
-      throw new Error('Tool argument "taskDir/workspaceDir" must be an absolute path.');
+      throw new Error('Tool argument "workspaceDir" must be an absolute path.');
     }
     return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskSlug);
   }
@@ -405,10 +405,10 @@ export function resolveWorkspaceFile(baseDir: string, fileName: string, argument
 export function normalizeTaskScriptName(value: unknown, taskSlug: string): string {
   const scriptName = asOptionalString(value) ?? `${taskSlug}.figma.js`;
   if (isAbsolute(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
-    throw new Error('Tool argument "fileName/scriptName" must be a file name, not a path.');
+    throw new Error('Tool argument "fileName" must be a file name, not a path.');
   }
   if (!scriptName.endsWith(".figma.js")) {
-    throw new Error('Tool argument "fileName/scriptName" must end with ".figma.js".');
+    throw new Error('Tool argument "fileName" must end with ".figma.js".');
   }
   return scriptName;
 }
@@ -450,7 +450,7 @@ function resolveScriptOutputFiles(
     const sessionDir = session.workspace.sessionDir;
     const inputFile = asOptionalString(args.inputFile);
     const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
-    const resultFile = resolveWorkspaceOutputFile(args.resultFile ?? args.outputFile, sessionDir, defaultResult, "resultFile/outputFile");
+    const resultFile = resolveWorkspaceOutputFile(args.outputFile, sessionDir, defaultResult, "outputFile");
     return {
       resultFile,
       diagnosticsFile: args.diagnosticsFile ? resolveWorkspaceOutputFile(args.diagnosticsFile, sessionDir, "diagnostics.json", "diagnosticsFile") : undefined,
@@ -459,7 +459,7 @@ function resolveScriptOutputFiles(
     };
   }
   const hasOutputDir = Boolean(outputDir);
-  const resultFile = resolveOptionalOutputFile(args.resultFile ?? args.outputFile, outputDir, hasOutputDir ? "result.json" : undefined, "resultFile/outputFile");
+  const resultFile = resolveOptionalOutputFile(args.outputFile, outputDir, hasOutputDir ? "result.json" : undefined, "outputFile");
   return {
     resultFile,
     diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, undefined, "diagnosticsFile"),
@@ -590,7 +590,7 @@ function resolveTaskWorkspace(options: {
   const explicitWorkspace = asOptionalString(options.workspaceDir);
   if (explicitWorkspace) {
     if (!isAbsolute(explicitWorkspace)) {
-      throw new Error('Tool argument "taskDir/workspaceDir" must be an absolute path.');
+      throw new Error('Tool argument "workspaceDir" must be an absolute path.');
     }
     return explicitWorkspace;
   }
@@ -643,7 +643,7 @@ function createWorkspaceFromFileDir(options: {
 function normalizeFileContextDirectory(fileKey: string | undefined, fileSlug: string): string {
   if (fileKey) {
     if (isAbsolute(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
-      throw new Error('Tool argument "fileKey" must be a simple Figma file key.');
+      throw new Error('Derived Figma file key must be a simple file key.');
     }
     return fileKey;
   }
