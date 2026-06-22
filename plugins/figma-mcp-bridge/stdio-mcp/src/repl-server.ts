@@ -730,6 +730,13 @@ export function createFigmaReplClient(
   };
 }
 
+function withMcpDefaultTitle(args: unknown, title: string): Record<string, unknown> & { title: string } {
+  if (args === undefined) {
+    return { title };
+  }
+  return withDefaultTitle(args as Record<string, unknown>, title);
+}
+
 export function createFigmaReplMcpServer(
   options: FigmaReplMcpServerOptions = {},
 ): {
@@ -771,54 +778,65 @@ export function createFigmaReplMcpServer(
 
   server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
     const rawArgs = request.params.arguments;
-    const args = asRecord(rawArgs);
     switch (request.params.name) {
       case "figma_repl_open":
-        return handleOpen(asOpenArgs(rawArgs), { sessions, upstreamToolCache, config });
+        return handleOpen(
+          asOpenArgs(withMcpDefaultTitle(rawArgs, "Open Figma REPL session")),
+          { sessions, upstreamToolCache, config },
+        );
       case "figma_repl_eval":
-        return handleEval(asEvalArgs(rawArgs), { client, sessions, upstreamToolCache, config });
+        return handleEval(
+          asEvalArgs(withMcpDefaultTitle(rawArgs, "Run Figma REPL JavaScript")),
+          { client, sessions, upstreamToolCache, config },
+        );
       case "figma_repl_run_script_file":
-        return handleRunScriptFile(asRunScriptFileArgs(rawArgs), {
+        return handleRunScriptFile(asRunScriptFileArgs(withMcpDefaultTitle(rawArgs, "Run Figma JavaScript file")), {
           client,
           sessions,
           upstreamToolCache,
           config,
         });
       case "figma_repl_apply_asset_manifest":
-        return handleApplyAssetManifest(asApplyAssetManifestArgs(rawArgs), {
+        return handleApplyAssetManifest(asApplyAssetManifestArgs(withMcpDefaultTitle(rawArgs, "Apply Figma asset manifest")), {
           client,
           sessions,
           upstreamToolCache,
           config,
         });
       case "figma_repl_capture_node":
-        return handleCaptureNode(asCaptureNodeArgs(rawArgs), {
+        return handleCaptureNode(asCaptureNodeArgs(withMcpDefaultTitle(rawArgs, "Capture Figma node")), {
           client,
           sessions,
           upstreamToolCache,
           config,
         });
       case "figma_repl_run_task_plan":
-        return handleRunTaskPlan(asRunTaskPlanArgs(rawArgs), {
+        return handleRunTaskPlan(asRunTaskPlanArgs(withMcpDefaultTitle(rawArgs, "Run Figma REPL task plan")), {
           client,
           sessions,
           upstreamToolCache,
           config,
         });
       case "figma_repl_prepare_task":
-        return handlePrepareTask(asPrepareTaskArgs(rawArgs), { sessions });
+        return handlePrepareTask(
+          asPrepareTaskArgs(withMcpDefaultTitle(rawArgs, "Prepare Figma REPL task")),
+          { sessions },
+        );
       case "figma_repl_guidance":
-        return handleGuidance(asGuidanceArgs(rawArgs));
+        return handleGuidance(asGuidanceArgs(withMcpDefaultTitle(rawArgs, "Read Figma REPL guidance")));
       case "figma_repl_inspect":
-        return handleInspect(asInspectArgs(rawArgs), { client, sessions, upstreamToolCache, config });
+        return handleInspect(
+          asInspectArgs(withMcpDefaultTitle(rawArgs, "Inspect Figma REPL target")),
+          { client, sessions, upstreamToolCache, config },
+        );
       case "figma_repl_call_upstream_tool":
-        return handleCallUpstreamTool(asCallUpstreamToolArgs(rawArgs), {
+        return handleCallUpstreamTool(asCallUpstreamToolArgs(withMcpDefaultTitle(rawArgs, "Call upstream Figma MCP tool")), {
           client,
           sessions,
           upstreamToolCache,
         });
       case "figma_repl_lookup":
-        return handleLookup(asLookupArgs(rawArgs));
+        return handleLookup(asLookupArgs(withMcpDefaultTitle(rawArgs, "Look up Figma REPL reference")));
       default:
         throw new Error(`Unknown figma_repl_mcp tool: ${request.params.name}`);
     }
@@ -4337,10 +4355,21 @@ function slugifyTaskName(value: unknown): string {
 
 function createToolArgumentGuidancePayload(): Record<string, unknown> {
   return {
+    title: {
+      optional: true,
+      preferSupplying: true,
+      schemaDescription: "One concise sentence-style line for UI/log display.",
+      guidance: "Prefer supplying title on normal calls. Describe what this call is doing in plain language; keep it specific and avoid bare labels or tool names. If omitted, the runtime uses a generic default title.",
+      examples: [
+        "Capture the hero variant for visual QA",
+        "Dry-run the token audit script",
+        "Apply generated assets to product cards",
+      ],
+    },
     prepareTask: {
       tool: "figma_repl_prepare_task",
       recommendedCalls: {
-        workspaceFromFile: { title: "Prepare task", file: "<figma file URL or file key>", task: "<task>", surface: "design" },
+        workspaceFromFile: { title: "Prepare the token audit workspace", file: "<figma file URL or file key>", task: "<task>", surface: "design" },
       },
       advancedArguments: ["cwd", "fileSlug", "dirName", "taskSlug", "workspaceDir", "fileName", "taskRoot", "template", "overwrite"],
       avoidUnless: {
@@ -4353,7 +4382,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     open: {
       tool: "figma_repl_open",
       recommendedCalls: {
-        session: { title: "Open session", sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" },
+        session: { title: "Open the design file session", sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" },
       },
       advancedArguments: ["cwd", "dirName", "connect", "refresh", "upstreamTool", "upstreamArgument", "upstreamArguments", "handles"],
       avoidUnless: {
@@ -4368,8 +4397,8 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     eval: {
       tool: "figma_repl_eval",
       recommendedCalls: {
-        read: { title: "Inspect with eval", sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
-        write: { title: "Run eval transaction", sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" },
+        read: { title: "Inspect selected layout metadata", sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
+        write: { title: "Apply the selected node updates", sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" },
       },
       advancedArguments: ["allowDangerousOperations", "upstreamTool", "upstreamArgument", "upstreamArguments", "handleUpdates"],
       avoidUnless: {
@@ -4381,8 +4410,8 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     inspect: {
       tool: "figma_repl_inspect",
       recommendedCalls: {
-        inspectTarget: { title: "Inspect node", sessionId: "<session>", target: "$selection" },
-        validateHandles: { title: "Validate handles", sessionId: "<session>", mode: "validate" },
+        inspectTarget: { title: "Inspect the current selection", sessionId: "<session>", target: "$selection" },
+        validateHandles: { title: "Validate cached node handles", sessionId: "<session>", mode: "validate" },
       },
       advancedArguments: ["handles", "upstreamTool", "upstreamArgument", "upstreamArguments"],
       avoidUnless: {
@@ -4393,7 +4422,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     assetManifest: {
       tool: "figma_repl_apply_asset_manifest",
       recommendedCalls: {
-        applyManifest: { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" },
+        applyManifest: { title: "Apply generated assets to target rectangles", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" },
       },
       advancedArguments: ["assets", "toolName", "arguments", "refresh"],
       avoidUnless: {
@@ -4405,7 +4434,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     captureNode: {
       tool: "figma_repl_capture_node",
       recommendedCalls: {
-        capture: { title: "Capture node", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
+        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
       },
       advancedArguments: ["metadataFile", "toolName", "arguments", "refresh"],
       avoidUnless: {
@@ -4417,7 +4446,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     taskPlan: {
       tool: "figma_repl_run_task_plan",
       recommendedCalls: {
-        filePlan: { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" },
+        filePlan: { title: "Run the repeatable asset QA plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" },
       },
       advancedArguments: ["steps"],
       avoidUnless: {
@@ -4438,7 +4467,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       tool: "figma_repl_call_upstream_tool",
       guidance: "Explicit upstream escape hatch only; use when a required official Figma MCP capability is not covered by the REPL workflow tools.",
       recommendedCalls: {
-        explicit: { title: "Call upstream tool", sessionId: "<session>", toolName: "<official upstream tool>", arguments: {} },
+        explicit: { title: "Call the upstream-only Figma tool", sessionId: "<session>", toolName: "<official upstream tool>", arguments: {} },
       },
       advancedArguments: ["refresh"],
       avoidUnless: {
@@ -4490,10 +4519,10 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     scriptWorkflow: {
       primaryTool: "figma_repl_run_script_file",
       scriptShape: "Write an async function body in a local .figma.js file. The runner injects Figma REPL prelude plus $ helpers before upstream use_figma execution.",
-      requiredArguments: ["title", "inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
+      requiredArguments: ["inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
       recommendedCalls: {
-        dryRun: { title: "Dry-run script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
-        execute: { title: "Execute script", sessionId: "<session>", inputFile: "<task>.figma.js", outputFile: "<task>.result.json" },
+        dryRun: { title: "Dry-run the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
+        execute: { title: "Execute the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js", outputFile: "<task>.result.json" },
       },
       advancedArguments: [
         "scriptPath",

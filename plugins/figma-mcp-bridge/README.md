@@ -74,7 +74,7 @@ Agents should use `figma_repl_mcp` first:
 5. `figma_repl_run_script_file({ title, sessionId, inputFile, outputFile })`
 6. `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath, outputFile })`, `figma_repl_capture_node({ title, sessionId, target, outputFile })`, or `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })` when needed
 
-In workspace workflows, prefer `task`, `inputFile`, `outputFile`, `manifestPath`, `target`, and `planPath`. Inline assets/steps, custom upstream templates, `scriptPath`, split output files, upstream overrides, `metadataFile`, and `refresh` are advanced/debug escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
+In workspace workflows, prefer `title`, `task`, `inputFile`, `outputFile`, `manifestPath`, `target`, and `planPath`. `title` is optional but recommended for UI/log clarity; omitted titles use runtime defaults. Inline assets/steps, custom upstream templates, `scriptPath`, split output files, upstream overrides, `metadataFile`, and `refresh` are advanced/debug escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
 
 For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 

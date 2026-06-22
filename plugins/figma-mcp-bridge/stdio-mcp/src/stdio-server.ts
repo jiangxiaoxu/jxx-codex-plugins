@@ -63,13 +63,13 @@ export function createFigmaStdioMcpServer(
 
   server.setRequestHandler(ListToolsRequestSchema, async (_request: ListToolsRequest) => {
     await client.connect();
-    return injectRequiredTitleArgument(asMcpResult(await client.listTools()));
+    return injectOptionalTitleArgument(asMcpResult(await client.listTools()));
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
     await client.connect();
     const args = asRecord(request.params.arguments);
-    assertRequiredTitleArgument(args);
+    assertOptionalTitleArgument(args);
     return asMcpResult(
       await client.callTool(
         request.params.name,
@@ -111,7 +111,7 @@ function asMcpResult(value: unknown): Record<string, unknown> {
   throw new Error("Upstream MCP server returned a non-object result.");
 }
 
-function injectRequiredTitleArgument(
+function injectOptionalTitleArgument(
   result: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!Array.isArray(result.tools)) {
@@ -142,18 +142,16 @@ function injectTitleIntoInputSchema(inputSchema: unknown): Record<string, unknow
       ...properties,
       [TOOL_TITLE_ARGUMENT]: {
         type: "string",
-        description: "Human-readable title used when presenting output to the user.",
+        description: "One concise sentence-style line for UI/log display.",
       },
     },
-    required: required.includes(TOOL_TITLE_ARGUMENT)
-      ? required
-      : [...required, TOOL_TITLE_ARGUMENT],
+    required: required.filter((name) => name !== TOOL_TITLE_ARGUMENT),
   };
 }
 
-function assertRequiredTitleArgument(args: Record<string, unknown>): void {
-  if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
-    throw new Error('Tool argument "title" is required and must be a string.');
+function assertOptionalTitleArgument(args: Record<string, unknown>): void {
+  if (args[TOOL_TITLE_ARGUMENT] !== undefined && typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
+    throw new Error('Tool argument "title" must be a string.');
   }
 }
 

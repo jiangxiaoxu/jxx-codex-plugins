@@ -558,8 +558,11 @@ export function withDefaultTitle<T extends Record<string, unknown>>(
   if (!isRecord(args)) {
     throw new Error("Tool arguments must be an object.");
   }
+  if (args.title !== undefined && typeof args.title !== "string") {
+    throw new Error('Tool argument "title" must be a string.');
+  }
   return {
     ...args,
-    title: typeof args.title === "string" ? args.title : title,
+    title: args.title ?? title,
   };
 }
