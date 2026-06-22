@@ -26586,7 +26586,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_apply_asset_manifest",
-      description: "Apply local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, refresh, resultFile, and inlineResultLimit are advanced/debug/compat only.",
+      description: "Apply local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, refresh, and resultFile are advanced/debug only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -26602,13 +26602,12 @@ function createReplToolDescriptions(options) {
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload."),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
         resultFile: stringProperty("Advanced output alias/escape hatch for manifest result JSON. Prefer outputFile in workspaces."),
-        outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace."),
-        inlineResultLimit: numberProperty("Compatibility-only no-op style field for file-output workflows; manifest responses already return concise metadata.")
+        outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace.")
       }, ["title"])
     },
     {
       name: "figma_repl_capture_node",
-      description: "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, nodeId, outputFile }. targetNodeId/target/handle aliases, custom upstream templates, refresh, resultFile, and inlineResultLimit are advanced/debug/compat only.",
+      description: "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, nodeId, outputFile }. targetNodeId/target/handle aliases, custom upstream templates, refresh, and resultFile are advanced/debug only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -26623,13 +26622,12 @@ function createReplToolDescriptions(options) {
         toolName: stringProperty("Advanced upstream screenshot/capture tool override. Leave unset so the REPL selects an advertised screenshot-like tool and infers node id from recognizable schema fields."),
         arguments: objectProperty("Advanced upstream arguments template. Use {{nodeId}} or {{targetNodeId}} placeholders only when adapting a custom upstream schema."),
         argumentsTemplate: objectProperty("Advanced alias for arguments."),
-        refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: numberProperty("Compatibility-only no-op style field for file-output workflows; capture responses return only file metadata.")
+        refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch.")
       }, ["title", "outputFile"])
     },
     {
       name: "figma_repl_run_task_plan",
-      description: "Run a sequential local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Inline steps, resultFile, and inlineResultLimit are advanced/compat only. Later steps can reference prior outputs with templates like {{outputs.stepId.resultFile.path}}.",
+      description: "Run a sequential local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Inline steps and resultFile are advanced/compat only. Later steps can reference prior outputs with templates like {{outputs.stepId.resultFile.path}}.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
@@ -26641,8 +26639,7 @@ function createReplToolDescriptions(options) {
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true."),
         resultFile: stringProperty("Advanced output alias/escape hatch for JSON result file. Prefer outputFile in workspaces; required only when using inline steps without a file plan."),
-        outputFile: stringProperty("Recommended plan result JSON file name inside the initialized file-context workspace."),
-        inlineResultLimit: numberProperty("Compatibility-only no-op style field for file-output workflows; plan responses return per-step statuses.")
+        outputFile: stringProperty("Recommended plan result JSON file name inside the initialized file-context workspace.")
       }, ["title"])
     },
     {
@@ -26745,8 +26742,9 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamTool: stringProperty("Upstream eval tool name used."),
     upstreamArgument: stringProperty("Upstream eval argument name used."),
     diagnostics: arrayProperty("Preflight diagnostics."),
-    result: jsonProperty("Parsed upstream JSON output when available."),
-    text: stringProperty("Upstream text fallback when JSON output is unavailable.")
+    upstream: objectProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    primaryFix: stringProperty("Suggested primary repair when execution failed.")
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
@@ -26759,23 +26757,27 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstream: objectProperty("File-script upstream output envelope with JSON payload or text fallback.")
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
-    assets: arrayProperty("Per-asset upstream upload/fill results."),
+    session: objectProperty("Public local REPL session metadata."),
+    assets: arrayProperty("Compact per-asset upload/fill results."),
     validation: objectProperty("Optional target validation result."),
     outputFiles: objectProperty("Files written for result output."),
     failures: arrayProperty("Per-asset or validation failures.")
   }),
   figma_repl_capture_node: toolOutputSchema({
-    file: stringProperty("Local output file path."),
+    session: objectProperty("Public local REPL session metadata."),
+    outputFile: stringProperty("Local output file path when capture succeeded."),
+    plannedOutputFile: stringProperty("Local output file path requested when capture failed before writing."),
     nodeId: stringProperty("Captured Figma node id."),
     toolName: stringProperty("Upstream screenshot/capture tool name used."),
     kind: stringProperty("Saved output kind."),
     mimeType: stringProperty("Detected output MIME type."),
-    bytes: numberProperty("Saved output byte count."),
     qa: objectProperty("Compact capture QA hints."),
+    upstream: objectProperty("Upstream output envelope, compact inline and complete in resultFile when requested."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
     outputFiles: objectProperty("Files written for result output.")
   }),
   figma_repl_run_task_plan: toolOutputSchema({
+    session: objectProperty("Public local REPL session metadata."),
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     stopOnFailure: booleanProperty("Whether the plan was configured to stop on first failure."),
     steps: arrayProperty("Compact per-step execution summaries."),
@@ -26804,13 +26806,16 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_inspect: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
     diagnostics: arrayProperty("Read-mode diagnostics."),
-    result: jsonProperty("Parsed upstream JSON output when available."),
-    text: stringProperty("Upstream text fallback when JSON output is unavailable.")
+    upstream: objectProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstreamError: objectProperty("Normalized upstream failure details when inspection failed."),
+    primaryFix: stringProperty("Suggested primary repair when inspection failed.")
   }),
   figma_repl_call_upstream_tool: toolOutputSchema({
+    session: objectProperty("Public local REPL session metadata."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
-    result: jsonProperty("Parsed upstream JSON output when available."),
-    text: stringProperty("Upstream text fallback when JSON output is unavailable.")
+    upstream: objectProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    primaryFix: stringProperty("Suggested primary repair when execution failed.")
   }),
   figma_repl_lookup: toolOutputSchema({
     kind: stringProperty("Lookup kind: docs or api."),
@@ -26867,9 +26872,6 @@ function numberProperty(description) {
 }
 function objectProperty(description) {
   return { type: "object", description, additionalProperties: true };
-}
-function jsonProperty(description) {
-  return { description };
 }
 function arrayProperty(description) {
   return { type: "array", description, items: { type: "object", additionalProperties: true } };
@@ -28203,6 +28205,7 @@ async function executeApplyAssetManifest(args, runtime) {
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const failures = [];
   const assetResults = [];
+  const assetDetails = [];
   await runtime.client.connect();
   for (const asset of manifest.assets) {
     const tool = selectUpstreamTool({
@@ -28220,10 +28223,7 @@ async function executeApplyAssetManifest(args, runtime) {
     try {
       const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
       const parsed = parseUpstreamToolResult(upstream);
-      const fullResult = {
-        ...upstreamResultFields({ parsed, upstream }),
-        ...upstreamFailureFields(parsed)
-      };
+      const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0;
       const upload = parsed.upstreamError ? void 0 : await submitLocalAssetUploadIfAvailable(asset, parsed);
       const ok2 = !parsed.upstreamError && upload?.ok !== false;
       const entry = {
@@ -28232,45 +28232,62 @@ async function executeApplyAssetManifest(args, runtime) {
         targetNodeId: asset.targetNodeId,
         handle: asset.handle,
         name: asset.name,
-        metadata: asset.metadata,
         toolName: tool.name,
+        upload,
+        error: upstreamError,
+        upstreamSummary: parsed.upstreamError ? parsed.upstreamError.message : summarizeParsedResult(parsed)
+      };
+      const detail = {
+        ...entry,
+        metadata: asset.metadata,
         arguments: upstreamArguments,
-        result: upload ? { ...fullResult, upload } : fullResult,
+        upstream: upstreamEnvelope(parsed),
+        upstreamError,
+        primaryFix: parsed.primaryFix,
         startedAt,
         finishedAt: (/* @__PURE__ */ new Date()).toISOString()
       };
       assetResults.push(entry);
+      assetDetails.push(detail);
       if (!ok2) {
         failures.push({
           path: asset.path,
           targetNodeId: asset.targetNodeId,
           handle: asset.handle,
           toolName: tool.name,
-          error: parsed.upstreamError
+          error: upstreamError
         });
       }
     } catch (error2) {
       const upstreamError = normalizeCaughtUpstreamError(error2);
+      const responseError = responseUpstreamError(upstreamError);
       const entry = {
         ok: false,
         path: asset.path,
         targetNodeId: asset.targetNodeId,
         handle: asset.handle,
         name: asset.name,
-        metadata: asset.metadata,
         toolName: tool.name,
+        error: responseError,
+        upstreamSummary: upstreamError.message
+      };
+      const detail = {
+        ...entry,
+        metadata: asset.metadata,
         arguments: upstreamArguments,
-        error: upstreamError,
+        upstreamError: responseError,
+        primaryFix: primaryFixForUpstreamError(upstreamError),
         startedAt,
         finishedAt: (/* @__PURE__ */ new Date()).toISOString()
       };
       assetResults.push(entry);
+      assetDetails.push(detail);
       failures.push({
         path: asset.path,
         targetNodeId: asset.targetNodeId,
         handle: asset.handle,
         toolName: tool.name,
-        error: upstreamError
+        error: responseError
       });
     }
   }
@@ -28284,14 +28301,25 @@ async function executeApplyAssetManifest(args, runtime) {
     assetResults
   });
   const ok = failures.length === 0 && validation.ok !== false;
+  for (const detail of assetDetails) {
+    const targetNodeId = asOptionalString2(detail.targetNodeId);
+    const asset = assetResults.find((item) => item.targetNodeId === targetNodeId);
+    if (asset?.validation !== void 0) {
+      detail.validation = asset.validation;
+    }
+  }
   const payload = {
     ok,
+    session: responseSession(session),
     assets: assetResults,
     validation,
     failures: failures.length > 0 ? failures : void 0
   };
   if (resultFile) {
-    files.resultFile = await writeJsonFile(resultFile, payload);
+    files.resultFile = await writeJsonFile(resultFile, {
+      ...payload,
+      assetDetails
+    });
   }
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
@@ -28343,15 +28371,19 @@ async function executeCaptureNode(args, runtime) {
     const outputFiles2 = {};
     const payload2 = {
       ok: false,
-      file: outputFile,
+      session: responseSession(session),
+      plannedOutputFile: outputFile,
       nodeId,
       handle: targetResolution.handle,
       toolName: tool.name,
-      ...upstreamResultFields({ parsed, upstream }),
+      upstream: upstreamEnvelope(parsed, { includePayload: false }),
       ...upstreamFailureFields(parsed)
     };
     if (resultFile) {
-      outputFiles2.resultFile = await writeJsonFile(resultFile, payload2);
+      outputFiles2.resultFile = await writeJsonFile(resultFile, {
+        ...payload2,
+        upstream: upstreamEnvelope(parsed)
+      });
     }
     return {
       ...payload2,
@@ -28378,7 +28410,8 @@ async function executeCaptureNode(args, runtime) {
   });
   const payload = {
     ok: true,
-    file: outputFile,
+    session: responseSession(session),
+    outputFile,
     nodeId,
     handle: targetResolution.handle,
     toolName: tool.name,
@@ -28390,10 +28423,13 @@ async function executeCaptureNode(args, runtime) {
     height: saved.height,
     sourceUrl: saved.sourceUrl,
     qa: createCaptureQa(saved),
-    ...upstreamResultFields({ parsed, upstream })
+    upstream: upstreamEnvelope(parsed, { includePayload: false })
   };
   if (resultFile) {
-    outputFiles.resultFile = await writeJsonFile(resultFile, payload);
+    outputFiles.resultFile = await writeJsonFile(resultFile, {
+      ...payload,
+      upstream: upstreamEnvelope(parsed)
+    });
   }
   return {
     ...payload,
@@ -28489,6 +28525,7 @@ async function executeRunTaskPlan(args, runtime) {
   const failures = steps.filter((step) => step.ok === false);
   const payload = {
     ok: failures.length === 0,
+    session: responseSession(session),
     stopped,
     stopOnFailure,
     steps,
@@ -28523,10 +28560,10 @@ async function handlePrepareTask(args, runtime) {
     session.workspace = workspace;
     touchSession(session);
   }
-  const workspaceDir = workspace.fileDir;
   const scriptName = normalizeTaskScriptName(args.fileName ?? args.scriptName ?? workspace.files.script, intentSlug);
+  const outputFile = resultFileNameForScript(scriptName);
   const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName/scriptName");
-  const resultFile = resolveWorkspaceFile(workspace.sessionDir, resultFileNameForScript(scriptName), "resultFile");
+  const resultFile = resolveWorkspaceFile(workspace.sessionDir, outputFile, "resultFile");
   await ensureWorkspaceDirectories(workspace);
   await writeTaskFile(scriptPath, createTaskScriptTemplate(intentSlug, args), Boolean(args.overwrite));
   const resultFileMetadata = await writeTaskFile(resultFile, JSON.stringify({
@@ -28546,9 +28583,8 @@ async function handlePrepareTask(args, runtime) {
       slug: intentSlug,
       intentSlug,
       fileContext: workspace.fileContext,
-      fileDir: workspace.fileDir,
-      workspaceDir,
-      taskDir: workspaceDir,
+      inputFile: scriptName,
+      outputFile,
       workspace,
       scriptPath,
       resultFile: resultFileMetadata,
@@ -28803,6 +28839,7 @@ async function executeCallUpstreamTool(args, runtime) {
   });
   return {
     ok: !parsed.upstreamError,
+    session: responseSession(session),
     toolName: args.toolName,
     ...upstreamResultFields({
       parsed,
@@ -30294,7 +30331,7 @@ return {
     if (parsed.upstreamError) {
       return {
         ok: false,
-        error: parsed.upstreamError,
+        error: responseUpstreamError(parsed.upstreamError),
         primaryFix: parsed.primaryFix
       };
     }
@@ -30317,7 +30354,7 @@ return {
   } catch (error2) {
     return {
       ok: false,
-      error: normalizeCaughtUpstreamError(error2)
+      error: responseUpstreamError(normalizeCaughtUpstreamError(error2))
     };
   }
 }
@@ -30517,7 +30554,7 @@ function createTaskPlanStepReference(options) {
   const outputFiles = asRecord3(options.result.outputFiles);
   const upstream = asRecord3(options.result.upstream);
   const upstreamPayload = runScriptUpstreamPayload(options.result);
-  const result = asRecord3(options.type === "script-file" ? upstreamPayload : options.result.result);
+  const result = asRecord3(upstreamPayload);
   const nestedResult = isRecord5(result.result) ? asRecord3(result.result) : result;
   const session = asRecord3(options.result.session);
   const handles = isRecord5(session.handles) ? session.handles : isRecord5(result.handles) ? result.handles : isRecord5(nestedResult.handles) ? nestedResult.handles : void 0;
@@ -30527,17 +30564,19 @@ function createTaskPlanStepReference(options) {
     type: options.type,
     status: options.status,
     ok: options.ok,
-    file: options.result.file,
     upstream: Object.keys(upstream).length > 0 ? upstream : void 0,
-    result: options.type !== "script-file" && Object.keys(result).length > 0 ? result : void 0,
     nodeIds: collectNodeIds(options.result),
     handles,
+    assets: options.result.assets,
+    validation: options.result.validation,
     assetTargets: nestedResult.assetTargets,
     captureTarget: nestedResult.captureTarget,
     createdNodeId: nestedResult.createdNodeId,
+    outputFile: options.result.outputFile,
+    plannedOutputFile: options.result.plannedOutputFile,
     outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0,
     resultFile: asRecord3(outputFiles.resultFile).path,
-    outputFile: asRecord3(outputFiles.outputFile).path
+    outputFilePath: asRecord3(outputFiles.outputFile).path
   };
 }
 function normalizeTaskPlanStepType2(step) {
@@ -30548,7 +30587,7 @@ function taskPlanStepSucceeded(result) {
   if (result.ok === false) {
     return false;
   }
-  const nestedResult = asRecord3(runScriptUpstreamPayload(result) ?? result.result);
+  const nestedResult = asRecord3(runScriptUpstreamPayload(result));
   if (nestedResult.ok === false) {
     return false;
   }
@@ -30557,7 +30596,8 @@ function taskPlanStepSucceeded(result) {
 function summarizeTaskPlanStepResult(result) {
   return {
     ok: result.ok !== false,
-    file: result.file,
+    outputFile: result.outputFile,
+    plannedOutputFile: result.plannedOutputFile,
     files: result.files ?? result.outputFiles,
     toolName: result.toolName,
     upstreamTool: result.upstreamTool,
@@ -30864,14 +30904,13 @@ function createToolArgumentGuidancePayload() {
       recommendedCalls: {
         applyManifest: { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" }
       },
-      advancedArguments: ["assets", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile", "inlineResultLimit"],
+      advancedArguments: ["assets", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile"],
       avoidUnless: {
         assets: "Prefer manifestPath for repeatable local-file workflows; inline assets are for generated one-off plans.",
         assetAliases: "Use path/targetNodeId as the preferred asset fields; other path/target aliases are compatibility only.",
         upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom or fake upstream asset schema.",
         refresh: "Use only for upstream tool-cache debug.",
-        resultFile: "Prefer outputFile in initialized workspaces.",
-        inlineResultLimit: "Compatibility-only; manifest responses are already concise."
+        resultFile: "Prefer outputFile in initialized workspaces."
       }
     },
     captureNode: {
@@ -30879,13 +30918,12 @@ function createToolArgumentGuidancePayload() {
       recommendedCalls: {
         capture: { title: "Capture node", sessionId: "<session>", nodeId: "$target", outputFile: "<capture>.png" }
       },
-      advancedArguments: ["targetNodeId", "target", "handle", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile", "inlineResultLimit"],
+      advancedArguments: ["targetNodeId", "target", "handle", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile"],
       avoidUnless: {
         targetAliases: "Prefer nodeId for direct calls; target/handle aliases are mainly for plan templates and compatibility.",
         upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom screenshot upstream schema.",
         refresh: "Use only for upstream tool-cache debug.",
-        resultFile: "Use only when separate capture metadata JSON is explicitly needed.",
-        inlineResultLimit: "Compatibility-only; capture responses return file metadata."
+        resultFile: "Use only when separate capture metadata JSON is explicitly needed."
       }
     },
     taskPlan: {
@@ -30893,11 +30931,10 @@ function createToolArgumentGuidancePayload() {
       recommendedCalls: {
         filePlan: { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" }
       },
-      advancedArguments: ["steps", "resultFile", "inlineResultLimit"],
+      advancedArguments: ["steps", "resultFile"],
       avoidUnless: {
         steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans.",
-        resultFile: "Prefer outputFile in initialized workspaces.",
-        inlineResultLimit: "Compatibility-only; plan responses return per-step statuses."
+        resultFile: "Prefer outputFile in initialized workspaces."
       }
     },
     guidance: {
@@ -30941,7 +30978,7 @@ function createCapabilitiesPayload() {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma_repl_mcp interface.",
-      responseShape: "Fixed structured payloads without session.history; file-script upstream JSON is returned as upstream.payload, file-script text is returned as upstream.text, and other upstream-backed tools keep parsed JSON in result with text as the non-JSON fallback."
+      responseShape: "Fixed structured payloads without session.history. Upstream-backed single-call tools return JSON in upstream.payload or non-JSON output in upstream.text. Asset manifests keep compact inline assets and complete per-asset upstream envelopes in explicit result files."
     },
     patterns: {
       text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
@@ -31028,19 +31065,20 @@ function createCapabilitiesPayload() {
         purpose: "Apply local generated image files to pre-created target nodes through configurable upstream asset/upload tools including official upload_assets.",
         assetShape: "{ path|filePath|localPath, targetNodeId|nodeId|target|targetId, nodeUrl?, name?, metadata?, toolName?, arguments? }",
         defaults: "Uses explicit toolName/arguments templates when provided; otherwise selects an advertised asset-like upstream tool, resolves target handles, and adapts upload_assets with file, MIME, node id, and node URL fields.",
+        result: "Inline assets are compact: ok, path, targetNodeId, handle, name, toolName, upload, validation, error, upstreamSummary. Explicit outputFile/resultFile writes assetDetails with full per-asset upstream envelopes and arguments.",
         validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload."
       },
       capture: {
         tool: "figma_repl_capture_node",
         purpose: "Call an upstream screenshot/capture tool and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
         defaulting: "Uses explicit toolName/arguments templates when provided; otherwise selects an advertised screenshot-like upstream tool and infers node id only from recognizable schema fields.",
-        metadata: "Returns kind, mimeType, bytes, width/height when detectable, sourceUrl when downloaded, qa warnings, and optional resultFile metadata."
+        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, mimeType, bytes, width/height when detectable, sourceUrl when downloaded, qa warnings, compact inline upstream, and optional resultFile metadata with full upstream."
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",
         stepTypes: ["script-file", "asset-manifest", "upload_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
-        references: "Later step arguments can reference prior outputs with {{outputs.stepId.resultFile.path}} or {{steps.stepId.outputFiles.resultFile.path}}; script-step upstream JSON is available at {{steps.stepId.upstream.payload}}.",
+        references: "Later step arguments can reference prior outputs with {{outputs.stepId.resultFile.path}} or {{steps.stepId.outputFiles.resultFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
         result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, and <step-id>.png plus <step-id>.capture.result.json."
       }
     },
@@ -31453,19 +31491,13 @@ function responseEvalSettingsFields(evalSettings) {
   };
 }
 function upstreamResultFields(options) {
-  const fields = {};
-  if (options.parsed.json !== void 0) {
-    fields.result = options.parsed.json;
-  }
-  if (options.parsed.json === void 0) {
-    fields.text = options.parsed.text || void 0;
-  }
-  return fields;
+  return {
+    upstream: upstreamEnvelope(options.parsed)
+  };
 }
 function runScriptUpstreamFields(parsed) {
-  const ok = !parsed.upstreamError;
   return {
-    upstream: parsed.json !== void 0 ? { kind: "json", ok, payload: parsed.json } : { kind: "text", ok, text: parsed.text || void 0 }
+    upstream: upstreamEnvelope(parsed)
   };
 }
 function runScriptUpstreamFailureFields(parsed) {
@@ -31483,9 +31515,17 @@ function responseUpstreamError(error2) {
 }
 function upstreamFailureFields(parsed) {
   return {
-    upstreamError: parsed.upstreamError,
+    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0,
     primaryFix: parsed.primaryFix
   };
+}
+function upstreamEnvelope(parsed, options = {}) {
+  const includePayload = options.includePayload ?? true;
+  const ok = !parsed.upstreamError;
+  if (parsed.json !== void 0) {
+    return includePayload ? { kind: "json", ok, payload: parsed.json } : { kind: "json", ok };
+  }
+  return includePayload ? { kind: "text", ok, text: parsed.text || void 0 } : { kind: "text", ok };
 }
 function publicSession(session, options = {}) {
   const includeHistory = options.includeHistory ?? true;

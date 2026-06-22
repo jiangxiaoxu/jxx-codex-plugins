@@ -59,7 +59,7 @@ The plugin's `.mcp.json` installs:
 
 Upgrade note: the persistent MCP server id changed from `figma-repl-mcp` to `figma_repl_mcp`. Reload or reinstall the plugin, or restart the MCP server, so old cached `figma-repl-mcp` tool schemas are not exposed.
 
-Local `figma_repl_*` tools return a fixed structured shape. `figma_repl_run_script_file` stores upstream JSON in `upstream.payload` and non-JSON output in `upstream.text`; other upstream-backed tools keep parsed JSON in `result` with `text` as the non-JSON fallback. Diagnostics are arrays, session payloads omit history, and large data points to `outputFiles` entries shaped as `{ path, bytes, lineCount }`.
+Local `figma_repl_*` tools return a fixed structured shape. Upstream-backed single-call tools store parsed JSON in `upstream.payload` and non-JSON output in `upstream.text`; asset manifests keep compact inline asset entries and write full per-asset upstream details only to explicit result files. Diagnostics are arrays, session payloads omit history, and large data points to `outputFiles` entries shaped as `{ path, bytes, lineCount }`.
 
 `figma-stdio` is not installed as a persistent plugin server by default. Keep using `figma_repl_mcp` for agent work; use `figma-stdio` only through the package CLI or Node API for parity checks and raw official MCP debugging.
 
@@ -74,7 +74,7 @@ Agents should use `figma_repl_mcp` first:
 5. `figma_repl_run_script_file({ title, sessionId, inputFile, outputFile })`
 6. `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath, outputFile })`, `figma_repl_capture_node({ title, sessionId, nodeId, outputFile })`, or `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })` when needed
 
-In workspace workflows, prefer `intent`, `inputFile`, `outputFile`, `manifestPath`, `nodeId`, and `planPath`. Alias fields, inline assets/steps, custom upstream templates, `resultFile`, `scriptPath`, split output files, upstream overrides, `refresh`, and `inlineResultLimit` are advanced/debug/compat escape hatches; `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
+In workspace workflows, prefer `intent`, `inputFile`, `outputFile`, `manifestPath`, `nodeId`, and `planPath`. Alias fields, inline assets/steps, custom upstream templates, `resultFile`, `scriptPath`, split output files, upstream overrides, and `refresh` are advanced/debug/compat escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
 
 For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 

@@ -82,7 +82,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_apply_asset_manifest",
       description:
-        "Apply local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, refresh, resultFile, and inlineResultLimit are advanced/debug/compat only.",
+        "Apply local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, refresh, and resultFile are advanced/debug only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -99,13 +99,12 @@ export function createReplToolDescriptions(
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
         resultFile: stringProperty("Advanced output alias/escape hatch for manifest result JSON. Prefer outputFile in workspaces."),
         outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace."),
-        inlineResultLimit: numberProperty("Compatibility-only no-op style field for file-output workflows; manifest responses already return concise metadata."),
       }, ["title"]),
     },
     {
       name: "figma_repl_capture_node",
       description:
-        "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, nodeId, outputFile }. targetNodeId/target/handle aliases, custom upstream templates, refresh, resultFile, and inlineResultLimit are advanced/debug/compat only.",
+        "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, nodeId, outputFile }. targetNodeId/target/handle aliases, custom upstream templates, refresh, and resultFile are advanced/debug only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -121,13 +120,12 @@ export function createReplToolDescriptions(
         arguments: objectProperty("Advanced upstream arguments template. Use {{nodeId}} or {{targetNodeId}} placeholders only when adapting a custom upstream schema."),
         argumentsTemplate: objectProperty("Advanced alias for arguments."),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: numberProperty("Compatibility-only no-op style field for file-output workflows; capture responses return only file metadata."),
       }, ["title", "outputFile"]),
     },
     {
       name: "figma_repl_run_task_plan",
       description:
-        "Run a sequential local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Inline steps, resultFile, and inlineResultLimit are advanced/compat only. Later steps can reference prior outputs with templates like {{outputs.stepId.resultFile.path}}.",
+        "Run a sequential local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Inline steps and resultFile are advanced/compat only. Later steps can reference prior outputs with templates like {{outputs.stepId.resultFile.path}}.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
@@ -140,7 +138,6 @@ export function createReplToolDescriptions(
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true."),
         resultFile: stringProperty("Advanced output alias/escape hatch for JSON result file. Prefer outputFile in workspaces; required only when using inline steps without a file plan."),
         outputFile: stringProperty("Recommended plan result JSON file name inside the initialized file-context workspace."),
-        inlineResultLimit: numberProperty("Compatibility-only no-op style field for file-output workflows; plan responses return per-step statuses."),
       }, ["title"]),
     },
     {
@@ -249,8 +246,9 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamTool: stringProperty("Upstream eval tool name used."),
     upstreamArgument: stringProperty("Upstream eval argument name used."),
     diagnostics: arrayProperty("Preflight diagnostics."),
-    result: jsonProperty("Parsed upstream JSON output when available."),
-    text: stringProperty("Upstream text fallback when JSON output is unavailable."),
+    upstream: objectProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    primaryFix: stringProperty("Suggested primary repair when execution failed."),
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
@@ -263,23 +261,27 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstream: objectProperty("File-script upstream output envelope with JSON payload or text fallback."),
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
-    assets: arrayProperty("Per-asset upstream upload/fill results."),
+    session: objectProperty("Public local REPL session metadata."),
+    assets: arrayProperty("Compact per-asset upload/fill results."),
     validation: objectProperty("Optional target validation result."),
     outputFiles: objectProperty("Files written for result output."),
     failures: arrayProperty("Per-asset or validation failures."),
   }),
   figma_repl_capture_node: toolOutputSchema({
-    file: stringProperty("Local output file path."),
+    session: objectProperty("Public local REPL session metadata."),
+    outputFile: stringProperty("Local output file path when capture succeeded."),
+    plannedOutputFile: stringProperty("Local output file path requested when capture failed before writing."),
     nodeId: stringProperty("Captured Figma node id."),
     toolName: stringProperty("Upstream screenshot/capture tool name used."),
     kind: stringProperty("Saved output kind."),
     mimeType: stringProperty("Detected output MIME type."),
-    bytes: numberProperty("Saved output byte count."),
     qa: objectProperty("Compact capture QA hints."),
+    upstream: objectProperty("Upstream output envelope, compact inline and complete in resultFile when requested."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
     outputFiles: objectProperty("Files written for result output."),
   }),
   figma_repl_run_task_plan: toolOutputSchema({
+    session: objectProperty("Public local REPL session metadata."),
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     stopOnFailure: booleanProperty("Whether the plan was configured to stop on first failure."),
     steps: arrayProperty("Compact per-step execution summaries."),
@@ -308,13 +310,16 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_inspect: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
     diagnostics: arrayProperty("Read-mode diagnostics."),
-    result: jsonProperty("Parsed upstream JSON output when available."),
-    text: stringProperty("Upstream text fallback when JSON output is unavailable."),
+    upstream: objectProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstreamError: objectProperty("Normalized upstream failure details when inspection failed."),
+    primaryFix: stringProperty("Suggested primary repair when inspection failed."),
   }),
   figma_repl_call_upstream_tool: toolOutputSchema({
+    session: objectProperty("Public local REPL session metadata."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
-    result: jsonProperty("Parsed upstream JSON output when available."),
-    text: stringProperty("Upstream text fallback when JSON output is unavailable."),
+    upstream: objectProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    primaryFix: stringProperty("Suggested primary repair when execution failed."),
   }),
   figma_repl_lookup: toolOutputSchema({
     kind: stringProperty("Lookup kind: docs or api."),

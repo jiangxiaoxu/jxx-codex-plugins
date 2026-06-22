@@ -15,7 +15,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 4. If direct `figma_repl_*` tools are not installed in the active Codex environment, use the package-local Node API `createFigmaReplClient` against the same OAuth cache.
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
 6. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-7. Local `figma_repl_*` responses use a fixed structured shape; for `figma_repl_run_script_file`, read upstream JSON from `upstream.payload` or text from `upstream.text`, and use `outputFiles` for large payloads.
+7. Local `figma_repl_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.payload` or text from `upstream.text`, and use `outputFiles` for large payloads.
 
 ## Lazy Tool Loading
 
@@ -31,7 +31,7 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 - For visual QA, call `figma_repl_capture_node({ title, sessionId, nodeId, outputFile })` and inspect the local image/result files.
 - For repeatable multi-step workflows, use `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })`.
 
-Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `intent`, `inputFile`, `outputFile`, `manifestPath`, `nodeId`, and `planPath` defaults after workspace initialization. Alias fields, inline assets/steps, custom upstream templates, absolute `scriptPath`, upstream overrides, split output files, `refresh`, and `inlineResultLimit` are advanced/debug/compat escape hatches. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
+Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `intent`, `inputFile`, `outputFile`, `manifestPath`, `nodeId`, and `planPath` defaults after workspace initialization. Alias fields, inline assets/steps, custom upstream templates, absolute `scriptPath`, upstream overrides, split output files, and `refresh` are advanced/debug/compat escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
 
 ## Script Contract
 

@@ -86,7 +86,6 @@ export interface FigmaReplApplyAssetManifestArguments {
   refresh?: boolean;
   resultFile?: string;
   outputFile?: string;
-  inlineResultLimit?: number;
 }
 
 export interface FigmaReplCaptureNodeArguments {
@@ -103,7 +102,6 @@ export interface FigmaReplCaptureNodeArguments {
   arguments?: Record<string, unknown>;
   argumentsTemplate?: Record<string, unknown>;
   refresh?: boolean;
-  inlineResultLimit?: number;
 }
 
 export interface FigmaReplTaskPlanStep {
@@ -124,7 +122,6 @@ export interface FigmaReplRunTaskPlanArguments {
   stopOnFailure?: boolean;
   resultFile?: string;
   outputFile?: string;
-  inlineResultLimit?: number;
 }
 
 export interface FigmaReplCallUpstreamToolArguments {
