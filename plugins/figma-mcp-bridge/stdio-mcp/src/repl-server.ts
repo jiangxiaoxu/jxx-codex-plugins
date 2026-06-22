@@ -164,6 +164,9 @@ export const FIGMA_REPL_EVAL_COMMON_HELPER_NAMES = [
   "text",
   "layout",
   "create",
+  "findFreeSlot",
+  "placeNode",
+  "replaceGeneratedFrame",
   "inspect",
   "screenshot",
   "imageAsset",
@@ -301,10 +304,20 @@ interface NormalizedAssetManifest {
 interface NormalizedAssetManifestAsset {
   path: string;
   targetNodeId: string;
+  handle?: string;
+  fileKey?: string;
+  nodeUrl?: string;
+  scaleMode?: string;
   name?: string;
   metadata?: Record<string, unknown>;
   toolName?: string;
   arguments?: Record<string, unknown>;
+}
+
+interface TaskPlanReferenceContext {
+  steps: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  last?: unknown;
 }
 
 interface FigmaReplRuntime {
@@ -1065,6 +1078,7 @@ async function executeApplyAssetManifest(
           ok,
           path: asset.path,
           targetNodeId: asset.targetNodeId,
+          handle: asset.handle,
           name: asset.name,
           metadata: asset.metadata,
           toolName: tool.name,
@@ -1078,6 +1092,7 @@ async function executeApplyAssetManifest(
         failures.push({
           path: asset.path,
           targetNodeId: asset.targetNodeId,
+          handle: asset.handle,
           toolName: tool.name,
           error: parsed.upstreamError,
         });
@@ -1088,6 +1103,7 @@ async function executeApplyAssetManifest(
         ok: false,
         path: asset.path,
         targetNodeId: asset.targetNodeId,
+        handle: asset.handle,
         name: asset.name,
         metadata: asset.metadata,
         toolName: tool.name,
@@ -1100,6 +1116,7 @@ async function executeApplyAssetManifest(
       failures.push({
         path: asset.path,
         targetNodeId: asset.targetNodeId,
+        handle: asset.handle,
         toolName: tool.name,
         error: upstreamError,
       });
@@ -1154,11 +1171,15 @@ async function executeCaptureNode(
   runtime: FigmaReplRuntime,
 ): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
-  const nodeId = asOptionalString(args.nodeId) ?? asOptionalString(args.targetNodeId);
-  if (!nodeId) {
-    throw new Error('Tool argument "nodeId" or "targetNodeId" is required and must be a string.');
-  }
   const session = runtime.sessions.getOrCreate(args.sessionId);
+  const targetResolution = resolveSessionTargetInput(
+    args.nodeId ?? args.targetNodeId ?? args.target ?? args.handle,
+    session,
+  );
+  const nodeId = targetResolution.nodeId;
+  if (!nodeId) {
+    throw new Error('Tool argument "nodeId", "targetNodeId", "target", or "handle" is required.');
+  }
   const outputFile = resolveRequiredWorkspaceAwareFile(args.outputFile, session, "outputFile");
   const resultFile = resolveWorkspaceAwareFile(args.resultFile, session, "resultFile");
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
@@ -1183,6 +1204,7 @@ async function executeCaptureNode(
       ok: false,
       file: outputFile,
       nodeId,
+      handle: targetResolution.handle,
       toolName: tool.name,
       ...upstreamResultFields({ parsed, upstream }),
       ...upstreamFailureFields(parsed),
@@ -1217,6 +1239,7 @@ async function executeCaptureNode(
     ok: true,
     file: outputFile,
     nodeId,
+    handle: targetResolution.handle,
     toolName: tool.name,
     kind: saved.kind,
     mimeType: saved.mimeType,
@@ -1254,6 +1277,8 @@ async function executeRunTaskPlan(
   const resultFile = resolveTaskPlanResultFile(args, plan.planPath, session);
   const stopOnFailure = args.stopOnFailure !== false;
   const steps: Array<Record<string, unknown>> = [];
+  const outputReferences: Record<string, unknown> = {};
+  const references: TaskPlanReferenceContext = { steps: {}, outputs: {} };
   let stopped = false;
 
   for (const [index, step] of plan.steps.entries()) {
@@ -1267,10 +1292,25 @@ async function executeRunTaskPlan(
         type,
         title: `${args.title}: ${id}`,
         sessionId: args.sessionId,
+        references,
         runtime,
       });
       const ok = taskPlanStepSucceeded(result);
       const status = ok ? "completed" : "failed";
+      const reference = createTaskPlanStepReference({
+        id,
+        index,
+        type,
+        status,
+        ok,
+        result,
+      });
+      references.steps[id] = reference;
+      references.outputs[id] = asRecord(reference).outputFiles ?? {};
+      references.last = reference;
+      if (asRecord(reference).outputFiles !== undefined) {
+        outputReferences[id] = asRecord(reference).outputFiles;
+      }
       steps.push({
         id,
         index,
@@ -1278,6 +1318,7 @@ async function executeRunTaskPlan(
         status,
         ok,
         summary: summarizeTaskPlanStepResult(result),
+        outputReferences: asRecord(reference).outputFiles,
         finishedAt: new Date().toISOString(),
         startedAt,
       });
@@ -1287,6 +1328,16 @@ async function executeRunTaskPlan(
       }
     } catch (error) {
       const upstreamError = normalizeCaughtUpstreamError(error);
+      const reference = {
+        id,
+        index,
+        type,
+        status: "failed",
+        ok: false,
+        error: upstreamError,
+      };
+      references.steps[id] = reference;
+      references.last = reference;
       steps.push({
         id,
         index,
@@ -1310,6 +1361,7 @@ async function executeRunTaskPlan(
     stopped,
     stopOnFailure,
     steps,
+    outputReferences: Object.keys(outputReferences).length > 0 ? outputReferences : undefined,
     failures: failures.length > 0 ? failures : undefined,
   };
   const outputFiles = {
@@ -1991,6 +2043,134 @@ async function selectNodesForRepl(targets = "$selection", options = {}) {
   };
 }
 
+function resolveSceneNodeForPlacement(value, name) {
+  if (!value) throw new Error(name + " is required.");
+  if (typeof value === "object" && "type" in value) return value;
+  return $(value);
+}
+
+function canPositionNode(node) {
+  return node && "x" in node && "y" in node && "width" in node && "height" in node;
+}
+
+function readPlacementSize(input, fallback) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    width: readFiniteNumber(source.width ?? fallback.width, "size.width"),
+    height: readFiniteNumber(source.height ?? fallback.height, "size.height"),
+  };
+}
+
+function nodeBounds(node) {
+  return { x: node.x, y: node.y, width: node.width, height: node.height };
+}
+
+function boundsIntersect(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+async function resolvePlacementParent(inputParent, node) {
+  if (inputParent) return await resolveSceneNodeForPlacement(inputParent, "placement.parent");
+  return node && node.parent ? node.parent : figma.currentPage;
+}
+
+async function findFreeSlotForRepl(options = {}) {
+  const input = options || {};
+  const preferred = input.preferred || input.position || {};
+  const parent = await resolvePlacementParent(input.parent);
+  const size = readPlacementSize(input.size, { width: 1, height: 1 });
+  const gap = input.gap === undefined ? 40 : readFiniteNumber(input.gap, "gap");
+  const direction = String(input.direction || "down");
+  let x = readFiniteNumber(preferred.x ?? 0, "preferred.x");
+  let y = readFiniteNumber(preferred.y ?? 0, "preferred.y");
+  let shiftedSlots = 0;
+  let collidedNodeIds = [];
+  const children = "children" in parent
+    ? Array.from(parent.children).filter((child) => child.visible !== false && canPositionNode(child) && child !== input.exclude)
+    : [];
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const candidate = { x, y, width: size.width, height: size.height };
+    const collisions = children.filter((child) => boundsIntersect(candidate, nodeBounds(child)));
+    if (collisions.length === 0) {
+      return { x, y, width: size.width, height: size.height, shiftedSlots, collidedNodeIds };
+    }
+    collidedNodeIds = collisions.map((child) => child.id);
+    shiftedSlots += 1;
+    if (direction === "right") x += size.width + gap;
+    else if (direction === "left") x -= size.width + gap;
+    else if (direction === "up") y -= size.height + gap;
+    else y += size.height + gap;
+  }
+  throw new Error("$.findFreeSlot could not find a free slot after 500 attempts.");
+}
+
+async function placeNodeForRepl(target, options = {}) {
+  const node = await resolveSceneNodeForPlacement(target, "$.placeNode target");
+  if (!canPositionNode(node)) {
+    throw new Error("$.placeNode target must resolve to a positionable scene node.");
+  }
+  const input = options || {};
+  const preferred = input.preferred || input.position || { x: node.x, y: node.y };
+  let placement = { x: preferred.x, y: preferred.y, shiftedSlots: 0, collidedNodeIds: [] };
+  if (input.avoidOverlap) {
+    placement = await findFreeSlotForRepl({ ...input, preferred, size: input.size || nodeBounds(node), parent: input.parent, exclude: node });
+  }
+  node.x = readFiniteNumber(placement.x, "placement.x");
+  node.y = readFiniteNumber(placement.y, "placement.y");
+  if (input.as) remember(input.as, node);
+  return placement;
+}
+
+async function replaceGeneratedFrameForRepl(options = {}) {
+  const input = options || {};
+  const name = String(input.name || "");
+  if (!name) throw new Error("$.replaceGeneratedFrame requires an exact name.");
+  const guardPrefixes = input.guardPrefix ? [String(input.guardPrefix)] : ["Variant ", "Codex Generated ", "Generated "];
+  if (!guardPrefixes.some((prefix) => name.startsWith(prefix))) {
+    throw new Error("$.replaceGeneratedFrame name must start with guardPrefix or one of: Variant , Codex Generated , Generated .");
+  }
+  const parent = input.parent
+    ? await resolveSceneNodeForPlacement(input.parent, "$.replaceGeneratedFrame parent")
+    : figma.currentPage;
+  if (!parent || !("appendChild" in parent)) {
+    throw new Error("$.replaceGeneratedFrame requires a writable parent.");
+  }
+  const children = "children" in parent ? Array.from(parent.children) : [];
+  const existingFrames = children.filter((child) => child.type === "FRAME" && child.name === name);
+  if (input.dryRun) {
+    return {
+      dryRun: true,
+      name,
+      matches: existingFrames.map((node) => summarizeNode(node, input.depth || 0)),
+    };
+  }
+  const frame = figma.createFrame();
+  frame.name = name;
+  if (input.size !== undefined) setNodeSizeFromInput(frame, input.size);
+  if (input.position !== undefined) setNodePositionFromInput(frame, input.position);
+  const firstExisting = existingFrames[0];
+  const insertIndex = firstExisting ? children.indexOf(firstExisting) : -1;
+  if (firstExisting && input.size === undefined) frame.resize(firstExisting.width, firstExisting.height);
+  if (firstExisting && input.position === undefined) {
+    frame.x = firstExisting.x;
+    frame.y = firstExisting.y;
+  }
+  if (insertIndex >= 0 && "insertChild" in parent) parent.insertChild(insertIndex, frame);
+  else parent.appendChild(frame);
+  for (const existing of existingFrames) existing.remove();
+  if (input.placement && input.placement.avoidOverlap) {
+    await placeNodeForRepl(frame, { ...input.placement, size: nodeBounds(frame), exclude: frame });
+  }
+  if (input.as) remember(input.as, frame);
+  const selection = input.select === false ? undefined : await selectNodesForRepl([frame], { zoom: input.zoom !== false, depth: 0 });
+  return {
+    replaced: existingFrames.map((node) => node.id),
+    frame: summarizeNode(frame, input.depth || 0),
+    selectedNodeIds: selection ? selection.selectedNodeIds : [],
+    handle: input.as,
+  };
+}
+
 async function cloneNodeTreeForRepl(targetOrOptions, maybeOptions = {}) {
   const looksLikeOptions = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions) && !("type" in targetOrOptions);
   const input = looksLikeOptions ? targetOrOptions : { source: targetOrOptions, ...maybeOptions };
@@ -2475,6 +2655,9 @@ $.resolveId = resolveHandleId;
 $.node = $;
 $.select = selectNodesForRepl;
 $.cloneNodeTree = cloneNodeTreeForRepl;
+$.findFreeSlot = findFreeSlotForRepl;
+$.placeNode = placeNodeForRepl;
+$.replaceGeneratedFrame = replaceGeneratedFrameForRepl;
 $.findAll = async function findAll(criteria = {}) {
   const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
   const root = input.within ? await $(input.within) : figma.currentPage;
@@ -2656,7 +2839,7 @@ async function loadAssetManifest(
   }
   const baseDir = manifestPath ? dirname(manifestPath) : session.workspace?.sessionDir;
   return {
-    assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir)),
+    assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir, session)),
     toolName: asOptionalString(args.toolName) ?? asOptionalString(manifestRecord.toolName),
     argumentsTemplate: recordFromUnknown(
       args.argumentsTemplate ??
@@ -2671,6 +2854,7 @@ function normalizeManifestAsset(
   value: unknown,
   index: number,
   baseDir: string | undefined,
+  session: FigmaReplSession,
 ): NormalizedAssetManifestAsset {
   const record = asRecord(value);
   const rawPath =
@@ -2688,15 +2872,25 @@ function normalizeManifestAsset(
   if (!path) {
     throw new Error(`Asset manifest entry ${index} path must be absolute unless manifestPath is used.`);
   }
-  const targetNodeId =
-    asOptionalString(record.targetNodeId) ??
-    asOptionalString(record.nodeId);
-  if (!targetNodeId) {
-    throw new Error(`Asset manifest entry ${index} requires targetNodeId or nodeId.`);
+  const targetResolution = resolveSessionTargetInput(
+    record.targetNodeId ??
+    record.nodeId ??
+    record.target ??
+    record.targetHandle ??
+    record.targetId,
+    session,
+  );
+  const resolvedTargetNodeId = targetResolution.nodeId;
+  if (!resolvedTargetNodeId) {
+    throw new Error(`Asset manifest entry ${index} requires targetNodeId, nodeId, target, targetHandle, or targetId.`);
   }
   return {
     path,
-    targetNodeId,
+    targetNodeId: resolvedTargetNodeId,
+    handle: targetResolution.handle,
+    fileKey: session.fileKey ?? extractFigmaFileKey(session.fileUrl),
+    nodeUrl: asOptionalString(record.nodeUrl) ?? asOptionalString(record.url) ?? buildFigmaNodeUrl(session, resolvedTargetNodeId),
+    scaleMode: asOptionalString(record.scaleMode),
     name: asOptionalString(record.name),
     metadata: recordFromUnknown(record.metadata),
     toolName: asOptionalString(record.toolName),
@@ -2740,15 +2934,24 @@ function buildAssetManifestUpstreamArguments(options: {
     return expandTemplateObject(options.template, context);
   }
   const properties = inputSchemaProperties(options.tool.inputSchema);
+  if (options.tool.name === "upload_assets") {
+    return buildUploadAssetsArguments(options.asset, properties);
+  }
   if (properties.assets) {
     return {
       assets: [
         {
           path: options.asset.path,
           filePath: options.asset.path,
+          localPath: options.asset.path,
           targetNodeId: options.asset.targetNodeId,
           nodeId: options.asset.targetNodeId,
+          target: options.asset.targetNodeId,
+          targetId: options.asset.targetNodeId,
+          nodeUrl: options.asset.nodeUrl,
+          url: options.asset.nodeUrl,
           name: options.asset.name,
+          mimeType: mimeTypeForAssetPath(options.asset.path),
           metadata: options.asset.metadata,
         },
       ],
@@ -2757,6 +2960,9 @@ function buildAssetManifestUpstreamArguments(options: {
   const result: Record<string, unknown> = {};
   assignFirstKnownProperty(result, properties, ["path", "filePath", "localPath"], options.asset.path);
   assignFirstKnownProperty(result, properties, ["targetNodeId", "nodeId", "target", "targetId"], options.asset.targetNodeId);
+  assignFirstKnownProperty(result, properties, ["nodeUrl", "url"], options.asset.nodeUrl);
+  assignFirstKnownProperty(result, properties, ["fileKey", "key", "file_key"], options.asset.fileKey);
+  assignFirstKnownProperty(result, properties, ["mimeType", "contentType"], mimeTypeForAssetPath(options.asset.path));
   assignFirstKnownProperty(result, properties, ["name"], options.asset.name);
   assignFirstKnownProperty(result, properties, ["metadata"], options.asset.metadata);
   if (Object.keys(result).length >= 2) {
@@ -2765,6 +2971,55 @@ function buildAssetManifestUpstreamArguments(options: {
   throw new Error(
     `Asset manifest entry for "${options.asset.path}" needs an arguments template because upstream tool "${options.tool.name}" input schema is not recognizable.`,
   );
+}
+
+function buildUploadAssetsArguments(
+  asset: NormalizedAssetManifestAsset,
+  properties: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!asset.fileKey) {
+    throw new Error(
+      `Asset manifest entry for "${asset.path}" needs a fileKey for upload_assets. Open the session with fileUrl/fileKey or pass argumentsTemplate: { fileKey: "<fileKey>", count: 1, nodeId: "{{targetNodeId}}", scaleMode: "FILL" }.`,
+    );
+  }
+  const scaleMode = normalizeImageScaleMode(asset.scaleMode ?? "FILL", "scaleMode");
+  const entry = removeUndefined({
+    path: asset.path,
+    filePath: asset.path,
+    localPath: asset.path,
+    targetNodeId: asset.targetNodeId,
+    nodeId: asset.targetNodeId,
+    target: asset.targetNodeId,
+    targetId: asset.targetNodeId,
+    nodeUrl: asset.nodeUrl,
+    url: asset.nodeUrl,
+    name: asset.name,
+    mimeType: mimeTypeForAssetPath(asset.path),
+    scaleMode,
+    metadata: asset.metadata,
+  }) as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  if (properties.assets !== undefined && Object.keys(properties).length > 0) {
+    result.assets = [entry];
+  } else if (Object.keys(properties).length === 0) {
+    result.fileKey = asset.fileKey;
+    result.count = 1;
+    result.nodeId = asset.targetNodeId;
+    result.scaleMode = scaleMode;
+  } else {
+    assignFirstKnownProperty(result, properties, ["path", "filePath", "localPath"], asset.path);
+    assignFirstKnownProperty(result, properties, ["targetNodeId", "nodeId", "target", "targetId"], asset.targetNodeId);
+    assignFirstKnownProperty(result, properties, ["nodeUrl", "url"], asset.nodeUrl);
+    assignFirstKnownProperty(result, properties, ["name"], asset.name);
+    assignFirstKnownProperty(result, properties, ["mimeType", "contentType"], mimeTypeForAssetPath(asset.path));
+    assignFirstKnownProperty(result, properties, ["count"], 1);
+    assignFirstKnownProperty(result, properties, ["scaleMode"], scaleMode);
+  }
+  assignFirstKnownMissingProperty(result, properties, ["fileKey", "key", "file_key"], asset.fileKey);
+  if (Object.keys(result).length === 0) {
+    result.assets = [entry];
+  }
+  return result;
 }
 
 function buildCaptureUpstreamArguments(options: {
@@ -3030,6 +3285,12 @@ async function submitLocalAssetUploadIfAvailable(
 
 function extractAssetSubmitUrl(value: unknown): string | undefined {
   const record = asRecord(value);
+  if (isRecord(record.result)) {
+    const nestedUrl = extractAssetSubmitUrl(record.result);
+    if (nestedUrl) {
+      return nestedUrl;
+    }
+  }
   const uploads = Array.isArray(record.uploads) ? record.uploads : [];
   for (const upload of uploads) {
     const uploadRecord = asRecord(upload);
@@ -3056,6 +3317,14 @@ function mimeTypeForAssetPath(path: string): string {
     return "image/webp";
   }
   return "image/png";
+}
+
+function normalizeImageScaleMode(value: string, name: string): string {
+  const normalized = String(value || "FILL").toUpperCase();
+  if (!["FILL", "FIT", "CROP", "TILE"].includes(normalized)) {
+    throw new Error(`${name} must be FILL, FIT, CROP, or TILE.`);
+  }
+  return normalized;
 }
 
 function summarizeUploadResponse(text: string, json: unknown): unknown {
@@ -3100,6 +3369,7 @@ async function runTaskPlanStep(options: {
   type: string;
   title: string;
   sessionId?: string;
+  references?: TaskPlanReferenceContext;
   runtime: {
     client: FigmaMcpProxyClient;
     sessions: FigmaReplSessionStore;
@@ -3107,7 +3377,10 @@ async function runTaskPlanStep(options: {
     config: { evalToolName: string; evalToolArgument?: string };
   };
 }): Promise<Record<string, unknown>> {
-  const rawStepArgs = taskPlanStepArguments(options.step);
+  const rawStepArgs = expandTaskPlanStepReferences(
+    taskPlanStepArguments(options.step),
+    options.references,
+  );
   const commonArgs = {
     title: asOptionalString(rawStepArgs.title) ?? options.title,
     sessionId: asOptionalString(rawStepArgs.sessionId) ?? options.sessionId,
@@ -3149,6 +3422,90 @@ function taskPlanStepArguments(step: FigmaReplTaskPlanStep): Record<string, unkn
       ),
     ),
     ...asRecord(step.args),
+  };
+}
+
+function expandTaskPlanStepReferences(
+  args: Record<string, unknown>,
+  references: TaskPlanReferenceContext | undefined,
+): Record<string, unknown> {
+  if (!references) {
+    return args;
+  }
+  return expandTaskPlanReferenceValue(args, {
+    steps: references.steps,
+    outputs: references.outputs,
+    last: references.last,
+  }) as Record<string, unknown>;
+}
+
+function expandTaskPlanReferenceValue(value: unknown, context: Record<string, unknown>): unknown {
+  if (typeof value === "string") {
+    const exact = /^\{\{\s*([^}]+?)\s*\}\}$/u.exec(value);
+    if (exact) {
+      const path = exact[1].trim();
+      return isTaskPlanReferencePath(path) ? readTemplatePath(context, path) : value;
+    }
+    return value.replace(/\{\{\s*([^}]+?)\s*\}\}/gu, (match, rawPath: string) => {
+      const path = rawPath.trim();
+      if (!isTaskPlanReferencePath(path)) {
+        return match;
+      }
+      const resolved = readTemplatePath(context, path);
+      if (resolved === undefined || resolved === null) {
+        return "";
+      }
+      return typeof resolved === "string" ? resolved : JSON.stringify(resolved);
+    });
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => expandTaskPlanReferenceValue(item, context));
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, expandTaskPlanReferenceValue(item, context)]),
+    );
+  }
+  return value;
+}
+
+function isTaskPlanReferencePath(path: string): boolean {
+  return /^(?:outputs|steps|last)(?:\.|$)/u.test(path);
+}
+
+function createTaskPlanStepReference(options: {
+  id: string;
+  index: number;
+  type: string;
+  status: string;
+  ok: boolean;
+  result: Record<string, unknown>;
+}): Record<string, unknown> {
+  const outputFiles = asRecord(options.result.outputFiles);
+  const result = asRecord(options.result.result);
+  const nestedResult = isRecord(result.result) ? asRecord(result.result) : result;
+  const session = asRecord(options.result.session);
+  const handles =
+    isRecord(session.handles) ? session.handles :
+      isRecord(result.handles) ? result.handles :
+        isRecord(nestedResult.handles) ? nestedResult.handles :
+          undefined;
+  return {
+    id: options.id,
+    index: options.index,
+    type: options.type,
+    status: options.status,
+    ok: options.ok,
+    file: options.result.file,
+    result: Object.keys(result).length > 0 ? result : undefined,
+    nodeIds: collectNodeIds(options.result),
+    handles,
+    assetTargets: nestedResult.assetTargets,
+    captureTarget: nestedResult.captureTarget,
+    createdNodeId: nestedResult.createdNodeId,
+    outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
+    resultFile: asRecord(outputFiles.resultFile).path,
+    outputFile: asRecord(outputFiles.outputFile).path,
   };
 }
 
@@ -3375,6 +3732,9 @@ const FIGMA_REPL_EVAL_HELPER_DESCRIPTIONS: Record<FigmaReplEvalHelperPath, strin
   "$.text": "Create or update a text node with font loading and optional handle storage.",
   "$.layout": "Apply auto-layout properties to a target node.",
   "$.create": "Create a common Design node with optional parent, size, layout, appearance, and handle.",
+  "$.findFreeSlot": "Find a non-overlapping slot in one parent using a preferred x/y, fixed size, gap, and direction.",
+  "$.placeNode": "Move a node to an explicit or non-overlapping generated slot and return placement metadata.",
+  "$.replaceGeneratedFrame": "Safely replace generated top-level FRAME nodes whose names match a guarded prefix, with dry-run support.",
   "$.inspect": "Resolve a handle or node id and return a compact node summary.",
   "$.screenshot": "Attempt a target node screenshot when upstream supports node.screenshot(); fall back to official screenshot tools for final QA if no image payload is returned.",
   "$.imageAsset": "Create or update an image-fill rectangle from small generated PNG/JPEG base64 or byte arrays; use upload_assets/upstream asset fill workflow for large files.",
@@ -3414,10 +3774,11 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "helperProfile defaults to auto: common helpers are always available, while heavy $.imageAsset and $.cloneNodeTree helpers are injected only when the script source uses them.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
-      "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target image fills are validated when upstream eval is available.",
+      "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
       "Use figma_repl_capture_node to write final visual QA captures to a local file; it returns bytes, MIME, dimensions when detectable, sourceUrl, and QA warnings.",
-      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest application, captures, and upstream calls; initialized workspaces get default step output files.",
+      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.resultFile.path}}.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
+      "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Use <intentSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
       "Responses use the fixed structured shape: parsed upstream JSON stays in result, non-JSON upstream output falls back to text, diagnostics are arrays, and file pointers stay in outputFiles.",
       "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
@@ -3476,7 +3837,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         "figma_repl_open with fileUrl and expectedSurface for stateful Plugin API work",
         "figma_repl_inspect with mode=inspect or mode=validate before mutation",
         "figma_repl_run_script_file with inputFile and dryRun=true for primary .figma.js workflows, output files, and line-aware repair",
-        "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through a manifest",
+        "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through a manifest or official upload_assets",
         "figma_repl_capture_node for final visual QA captures saved to local files",
         "figma_repl_run_task_plan for sequential file plans that combine script dry-runs/exec, asset manifests, captures, and upstream tool calls",
         "figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool",
@@ -3490,6 +3851,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       createUi: "Use $.create for common Design nodes and native Plugin API calls for advanced construction.",
       transaction: "Use dryRun=true first, then execute the same .figma.js file; add $.checkpoint calls before/after meaningful batches to return handle and node summaries.",
       clone: "Use $.cloneNodeTree to copy a node to the side; it clones outer-to-inner and preserves instance subtrees whole when children cannot be rebuilt.",
+      generatedFrame: "Use $.findFreeSlot or $.placeNode for predictable non-overlapping placement and $.replaceGeneratedFrame when replacing a guarded generated FRAME.",
       designSystem: "Use native Plugin API calls in .figma.js for variables/styles/components; use explicit REPL upstream calls only when a task requires them.",
       query: "Use figma_repl_guidance first for natural-language tasks; it returns recommendedCards, queryHints, apiSymbols, avoid, and compact referenceContext. Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
       pages: "Use targetPageId or one setCurrentPageAsync call; direct figma.currentPage assignment is blocked.",
@@ -3530,9 +3892,9 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       resource: "figma-repl://workflow-tools",
       assetManifest: {
         tool: "figma_repl_apply_asset_manifest",
-        purpose: "Apply local generated image files to pre-created target nodes through configurable upstream asset/upload tools.",
-        assetShape: "{ path|filePath|localPath, targetNodeId|nodeId, name?, metadata?, toolName?, arguments? }",
-        defaults: "Uses explicit toolName/arguments templates when provided; otherwise selects an advertised asset-like upstream tool and only infers arguments from recognizable input schema fields.",
+        purpose: "Apply local generated image files to pre-created target nodes through configurable upstream asset/upload tools including official upload_assets.",
+        assetShape: "{ path|filePath|localPath, targetNodeId|nodeId|target|targetId, nodeUrl?, name?, metadata?, toolName?, arguments? }",
+        defaults: "Uses explicit toolName/arguments templates when provided; otherwise selects an advertised asset-like upstream tool, resolves target handles, and adapts upload_assets with file, MIME, node id, and node URL fields.",
         validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload.",
       },
       capture: {
@@ -3543,9 +3905,10 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",
-        stepTypes: ["script-file", "asset-manifest", "screenshot-capture", "upstream-tool"],
+        stepTypes: ["script-file", "asset-manifest", "upload_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
-        result: "Writes a compact plan result JSON and returns per-step status summaries. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, and <step-id>.png plus <step-id>.capture.result.json.",
+        references: "Later step arguments can reference prior outputs with {{outputs.stepId.resultFile.path}} or {{steps.stepId.outputFiles.resultFile.path}}.",
+        result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, and <step-id>.png plus <step-id>.capture.result.json.",
       },
     },
     queryStrategy: {
@@ -3849,7 +4212,7 @@ function normalizeCaughtUpstreamError(error: unknown): FigmaReplUpstreamError {
 function primaryFixForUpstreamError(error: FigmaReplUpstreamError): string {
   const message = error.message.toLowerCase();
   if (message.includes("remove") && (message.includes("instance") || message.includes("children") || message.includes("subtree"))) {
-    return "Use $.cloneNodeTree({ source, placement: 'right' }) so instance subtrees are preserved whole instead of manually removing/rebuilding their children.";
+    return "Use $.replaceGeneratedFrame({ name, dryRun: true }) for guarded generated-frame replacement, or $.cloneNodeTree({ source, placement: 'right' }) for copy/rebuild workflows.";
   }
   if (message.includes("font") || message.includes("characters")) {
     return "Load the target font with figma.loadFontAsync or use $.text before changing TextNode characters.";
@@ -4094,6 +4457,68 @@ function normalizeLocalHandleName(name: string): string {
   return name.startsWith("$") ? name : `$${name}`;
 }
 
+function resolveSessionNodeInput(input: string | undefined, session: FigmaReplSession): string | undefined {
+  return resolveSessionTargetInput(input, session).nodeId;
+}
+
+function resolveSessionTargetInput(input: unknown, session: FigmaReplSession): { nodeId?: string; handle?: string } {
+  if (isRecord(input)) {
+    const explicitHandle = asOptionalString(input.handle) ?? asOptionalString(input.targetHandle);
+    const nodeValue =
+      explicitHandle ??
+      asOptionalString(input.nodeId) ??
+      asOptionalString(input.targetNodeId) ??
+      asOptionalString(input.target) ??
+      asOptionalString(input.id) ??
+      asOptionalString(input.url) ??
+      asOptionalString(input.nodeUrl);
+    return resolveSessionTargetInput(nodeValue, session);
+  }
+  const value = asOptionalString(input);
+  if (!value) {
+    return {};
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return {};
+  }
+  if (trimmed.startsWith("$")) {
+    const handle = normalizeLocalHandleName(trimmed);
+    return {
+      nodeId: session.handles[handle] ?? trimmed,
+      handle,
+    };
+  }
+  const fromUrl = extractFigmaNodeId(trimmed);
+  if (fromUrl) {
+    return { nodeId: fromUrl };
+  }
+  const handle = normalizeLocalHandleName(trimmed);
+  if (session.handles[handle]) {
+    return {
+      nodeId: session.handles[handle],
+      handle,
+    };
+  }
+  return { nodeId: trimmed };
+}
+
+function buildFigmaNodeUrl(session: FigmaReplSession, nodeId: string): string | undefined {
+  const fileUrl = session.fileUrl;
+  const fileKey = session.fileKey ?? extractFigmaFileKey(fileUrl);
+  const nodeParam = encodeURIComponent(nodeId.replace(/:/gu, "-"));
+  if (fileUrl) {
+    try {
+      const url = new URL(fileUrl);
+      url.searchParams.set("node-id", nodeId.replace(/:/gu, "-"));
+      return url.toString();
+    } catch {
+      // Fall through to a file-key URL when available.
+    }
+  }
+  return fileKey ? `https://www.figma.com/design/${fileKey}/?node-id=${nodeParam}` : undefined;
+}
+
 function touchSession(session: FigmaReplSession): void {
   session.updatedAt = new Date().toISOString();
 }
@@ -4210,6 +4635,19 @@ function extractFigmaFileKey(fileUrl: string | undefined): string | undefined {
       ["design", "board", "slides"].includes(part),
     );
     return kindIndex >= 0 ? parts[kindIndex + 1] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractFigmaNodeId(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  try {
+    const url = new URL(value);
+    const nodeId = url.searchParams.get("node-id") ?? url.searchParams.get("node_id");
+    return nodeId ? nodeId.replace(/-/gu, ":") : undefined;
   } catch {
     return undefined;
   }

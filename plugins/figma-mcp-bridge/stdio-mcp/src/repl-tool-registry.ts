@@ -34,6 +34,7 @@ export const TASK_PLAN_STEP_TYPE_ALIASES: Readonly<Record<string, FigmaReplTaskP
   figma_repl_apply_asset_manifest: "asset-manifest",
   apply_asset_manifest: "asset-manifest",
   asset_manifest: "asset-manifest",
+  upload_assets: "asset-manifest",
   "asset-manifest": "asset-manifest",
   figma_repl_capture_node: "screenshot-capture",
   capture_node: "screenshot-capture",

@@ -66,6 +66,11 @@ export interface FigmaReplAssetManifestAsset {
   localPath?: string;
   targetNodeId?: string;
   nodeId?: string;
+  target?: unknown;
+  targetHandle?: string;
+  targetId?: string;
+  nodeUrl?: string;
+  url?: string;
   name?: string;
   metadata?: Record<string, unknown>;
   toolName?: string;
@@ -94,6 +99,8 @@ export interface FigmaReplCaptureNodeArguments {
   sessionId?: string;
   nodeId?: string;
   targetNodeId?: string;
+  target?: unknown;
+  handle?: string;
   outputFile?: string;
   resultFile?: string;
   toolName?: string;
@@ -260,12 +267,20 @@ export function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments 
     "sessionId",
     "nodeId",
     "targetNodeId",
+    "handle",
     "outputFile",
     "resultFile",
     "toolName",
   ]);
   assertOptionalRecord(record, "arguments");
   assertOptionalRecord(record, "argumentsTemplate");
+  if (
+    record.target !== undefined &&
+    typeof record.target !== "string" &&
+    !isRecord(record.target)
+  ) {
+    throw new Error('Tool argument "target" must be a string or object.');
+  }
   return record;
 }
 
@@ -426,9 +441,22 @@ function assertOptionalAssets(record: Record<string, unknown>): void {
       "localPath",
       "targetNodeId",
       "nodeId",
+      "targetHandle",
+      "targetId",
+      "nodeUrl",
+      "url",
+      "scaleMode",
       "name",
       "toolName",
     ]);
+    const target = asset.target;
+    if (
+      target !== undefined &&
+      typeof target !== "string" &&
+      !isRecord(target)
+    ) {
+      throw new Error(`Tool argument "${assetName}.target" must be a string or object.`);
+    }
     assertOptionalRecord(asset, "metadata", `${assetName}.metadata`);
     assertOptionalRecord(asset, "arguments", `${assetName}.arguments`);
   });

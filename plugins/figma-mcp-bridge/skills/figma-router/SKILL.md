@@ -1,6 +1,6 @@
 ---
 name: figma-router
-description: Unified routing entry for Figma MCP login, figma_repl_mcp file workflows, and compact Figma Plugin API lookup. Use for Figma design, FigJam, Slides, design systems, tokens, components, use_figma, figma_repl_run_script_file, Plugin API lookup, or Figma MCP auth repair.
+description: Unified routing entry for Figma MCP login, figma_repl_mcp file workflows, and compact Figma Plugin API lookup. Use for Figma design, FigJam, Slides, design systems, tokens, components, use_figma, figma_repl_run_script_file, Plugin API lookup, or Figma MCP auth repair. When selected, first expose deferred Figma tools with tool_search using a query that includes figma and figma_repl.
 ---
 
 # Figma Router
@@ -10,11 +10,16 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 ## Default Route
 
 1. If the user asks for login, auth setup, credential refresh, or auth repair, run the Figma MCP Login flow below.
-2. Start by reading `figma-repl://capabilities`, then use the file workflow.
-3. If direct `figma_repl_*` tools are not installed in the active Codex environment, use the package-local Node API `createFigmaReplClient` against the same OAuth cache.
-4. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
-5. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-6. Local `figma_repl_*` responses use a fixed structured shape; read large or raw upstream payloads from `outputFiles`, using `rawBytes` on file metadata to decide whether to inspect a result file.
+2. Before any Figma MCP action, expose deferred Figma tools through `tool_search` with a query such as `figma_repl_mcp figma_repl figma`.
+3. After Figma tools are available, read `figma-repl://capabilities`, then use the file workflow.
+4. If direct `figma_repl_*` tools are not installed in the active Codex environment, use the package-local Node API `createFigmaReplClient` against the same OAuth cache.
+5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
+6. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
+7. Local `figma_repl_*` responses use a fixed structured shape; read large or raw upstream payloads from `outputFiles`, using `rawBytes` on file metadata to decide whether to inspect a result file.
+
+## Lazy Tool Loading
+
+Figma MCP tools may be deferred and unavailable until discovered. Do not assume `figma_repl_prepare_task`, `figma_repl_run_script_file`, or related tools are already visible. Before any Figma MCP action, call `tool_search` with a query containing `figma` and `figma_repl`; Figma tool names intentionally include `figma`, so this should expose the relevant tool family. Use a broader query such as `figma MCP use_figma get node selection` only if the first search does not expose the needed tools.
 
 ## Primary File Workflow
 

@@ -367,11 +367,15 @@ test("figma REPL eval exposes and executes the common $ helper surface", async (
       "const screenshotBytes = Array.from(await $.screenshot('$root', { format: 'PNG' }));",
       "const asset = await $.imageAsset({ parent: '$root', as: '$asset', name: 'Eval helper asset', base64: 'AQIDBA==', size: { width: 16, height: 16 } });",
       "const clone = await $.cloneNodeTree({ source: '$asset', parent: '$root', as: '$clone', select: false, placement: 'none' });",
+      "const freeSlot = await $.findFreeSlot({ parent: figma.currentPage, preferred: { x: 0, y: 0 }, size: { width: 20, height: 20 }, direction: 'right', gap: 4 });",
+      "const generated = await $.replaceGeneratedFrame({ name: 'Variant Eval helper generated', size: { width: 20, height: 20 }, position: { x: 0, y: 0 }, as: '$generated', select: false });",
+      "const generatedDryRun = await $.replaceGeneratedFrame({ name: 'Variant Eval helper generated', dryRun: true });",
+      "const generatedPlacement = await $.placeNode('$generated', { preferred: { x: 0, y: 0 }, size: { width: 20, height: 20 }, avoidOverlap: true, direction: 'right', gap: 4 });",
       "const viaNode = await $.node('$clone');",
       "const resolvedCloneId = $.resolveId('$clone');",
       "$.forget('$clone');",
       "const checkpoint = await $.checkpoint('eval-helper-surface', [root, '$title'], { depth: 0 });",
-      "return { helperTypes, handles: { ...$.handles }, checkpoints: $.checkpoints.length, root: root.id, title: title.id, allText: allText.length, found: found.id, selected: selected.selectedNodeIds, inspected, screenshotBytes, assetFill: asset.fills[0], cloneId: clone.clone.id, viaNode: viaNode.id, resolvedCloneId, cloneForgotten: !('$clone' in $.handles), checkpointName: checkpoint.name, checkpointFirstId: checkpoint.summaries[0].id };",
+      "return { helperTypes, handles: { ...$.handles }, checkpoints: $.checkpoints.length, root: root.id, title: title.id, allText: allText.length, found: found.id, selected: selected.selectedNodeIds, inspected, screenshotBytes, assetFill: asset.fills[0], cloneId: clone.clone.id, viaNode: viaNode.id, resolvedCloneId, cloneForgotten: !('$clone' in $.handles), freeSlot, generatedFrame: generated.frame, generatedDryRunMatches: generatedDryRun.matches.length, generatedPlacement, checkpointName: checkpoint.name, checkpointFirstId: checkpoint.summaries[0].id };",
     ].join("\n"),
   });
   const runScript = new Function("figma", `return (async () => {\n${script}\n})();`);
@@ -381,6 +385,11 @@ test("figma REPL eval exposes and executes the common $ helper surface", async (
   assert.deepEqual(result.result.helperTypes, Object.fromEntries(expectedFunctionHelpers.map((name) => [name, "function"])));
   assert.equal(result.result.handles.$root, result.result.root);
   assert.equal(result.result.handles.$title, result.result.title);
+  assert.ok(result.result.handles.$generated);
+  assert.equal(result.result.generatedFrame.name, "Variant Eval helper generated");
+  assert.equal(result.result.generatedDryRunMatches, 1);
+  assert.ok(result.result.freeSlot.shiftedSlots > 0);
+  assert.ok(result.result.generatedPlacement.shiftedSlots > 0);
   assert.equal(result.result.allText, 1);
   assert.equal(result.result.found, result.result.title);
   assert.deepEqual(result.result.selected, [result.result.title]);
@@ -447,6 +456,9 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.scriptWorkflow.options.outputFile, /result\.json/);
   assert.match(capabilities.scriptWorkflow.helpers["$.select"], /selection/);
   assert.match(capabilities.scriptWorkflow.helpers["$.cloneNodeTree"], /instance-subtree/);
+  assert.match(capabilities.scriptWorkflow.helpers["$.findFreeSlot"], /non-overlapping/);
+  assert.match(capabilities.scriptWorkflow.helpers["$.placeNode"], /placement/);
+  assert.match(capabilities.scriptWorkflow.helpers["$.replaceGeneratedFrame"], /replace/);
   assert.match(capabilities.scriptWorkflow.helpers["$.imageAsset"], /image-fill rectangle/);
   assert.match(capabilities.scriptWorkflow.helpers["$.screenshot"], /final QA/);
   assert.match(capabilities.scriptWorkflow.helpers["$.checkpoint"], /summaries/);
@@ -617,7 +629,7 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   const docsText = [skillText, openaiText, pluginReadme, stdioReadme].join("\n");
 
   assert.match(skillText, /After OAuth registration, use `figma_repl_mcp` as the agent-facing entrypoint/);
-  assert.match(skillText, /Start by reading `figma-repl:\/\/capabilities`/);
+  assert.match(skillText, /read `figma-repl:\/\/capabilities`/);
   assert.match(skillText, /Bundled reference files are internal lookup corpus/);
   assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`/);
   for (const uri of expectedStaticResourceUris.filter((uri) => uri !== "figma-repl://sessions")) {
@@ -629,7 +641,6 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   assert.match(stdioReadme, /old persistent server id `figma-repl-mcp`/);
   assert.match(stdioReadme, /bundled corpus files are internal and are not an agent-facing documentation path/);
   assert.match(stdioReadme, /explicit uncovered upstream capability/);
-  assert.match(skillText, /reload or reinstall the plugin, or restart the MCP server/);
   assert.match(openaiText, /figma_repl_mcp/);
   for (const term of forbiddenRouterContractTerms) {
     assert.ok(!docsText.includes(term), `router docs must not mention ${term}`);
@@ -1185,18 +1196,23 @@ test("figma REPL submits local bytes when upload_assets returns a submit URL", a
   try {
     await server.connect(serverTransport);
     await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Open upload file context",
+        sessionId: "upload",
+        connect: false,
+        fileUrl: "https://www.figma.com/design/file123/Test",
+        handles: { "$iconTarget": "12:34" },
+      },
+    });
     const result = await mcpClient.callTool({
       name: "figma_repl_apply_asset_manifest",
       arguments: {
         title: "Apply upload asset",
-        assets: [{ path: assetPath, targetNodeId: "12:34", name: "Icon" }],
+        sessionId: "upload",
+        assets: [{ path: assetPath, targetHandle: "$iconTarget", name: "Icon" }],
         toolName: "upload_assets",
-        argumentsTemplate: {
-          fileKey: "file123",
-          count: 1,
-          nodeId: "{{targetNodeId}}",
-          scaleMode: "FILL",
-        },
       },
     });
     const json = structuredToolResult(result);
@@ -1442,6 +1458,7 @@ test("figma REPL capture node injects session file key when upstream schema need
         sessionId: "capture-filekey",
         connect: false,
         fileUrl: "https://www.figma.com/design/EctrdKKdR3c8JTPl55qn3r/Untitled",
+        handles: { "$hero": "22:9" },
       },
     });
     const result = await mcpClient.callTool({
@@ -1449,7 +1466,7 @@ test("figma REPL capture node injects session file key when upstream schema need
       arguments: {
         title: "Capture node",
         sessionId: "capture-filekey",
-        nodeId: "22:9",
+        target: { handle: "$hero" },
         outputFile,
         toolName: "fake_screenshot",
       },
@@ -1564,6 +1581,24 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
   const fakeClient = createFakeFigmaClient(
     calls,
     ({ name, args }) => {
+      if (name === "use_figma") {
+        assert.equal(typeof args.code, "string");
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                result: {
+                  createdNodeId: "10:1",
+                  assetTargets: { central: "11:22" },
+                  captureTarget: "11:22",
+                },
+              }),
+            },
+          ],
+        };
+      }
       if (name === "fake_asset") {
         assert.equal(args.nodeId, "11:22");
         assert.match(args.path, /asset\.png$/);
@@ -1583,12 +1618,21 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
           ],
         };
       }
+      if (name === "fake_reference") {
+        assert.match(args.assetResult, /asset\.assets\.result\.json$/u);
+        assert.match(args.captureOutput, /capture\.png$/u);
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, result: { summary: "referenced outputs" } }) }],
+        };
+      }
       throw new Error(`unexpected tool ${name}`);
     },
     {
       tools: [
         { name: "fake_asset", inputSchema: { type: "object", properties: {} } },
         { name: "fake_screenshot", inputSchema: { type: "object", properties: {} } },
+        { name: "fake_reference", inputSchema: { type: "object", properties: {} } },
+        { name: "use_figma", inputSchema: { type: "object", properties: { code: { type: "string" } } } },
       ],
     },
   );
@@ -1630,21 +1674,29 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
             id: "script",
             type: "script-file",
             inputFile: "workspace-plan.figma.js",
-            dryRun: true,
           },
           {
             id: "asset",
             type: "asset-manifest",
-            assets: [{ path: "asset.png", targetNodeId: "11:22" }],
+            assets: [{ path: "asset.png", targetNodeId: "{{steps.script.result.result.assetTargets.central}}" }],
             toolName: "fake_asset",
             argumentsTemplate: { path: "{{path}}", nodeId: "{{targetNodeId}}" },
           },
           {
             id: "capture",
             type: "screenshot-capture",
-            nodeId: "11:22",
+            nodeId: "{{steps.script.result.result.captureTarget}}",
             toolName: "fake_screenshot",
             argumentsTemplate: { id: "{{nodeId}}" },
+          },
+          {
+            id: "reference",
+            type: "upstream-tool",
+            toolName: "fake_reference",
+            arguments: {
+              assetResult: "{{outputs.asset.resultFile.path}}",
+              captureOutput: "{{steps.capture.outputFiles.outputFile.path}}",
+            },
           },
         ],
       },
@@ -1654,8 +1706,10 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
     assertFilePointer(json.outputFiles.resultFile, resolve(fileDir, "run-workspace-plan.plan.result.json"));
     const planFile = await readPrettyJsonPointer(json.outputFiles.resultFile, resolve(fileDir, "run-workspace-plan.plan.result.json"));
     assert.equal(planFile.outputFiles, undefined);
-    assert.deepEqual(json.steps.map((step) => step.status), ["completed", "completed", "completed"]);
-    assert.equal(JSON.parse(await readFile(resolve(fileDir, "script.result.json"), "utf8")).dryRun, true);
+    assert.deepEqual(json.steps.map((step) => step.status), ["completed", "completed", "completed", "completed"]);
+    assert.match(json.outputReferences.asset.resultFile.path, /asset\.assets\.result\.json$/u);
+    assert.match(json.outputReferences.capture.outputFile.path, /capture\.png$/u);
+    assert.equal(JSON.parse(await readFile(resolve(fileDir, "script.result.json"), "utf8")).result.result.assetTargets.central, "11:22");
     assert.equal(JSON.parse(await readFile(resolve(fileDir, "asset.assets.result.json"), "utf8")).ok, true);
     const captureFile = JSON.parse(await readFile(resolve(fileDir, "capture.capture.result.json"), "utf8"));
     assert.equal(captureFile.file, resolve(fileDir, "capture.png"));
@@ -2105,6 +2159,9 @@ test("figma REPL run_script_file supports generated image asset helper without r
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
     assert.equal(name, "use_figma");
     assert.match(args.code, /\$\.imageAsset = async function imageAsset/);
+    assert.match(args.code, /\$\.findFreeSlot = __figmaReplFindFreeSlot/);
+    assert.match(args.code, /\$\.placeNode = async function placeNode/);
+    assert.match(args.code, /\$\.replaceGeneratedFrame = async function replaceGeneratedFrame/);
     assert.match(args.code, /figma\.createImage\(bytes\)/);
     assert.match(args.code, /Generated icon asset/);
     return {

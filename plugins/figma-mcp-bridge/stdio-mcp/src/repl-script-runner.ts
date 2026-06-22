@@ -112,6 +112,9 @@ function resolveFigmaReplHelperProfile(
       "$.text",
       "$.layout",
       "$.create",
+      "$.findFreeSlot",
+      "$.placeNode",
+      "$.replaceGeneratedFrame",
       "$.select",
       "$.inspect",
       "$.screenshot",
@@ -251,8 +254,131 @@ $.create = async function create(options = {}) {
   } else {
     figma.currentPage.appendChild(node);
   }
+  if (options.placement && options.placement.avoidOverlap) {
+    await $.placeNode(node, { ...options.placement, size: options.placement.size || (options.size || { width: node.width, height: node.height }), exclude: node });
+  } else if (options.position !== undefined) {
+    setNodePositionFromInput(node, options.position);
+  }
   if (options.as) remember(options.as, node);
   return node;
+};
+function __figmaReplResolveSceneNodeForPlacement(value, name) {
+  if (!value) throw new Error(name + " is required.");
+  if (typeof value === "object" && "type" in value) return value;
+  return $(value);
+}
+function __figmaReplCanPosition(node) {
+  return node && "x" in node && "y" in node && "width" in node && "height" in node;
+}
+function __figmaReplReadSize(input, fallback) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    width: readFiniteNumber(source.width ?? fallback.width, "size.width"),
+    height: readFiniteNumber(source.height ?? fallback.height, "size.height"),
+  };
+}
+function __figmaReplBounds(node) {
+  return { x: node.x, y: node.y, width: node.width, height: node.height };
+}
+function __figmaReplIntersects(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+async function __figmaReplResolvePlacementParent(inputParent, node) {
+  if (inputParent) return await __figmaReplResolveSceneNodeForPlacement(inputParent, "placement.parent");
+  return node && node.parent ? node.parent : figma.currentPage;
+}
+async function __figmaReplFindFreeSlot(options = {}) {
+  const input = options || {};
+  const preferred = input.preferred || input.position || {};
+  const parent = await __figmaReplResolvePlacementParent(input.parent);
+  const size = __figmaReplReadSize(input.size, { width: 1, height: 1 });
+  const gap = input.gap === undefined ? 40 : readFiniteNumber(input.gap, "gap");
+  const direction = String(input.direction || "down");
+  let x = readFiniteNumber(preferred.x ?? 0, "preferred.x");
+  let y = readFiniteNumber(preferred.y ?? 0, "preferred.y");
+  let shiftedSlots = 0;
+  let collidedNodeIds = [];
+  const children = "children" in parent ? Array.from(parent.children).filter((child) => child.visible !== false && __figmaReplCanPosition(child) && child !== input.exclude) : [];
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const candidate = { x, y, width: size.width, height: size.height };
+    const collisions = children.filter((child) => __figmaReplIntersects(candidate, __figmaReplBounds(child)));
+    if (collisions.length === 0) {
+      return { x, y, width: size.width, height: size.height, shiftedSlots, collidedNodeIds };
+    }
+    collidedNodeIds = collisions.map((child) => child.id);
+    shiftedSlots += 1;
+    if (direction === "right") x += size.width + gap;
+    else if (direction === "left") x -= size.width + gap;
+    else if (direction === "up") y -= size.height + gap;
+    else y += size.height + gap;
+  }
+  throw new Error("$.findFreeSlot could not find a free slot after 500 attempts.");
+}
+$.findFreeSlot = __figmaReplFindFreeSlot;
+$.placeNode = async function placeNode(target, options = {}) {
+  const node = await __figmaReplResolveSceneNodeForPlacement(target, "$.placeNode target");
+  if (!__figmaReplCanPosition(node)) {
+    throw new Error("$.placeNode target must resolve to a positionable scene node.");
+  }
+  const input = options || {};
+  const preferred = input.preferred || input.position || { x: node.x, y: node.y };
+  let placement = { x: preferred.x, y: preferred.y, shiftedSlots: 0, collidedNodeIds: [] };
+  if (input.avoidOverlap) {
+    placement = await __figmaReplFindFreeSlot({ ...input, preferred, size: input.size || __figmaReplBounds(node), parent: input.parent, exclude: node });
+  }
+  node.x = readFiniteNumber(placement.x, "placement.x");
+  node.y = readFiniteNumber(placement.y, "placement.y");
+  if (input.as) remember(input.as, node);
+  return placement;
+};
+$.replaceGeneratedFrame = async function replaceGeneratedFrame(options = {}) {
+  const input = options || {};
+  const name = String(input.name || "");
+  if (!name) throw new Error("$.replaceGeneratedFrame requires an exact name.");
+  const guardPrefixes = input.guardPrefix ? [String(input.guardPrefix)] : ["Variant ", "Codex Generated ", "Generated "];
+  if (!guardPrefixes.some((prefix) => name.startsWith(prefix))) {
+    throw new Error("$.replaceGeneratedFrame name must start with guardPrefix or one of: Variant , Codex Generated , Generated .");
+  }
+  const parent = input.parent
+    ? await __figmaReplResolveSceneNodeForPlacement(input.parent, "$.replaceGeneratedFrame parent")
+    : figma.currentPage;
+  if (!parent || !("appendChild" in parent)) {
+    throw new Error("$.replaceGeneratedFrame requires a writable parent.");
+  }
+  const children = "children" in parent ? Array.from(parent.children) : [];
+  const existingFrames = children.filter((child) => child.type === "FRAME" && child.name === name);
+  if (input.dryRun) {
+    return {
+      dryRun: true,
+      name,
+      matches: existingFrames.map((node) => summarizeNode(node, input.depth || 0)),
+    };
+  }
+  let frame = figma.createFrame();
+  frame.name = name;
+  if (input.size !== undefined) setNodeSizeFromInput(frame, input.size);
+  if (input.position !== undefined) setNodePositionFromInput(frame, input.position);
+  const firstExisting = existingFrames[0];
+  const insertIndex = firstExisting ? children.indexOf(firstExisting) : -1;
+  if (firstExisting && input.size === undefined) frame.resize(firstExisting.width, firstExisting.height);
+  if (firstExisting && input.position === undefined) {
+    frame.x = firstExisting.x;
+    frame.y = firstExisting.y;
+  }
+  if (insertIndex >= 0 && "insertChild" in parent) parent.insertChild(insertIndex, frame);
+  else parent.appendChild(frame);
+  for (const existing of existingFrames) existing.remove();
+  if (input.placement && input.placement.avoidOverlap) {
+    await $.placeNode(frame, { ...input.placement, size: __figmaReplBounds(frame), exclude: frame });
+  }
+  if (input.as) remember(input.as, frame);
+  const selection = input.select === false ? undefined : await $.select([frame], { zoom: input.zoom !== false, depth: 0 });
+  return {
+    replaced: existingFrames.map((node) => node.id),
+    frame: summarizeNode(frame, input.depth || 0),
+    selectedNodeIds: selection ? selection.selectedNodeIds : [],
+    handle: input.as,
+  };
 };
 function __figmaReplDecodeBase64(input) {
   const source = String(input || "").replace(/^data:[^,]+,/u, "").replace(/\\s+/gu, "");
@@ -624,7 +750,7 @@ const DANGEROUS_DIAGNOSTICS = [
   {
     code: "FIGMA_REPL_NODE_REMOVAL",
     message: "Direct remove() is destructive and can break clone rebuilds, especially inside instance subtrees.",
-    suggestion: "Use $.cloneNodeTree for copy/rebuild workflows; pass allowDangerousOperations=true only after reviewing exact cleanup semantics.",
+    suggestion: "Use $.replaceGeneratedFrame for guarded generated-frame replacement, or $.cloneNodeTree for copy/rebuild workflows.",
     docsHint: "figma-repl://safety#destructive",
   },
   {
