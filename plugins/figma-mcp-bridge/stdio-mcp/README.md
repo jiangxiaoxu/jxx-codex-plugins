@@ -71,9 +71,9 @@ await upstream.close();
 
 ## REPL Response Shape
 
-Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, upstream JSON is returned as `result`, non-JSON upstream output falls back to `text`, and file pointers are under `outputFiles` as `{ path, bytes, lineCount }`.
+Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and file pointers are under `outputFiles` as `{ path, bytes, lineCount }`. `figma_repl_run_script_file` returns upstream JSON as `upstream.payload` and non-JSON upstream output as `upstream.text`; other upstream-backed tools keep parsed JSON in `result` with `text` as the non-JSON fallback.
 
-Raw upstream payloads are written only to output/result files, never returned inline in MCP structuredContent. Executed `figma_repl_run_script_file` result files include `raw`, parsed as JSON/object when upstream text is JSON, and the corresponding `outputFiles.resultFile` pointer includes `rawBytes`.
+Executed `figma_repl_run_script_file` result files use the same `upstream` envelope and do not duplicate upstream JSON into `raw`.
 
 ## REPL File Workflow
 
@@ -91,13 +91,17 @@ await figma.prepareTask({
 await figma.runScriptFile({
   sessionId: "settings workspace",
   inputFile: "settings-panel-polish.figma.js",
-  outputFile: "settings-panel-polish.result.json",
   dryRun: true,
   strict: true,
 });
+await figma.runScriptFile({
+  sessionId: "settings workspace",
+  inputFile: "settings-panel-polish.figma.js",
+  outputFile: "settings-panel-polish.result.json",
+});
 ```
 
-`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `cwd` or file context is supplied. A task normally uses `<intentSlug>.figma.js` and `<intentSlug>.result.json` in that folder. Absolute `scriptPath`, `outputDir`, and `resultFile` remain escape hatches.
+`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `cwd` or file context is supplied. A task normally uses `<intentSlug>.figma.js` and `<intentSlug>.result.json` in that folder, then calls `runScriptFile` with `inputFile` and `outputFile`. Absolute `scriptPath`, `outputDir`, `resultFile`, split files, upstream overrides, and `inlineResultLimit` remain advanced/debug escape hatches.
 
 Write ordinary async JavaScript in `.figma.js` files. Use native Figma Plugin API calls for advanced work and injected `$` helpers for common agent tasks:
 

@@ -15,7 +15,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 4. If direct `figma_repl_*` tools are not installed in the active Codex environment, use the package-local Node API `createFigmaReplClient` against the same OAuth cache.
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
 6. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-7. Local `figma_repl_*` responses use a fixed structured shape; read large or raw upstream payloads from `outputFiles`, using `rawBytes` on file metadata to decide whether to inspect a result file.
+7. Local `figma_repl_*` responses use a fixed structured shape; for `figma_repl_run_script_file`, read upstream JSON from `upstream.payload` or text from `upstream.text`, and use `outputFiles` for large payloads.
 
 ## Lazy Tool Loading
 
@@ -31,14 +31,14 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 - For visual QA, call `figma_repl_capture_node` and inspect the local image/result files.
 - For repeatable multi-step workflows, use `figma_repl_run_task_plan`.
 
-Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls can use simple `inputFile` and `outputFile` names after workspace initialization. Absolute paths remain escape hatches.
+Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `inputFile` and `outputFile` names after workspace initialization. Absolute `scriptPath`, upstream overrides, split output files, and `inlineResultLimit` are advanced/debug escape hatches.
 
 ## Script Contract
 
 - Write ordinary async JavaScript in `.figma.js`: native Figma Plugin API for advanced work, injected `$` helpers for common agent tasks.
 - Keep each transaction small and repairable. Use `dryRun: true`, then fix diagnostics by file line before executing.
 - Return compact JSON with changed node ids, handles, and validation notes. Write large results to the paired `outputFile` instead of relying on inline MCP output.
-- Read parsed upstream JSON from `result`; if upstream output is not JSON, read `text`. File pointers are reported in `outputFiles`.
+- Read parsed upstream JSON from `upstream.payload`; if upstream output is not JSON, read `upstream.text`. File pointers are reported in `outputFiles`.
 - Common helpers: `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`.
 - Prefer `$.select` over direct selection mutation. Use `figma_repl_inspect({ mode: "validate" })` before reusing old handles.
 - For generated assets, use `$.imageAsset` only for small inline PNG/JPEG data; for larger local assets, create target rectangles and use `figma_repl_apply_asset_manifest`.

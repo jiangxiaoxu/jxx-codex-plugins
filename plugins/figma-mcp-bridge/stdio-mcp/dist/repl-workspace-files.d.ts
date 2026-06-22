@@ -30,7 +30,6 @@ export interface FilePointerMetadata {
     path: string;
     bytes: number;
     lineCount: number;
-    rawBytes?: number;
 }
 export interface ScriptOutputFileMetadata {
     resultFile?: FilePointerMetadata;

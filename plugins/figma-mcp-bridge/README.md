@@ -59,7 +59,7 @@ The plugin's `.mcp.json` installs:
 
 Upgrade note: the persistent MCP server id changed from `figma-repl-mcp` to `figma_repl_mcp`. Reload or reinstall the plugin, or restart the MCP server, so old cached `figma-repl-mcp` tool schemas are not exposed.
 
-Local `figma_repl_*` tools return a fixed structured shape. Parsed upstream JSON stays in `result`, non-JSON upstream output falls back to `text`, diagnostics are arrays, session payloads omit history, and large data points to `outputFiles` entries shaped as `{ path, bytes, lineCount }`, with `rawBytes` when a result file contains a raw upstream payload. Raw upstream payloads are written only to output/result files, not returned inline in MCP structuredContent.
+Local `figma_repl_*` tools return a fixed structured shape. `figma_repl_run_script_file` stores upstream JSON in `upstream.payload` and non-JSON output in `upstream.text`; other upstream-backed tools keep parsed JSON in `result` with `text` as the non-JSON fallback. Diagnostics are arrays, session payloads omit history, and large data points to `outputFiles` entries shaped as `{ path, bytes, lineCount }`.
 
 `figma-stdio` is not installed as a persistent plugin server by default. Keep using `figma_repl_mcp` for agent work; use `figma-stdio` only through the package CLI or Node API for parity checks and raw official MCP debugging.
 
@@ -70,9 +70,11 @@ Agents should use `figma_repl_mcp` first:
 1. read `figma-repl://capabilities`
 2. `figma_repl_prepare_task({ cwd, fileUrl|fileKey, intent })`
 3. edit local `.figma.js`
-4. `figma_repl_run_script_file({ dryRun: true, strict: true })`
-5. `figma_repl_run_script_file`
+4. `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, expectedSurface })`
+5. `figma_repl_run_script_file({ title, sessionId, inputFile, outputFile })`
 6. `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, or `figma_repl_run_task_plan` when needed
+
+In workspace workflows, prefer `inputFile` and `outputFile`. Absolute `scriptPath`, `resultFile`, upstream overrides, split output files, and `inlineResultLimit` are advanced/debug escape hatches.
 
 For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 
