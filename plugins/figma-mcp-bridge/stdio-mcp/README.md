@@ -137,7 +137,7 @@ Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, 
 
 - `figma_repl_apply_asset_manifest`: recommended call is `{ title, sessionId, manifestPath, outputFile }`; inline assets, custom upstream templates, and `refresh` are advanced/debug fields.
 - `figma_repl_capture_node`: recommended call is `{ title, sessionId, target, outputFile }`; `metadataFile`, custom upstream templates, and `refresh` are advanced/debug fields.
-- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath, outputFile }`; inline `steps` are advanced fields.
+- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath, outputFile }`; inline `steps` are advanced fields and each step must be `{ type, args }`.
 
 Keep `.figma.js` transactions small enough for upstream `use_figma` payload limits. Split dense work into skeleton, asset targets, upload fills, and visual fixes when payload diagnostics appear.
 

@@ -26321,7 +26321,10 @@ function asRunTaskPlanArgs(args) {
     "planPath",
     "outputFile"
   ]);
-  assertOptionalTaskPlanSteps(record2);
+  const steps = assertOptionalTaskPlanSteps(record2);
+  if (steps) {
+    record2.steps = steps;
+  }
   return record2;
 }
 function asPrepareTaskArgs(args) {
@@ -26484,21 +26487,46 @@ function assertOptionalTargetValue(value, displayName) {
   );
   assertOptionalStringFieldsWithPrefix(value, displayName, ["handle"]);
 }
+function asTaskPlanSteps(value, displayName = "steps") {
+  if (!Array.isArray(value)) {
+    throw new Error(`Tool argument "${displayName}" must be an array.`);
+  }
+  return value.map((step, index) => asTaskPlanStep(step, `${displayName}[${index}]`));
+}
 function assertOptionalTaskPlanSteps(record2) {
   const steps = assertOptionalArray(record2, "steps");
   if (!steps) {
-    return;
+    return void 0;
   }
-  steps.forEach((step, index) => {
-    const stepName = `steps[${index}]`;
-    if (!isRecord3(step)) {
-      throw new Error(`Tool argument "${stepName}" must be an object.`);
+  return asTaskPlanSteps(steps);
+}
+function asTaskPlanStep(value, displayName) {
+  if (!isRecord3(value)) {
+    throw new Error(`Tool argument "${displayName}" must be an object.`);
+  }
+  assertRemovedArguments(value, ["tool"], "type", `${displayName}.tool`);
+  assertRemovedArguments(value, ["arguments"], "args", `${displayName}.arguments`);
+  assertOnlyTaskPlanStepFields(value, displayName);
+  assertOptionalStringFieldsWithPrefix(value, displayName, ["id", "type"]);
+  assertOptionalRecord(value, "args", `${displayName}.args`);
+  const step = {};
+  if (value.id !== void 0) {
+    step.id = value.id;
+  }
+  if (value.type !== void 0) {
+    step.type = value.type;
+  }
+  if (value.args !== void 0) {
+    step.args = value.args;
+  }
+  return step;
+}
+function assertOnlyTaskPlanStepFields(record2, displayName) {
+  for (const key of Object.keys(record2)) {
+    if (!["id", "type", "args"].includes(key)) {
+      throw new Error(`Tool argument "${displayName}.${key}" is not supported. Put step tool inputs under "args".`);
     }
-    assertRemovedArguments(step, ["tool"], "type", `${stepName}.tool`);
-    assertRemovedArguments(step, ["arguments"], "args", `${stepName}.arguments`);
-    assertOptionalStringFieldsWithPrefix(step, stepName, ["id", "type"]);
-    assertOptionalRecord(step, "args", `${stepName}.args`);
-  });
+  }
 }
 function assertOptionalStringFieldsWithPrefix(record2, prefix, keys) {
   for (const key of keys) {
@@ -26821,6 +26849,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_prepare_task: toolOutputSchema({
     task: objectProperty("Prepared task workspace and script/result files."),
     session: objectProperty("Public local REPL session metadata."),
+    outputFiles: objectProperty("Files written for the prepared pending result output."),
     next: stringArrayProperty("Suggested next actions.")
   }),
   figma_repl_guidance: toolOutputSchema({
@@ -27057,13 +27086,13 @@ async function loadTaskPlan(args, session) {
   const planPath = resolveWorkspaceAwareFile(args.planPath, session, "planPath");
   const planValue = planPath ? JSON.parse(await readFile3(planPath, "utf8")) : void 0;
   const planRecord = asRecord2(planValue);
-  const steps = Array.isArray(args.steps) ? args.steps : Array.isArray(planValue) ? planValue : Array.isArray(planRecord.steps) ? planRecord.steps : void 0;
+  const steps = Array.isArray(args.steps) ? asTaskPlanSteps(args.steps) : Array.isArray(planValue) ? asTaskPlanSteps(planValue, "plan") : Array.isArray(planRecord.steps) ? asTaskPlanSteps(planRecord.steps, "plan.steps") : void 0;
   if (!steps || steps.length === 0) {
     throw new Error('Tool argument "steps" or "planPath" with steps is required.');
   }
   return {
     planPath,
-    steps: steps.map((step) => asRecord2(step))
+    steps
   };
 }
 function resolveTaskPlanResultFile(args, planPath, session) {
@@ -28584,42 +28613,43 @@ async function handlePrepareTask(args, runtime) {
   assertRequiredTitleArgument2(args);
   const session = runtime?.sessions.getOrCreate(args.sessionId);
   applyWorkspaceFileContextArgs(session, args);
-  const intentSlug = deriveIntentSlug(args, "figma-task");
+  const taskSlug = deriveTaskSlug(args, "figma-task");
   const fileSlug = deriveFileSlug(args, session);
-  const workspace = resolvePrepareTaskWorkspace(args, intentSlug, fileSlug, session);
+  const workspace = resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session);
   if (session) {
     session.workspace = workspace;
     touchSession(session);
   }
-  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, intentSlug);
+  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskSlug);
   const outputFile = resultFileNameForScript(scriptName);
   const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
   const resultFile = resolveWorkspaceFile(workspace.sessionDir, outputFile, "outputFile");
   await ensureWorkspaceDirectories(workspace);
-  await writeTaskFile(scriptPath, createTaskScriptTemplate(intentSlug, args), Boolean(args.overwrite));
-  const resultFileMetadata = await writeTaskFile(resultFile, JSON.stringify({
+  await writeTaskFile(scriptPath, createTaskScriptTemplate(taskSlug, args), Boolean(args.overwrite));
+  const outputFilePointer = await writeTaskFile(resultFile, JSON.stringify({
     ok: null,
     status: "pending",
     sessionId: session?.id,
     fileKey: session?.fileKey ?? workspace.fileKey,
     fileContext: workspace.fileContext,
-    intentSlug,
-    scriptFile: scriptName
+    taskSlug,
+    inputFile: scriptName,
+    outputFile
   }, null, 2) + "\n", Boolean(args.overwrite));
+  const outputFiles = { outputFile: outputFilePointer };
   return makeJsonToolResult({
     ok: true,
     session: session ? responseSession(session) : void 0,
     task: {
-      slug: intentSlug,
-      intentSlug,
+      taskSlug,
       fileContext: workspace.fileContext,
       inputFile: scriptName,
       outputFile,
-      workspace,
+      workspace: responseWorkspace(workspace),
       scriptPath,
-      resultFile: resultFileMetadata,
       overwritten: Boolean(args.overwrite)
     },
+    outputFiles,
     next: [
       "Edit the .figma.js file in this task folder.",
       "Dry-run with figma_repl_run_script_file before upstream execution.",
@@ -28627,7 +28657,7 @@ async function handlePrepareTask(args, runtime) {
     ]
   });
 }
-function resolvePrepareTaskWorkspace(args, intentSlug, fileSlug, session) {
+function resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session) {
   const parsedFile = parseFigmaFileReference(args.file);
   const fileKey = session?.fileKey ?? parsedFile.fileKey;
   if (typeof args.cwd === "string" && args.cwd.length > 0) {
@@ -28639,7 +28669,7 @@ function resolvePrepareTaskWorkspace(args, intentSlug, fileSlug, session) {
       dirName: args.dirName,
       fileKey,
       fileSlug,
-      intentSlug
+      intentSlug: taskSlug
     });
   }
   const hasFileContext = Boolean(args.file || args.fileSlug || args.dirName);
@@ -28650,12 +28680,12 @@ function resolvePrepareTaskWorkspace(args, intentSlug, fileSlug, session) {
       dirName: args.dirName,
       fileKey,
       fileSlug,
-      intentSlug
+      intentSlug: taskSlug
     });
   }
   return resolvePreparedTaskWorkspace({
     args,
-    taskSlug: intentSlug,
+    taskSlug,
     fileSlug,
     session
   });
@@ -30539,14 +30569,7 @@ async function runTaskPlanStep(options) {
   throw new Error(`Unsupported figma_repl_run_task_plan step type "${options.type}".`);
 }
 function taskPlanStepArguments(step) {
-  return {
-    ...Object.fromEntries(
-      Object.entries(step).filter(
-        ([key]) => !["id", "type", "args"].includes(key)
-      )
-    ),
-    ...asRecord3(step.args)
-  };
+  return asRecord3(step.args);
 }
 function expandTaskPlanStepReferences(args, references) {
   if (!references) {
@@ -30809,7 +30832,7 @@ function bindOpenWorkspaceIfAvailable(session, args) {
     intentSlug: session.slug
   });
 }
-function deriveIntentSlug(args, fallback) {
+function deriveTaskSlug(args, fallback) {
   return slugifyTaskName2(
     args.taskSlug ?? args.task ?? args.title ?? args.sessionId ?? fallback
   );
@@ -31006,7 +31029,8 @@ function createToolArgumentGuidancePayload() {
       },
       advancedArguments: ["steps"],
       avoidUnless: {
-        steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans."
+        steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans.",
+        stepArgs: "Each step must use { type, args }; put tool-specific fields inside args, not at the step top level."
       }
     },
     guidance: {
@@ -31543,6 +31567,23 @@ function diagnosticsForResponse(diagnostics) {
 function responseSession(session) {
   return publicSession(session, { includeHistory: false });
 }
+function responseWorkspace(workspace) {
+  return {
+    root: workspace.root,
+    fileDir: workspace.fileDir,
+    fileContext: workspace.fileContext,
+    fileKey: workspace.fileKey,
+    fileSlug: workspace.fileSlug,
+    taskSlug: workspace.intentSlug,
+    sessionDir: workspace.sessionDir,
+    scriptPath: workspace.scriptPath,
+    outputFilePath: workspace.resultFile,
+    files: {
+      inputFile: workspace.files.script,
+      outputFile: workspace.files.result
+    }
+  };
+}
 function responseScriptMetadata(metadata) {
   return removeUndefined2({
     scriptPath: metadata.scriptPath,
@@ -31613,7 +31654,7 @@ function publicSession(session, options = {}) {
     evalToolArgument: session.evalToolArgument,
     upstreamArguments: session.upstreamArguments,
     handles: session.handles,
-    workspace: session.workspace,
+    workspace: session.workspace ? responseWorkspace(session.workspace) : void 0,
     lastDiagnostics: session.lastDiagnostics,
     history: includeHistory ? session.history.slice(-historyLimit) : void 0
   };

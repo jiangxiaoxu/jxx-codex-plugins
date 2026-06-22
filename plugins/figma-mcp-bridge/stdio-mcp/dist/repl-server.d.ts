@@ -61,6 +61,22 @@ export interface FigmaReplOutputFiles {
     outputFile?: FigmaReplFilePointer;
     metadataFile?: FigmaReplFilePointer;
 }
+export interface FigmaReplPublicWorkspace {
+    [key: string]: unknown;
+    root: string;
+    fileDir: string;
+    fileContext: string;
+    fileKey?: string;
+    fileSlug: string;
+    taskSlug: string;
+    sessionDir: string;
+    scriptPath: string;
+    outputFilePath: string;
+    files: {
+        inputFile: string;
+        outputFile: string;
+    };
+}
 export interface FigmaReplPublicSession {
     [key: string]: unknown;
     id: string;
@@ -78,7 +94,7 @@ export interface FigmaReplPublicSession {
     upstreamArguments: Record<string, unknown>;
     handles: Record<string, string>;
     lastDiagnostics: FigmaReplDiagnostic[];
-    workspace?: FigmaReplSessionWorkspace;
+    workspace?: FigmaReplPublicWorkspace;
 }
 export interface FigmaReplToolResultBase {
     [key: string]: unknown;
@@ -196,18 +212,17 @@ export interface FigmaReplRunTaskPlanResult extends FigmaReplToolResultBase {
 }
 export interface FigmaReplPreparedTask {
     [key: string]: unknown;
-    slug: string;
-    intentSlug: string;
+    taskSlug: string;
     fileContext: string;
     inputFile: string;
     outputFile: string;
-    workspace: FigmaReplSessionWorkspace;
+    workspace: FigmaReplPublicWorkspace;
     scriptPath: string;
-    resultFile: FigmaReplFilePointer;
     overwritten: boolean;
 }
 export interface FigmaReplPrepareTaskResult extends FigmaReplToolResultBase {
     task: FigmaReplPreparedTask;
+    outputFiles: FigmaReplOutputFiles;
     next: string[];
 }
 export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {

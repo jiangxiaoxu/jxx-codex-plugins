@@ -85,7 +85,6 @@ export interface FigmaReplCaptureNodeArguments {
     refresh?: boolean;
 }
 export interface FigmaReplTaskPlanStep {
-    [key: string]: unknown;
     id?: string;
     type?: string;
     args?: Record<string, unknown>;
@@ -168,6 +167,7 @@ export declare function asGuidanceArgs(args: unknown): FigmaReplGuidanceArgument
 export declare function asInspectArgs(args: unknown): FigmaReplInspectArguments;
 export declare function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments;
 export declare function asLookupArgs(args: unknown): FigmaReplLookupArguments;
+export declare function asTaskPlanSteps(value: unknown, displayName?: string): FigmaReplTaskPlanStep[];
 export declare function assertRequiredTitleArgument(args: Record<string, unknown>): void;
 export declare function withDefaultTitle<T extends Record<string, unknown>>(args: T, title: string): T & {
     title: string;

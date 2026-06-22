@@ -277,6 +277,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_prepare_task: toolOutputSchema({
     task: objectProperty("Prepared task workspace and script/result files."),
     session: objectProperty("Public local REPL session metadata."),
+    outputFiles: objectProperty("Files written for the prepared pending result output."),
     next: stringArrayProperty("Suggested next actions."),
   }),
   figma_repl_guidance: toolOutputSchema({
