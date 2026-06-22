@@ -83,17 +83,17 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_apply_asset_manifest",
       description:
-        "Apply a local asset manifest to Figma target nodes through configurable upstream asset/upload tools. Use for large generated images after .figma.js creates target rectangles.",
+        "Apply a local asset manifest to Figma target nodes through configurable upstream asset/upload tools, including official upload_assets when advertised. Use for large generated images after .figma.js creates target rectangles.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         manifestPath: stringProperty("Path to a JSON manifest. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of assets or an object with assets/toolName/argumentsTemplate."),
         assets: {
           type: "array",
-          description: "Inline asset entries: { path|filePath|localPath, targetNodeId|nodeId, name?, metadata?, toolName?, arguments? }.",
+          description: "Inline asset entries: { path|filePath|localPath, targetNodeId|nodeId|target|targetHandle|targetId, nodeUrl?, scaleMode?, name?, metadata?, toolName?, arguments? }. Target fields accept local handles like $hero.",
           items: { type: "object", additionalProperties: true },
         },
-        toolName: stringProperty("Default upstream asset/upload/fill tool. If omitted, the REPL selects an advertised asset-like tool and infers args only from recognizable schema fields."),
+        toolName: stringProperty("Default upstream asset/upload/fill tool. If omitted, the REPL selects an advertised asset-like tool such as upload_assets and infers args only from recognizable schema fields."),
         arguments: objectProperty("Default upstream arguments template. Use {{path}}, {{targetNodeId}}, {{name}}, {{metadata.foo}}, or {{asset}} placeholders."),
         argumentsTemplate: objectProperty("Alias for arguments. Prefer this when mirroring fake or upstream schemas explicitly."),
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload."),
@@ -110,8 +110,12 @@ export function createReplToolDescriptions(
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
-        nodeId: stringProperty("Figma node id to capture."),
-        targetNodeId: stringProperty("Alias for nodeId."),
+        nodeId: stringProperty("Figma node id, node URL, or local handle like $hero to capture."),
+        targetNodeId: stringProperty("Alias for nodeId. Accepts node ids, node URLs, or local handles."),
+        target: {
+          description: "Alias for nodeId for handle-aware workflow plans. Accepts a string or object like { handle: \"$hero\" }.",
+        },
+        handle: stringProperty("Local handle like $hero to capture."),
         outputFile: stringProperty("Local file path where the screenshot image, downloaded URL payload, or text response is written. Accepts an absolute path or a file name inside the initialized file-context workspace."),
         resultFile: stringProperty("Optional capture metadata JSON. Accepts an absolute path or a file name inside the initialized file-context workspace."),
         toolName: stringProperty("Upstream screenshot/capture tool. If omitted, the REPL selects an advertised screenshot-like tool and infers node id only from recognizable schema fields."),
@@ -124,14 +128,14 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_run_task_plan",
       description:
-        "Run a sequential local JSON task plan: script-file dryRun/execute, asset manifest application, screenshot capture, and generic upstream tool calls. Stops on first failure by default.",
+        "Run a sequential local JSON task plan: script-file dryRun/execute, asset manifest/upload_assets application, screenshot capture, and generic upstream tool calls. Later steps can reference prior outputs with templates like {{outputs.stepId.resultFile.path}}. Stops on first failure by default.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
         planPath: stringProperty("JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of steps or an object with steps."),
         steps: {
           type: "array",
-          description: "Inline steps. Supported type/tool values: script-file, asset-manifest, screenshot-capture, upstream-tool.",
+          description: "Inline steps. Supported type/tool values: script-file, asset-manifest/upload_assets, screenshot-capture, upstream-tool. Step args support {{outputs.stepId.*}} and {{steps.stepId.*}} references.",
           items: { type: "object", additionalProperties: true },
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true."),
@@ -281,6 +285,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     stopOnFailure: booleanProperty("Whether the plan was configured to stop on first failure."),
     steps: arrayProperty("Compact per-step execution summaries."),
+    outputReferences: objectProperty("Plan-level map of step id to output file pointers for later workflow references."),
     outputFiles: objectProperty("Files written for plan result output."),
     failures: arrayProperty("Failed task-plan steps."),
   }),
