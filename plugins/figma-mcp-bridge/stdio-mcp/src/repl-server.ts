@@ -48,7 +48,7 @@ import {
   diagnoseFigmaReplCode,
   diagnoseFigmaReplContext,
   diagnoseWrappedScriptSize,
-  resolveFigmaReplScriptHelperSelection,
+  resolveFigmaReplScriptHelperSelection as resolveFigmaReplScriptHelperSelectionInternal,
   throwIfFatalDiagnostics,
   type FigmaReplDiagnostic,
   type FigmaReplDiagnosticsOptions,
@@ -118,8 +118,13 @@ export const FIGMA_REPL_DEFAULT_SESSION_ID = "default";
 export {
   assertSafeFigmaReplCode,
   diagnoseFigmaReplCode,
-  resolveFigmaReplScriptHelperSelection,
 };
+
+/**
+ * @internal Internal-facing helper-selection utility for tests and payload debugging.
+ * This is not a stable MCP tool input contract, and callers cannot use it to configure helper injection.
+ */
+export const resolveFigmaReplScriptHelperSelection = resolveFigmaReplScriptHelperSelectionInternal;
 export type {
   FigmaReplDiagnostic,
   FigmaReplDiagnosticsOptions,
@@ -1904,6 +1909,10 @@ function inferEvalArgumentName(tool: UpstreamToolInfo): string | undefined {
   return stringProperty?.[0];
 }
 
+/**
+ * @internal Internal wrapper builder used by the Figma REPL server and tests.
+ * This is not a stable MCP tool input contract; MCP callers should use figma_repl_eval or figma_repl_run_script_file.
+ */
 export function buildFigmaEvalScript(options: {
   session: Pick<FigmaReplSession, "id" | "handles" | "currentPageId" | "fileUrl" | "fileKey" | "surface" | "knownPages">;
   code: string;

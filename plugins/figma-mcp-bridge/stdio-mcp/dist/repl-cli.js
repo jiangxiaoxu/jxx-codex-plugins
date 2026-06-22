@@ -27522,6 +27522,7 @@ function asOptionalString(value) {
 
 // src/repl-server.ts
 var FIGMA_REPL_DEFAULT_SESSION_ID = "default";
+var resolveFigmaReplScriptHelperSelection2 = resolveFigmaReplScriptHelperSelection;
 var DEFAULT_EVAL_TOOL_NAME = "use_figma";
 var DEFAULT_EVAL_ARGUMENT_CANDIDATES = [
   "code",
@@ -28873,7 +28874,7 @@ function inferEvalArgumentName(tool) {
 }
 function buildFigmaEvalScript(options) {
   const includeEvalHelpers = options.includeEvalHelpers !== false;
-  const evalInjectedHelpers = includeEvalHelpers ? resolveFigmaReplScriptHelperSelection(options.code).injectedHelpers : void 0;
+  const evalInjectedHelpers = includeEvalHelpers ? resolveFigmaReplScriptHelperSelection2(options.code).injectedHelpers : void 0;
   return `${createFigmaReplPrelude(
     options.session,
     options.mode ?? "write",

@@ -49,6 +49,10 @@ export declare function compileFigmaReplScriptFile(options: {
     allowDangerousOperations?: boolean;
     strict?: boolean;
 }): CompiledFigmaReplScriptFile;
+/**
+ * @internal Internal helper-selection utility used by the REPL compiler.
+ * This reports injected helper metadata; it is not an MCP caller configuration surface.
+ */
 export declare function resolveFigmaReplScriptHelperSelection(source: string): FigmaReplScriptHelperSelection;
 export declare function assertSafeFigmaReplCode(code: string, options?: FigmaReplDiagnosticsOptions): void;
 export declare function diagnoseFigmaReplCode(code: string, options?: FigmaReplDiagnosticsOptions): FigmaReplDiagnostic[];
