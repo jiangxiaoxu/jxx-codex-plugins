@@ -51,6 +51,16 @@ await figma.open({
   fileUrl: "https://www.figma.com/design/<fileKey>/<fileName>?node-id=<nodeId>",
   expectedSurface: "design",
 });
+const evalResult = await figma.eval({
+  code: "return { page: figma.currentPage.name };",
+  mode: "read",
+});
+const payload = evalResult.upstream.payload;
+const capture = await figma.captureNode({
+  nodeId: "$target",
+  outputFile: "qa.png",
+});
+if (!capture.ok) console.log(capture.plannedOutputFile);
 await figma.close();
 ```
 

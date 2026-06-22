@@ -16,6 +16,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
 6. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
 7. Local `figma_repl_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.payload` or text from `upstream.text`, and use `outputFiles` for large payloads.
+8. `createFigmaReplClient` mirrors the same result shape in Node: read `result.upstream.payload`, compact asset entries, and capture `plannedOutputFile` on failure.
 
 ## Lazy Tool Loading
 
