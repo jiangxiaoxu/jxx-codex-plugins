@@ -26527,7 +26527,7 @@ function createReplToolDescriptions(options) {
   const tools = [
     {
       name: "figma_repl_open",
-      description: "Create or update a local Figma REPL session. Records fileKey/surface/page context, local handles, and upstream use_figma settings.",
+      description: "Create or update a local Figma REPL session. Recommended call: { title, sessionId, fileUrl, expectedSurface }. Records file/surface/page context and local handles; use upstream overrides only for routing debug.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
@@ -26537,16 +26537,16 @@ function createReplToolDescriptions(options) {
         currentPageId: stringProperty("Optional current Figma page id stored in local session metadata."),
         reset: booleanProperty("Reset local handles and history for this session before opening."),
         connect: booleanProperty("Connect to upstream Figma MCP during open. Defaults to true."),
-        refresh: booleanProperty("Refresh cached upstream tool list."),
-        upstreamTool: stringProperty("Override upstream eval tool name. Defaults to use_figma."),
-        upstreamArgument: stringProperty("Override upstream JavaScript argument name. Usually code."),
-        upstreamArguments: objectProperty("Extra arguments merged into every upstream eval call for this session."),
-        handles: objectProperty('Initial local handles, for example {"$header": "12:34"}.')
+        refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list."),
+        upstreamTool: stringProperty("Advanced upstream-routing debug override. Defaults to use_figma; ordinary agents should not set this."),
+        upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override. Usually code; ordinary agents should not set this."),
+        upstreamArguments: objectProperty("Advanced extra upstream arguments for routing debug, merged into every upstream eval call for this session; ordinary agents should not set this."),
+        handles: objectProperty('Advanced bootstrap/import only: initial local handles, for example {"$header": "12:34"}.')
       }, ["title"])
     },
     {
       name: "figma_repl_eval",
-      description: "Run one batched JavaScript transaction through upstream use_figma. Diagnostics block unsafe API-contract/read-mode/surface mistakes before dispatch. The eval wrapper injects only AST-referenced $ helpers; read figma-repl://capabilities for disabled dynamic helper syntax.",
+      description: "Run one batched JavaScript transaction through upstream use_figma. Recommended call: { title, sessionId, code, mode, expectedSurface }. The eval wrapper injects only AST-referenced $ helpers; read figma-repl://capabilities for disabled dynamic helper syntax and argument guidance.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -26554,10 +26554,10 @@ function createReplToolDescriptions(options) {
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
         expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
-        upstreamTool: stringProperty("Override upstream eval tool name for this call."),
-        upstreamArgument: stringProperty("Override upstream JavaScript argument name for this call."),
-        upstreamArguments: objectProperty("Extra arguments sent to the upstream tool for this call."),
-        handleUpdates: objectProperty("Local handle updates merged before running code.")
+        upstreamTool: stringProperty("Advanced upstream-routing debug override for this call; ordinary agents should not set this."),
+        upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
+        upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this."),
+        handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code.")
       }, ["title", "code"])
     },
     {
@@ -26586,103 +26586,103 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_apply_asset_manifest",
-      description: "Apply a local asset manifest to Figma target nodes through configurable upstream asset/upload tools, including official upload_assets when advertised. Use for large generated images after .figma.js creates target rectangles.",
+      description: "Apply local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, refresh, resultFile, and inlineResultLimit are advanced/debug/compat only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
-        manifestPath: stringProperty("Path to a JSON manifest. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of assets or an object with assets/toolName/argumentsTemplate."),
+        manifestPath: stringProperty("Recommended manifest file path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of assets or an object with assets/toolName/argumentsTemplate."),
         assets: {
           type: "array",
-          description: "Inline asset entries: { path|filePath|localPath, targetNodeId|nodeId|target|targetHandle|targetId, nodeUrl?, scaleMode?, name?, metadata?, toolName?, arguments? }. Target fields accept local handles like $hero.",
+          description: "Advanced inline asset entries. Prefer manifestPath. Compatibility aliases are accepted: path|filePath|localPath and targetNodeId|nodeId|target|targetHandle|targetId; target fields accept local handles like $hero.",
           items: { type: "object", additionalProperties: true }
         },
-        toolName: stringProperty("Default upstream asset/upload/fill tool. If omitted, the REPL selects an advertised asset-like tool such as upload_assets and infers args only from recognizable schema fields."),
-        arguments: objectProperty("Default upstream arguments template. Use {{path}}, {{targetNodeId}}, {{name}}, {{metadata.foo}}, or {{asset}} placeholders."),
-        argumentsTemplate: objectProperty("Alias for arguments. Prefer this when mirroring fake or upstream schemas explicitly."),
+        toolName: stringProperty("Advanced upstream-tool override. Leave unset so the REPL selects an advertised asset-like tool such as upload_assets and infers recognizable args."),
+        arguments: objectProperty("Advanced upstream arguments template. Use {{path}}, {{targetNodeId}}, {{name}}, {{metadata.foo}}, or {{asset}} placeholders only when adapting a custom upstream schema."),
+        argumentsTemplate: objectProperty("Advanced alias for arguments. Use only when mirroring fake or upstream schemas explicitly."),
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        resultFile: stringProperty("Optional manifest result JSON. Accepts an absolute path or a file name inside the initialized file-context workspace."),
-        outputFile: stringProperty("Alias for resultFile."),
-        inlineResultLimit: numberProperty("Reserved for compatibility with file-output workflows; manifest responses already return concise metadata.")
+        refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
+        resultFile: stringProperty("Advanced output alias/escape hatch for manifest result JSON. Prefer outputFile in workspaces."),
+        outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace."),
+        inlineResultLimit: numberProperty("Compatibility-only no-op style field for file-output workflows; manifest responses already return concise metadata.")
       }, ["title"])
     },
     {
       name: "figma_repl_capture_node",
-      description: "Capture one Figma node through a configurable upstream screenshot tool and save image bytes, screenshot URL payloads, or text responses to a local outputFile for final visual QA.",
+      description: "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, nodeId, outputFile }. targetNodeId/target/handle aliases, custom upstream templates, refresh, resultFile, and inlineResultLimit are advanced/debug/compat only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
-        nodeId: stringProperty("Figma node id, node URL, or local handle like $hero to capture."),
-        targetNodeId: stringProperty("Alias for nodeId. Accepts node ids, node URLs, or local handles."),
+        nodeId: stringProperty("Recommended target to capture: Figma node id, node URL, or local handle like $hero."),
+        targetNodeId: stringProperty("Compatibility alias for nodeId. Prefer nodeId for direct tool calls."),
         target: {
-          description: 'Alias for nodeId for handle-aware workflow plans. Accepts a string or object like { handle: "$hero" }.'
+          description: 'Advanced alias for handle-aware workflow plans. Prefer nodeId for direct tool calls; accepts a string or object like { handle: "$hero" }.'
         },
-        handle: stringProperty("Local handle like $hero to capture."),
-        outputFile: stringProperty("Local file path where the screenshot image, downloaded URL payload, or text response is written. Accepts an absolute path or a file name inside the initialized file-context workspace."),
-        resultFile: stringProperty("Optional capture metadata JSON. Accepts an absolute path or a file name inside the initialized file-context workspace."),
-        toolName: stringProperty("Upstream screenshot/capture tool. If omitted, the REPL selects an advertised screenshot-like tool and infers node id only from recognizable schema fields."),
-        arguments: objectProperty("Upstream arguments template. Use {{nodeId}} or {{targetNodeId}} placeholders."),
-        argumentsTemplate: objectProperty("Alias for arguments."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: numberProperty("Reserved for compatibility with file-output workflows; capture responses return only file metadata.")
+        handle: stringProperty("Compatibility alias for nodeId when passing a local handle like $hero. Prefer nodeId."),
+        outputFile: stringProperty("Recommended local output file for screenshot image, downloaded URL payload, or text response. Accepts an absolute path or a file name inside the initialized file-context workspace."),
+        resultFile: stringProperty("Advanced optional capture metadata JSON. Prefer outputFile unless separate metadata is explicitly needed."),
+        toolName: stringProperty("Advanced upstream screenshot/capture tool override. Leave unset so the REPL selects an advertised screenshot-like tool and infers node id from recognizable schema fields."),
+        arguments: objectProperty("Advanced upstream arguments template. Use {{nodeId}} or {{targetNodeId}} placeholders only when adapting a custom upstream schema."),
+        argumentsTemplate: objectProperty("Advanced alias for arguments."),
+        refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
+        inlineResultLimit: numberProperty("Compatibility-only no-op style field for file-output workflows; capture responses return only file metadata.")
       }, ["title", "outputFile"])
     },
     {
       name: "figma_repl_run_task_plan",
-      description: "Run a sequential local JSON task plan: script-file dryRun/execute, asset manifest/upload_assets application, screenshot capture, and generic upstream tool calls. Later steps can reference prior outputs with templates like {{outputs.stepId.resultFile.path}}. Stops on first failure by default.",
+      description: "Run a sequential local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Inline steps, resultFile, and inlineResultLimit are advanced/compat only. Later steps can reference prior outputs with templates like {{outputs.stepId.resultFile.path}}.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
-        planPath: stringProperty("JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace. It may be an array of steps or an object with steps."),
+        planPath: stringProperty("Recommended JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of steps or an object with steps."),
         steps: {
           type: "array",
-          description: "Inline steps. Supported type/tool values: script-file, asset-manifest/upload_assets, screenshot-capture, upstream-tool. Step args support {{outputs.stepId.*}} and {{steps.stepId.*}} references.",
+          description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type/tool values: script-file, asset-manifest/upload_assets, screenshot-capture, upstream-tool.",
           items: { type: "object", additionalProperties: true }
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true."),
-        resultFile: stringProperty("JSON result file. Accepts an absolute path or a file name inside the initialized file-context workspace. Defaults to <planPath>.result.json for file plans; required for inline plans."),
-        outputFile: stringProperty("Alias for resultFile."),
-        inlineResultLimit: numberProperty("Reserved for compatibility with file-output workflows; plan responses return per-step statuses.")
+        resultFile: stringProperty("Advanced output alias/escape hatch for JSON result file. Prefer outputFile in workspaces; required only when using inline steps without a file plan."),
+        outputFile: stringProperty("Recommended plan result JSON file name inside the initialized file-context workspace."),
+        inlineResultLimit: numberProperty("Compatibility-only no-op style field for file-output workflows; plan responses return per-step statuses.")
       }, ["title"])
     },
     {
       name: "figma_repl_prepare_task",
-      description: "Create or reuse an intent-specific .figma.js script and paired .result.json file. With cwd or file context, initializes <cwd>/figma-mcp/<fileKey-or-fileSlug>/ for inputFile/outputFile workflows.",
+      description: "Create or reuse an intent-specific .figma.js script and paired .result.json file. Recommended workspace call: { title, cwd, fileUrl|fileKey, intent, expectedSurface }. Alias and override fields are compatibility/advanced only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
-        intent: stringProperty("Human intent used to derive <intentSlug>.figma.js and <intentSlug>.result.json."),
-        task: stringProperty("Alias for intent."),
-        goal: stringProperty("Alias for intent when deriving script/result names, and copied into generated files."),
-        fileUrl: stringProperty("Figma file URL used to derive fileKey/file context when preparing a workspace."),
-        fileKey: stringProperty("Explicit Figma file key used as the file-context directory name."),
-        fileSlug: stringProperty("File-context slug to use when no fileKey is available."),
-        cwd: stringProperty("Absolute project directory where the figma-mcp workspace directory will be created."),
-        dirName: stringProperty("Workspace directory name under cwd. Defaults to figma-mcp."),
-        taskSlug: stringProperty("Stable slug for the task directory. Defaults from taskName/title."),
-        taskName: stringProperty("Human-readable task name used to derive a slug when taskSlug is omitted."),
-        taskDir: stringProperty("Absolute task directory override. Preferred public name for workspaceDir."),
-        fileName: stringProperty("File name ending in .figma.js. Preferred public name for scriptName."),
-        taskRoot: stringProperty(`Absolute task root. Defaults to ${options.taskWorkspaceRootEnv}, then OS temp figma-repl-mcp/tasks.`),
-        workspaceDir: stringProperty("Alias for taskDir. Absolute workspace directory override."),
-        scriptName: stringProperty("Alias for fileName. File name ending in .figma.js. Defaults to <slug>.figma.js."),
-        expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface persisted on the session and copied into generated guidance."),
+        intent: stringProperty("Recommended human intent used to derive <intentSlug>.figma.js and <intentSlug>.result.json."),
+        task: stringProperty("Compatibility alias for intent. Prefer intent."),
+        goal: stringProperty("Compatibility alias for intent when deriving script/result names. Prefer intent."),
+        fileUrl: stringProperty("Recommended Figma file URL used to derive fileKey/file context when preparing a workspace."),
+        fileKey: stringProperty("Recommended explicit Figma file key when fileUrl is not available; used as the file-context directory name."),
+        fileSlug: stringProperty("Advanced file-context slug override to use when no fileKey is available."),
+        cwd: stringProperty("Recommended absolute project directory where the figma-mcp workspace directory will be created."),
+        dirName: stringProperty("Advanced workspace directory name under cwd. Defaults to figma-mcp."),
+        taskSlug: stringProperty("Advanced stable slug override for the task directory. Defaults from taskName/title."),
+        taskName: stringProperty("Advanced human-readable task name used to derive a slug when taskSlug is omitted."),
+        taskDir: stringProperty("Advanced absolute task directory override. Preferred public name for workspaceDir."),
+        fileName: stringProperty("Advanced script file-name override ending in .figma.js. Preferred public name for scriptName."),
+        taskRoot: stringProperty(`Advanced absolute task root for temp task workspaces. Defaults to ${options.taskWorkspaceRootEnv}, then OS temp figma-repl-mcp/tasks.`),
+        workspaceDir: stringProperty("Compatibility alias for taskDir. Prefer taskDir only when an absolute workspace override is needed."),
+        scriptName: stringProperty("Compatibility alias for fileName. Prefer fileName only when overriding the generated script file name."),
+        expectedSurface: enumProperty(["design", "figjam", "slides"], "Recommended expected Figma surface persisted on the session and copied into generated guidance."),
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
         template: stringProperty("Template hint copied into the generated .figma.js comments. V1 templates are curated guidance only."),
-        overwrite: booleanProperty("Overwrite existing script/result pair. Defaults false.")
+        overwrite: booleanProperty("Advanced destructive overwrite of an existing script/result pair. Defaults false.")
       }, ["title"])
     },
     {
       name: "figma_repl_guidance",
-      description: "Return compact guidance, file-workflow planning, curated API cards, or catalog metadata before broader lookup.",
+      description: "Return compact guidance, file-workflow planning, curated API cards, or catalog metadata before broader lookup. Prefer task for natural-language intent; intent and goal are aliases.",
       inputSchema: objectSchema({
         title: titleProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
         card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
         query: stringProperty(`Search query when card id is not known. Hard limit ${options.maxLookupQueryLength} characters.`),
         task: stringProperty(`Natural-language task intent. Preferred public name for intent. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
-        intent: stringProperty(`Natural-language task intent, for example 'create a card with text and auto layout'. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
-        goal: stringProperty(`Natural-language goal used by guidance or plan mode. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        intent: stringProperty(`Alias for task. Natural-language task intent. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        goal: stringProperty(`Alias for task in guidance or plan mode. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface. Preferred public name for expectedSurface."),
         workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
         expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
@@ -26691,7 +26691,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_inspect",
-      description: "Inspect $selection, $currentPage, a stored handle, or validate cached handles through one read-mode use_figma call.",
+      description: 'Inspect $selection, $currentPage, a stored handle, or validate cached handles through one read-mode use_figma call. Recommended calls: { title, sessionId, target } or { title, sessionId, mode:"validate" }; upstream overrides are debug-only.',
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -26703,14 +26703,14 @@ function createReplToolDescriptions(options) {
           description: "Optional handle names or raw node ids to validate. Defaults to all cached handles.",
           items: { type: "string" }
         },
-        upstreamTool: stringProperty("Override upstream eval tool name for this call."),
-        upstreamArgument: stringProperty("Override upstream JavaScript argument name for this call."),
-        upstreamArguments: objectProperty("Extra arguments sent to the upstream tool for this call.")
+        upstreamTool: stringProperty("Advanced upstream-routing debug override for this call; ordinary agents should not set this."),
+        upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
+        upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this.")
       }, ["title"])
     },
     {
       name: "figma_repl_call_upstream_tool",
-      description: "Proxy one official upstream Figma MCP tool call through figma_repl_mcp so agents can stay on the unified REPL facade for capabilities not covered by the file workflow.",
+      description: "Explicit upstream escape hatch: proxy one official upstream Figma MCP tool call through figma_repl_mcp for capabilities not covered by the file workflow.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
@@ -26721,14 +26721,14 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_lookup",
-      description: "Look up compact docs snippets or targeted Figma Plugin API symbols from the internal corpus.",
+      description: "Look up compact docs snippets or targeted Figma Plugin API symbols from the internal corpus. For kind=docs use query; for kind=api use symbol.",
       inputSchema: objectSchema({
         title: titleProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
-        query: stringProperty(`Keyword query, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
-        symbol: stringProperty(`API symbol for kind=api, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
-        maxResults: numberProperty(`Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
-        maxSnippetLines: numberProperty(`Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`)
+        query: stringProperty(`Recommended for kind=docs keyword lookup, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
+        symbol: stringProperty(`Recommended for kind=api exact Plugin API lookup, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
+        maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
+        maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`)
       }, ["title", "kind"])
     }
   ];
@@ -30805,6 +30805,124 @@ function slugifyTaskName2(value) {
   const slug = source.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
   return slug || "figma-task";
 }
+function createToolArgumentGuidancePayload() {
+  return {
+    prepareTask: {
+      tool: "figma_repl_prepare_task",
+      recommendedCalls: {
+        workspaceFromUrl: { title: "Prepare task", cwd: "<absolute project cwd>", fileUrl: "<figma file URL>", intent: "<intent>", expectedSurface: "design" },
+        workspaceFromKey: { title: "Prepare task", cwd: "<absolute project cwd>", fileKey: "<figma file key>", intent: "<intent>", expectedSurface: "design" }
+      },
+      advancedArguments: ["task", "goal", "fileSlug", "dirName", "taskSlug", "taskName", "taskDir", "workspaceDir", "fileName", "scriptName", "taskRoot", "template", "overwrite"],
+      avoidUnless: {
+        taskAliases: "Use task/goal only for compatibility; prefer intent.",
+        workspaceOverrides: "Use taskDir/workspaceDir/taskRoot only when deliberately bypassing the default <cwd>/figma-mcp/<fileKey-or-fileSlug> layout.",
+        fileNameAliases: "Use fileName/scriptName only when the generated <intentSlug>.figma.js name is unsuitable.",
+        overwrite: "Use only after deciding that replacing an existing script/result pair is intended."
+      }
+    },
+    open: {
+      tool: "figma_repl_open",
+      recommendedCalls: {
+        session: { title: "Open session", sessionId: "<session>", fileUrl: "<figma file URL>", expectedSurface: "design" }
+      },
+      advancedArguments: ["connect", "refresh", "upstreamTool", "upstreamArgument", "upstreamArguments", "handles"],
+      avoidUnless: {
+        connect: "Leave at the default true unless intentionally updating only local metadata.",
+        refresh: "Use only for upstream tool-cache debug.",
+        upstreamOverrides: "Use upstreamTool/upstreamArgument/upstreamArguments only for upstream routing debug.",
+        handles: "Use only when importing known node ids into a new session; prefer $.remember from scripts."
+      }
+    },
+    eval: {
+      tool: "figma_repl_eval",
+      recommendedCalls: {
+        read: { title: "Inspect with eval", sessionId: "<session>", code: "<return compact JSON>", mode: "read", expectedSurface: "design" },
+        write: { title: "Run eval transaction", sessionId: "<session>", code: "<return compact JSON>", mode: "write", expectedSurface: "design" }
+      },
+      advancedArguments: ["allowDangerousOperations", "upstreamTool", "upstreamArgument", "upstreamArguments", "handleUpdates"],
+      avoidUnless: {
+        allowDangerousOperations: "Use only after reviewing the exact code; it does not bypass API contract, surface, or read-mode guards.",
+        upstreamOverrides: "Use upstreamTool/upstreamArgument/upstreamArguments only for upstream routing debug.",
+        handleUpdates: "Use only for handle import/repair; prefer $.remember inside code."
+      }
+    },
+    inspect: {
+      tool: "figma_repl_inspect",
+      recommendedCalls: {
+        inspectTarget: { title: "Inspect node", sessionId: "<session>", target: "$selection" },
+        validateHandles: { title: "Validate handles", sessionId: "<session>", mode: "validate" }
+      },
+      advancedArguments: ["handles", "upstreamTool", "upstreamArgument", "upstreamArguments"],
+      avoidUnless: {
+        handles: "Pass handles only to validate a subset; omit to validate all cached handles.",
+        upstreamOverrides: "Use upstreamTool/upstreamArgument/upstreamArguments only for upstream routing debug."
+      }
+    },
+    assetManifest: {
+      tool: "figma_repl_apply_asset_manifest",
+      recommendedCalls: {
+        applyManifest: { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" }
+      },
+      advancedArguments: ["assets", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile", "inlineResultLimit"],
+      avoidUnless: {
+        assets: "Prefer manifestPath for repeatable local-file workflows; inline assets are for generated one-off plans.",
+        assetAliases: "Use path/targetNodeId as the preferred asset fields; other path/target aliases are compatibility only.",
+        upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom or fake upstream asset schema.",
+        refresh: "Use only for upstream tool-cache debug.",
+        resultFile: "Prefer outputFile in initialized workspaces.",
+        inlineResultLimit: "Compatibility-only; manifest responses are already concise."
+      }
+    },
+    captureNode: {
+      tool: "figma_repl_capture_node",
+      recommendedCalls: {
+        capture: { title: "Capture node", sessionId: "<session>", nodeId: "$target", outputFile: "<capture>.png" }
+      },
+      advancedArguments: ["targetNodeId", "target", "handle", "toolName", "arguments", "argumentsTemplate", "refresh", "resultFile", "inlineResultLimit"],
+      avoidUnless: {
+        targetAliases: "Prefer nodeId for direct calls; target/handle aliases are mainly for plan templates and compatibility.",
+        upstreamTemplates: "Use toolName/arguments/argumentsTemplate only when adapting a custom screenshot upstream schema.",
+        refresh: "Use only for upstream tool-cache debug.",
+        resultFile: "Use only when separate capture metadata JSON is explicitly needed.",
+        inlineResultLimit: "Compatibility-only; capture responses return file metadata."
+      }
+    },
+    taskPlan: {
+      tool: "figma_repl_run_task_plan",
+      recommendedCalls: {
+        filePlan: { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" }
+      },
+      advancedArguments: ["steps", "resultFile", "inlineResultLimit"],
+      avoidUnless: {
+        steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans.",
+        resultFile: "Prefer outputFile in initialized workspaces.",
+        inlineResultLimit: "Compatibility-only; plan responses return per-step statuses."
+      }
+    },
+    guidance: {
+      tool: "figma_repl_guidance",
+      preferredArguments: ["task", "mode", "surface"],
+      aliases: { intent: "Alias for task.", goal: "Alias for task." }
+    },
+    lookup: {
+      tool: "figma_repl_lookup",
+      preferredArguments: { docs: ["kind=docs", "query"], api: ["kind=api", "symbol"] },
+      resultSizeControls: ["maxResults", "maxSnippetLines"]
+    },
+    callUpstreamTool: {
+      tool: "figma_repl_call_upstream_tool",
+      guidance: "Explicit upstream escape hatch only; use when a required official Figma MCP capability is not covered by the REPL workflow tools.",
+      recommendedCalls: {
+        explicit: { title: "Call upstream tool", sessionId: "<session>", toolName: "<official upstream tool>", arguments: {} }
+      },
+      advancedArguments: ["refresh"],
+      avoidUnless: {
+        refresh: "Use only for upstream tool-cache debug."
+      }
+    }
+  };
+}
 function createCapabilitiesPayload() {
   return {
     guide: {
@@ -30901,6 +31019,7 @@ function createCapabilitiesPayload() {
       },
       helpers: createEvalHelperDescriptionsPayload()
     },
+    toolArgumentGuidance: createToolArgumentGuidancePayload(),
     fileWorkflow: createFileWorkflowPayload(),
     workflowTools: {
       resource: "figma-repl://workflow-tools",

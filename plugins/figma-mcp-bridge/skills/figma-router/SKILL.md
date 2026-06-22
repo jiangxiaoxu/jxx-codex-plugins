@@ -23,15 +23,15 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 
 ## Primary File Workflow
 
-- Prepare a repairable workspace and intent file: `figma_repl_prepare_task({ cwd, fileUrl|fileKey, intent|title|goal })`.
+- Prepare a repairable workspace and intent file: `figma_repl_prepare_task({ title, cwd, fileUrl|fileKey, intent, expectedSurface })`.
 - Edit the generated `<intent>.figma.js`; use native Figma Plugin API plus the injected `$` helpers.
 - Dry-run: `figma_repl_run_script_file({ sessionId, inputFile, dryRun: true, strict: true, expectedSurface })`.
 - Execute: `figma_repl_run_script_file({ sessionId, inputFile, outputFile })`.
-- For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest`.
-- For visual QA, call `figma_repl_capture_node` and inspect the local image/result files.
-- For repeatable multi-step workflows, use `figma_repl_run_task_plan`.
+- For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath, outputFile })`.
+- For visual QA, call `figma_repl_capture_node({ title, sessionId, nodeId, outputFile })` and inspect the local image/result files.
+- For repeatable multi-step workflows, use `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })`.
 
-Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `inputFile` and `outputFile` names after workspace initialization. Absolute `scriptPath`, upstream overrides, split output files, and `inlineResultLimit` are advanced/debug escape hatches.
+Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `intent`, `inputFile`, `outputFile`, `manifestPath`, `nodeId`, and `planPath` defaults after workspace initialization. Alias fields, inline assets/steps, custom upstream templates, absolute `scriptPath`, upstream overrides, split output files, `refresh`, and `inlineResultLimit` are advanced/debug/compat escape hatches. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
 
 ## Script Contract
 

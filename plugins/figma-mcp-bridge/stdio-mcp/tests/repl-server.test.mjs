@@ -529,6 +529,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.scriptWorkflow);
   assert.ok(capabilities.fileWorkflow);
   assert.ok(capabilities.workflowTools);
+  assert.ok(capabilities.toolArgumentGuidance);
   assert.ok(capabilities.apiCards);
   assert.ok(capabilities.intents);
   assert.ok(capabilities.safety);
@@ -558,6 +559,34 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.scriptWorkflow.advancedArguments.includes("upstreamTool"));
   assert.match(capabilities.scriptWorkflow.avoidUnless.scriptPath, /prefer inputFile/i);
   assert.match(capabilities.scriptWorkflow.avoidUnless.upstreamOverrides, /routing debug/);
+  assert.deepEqual(
+    capabilities.toolArgumentGuidance.prepareTask.recommendedCalls.workspaceFromUrl,
+    { title: "Prepare task", cwd: "<absolute project cwd>", fileUrl: "<figma file URL>", intent: "<intent>", expectedSurface: "design" },
+  );
+  assert.ok(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("taskRoot"));
+  assert.match(capabilities.toolArgumentGuidance.prepareTask.avoidUnless.taskAliases, /prefer intent/i);
+  assert.deepEqual(
+    capabilities.toolArgumentGuidance.assetManifest.recommendedCalls.applyManifest,
+    { title: "Apply asset manifest", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" },
+  );
+  assert.ok(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("argumentsTemplate"));
+  assert.match(capabilities.toolArgumentGuidance.assetManifest.avoidUnless.upstreamTemplates, /custom or fake upstream asset schema/i);
+  assert.deepEqual(
+    capabilities.toolArgumentGuidance.captureNode.recommendedCalls.capture,
+    { title: "Capture node", sessionId: "<session>", nodeId: "$target", outputFile: "<capture>.png" },
+  );
+  assert.ok(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("targetNodeId"));
+  assert.match(capabilities.toolArgumentGuidance.captureNode.avoidUnless.targetAliases, /Prefer nodeId/i);
+  assert.deepEqual(
+    capabilities.toolArgumentGuidance.taskPlan.recommendedCalls.filePlan,
+    { title: "Run task plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" },
+  );
+  assert.ok(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("steps"));
+  assert.match(capabilities.toolArgumentGuidance.open.avoidUnless.upstreamOverrides, /routing debug/);
+  assert.match(capabilities.toolArgumentGuidance.eval.avoidUnless.upstreamOverrides, /routing debug/);
+  assert.match(capabilities.toolArgumentGuidance.inspect.avoidUnless.upstreamOverrides, /routing debug/);
+  assert.deepEqual(capabilities.toolArgumentGuidance.lookup.preferredArguments.api, ["kind=api", "symbol"]);
+  assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /Explicit upstream escape hatch/);
   assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("eval wrapper")));
   assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("Dynamic $ helper access")));
   assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("$[name] / $name-style")));
@@ -642,6 +671,60 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(evalTool.description, /AST-referenced \$ helpers/);
   assert.match(evalTool.description, /figma-repl:\/\/capabilities/);
   assert.doesNotMatch(evalTool.description, /\$\[name\]/);
+  assert.match(evalTool.inputSchema.properties.upstreamTool.description, /routing debug/);
+  assert.match(evalTool.inputSchema.properties.handleUpdates.description, /handle-import escape hatch/);
+  const openTool = tools.tools.find((tool) => tool.name === "figma_repl_open");
+  assert.ok(openTool);
+  assert.match(openTool.description, /Recommended call: \{ title, sessionId, fileUrl, expectedSurface \}/);
+  assert.match(openTool.inputSchema.properties.upstreamArguments.description, /routing debug/);
+  const assetManifestTool = tools.tools.find((tool) => tool.name === "figma_repl_apply_asset_manifest");
+  assert.ok(assetManifestTool);
+  assert.match(assetManifestTool.description, /Recommended workspace call: \{ title, sessionId, manifestPath, outputFile\? \}/);
+  assert.match(assetManifestTool.inputSchema.properties.manifestPath.description, /Recommended manifest file path/);
+  assert.match(assetManifestTool.inputSchema.properties.assets.description, /Advanced inline asset entries/);
+  assert.match(assetManifestTool.inputSchema.properties.toolName.description, /Advanced upstream-tool override/);
+  assert.match(assetManifestTool.inputSchema.properties.argumentsTemplate.description, /Advanced alias/);
+  assert.match(assetManifestTool.inputSchema.properties.resultFile.description, /Advanced output alias/);
+  assert.match(assetManifestTool.inputSchema.properties.outputFile.description, /Recommended manifest result JSON/);
+  assert.match(assetManifestTool.inputSchema.properties.inlineResultLimit.description, /Compatibility-only/);
+  const captureNodeTool = tools.tools.find((tool) => tool.name === "figma_repl_capture_node");
+  assert.ok(captureNodeTool);
+  assert.match(captureNodeTool.description, /Recommended call: \{ title, sessionId, nodeId, outputFile \}/);
+  assert.match(captureNodeTool.inputSchema.properties.nodeId.description, /Recommended target/);
+  assert.match(captureNodeTool.inputSchema.properties.targetNodeId.description, /Compatibility alias/);
+  assert.match(captureNodeTool.inputSchema.properties.target.description, /Advanced alias/);
+  assert.match(captureNodeTool.inputSchema.properties.toolName.description, /Advanced upstream/);
+  assert.match(captureNodeTool.inputSchema.properties.inlineResultLimit.description, /Compatibility-only/);
+  const taskPlanTool = tools.tools.find((tool) => tool.name === "figma_repl_run_task_plan");
+  assert.ok(taskPlanTool);
+  assert.match(taskPlanTool.description, /Recommended file-plan call: \{ title, sessionId, planPath, outputFile \}/);
+  assert.match(taskPlanTool.inputSchema.properties.planPath.description, /Recommended JSON plan path/);
+  assert.match(taskPlanTool.inputSchema.properties.steps.description, /Advanced inline steps/);
+  assert.match(taskPlanTool.inputSchema.properties.resultFile.description, /Advanced output alias/);
+  const prepareTaskTool = tools.tools.find((tool) => tool.name === "figma_repl_prepare_task");
+  assert.ok(prepareTaskTool);
+  assert.match(prepareTaskTool.description, /Recommended workspace call: \{ title, cwd, fileUrl\|fileKey, intent, expectedSurface \}/);
+  assert.match(prepareTaskTool.inputSchema.properties.intent.description, /Recommended human intent/);
+  assert.match(prepareTaskTool.inputSchema.properties.task.description, /Compatibility alias/);
+  assert.match(prepareTaskTool.inputSchema.properties.workspaceDir.description, /Compatibility alias/);
+  assert.match(prepareTaskTool.inputSchema.properties.taskRoot.description, /Advanced absolute task root/);
+  assert.match(prepareTaskTool.inputSchema.properties.overwrite.description, /Advanced destructive/);
+  const inspectTool = tools.tools.find((tool) => tool.name === "figma_repl_inspect");
+  assert.ok(inspectTool);
+  assert.match(inspectTool.description, /upstream overrides are debug-only/);
+  assert.match(inspectTool.inputSchema.properties.upstreamArguments.description, /routing\/debug/);
+  const guidanceMetadataTool = tools.tools.find((tool) => tool.name === "figma_repl_guidance");
+  assert.ok(guidanceMetadataTool);
+  assert.match(guidanceMetadataTool.description, /Prefer task/);
+  assert.match(guidanceMetadataTool.inputSchema.properties.intent.description, /Alias for task/);
+  const lookupMetadataTool = tools.tools.find((tool) => tool.name === "figma_repl_lookup");
+  assert.ok(lookupMetadataTool);
+  assert.match(lookupMetadataTool.description, /kind=docs use query/);
+  assert.match(lookupMetadataTool.inputSchema.properties.symbol.description, /Recommended for kind=api/);
+  assert.match(lookupMetadataTool.inputSchema.properties.maxResults.description, /Result-size control only/);
+  const callUpstreamTool = tools.tools.find((tool) => tool.name === "figma_repl_call_upstream_tool");
+  assert.ok(callUpstreamTool);
+  assert.match(callUpstreamTool.description, /Explicit upstream escape hatch/);
   await assert.rejects(
     () => mcpClient.callTool({
       name: "figma_repl_capabilities",

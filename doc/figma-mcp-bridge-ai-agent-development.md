@@ -31,6 +31,7 @@ Pin these facts when changing the router surface:
 - public `figma_repl_*` tools are exactly `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`, `figma_repl_run_task_plan`, `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_inspect`, `figma_repl_call_upstream_tool`, and `figma_repl_lookup`;
 - every public `figma_repl_*` tool uses a fixed structured response shape: public session without `history`, diagnostics arrays present, file pointers under `outputFiles` as `{ path, bytes, lineCount }`, `figma_repl_run_script_file` upstream output in `upstream.payload` or `upstream.text`, and other upstream-backed tools keeping parsed JSON in `result` with `text` as the non-JSON fallback;
 - public tool schemas and docs expose the fixed response shape only. Raw upstream payloads are not returned inline in MCP structuredContent, and `figma_repl_run_script_file` result files use the `upstream` envelope instead of duplicate `raw`;
+- `figma-repl://capabilities.toolArgumentGuidance` is the canonical normal-path vs alias/advanced/debug argument guide for public `figma_repl_*` tools;
 - bundled corpus files are internal lookup data, not agent-facing docs;
 - `figma_repl_call_upstream_tool` is only for explicit uncovered upstream capabilities.
 
