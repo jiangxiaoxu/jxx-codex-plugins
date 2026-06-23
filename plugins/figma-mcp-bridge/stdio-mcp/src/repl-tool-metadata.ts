@@ -106,6 +106,23 @@ export function createReplToolDescriptions(
       }),
     },
     {
+      name: "figma_repl_download_assets",
+      description:
+        "Workflow add-on for official Figma asset downloads. Recommended call: { title, sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir?, outputFile? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets and saves exported plus raw/source files locally.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for fileKey, handles, workspace defaults, and history. Defaults to 'default'."),
+        targets: {
+          type: "array",
+          description: "Recommended target list. Single-target calls still use targets: [{ target }]. Mutually exclusive with manifestPath.",
+          items: downloadAssetTargetProperty(),
+        },
+        manifestPath: stringProperty("Optional batch manifest path. Accepts an absolute path or a file name inside the initialized file-context workspace. Manifest shape is exactly { targets: [...] }; assets aliases are rejected."),
+        outputDir: stringProperty("Optional output directory. Relative paths require an initialized workspace. Defaults to <slug>.downloads in the workspace, or a temp download-results directory without a workspace."),
+        outputFile: stringProperty("Optional full result JSON path. Relative paths require an initialized workspace. Defaults to <slug>.downloads.result.json."),
+      }),
+    },
+    {
       name: "figma_repl_capture_node",
       description:
         "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, target, outputFile? }. Image captures default to WebP; explicit .png/.jpg/.jpeg outputFile extensions are preserved. preview:true adds a WebP MCP image preview. metadataFile, custom upstream templates, and refresh are advanced/debug only.",
@@ -133,7 +150,7 @@ export function createReplToolDescriptions(
         planPath: stringProperty("Recommended JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of steps or an object with steps."),
         steps: {
           type: "array",
-          description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type values: script-file, asset-manifest/upload_assets, screenshot-capture, upstream-tool. Step arguments go under args.",
+          description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type values: script-file, asset-manifest/upload_assets, download-assets/download_assets, screenshot-capture, upstream-tool. Step arguments go under args.",
           items: taskPlanStepProperty("One task-plan step. Put tool-specific inputs under args."),
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true.", { default: true }),
@@ -268,6 +285,13 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     validation: objectProperty("Optional target validation result."),
     outputFiles: outputFilesProperty("Files written for result output.", ["outputFile"]),
     failures: arrayProperty("Per-asset or validation failures."),
+  }),
+  figma_repl_download_assets: toolOutputSchema({
+    session: objectProperty("Public local REPL session metadata."),
+    outputDir: stringProperty("Local directory containing per-target download folders."),
+    targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
+    failures: arrayProperty("Per-target download or upstream failures."),
+    outputFiles: outputFilesProperty("Files written for complete download result output.", ["outputFile"]),
   }),
   figma_repl_capture_node: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
@@ -428,9 +452,24 @@ function taskPlanStepProperty(description: string): Record<string, unknown> {
     description,
     properties: {
       id: stringProperty("Optional stable step id used by output references and templates."),
-      type: stringProperty("Task-plan step type, for example script-file, asset-manifest, screenshot-capture, or upstream-tool."),
+      type: stringProperty("Task-plan step type, for example script-file, asset-manifest, download-assets, screenshot-capture, or upstream-tool."),
       args: objectProperty("Tool-specific step arguments. Put all step tool inputs here."),
     },
+    additionalProperties: false,
+  };
+}
+
+function downloadAssetTargetProperty(): Record<string, unknown> {
+  return {
+    type: "object",
+    description: "One Figma target for official download_assets. Use target for node id, node URL, local handle, or { handle }.",
+    properties: {
+      target: jsonProperty("Required target. Accepts a node id, node URL, local handle like $hero, or object like { handle: \"$hero\" }."),
+      name: stringProperty("Optional display name used for the local target folder slug and result readability."),
+      defaultFormat: enumProperty(["png", "jpg", "svg", "pdf"], "Optional official download_assets defaultFormat forwarded upstream."),
+      defaultScale: numberProperty("Optional official download_assets defaultScale forwarded upstream. Must be from 0.01 to 4.", { minimum: 0.01, maximum: 4 }),
+    },
+    required: ["target"],
     additionalProperties: false,
   };
 }
@@ -589,6 +628,44 @@ function compactAssetResultsProperty(description: string): Record<string, unknow
         upload: objectProperty("Compact upload summary."),
         validation: objectProperty("Compact target validation result."),
         error: objectProperty("Compact per-asset error."),
+        upstreamSummary: stringProperty("Compact upstream summary text."),
+      },
+      additionalProperties: true,
+    },
+  };
+}
+
+function compactDownloadAssetResultsProperty(description: string): Record<string, unknown> {
+  return {
+    type: "array",
+    description,
+    items: {
+      type: "object",
+      properties: {
+        ok: booleanProperty("Whether this target download succeeded."),
+        targetNodeId: stringProperty("Resolved Figma target node id."),
+        handle: stringProperty("Local handle associated with the target when available."),
+        name: stringProperty("Target display name when available."),
+        outputDir: stringProperty("Per-target local output directory."),
+        downloadedFiles: {
+          type: "array",
+          description: "Compact downloaded file pointers and per-file failures.",
+          items: {
+            type: "object",
+            properties: {
+              ok: booleanProperty("Whether this file download succeeded."),
+              kind: enumProperty(["exported", "raw"], "Downloaded file kind."),
+              path: stringProperty("Absolute local file path when saved."),
+              bytes: numberProperty("File size in bytes when saved."),
+              lineCount: numberProperty("Line count; downloaded binaries use 0."),
+              mimeType: stringProperty("Detected response MIME type when available."),
+              format: stringProperty("File extension/format used for the saved file."),
+              error: objectProperty("Per-file download error when saving failed."),
+            },
+            additionalProperties: true,
+          },
+        },
+        error: objectProperty("Compact per-target upstream or download error."),
         upstreamSummary: stringProperty("Compact upstream summary text."),
       },
       additionalProperties: true,

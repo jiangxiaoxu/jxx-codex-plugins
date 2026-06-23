@@ -2,7 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type RemoteMcpClientOptions } from "./client.js";
 import { type ReferenceSearchResult } from "./repl-doc-search.js";
 import { assertSafeFigmaReplCode, diagnoseFigmaReplCode, resolveFigmaReplScriptHelperSelection as resolveFigmaReplScriptHelperSelectionInternal, type FigmaReplDiagnostic, type FigmaReplDiagnosticsOptions, type FigmaReplDiagnosticSeverity, type FigmaReplFileDiagnostic, type FigmaReplSurface } from "./repl-script-runner.js";
-import type { FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplEvalArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments } from "./repl-tool-args.js";
+import type { FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplEvalArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments } from "./repl-tool-args.js";
 import { type FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 import type { FigmaMcpProxyClient } from "./stdio-server.js";
 export declare const FIGMA_REPL_DEFAULT_SESSION_ID = "default";
@@ -14,7 +14,7 @@ export { assertSafeFigmaReplCode, diagnoseFigmaReplCode, };
 export declare const resolveFigmaReplScriptHelperSelection: typeof resolveFigmaReplScriptHelperSelectionInternal;
 export type { FigmaReplDiagnostic, FigmaReplDiagnosticsOptions, FigmaReplDiagnosticSeverity, FigmaReplFileDiagnostic, FigmaReplSurface, };
 export type { FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
-export type { FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplEvalArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
+export type { FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplDownloadAssetsTarget, FigmaReplEvalArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
 export declare const FIGMA_REPL_EVAL_COMMON_HELPER_NAMES: readonly ["remember", "forget", "resolveId", "node", "select", "cloneNodeTree", "findAll", "find", "text", "layout", "create", "findFreeSlot", "placeNode", "replaceGeneratedFrame", "inspect", "screenshot", "imageAsset", "checkpoint"];
 export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
     client?: FigmaMcpProxyClient;
@@ -174,6 +174,31 @@ export interface FigmaReplApplyAssetManifestResult extends FigmaReplToolResultBa
     failures?: Array<Record<string, unknown>>;
     outputFiles?: FigmaReplOutputFiles;
 }
+export interface FigmaReplDownloadedAssetFile extends FigmaReplFilePointer {
+    [key: string]: unknown;
+    kind: "exported" | "raw";
+    sourceUrl: string;
+    mimeType?: string;
+    format?: string;
+}
+export interface FigmaReplDownloadAssetsTargetResult {
+    [key: string]: unknown;
+    ok: boolean;
+    targetNodeId: string;
+    handle?: string;
+    name?: string;
+    outputDir: string;
+    downloadedFiles: FigmaReplDownloadedAssetFile[];
+    upstreamSummary?: string;
+    error?: FigmaReplPublicUpstreamError;
+}
+export interface FigmaReplDownloadAssetsResult extends FigmaReplToolResultBase {
+    session: FigmaReplPublicSession;
+    outputDir: string;
+    targets: FigmaReplDownloadAssetsTargetResult[];
+    failures?: Array<Record<string, unknown>>;
+    outputFiles: FigmaReplOutputFiles;
+}
 export interface FigmaReplCaptureQaResult {
     [key: string]: unknown;
     ok: boolean;
@@ -286,6 +311,7 @@ export interface FigmaReplClient {
     eval(args: FigmaReplEvalArguments): Promise<FigmaReplEvalResult>;
     runScriptFile(args: FigmaReplRunScriptFileArguments): Promise<FigmaReplRunScriptFileResult>;
     applyAssetManifest(args: FigmaReplApplyAssetManifestArguments): Promise<FigmaReplApplyAssetManifestResult>;
+    downloadAssets(args: FigmaReplDownloadAssetsArguments): Promise<FigmaReplDownloadAssetsResult>;
     captureNode(args: FigmaReplCaptureNodeArguments): Promise<FigmaReplCaptureNodeResult>;
     runTaskPlan(args: FigmaReplRunTaskPlanArguments): Promise<FigmaReplRunTaskPlanResult>;
     prepareTask(args: FigmaReplPrepareTaskArguments): Promise<FigmaReplPrepareTaskResult>;

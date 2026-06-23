@@ -18462,8 +18462,8 @@ function isRecord2(value) {
 // src/repl-server.ts
 import { randomUUID } from "node:crypto";
 import { tmpdir as tmpdir2 } from "node:os";
-import { readFile as readFile4 } from "node:fs/promises";
-import { dirname as dirname5, isAbsolute as isAbsolute3, relative as relative3, resolve as resolve5 } from "node:path";
+import { mkdir as mkdir3, readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
+import { dirname as dirname5, extname as extname2, isAbsolute as isAbsolute3, relative as relative3, resolve as resolve5 } from "node:path";
 
 // src/repl-doc-search.ts
 import { readFile as readFile2 } from "node:fs/promises";
@@ -26235,6 +26235,7 @@ var FIGMA_REPL_EVAL_MODES = ["read", "write"];
 var FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"];
 var FIGMA_REPL_INSPECT_MODES = ["inspect", "validate", "style"];
 var FIGMA_REPL_LOOKUP_KINDS = ["docs", "api"];
+var FIGMA_REPL_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"];
 function assertRemovedFileReferenceFields(record2) {
   const removed = ["fileUrl", "fileKey"].filter((field) => record2[field] !== void 0);
   if (removed.length > 0) {
@@ -26314,6 +26315,23 @@ function asApplyAssetManifestArgs(args) {
   ]);
   assertOptionalRecord(record2, "arguments");
   assertOptionalAssets(record2);
+  return record2;
+}
+function asDownloadAssetsArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["target"], "targets");
+  assertRemovedArguments(record2, ["assets"], "targets");
+  assertRemovedArguments(record2, ["toolName", "arguments", "refresh", "download"], "figma_repl_call_upstream_tool");
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "manifestPath",
+    "outputDir",
+    "outputFile"
+  ]);
+  const targets = assertOptionalDownloadAssetTargets(record2);
+  if (targets) {
+    record2.targets = targets;
+  }
   return record2;
 }
 function asCaptureNodeArgs(args) {
@@ -26487,6 +26505,40 @@ function assertOptionalAssets(record2) {
     assertOptionalRecord(asset, "arguments", `${assetName}.arguments`);
   });
 }
+function assertOptionalDownloadAssetTargets(record2) {
+  const targets = assertOptionalArray(record2, "targets");
+  if (!targets) {
+    return void 0;
+  }
+  return targets.map((target, index) => {
+    const targetName = `targets[${index}]`;
+    if (!isRecord3(target)) {
+      throw new Error(`Tool argument "${targetName}" must be an object.`);
+    }
+    assertRemovedArguments(
+      target,
+      ["nodeId", "targetNodeId", "targetHandle", "targetId"],
+      "target",
+      `${targetName}.nodeId/targetNodeId/targetHandle/targetId`
+    );
+    assertOptionalStringFieldsWithPrefix(target, targetName, ["name"]);
+    assertOptionalTargetValue(target.target, `${targetName}.target`);
+    const defaultFormat = target.defaultFormat;
+    if (defaultFormat !== void 0 && (typeof defaultFormat !== "string" || !FIGMA_REPL_DOWNLOAD_ASSET_FORMATS.includes(defaultFormat))) {
+      throw new Error(`Tool argument "${targetName}.defaultFormat" must be one of: ${FIGMA_REPL_DOWNLOAD_ASSET_FORMATS.join(", ")}.`);
+    }
+    const defaultScale = target.defaultScale;
+    if (defaultScale !== void 0 && (typeof defaultScale !== "number" || !Number.isFinite(defaultScale) || defaultScale < 0.01 || defaultScale > 4)) {
+      throw new Error(`Tool argument "${targetName}.defaultScale" must be a number from 0.01 to 4.`);
+    }
+    return {
+      target: target.target,
+      name: target.name,
+      defaultFormat,
+      defaultScale
+    };
+  });
+}
 function assertOptionalTargetValue(value, displayName) {
   if (value === void 0) {
     return;
@@ -26584,6 +26636,7 @@ var LOCAL_REPL_TOOL_NAMES = [
   "figma_repl_eval",
   "figma_repl_run_script_file",
   "figma_repl_apply_asset_manifest",
+  "figma_repl_download_assets",
   "figma_repl_capture_node",
   "figma_repl_run_task_plan",
   "figma_repl_prepare_task",
@@ -26606,6 +26659,10 @@ var TASK_PLAN_STEP_TYPE_ALIASES = {
   asset_manifest: "asset-manifest",
   upload_assets: "asset-manifest",
   "asset-manifest": "asset-manifest",
+  figma_repl_download_assets: "download-assets",
+  download_assets: "download-assets",
+  download_assets_from_figma: "download-assets",
+  "download-assets": "download-assets",
   figma_repl_capture_node: "screenshot-capture",
   capture_node: "screenshot-capture",
   screenshot: "screenshot-capture",
@@ -26706,6 +26763,22 @@ function createReplToolDescriptions(options) {
       })
     },
     {
+      name: "figma_repl_download_assets",
+      description: "Workflow add-on for official Figma asset downloads. Recommended call: { title, sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir?, outputFile? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets and saves exported plus raw/source files locally.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for fileKey, handles, workspace defaults, and history. Defaults to 'default'."),
+        targets: {
+          type: "array",
+          description: "Recommended target list. Single-target calls still use targets: [{ target }]. Mutually exclusive with manifestPath.",
+          items: downloadAssetTargetProperty()
+        },
+        manifestPath: stringProperty("Optional batch manifest path. Accepts an absolute path or a file name inside the initialized file-context workspace. Manifest shape is exactly { targets: [...] }; assets aliases are rejected."),
+        outputDir: stringProperty("Optional output directory. Relative paths require an initialized workspace. Defaults to <slug>.downloads in the workspace, or a temp download-results directory without a workspace."),
+        outputFile: stringProperty("Optional full result JSON path. Relative paths require an initialized workspace. Defaults to <slug>.downloads.result.json.")
+      })
+    },
+    {
       name: "figma_repl_capture_node",
       description: "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, target, outputFile? }. Image captures default to WebP; explicit .png/.jpg/.jpeg outputFile extensions are preserved. preview:true adds a WebP MCP image preview. metadataFile, custom upstream templates, and refresh are advanced/debug only.",
       inputSchema: objectSchema({
@@ -26731,7 +26804,7 @@ function createReplToolDescriptions(options) {
         planPath: stringProperty("Recommended JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of steps or an object with steps."),
         steps: {
           type: "array",
-          description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type values: script-file, asset-manifest/upload_assets, screenshot-capture, upstream-tool. Step arguments go under args.",
+          description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type values: script-file, asset-manifest/upload_assets, download-assets/download_assets, screenshot-capture, upstream-tool. Step arguments go under args.",
           items: taskPlanStepProperty("One task-plan step. Put tool-specific inputs under args.")
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true.", { default: true }),
@@ -26860,6 +26933,13 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     validation: objectProperty("Optional target validation result."),
     outputFiles: outputFilesProperty("Files written for result output.", ["outputFile"]),
     failures: arrayProperty("Per-asset or validation failures.")
+  }),
+  figma_repl_download_assets: toolOutputSchema({
+    session: objectProperty("Public local REPL session metadata."),
+    outputDir: stringProperty("Local directory containing per-target download folders."),
+    targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
+    failures: arrayProperty("Per-target download or upstream failures."),
+    outputFiles: outputFilesProperty("Files written for complete download result output.", ["outputFile"])
   }),
   figma_repl_capture_node: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
@@ -27004,9 +27084,23 @@ function taskPlanStepProperty(description) {
     description,
     properties: {
       id: stringProperty("Optional stable step id used by output references and templates."),
-      type: stringProperty("Task-plan step type, for example script-file, asset-manifest, screenshot-capture, or upstream-tool."),
+      type: stringProperty("Task-plan step type, for example script-file, asset-manifest, download-assets, screenshot-capture, or upstream-tool."),
       args: objectProperty("Tool-specific step arguments. Put all step tool inputs here.")
     },
+    additionalProperties: false
+  };
+}
+function downloadAssetTargetProperty() {
+  return {
+    type: "object",
+    description: "One Figma target for official download_assets. Use target for node id, node URL, local handle, or { handle }.",
+    properties: {
+      target: jsonProperty('Required target. Accepts a node id, node URL, local handle like $hero, or object like { handle: "$hero" }.'),
+      name: stringProperty("Optional display name used for the local target folder slug and result readability."),
+      defaultFormat: enumProperty(["png", "jpg", "svg", "pdf"], "Optional official download_assets defaultFormat forwarded upstream."),
+      defaultScale: numberProperty("Optional official download_assets defaultScale forwarded upstream. Must be from 0.01 to 4.", { minimum: 0.01, maximum: 4 })
+    },
+    required: ["target"],
     additionalProperties: false
   };
 }
@@ -27153,6 +27247,43 @@ function compactAssetResultsProperty(description) {
         upload: objectProperty("Compact upload summary."),
         validation: objectProperty("Compact target validation result."),
         error: objectProperty("Compact per-asset error."),
+        upstreamSummary: stringProperty("Compact upstream summary text.")
+      },
+      additionalProperties: true
+    }
+  };
+}
+function compactDownloadAssetResultsProperty(description) {
+  return {
+    type: "array",
+    description,
+    items: {
+      type: "object",
+      properties: {
+        ok: booleanProperty("Whether this target download succeeded."),
+        targetNodeId: stringProperty("Resolved Figma target node id."),
+        handle: stringProperty("Local handle associated with the target when available."),
+        name: stringProperty("Target display name when available."),
+        outputDir: stringProperty("Per-target local output directory."),
+        downloadedFiles: {
+          type: "array",
+          description: "Compact downloaded file pointers and per-file failures.",
+          items: {
+            type: "object",
+            properties: {
+              ok: booleanProperty("Whether this file download succeeded."),
+              kind: enumProperty(["exported", "raw"], "Downloaded file kind."),
+              path: stringProperty("Absolute local file path when saved."),
+              bytes: numberProperty("File size in bytes when saved."),
+              lineCount: numberProperty("Line count; downloaded binaries use 0."),
+              mimeType: stringProperty("Detected response MIME type when available."),
+              format: stringProperty("File extension/format used for the saved file."),
+              error: objectProperty("Per-file download error when saving failed.")
+            },
+            additionalProperties: true
+          }
+        },
+        error: objectProperty("Compact per-target upstream or download error."),
         upstreamSummary: stringProperty("Compact upstream summary text.")
       },
       additionalProperties: true
@@ -27388,6 +27519,15 @@ function withTaskPlanDefaultFiles(stepArgs, type, id, session) {
   if (type === "asset-manifest") {
     if (!hasOutputFile) {
       next.outputFile = `${stepSlug}.assets.result.json`;
+    }
+    return next;
+  }
+  if (type === "download-assets") {
+    if (!hasOutputFile) {
+      next.outputFile = `${stepSlug}.downloads.result.json`;
+    }
+    if (!asOptionalString(next.outputDir)) {
+      next.outputDir = `${stepSlug}.downloads`;
     }
     return next;
   }
@@ -27860,6 +28000,7 @@ var DEFAULT_ASSET_TOOL_CANDIDATES = [
   "set_image_fill",
   "apply_image_asset"
 ];
+var DOWNLOAD_ASSETS_TOOL_NAME = "download_assets";
 var DEFAULT_SCREENSHOT_TOOL_CANDIDATES = [
   "get_screenshot",
   "capture_node_screenshot",
@@ -27958,6 +28099,10 @@ function createFigmaReplClient(options = {}) {
       asApplyAssetManifestArgs(withDefaultTitle(args, "Apply Figma asset manifest")),
       runtime
     ),
+    downloadAssets: async (args) => executeDownloadAssets(
+      asDownloadAssetsArgs(withDefaultTitle(args, "Download Figma assets")),
+      runtime
+    ),
     captureNode: async (args) => executeCaptureNode(
       asCaptureNodeArgs(withDefaultTitle(args, "Capture Figma node")),
       runtime
@@ -28045,6 +28190,13 @@ function createFigmaReplMcpServer(options = {}) {
         });
       case "figma_repl_apply_asset_manifest":
         return handleApplyAssetManifest(asApplyAssetManifestArgs(withMcpDefaultTitle(rawArgs, "Apply Figma asset manifest")), {
+          client,
+          sessions,
+          upstreamToolCache,
+          config: config2
+        });
+      case "figma_repl_download_assets":
+        return handleDownloadAssets(asDownloadAssetsArgs(withMcpDefaultTitle(rawArgs, "Download Figma assets")), {
           client,
           sessions,
           upstreamToolCache,
@@ -28754,6 +28906,380 @@ function compactUploadSummary(upload) {
     mimeType: upload.mimeType,
     bytes: upload.bytes
   });
+}
+async function handleDownloadAssets(args, runtime) {
+  return makeJsonToolResult(await executeDownloadAssets(args, runtime));
+}
+async function executeDownloadAssets(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  const manifest = await loadDownloadAssetsManifest(args, session);
+  const paths = resolveDownloadAssetsOutputPaths(args, session);
+  const tools = await runtime.upstreamToolCache.list(false);
+  const tool = tools.find((item) => item.name === DOWNLOAD_ASSETS_TOOL_NAME);
+  if (!tool) {
+    throw new Error(
+      `Upstream Figma MCP tool "${DOWNLOAD_ASSETS_TOOL_NAME}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
+    );
+  }
+  const targetResults = [];
+  const targetDetails = [];
+  const failures = [];
+  const usedSlugs = /* @__PURE__ */ new Set();
+  await runtime.client.connect();
+  for (const [index, target] of manifest.targets.entries()) {
+    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const targetSlug = uniqueDownloadTargetSlug(target, index, usedSlugs);
+    const targetOutputDir = resolve5(paths.outputDir, targetSlug);
+    const upstreamArguments = buildDownloadAssetsUpstreamArguments(target);
+    try {
+      const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+      const parsed = parseUpstreamToolResult(upstream);
+      const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0;
+      const links = parsed.upstreamError ? [] : collectDownloadAssetLinks(parsed.json);
+      const downloadedFiles = parsed.upstreamError ? [] : await downloadAssetLinks(links, targetOutputDir);
+      const downloadFailures = downloadedFiles.filter((file) => file.ok === false);
+      const ok2 = !parsed.upstreamError && links.length > 0 && downloadFailures.length === 0;
+      const entry = removeUndefined2({
+        ok: ok2,
+        targetNodeId: target.targetNodeId,
+        handle: target.handle,
+        name: target.name,
+        outputDir: targetOutputDir,
+        downloadedFiles: compactDownloadedFiles(downloadedFiles),
+        upstreamSummary: parsed.upstreamError ? parsed.upstreamError.message : summarizeParsedResult(parsed),
+        error: upstreamError
+      });
+      const detail = removeUndefined2({
+        ...entry,
+        toolName: tool.name,
+        arguments: upstreamArguments,
+        links,
+        downloadedFiles,
+        upstream: upstreamEnvelope(parsed),
+        upstreamError,
+        primaryFix: parsed.primaryFix,
+        startedAt,
+        finishedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      targetResults.push(entry);
+      targetDetails.push(detail);
+      if (!ok2) {
+        failures.push(removeUndefined2({
+          targetNodeId: target.targetNodeId,
+          handle: target.handle,
+          name: target.name,
+          outputDir: targetOutputDir,
+          error: upstreamError ?? downloadFailures[0]?.error ?? {
+            message: links.length === 0 ? "Upstream download_assets returned no downloadable URLs." : "One or more asset downloads failed."
+          }
+        }));
+      }
+    } catch (error2) {
+      const upstreamError = normalizeCaughtUpstreamError(error2);
+      const responseError = responseUpstreamError(upstreamError);
+      const entry = removeUndefined2({
+        ok: false,
+        targetNodeId: target.targetNodeId,
+        handle: target.handle,
+        name: target.name,
+        outputDir: targetOutputDir,
+        downloadedFiles: [],
+        upstreamSummary: upstreamError.message,
+        error: responseError
+      });
+      const detail = removeUndefined2({
+        ...entry,
+        toolName: tool.name,
+        arguments: upstreamArguments,
+        upstreamError: responseError,
+        primaryFix: primaryFixForUpstreamError(upstreamError),
+        startedAt,
+        finishedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      targetResults.push(entry);
+      targetDetails.push(detail);
+      failures.push(removeUndefined2({
+        targetNodeId: target.targetNodeId,
+        handle: target.handle,
+        name: target.name,
+        outputDir: targetOutputDir,
+        error: responseError
+      }));
+    }
+  }
+  const ok = failures.length === 0;
+  const payload = removeUndefined2({
+    ok,
+    session: responseSession(session),
+    outputDir: paths.outputDir,
+    targets: targetResults,
+    failures: failures.length > 0 ? failures : void 0
+  });
+  const outputFiles = {
+    outputFile: responseFilePointer(await writeJsonFile(paths.outputFile, {
+      ...payload,
+      toolName: tool.name,
+      targetDetails
+    }))
+  };
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_download_assets",
+    title: args.title,
+    mode: "download-assets",
+    summary: `Downloaded assets for ${targetResults.length} target(s) with ${failures.length} failures.`,
+    nodeIds: manifest.targets.map((target) => target.targetNodeId)
+  });
+  return {
+    ...payload,
+    outputFiles
+  };
+}
+async function loadDownloadAssetsManifest(args, session) {
+  const inlineTargets = Array.isArray(args.targets) ? args.targets : void 0;
+  const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
+  if (inlineTargets && manifestPath) {
+    throw new Error('Pass either "targets" or "manifestPath", not both.');
+  }
+  const manifestValue = manifestPath ? JSON.parse(await readFile4(manifestPath, "utf8")) : void 0;
+  const manifestRecord = asRecord3(manifestValue);
+  if (manifestRecord.assets !== void 0) {
+    throw new Error('Download manifest field "assets" is not supported. Use "targets".');
+  }
+  const rawTargets = inlineTargets ?? (Array.isArray(manifestRecord.targets) ? manifestRecord.targets : void 0);
+  if (!rawTargets || rawTargets.length === 0) {
+    throw new Error('Tool argument "targets" or "manifestPath" with targets is required.');
+  }
+  return {
+    targets: rawTargets.map((target, index) => normalizeDownloadAssetTarget(target, index, session))
+  };
+}
+function normalizeDownloadAssetTarget(value, index, session) {
+  const record2 = asRecord3(value);
+  const targetResolution = resolveSessionTargetInput(record2.target, session);
+  const targetNodeId = targetResolution.nodeId;
+  if (!targetNodeId) {
+    throw new Error(`Download target ${index} requires target.`);
+  }
+  const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl) ?? extractFigmaFileKeyFromTargetInput(record2.target);
+  if (!fileKey) {
+    throw new Error(`Download target ${index} requires a session fileKey. Call figma_repl_open or figma_repl_prepare_task with a Figma file URL first.`);
+  }
+  const defaultFormat = asOptionalDownloadAssetFormat(record2.defaultFormat);
+  const defaultScale = typeof record2.defaultScale === "number" && Number.isFinite(record2.defaultScale) ? record2.defaultScale : void 0;
+  return {
+    targetNodeId,
+    handle: targetResolution.handle,
+    fileKey,
+    name: asOptionalString2(record2.name),
+    defaultFormat,
+    defaultScale
+  };
+}
+function asOptionalDownloadAssetFormat(value) {
+  if (value === "png" || value === "jpg" || value === "svg" || value === "pdf") {
+    return value;
+  }
+  return void 0;
+}
+function extractFigmaFileKeyFromTargetInput(input) {
+  if (isRecord5(input)) {
+    return extractFigmaFileKeyFromTargetInput(input.url) ?? extractFigmaFileKeyFromTargetInput(input.nodeUrl) ?? extractFigmaFileKeyFromTargetInput(input.target);
+  }
+  return extractFigmaFileKey(asOptionalString2(input));
+}
+function resolveDownloadAssetsOutputPaths(args, session) {
+  const slug = slugifyTaskName2(args.title || "download-assets");
+  const explicitOutputDir = resolveWorkspaceAwareFile(args.outputDir, session, "outputDir");
+  const explicitOutputFile = resolveWorkspaceAwareFile(args.outputFile, session, "outputFile");
+  let outputDir = explicitOutputDir;
+  let outputFile = explicitOutputFile;
+  if (!outputDir) {
+    outputDir = session.workspace ? resolveWorkspaceFile(session.workspace.sessionDir, `${slug}.downloads`, "outputDir") : resolveDownloadAssetsTempPath(session, `${slug}.downloads`);
+  }
+  if (!outputFile) {
+    outputFile = session.workspace ? resolveWorkspaceFile(session.workspace.sessionDir, `${slug}.downloads.result.json`, "outputFile") : resolveDownloadAssetsTempPath(session, `${slug}.downloads.result.json`);
+  }
+  return { outputDir, outputFile };
+}
+function resolveDownloadAssetsTempPath(session, fileName) {
+  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve5(tmpdir2(), "figma-repl-mcp", "tasks");
+  if (!isAbsolute3(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve5(root, "download-results", session.slug, fileName);
+}
+function buildDownloadAssetsUpstreamArguments(target) {
+  return removeUndefined2({
+    fileKey: target.fileKey,
+    nodeId: target.targetNodeId,
+    defaultFormat: target.defaultFormat,
+    defaultScale: target.defaultScale
+  });
+}
+function uniqueDownloadTargetSlug(target, index, used) {
+  const base = slugifyTaskName2(target.name || target.handle || target.targetNodeId || `target-${index + 1}`);
+  let candidate = base || `target-${index + 1}`;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+function collectDownloadAssetLinks(value) {
+  const links = /* @__PURE__ */ new Map();
+  const visit = (item, path) => {
+    if (Array.isArray(item)) {
+      item.forEach((child, index) => visit(child, [...path, String(index)]));
+      return;
+    }
+    if (!isRecord5(item)) {
+      return;
+    }
+    for (const [key, child] of Object.entries(item)) {
+      if (typeof child === "string" && looksLikeDownloadUrl(child)) {
+        const kind = inferDownloadAssetKind([...path, key]);
+        const format = inferDownloadAssetFormat(item, child);
+        const mapKey = `${kind}:${child}`;
+        if (!links.has(mapKey)) {
+          links.set(mapKey, {
+            kind,
+            url: child,
+            format,
+            name: asOptionalString2(item.name) ?? asOptionalString2(item.fileName) ?? asOptionalString2(item.filename)
+          });
+        }
+      }
+      visit(child, [...path, key]);
+    }
+  };
+  visit(value, []);
+  return [...links.values()];
+}
+function looksLikeDownloadUrl(value) {
+  if (!/^https?:\/\//iu.test(value)) {
+    return false;
+  }
+  return /\.(?:png|jpe?g|webp|gif|svg|pdf)(?:[?#].*)?$/iu.test(value) || /(?:download|export|render|image|asset|file|url)/iu.test(value);
+}
+function inferDownloadAssetKind(path) {
+  const joined = path.join(".").toLowerCase();
+  if (/(?:raw|source|original|fill|fills|image|images)/u.test(joined)) {
+    return "raw";
+  }
+  return "exported";
+}
+function inferDownloadAssetFormat(record2, url2) {
+  return sanitizeFileExtension(
+    asOptionalString2(record2.format) ?? asOptionalString2(record2.exportFormat) ?? asOptionalString2(record2.fileFormat) ?? extensionFromUrl(url2)
+  );
+}
+async function downloadAssetLinks(links, outputDir) {
+  await mkdir3(outputDir, { recursive: true });
+  const rawIndexes = /* @__PURE__ */ new Map();
+  const results = [];
+  for (const link of links) {
+    const index = (rawIndexes.get(link.kind) ?? 0) + 1;
+    rawIndexes.set(link.kind, index);
+    try {
+      const response = await fetch(link.url);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const mimeType = contentTypeWithoutParameters(response.headers.get("content-type")) ?? void 0;
+      const format = sanitizeFileExtension(link.format) ?? extensionFromContentType(mimeType) ?? extensionFromUrl(link.url) ?? "bin";
+      const baseName = link.kind === "exported" ? index === 1 ? "exported" : `exported-${index}` : `raw-${index}`;
+      const path = resolve5(outputDir, `${baseName}.${format}`);
+      if (!response.ok) {
+        results.push(removeUndefined2({
+          ok: false,
+          kind: link.kind,
+          sourceUrl: link.url,
+          path,
+          mimeType,
+          format,
+          error: {
+            message: `Download failed with HTTP ${response.status} ${response.statusText}`.trim(),
+            code: `HTTP_${response.status}`
+          }
+        }));
+        continue;
+      }
+      await writeFile3(path, bytes);
+      results.push(removeUndefined2({
+        ok: true,
+        kind: link.kind,
+        sourceUrl: link.url,
+        path,
+        bytes: bytes.byteLength,
+        lineCount: 0,
+        mimeType,
+        format
+      }));
+    } catch (error2) {
+      const upstreamError = normalizeCaughtUpstreamError(error2);
+      results.push(removeUndefined2({
+        ok: false,
+        kind: link.kind,
+        sourceUrl: link.url,
+        error: responseUpstreamError(upstreamError)
+      }));
+    }
+  }
+  return results;
+}
+function compactDownloadedFiles(files) {
+  return files.map((file) => removeUndefined2({
+    ok: file.ok,
+    kind: file.kind,
+    path: file.path,
+    bytes: file.bytes,
+    lineCount: file.lineCount,
+    mimeType: file.mimeType,
+    format: file.format,
+    error: file.error
+  }));
+}
+function contentTypeWithoutParameters(value) {
+  if (!value) {
+    return void 0;
+  }
+  return value.split(";")[0].trim().toLowerCase() || void 0;
+}
+function extensionFromContentType(mimeType) {
+  switch (mimeType) {
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    case "image/svg+xml":
+      return "svg";
+    case "application/pdf":
+      return "pdf";
+    default:
+      return void 0;
+  }
+}
+function extensionFromUrl(value) {
+  try {
+    const extension = extname2(new URL(value).pathname);
+    return sanitizeFileExtension(extension);
+  } catch {
+    return sanitizeFileExtension(extname2(value));
+  }
+}
+function sanitizeFileExtension(value) {
+  if (!value) {
+    return void 0;
+  }
+  const normalized = value.trim().replace(/^\./u, "").toLowerCase();
+  return /^[a-z0-9]{1,8}$/u.test(normalized) ? normalized : void 0;
 }
 async function handleCaptureNode(args, runtime) {
   const result = await executeCaptureNodeForTool(args, runtime);
@@ -31131,6 +31657,12 @@ async function runTaskPlanStep(options) {
       options.runtime
     );
   }
+  if (options.type === "download-assets") {
+    return executeDownloadAssets(
+      asDownloadAssetsArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime
+    );
+  }
   if (options.type === "screenshot-capture") {
     return executeCaptureNode(
       asCaptureNodeArgs({ ...commonArgs, ...stepArgs }),
@@ -31212,6 +31744,8 @@ function createTaskPlanStepReference(options) {
     nodeIds: collectNodeIds(options.result),
     handles,
     assets: options.result.assets,
+    downloadTargets: options.result.targets,
+    downloadOutputDir: options.result.outputDir,
     validation: options.result.validation,
     assetTargets: nestedResult.assetTargets,
     captureTarget: nestedResult.captureTarget,
@@ -31484,7 +32018,7 @@ function createFileWorkflowPayload() {
     planTool: "figma_repl_guidance",
     workspaceLayout: "<cwd>/figma-mcp/<fileKey-or-fileSlug>/<taskSlug>.figma.js + <taskSlug>.result.json",
     outputFiles: ["inputFile", "outputFile", "upstreamFile", "inlineResultLimit"],
-    workflowTools: ["figma_repl_apply_asset_manifest", "figma_repl_capture_node", "figma_repl_run_task_plan"],
+    workflowTools: ["figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_capture_node", "figma_repl_run_task_plan"],
     helpers: createEvalHelperPathList(),
     defaultTaskRoot: `${TASK_WORKSPACE_ROOT_ENV}, then OS temp figma-repl-mcp/tasks/<slug>`,
     guidance: [
@@ -31497,8 +32031,9 @@ function createFileWorkflowPayload() {
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
+      "Use figma_repl_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
       "Use figma_repl_capture_node to write final visual QA captures to local image files; default and recommended image output is WebP, while explicit .png/.jpg/.jpeg outputFile extensions are preserved. Pass preview=true only when the MCP response should include a WebP image preview. Pass metadataFile when you need the complete upstream capture envelope.",
-      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.outputFile.path}}.",
+      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.outputFile.path}}.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Use <taskSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
@@ -31556,8 +32091,8 @@ function createToolTierPayload() {
       tools: ["figma_repl_open", "figma_repl_guidance", "figma_repl_lookup"]
     },
     workflowAddOns: {
-      summary: "Use when the primary script workflow needs generated assets or repeatable multi-step orchestration.",
-      tools: ["figma_repl_apply_asset_manifest", "figma_repl_run_task_plan"]
+      summary: "Use when the primary script workflow needs generated assets, downloaded Figma assets, or repeatable multi-step orchestration.",
+      tools: ["figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_run_task_plan"]
     },
     advancedEscapeHatches: {
       summary: "Use only for short ephemeral calls, upstream-only capabilities, or routing/debug cases.",
@@ -31652,6 +32187,19 @@ function createToolArgumentGuidancePayload() {
         refresh: "Use only for upstream tool-cache debug."
       }
     },
+    downloadAssets: {
+      tool: "figma_repl_download_assets",
+      tier: "workflowAddOns",
+      recommendedCalls: {
+        downloadTargets: { title: "Download source assets from targets", sessionId: "<session>", targets: [{ target: "$target", defaultFormat: "png" }], outputDir: "<downloads>", outputFile: "<downloads>.result.json" }
+      },
+      preferredArguments: ["targets", "manifestPath", "outputDir", "outputFile"],
+      avoidUnless: {
+        manifestPath: "Use only for repeatable batch files shaped as { targets: [...] }; inline targets are clearer for one-off calls.",
+        outputDir: "Omit for the default <slug>.downloads directory unless downstream steps need a specific path.",
+        outputFile: "Omit for the default <slug>.downloads.result.json unless downstream steps need a specific path."
+      }
+    },
     captureNode: {
       tool: "figma_repl_capture_node",
       tier: "normalPath",
@@ -31717,6 +32265,7 @@ function createCapabilitiesPayload() {
         "figma_repl_run_script_file without dryRun to execute the reviewed file workflow",
         "figma_repl_inspect with mode=inspect, mode=style, or mode=validate before mutation and after generated work",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through a manifest or official upload_assets",
+        "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
         "figma_repl_capture_node for final visual QA captures saved as local image files, WebP by default and PNG/JPEG when the outputFile extension requests it; add preview=true for a WebP MCP image preview",
         "figma_repl_open only for lightweight session/context binding when a prepared task is not needed",
         "figma_repl_run_task_plan only for repeatable multi-step plans",
@@ -31725,7 +32274,7 @@ function createCapabilitiesPayload() {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma_repl_mcp interface.",
-      responseShape: "Fixed structured payloads without session.history. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and preview schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests keep compact inline assets and complete per-asset upstream envelopes in explicit result files."
+      responseShape: "Fixed structured payloads without session.history. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and preview schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files."
     },
     toolTiers: createToolTierPayload(),
     patterns: {
@@ -31817,6 +32366,13 @@ function createCapabilitiesPayload() {
         result: "Inline assets are compact: ok, path, targetNodeId, handle, name, toolName, compact upload summary, validation, error, upstreamSummary. Explicit outputFile writes assetDetails with full per-asset upstream envelopes, upload details, and arguments.",
         validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload."
       },
+      downloadAssets: {
+        tool: "figma_repl_download_assets",
+        purpose: "Call official upstream download_assets for one or more Figma targets and save exported renders plus raw/source image URLs locally.",
+        targetShape: '{ target, name?, defaultFormat?, defaultScale? }; target accepts a node id, node URL, local handle like $hero, or { handle: "$hero" }.',
+        defaults: "Use targets for inline calls or manifestPath pointing to { targets: [...] }. outputDir defaults to <slug>.downloads and outputFile defaults to <slug>.downloads.result.json in initialized workspaces.",
+        result: "Inline targets are compact: ok, targetNodeId, handle, name, outputDir, downloaded file pointers, upstreamSummary, and error. outputFile writes targetDetails with per-target upstream envelopes, arguments, discovered URLs, and download details."
+      },
       capture: {
         tool: "figma_repl_capture_node",
         purpose: "Call an upstream screenshot/capture tool and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
@@ -31825,10 +32381,10 @@ function createCapabilitiesPayload() {
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",
-        stepTypes: ["script-file", "asset-manifest", "upload_assets", "screenshot-capture", "upstream-tool"],
+        stepTypes: ["script-file", "asset-manifest", "upload_assets", "download-assets", "download_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
-        references: "Later step arguments can reference prior outputs with {{outputs.stepId.outputFile.path}} or {{steps.stepId.outputFiles.outputFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
-        result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, <step-id>.webp for image captures, and <step-id>.capture.result.json."
+        references: "Later step arguments can reference prior outputs with {{outputs.stepId.outputFile.path}} or {{steps.stepId.outputFiles.outputFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, downloads expose {{steps.stepId.downloadOutputDir}} and {{steps.stepId.downloadTargets}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
+        result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, <step-id>.downloads.result.json plus <step-id>.downloads, <step-id>.webp for image captures, and <step-id>.capture.result.json."
       }
     },
     queryStrategy: {

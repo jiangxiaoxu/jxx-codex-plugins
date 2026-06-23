@@ -75,6 +75,22 @@ export interface FigmaReplApplyAssetManifestArguments {
     refresh?: boolean;
     outputFile?: string;
 }
+export interface FigmaReplDownloadAssetsTarget {
+    [key: string]: unknown;
+    target?: unknown;
+    name?: string;
+    defaultFormat?: "png" | "jpg" | "svg" | "pdf";
+    defaultScale?: number;
+}
+export interface FigmaReplDownloadAssetsArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    targets?: FigmaReplDownloadAssetsTarget[];
+    manifestPath?: string;
+    outputDir?: string;
+    outputFile?: string;
+}
 export interface FigmaReplCaptureNodeArguments {
     [key: string]: unknown;
     title?: string;
@@ -165,6 +181,7 @@ export declare function asOpenArgs(args: unknown): FigmaReplOpenArguments;
 export declare function asEvalArgs(args: unknown): FigmaReplEvalArguments;
 export declare function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArguments;
 export declare function asApplyAssetManifestArgs(args: unknown): FigmaReplApplyAssetManifestArguments;
+export declare function asDownloadAssetsArgs(args: unknown): FigmaReplDownloadAssetsArguments;
 export declare function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments;
 export declare function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments;
 export declare function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments;

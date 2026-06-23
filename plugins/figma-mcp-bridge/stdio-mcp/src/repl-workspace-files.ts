@@ -354,6 +354,15 @@ export function withTaskPlanDefaultFiles(
     }
     return next;
   }
+  if (type === "download-assets") {
+    if (!hasOutputFile) {
+      next.outputFile = `${stepSlug}.downloads.result.json`;
+    }
+    if (!asOptionalString(next.outputDir)) {
+      next.outputDir = `${stepSlug}.downloads`;
+    }
+    return next;
+  }
   if (type === "screenshot-capture") {
     if (!asOptionalString(next.outputFile)) {
       next.outputFile = stepSlug;
