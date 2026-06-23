@@ -89,6 +89,7 @@ export interface FigmaReplCaptureNodeArguments {
   sessionId?: string;
   target?: unknown;
   outputFile?: string;
+  preview?: boolean;
   metadataFile?: string;
   toolName?: string;
   arguments?: Record<string, unknown>;

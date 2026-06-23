@@ -13,6 +13,9 @@ export type ReplToolDescriptionOptions = {
   maxLookupQueryLength: number;
 };
 
+const DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4_000;
+const MAX_INLINE_RESULT_LIMIT_BYTES = 30_000;
+
 export function createReplToolDescriptions(
   options: ReplToolDescriptionOptions,
 ): Record<string, unknown>[] {
@@ -31,7 +34,7 @@ export function createReplToolDescriptions(
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface; blocks mismatched Design/FigJam/Slides usage later."),
         currentPageId: stringProperty("Optional current Figma page id stored in local session metadata."),
         reset: booleanProperty("Reset local handles and history for this session before opening."),
-        connect: booleanProperty("Connect to upstream Figma MCP during open. Defaults to true."),
+        connect: booleanProperty("Connect to upstream Figma MCP during open. Defaults to true.", { default: true }),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list."),
         upstreamTool: stringProperty("Advanced upstream-routing debug override. Defaults to use_figma; ordinary agents should not set this."),
         upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override. Usually code; ordinary agents should not set this."),
@@ -51,7 +54,7 @@ export function createReplToolDescriptions(
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
         outputFile: stringProperty("Optional full result JSON file. Relative paths require an initialized workspace; omitted large results use an automatic eval-<timestamp>.result.json file."),
-        inlineResultLimit: numberProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
         upstreamTool: stringProperty("Advanced upstream-routing debug override for this call; ordinary agents should not set this."),
         upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
         upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this."),
@@ -79,7 +82,7 @@ export function createReplToolDescriptions(
         outputFile: stringProperty("Recommended normal result file name inside the initialized file-context directory. Defaults to the input script basename plus .result.json."),
         diagnosticsFile: stringProperty("Advanced opt-in split diagnostics JSON file. Leave unset for normal agent workflows."),
         summaryFile: stringProperty("Advanced opt-in split Markdown summary file. Leave unset for normal agent workflows."),
-        inlineResultLimit: numberProperty("Advanced payload-size control in bytes for inline upstream.payload/upstream.text only. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
+        inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.payload/upstream.text only. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
       }),
     },
     {
@@ -97,7 +100,7 @@ export function createReplToolDescriptions(
         },
         toolName: stringProperty("Advanced upstream-tool override. Leave unset so the REPL selects an advertised asset-like tool such as upload_assets and infers recognizable args."),
         arguments: objectProperty("Advanced upstream arguments template. Use {{path}}, {{target}}, {{name}}, {{metadata.foo}}, or {{asset}} placeholders only when adapting a custom upstream schema."),
-        validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload."),
+        validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload.", { default: true }),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
         outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace."),
       }),
@@ -105,19 +108,20 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_capture_node",
       description:
-        "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, target, outputFile }. metadataFile, custom upstream templates, and refresh are advanced/debug only.",
+        "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, target, outputFile? }. Image captures default to WebP; explicit .png/.jpg/.jpeg outputFile extensions are preserved. preview:true adds a WebP MCP image preview. metadataFile, custom upstream templates, and refresh are advanced/debug only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         target: {
           description: "Recommended target to capture. Accepts a Figma node id, node URL, local handle like $hero, or object like { handle: \"$hero\" }.",
         },
-        outputFile: stringProperty("Recommended local output file for screenshot image, downloaded URL payload, or text response. Accepts an absolute path or a file name inside the initialized file-context workspace."),
+        outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .webp; explicit .png, .jpg, and .jpeg extensions are preserved; extensionless or other extensions normalize to .webp. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.webp path for image captures."),
+        preview: booleanProperty("Opt in to a WebP MCP image preview in the tool content. Defaults false. The structured result contains only compact preview metadata.", { default: false }),
         metadataFile: stringProperty("Advanced optional capture metadata JSON. Use only when separate metadata is explicitly needed."),
         toolName: stringProperty("Advanced upstream screenshot/capture tool override. Leave unset so the REPL selects an advertised screenshot-like tool and infers node id from recognizable schema fields."),
         arguments: objectProperty("Advanced upstream arguments template. Use {{target}} only when adapting a custom upstream schema."),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
-      }, ["outputFile"]),
+      }),
     },
     {
       name: "figma_repl_run_task_plan",
@@ -130,9 +134,9 @@ export function createReplToolDescriptions(
         steps: {
           type: "array",
           description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type values: script-file, asset-manifest/upload_assets, screenshot-capture, upstream-tool. Step arguments go under args.",
-          items: { type: "object", additionalProperties: true },
+          items: taskPlanStepProperty("One task-plan step. Put tool-specific inputs under args."),
         },
-        stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true."),
+        stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true.", { default: true }),
         outputFile: stringProperty("Recommended plan result JSON file name inside the initialized file-context workspace."),
       }),
     },
@@ -204,7 +208,7 @@ export function createReplToolDescriptions(
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         outputFile: stringProperty("Optional full result JSON file. Relative paths require an initialized workspace; omitted large results use an automatic upstream-<tool>-<timestamp>.result.json file."),
-        inlineResultLimit: numberProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
       }, ["toolName", "arguments"]),
     },
     {
@@ -235,27 +239,34 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamTool: stringProperty("Upstream eval tool name used."),
     upstreamArgument: stringProperty("Upstream eval argument name used."),
     diagnostics: arrayProperty("Preflight diagnostics."),
-    upstream: objectProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: objectProperty("Files written for full result and upstream sidecar when inline fields are omitted or outputFile is requested."),
-    inlineResultLimit: objectProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
+    outputFiles: outputFilesProperty(
+      "Files written for full result and upstream sidecar when inline fields are omitted or outputFile is requested.",
+      ["outputFile", "upstreamFile"],
+    ),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
     session: objectProperty("Public local REPL session metadata."),
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
-    script: objectProperty("Compiled script metadata."),
-    outputFiles: objectProperty("Files written for complete result, upstream sidecar, diagnostics, summary, or failure-only compiled script."),
+    script: scriptMetadataProperty("Compiled script metadata."),
+    outputFiles: outputFilesProperty(
+      "Files written for complete result, upstream sidecar, diagnostics, summary, or failure-only compiled script.",
+      ["outputFile", "upstreamFile", "diagnosticsFile", "summaryFile", "compiledScriptFile"],
+    ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    upstream: objectProperty("File-script upstream output envelope with JSON payload or text fallback."),
+    upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON payload or text fallback."),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
-    assets: arrayProperty("Compact per-asset upload/fill results."),
+    assets: compactAssetResultsProperty("Compact per-asset upload/fill results."),
     validation: objectProperty("Optional target validation result."),
-    outputFiles: objectProperty("Files written for result output."),
+    outputFiles: outputFilesProperty("Files written for result output.", ["outputFile"]),
     failures: arrayProperty("Per-asset or validation failures."),
   }),
   figma_repl_capture_node: toolOutputSchema({
@@ -264,12 +275,13 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     plannedOutputFile: stringProperty("Local output file path requested when capture failed before writing."),
     nodeId: stringProperty("Captured Figma node id."),
     toolName: stringProperty("Upstream screenshot/capture tool name used."),
-    kind: stringProperty("Saved output kind."),
-    mimeType: stringProperty("Detected output MIME type."),
+    kind: enumProperty(["image", "text"], "Saved output kind."),
+    mimeType: enumProperty(["image/webp", "image/png", "image/jpeg", "text/plain"], "Detected output MIME type."),
+    preview: capturePreviewProperty("Optional WebP MCP image preview metadata when preview:true is requested."),
     qa: objectProperty("Compact capture QA hints."),
-    upstream: objectProperty("Upstream output envelope, compact inline and complete in outputFile when requested."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope, compact inline and complete in outputFile when requested."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
-    outputFiles: objectProperty("Files written for result output."),
+    outputFiles: outputFilesProperty("Files written for result output.", ["outputFile", "metadataFile"]),
   }),
   figma_repl_run_task_plan: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
@@ -277,14 +289,14 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     stopOnFailure: booleanProperty("Whether the plan was configured to stop on first failure."),
     steps: arrayProperty("Compact per-step execution summaries."),
     outputReferences: objectProperty("Plan-level map of step id to output file pointers for later workflow references."),
-    outputFiles: objectProperty("Files written for plan result output."),
+    outputFiles: outputFilesProperty("Files written for plan result output.", ["outputFile"]),
     failures: arrayProperty("Failed task-plan steps."),
   }),
   figma_repl_prepare_task: toolOutputSchema({
     task: objectProperty("Prepared task workspace and script/result files."),
     session: objectProperty("Public local REPL session metadata."),
-    taskChange: objectProperty("Previous/current task file pointers and whether the session active task changed."),
-    outputFiles: objectProperty("Files written for the prepared pending result output."),
+    taskChange: taskChangeProperty("Previous/current task file pointers and whether the session active task changed."),
+    outputFiles: outputFilesProperty("Files written for the prepared pending result output.", ["outputFile"]),
     next: stringArrayProperty("Suggested next actions."),
   }),
   figma_repl_guidance: toolOutputSchema({
@@ -303,18 +315,21 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_inspect: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
     diagnostics: arrayProperty("Read-mode diagnostics."),
-    upstream: objectProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback."),
     upstreamError: objectProperty("Normalized upstream failure details when inspection failed."),
     primaryFix: stringProperty("Suggested primary repair when inspection failed."),
   }),
   figma_repl_call_upstream_tool: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
-    upstream: objectProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: objectProperty("Files written for full result and upstream sidecar when inline fields are omitted or outputFile is requested."),
-    inlineResultLimit: objectProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
+    outputFiles: outputFilesProperty(
+      "Files written for full result and upstream sidecar when inline fields are omitted or outputFile is requested.",
+      ["outputFile", "upstreamFile"],
+    ),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
   }),
   figma_repl_lookup: toolOutputSchema({
     kind: stringProperty("Lookup kind: docs or api."),
@@ -371,12 +386,12 @@ function stringProperty(description: string): Record<string, unknown> {
   return { type: "string", description };
 }
 
-function booleanProperty(description: string): Record<string, unknown> {
-  return { type: "boolean", description };
+function booleanProperty(description: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { type: "boolean", description, ...extra };
 }
 
-function numberProperty(description: string): Record<string, unknown> {
-  return { type: "number", description };
+function numberProperty(description: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { type: "number", description, ...extra };
 }
 
 function objectProperty(description: string): Record<string, unknown> {
@@ -397,6 +412,201 @@ function stringArrayProperty(description: string): Record<string, unknown> {
 
 function enumProperty(values: string[], description: string): Record<string, unknown> {
   return { type: "string", enum: values, description };
+}
+
+function inlineResultLimitInputProperty(description: string): Record<string, unknown> {
+  return numberProperty(description, {
+    default: DEFAULT_INLINE_RESULT_LIMIT_BYTES,
+    minimum: 0,
+    maximum: MAX_INLINE_RESULT_LIMIT_BYTES,
+  });
+}
+
+function taskPlanStepProperty(description: string): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: {
+      id: stringProperty("Optional stable step id used by output references and templates."),
+      type: stringProperty("Task-plan step type, for example script-file, asset-manifest, screenshot-capture, or upstream-tool."),
+      args: objectProperty("Tool-specific step arguments. Put all step tool inputs here."),
+    },
+    additionalProperties: false,
+  };
+}
+
+function filePointerProperty(description = "Local file pointer."): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: {
+      path: stringProperty("Absolute local file path."),
+      bytes: numberProperty("File size in bytes."),
+      lineCount: numberProperty("Line count for text-like files; image and binary files use 0."),
+    },
+    required: ["path", "bytes", "lineCount"],
+    additionalProperties: true,
+  };
+}
+
+function outputFilesProperty(
+  description: string,
+  keys: readonly string[],
+): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: Object.fromEntries(
+      keys.map((key) => [key, filePointerProperty(outputFilePointerDescription(key))]),
+    ),
+    additionalProperties: true,
+  };
+}
+
+function outputFilePointerDescription(key: string): string {
+  switch (key) {
+    case "outputFile":
+      return "Primary local output file pointer.";
+    case "upstreamFile":
+      return "Upstream envelope sidecar file pointer.";
+    case "metadataFile":
+      return "Capture metadata JSON file pointer.";
+    case "diagnosticsFile":
+      return "Split diagnostics JSON file pointer.";
+    case "summaryFile":
+      return "Split summary Markdown file pointer.";
+    case "compiledScriptFile":
+      return "Failure-only compiled script wrapper file pointer.";
+    default:
+      return "Local output file pointer.";
+  }
+}
+
+function upstreamEnvelopeProperty(description: string): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: {
+      kind: enumProperty(["json", "text", "unknown"], "Upstream output representation kind."),
+      ok: booleanProperty("Whether the upstream envelope represents a successful upstream result."),
+      payload: jsonProperty("Parsed upstream JSON payload when kind is json and the field is not omitted inline."),
+      text: stringProperty("Upstream text output when kind is text and the field is not omitted inline."),
+      upstreamError: objectProperty("Normalized upstream error when available."),
+    },
+    additionalProperties: true,
+  };
+}
+
+function inlineResultLimitProperty(description: string): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: {
+      limit: numberProperty("Effective inline byte limit."),
+      limitBytes: numberProperty("Effective inline byte limit."),
+      limitHuman: stringProperty("Human-readable inline byte limit, for example 4 KB."),
+      omitted: {
+        type: "array",
+        description: "Inline fields omitted because they exceeded the effective byte limit.",
+        items: {
+          type: "object",
+          properties: {
+            field: stringProperty("Omitted result field path, for example upstream.payload."),
+            bytes: numberProperty("Omitted field size in bytes."),
+            limit: numberProperty("Effective inline byte limit."),
+            bytesHuman: stringProperty("Human-readable omitted field size."),
+            limitHuman: stringProperty("Human-readable inline byte limit."),
+          },
+          additionalProperties: true,
+        },
+      },
+    },
+    additionalProperties: true,
+  };
+}
+
+function helperUsageProperty(description: string): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: {
+      direct: stringArrayProperty("Helpers or $ properties directly referenced by the script."),
+      transitive: stringArrayProperty("Additional helpers injected because referenced helpers depend on them."),
+      runtimeBase: stringArrayProperty("Base $ runtime properties injected by the runner."),
+      injected: stringArrayProperty("Final injected helper/property list."),
+    },
+    additionalProperties: true,
+  };
+}
+
+function scriptMetadataProperty(description: string): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: {
+      inputFile: stringProperty("Workspace-relative input script file when available."),
+      scriptPath: stringProperty("Absolute script path used by the runner."),
+      bytes: numberProperty("Source script size in bytes."),
+      injectedHelpers: stringArrayProperty("Final injected helper/property list."),
+      helperUsage: helperUsageProperty("Structured helper usage report."),
+    },
+    additionalProperties: true,
+  };
+}
+
+function capturePreviewProperty(description: string): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: {
+      enabled: booleanProperty("Whether preview was requested."),
+      kind: enumProperty(["mcp-image"], "Preview delivery kind when an image preview is returned."),
+      mimeType: enumProperty(["image/webp"], "Preview MIME type."),
+      width: numberProperty("Preview width in pixels."),
+      height: numberProperty("Preview height in pixels."),
+      bytes: numberProperty("Preview payload size in bytes."),
+      source: enumProperty(["outputFile"], "Preview source."),
+      omittedReason: enumProperty(["not-image", "generation-failed"], "Reason preview content was not returned."),
+      error: stringProperty("Preview generation error message when omittedReason is generation-failed."),
+    },
+    additionalProperties: true,
+  };
+}
+
+function compactAssetResultsProperty(description: string): Record<string, unknown> {
+  return {
+    type: "array",
+    description,
+    items: {
+      type: "object",
+      properties: {
+        ok: booleanProperty("Whether this asset operation succeeded."),
+        path: stringProperty("Local asset path."),
+        targetNodeId: stringProperty("Resolved target Figma node id."),
+        handle: stringProperty("Local handle associated with the target when available."),
+        name: stringProperty("Asset display name when available."),
+        toolName: stringProperty("Upstream asset/upload tool used."),
+        upload: objectProperty("Compact upload summary."),
+        validation: objectProperty("Compact target validation result."),
+        error: objectProperty("Compact per-asset error."),
+        upstreamSummary: stringProperty("Compact upstream summary text."),
+      },
+      additionalProperties: true,
+    },
+  };
+}
+
+function taskChangeProperty(description: string): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: {
+      previous: objectProperty("Previous active task/session file pointers before prepare_task."),
+      current: objectProperty("Current active task/session file pointers after prepare_task."),
+      changed: booleanProperty("Whether the session active task changed."),
+    },
+    additionalProperties: true,
+  };
 }
 
 function toolOutputSchema(properties: Record<string, unknown>): Record<string, unknown> {

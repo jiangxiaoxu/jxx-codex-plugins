@@ -94,6 +94,8 @@ import {
 import {
   DEFAULT_WORKSPACE_DIR_NAME,
   TASK_WORKSPACE_ROOT_ENV,
+  captureImageOutputFilePath,
+  createCapturePreviewImage,
   createScriptOutputWriter,
   createSessionWorkspace,
   effectiveInlineResultLimit,
@@ -240,6 +242,13 @@ export interface FigmaReplFilePointer {
   lineCount: number;
 }
 
+interface FigmaReplImageContent {
+  [key: string]: unknown;
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
 export interface FigmaReplOutputFiles {
   [key: string]: unknown;
   diagnosticsFile?: FigmaReplFilePointer;
@@ -320,6 +329,7 @@ export interface FigmaReplScriptMetadata {
   targetPageId?: string;
   expectedSurface?: FigmaReplSurface;
   injectedHelpers: string[];
+  helperUsage?: Record<string, unknown>;
   compiledScriptBytes: number;
 }
 
@@ -372,6 +382,18 @@ export interface FigmaReplCaptureQaResult {
   warnings: string[];
 }
 
+export interface FigmaReplCapturePreviewResult {
+  [key: string]: unknown;
+  enabled: boolean;
+  kind?: "mcp-image";
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  bytes?: number;
+  source?: string;
+  omittedReason?: string;
+}
+
 export interface FigmaReplCaptureNodeResult extends FigmaReplUpstreamBackedResult {
   session: FigmaReplPublicSession;
   outputFile?: string;
@@ -387,6 +409,7 @@ export interface FigmaReplCaptureNodeResult extends FigmaReplUpstreamBackedResul
   height?: number;
   sourceUrl?: string;
   qa?: FigmaReplCaptureQaResult;
+  preview?: FigmaReplCapturePreviewResult;
   outputFiles?: FigmaReplOutputFiles;
 }
 
@@ -1600,13 +1623,21 @@ async function handleCaptureNode(
   args: FigmaReplCaptureNodeArguments,
   runtime: FigmaReplRuntime,
 ): Promise<Record<string, unknown>> {
-  return makeJsonToolResult(await executeCaptureNode(args, runtime));
+  const result = await executeCaptureNodeForTool(args, runtime);
+  return makeJsonToolResult(result.payload, result.previewContent ? [result.previewContent] : undefined);
 }
 
 async function executeCaptureNode(
   args: FigmaReplCaptureNodeArguments,
   runtime: FigmaReplRuntime,
 ): Promise<Record<string, unknown>> {
+  return (await executeCaptureNodeForTool(args, runtime)).payload;
+}
+
+async function executeCaptureNodeForTool(
+  args: FigmaReplCaptureNodeArguments,
+  runtime: FigmaReplRuntime,
+): Promise<{ payload: Record<string, unknown>; previewContent?: FigmaReplImageContent }> {
   assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const targetResolution = resolveSessionTargetInput(args.target, session);
@@ -1614,7 +1645,8 @@ async function executeCaptureNode(
   if (!nodeId) {
     throw new Error('Tool argument "target" is required.');
   }
-  const outputFile = resolveRequiredWorkspaceAwareFile(args.outputFile, session, "outputFile");
+  const requestedOutputFile = resolveCaptureOutputFile(args, session);
+  const plannedImageOutputFile = captureImageOutputFilePath(requestedOutputFile);
   const metadataFile = resolveWorkspaceAwareFile(args.metadataFile, session, "metadataFile");
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = selectUpstreamTool({
@@ -1637,7 +1669,7 @@ async function executeCaptureNode(
     const payload = {
       ok: false,
       session: responseSession(session),
-      plannedOutputFile: outputFile,
+      plannedOutputFile: plannedImageOutputFile,
       nodeId,
       handle: targetResolution.handle,
       toolName: tool.name,
@@ -1651,13 +1683,15 @@ async function executeCaptureNode(
       });
     }
     return {
-      ...payload,
-      outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
+      payload: {
+        ...payload,
+        outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
+      },
     };
   }
-  const saved = await writeCaptureOutputFile(outputFile, upstream, parsed);
+  const saved = await writeCaptureOutputFile(requestedOutputFile, upstream, parsed);
   const outputFileMetadata = {
-    path: outputFile,
+    path: saved.path,
     bytes: saved.bytes,
     lineCount: saved.lineCount,
   };
@@ -1670,13 +1704,14 @@ async function executeCaptureNode(
     tool: "figma_repl_capture_node",
     title: args.title,
     mode: "capture",
-    summary: `Captured node ${nodeId} to ${outputFile}.`,
+    summary: `Captured node ${nodeId} to ${saved.path}.`,
     nodeIds: [nodeId],
   });
+  const preview = await maybeCreateCapturePreview(saved, args.preview === true);
   const payload = {
     ok: true,
     session: responseSession(session),
-    outputFile,
+    outputFile: saved.path,
     nodeId,
     handle: targetResolution.handle,
     toolName: tool.name,
@@ -1688,6 +1723,7 @@ async function executeCaptureNode(
     height: saved.height,
     sourceUrl: saved.sourceUrl,
     qa: createCaptureQa(saved),
+    preview: preview.metadata,
     upstream: upstreamEnvelope(parsed, { includePayload: false }),
   };
   if (metadataFile) {
@@ -1697,9 +1733,72 @@ async function executeCaptureNode(
     });
   }
   return {
-    ...payload,
-    outputFiles,
+    payload: {
+      ...payload,
+      outputFiles,
+    },
+    previewContent: preview.content,
   };
+}
+
+function resolveCaptureOutputFile(args: FigmaReplCaptureNodeArguments, session: FigmaReplSession): string {
+  const explicit = resolveWorkspaceAwareFile(args.outputFile, session, "outputFile");
+  if (explicit) {
+    return explicit;
+  }
+  const fileName = `capture-${new Date().toISOString().replace(/[^\dTZ]/gu, "")}`;
+  if (session.workspace) {
+    return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "outputFile");
+  }
+  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve(tmpdir(), "figma-repl-mcp", "tasks");
+  if (!isAbsolute(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve(root, "capture-results", session.slug, fileName);
+}
+
+async function maybeCreateCapturePreview(
+  saved: { path: string; kind: "image" | "text"; mimeType: string },
+  enabled: boolean,
+): Promise<{ metadata?: FigmaReplCapturePreviewResult; content?: FigmaReplImageContent }> {
+  if (!enabled) {
+    return {};
+  }
+  if (saved.kind !== "image") {
+    return {
+      metadata: {
+        enabled: true,
+        omittedReason: "not-image",
+      },
+    };
+  }
+  try {
+    const preview = await createCapturePreviewImage(saved.path);
+    return {
+      metadata: {
+        enabled: true,
+        kind: "mcp-image",
+        mimeType: preview.mimeType,
+        width: preview.width,
+        height: preview.height,
+        bytes: preview.bytes,
+        source: "outputFile",
+      },
+      content: {
+        type: "image",
+        data: preview.data.toString("base64"),
+        mimeType: preview.mimeType,
+      },
+    };
+  } catch (error) {
+    return {
+      metadata: {
+        enabled: true,
+        omittedReason: "generation-failed",
+        error: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
 }
 
 async function handleRunTaskPlan(
@@ -4631,12 +4730,12 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Initialize a file workspace once, then keep task script/result pairs in that file-context folder.",
       "Run dryRun first for file-aware diagnostics without upstream calls.",
       "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime.",
+      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. File-script metadata includes helperUsage.direct/transitive/runtimeBase for audit.",
       "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
-      "Use figma_repl_capture_node to write final visual QA captures to a local file; it returns bytes, MIME, dimensions when detectable, sourceUrl, and QA warnings. Pass metadataFile when you need the complete upstream capture envelope.",
+      "Use figma_repl_capture_node to write final visual QA captures to local image files; default and recommended image output is WebP, while explicit .png/.jpg/.jpeg outputFile extensions are preserved. Pass preview=true only when the MCP response should include a WebP image preview. Pass metadataFile when you need the complete upstream capture envelope.",
       "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.outputFile.path}}.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
@@ -4771,7 +4870,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     captureNode: {
       tool: "figma_repl_capture_node",
       recommendedCalls: {
-        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
+        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.webp", preview: true },
       },
       advancedArguments: ["metadataFile", "toolName", "arguments", "refresh"],
       avoidUnless: {
@@ -4828,13 +4927,13 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         "figma_repl_inspect with mode=inspect, mode=style, or mode=validate before mutation",
         "figma_repl_run_script_file with inputFile and dryRun=true for primary .figma.js workflows, output files, and line-aware repair",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through a manifest or official upload_assets",
-        "figma_repl_capture_node for final visual QA captures saved to local files",
+        "figma_repl_capture_node for final visual QA captures saved as local image files, WebP by default and PNG/JPEG when the outputFile extension requests it; add preview=true for a WebP MCP image preview",
         "figma_repl_run_task_plan for sequential file plans that combine script dry-runs/exec, asset manifests, captures, and upstream tool calls",
         "figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool",
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma_repl_mcp interface.",
-      responseShape: "Fixed structured payloads without session.history. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests keep compact inline assets and complete per-asset upstream envelopes in explicit result files.",
+      responseShape: "Fixed structured payloads without session.history. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and preview schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests keep compact inline assets and complete per-asset upstream envelopes in explicit result files.",
     },
     patterns: {
       text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
@@ -4929,14 +5028,14 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         tool: "figma_repl_capture_node",
         purpose: "Call an upstream screenshot/capture tool and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
         defaulting: "Uses explicit toolName/arguments templates when provided; otherwise selects an advertised screenshot-like upstream tool and infers node id only from recognizable schema fields.",
-        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, mimeType, bytes, width/height when detectable, sourceUrl when downloaded, qa warnings, compact inline upstream, and optional metadataFile with the full upstream capture envelope.",
+        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, optional WebP preview metadata when preview=true, and optional metadataFile with the full upstream capture envelope.",
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",
         stepTypes: ["script-file", "asset-manifest", "upload_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
         references: "Later step arguments can reference prior outputs with {{outputs.stepId.outputFile.path}} or {{steps.stepId.outputFiles.outputFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
-        result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, and <step-id>.png plus <step-id>.capture.result.json.",
+        result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, <step-id>.webp for image captures, and <step-id>.capture.result.json.",
       },
     },
     queryStrategy: {
@@ -5407,6 +5506,7 @@ function responseScriptMetadata(
     targetPageId: metadata.targetPageId,
     expectedSurface: metadata.expectedSurface,
     injectedHelpers: metadata.injectedHelpers,
+    helperUsage: metadata.helperUsage,
     compiledScriptBytes: metadata.compiledScriptBytes,
   }) as Record<string, unknown>;
 }
@@ -5605,7 +5705,7 @@ function sanitizeSessionId(sessionId: string): string {
   return value.slice(0, 120);
 }
 
-function makeJsonToolResult(value: unknown): Record<string, unknown> {
+function makeJsonToolResult(value: unknown, extraContent: Array<Record<string, unknown>> = []): Record<string, unknown> {
   const structuredContent = removeUndefined(value);
   return {
     structuredContent,
@@ -5614,6 +5714,7 @@ function makeJsonToolResult(value: unknown): Record<string, unknown> {
         type: "text",
         text: summarizeToolResult(structuredContent),
       },
+      ...extraContent,
     ],
   };
 }

@@ -48,6 +48,14 @@ export interface FigmaReplScriptHelperSelection {
   helperNames: Set<FigmaReplScriptHelperName>;
   baseProperties: Set<string>;
   injectedHelpers: string[];
+  helperUsage: FigmaReplScriptHelperUsageReport;
+}
+
+export interface FigmaReplScriptHelperUsageReport {
+  direct: string[];
+  transitive: string[];
+  runtimeBase: string[];
+  injected: string[];
 }
 
 export interface CompiledFigmaReplScriptFile {
@@ -59,6 +67,7 @@ export interface CompiledFigmaReplScriptFile {
     sourceLineCount: number;
     helperApiVersion: string;
     injectedHelpers: string[];
+    helperUsage: FigmaReplScriptHelperUsageReport;
     targetPageId?: string;
     expectedSurface?: FigmaReplSurface;
     diagnosticsCount: number;
@@ -101,6 +110,7 @@ export function compileFigmaReplScriptFile(options: {
       sourceLineCount: countLines(options.source),
       helperApiVersion: "1",
       injectedHelpers: helperSelection.injectedHelpers,
+      helperUsage: helperSelection.helperUsage,
       targetPageId: options.targetPageId,
       expectedSurface: options.expectedSurface,
       diagnosticsCount: diagnostics.length,
@@ -116,6 +126,8 @@ export function resolveFigmaReplScriptHelperSelection(
   source: string,
 ): FigmaReplScriptHelperSelection {
   const usage = analyzeFigmaReplScriptHelperUsage(source);
+  const directHelperNames = new Set(usage.helperNames);
+  const directBaseProperties = new Set(usage.baseProperties);
   const helperNames = new Set(usage.helperNames);
   expandFigmaReplScriptHelperDependencies(helperNames);
   const baseProperties = new Set(usage.baseProperties);
@@ -127,10 +139,25 @@ export function resolveFigmaReplScriptHelperSelection(
     ...Array.from(baseProperties).sort().map((property) => `$.${property}`),
     ...FIGMA_REPL_SCRIPT_HELPERS.filter((helper) => helperNames.has(helper)).map((helper) => `$.${helper}`),
   ].filter((item): item is string => item !== undefined);
+  const direct = [
+    usage.usesDollarFunction ? "$" : undefined,
+    ...Array.from(directBaseProperties).sort().map((property) => `$.${property}`),
+    ...FIGMA_REPL_SCRIPT_HELPERS.filter((helper) => directHelperNames.has(helper)).map((helper) => `$.${helper}`),
+  ].filter((item): item is string => item !== undefined);
+  const transitive = FIGMA_REPL_SCRIPT_HELPERS
+    .filter((helper) => helperNames.has(helper) && !directHelperNames.has(helper))
+    .map((helper) => `$.${helper}`);
+  const runtimeBase = Array.from(baseProperties).sort().map((property) => `$.${property}`);
   return {
     helperNames,
     baseProperties,
     injectedHelpers,
+    helperUsage: {
+      direct,
+      transitive,
+      runtimeBase,
+      injected: injectedHelpers,
+    },
   };
 }
 

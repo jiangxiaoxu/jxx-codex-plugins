@@ -59,6 +59,7 @@ export declare function resolveScriptInputPath(args: FigmaReplRunScriptFileArgum
 export declare function resolveRequiredWorkspaceAwareFile(value: unknown, session: FigmaReplWorkspaceFileSession, argumentName: string): string;
 export declare function resolveWorkspaceAwareFile(value: unknown, session: FigmaReplWorkspaceFileSession, argumentName: string): string | undefined;
 export declare function writeCaptureOutputFile(outputFile: string, upstream: unknown, parsed: ParsedCaptureResult): Promise<{
+    path: string;
     kind: "image" | "text";
     mimeType: string;
     bytes: number;
@@ -66,6 +67,15 @@ export declare function writeCaptureOutputFile(outputFile: string, upstream: unk
     width?: number;
     height?: number;
     sourceUrl?: string;
+}>;
+export declare function captureImageOutputFilePath(outputFile: string): string;
+export declare function captureTextOutputFilePath(outputFile: string): string;
+export declare function createCapturePreviewImage(inputFile: string): Promise<{
+    data: Buffer;
+    mimeType: "image/webp";
+    bytes: number;
+    width?: number;
+    height?: number;
 }>;
 export declare function loadTaskPlan(args: FigmaReplRunTaskPlanArguments, session: FigmaReplWorkspaceFileSession): Promise<{
     planPath?: string;

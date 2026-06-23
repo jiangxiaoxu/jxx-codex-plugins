@@ -126,6 +126,7 @@ export interface FigmaReplScriptMetadata {
     targetPageId?: string;
     expectedSurface?: FigmaReplSurface;
     injectedHelpers: string[];
+    helperUsage?: Record<string, unknown>;
     compiledScriptBytes: number;
 }
 export interface FigmaReplInlineResultLimit {
@@ -178,6 +179,17 @@ export interface FigmaReplCaptureQaResult {
     ok: boolean;
     warnings: string[];
 }
+export interface FigmaReplCapturePreviewResult {
+    [key: string]: unknown;
+    enabled: boolean;
+    kind?: "mcp-image";
+    mimeType?: string;
+    width?: number;
+    height?: number;
+    bytes?: number;
+    source?: string;
+    omittedReason?: string;
+}
 export interface FigmaReplCaptureNodeResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplPublicSession;
     outputFile?: string;
@@ -193,6 +205,7 @@ export interface FigmaReplCaptureNodeResult extends FigmaReplUpstreamBackedResul
     height?: number;
     sourceUrl?: string;
     qa?: FigmaReplCaptureQaResult;
+    preview?: FigmaReplCapturePreviewResult;
     outputFiles?: FigmaReplOutputFiles;
 }
 export interface FigmaReplTaskPlanStepResult {
