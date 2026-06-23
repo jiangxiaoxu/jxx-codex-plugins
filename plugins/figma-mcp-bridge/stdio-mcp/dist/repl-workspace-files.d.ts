@@ -70,12 +70,16 @@ export declare function writeCaptureOutputFile(outputFile: string, upstream: unk
 }>;
 export declare function captureImageOutputFilePath(outputFile: string): string;
 export declare function captureTextOutputFilePath(outputFile: string): string;
-export declare function createCapturePreviewImage(inputFile: string): Promise<{
+export declare function createCaptureThumbnailImage(inputFile: string, maxSize: number): Promise<{
+    path: string;
     data: Buffer;
     mimeType: "image/png";
     bytes: number;
-    width?: number;
-    height?: number;
+    lineCount: 0;
+    width: number;
+    height: number;
+    sourceWidth: number;
+    sourceHeight: number;
 }>;
 export declare function loadTaskPlan(args: FigmaReplRunTaskPlanArguments, session: FigmaReplWorkspaceFileSession): Promise<{
     planPath?: string;

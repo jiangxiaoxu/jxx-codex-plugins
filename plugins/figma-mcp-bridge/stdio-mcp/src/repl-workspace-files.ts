@@ -1,6 +1,7 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
+import { deflateSync, inflateSync } from "node:zlib";
 import type { FigmaReplDiagnostic } from "./repl-script-runner.js";
 import type {
   FigmaReplRunScriptFileArguments,
@@ -11,6 +12,7 @@ import { asTaskPlanSteps } from "./repl-tool-args.js";
 
 export const TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 export const DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
+const PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
 
 type CaptureImageMimeType = "image/png";
 
@@ -217,18 +219,98 @@ export function captureTextOutputFilePath(outputFile: string): string {
   return withFileExtension(outputFile, ".txt");
 }
 
-export async function createCapturePreviewImage(
+export async function createCaptureThumbnailImage(
   inputFile: string,
-): Promise<{ data: Buffer; mimeType: "image/png"; bytes: number; width?: number; height?: number }> {
-  const data = await readFile(inputFile);
-  const dimensions = readPngDimensions(data);
+  maxSize: number,
+): Promise<{
+  path: string;
+  data: Buffer;
+  mimeType: "image/png";
+  bytes: number;
+  lineCount: 0;
+  width: number;
+  height: number;
+  sourceWidth: number;
+  sourceHeight: number;
+}> {
+  const input = await readFile(inputFile);
+  const source = decodePngRgba(input);
+  const safeMaxSize = Math.max(1, Math.floor(maxSize));
+  const scale = Math.min(1, safeMaxSize / Math.max(source.width, source.height));
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  const data = width === source.width && height === source.height
+    ? input
+    : encodePngRgba({
+      width,
+      height,
+      data: resizeRgbaBilinear(source, width, height),
+    });
+  const path = captureThumbnailOutputFilePath(inputFile);
+  await writeFile(path, data);
   return {
+    path,
     data,
     mimeType: "image/png",
     bytes: data.byteLength,
-    width: dimensions?.width,
-    height: dimensions?.height,
+    lineCount: 0,
+    width,
+    height,
+    sourceWidth: source.width,
+    sourceHeight: source.height,
   };
+}
+
+function captureThumbnailOutputFilePath(outputFile: string): string {
+  const extension = extname(outputFile);
+  return extension
+    ? `${outputFile.slice(0, -extension.length)}.thumb.png`
+    : `${outputFile}.thumb.png`;
+}
+
+function resizeRgbaBilinear(
+  source: { width: number; height: number; data: Buffer },
+  width: number,
+  height: number,
+): Buffer {
+  const target = Buffer.alloc(width * height * 4);
+  const xRatio = width > 1 ? (source.width - 1) / (width - 1) : 0;
+  const yRatio = height > 1 ? (source.height - 1) / (height - 1) : 0;
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = y * yRatio;
+    const y0 = Math.floor(sourceY);
+    const y1 = Math.min(source.height - 1, y0 + 1);
+    const yWeight = sourceY - y0;
+    for (let x = 0; x < width; x += 1) {
+      const sourceX = x * xRatio;
+      const x0 = Math.floor(sourceX);
+      const x1 = Math.min(source.width - 1, x0 + 1);
+      const xWeight = sourceX - x0;
+      const targetIndex = (y * width + x) * 4;
+      const topLeftIndex = (y0 * source.width + x0) * 4;
+      const topRightIndex = (y0 * source.width + x1) * 4;
+      const bottomLeftIndex = (y1 * source.width + x0) * 4;
+      const bottomRightIndex = (y1 * source.width + x1) * 4;
+      for (let channel = 0; channel < 4; channel += 1) {
+        const top = lerp(
+          source.data[topLeftIndex + channel],
+          source.data[topRightIndex + channel],
+          xWeight,
+        );
+        const bottom = lerp(
+          source.data[bottomLeftIndex + channel],
+          source.data[bottomRightIndex + channel],
+          xWeight,
+        );
+        target[targetIndex + channel] = Math.round(lerp(top, bottom, yWeight));
+      }
+    }
+  }
+  return target;
+}
+
+function lerp(a: number, b: number, weight: number): number {
+  return a + (b - a) * weight;
 }
 
 async function writeCaptureImageOutputFile(
@@ -297,6 +379,193 @@ function isPngBuffer(buffer: Buffer): boolean {
     buffer[5] === 0x0a &&
     buffer[6] === 0x1a &&
     buffer[7] === 0x0a;
+}
+
+function decodePngRgba(buffer: Buffer): { width: number; height: number; data: Buffer } {
+  if (!isPngBuffer(buffer)) {
+    throw new Error("Capture thumbnail generation requires a PNG input file.");
+  }
+  let offset = PNG_SIGNATURE.length;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  let interlaceMethod = 0;
+  const idatChunks: Buffer[] = [];
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString("ascii", offset + 4, offset + 8);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    if (dataEnd + 4 > buffer.length) {
+      throw new Error("PNG chunk exceeds input size.");
+    }
+    const chunkData = buffer.subarray(dataStart, dataEnd);
+    if (type === "IHDR") {
+      width = chunkData.readUInt32BE(0);
+      height = chunkData.readUInt32BE(4);
+      bitDepth = chunkData[8];
+      colorType = chunkData[9];
+      interlaceMethod = chunkData[12];
+    } else if (type === "IDAT") {
+      idatChunks.push(chunkData);
+    } else if (type === "IEND") {
+      break;
+    }
+    offset = dataEnd + 4;
+  }
+  if (!width || !height || idatChunks.length === 0) {
+    throw new Error("PNG input is missing IHDR or IDAT data.");
+  }
+  if (bitDepth !== 8 || interlaceMethod !== 0) {
+    throw new Error("Capture thumbnail generation supports only 8-bit non-interlaced PNG files.");
+  }
+  const bytesPerPixel = pngBytesPerPixel(colorType);
+  const scanlineLength = width * bytesPerPixel;
+  const inflated = inflateSync(Buffer.concat(idatChunks));
+  const unfiltered = Buffer.alloc(scanlineLength * height);
+  let inputOffset = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filter = inflated[inputOffset];
+    inputOffset += 1;
+    const rowOffset = y * scanlineLength;
+    const previousRowOffset = rowOffset - scanlineLength;
+    for (let x = 0; x < scanlineLength; x += 1) {
+      const raw = inflated[inputOffset + x];
+      const left = x >= bytesPerPixel ? unfiltered[rowOffset + x - bytesPerPixel] : 0;
+      const up = y > 0 ? unfiltered[previousRowOffset + x] : 0;
+      const upLeft = y > 0 && x >= bytesPerPixel ? unfiltered[previousRowOffset + x - bytesPerPixel] : 0;
+      unfiltered[rowOffset + x] = (raw + pngFilterPredictor(filter, left, up, upLeft)) & 0xff;
+    }
+    inputOffset += scanlineLength;
+  }
+  return {
+    width,
+    height,
+    data: pngScanlinesToRgba(unfiltered, width, height, colorType, bytesPerPixel),
+  };
+}
+
+function pngBytesPerPixel(colorType: number): number {
+  switch (colorType) {
+    case 0:
+      return 1;
+    case 2:
+      return 3;
+    case 4:
+      return 2;
+    case 6:
+      return 4;
+    default:
+      throw new Error(`Unsupported PNG color type for capture thumbnail generation: ${colorType}.`);
+  }
+}
+
+function pngFilterPredictor(filter: number, left: number, up: number, upLeft: number): number {
+  switch (filter) {
+    case 0:
+      return 0;
+    case 1:
+      return left;
+    case 2:
+      return up;
+    case 3:
+      return Math.floor((left + up) / 2);
+    case 4:
+      return paethPredictor(left, up, upLeft);
+    default:
+      throw new Error(`Unsupported PNG filter type for capture thumbnail generation: ${filter}.`);
+  }
+}
+
+function paethPredictor(left: number, up: number, upLeft: number): number {
+  const estimate = left + up - upLeft;
+  const leftDistance = Math.abs(estimate - left);
+  const upDistance = Math.abs(estimate - up);
+  const upLeftDistance = Math.abs(estimate - upLeft);
+  if (leftDistance <= upDistance && leftDistance <= upLeftDistance) {
+    return left;
+  }
+  return upDistance <= upLeftDistance ? up : upLeft;
+}
+
+function pngScanlinesToRgba(
+  scanlines: Buffer,
+  width: number,
+  height: number,
+  colorType: number,
+  bytesPerPixel: number,
+): Buffer {
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let index = 0; index < width * height; index += 1) {
+    const sourceIndex = index * bytesPerPixel;
+    const targetIndex = index * 4;
+    if (colorType === 0) {
+      const value = scanlines[sourceIndex];
+      rgba[targetIndex] = value;
+      rgba[targetIndex + 1] = value;
+      rgba[targetIndex + 2] = value;
+      rgba[targetIndex + 3] = 255;
+    } else if (colorType === 2) {
+      rgba[targetIndex] = scanlines[sourceIndex];
+      rgba[targetIndex + 1] = scanlines[sourceIndex + 1];
+      rgba[targetIndex + 2] = scanlines[sourceIndex + 2];
+      rgba[targetIndex + 3] = 255;
+    } else if (colorType === 4) {
+      const value = scanlines[sourceIndex];
+      rgba[targetIndex] = value;
+      rgba[targetIndex + 1] = value;
+      rgba[targetIndex + 2] = value;
+      rgba[targetIndex + 3] = scanlines[sourceIndex + 1];
+    } else {
+      rgba[targetIndex] = scanlines[sourceIndex];
+      rgba[targetIndex + 1] = scanlines[sourceIndex + 1];
+      rgba[targetIndex + 2] = scanlines[sourceIndex + 2];
+      rgba[targetIndex + 3] = scanlines[sourceIndex + 3];
+    }
+  }
+  return rgba;
+}
+
+function encodePngRgba(input: { width: number; height: number; data: Buffer }): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(input.width, 0);
+  ihdr.writeUInt32BE(input.height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const scanlineLength = input.width * 4;
+  const scanlines = Buffer.alloc((scanlineLength + 1) * input.height);
+  for (let y = 0; y < input.height; y += 1) {
+    const targetOffset = y * (scanlineLength + 1);
+    scanlines[targetOffset] = 0;
+    input.data.copy(scanlines, targetOffset + 1, y * scanlineLength, (y + 1) * scanlineLength);
+  }
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(scanlines)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const typeBytes = Buffer.from(type, "ascii");
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBytes, data])), 0);
+  return Buffer.concat([length, typeBytes, data, crc]);
+}
+
+function crc32(buffer: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 function resolveCaptureImageOutput(path: string): { path: string; mimeType: CaptureImageMimeType } {

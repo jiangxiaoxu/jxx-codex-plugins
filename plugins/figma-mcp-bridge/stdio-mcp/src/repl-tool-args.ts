@@ -93,7 +93,8 @@ export interface FigmaReplCaptureNodeArguments {
   sessionId?: string;
   target?: unknown;
   outputFile?: string;
-  preview?: boolean;
+  thumbnail?: boolean;
+  thumbnailMaxSize?: number;
   metadataFile?: string;
 }
 

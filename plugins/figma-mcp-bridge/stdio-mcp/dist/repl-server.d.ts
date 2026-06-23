@@ -199,15 +199,19 @@ export interface FigmaReplCaptureQaResult {
     ok: boolean;
     warnings: string[];
 }
-export interface FigmaReplCapturePreviewResult {
+export interface FigmaReplCaptureThumbnailResult {
     [key: string]: unknown;
     enabled: boolean;
     kind?: "mcp-image";
     mimeType?: string;
+    path?: string;
     width?: number;
     height?: number;
     bytes?: number;
+    maxSize?: number;
     source?: string;
+    sourceWidth?: number;
+    sourceHeight?: number;
     omittedReason?: string;
 }
 export interface FigmaReplCaptureNodeResult extends FigmaReplUpstreamBackedResult {
@@ -225,7 +229,7 @@ export interface FigmaReplCaptureNodeResult extends FigmaReplUpstreamBackedResul
     height?: number;
     sourceUrl?: string;
     qa?: FigmaReplCaptureQaResult;
-    preview?: FigmaReplCapturePreviewResult;
+    thumbnail?: FigmaReplCaptureThumbnailResult;
     outputFiles?: FigmaReplOutputFiles;
 }
 export interface FigmaReplTaskPlanStepResult {
