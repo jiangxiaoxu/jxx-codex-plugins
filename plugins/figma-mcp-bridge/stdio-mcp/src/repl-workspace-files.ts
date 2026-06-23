@@ -1,7 +1,6 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
-import sharp from "sharp";
 import type { FigmaReplDiagnostic } from "./repl-script-runner.js";
 import type {
   FigmaReplRunScriptFileArguments,
@@ -17,6 +16,9 @@ const CAPTURE_JPEG_OPTIONS = { quality: 98 } as const;
 
 type CaptureImageFormat = "webp" | "png" | "jpeg";
 type CaptureImageMimeType = "image/webp" | "image/png" | "image/jpeg";
+type SharpFactory = typeof import("sharp")["default"];
+
+let sharpFactoryPromise: Promise<SharpFactory> | undefined;
 
 export interface FigmaReplSessionWorkspace {
   root: string;
@@ -220,6 +222,7 @@ export async function createCapturePreviewImage(
   inputFile: string,
 ): Promise<{ data: Buffer; mimeType: "image/webp"; bytes: number; width?: number; height?: number }> {
   const input = await readFile(inputFile);
+  const sharp = await loadSharpFactory();
   const { data, info } = await sharp(input)
     .resize({ width: 320, height: 320, fit: "inside", withoutEnlargement: true })
     .webp(CAPTURE_WEBP_OPTIONS)
@@ -240,6 +243,7 @@ async function writeCaptureImageOutputFile(
 ): Promise<{ path: string; kind: "image"; mimeType: CaptureImageMimeType; bytes: number; lineCount: 0; width?: number; height?: number; sourceUrl?: string }> {
   const output = resolveCaptureImageOutput(outputFile);
   await mkdir(dirname(output.path), { recursive: true });
+  const sharp = await loadSharpFactory();
   const pipeline = sharp(buffer);
   const encoded = output.format === "png"
     ? pipeline.png()
@@ -258,6 +262,16 @@ async function writeCaptureImageOutputFile(
     height: info.height,
     sourceUrl,
   };
+}
+
+async function loadSharpFactory(): Promise<SharpFactory> {
+  sharpFactoryPromise ??= import("sharp")
+    .then((module) => module.default)
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Image capture conversion requires the optional native dependency "sharp", but it could not be loaded: ${message}`);
+    });
+  return sharpFactoryPromise;
 }
 
 function resolveCaptureImageOutput(path: string): { path: string; format: CaptureImageFormat; mimeType: CaptureImageMimeType } {

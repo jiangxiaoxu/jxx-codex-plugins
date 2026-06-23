@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import sharp from "sharp";
 import {
@@ -5700,6 +5701,26 @@ test("figma REPL stdio CLI exits cleanly when stdin ends", async () => {
   assert.equal(result.signal, null);
   assert.equal(result.stdout, "");
   assert.equal(result.stderr, "");
+});
+
+test("figma REPL stdio CLI completes initialize and lists local tools", async () => {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["dist/repl-stdio-cli.js"],
+    cwd: packageRoot,
+  });
+  const client = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+
+  try {
+    await client.connect(transport);
+    const result = await client.listTools();
+    assert.ok(result.tools.some((tool) => tool.name === "figma_repl_capture_node"));
+  } finally {
+    await client.close().catch(() => undefined);
+  }
 });
 
 function createFakeFigmaClient(calls, callToolImpl, options = {}) {
