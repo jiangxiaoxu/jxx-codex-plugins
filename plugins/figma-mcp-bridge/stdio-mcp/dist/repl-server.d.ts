@@ -156,11 +156,8 @@ export interface FigmaReplAssetManifestItem {
     targetNodeId: string;
     handle?: string;
     name?: string;
-    toolName: string;
-    upload?: unknown;
     validation?: unknown;
-    error?: FigmaReplPublicUpstreamError;
-    upstreamSummary?: string;
+    upstreamError?: FigmaReplPublicUpstreamError;
 }
 export interface FigmaReplApplyAssetManifestResult extends FigmaReplToolResultBase {
     session: FigmaReplPublicSession;
@@ -184,8 +181,8 @@ export interface FigmaReplDownloadAssetsTargetResult {
     name?: string;
     outputDir: string;
     downloadedFiles: FigmaReplDownloadedAssetFile[];
-    upstreamSummary?: string;
-    error?: FigmaReplPublicUpstreamError;
+    upstreamError?: FigmaReplPublicUpstreamError;
+    downloadError?: FigmaReplPublicUpstreamError;
 }
 export interface FigmaReplDownloadAssetsResult extends FigmaReplToolResultBase {
     session: FigmaReplPublicSession;
@@ -194,43 +191,14 @@ export interface FigmaReplDownloadAssetsResult extends FigmaReplToolResultBase {
     failures?: Array<Record<string, unknown>>;
     outputFiles: FigmaReplOutputFiles;
 }
-export interface FigmaReplCaptureQaResult {
-    [key: string]: unknown;
-    ok: boolean;
-    warnings: string[];
-}
-export interface FigmaReplCaptureThumbnailResult {
-    [key: string]: unknown;
-    enabled: boolean;
-    kind?: "mcp-image";
-    mimeType?: string;
-    path?: string;
-    width?: number;
-    height?: number;
-    bytes?: number;
-    maxSize?: number;
-    source?: string;
-    sourceWidth?: number;
-    sourceHeight?: number;
-    omittedReason?: string;
-}
-export interface FigmaReplCaptureNodeResult extends FigmaReplUpstreamBackedResult {
+export interface FigmaReplCaptureNodeResult extends FigmaReplToolResultBase {
     session: FigmaReplPublicSession;
     outputFile?: string;
-    plannedOutputFile?: string;
     nodeId: string;
-    handle?: string;
-    toolName: string;
-    kind?: string;
-    mimeType?: string;
     bytes?: number;
-    lineCount?: number;
     width?: number;
     height?: number;
-    sourceUrl?: string;
-    qa?: FigmaReplCaptureQaResult;
-    thumbnail?: FigmaReplCaptureThumbnailResult;
-    outputFiles?: FigmaReplOutputFiles;
+    upstreamError?: FigmaReplPublicUpstreamError;
 }
 export interface FigmaReplTaskPlanStepResult {
     [key: string]: unknown;
@@ -282,9 +250,10 @@ export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {
     avoid?: string[];
     suggestions?: Record<string, unknown>;
 }
-export interface FigmaReplInspectResult extends FigmaReplUpstreamBackedResult {
+export interface FigmaReplInspectResult extends FigmaReplToolResultBase {
     session: FigmaReplPublicSession;
     diagnostics: FigmaReplDiagnostic[];
+    upstreamError?: FigmaReplPublicUpstreamError;
 }
 export interface FigmaReplCallUpstreamToolResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplPublicSession;

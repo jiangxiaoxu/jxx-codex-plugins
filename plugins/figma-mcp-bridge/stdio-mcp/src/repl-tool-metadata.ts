@@ -113,18 +113,15 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_capture_node",
       description:
-        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { title, sessionId, target, outputFile? }. Image captures are saved as PNG; extensionless or non-.png outputFile values normalize to .png. A PNG MCP thumbnail image is returned by default.",
+        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { target, sessionId?, outputFile? }. Captures are saved as PNG; extensionless or non-.png outputFile values normalize to .png. Results return the local PNG path in structuredContent.outputFile.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
+        sessionId: stringProperty("Local REPL session id used for file context and history. Defaults to 'default'."),
         target: {
-          description: "Recommended target to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:\"$hero\" }, or { fileKey, nodeId }.",
+          description: "Target node to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:\"$hero\" }, or { fileKey, nodeId }.",
         },
-        outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .png; extensionless or non-.png values normalize to .png. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.png path for image captures."),
-        thumbnail: booleanProperty("Return a PNG MCP thumbnail image in the tool content. Defaults true; set false to save only the full PNG capture.", { default: true }),
-        thumbnailMaxSize: numberProperty("Maximum thumbnail width or height in pixels. Defaults to 512 and is capped at 4096.", { default: 512, minimum: 1, maximum: 4096 }),
-        metadataFile: stringProperty("Advanced optional capture metadata JSON. Use only when separate metadata is explicitly needed."),
-      }),
+        outputFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted outputFile auto-generates capture-<timestamp>.png."),
+      }, ["target"]),
     },
     {
       name: "figma_repl_run_task_plan",
@@ -278,17 +275,12 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_repl_capture_node: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
-    outputFile: stringProperty("Local output file path when capture succeeded."),
-    plannedOutputFile: stringProperty("Local output file path requested when capture failed before writing."),
+    outputFile: stringProperty("Absolute local PNG screenshot path when capture succeeded."),
     nodeId: stringProperty("Captured Figma node id."),
-    toolName: stringProperty("Upstream screenshot/capture tool name used."),
-    kind: enumProperty(["image", "text"], "Saved output kind."),
-    mimeType: enumProperty(["image/png", "text/plain"], "Detected output MIME type."),
-    thumbnail: captureThumbnailProperty("Optional PNG MCP thumbnail metadata when thumbnail:true is requested."),
-    qa: objectProperty("Compact capture QA hints."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope, compact inline and complete in outputFile when requested."),
+    bytes: numberProperty("Saved PNG file size in bytes."),
+    width: numberProperty("Saved PNG width in pixels."),
+    height: numberProperty("Saved PNG height in pixels."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
-    outputFiles: outputFilesProperty("Files written for result output.", ["outputFile", "thumbnailFile", "metadataFile"]),
   }),
   figma_repl_run_task_plan: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
@@ -322,9 +314,15 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_inspect: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
     diagnostics: arrayProperty("Read-mode diagnostics."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback."),
+    target: stringProperty("Inspected target selector or node id when returned by the inspect mode."),
+    summary: jsonProperty("Compact inspected node or selection summary when returned by the inspect mode."),
+    handles: objectProperty("Known handle map returned by read-side inspection when available."),
+    mode: stringProperty("Inspect mode marker when returned by the inspect mode."),
+    nodeCount: numberProperty("Inspected node count for style audits."),
+    style: objectProperty("Compact visual-token/style audit for mode=style."),
+    validations: arrayProperty("Handle validation results for mode=validate."),
+    validatedNodeIds: stringArrayProperty("Validated node ids for mode=validate."),
     upstreamError: objectProperty("Normalized upstream failure details when inspection failed."),
-    primaryFix: stringProperty("Suggested primary repair when inspection failed."),
   }),
   figma_repl_call_upstream_tool: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
@@ -491,8 +489,6 @@ function outputFilePointerDescription(key: string): string {
       return "Primary local output file pointer.";
     case "upstreamFile":
       return "Upstream envelope sidecar file pointer.";
-    case "thumbnailFile":
-      return "Capture thumbnail PNG file pointer.";
     case "metadataFile":
       return "Capture metadata JSON file pointer.";
     case "diagnosticsFile":
@@ -578,29 +574,6 @@ function scriptMetadataProperty(description: string): Record<string, unknown> {
   };
 }
 
-function captureThumbnailProperty(description: string): Record<string, unknown> {
-  return {
-    type: "object",
-    description,
-    properties: {
-      enabled: booleanProperty("Whether thumbnail was requested."),
-      kind: enumProperty(["mcp-image"], "Thumbnail delivery kind when an image thumbnail is returned."),
-      mimeType: enumProperty(["image/png"], "Thumbnail MIME type."),
-      path: stringProperty("Absolute local thumbnail PNG path."),
-      width: numberProperty("Thumbnail width in pixels."),
-      height: numberProperty("Thumbnail height in pixels."),
-      bytes: numberProperty("Thumbnail payload size in bytes."),
-      maxSize: numberProperty("Effective maximum thumbnail width or height in pixels."),
-      source: enumProperty(["thumbnailFile"], "Thumbnail source."),
-      sourceWidth: numberProperty("Full capture image width in pixels."),
-      sourceHeight: numberProperty("Full capture image height in pixels."),
-      omittedReason: enumProperty(["not-image", "generation-failed"], "Reason thumbnail content was not returned."),
-      error: stringProperty("Thumbnail generation error message when omittedReason is generation-failed."),
-    },
-    additionalProperties: true,
-  };
-}
-
 function compactAssetResultsProperty(description: string): Record<string, unknown> {
   return {
     type: "array",
@@ -613,11 +586,8 @@ function compactAssetResultsProperty(description: string): Record<string, unknow
         targetNodeId: stringProperty("Resolved target Figma node id."),
         handle: stringProperty("Local handle associated with the target when available."),
         name: stringProperty("Asset display name when available."),
-        toolName: stringProperty("Upstream asset/upload tool used."),
-        upload: objectProperty("Compact upload summary."),
         validation: objectProperty("Compact target validation result."),
-        error: objectProperty("Compact per-asset error."),
-        upstreamSummary: stringProperty("Compact upstream summary text."),
+        upstreamError: objectProperty("Compact per-asset upstream error."),
       },
       additionalProperties: true,
     },
@@ -654,8 +624,8 @@ function compactDownloadAssetResultsProperty(description: string): Record<string
             additionalProperties: true,
           },
         },
-        error: objectProperty("Compact per-target upstream or download error."),
-        upstreamSummary: stringProperty("Compact upstream summary text."),
+        upstreamError: objectProperty("Compact per-target upstream error."),
+        downloadError: objectProperty("Compact per-target local download error."),
       },
       additionalProperties: true,
     },

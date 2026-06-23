@@ -58,7 +58,6 @@ export {
   type FigmaReplCallUpstreamToolResult,
   type FigmaReplCaptureNodeArguments,
   type FigmaReplCaptureNodeResult,
-  type FigmaReplCaptureQaResult,
   type FigmaReplClient,
   type FigmaReplClientOptions,
   type FigmaReplDiagnostic,
