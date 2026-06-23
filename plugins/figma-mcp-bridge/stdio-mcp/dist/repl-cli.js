@@ -26759,7 +26759,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_capture_node",
-      description: "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { title, sessionId, target, outputFile? }. Image captures are saved as PNG; extensionless or non-.png outputFile values normalize to .png. preview:true adds a full-resolution PNG MCP image preview.",
+      description: "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { title, sessionId, target, outputFile? }. Image captures are saved as PNG; extensionless or non-.png outputFile values normalize to .png. A PNG MCP thumbnail image is returned by default.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -26767,7 +26767,8 @@ function createReplToolDescriptions(options) {
           description: 'Recommended target to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:"$hero" }, or { fileKey, nodeId }.'
         },
         outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .png; extensionless or non-.png values normalize to .png. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.png path for image captures."),
-        preview: booleanProperty("Opt in to a full-resolution PNG MCP image preview in the tool content. Defaults false. The structured result contains only compact preview metadata.", { default: false }),
+        thumbnail: booleanProperty("Return a PNG MCP thumbnail image in the tool content. Defaults true; set false to save only the full PNG capture.", { default: true }),
+        thumbnailMaxSize: numberProperty("Maximum thumbnail width or height in pixels. Defaults to 512 and is capped at 4096.", { default: 512, minimum: 1, maximum: 4096 }),
         metadataFile: stringProperty("Advanced optional capture metadata JSON. Use only when separate metadata is explicitly needed.")
       })
     },
@@ -26922,11 +26923,11 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     toolName: stringProperty("Upstream screenshot/capture tool name used."),
     kind: enumProperty(["image", "text"], "Saved output kind."),
     mimeType: enumProperty(["image/png", "text/plain"], "Detected output MIME type."),
-    preview: capturePreviewProperty("Optional PNG MCP image preview metadata when preview:true is requested."),
+    thumbnail: captureThumbnailProperty("Optional PNG MCP thumbnail metadata when thumbnail:true is requested."),
     qa: objectProperty("Compact capture QA hints."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope, compact inline and complete in outputFile when requested."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
-    outputFiles: outputFilesProperty("Files written for result output.", ["outputFile", "metadataFile"])
+    outputFiles: outputFilesProperty("Files written for result output.", ["outputFile", "thumbnailFile", "metadataFile"])
   }),
   figma_repl_run_task_plan: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
@@ -27106,6 +27107,8 @@ function outputFilePointerDescription(key) {
       return "Primary local output file pointer.";
     case "upstreamFile":
       return "Upstream envelope sidecar file pointer.";
+    case "thumbnailFile":
+      return "Capture thumbnail PNG file pointer.";
     case "metadataFile":
       return "Capture metadata JSON file pointer.";
     case "diagnosticsFile":
@@ -27186,20 +27189,24 @@ function scriptMetadataProperty(description) {
     additionalProperties: true
   };
 }
-function capturePreviewProperty(description) {
+function captureThumbnailProperty(description) {
   return {
     type: "object",
     description,
     properties: {
-      enabled: booleanProperty("Whether preview was requested."),
-      kind: enumProperty(["mcp-image"], "Preview delivery kind when an image preview is returned."),
-      mimeType: enumProperty(["image/png"], "Preview MIME type."),
-      width: numberProperty("Preview width in pixels."),
-      height: numberProperty("Preview height in pixels."),
-      bytes: numberProperty("Preview payload size in bytes."),
-      source: enumProperty(["outputFile"], "Preview source."),
-      omittedReason: enumProperty(["not-image", "generation-failed"], "Reason preview content was not returned."),
-      error: stringProperty("Preview generation error message when omittedReason is generation-failed.")
+      enabled: booleanProperty("Whether thumbnail was requested."),
+      kind: enumProperty(["mcp-image"], "Thumbnail delivery kind when an image thumbnail is returned."),
+      mimeType: enumProperty(["image/png"], "Thumbnail MIME type."),
+      path: stringProperty("Absolute local thumbnail PNG path."),
+      width: numberProperty("Thumbnail width in pixels."),
+      height: numberProperty("Thumbnail height in pixels."),
+      bytes: numberProperty("Thumbnail payload size in bytes."),
+      maxSize: numberProperty("Effective maximum thumbnail width or height in pixels."),
+      source: enumProperty(["thumbnailFile"], "Thumbnail source."),
+      sourceWidth: numberProperty("Full capture image width in pixels."),
+      sourceHeight: numberProperty("Full capture image height in pixels."),
+      omittedReason: enumProperty(["not-image", "generation-failed"], "Reason thumbnail content was not returned."),
+      error: stringProperty("Thumbnail generation error message when omittedReason is generation-failed.")
     },
     additionalProperties: true
   };
@@ -27291,8 +27298,10 @@ function toolOutputSchema(properties) {
 import { mkdir as mkdir2, readFile as readFile3, unlink, writeFile as writeFile2 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname as dirname4, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve4 } from "node:path";
+import { deflateSync, inflateSync } from "node:zlib";
 var TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 var DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
+var PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
 function createScriptOutputWriter(args, session, formatSummaryMarkdown) {
   const files = resolveScriptOutputFiles(args, session);
   return {
@@ -27401,16 +27410,74 @@ function captureImageOutputFilePath(outputFile) {
 function captureTextOutputFilePath(outputFile) {
   return withFileExtension(outputFile, ".txt");
 }
-async function createCapturePreviewImage(inputFile) {
-  const data2 = await readFile3(inputFile);
-  const dimensions = readPngDimensions(data2);
+async function createCaptureThumbnailImage(inputFile, maxSize) {
+  const input = await readFile3(inputFile);
+  const source = decodePngRgba(input);
+  const safeMaxSize = Math.max(1, Math.floor(maxSize));
+  const scale = Math.min(1, safeMaxSize / Math.max(source.width, source.height));
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  const data2 = width === source.width && height === source.height ? input : encodePngRgba({
+    width,
+    height,
+    data: resizeRgbaBilinear(source, width, height)
+  });
+  const path = captureThumbnailOutputFilePath(inputFile);
+  await writeFile2(path, data2);
   return {
+    path,
     data: data2,
     mimeType: "image/png",
     bytes: data2.byteLength,
-    width: dimensions?.width,
-    height: dimensions?.height
+    lineCount: 0,
+    width,
+    height,
+    sourceWidth: source.width,
+    sourceHeight: source.height
   };
+}
+function captureThumbnailOutputFilePath(outputFile) {
+  const extension = extname(outputFile);
+  return extension ? `${outputFile.slice(0, -extension.length)}.thumb.png` : `${outputFile}.thumb.png`;
+}
+function resizeRgbaBilinear(source, width, height) {
+  const target = Buffer.alloc(width * height * 4);
+  const xRatio = width > 1 ? (source.width - 1) / (width - 1) : 0;
+  const yRatio = height > 1 ? (source.height - 1) / (height - 1) : 0;
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = y * yRatio;
+    const y0 = Math.floor(sourceY);
+    const y1 = Math.min(source.height - 1, y0 + 1);
+    const yWeight = sourceY - y0;
+    for (let x = 0; x < width; x += 1) {
+      const sourceX = x * xRatio;
+      const x0 = Math.floor(sourceX);
+      const x1 = Math.min(source.width - 1, x0 + 1);
+      const xWeight = sourceX - x0;
+      const targetIndex = (y * width + x) * 4;
+      const topLeftIndex = (y0 * source.width + x0) * 4;
+      const topRightIndex = (y0 * source.width + x1) * 4;
+      const bottomLeftIndex = (y1 * source.width + x0) * 4;
+      const bottomRightIndex = (y1 * source.width + x1) * 4;
+      for (let channel = 0; channel < 4; channel += 1) {
+        const top = lerp(
+          source.data[topLeftIndex + channel],
+          source.data[topRightIndex + channel],
+          xWeight
+        );
+        const bottom = lerp(
+          source.data[bottomLeftIndex + channel],
+          source.data[bottomRightIndex + channel],
+          xWeight
+        );
+        target[targetIndex + channel] = Math.round(lerp(top, bottom, yWeight));
+      }
+    }
+  }
+  return target;
+}
+function lerp(a, b, weight) {
+  return a + (b - a) * weight;
 }
 async function writeCaptureImageOutputFile(outputFile, buffer, sourceUrl, sourceMimeType) {
   const output = resolveCaptureImageOutput(outputFile);
@@ -27461,6 +27528,179 @@ function readPngDimensions(buffer) {
 }
 function isPngBuffer(buffer) {
   return buffer.length >= 8 && buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71 && buffer[4] === 13 && buffer[5] === 10 && buffer[6] === 26 && buffer[7] === 10;
+}
+function decodePngRgba(buffer) {
+  if (!isPngBuffer(buffer)) {
+    throw new Error("Capture thumbnail generation requires a PNG input file.");
+  }
+  let offset2 = PNG_SIGNATURE.length;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  let interlaceMethod = 0;
+  const idatChunks = [];
+  while (offset2 + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset2);
+    const type = buffer.toString("ascii", offset2 + 4, offset2 + 8);
+    const dataStart = offset2 + 8;
+    const dataEnd = dataStart + length;
+    if (dataEnd + 4 > buffer.length) {
+      throw new Error("PNG chunk exceeds input size.");
+    }
+    const chunkData = buffer.subarray(dataStart, dataEnd);
+    if (type === "IHDR") {
+      width = chunkData.readUInt32BE(0);
+      height = chunkData.readUInt32BE(4);
+      bitDepth = chunkData[8];
+      colorType = chunkData[9];
+      interlaceMethod = chunkData[12];
+    } else if (type === "IDAT") {
+      idatChunks.push(chunkData);
+    } else if (type === "IEND") {
+      break;
+    }
+    offset2 = dataEnd + 4;
+  }
+  if (!width || !height || idatChunks.length === 0) {
+    throw new Error("PNG input is missing IHDR or IDAT data.");
+  }
+  if (bitDepth !== 8 || interlaceMethod !== 0) {
+    throw new Error("Capture thumbnail generation supports only 8-bit non-interlaced PNG files.");
+  }
+  const bytesPerPixel = pngBytesPerPixel(colorType);
+  const scanlineLength = width * bytesPerPixel;
+  const inflated = inflateSync(Buffer.concat(idatChunks));
+  const unfiltered = Buffer.alloc(scanlineLength * height);
+  let inputOffset = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filter = inflated[inputOffset];
+    inputOffset += 1;
+    const rowOffset = y * scanlineLength;
+    const previousRowOffset = rowOffset - scanlineLength;
+    for (let x = 0; x < scanlineLength; x += 1) {
+      const raw = inflated[inputOffset + x];
+      const left = x >= bytesPerPixel ? unfiltered[rowOffset + x - bytesPerPixel] : 0;
+      const up = y > 0 ? unfiltered[previousRowOffset + x] : 0;
+      const upLeft = y > 0 && x >= bytesPerPixel ? unfiltered[previousRowOffset + x - bytesPerPixel] : 0;
+      unfiltered[rowOffset + x] = raw + pngFilterPredictor(filter, left, up, upLeft) & 255;
+    }
+    inputOffset += scanlineLength;
+  }
+  return {
+    width,
+    height,
+    data: pngScanlinesToRgba(unfiltered, width, height, colorType, bytesPerPixel)
+  };
+}
+function pngBytesPerPixel(colorType) {
+  switch (colorType) {
+    case 0:
+      return 1;
+    case 2:
+      return 3;
+    case 4:
+      return 2;
+    case 6:
+      return 4;
+    default:
+      throw new Error(`Unsupported PNG color type for capture thumbnail generation: ${colorType}.`);
+  }
+}
+function pngFilterPredictor(filter, left, up, upLeft) {
+  switch (filter) {
+    case 0:
+      return 0;
+    case 1:
+      return left;
+    case 2:
+      return up;
+    case 3:
+      return Math.floor((left + up) / 2);
+    case 4:
+      return paethPredictor(left, up, upLeft);
+    default:
+      throw new Error(`Unsupported PNG filter type for capture thumbnail generation: ${filter}.`);
+  }
+}
+function paethPredictor(left, up, upLeft) {
+  const estimate = left + up - upLeft;
+  const leftDistance = Math.abs(estimate - left);
+  const upDistance = Math.abs(estimate - up);
+  const upLeftDistance = Math.abs(estimate - upLeft);
+  if (leftDistance <= upDistance && leftDistance <= upLeftDistance) {
+    return left;
+  }
+  return upDistance <= upLeftDistance ? up : upLeft;
+}
+function pngScanlinesToRgba(scanlines, width, height, colorType, bytesPerPixel) {
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let index = 0; index < width * height; index += 1) {
+    const sourceIndex = index * bytesPerPixel;
+    const targetIndex = index * 4;
+    if (colorType === 0) {
+      const value = scanlines[sourceIndex];
+      rgba[targetIndex] = value;
+      rgba[targetIndex + 1] = value;
+      rgba[targetIndex + 2] = value;
+      rgba[targetIndex + 3] = 255;
+    } else if (colorType === 2) {
+      rgba[targetIndex] = scanlines[sourceIndex];
+      rgba[targetIndex + 1] = scanlines[sourceIndex + 1];
+      rgba[targetIndex + 2] = scanlines[sourceIndex + 2];
+      rgba[targetIndex + 3] = 255;
+    } else if (colorType === 4) {
+      const value = scanlines[sourceIndex];
+      rgba[targetIndex] = value;
+      rgba[targetIndex + 1] = value;
+      rgba[targetIndex + 2] = value;
+      rgba[targetIndex + 3] = scanlines[sourceIndex + 1];
+    } else {
+      rgba[targetIndex] = scanlines[sourceIndex];
+      rgba[targetIndex + 1] = scanlines[sourceIndex + 1];
+      rgba[targetIndex + 2] = scanlines[sourceIndex + 2];
+      rgba[targetIndex + 3] = scanlines[sourceIndex + 3];
+    }
+  }
+  return rgba;
+}
+function encodePngRgba(input) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(input.width, 0);
+  ihdr.writeUInt32BE(input.height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const scanlineLength = input.width * 4;
+  const scanlines = Buffer.alloc((scanlineLength + 1) * input.height);
+  for (let y = 0; y < input.height; y += 1) {
+    const targetOffset = y * (scanlineLength + 1);
+    scanlines[targetOffset] = 0;
+    input.data.copy(scanlines, targetOffset + 1, y * scanlineLength, (y + 1) * scanlineLength);
+  }
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(scanlines)),
+    pngChunk("IEND", Buffer.alloc(0))
+  ]);
+}
+function pngChunk(type, data2) {
+  const typeBytes = Buffer.from(type, "ascii");
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data2.length, 0);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBytes, data2])), 0);
+  return Buffer.concat([length, typeBytes, data2, crc]);
+}
+function crc32(buffer) {
+  let crc = 4294967295;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc >>> 1 ^ (crc & 1 ? 3988292384 : 0);
+    }
+  }
+  return (crc ^ 4294967295) >>> 0;
 }
 function resolveCaptureImageOutput(path) {
   const extension = extname(path).toLowerCase();
@@ -27989,6 +28229,8 @@ var FIGMA_REPL_EVAL_COMMON_HELPER_NAMES = [
 var DEFAULT_HISTORY_LIMIT = 50;
 var DEFAULT_INLINE_RESULT_LIMIT = 4e3;
 var MAX_INLINE_RESULT_LIMIT = 3e4;
+var DEFAULT_CAPTURE_THUMBNAIL_MAX_SIZE = 512;
+var MAX_CAPTURE_THUMBNAIL_MAX_SIZE = 4096;
 var UPLOAD_ASSETS_TOOL_NAME = "upload_assets";
 var DOWNLOAD_ASSETS_TOOL_NAME = "download_assets";
 var SCREENSHOT_TOOL_NAME = "get_screenshot";
@@ -29199,13 +29441,16 @@ function sanitizeFileExtension(value) {
 }
 async function handleCaptureNode(args, runtime) {
   const result = await executeCaptureNodeForTool(args, runtime);
-  return makeJsonToolResult(result.payload, result.previewContent ? [result.previewContent] : void 0);
+  return makeJsonToolResult(result.payload, result.thumbnailContent ? [result.thumbnailContent] : void 0);
 }
 async function executeCaptureNode(args, runtime) {
   return (await executeCaptureNodeForTool(args, runtime)).payload;
 }
 async function executeCaptureNodeForTool(args, runtime) {
   assertRequiredTitleArgument(args);
+  rejectRemovedCapturePreviewArgument(args);
+  const thumbnailEnabled = args.thumbnail !== false;
+  const thumbnailMaxSize = thumbnailEnabled ? normalizeCaptureThumbnailMaxSize(args.thumbnailMaxSize) : void 0;
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const targetResolution = resolveSessionTargetInput(args.target, session);
   const nodeId = targetResolution.nodeId;
@@ -29273,7 +29518,14 @@ async function executeCaptureNodeForTool(args, runtime) {
     summary: `Captured node ${nodeId} to ${saved.path}.`,
     nodeIds: [nodeId]
   });
-  const preview = await maybeCreateCapturePreview(saved, args.preview === true);
+  const thumbnail = await maybeCreateCaptureThumbnail(saved, thumbnailEnabled, thumbnailMaxSize);
+  if (thumbnail.file) {
+    outputFiles.thumbnailFile = {
+      path: thumbnail.file.path,
+      bytes: thumbnail.file.bytes,
+      lineCount: thumbnail.file.lineCount
+    };
+  }
   const payload = {
     ok: true,
     session: responseSession(session),
@@ -29289,7 +29541,7 @@ async function executeCaptureNodeForTool(args, runtime) {
     height: saved.height,
     sourceUrl: saved.sourceUrl,
     qa: createCaptureQa(saved),
-    preview: preview.metadata,
+    thumbnail: thumbnail.metadata,
     upstream: upstreamEnvelope(parsed, { includePayload: false })
   };
   if (metadataFile) {
@@ -29303,8 +29555,13 @@ async function executeCaptureNodeForTool(args, runtime) {
       ...payload,
       outputFiles
     },
-    previewContent: preview.content
+    thumbnailContent: thumbnail.content
   };
+}
+function rejectRemovedCapturePreviewArgument(args) {
+  if (Object.prototype.hasOwnProperty.call(args, "preview")) {
+    throw new Error('Tool argument "preview" was removed. Use "thumbnail": true and optional "thumbnailMaxSize" instead.');
+  }
 }
 function resolveCaptureOutputFile(args, session) {
   const explicit = resolveWorkspaceAwareFile(args.outputFile, session, "outputFile");
@@ -29321,10 +29578,11 @@ function resolveCaptureOutputFile(args, session) {
   }
   return resolve5(root, "capture-results", session.slug, fileName);
 }
-async function maybeCreateCapturePreview(saved, enabled) {
+async function maybeCreateCaptureThumbnail(saved, enabled, maxSizeInput) {
   if (!enabled) {
     return {};
   }
+  const maxSize = maxSizeInput ?? DEFAULT_CAPTURE_THUMBNAIL_MAX_SIZE;
   if (saved.kind !== "image") {
     return {
       metadata: {
@@ -29334,21 +29592,30 @@ async function maybeCreateCapturePreview(saved, enabled) {
     };
   }
   try {
-    const preview = await createCapturePreviewImage(saved.path);
+    const thumbnail = await createCaptureThumbnailImage(saved.path, maxSize);
     return {
       metadata: {
         enabled: true,
         kind: "mcp-image",
-        mimeType: preview.mimeType,
-        width: preview.width,
-        height: preview.height,
-        bytes: preview.bytes,
-        source: "outputFile"
+        mimeType: thumbnail.mimeType,
+        path: thumbnail.path,
+        width: thumbnail.width,
+        height: thumbnail.height,
+        bytes: thumbnail.bytes,
+        maxSize,
+        source: "thumbnailFile",
+        sourceWidth: thumbnail.sourceWidth,
+        sourceHeight: thumbnail.sourceHeight
       },
       content: {
         type: "image",
-        data: preview.data.toString("base64"),
-        mimeType: preview.mimeType
+        data: thumbnail.data.toString("base64"),
+        mimeType: thumbnail.mimeType
+      },
+      file: {
+        path: thumbnail.path,
+        bytes: thumbnail.bytes,
+        lineCount: thumbnail.lineCount
       }
     };
   } catch (error2) {
@@ -29360,6 +29627,17 @@ async function maybeCreateCapturePreview(saved, enabled) {
       }
     };
   }
+}
+function normalizeCaptureThumbnailMaxSize(value) {
+  if (value === void 0 || value === null) {
+    return DEFAULT_CAPTURE_THUMBNAIL_MAX_SIZE;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
+    throw new Error(
+      `Tool argument "thumbnailMaxSize" must be a positive number of pixels up to ${MAX_CAPTURE_THUMBNAIL_MAX_SIZE}.`
+    );
+  }
+  return Math.min(Math.floor(value), MAX_CAPTURE_THUMBNAIL_MAX_SIZE);
 }
 async function handleRunTaskPlan(args, runtime) {
   return makeJsonToolResult(await executeRunTaskPlan(args, runtime));
@@ -31789,12 +32067,12 @@ function createFileWorkflowPayload() {
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
       "Use figma_repl_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
-      "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png outputFile values normalize to .png. Pass preview=true only when the MCP response should include the full-resolution PNG image as an MCP media item. Pass metadataFile when you need the complete upstream capture envelope.",
+      "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png outputFile values normalize to .png. A capped PNG thumbnail media item is returned by default; pass thumbnail=false to suppress it. Pass metadataFile when you need the complete upstream capture envelope.",
       "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.outputFile.path}}.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Use <taskSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
-      "Tool responses are structured-first: JSON data is in structuredContent, while content is reserved for MCP media items such as capture preview images. File-script parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, file pointers stay in outputFiles, and upstream sidecars use outputFiles.upstreamFile.",
+      "Tool responses are structured-first: JSON data is in structuredContent, while content is reserved for MCP media items such as capture thumbnail images. File-script parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, file pointers stay in outputFiles, and upstream sidecars use outputFiles.upstreamFile.",
       "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing."
     ]
   };
@@ -31956,7 +32234,7 @@ function createToolArgumentGuidancePayload() {
       tool: "figma_repl_capture_node",
       tier: "normalPath",
       recommendedCalls: {
-        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png", preview: true }
+        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" }
       },
       advancedArguments: ["metadataFile"],
       avoidUnless: {
@@ -32016,7 +32294,7 @@ function createCapabilitiesPayload() {
         "figma_repl_inspect with mode=inspect, mode=style, or mode=validate before mutation and after generated work",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through official upload_assets",
         "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
-        "figma_repl_capture_node for final visual QA captures saved as local PNG files; add preview=true for a full-resolution PNG MCP image preview",
+        "figma_repl_capture_node for final visual QA captures saved as local PNG files with a default capped PNG MCP thumbnail image",
         "figma_repl_open only for lightweight session/context binding when a prepared task is not needed; start new file tasks with figma_repl_prepare_task",
         "figma_repl_run_task_plan only for repeatable multi-step plans",
         "figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work",
@@ -32024,7 +32302,7 @@ function createCapabilitiesPayload() {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent; content is empty except for MCP protocol media items such as capture preview images. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and preview schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files."
+      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent; content is empty except for MCP protocol media items such as capture thumbnail images. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and thumbnail schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files."
     },
     toolTiers: createToolTierPayload(),
     patterns: {
@@ -32123,7 +32401,7 @@ function createCapabilitiesPayload() {
         tool: "figma_repl_capture_node",
         purpose: "Call official upstream get_screenshot and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
         defaulting: "Requires advertised official get_screenshot and sends { fileKey, nodeId } upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
-        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, optional PNG preview metadata when preview=true, and optional metadataFile with the full upstream capture envelope."
+        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, PNG thumbnail metadata and outputFiles.thumbnailFile by default unless thumbnail=false, and optional metadataFile with the full upstream capture envelope."
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",

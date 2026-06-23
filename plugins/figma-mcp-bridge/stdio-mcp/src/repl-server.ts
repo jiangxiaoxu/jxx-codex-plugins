@@ -98,7 +98,7 @@ import {
   DEFAULT_WORKSPACE_DIR_NAME,
   TASK_WORKSPACE_ROOT_ENV,
   captureImageOutputFilePath,
-  createCapturePreviewImage,
+  createCaptureThumbnailImage,
   createScriptOutputWriter,
   createSessionWorkspace,
   effectiveInlineResultLimit,
@@ -187,6 +187,8 @@ type FigmaReplEvalHelperPath = "$" | `$.${FigmaReplEvalCommonHelperName}`;
 const DEFAULT_HISTORY_LIMIT = 50;
 const DEFAULT_INLINE_RESULT_LIMIT = 4_000;
 const MAX_INLINE_RESULT_LIMIT = 30_000;
+const DEFAULT_CAPTURE_THUMBNAIL_MAX_SIZE = 512;
+const MAX_CAPTURE_THUMBNAIL_MAX_SIZE = 4_096;
 const UPLOAD_ASSETS_TOOL_NAME = "upload_assets";
 const DOWNLOAD_ASSETS_TOOL_NAME = "download_assets";
 const SCREENSHOT_TOOL_NAME = "get_screenshot";
@@ -395,15 +397,19 @@ export interface FigmaReplCaptureQaResult {
   warnings: string[];
 }
 
-export interface FigmaReplCapturePreviewResult {
+export interface FigmaReplCaptureThumbnailResult {
   [key: string]: unknown;
   enabled: boolean;
   kind?: "mcp-image";
   mimeType?: string;
+  path?: string;
   width?: number;
   height?: number;
   bytes?: number;
+  maxSize?: number;
   source?: string;
+  sourceWidth?: number;
+  sourceHeight?: number;
   omittedReason?: string;
 }
 
@@ -422,7 +428,7 @@ export interface FigmaReplCaptureNodeResult extends FigmaReplUpstreamBackedResul
   height?: number;
   sourceUrl?: string;
   qa?: FigmaReplCaptureQaResult;
-  preview?: FigmaReplCapturePreviewResult;
+  thumbnail?: FigmaReplCaptureThumbnailResult;
   outputFiles?: FigmaReplOutputFiles;
 }
 
@@ -2085,7 +2091,7 @@ async function handleCaptureNode(
   runtime: FigmaReplRuntime,
 ): Promise<Record<string, unknown>> {
   const result = await executeCaptureNodeForTool(args, runtime);
-  return makeJsonToolResult(result.payload, result.previewContent ? [result.previewContent] : undefined);
+  return makeJsonToolResult(result.payload, result.thumbnailContent ? [result.thumbnailContent] : undefined);
 }
 
 async function executeCaptureNode(
@@ -2098,8 +2104,13 @@ async function executeCaptureNode(
 async function executeCaptureNodeForTool(
   args: FigmaReplCaptureNodeArguments,
   runtime: FigmaReplRuntime,
-): Promise<{ payload: Record<string, unknown>; previewContent?: FigmaReplImageContent }> {
+): Promise<{ payload: Record<string, unknown>; thumbnailContent?: FigmaReplImageContent }> {
   assertRequiredTitleArgument(args);
+  rejectRemovedCapturePreviewArgument(args);
+  const thumbnailEnabled = args.thumbnail !== false;
+  const thumbnailMaxSize = thumbnailEnabled
+    ? normalizeCaptureThumbnailMaxSize(args.thumbnailMaxSize)
+    : undefined;
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const targetResolution = resolveSessionTargetInput(args.target, session);
   const nodeId = targetResolution.nodeId;
@@ -2167,7 +2178,14 @@ async function executeCaptureNodeForTool(
     summary: `Captured node ${nodeId} to ${saved.path}.`,
     nodeIds: [nodeId],
   });
-  const preview = await maybeCreateCapturePreview(saved, args.preview === true);
+  const thumbnail = await maybeCreateCaptureThumbnail(saved, thumbnailEnabled, thumbnailMaxSize);
+  if (thumbnail.file) {
+    outputFiles.thumbnailFile = {
+      path: thumbnail.file.path,
+      bytes: thumbnail.file.bytes,
+      lineCount: thumbnail.file.lineCount,
+    };
+  }
   const payload = {
     ok: true,
     session: responseSession(session),
@@ -2183,7 +2201,7 @@ async function executeCaptureNodeForTool(
     height: saved.height,
     sourceUrl: saved.sourceUrl,
     qa: createCaptureQa(saved),
-    preview: preview.metadata,
+    thumbnail: thumbnail.metadata,
     upstream: upstreamEnvelope(parsed, { includePayload: false }),
   };
   if (metadataFile) {
@@ -2197,8 +2215,14 @@ async function executeCaptureNodeForTool(
       ...payload,
       outputFiles,
     },
-    previewContent: preview.content,
+    thumbnailContent: thumbnail.content,
   };
+}
+
+function rejectRemovedCapturePreviewArgument(args: FigmaReplCaptureNodeArguments): void {
+  if (Object.prototype.hasOwnProperty.call(args, "preview")) {
+    throw new Error('Tool argument "preview" was removed. Use "thumbnail": true and optional "thumbnailMaxSize" instead.');
+  }
 }
 
 function resolveCaptureOutputFile(args: FigmaReplCaptureNodeArguments, session: FigmaReplSession): string {
@@ -2217,13 +2241,19 @@ function resolveCaptureOutputFile(args: FigmaReplCaptureNodeArguments, session: 
   return resolve(root, "capture-results", session.slug, fileName);
 }
 
-async function maybeCreateCapturePreview(
+async function maybeCreateCaptureThumbnail(
   saved: { path: string; kind: "image" | "text"; mimeType: string },
   enabled: boolean,
-): Promise<{ metadata?: FigmaReplCapturePreviewResult; content?: FigmaReplImageContent }> {
+  maxSizeInput: number | undefined,
+): Promise<{
+  metadata?: FigmaReplCaptureThumbnailResult;
+  content?: FigmaReplImageContent;
+  file?: { path: string; bytes: number; lineCount: 0 };
+}> {
   if (!enabled) {
     return {};
   }
+  const maxSize = maxSizeInput ?? DEFAULT_CAPTURE_THUMBNAIL_MAX_SIZE;
   if (saved.kind !== "image") {
     return {
       metadata: {
@@ -2233,21 +2263,30 @@ async function maybeCreateCapturePreview(
     };
   }
   try {
-    const preview = await createCapturePreviewImage(saved.path);
+    const thumbnail = await createCaptureThumbnailImage(saved.path, maxSize);
     return {
       metadata: {
         enabled: true,
         kind: "mcp-image",
-        mimeType: preview.mimeType,
-        width: preview.width,
-        height: preview.height,
-        bytes: preview.bytes,
-        source: "outputFile",
+        mimeType: thumbnail.mimeType,
+        path: thumbnail.path,
+        width: thumbnail.width,
+        height: thumbnail.height,
+        bytes: thumbnail.bytes,
+        maxSize,
+        source: "thumbnailFile",
+        sourceWidth: thumbnail.sourceWidth,
+        sourceHeight: thumbnail.sourceHeight,
       },
       content: {
         type: "image",
-        data: preview.data.toString("base64"),
-        mimeType: preview.mimeType,
+        data: thumbnail.data.toString("base64"),
+        mimeType: thumbnail.mimeType,
+      },
+      file: {
+        path: thumbnail.path,
+        bytes: thumbnail.bytes,
+        lineCount: thumbnail.lineCount,
       },
     };
   } catch (error) {
@@ -2259,6 +2298,18 @@ async function maybeCreateCapturePreview(
       },
     };
   }
+}
+
+function normalizeCaptureThumbnailMaxSize(value: unknown): number {
+  if (value === undefined || value === null) {
+    return DEFAULT_CAPTURE_THUMBNAIL_MAX_SIZE;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
+    throw new Error(
+      `Tool argument "thumbnailMaxSize" must be a positive number of pixels up to ${MAX_CAPTURE_THUMBNAIL_MAX_SIZE}.`,
+    );
+  }
+  return Math.min(Math.floor(value), MAX_CAPTURE_THUMBNAIL_MAX_SIZE);
 }
 
 async function handleRunTaskPlan(
@@ -5014,12 +5065,12 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
       "Use figma_repl_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
-      "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png outputFile values normalize to .png. Pass preview=true only when the MCP response should include the full-resolution PNG image as an MCP media item. Pass metadataFile when you need the complete upstream capture envelope.",
+      "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png outputFile values normalize to .png. A capped PNG thumbnail media item is returned by default; pass thumbnail=false to suppress it. Pass metadataFile when you need the complete upstream capture envelope.",
       "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.outputFile.path}}.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Use <taskSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
-      "Tool responses are structured-first: JSON data is in structuredContent, while content is reserved for MCP media items such as capture preview images. File-script parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, file pointers stay in outputFiles, and upstream sidecars use outputFiles.upstreamFile.",
+      "Tool responses are structured-first: JSON data is in structuredContent, while content is reserved for MCP media items such as capture thumbnail images. File-script parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, file pointers stay in outputFiles, and upstream sidecars use outputFiles.upstreamFile.",
       "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
     ],
   };
@@ -5194,7 +5245,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       tool: "figma_repl_capture_node",
       tier: "normalPath",
       recommendedCalls: {
-        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png", preview: true },
+        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
       },
       advancedArguments: ["metadataFile"],
       avoidUnless: {
@@ -5255,7 +5306,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         "figma_repl_inspect with mode=inspect, mode=style, or mode=validate before mutation and after generated work",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through official upload_assets",
         "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
-        "figma_repl_capture_node for final visual QA captures saved as local PNG files; add preview=true for a full-resolution PNG MCP image preview",
+        "figma_repl_capture_node for final visual QA captures saved as local PNG files with a default capped PNG MCP thumbnail image",
         "figma_repl_open only for lightweight session/context binding when a prepared task is not needed; start new file tasks with figma_repl_prepare_task",
         "figma_repl_run_task_plan only for repeatable multi-step plans",
         "figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work",
@@ -5263,7 +5314,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent; content is empty except for MCP protocol media items such as capture preview images. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and preview schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files.",
+      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent; content is empty except for MCP protocol media items such as capture thumbnail images. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and thumbnail schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files.",
     },
     toolTiers: createToolTierPayload(),
     patterns: {
@@ -5362,7 +5413,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         tool: "figma_repl_capture_node",
         purpose: "Call official upstream get_screenshot and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
         defaulting: "Requires advertised official get_screenshot and sends { fileKey, nodeId } upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
-        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, optional PNG preview metadata when preview=true, and optional metadataFile with the full upstream capture envelope.",
+        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, PNG thumbnail metadata and outputFiles.thumbnailFile by default unless thumbnail=false, and optional metadataFile with the full upstream capture envelope.",
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",

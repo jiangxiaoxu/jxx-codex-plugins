@@ -152,6 +152,14 @@ function assertPngBuffer(buffer) {
   assert.equal(buffer.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
 }
 
+function readPngDimensions(buffer) {
+  assertPngBuffer(buffer);
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
+  };
+}
+
 function assertJpegBuffer(buffer) {
   assert.equal(buffer.subarray(0, 3).toString("hex"), "ffd8ff");
 }
@@ -888,7 +896,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(capabilities.toolArgumentGuidance.assetManifest.avoidUnless.upstreamTemplates, undefined);
   assert.deepEqual(
     capabilities.toolArgumentGuidance.captureNode.recommendedCalls.capture,
-    { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png", preview: true },
+    { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
   );
   assert.ok(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("metadataFile"));
   assert.equal(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("targetNodeId"), false);
@@ -1136,14 +1144,20 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(captureNodeTool.inputSchema.properties.outputFile.description, /Recommended extension.*\.png/);
   assert.match(captureNodeTool.inputSchema.properties.outputFile.description, /non-\.png values normalize to \.png/);
   assert.match(captureNodeTool.inputSchema.properties.metadataFile.description, /metadata JSON/);
-  assert.equal(captureNodeTool.inputSchema.properties.preview.default, false);
+  assert.equal(captureNodeTool.inputSchema.properties.preview, undefined);
+  assert.equal(captureNodeTool.inputSchema.properties.thumbnail.default, true);
+  assert.equal(captureNodeTool.inputSchema.properties.thumbnailMaxSize.default, 512);
+  assert.equal(captureNodeTool.inputSchema.properties.thumbnailMaxSize.maximum, 4096);
   assert.equal(captureNodeTool.inputSchema.properties.toolName, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.arguments, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.refresh, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.inlineResultLimit, undefined);
-  assert.deepEqual(captureNodeTool.outputSchema.properties.preview.properties.omittedReason.enum, ["not-image", "generation-failed"]);
+  assert.equal(captureNodeTool.outputSchema.properties.preview, undefined);
+  assert.deepEqual(captureNodeTool.outputSchema.properties.thumbnail.properties.omittedReason.enum, ["not-image", "generation-failed"]);
   assert.deepEqual(captureNodeTool.outputSchema.properties.mimeType.enum, ["image/png", "text/plain"]);
-  assert.deepEqual(captureNodeTool.outputSchema.properties.preview.properties.mimeType.enum, ["image/png"]);
+  assert.deepEqual(captureNodeTool.outputSchema.properties.thumbnail.properties.mimeType.enum, ["image/png"]);
+  assert.deepEqual(captureNodeTool.outputSchema.properties.thumbnail.properties.source.enum, ["thumbnailFile"]);
+  assert.ok(captureNodeTool.outputSchema.properties.outputFiles.properties.thumbnailFile);
   assert.ok(captureNodeTool.outputSchema.properties.outputFiles.properties.metadataFile);
   const taskPlanTool = tools.tools.find((tool) => tool.name === "figma_repl_run_task_plan");
   assert.ok(taskPlanTool);
@@ -2075,6 +2089,28 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
   );
   await assert.rejects(
     mcpClient.callTool({
+      name: "figma_repl_capture_node",
+      arguments: {
+        title: "Reject capture preview alias",
+        target: { fileKey: "file123", nodeId: "22:7" },
+        preview: true,
+      },
+    }),
+    /Tool argument "preview" was removed\. Use "thumbnail": true/,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_capture_node",
+      arguments: {
+        title: "Reject invalid thumbnail size",
+        target: { fileKey: "file123", nodeId: "22:7" },
+        thumbnailMaxSize: 0,
+      },
+    }),
+    /Tool argument "thumbnailMaxSize" must be a positive number/,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
       name: "figma_repl_inspect",
       arguments: {
         title: "Reject inspect handles",
@@ -2988,16 +3024,22 @@ test("figma REPL captures node screenshot responses to a local file", async () =
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(result.content.length, 0);
+    assert.equal(result.content.length, 1);
     assert.equal(json.outputFile, pngOutputFile);
     assert.equal(json.file, undefined);
     assertFilePointer(json.outputFiles.outputFile, pngOutputFile, { lineCount: 0 });
+    assertFilePointer(json.outputFiles.thumbnailFile, json.thumbnail.path, { lineCount: 0 });
     assert.equal(json.nodeId, "22:7");
     assert.equal(json.toolName, "get_screenshot");
     assert.equal(json.mimeType, "image/png");
     assert.equal(json.width, 4);
     assert.equal(json.height, 3);
-    assert.equal(json.preview, undefined);
+    assert.equal(json.thumbnail.enabled, true);
+    assert.equal(json.thumbnail.width, 4);
+    assert.equal(json.thumbnail.height, 3);
+    assert.equal(json.thumbnail.maxSize, 512);
+    assert.equal(result.content[0].mimeType, "image/png");
+    assert.deepEqual(readPngDimensions(Buffer.from(result.content[0].data, "base64")), { width: 4, height: 3 });
     assertPngBuffer(await readFile(pngOutputFile));
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
     await mcpClient.close();
@@ -3087,11 +3129,11 @@ test("figma REPL uses the stable official get_screenshot schema without override
   }
 });
 
-test("figma REPL capture node can return an opt-in full-resolution PNG MCP preview", async () => {
-  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-preview-"));
+test("figma REPL capture node returns a capped PNG MCP thumbnail by default", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-thumbnail-"));
   const previousTaskRoot = process.env.FIGMA_REPL_TASK_ROOT;
   process.env.FIGMA_REPL_TASK_ROOT = tempDir;
-  const pngBytes = await createTestPngBuffer(24, 18);
+  const pngBytes = await createTestPngBuffer(1024, 256);
   const calls = [];
   const fakeClient = createFakeFigmaClient(
     calls,
@@ -3132,31 +3174,35 @@ test("figma REPL capture node can return an opt-in full-resolution PNG MCP previ
     const result = await mcpClient.callTool({
       name: "figma_repl_capture_node",
       arguments: {
-        title: "Capture node preview",
-        sessionId: "capture-preview",
+        title: "Capture node thumbnail",
+        sessionId: "capture-thumbnail",
         target: "https://www.figma.com/design/file123/Test?node-id=22-71",
-        preview: true,
       },
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.match(json.outputFile, /capture-results.*capture-preview.*capture-.*\.png$/u);
+    assert.match(json.outputFile, /capture-results.*capture-thumbnail.*capture-.*\.png$/u);
     assertFilePointer(json.outputFiles.outputFile, json.outputFile, { lineCount: 0 });
+    assertFilePointer(json.outputFiles.thumbnailFile, json.thumbnail.path, { lineCount: 0 });
     assert.equal(json.mimeType, "image/png");
-    assert.equal(json.width, 24);
-    assert.equal(json.height, 18);
-    assert.equal(json.preview.enabled, true);
-    assert.equal(json.preview.kind, "mcp-image");
-    assert.equal(json.preview.mimeType, "image/png");
-    assert.equal(json.preview.width, 24);
-    assert.equal(json.preview.height, 18);
-    assert.equal(json.preview.source, "outputFile");
+    assert.equal(json.width, 1024);
+    assert.equal(json.height, 256);
+    assert.equal(json.thumbnail.enabled, true);
+    assert.equal(json.thumbnail.kind, "mcp-image");
+    assert.equal(json.thumbnail.mimeType, "image/png");
+    assert.equal(json.thumbnail.width, 512);
+    assert.equal(json.thumbnail.height, 128);
+    assert.equal(json.thumbnail.maxSize, 512);
+    assert.equal(json.thumbnail.source, "thumbnailFile");
+    assert.equal(json.thumbnail.sourceWidth, 1024);
+    assert.equal(json.thumbnail.sourceHeight, 256);
     assert.equal(result.content.length, 1);
     assert.equal(result.content[0].type, "image");
     assert.equal(result.content[0].mimeType, "image/png");
-    assert.equal(json.preview.data, undefined);
-    assertPngBuffer(Buffer.from(result.content[0].data, "base64"));
+    assert.equal(json.thumbnail.data, undefined);
+    assert.deepEqual(readPngDimensions(Buffer.from(result.content[0].data, "base64")), { width: 512, height: 128 });
     assertPngBuffer(await readFile(json.outputFile));
+    assert.deepEqual(readPngDimensions(await readFile(json.thumbnail.path)), { width: 512, height: 128 });
     await mcpClient.close();
   } finally {
     if (previousTaskRoot === undefined) {
@@ -3168,7 +3214,7 @@ test("figma REPL capture node can return an opt-in full-resolution PNG MCP previ
   }
 });
 
-test("figma REPL capture node normalizes non-PNG image output paths and returns PNG preview", async () => {
+test("figma REPL capture node normalizes non-PNG image output paths and returns PNG thumbnail", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-png-normalize-"));
   const outputFile = resolve(tempDir, "node.png");
   const requestedOutputFile = resolve(tempDir, "node.jpg");
@@ -3216,7 +3262,8 @@ test("figma REPL capture node normalizes non-PNG image output paths and returns 
         title: "Capture node as PNG",
         target: { fileKey: "file123", nodeId: "22:73" },
         outputFile: requestedOutputFile,
-        preview: true,
+        thumbnail: true,
+        thumbnailMaxSize: 8,
       },
     });
     const json = structuredToolResult(result);
@@ -3226,18 +3273,22 @@ test("figma REPL capture node normalizes non-PNG image output paths and returns 
     assert.equal(json.mimeType, "image/png");
     assert.equal(json.width, 16);
     assert.equal(json.height, 10);
-    assert.equal(json.preview.enabled, true);
-    assert.equal(json.preview.mimeType, "image/png");
+    assert.equal(json.thumbnail.enabled, true);
+    assert.equal(json.thumbnail.mimeType, "image/png");
+    assert.equal(json.thumbnail.width, 8);
+    assert.equal(json.thumbnail.height, 5);
+    assert.equal(json.thumbnail.maxSize, 8);
     assert.equal(result.content[0].mimeType, "image/png");
-    assertPngBuffer(Buffer.from(result.content[0].data, "base64"));
+    assert.deepEqual(readPngDimensions(Buffer.from(result.content[0].data, "base64")), { width: 8, height: 5 });
     assertPngBuffer(await readFile(outputFile));
+    assert.deepEqual(readPngDimensions(await readFile(json.thumbnail.path)), { width: 8, height: 5 });
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test("figma REPL capture node saves text output as txt and omits preview image", async () => {
+test("figma REPL capture node saves text output as txt and omits thumbnail image", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-text-"));
   const outputFile = resolve(tempDir, "node.png");
   const textOutputFile = resolve(tempDir, "node.txt");
@@ -3283,7 +3334,6 @@ test("figma REPL capture node saves text output as txt and omits preview image",
         title: "Capture node text",
         target: { fileKey: "file123", nodeId: "22:72" },
         outputFile,
-        preview: true,
       },
     });
     const json = structuredToolResult(result);
@@ -3292,8 +3342,8 @@ test("figma REPL capture node saves text output as txt and omits preview image",
     assert.equal(json.outputFile, textOutputFile);
     assert.equal(json.kind, "text");
     assert.equal(json.mimeType, "text/plain");
-    assert.equal(json.preview.enabled, true);
-    assert.equal(json.preview.omittedReason, "not-image");
+    assert.equal(json.thumbnail.enabled, true);
+    assert.equal(json.thumbnail.omittedReason, "not-image");
     assert.equal(await readFile(textOutputFile, "utf8"), "plain capture text");
     await mcpClient.close();
   } finally {
