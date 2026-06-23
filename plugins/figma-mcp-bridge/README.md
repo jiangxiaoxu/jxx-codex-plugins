@@ -59,7 +59,7 @@ The plugin's `.mcp.json` installs:
 
 Upgrade note: the persistent MCP server id changed from `figma-repl-mcp` to `figma_repl_mcp`. Reload or reinstall the plugin, or restart the MCP server, so old cached `figma-repl-mcp` tool schemas are not exposed.
 
-Local `figma_repl_*` tools return a fixed structured shape. Upstream-backed single-call tools store parsed JSON in `upstream.payload` and non-JSON output in `upstream.text`; asset manifests keep compact inline asset entries and write full per-asset upstream details only to explicit result files. Diagnostics are arrays, session payloads omit history, and large data points to `outputFiles` entries shaped as `{ path, bytes, lineCount }`.
+Local `figma_repl_*` tools return a fixed structured shape. Upstream-backed single-call tools store parsed JSON in `upstream.payload` and non-JSON output in `upstream.text`; asset manifests keep compact inline asset entries and write failure details only to generated debug files. Diagnostics are arrays, session payloads omit history, and JSON debug/result files point to `outputFiles.debugFile` entries shaped as `{ path, bytes, lineCount }`.
 
 `figma-stdio` is not installed as a persistent plugin server by default. Keep using `figma_repl_mcp` for agent work; use `figma-stdio` only through the package CLI or Node API for parity checks and raw official MCP debugging.
 
@@ -71,10 +71,10 @@ Agents should use `figma_repl_mcp` first:
 2. `figma_repl_prepare_task({ title, file, task, surface })`
 3. edit local `.figma.js`
 4. `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, surface })`
-5. `figma_repl_run_script_file({ title, sessionId, inputFile, outputFile })`
-6. `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath, outputFile })`, `figma_repl_capture_node({ title, sessionId, target, outputFile })`, or `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })` when needed
+5. `figma_repl_run_script_file({ title, sessionId, inputFile })`
+6. `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath })`, `figma_repl_capture_node({ title, sessionId, target, imageFile })`, or `figma_repl_run_task_plan({ title, sessionId, planPath })` when needed
 
-In workspace workflows, prefer `title`, `task`, `inputFile`, `outputFile`, `manifestPath`, `target`, and `planPath`. `title` is optional but recommended for UI/log clarity; omitted titles use runtime defaults. Inline assets/steps, custom upstream templates, `scriptPath`, split output files, upstream overrides, `metadataFile`, and `refresh` are advanced/debug escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
+In workspace workflows, prefer `title`, `task`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath`. `title` is optional but recommended for UI/log clarity; omitted titles use runtime defaults. Inline assets/steps, custom upstream templates, `scriptPath`, upstream overrides, and `refresh` are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
 
 For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 
@@ -99,15 +99,14 @@ await figma.runScriptFile({
 const run = await figma.runScriptFile({
   sessionId: "ui-work",
   inputFile: "edit-panel.figma.js",
-  outputFile: "edit-panel.result.json",
 });
 const payload = run.upstream?.payload;
 const capture = await figma.captureNode({
   sessionId: "ui-work",
   target: "$target",
-  outputFile: "qa.png",
+  imageFile: "qa.png",
 });
-if (!capture.ok) console.log(capture.plannedOutputFile);
+if (!run.ok) console.log(run.outputFiles?.debugFile?.path);
 await figma.close();
 ```
 

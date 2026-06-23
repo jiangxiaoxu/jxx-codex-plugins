@@ -40,9 +40,6 @@ export interface FigmaReplRunScriptFileArguments {
   surface?: FigmaReplSurface;
   targetPageId?: string;
   allowDangerousOperations?: boolean;
-  outputDir?: string;
-  diagnosticsFile?: string;
-  summaryFile?: string;
   inlineResultLimit?: number;
 }
 
@@ -201,6 +198,15 @@ function assertRemovedDebugOutputArguments(record: Record<string, unknown>, fiel
   }
 }
 
+function assertRemovedRunScriptOutputLayoutArguments(record: Record<string, unknown>): void {
+  const removed = ["outputDir", "diagnosticsFile", "summaryFile"].filter((field) => record[field] !== undefined);
+  if (removed.length > 0) {
+    throw new Error(
+      `Tool argument "${removed.join("/")}" was removed for figma_repl_run_script_file. Debug files are generated on demand for failures, diagnostics, and inline omissions; diagnostics are included in outputFiles.debugFile.`,
+    );
+  }
+}
+
 export function asOpenArgs(args: unknown): FigmaReplOpenArguments {
   const record = parseToolArgs<FigmaReplOpenArguments>(args);
   assertRemovedFileReferenceFields(record);
@@ -239,15 +245,13 @@ export function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArgume
   const record = parseToolArgs<FigmaReplRunScriptFileArguments>(args);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertRemovedRunScriptOutputLayoutArguments(record);
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
   assertOptionalStringFields(record, [
     "sessionId",
     "scriptPath",
     "inputFile",
     "targetPageId",
-    "outputDir",
-    "diagnosticsFile",
-    "summaryFile",
   ]);
   assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
   return record;

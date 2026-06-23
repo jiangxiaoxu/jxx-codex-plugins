@@ -58,9 +58,9 @@ const evalResult = await figma.eval({
 const payload = evalResult.upstream.payload;
 const capture = await figma.captureNode({
   target: "$target",
-  outputFile: "qa.png",
+  imageFile: "qa.png",
 });
-if (!capture.ok) console.log(capture.plannedOutputFile);
+if (!capture.ok) console.log(capture.upstreamError);
 await figma.close();
 ```
 
@@ -81,7 +81,7 @@ await upstream.close();
 
 ## REPL Response Shape
 
-Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and file pointers are under `outputFiles` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return upstream JSON as `upstream.payload` and non-JSON upstream output as `upstream.text`; asset manifests keep compact inline asset entries and write full per-asset upstream details only to explicit result files.
+Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and JSON debug/result file pointers are under `outputFiles.debugFile` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return upstream JSON as `upstream.payload` and non-JSON upstream output as `upstream.text`; asset manifests keep compact inline asset entries and write full per-asset upstream details only to generated debug files.
 
 Executed `figma_repl_run_script_file` result files use the same `upstream` envelope and do not duplicate upstream JSON into `raw`.
 
@@ -105,11 +105,10 @@ await figma.runScriptFile({
 await figma.runScriptFile({
   sessionId: "settings workspace",
   inputFile: "settings-panel-polish.figma.js",
-  outputFile: "settings-panel-polish.result.json",
 });
 ```
 
-`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `file` is supplied. `cwd` is optional and defaults to the MCP server process cwd. A task normally uses `task`, `<taskSlug>.figma.js`, and `<taskSlug>.result.json` in that folder, then calls `runScriptFile` with `inputFile` and `outputFile`. Absolute `scriptPath`, `outputDir`, split files, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
+`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `file` is supplied. `cwd` is optional and defaults to the MCP server process cwd. A task normally uses `task` and `<taskSlug>.figma.js` in that folder, then calls `runScriptFile` with `inputFile`. JSON debug/result files are generated on demand and returned through `outputFiles.debugFile`; script upstream sidecars use `outputFiles.upstreamFile`, and failure-only compiled wrappers use `outputFiles.compiledScriptFile`. Absolute `scriptPath`, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
 
 Write ordinary async JavaScript in `.figma.js` files. Use native Figma Plugin API calls for advanced work and injected `$` helpers for common agent tasks:
 
@@ -135,9 +134,9 @@ Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, 
 
 ## Assets, Capture, and Plans
 
-- `figma_repl_apply_asset_manifest`: recommended call is `{ title, sessionId, manifestPath, outputFile }`; inline assets, custom upstream templates, and `refresh` are advanced/debug fields.
-- `figma_repl_capture_node`: recommended call is `{ title, sessionId, target, outputFile }`; `metadataFile`, custom upstream templates, and `refresh` are advanced/debug fields.
-- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath, outputFile }`; inline `steps` are advanced fields and each step must be `{ type, args }`.
+- `figma_repl_apply_asset_manifest`: recommended call is `{ title, sessionId, manifestPath }`; inline assets are advanced/debug fields.
+- `figma_repl_capture_node`: recommended call is `{ title, sessionId, target, imageFile }`; `imageFile` is the PNG path and no `outputFiles` are returned.
+- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath }`; inline `steps` are advanced fields and each step must be `{ type, args }`.
 
 Keep `.figma.js` transactions small enough for upstream `use_figma` payload limits. Split dense work into skeleton, asset targets, upload fills, and visual fixes when payload diagnostics appear.
 

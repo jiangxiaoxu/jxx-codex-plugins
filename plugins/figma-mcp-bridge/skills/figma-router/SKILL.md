@@ -15,8 +15,8 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 4. If direct `figma_repl_*` tools are not installed in the active Codex environment, use the package-local Node API `createFigmaReplClient` against the same OAuth cache.
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
 6. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-7. Local `figma_repl_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.payload` or text from `upstream.text`, and use `outputFiles` for large payloads.
-8. `createFigmaReplClient` mirrors the same result shape in Node: read `result.upstream.payload`, compact asset entries, and capture `plannedOutputFile` on failure.
+7. Local `figma_repl_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.payload` or text from `upstream.text`, and use `outputFiles.debugFile` for generated JSON debug/result files.
+8. `createFigmaReplClient` mirrors the same result shape in Node: read `result.upstream.payload`, compact asset entries, generated debug files, and capture `imageFile` on success.
 
 ## Lazy Tool Loading
 
@@ -27,19 +27,19 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 - Prepare a repairable workspace and task file: `figma_repl_prepare_task({ title, file, task, surface })`. The `file` value accepts a Figma URL or raw file key; `cwd` is optional and defaults to the MCP server process cwd.
 - Edit the generated `<task>.figma.js`; use native Figma Plugin API plus the injected `$` helpers.
 - Dry-run: `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, surface })`.
-- Execute: `figma_repl_run_script_file({ title, sessionId, inputFile, outputFile })`.
-- For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath, outputFile })`.
-- For visual QA, call `figma_repl_capture_node({ title, sessionId, target, outputFile })` and inspect the local image/result files.
-- For repeatable multi-step workflows, use `figma_repl_run_task_plan({ title, sessionId, planPath, outputFile })`.
+- Execute: `figma_repl_run_script_file({ title, sessionId, inputFile })`.
+- For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath })`.
+- For visual QA, call `figma_repl_capture_node({ title, sessionId, target, imageFile })` and inspect the local image file.
+- For repeatable multi-step workflows, use `figma_repl_run_task_plan({ title, sessionId, planPath })`.
 
-Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `title`, `file`, `task`, `inputFile`, `outputFile`, `manifestPath`, `target`, and `planPath` defaults after workspace initialization. `title` is optional but recommended for UI/log clarity; omitted titles use runtime defaults. Inline assets/steps, custom upstream templates, absolute `scriptPath`, upstream overrides, split output files, `metadataFile`, and `refresh` are advanced/debug escape hatches; `inlineResultLimit` applies only to `figma_repl_run_script_file` payload-size control. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
+Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `title`, `file`, `task`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath` defaults after workspace initialization. `title` is optional but recommended for UI/log clarity; omitted titles use runtime defaults. Inline assets/steps, custom upstream templates, absolute `scriptPath`, and upstream overrides are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
 
 ## Script Contract
 
 - Write ordinary async JavaScript in `.figma.js`: native Figma Plugin API for advanced work, injected `$` helpers for common agent tasks.
 - Keep each transaction small and repairable. Use `dryRun: true`, then fix diagnostics by file line before executing.
-- Return compact JSON with changed node ids, handles, and validation notes. Write large results to the paired `outputFile` instead of relying on inline MCP output.
-- Read parsed upstream JSON from `upstream.payload`; if upstream output is not JSON, read `upstream.text`. File pointers are reported in `outputFiles`.
+- Return compact JSON with changed node ids, handles, and validation notes. Use generated `outputFiles.debugFile` pointers for failure or omitted-payload debug JSON instead of relying on inline MCP output.
+- Read parsed upstream JSON from `upstream.payload`; if upstream output is not JSON, read `upstream.text`. Debug file pointers are reported in `outputFiles.debugFile`.
 - Common helpers: `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`.
 - Prefer `$.select` over direct selection mutation. Use `figma_repl_inspect({ mode: "validate" })` before reusing old handles.
 - For generated assets, use `$.imageAsset` only for small inline PNG/JPEG data; for larger local assets, create target rectangles and use `figma_repl_apply_asset_manifest`.
