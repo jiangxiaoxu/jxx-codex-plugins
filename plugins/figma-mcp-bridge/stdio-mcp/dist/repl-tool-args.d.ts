@@ -22,7 +22,6 @@ export interface FigmaReplEvalArguments {
     surface?: FigmaReplSurface;
     allowDangerousOperations?: boolean;
     handleUpdates?: Record<string, string>;
-    outputFile?: string;
     inlineResultLimit?: number;
 }
 export interface FigmaReplRunScriptFileArguments {
@@ -37,7 +36,6 @@ export interface FigmaReplRunScriptFileArguments {
     targetPageId?: string;
     allowDangerousOperations?: boolean;
     outputDir?: string;
-    outputFile?: string;
     diagnosticsFile?: string;
     summaryFile?: string;
     inlineResultLimit?: number;
@@ -58,7 +56,6 @@ export interface FigmaReplApplyAssetManifestArguments {
     assets?: FigmaReplAssetManifestAsset[];
     manifestPath?: string;
     validateTargets?: boolean;
-    outputFile?: string;
 }
 export interface FigmaReplDownloadAssetsTarget {
     [key: string]: unknown;
@@ -74,14 +71,13 @@ export interface FigmaReplDownloadAssetsArguments {
     targets?: FigmaReplDownloadAssetsTarget[];
     manifestPath?: string;
     outputDir?: string;
-    outputFile?: string;
 }
 export interface FigmaReplCaptureNodeArguments {
     [key: string]: unknown;
     title?: string;
     sessionId?: string;
     target: unknown;
-    outputFile?: string;
+    imageFile?: string;
 }
 export interface FigmaReplTaskPlanStep {
     id?: string;
@@ -95,7 +91,6 @@ export interface FigmaReplRunTaskPlanArguments {
     planPath?: string;
     steps?: FigmaReplTaskPlanStep[];
     stopOnFailure?: boolean;
-    outputFile?: string;
 }
 export interface FigmaReplCallUpstreamToolArguments {
     [key: string]: unknown;
@@ -104,7 +99,6 @@ export interface FigmaReplCallUpstreamToolArguments {
     toolName: string;
     arguments?: Record<string, unknown>;
     refresh?: boolean;
-    outputFile?: string;
     inlineResultLimit?: number;
 }
 export interface FigmaReplLookupArguments {

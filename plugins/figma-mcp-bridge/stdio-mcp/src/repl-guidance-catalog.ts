@@ -158,7 +158,7 @@ export const FIGMA_REPL_API_CARDS: FigmaReplApiCard[] = [
     helpers: ["figma_repl_capture_node", "$.screenshot", "figma_repl_run_task_plan"],
     pluginApi: ["node.screenshot", "ExportSettingsImage"],
     apiSymbols: ["SceneNode.screenshot", "ExportSettingsImage", "figma.viewport"],
-    queryHints: ["capture node screenshot", "write screenshot to outputFile", "visual QA warnings"],
+    queryHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
     avoid: ["Treating opportunistic $.screenshot as final QA when no image payload is returned", "Relying only on inline MCP image payloads"],
     pitfalls: ["Prefer figma_repl_capture_node for final QA files.", "Inspect the saved local image/result when layout correctness matters."],
   },

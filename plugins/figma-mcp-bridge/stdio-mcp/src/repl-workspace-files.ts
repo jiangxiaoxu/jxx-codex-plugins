@@ -75,6 +75,7 @@ export function createScriptOutputWriter(
     diagnostics: FigmaReplDiagnostic[];
     summary: Record<string, unknown>;
     compiledScript?: string;
+    writeResult?: boolean;
   }): Promise<ScriptOutputFileMetadata>;
 } {
   const files = resolveScriptOutputFiles(args, session);
@@ -87,7 +88,7 @@ export function createScriptOutputWriter(
     },
     async write(payload) {
       const written: ScriptOutputFileMetadata = {};
-      if (files.resultFile) {
+      if (payload.writeResult && files.resultFile) {
         written.outputFile = await writeJsonFile(files.resultFile, payload.result);
       }
       if (files.diagnosticsFile) {
@@ -312,8 +313,6 @@ export function resolveTaskPlanResultFile(
   planPath: string | undefined,
   session: FigmaReplWorkspaceFileSession,
 ): string {
-  const explicit = resolveWorkspaceAwareFile(args.outputFile, session, "outputFile");
-  if (explicit) return explicit;
   if (planPath) {
     return planPath.replace(/\.json$/iu, ".result.json");
   }
@@ -321,10 +320,14 @@ export function resolveTaskPlanResultFile(
     return resolveWorkspaceFile(
       session.workspace.sessionDir,
       `${slugifyTaskName(args.title)}.plan.result.json`,
-      "outputFile",
+      "debugFile",
     );
   }
-  throw new Error('Tool argument "outputFile" is required for inline task plans.');
+  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve(tmpdir(), "figma-repl-mcp", "tasks");
+  if (!isAbsolute(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve(root, "task-plan-results", slugifyTaskName(args.title), `${slugifyTaskName(args.title)}.plan.result.json`);
 }
 
 export function withTaskPlanDefaultFiles(
@@ -338,31 +341,21 @@ export function withTaskPlanDefaultFiles(
   }
   const stepSlug = slugifyTaskName(id || type || "step");
   const next = { ...stepArgs };
-  const hasOutputFile = asOptionalString(next.outputFile) !== undefined;
   if (type === "script-file") {
-    if (!hasOutputFile) {
-      next.outputFile = `${stepSlug}.result.json`;
-    }
     return next;
   }
   if (type === "asset-manifest") {
-    if (!hasOutputFile) {
-      next.outputFile = `${stepSlug}.assets.result.json`;
-    }
     return next;
   }
   if (type === "download-assets") {
-    if (!hasOutputFile) {
-      next.outputFile = `${stepSlug}.downloads.result.json`;
-    }
     if (!asOptionalString(next.outputDir)) {
       next.outputDir = `${stepSlug}.downloads`;
     }
     return next;
   }
   if (type === "screenshot-capture") {
-    if (!asOptionalString(next.outputFile)) {
-      next.outputFile = stepSlug;
+    if (!asOptionalString(next.imageFile)) {
+      next.imageFile = stepSlug;
     }
     return next;
   }
@@ -518,7 +511,7 @@ function resolveScriptOutputFiles(
     const sessionDir = session.workspace.sessionDir;
     const inputFile = asOptionalString(args.inputFile);
     const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
-    const resultFile = resolveWorkspaceOutputFile(args.outputFile, sessionDir, defaultResult, "outputFile");
+    const resultFile = resolveWorkspaceOutputFile(undefined, sessionDir, defaultResult, "debugFile");
     return {
       resultFile,
       diagnosticsFile: args.diagnosticsFile ? resolveWorkspaceOutputFile(args.diagnosticsFile, sessionDir, "diagnostics.json", "diagnosticsFile") : undefined,
@@ -527,7 +520,7 @@ function resolveScriptOutputFiles(
     };
   }
   const hasOutputDir = Boolean(outputDir);
-  const resultFile = resolveOptionalOutputFile(args.outputFile, outputDir, hasOutputDir ? "result.json" : undefined, "outputFile");
+  const resultFile = resolveOptionalOutputFile(undefined, outputDir, hasOutputDir ? "result.json" : undefined, "debugFile");
   return {
     resultFile,
     diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, undefined, "diagnosticsFile"),
