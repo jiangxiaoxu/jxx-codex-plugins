@@ -26228,7 +26228,7 @@ function asCaptureNodeArgs(args) {
     "outputFile",
     "metadataFile"
   ]);
-  assertOptionalTargetValue(record2.target, "target");
+  assertOptionalCaptureTargetValue(record2.target, "target");
   return record2;
 }
 function asRunTaskPlanArgs(args) {
@@ -26435,6 +26435,25 @@ function assertOptionalTargetValue(value, displayName) {
     `${displayName}.nodeId/targetNodeId/targetHandle/targetId`
   );
   assertOptionalStringFieldsWithPrefix(value, displayName, ["handle"]);
+}
+function assertOptionalCaptureTargetValue(value, displayName) {
+  if (value === void 0 || typeof value === "string") {
+    return;
+  }
+  if (!isRecord2(value)) {
+    throw new Error(`Tool argument "${displayName}" must be a string or object.`);
+  }
+  assertOptionalStringFieldsWithPrefix(value, displayName, [
+    "fileKey",
+    "handle",
+    "targetHandle",
+    "nodeId",
+    "targetNodeId",
+    "target",
+    "id",
+    "url",
+    "nodeUrl"
+  ]);
 }
 function asTaskPlanSteps(value, displayName = "steps") {
   if (!Array.isArray(value)) {
@@ -26652,7 +26671,7 @@ function createReplToolDescriptions(options) {
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         target: {
-          description: 'Recommended target to capture. Accepts a Figma node id, node URL, local handle like $hero, or object like { handle: "$hero" }.'
+          description: 'Recommended target to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:"$hero" }, or { fileKey, nodeId }.'
         },
         outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .webp; explicit .png, .jpg, and .jpeg extensions are preserved; extensionless or other extensions normalize to .webp. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.webp path for image captures."),
         preview: booleanProperty("Opt in to a WebP MCP image preview in the tool content. Defaults false. The structured result contains only compact preview metadata.", { default: false }),
@@ -28594,6 +28613,7 @@ async function executeApplyAssetManifest(args, runtime) {
   const manifest = await loadAssetManifest(args, session);
   const tools = await runtime.upstreamToolCache.list(false);
   const tool = selectRequiredUpstreamTool(tools, UPLOAD_ASSETS_TOOL_NAME, "asset upload/fill");
+  assertUpstreamToolHasProperties(tool, ["fileKey", "count", "nodeId", "scaleMode"], "asset upload/fill");
   const failures = [];
   const assetResults = [];
   const assetDetails = [];
@@ -28746,6 +28766,13 @@ async function executeDownloadAssets(args, runtime) {
     throw new Error(
       `Upstream Figma MCP tool "${DOWNLOAD_ASSETS_TOOL_NAME}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
     );
+  }
+  assertUpstreamToolHasProperties(tool, ["fileKey", "nodeId"], "asset download");
+  if (manifest.targets.some((target) => target.defaultFormat !== void 0)) {
+    assertUpstreamToolHasProperty(tool, "defaultFormat", "asset download");
+  }
+  if (manifest.targets.some((target) => target.defaultScale !== void 0)) {
+    assertUpstreamToolHasProperty(tool, "defaultScale", "asset download");
   }
   const targetResults = [];
   const targetDetails = [];
@@ -29121,12 +29148,18 @@ async function executeCaptureNodeForTool(args, runtime) {
   if (!nodeId) {
     throw new Error('Tool argument "target" is required.');
   }
+  const fileKey = targetResolution.fileKey ?? session.fileKey ?? extractFigmaFileKey(session.fileUrl);
+  if (!fileKey) {
+    throw new Error('Tool argument "target" requires a fileKey for official get_screenshot. Pass a node URL, target:{ fileKey, nodeId }, or open the session with a Figma file URL first.');
+  }
   const requestedOutputFile = resolveCaptureOutputFile(args, session);
   const plannedImageOutputFile = captureImageOutputFilePath(requestedOutputFile);
   const metadataFile = resolveWorkspaceAwareFile(args.metadataFile, session, "metadataFile");
   const tools = await runtime.upstreamToolCache.list(false);
   const tool = selectRequiredUpstreamTool(tools, SCREENSHOT_TOOL_NAME, "node screenshot");
+  assertUpstreamToolHasProperties(tool, ["fileKey", "nodeId"], "node screenshot");
   const upstreamArguments = buildCaptureUpstreamArguments({
+    fileKey,
     nodeId,
     tool
   });
@@ -31060,6 +31093,11 @@ function assertUpstreamToolHasProperty(tool, propertyName, kind) {
     );
   }
 }
+function assertUpstreamToolHasProperties(tool, propertyNames, kind) {
+  for (const propertyName of propertyNames) {
+    assertUpstreamToolHasProperty(tool, propertyName, kind);
+  }
+}
 function buildAssetManifestUpstreamArguments(options) {
   if (options.tool.name === "upload_assets") {
     return buildUploadAssetsArguments(options.asset);
@@ -31084,7 +31122,7 @@ function buildUploadAssetsArguments(asset) {
 }
 function buildCaptureUpstreamArguments(options) {
   if (options.tool.name === "get_screenshot") {
-    return { nodeId: options.nodeId };
+    return { fileKey: options.fileKey, nodeId: options.nodeId };
   }
   throw new Error(
     `Required official upstream Figma MCP node screenshot tool "${SCREENSHOT_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging.`
@@ -32020,7 +32058,7 @@ function createCapabilitiesPayload() {
       capture: {
         tool: "figma_repl_capture_node",
         purpose: "Call official upstream get_screenshot and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
-        defaulting: "Requires advertised official get_screenshot and sends { nodeId } upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
+        defaulting: "Requires advertised official get_screenshot and sends { fileKey, nodeId } upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
         metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, optional WebP preview metadata when preview=true, and optional metadataFile with the full upstream capture envelope."
       },
       taskPlan: {
@@ -32633,8 +32671,13 @@ function normalizeLocalHandleName(name) {
 function resolveSessionTargetInput(input, session) {
   if (isRecord4(input)) {
     const explicitHandle = asOptionalString2(input.handle) ?? asOptionalString2(input.targetHandle);
+    const explicitFileKey = asOptionalString2(input.fileKey) ?? extractFigmaFileKey(asOptionalString2(input.url)) ?? extractFigmaFileKey(asOptionalString2(input.nodeUrl)) ?? extractFigmaFileKey(asOptionalString2(input.target));
     const nodeValue = explicitHandle ?? asOptionalString2(input.nodeId) ?? asOptionalString2(input.targetNodeId) ?? asOptionalString2(input.target) ?? asOptionalString2(input.id) ?? asOptionalString2(input.url) ?? asOptionalString2(input.nodeUrl);
-    return resolveSessionTargetInput(nodeValue, session);
+    const resolved = resolveSessionTargetInput(nodeValue, session);
+    return {
+      ...resolved,
+      fileKey: explicitFileKey ?? resolved.fileKey
+    };
   }
   const value = asOptionalString2(input);
   if (!value) {
@@ -32653,7 +32696,7 @@ function resolveSessionTargetInput(input, session) {
   }
   const fromUrl = extractFigmaNodeId(trimmed);
   if (fromUrl) {
-    return { nodeId: fromUrl };
+    return { nodeId: fromUrl, fileKey: extractFigmaFileKey(trimmed) };
   }
   const handle = normalizeLocalHandleName(trimmed);
   if (session.handles[handle]) {
