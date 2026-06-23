@@ -26,7 +26,6 @@ export interface FigmaReplEvalArguments {
   surface?: FigmaReplSurface;
   allowDangerousOperations?: boolean;
   handleUpdates?: Record<string, string>;
-  outputFile?: string;
   inlineResultLimit?: number;
 }
 
@@ -42,7 +41,6 @@ export interface FigmaReplRunScriptFileArguments {
   targetPageId?: string;
   allowDangerousOperations?: boolean;
   outputDir?: string;
-  outputFile?: string;
   diagnosticsFile?: string;
   summaryFile?: string;
   inlineResultLimit?: number;
@@ -65,7 +63,6 @@ export interface FigmaReplApplyAssetManifestArguments {
   assets?: FigmaReplAssetManifestAsset[];
   manifestPath?: string;
   validateTargets?: boolean;
-  outputFile?: string;
 }
 
 export interface FigmaReplDownloadAssetsTarget {
@@ -83,7 +80,6 @@ export interface FigmaReplDownloadAssetsArguments {
   targets?: FigmaReplDownloadAssetsTarget[];
   manifestPath?: string;
   outputDir?: string;
-  outputFile?: string;
 }
 
 export interface FigmaReplCaptureNodeArguments {
@@ -91,7 +87,7 @@ export interface FigmaReplCaptureNodeArguments {
   title?: string;
   sessionId?: string;
   target: unknown;
-  outputFile?: string;
+  imageFile?: string;
 }
 
 export interface FigmaReplTaskPlanStep {
@@ -107,7 +103,6 @@ export interface FigmaReplRunTaskPlanArguments {
   planPath?: string;
   steps?: FigmaReplTaskPlanStep[];
   stopOnFailure?: boolean;
-  outputFile?: string;
 }
 
 export interface FigmaReplCallUpstreamToolArguments {
@@ -117,7 +112,6 @@ export interface FigmaReplCallUpstreamToolArguments {
   toolName: string;
   arguments?: Record<string, unknown>;
   refresh?: boolean;
-  outputFile?: string;
   inlineResultLimit?: number;
 }
 
@@ -198,6 +192,15 @@ function assertRemovedArguments(
   }
 }
 
+function assertRemovedDebugOutputArguments(record: Record<string, unknown>, fields: readonly string[]): void {
+  const removed = fields.filter((field) => record[field] !== undefined);
+  if (removed.length > 0) {
+    throw new Error(
+      `Tool argument "${removed.join("/")}" was removed. Debug files are generated on demand for failures, diagnostics, and inline omissions.`,
+    );
+  }
+}
+
 export function asOpenArgs(args: unknown): FigmaReplOpenArguments {
   const record = parseToolArgs<FigmaReplOpenArguments>(args);
   assertRemovedFileReferenceFields(record);
@@ -221,10 +224,10 @@ export function asEvalArgs(args: unknown): FigmaReplEvalArguments {
   const record = parseToolArgs<FigmaReplEvalArguments>(args);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, [
     "code",
     "sessionId",
-    "outputFile",
   ]);
   assertOptionalEnum(record, "mode", FIGMA_REPL_EVAL_MODES);
   assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
@@ -235,7 +238,7 @@ export function asEvalArgs(args: unknown): FigmaReplEvalArguments {
 export function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArguments {
   const record = parseToolArgs<FigmaReplRunScriptFileArguments>(args);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
-  assertRemovedArguments(record, ["resultFile"], "outputFile");
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
   assertOptionalStringFields(record, [
     "sessionId",
@@ -243,7 +246,6 @@ export function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArgume
     "inputFile",
     "targetPageId",
     "outputDir",
-    "outputFile",
     "diagnosticsFile",
     "summaryFile",
   ]);
@@ -254,11 +256,10 @@ export function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArgume
 export function asApplyAssetManifestArgs(args: unknown): FigmaReplApplyAssetManifestArguments {
   const record = parseToolArgs<FigmaReplApplyAssetManifestArguments>(args);
   assertRemovedArguments(record, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_repl_call_upstream_tool");
-  assertRemovedArguments(record, ["resultFile"], "outputFile");
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, [
     "sessionId",
     "manifestPath",
-    "outputFile",
   ]);
   assertOptionalAssets(record);
   return record;
@@ -269,11 +270,11 @@ export function asDownloadAssetsArgs(args: unknown): FigmaReplDownloadAssetsArgu
   assertRemovedArguments(record, ["target"], "targets");
   assertRemovedArguments(record, ["assets"], "targets");
   assertRemovedArguments(record, ["toolName", "arguments", "refresh", "download"], "figma_repl_call_upstream_tool");
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, [
     "sessionId",
     "manifestPath",
     "outputDir",
-    "outputFile",
   ]);
   const targets = assertOptionalDownloadAssetTargets(record);
   if (targets) {
@@ -285,12 +286,13 @@ export function asDownloadAssetsArgs(args: unknown): FigmaReplDownloadAssetsArgu
 export function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments {
   const record = parseToolArgs<FigmaReplCaptureNodeArguments>(args);
   assertRemovedArguments(record, ["nodeId", "targetNodeId", "handle"], "target");
-  assertRemovedArguments(record, ["resultFile"], "outputFile");
+  assertRemovedArguments(record, ["outputFile"], "imageFile");
+  assertRemovedArguments(record, ["resultFile"], "imageFile");
   assertRemovedArguments(record, ["metadataFile"], "figma_repl_call_upstream_tool");
   assertRemovedArguments(record, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_repl_call_upstream_tool");
   assertOptionalStringFields(record, [
     "sessionId",
-    "outputFile",
+    "imageFile",
   ]);
   assertOptionalCaptureTargetValue(record.target, "target");
   return record;
@@ -298,11 +300,10 @@ export function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments 
 
 export function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments {
   const record = parseToolArgs<FigmaReplRunTaskPlanArguments>(args);
-  assertRemovedArguments(record, ["resultFile"], "outputFile");
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, [
     "sessionId",
     "planPath",
-    "outputFile",
   ]);
   const steps = assertOptionalTaskPlanSteps(record);
   if (steps) {
@@ -365,7 +366,8 @@ export function asInspectArgs(args: unknown): FigmaReplInspectArguments {
 
 export function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments {
   const record = parseToolArgs<FigmaReplCallUpstreamToolArguments>(args);
-  assertOptionalStringFields(record, ["sessionId", "toolName", "outputFile"]);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, ["sessionId", "toolName"]);
   assertOptionalRecord(record, "arguments");
   return record;
 }

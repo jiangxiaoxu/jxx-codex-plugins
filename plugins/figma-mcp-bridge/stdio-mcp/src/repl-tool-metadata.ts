@@ -49,7 +49,6 @@ export function createReplToolDescriptions(
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
-        outputFile: stringProperty("Optional minimal result envelope JSON file. Relative paths require an initialized workspace; omitted large results use an automatic eval-<timestamp>.result.json file plus a paired upstream sidecar."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
         handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code."),
       }, ["code"]),
@@ -57,7 +56,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_run_script_file",
       description:
-        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile, outputFile }. Use scriptPath, split output files, and inlineResultLimit only when a task explicitly needs those file/output controls. Execution uses fixed upstream use_figma/code.",
+        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile }. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
@@ -68,8 +67,7 @@ export function createReplToolDescriptions(
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
-        outputDir: stringProperty("Advanced absolute directory escape hatch. Defaults to result.json only; pass diagnosticsFile or summaryFile for split files."),
-        outputFile: stringProperty("Recommended normal result file name inside the initialized file-context directory. Defaults to the input script basename plus .result.json."),
+        outputDir: stringProperty("Advanced absolute directory escape hatch for on-demand debug files and split diagnostics/summary files."),
         diagnosticsFile: stringProperty("Advanced opt-in split diagnostics JSON file. Leave unset for normal agent workflows."),
         summaryFile: stringProperty("Advanced opt-in split Markdown summary file. Leave unset for normal agent workflows."),
         inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.payload/upstream.text only. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
@@ -78,7 +76,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_apply_asset_manifest",
       description:
-        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Use figma_repl_call_upstream_tool only for explicit uncovered upstream capabilities.",
+        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { title, sessionId, manifestPath } after .figma.js creates target rectangles. Debug JSON files are generated on demand for failures. Use figma_repl_call_upstream_tool only for explicit uncovered upstream capabilities.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -89,13 +87,12 @@ export function createReplToolDescriptions(
           items: { type: "object", additionalProperties: true },
         },
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload.", { default: true }),
-        outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace."),
       }),
     },
     {
       name: "figma_repl_download_assets",
       description:
-        "Workflow add-on for official Figma asset downloads. Recommended call: { title, sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir?, outputFile? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets and saves exported plus raw/source files locally.",
+        "Workflow add-on for official Figma asset downloads. Recommended call: { title, sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets, saves exported plus raw/source files locally, and writes debug JSON only on failure.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for fileKey, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -106,26 +103,25 @@ export function createReplToolDescriptions(
         },
         manifestPath: stringProperty("Optional batch manifest path. Accepts an absolute path or a file name inside the initialized file-context workspace. Manifest shape is exactly { targets: [...] }; assets aliases are rejected."),
         outputDir: stringProperty("Optional output directory. Relative paths require an initialized workspace. Defaults to <slug>.downloads in the workspace, or a temp download-results directory without a workspace."),
-        outputFile: stringProperty("Optional result JSON path. Relative paths require an initialized workspace. Defaults to <slug>.downloads.result.json."),
       }),
     },
     {
       name: "figma_repl_capture_node",
       description:
-        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { target, sessionId?, outputFile? }. Captures are saved as PNG; extensionless or non-.png outputFile values normalize to .png. Results return the local PNG path in structuredContent.outputFile.",
+        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { target, sessionId?, imageFile? }. Captures are saved as PNG; extensionless or non-.png imageFile values normalize to .png. Results return the local PNG path in structuredContent.imageFile.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for file context and history. Defaults to 'default'."),
         target: {
           description: "Target node to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:\"$hero\" }, or { fileKey, nodeId }.",
         },
-        outputFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted outputFile auto-generates capture-<timestamp>.png."),
+        imageFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted imageFile auto-generates capture-<timestamp>.png."),
       }, ["target"]),
     },
     {
       name: "figma_repl_run_task_plan",
       description:
-        "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Steps use only { id?, type?, args? }; put tool-specific inputs inside args.",
+        "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { title, sessionId, planPath }. Steps use only { id?, type?, args? }; put tool-specific inputs inside args. The plan-level debug file is generated automatically.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
@@ -136,17 +132,16 @@ export function createReplToolDescriptions(
           items: taskPlanStepProperty("One task-plan step. Put tool-specific inputs under args."),
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true.", { default: true }),
-        outputFile: stringProperty("Recommended plan result JSON file name inside the initialized file-context workspace."),
       }),
     },
     {
       name: "figma_repl_prepare_task",
       description:
-        "Core workflow entrypoint for creating or reusing a task-specific .figma.js script and paired .result.json file. Recommended workspace call: { title, file, task, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
+        "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { title, file, task, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
-        task: stringProperty("Recommended human task used to derive <taskSlug>.figma.js and <taskSlug>.result.json."),
+        task: stringProperty("Recommended human task used to derive <taskSlug>.figma.js."),
         file: stringProperty("Recommended Figma file URL or raw file key used to derive the file context when preparing a workspace."),
         fileSlug: stringProperty("Advanced file-context slug override to use when file cannot derive a key."),
         cwd: stringProperty("Optional absolute project directory where the figma-mcp workspace directory will be created. Defaults to the MCP server process cwd when file context is present."),
@@ -203,7 +198,6 @@ export function createReplToolDescriptions(
         toolName: stringProperty("Official upstream Figma MCP tool name to call for an uncovered capability. Local figma_repl_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        outputFile: stringProperty("Optional minimal result envelope JSON file. Relative paths require an initialized workspace; omitted large results use an automatic upstream-<tool>-<timestamp>.result.json file plus a paired upstream sidecar."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
       }, ["toolName", "arguments"]),
     },
@@ -236,7 +230,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
-      "Files written for minimal result envelope and upstream sidecar when inline fields are omitted or outputFile is requested.",
+      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
       ["outputFile", "upstreamFile"],
     ),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
@@ -247,7 +241,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
     script: scriptMetadataProperty("Compiled script metadata."),
     outputFiles: outputFilesProperty(
-      "Files written for complete result, upstream sidecar, diagnostics, summary, or failure-only compiled script.",
+      "Debug files written on demand for failures, diagnostics, inline omissions, split diagnostics/summary, or failure-only compiled script.",
       ["outputFile", "upstreamFile", "diagnosticsFile", "summaryFile", "compiledScriptFile"],
     ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -259,7 +253,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Public local REPL session metadata."),
     assets: compactAssetResultsProperty("Compact per-asset upload/fill results."),
     validation: objectProperty("Optional target validation result."),
-    outputFiles: outputFilesProperty("Files written for result output.", ["outputFile"]),
+    outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["outputFile"]),
     failures: arrayProperty("Per-asset or validation failures."),
   }),
   figma_repl_download_assets: toolOutputSchema({
@@ -267,11 +261,11 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     outputDir: stringProperty("Local directory containing per-target download folders."),
     targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
     failures: arrayProperty("Per-target download or upstream failures."),
-    outputFiles: outputFilesProperty("Files written for complete download result output.", ["outputFile"]),
+    outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["outputFile"]),
   }),
   figma_repl_capture_node: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
-    outputFile: stringProperty("Absolute local PNG screenshot path when capture succeeded."),
+    imageFile: stringProperty("Absolute local PNG screenshot path when capture succeeded."),
     nodeId: stringProperty("Captured Figma node id."),
     bytes: numberProperty("Saved PNG file size in bytes."),
     width: numberProperty("Saved PNG width in pixels."),
@@ -287,10 +281,9 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     failures: compactTaskPlanFailuresProperty("Compact failed task-plan step summaries."),
   }),
   figma_repl_prepare_task: toolOutputSchema({
-    task: objectProperty("Prepared task workspace and script/result files."),
+    task: objectProperty("Prepared task workspace and script file."),
     session: objectProperty("Public local REPL session metadata."),
     taskChange: taskChangeProperty("Previous/current task file pointers and whether the session active task changed."),
-    outputFiles: outputFilesProperty("Files written for the prepared pending result output.", ["outputFile"]),
     next: stringArrayProperty("Suggested next actions."),
   }),
   figma_repl_guidance: toolOutputSchema({
@@ -327,7 +320,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
-      "Files written for minimal result envelope and upstream sidecar when inline fields are omitted or outputFile is requested.",
+      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
       ["outputFile", "upstreamFile"],
     ),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),

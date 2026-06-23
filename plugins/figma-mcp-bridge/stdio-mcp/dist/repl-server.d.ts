@@ -70,10 +70,8 @@ export interface FigmaReplPublicWorkspace {
     taskSlug: string;
     sessionDir: string;
     scriptPath: string;
-    outputFilePath: string;
     files: {
         inputFile: string;
-        outputFile: string;
     };
 }
 export interface FigmaReplPublicSession {
@@ -186,11 +184,11 @@ export interface FigmaReplDownloadAssetsResult extends FigmaReplToolResultBase {
     outputDir: string;
     targets: FigmaReplDownloadAssetsTargetResult[];
     failures?: Array<Record<string, unknown>>;
-    outputFiles: FigmaReplOutputFiles;
+    outputFiles?: FigmaReplOutputFiles;
 }
 export interface FigmaReplCaptureNodeResult extends FigmaReplToolResultBase {
     session: FigmaReplPublicSession;
-    outputFile?: string;
+    imageFile?: string;
     nodeId: string;
     bytes?: number;
     width?: number;
@@ -231,14 +229,12 @@ export interface FigmaReplPreparedTask {
     taskSlug: string;
     fileContext: string;
     inputFile: string;
-    outputFile: string;
     workspace: FigmaReplPublicWorkspace;
     scriptPath: string;
     overwritten: boolean;
 }
 export interface FigmaReplPrepareTaskResult extends FigmaReplToolResultBase {
     task: FigmaReplPreparedTask;
-    outputFiles: FigmaReplOutputFiles;
     next: string[];
 }
 export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {

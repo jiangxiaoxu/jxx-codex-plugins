@@ -53,6 +53,7 @@ export declare function createScriptOutputWriter(args: FigmaReplRunScriptFileArg
         diagnostics: FigmaReplDiagnostic[];
         summary: Record<string, unknown>;
         compiledScript?: string;
+        writeResult?: boolean;
     }): Promise<ScriptOutputFileMetadata>;
 };
 export declare function resolveScriptInputPath(args: FigmaReplRunScriptFileArguments, session: FigmaReplWorkspaceFileSession): string;
