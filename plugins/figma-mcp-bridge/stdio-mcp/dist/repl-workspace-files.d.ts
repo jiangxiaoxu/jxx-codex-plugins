@@ -72,7 +72,7 @@ export declare function captureImageOutputFilePath(outputFile: string): string;
 export declare function captureTextOutputFilePath(outputFile: string): string;
 export declare function createCapturePreviewImage(inputFile: string): Promise<{
     data: Buffer;
-    mimeType: "image/webp";
+    mimeType: "image/png";
     bytes: number;
     width?: number;
     height?: number;

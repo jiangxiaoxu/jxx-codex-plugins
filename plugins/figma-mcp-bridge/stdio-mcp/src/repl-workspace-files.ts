@@ -11,14 +11,8 @@ import { asTaskPlanSteps } from "./repl-tool-args.js";
 
 export const TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 export const DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
-const CAPTURE_WEBP_OPTIONS = { quality: 98, effort: 4 } as const;
-const CAPTURE_JPEG_OPTIONS = { quality: 98 } as const;
 
-type CaptureImageFormat = "webp" | "png" | "jpeg";
-type CaptureImageMimeType = "image/webp" | "image/png" | "image/jpeg";
-type SharpFactory = typeof import("sharp")["default"];
-
-let sharpFactoryPromise: Promise<SharpFactory> | undefined;
+type CaptureImageMimeType = "image/png";
 
 export interface FigmaReplSessionWorkspace {
   root: string;
@@ -181,7 +175,7 @@ export async function writeCaptureOutputFile(
   const image = content.find((item) => item.type === "image" && typeof item.data === "string");
   if (image && typeof image.data === "string") {
     const buffer = Buffer.from(image.data, "base64");
-    return writeCaptureImageOutputFile(outputFile, buffer);
+    return writeCaptureImageOutputFile(outputFile, buffer, undefined, normalizeCaptureImageMimeType(image.mimeType));
   }
   const sourceUrl = extractCaptureImageUrl(upstream, parsed);
   if (sourceUrl) {
@@ -192,7 +186,12 @@ export async function writeCaptureOutputFile(
       );
     }
     const buffer = Buffer.from(await response.arrayBuffer());
-    return writeCaptureImageOutputFile(outputFile, buffer, sourceUrl);
+    return writeCaptureImageOutputFile(
+      outputFile,
+      buffer,
+      sourceUrl,
+      normalizeCaptureImageMimeType(response.headers.get("content-type")),
+    );
   }
   const textItem = content.find((item) => item.type === "text" && typeof item.text === "string");
   const text = typeof textItem?.text === "string"
@@ -220,19 +219,15 @@ export function captureTextOutputFilePath(outputFile: string): string {
 
 export async function createCapturePreviewImage(
   inputFile: string,
-): Promise<{ data: Buffer; mimeType: "image/webp"; bytes: number; width?: number; height?: number }> {
-  const input = await readFile(inputFile);
-  const sharp = await loadSharpFactory();
-  const { data, info } = await sharp(input)
-    .resize({ width: 320, height: 320, fit: "inside", withoutEnlargement: true })
-    .webp(CAPTURE_WEBP_OPTIONS)
-    .toBuffer({ resolveWithObject: true });
+): Promise<{ data: Buffer; mimeType: "image/png"; bytes: number; width?: number; height?: number }> {
+  const data = await readFile(inputFile);
+  const dimensions = readPngDimensions(data);
   return {
     data,
-    mimeType: "image/webp",
+    mimeType: "image/png",
     bytes: data.byteLength,
-    width: info.width,
-    height: info.height,
+    width: dimensions?.width,
+    height: dimensions?.height,
   };
 }
 
@@ -240,55 +235,79 @@ async function writeCaptureImageOutputFile(
   outputFile: string,
   buffer: Buffer,
   sourceUrl?: string,
+  sourceMimeType?: CaptureImageMimeType,
 ): Promise<{ path: string; kind: "image"; mimeType: CaptureImageMimeType; bytes: number; lineCount: 0; width?: number; height?: number; sourceUrl?: string }> {
   const output = resolveCaptureImageOutput(outputFile);
   await mkdir(dirname(output.path), { recursive: true });
-  const sharp = await loadSharpFactory();
-  const pipeline = sharp(buffer);
-  const encoded = output.format === "png"
-    ? pipeline.png()
-    : output.format === "jpeg"
-      ? pipeline.flatten({ background: "#ffffff" }).jpeg(CAPTURE_JPEG_OPTIONS)
-      : pipeline.webp(CAPTURE_WEBP_OPTIONS);
-  const { data, info } = await encoded.toBuffer({ resolveWithObject: true });
-  await writeFile(output.path, data);
+  const inputMimeType = sourceMimeType ?? detectCaptureImageMimeType(buffer);
+  if (inputMimeType !== "image/png") {
+    throw new Error(
+      `Capture image output currently supports official image/png screenshot payloads only; upstream returned ${inputMimeType ?? "unknown image data"}.`,
+    );
+  }
+  const dimensions = readPngDimensions(buffer);
+  await writeFile(output.path, buffer);
   return {
     path: output.path,
     kind: "image",
     mimeType: output.mimeType,
-    bytes: data.byteLength,
+    bytes: buffer.byteLength,
     lineCount: 0,
-    width: info.width,
-    height: info.height,
+    width: dimensions?.width,
+    height: dimensions?.height,
     sourceUrl,
   };
 }
 
-async function loadSharpFactory(): Promise<SharpFactory> {
-  sharpFactoryPromise ??= import("sharp")
-    .then((module) => module.default)
-    .catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Image capture conversion requires the optional native dependency "sharp", but it could not be loaded: ${message}`);
-    });
-  return sharpFactoryPromise;
+function normalizeCaptureImageMimeType(value: unknown): CaptureImageMimeType | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const mimeType = value.split(";")[0]?.trim().toLowerCase();
+  if (mimeType === "image/png") {
+    return mimeType;
+  }
+  return undefined;
 }
 
-function resolveCaptureImageOutput(path: string): { path: string; format: CaptureImageFormat; mimeType: CaptureImageMimeType } {
+function detectCaptureImageMimeType(buffer: Buffer): CaptureImageMimeType | undefined {
+  if (isPngBuffer(buffer)) {
+    return "image/png";
+  }
+  return undefined;
+}
+
+function readPngDimensions(buffer: Buffer): { width: number; height: number } | undefined {
+  if (!isPngBuffer(buffer) || buffer.length < 24) {
+    return undefined;
+  }
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
+  };
+}
+
+function isPngBuffer(buffer: Buffer): boolean {
+  return buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a;
+}
+
+function resolveCaptureImageOutput(path: string): { path: string; mimeType: CaptureImageMimeType } {
   const extension = extname(path).toLowerCase();
   if (extension === ".png") {
-    return { path, format: "png", mimeType: "image/png" };
+    return { path, mimeType: "image/png" };
   }
-  if (extension === ".jpg" || extension === ".jpeg") {
-    return { path, format: "jpeg", mimeType: "image/jpeg" };
-  }
-  if (extension === ".webp") {
-    return { path, format: "webp", mimeType: "image/webp" };
-  }
-  return { path: withFileExtension(path, ".webp"), format: "webp", mimeType: "image/webp" };
+  return { path: withFileExtension(path, ".png"), mimeType: "image/png" };
 }
 
-function withFileExtension(path: string, extension: ".webp" | ".txt"): string {
+function withFileExtension(path: string, extension: ".png" | ".txt"): string {
   const currentExtension = extname(path);
   if (!currentExtension) {
     return `${path}${extension}`;
