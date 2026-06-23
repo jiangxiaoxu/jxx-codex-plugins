@@ -2994,10 +2994,11 @@ async function resolveEvalSettings(
   const tool = tools.find((item) => item.name === toolName);
   if (!tool) {
     throw new Error(
-      `Upstream Figma MCP tool "${toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`,
+      `Required official upstream Figma MCP execution tool "${toolName}" was not found. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging. Available tools: ${tools.map((item) => item.name).join(", ")}`,
     );
   }
   const argumentName = DEFAULT_EVAL_ARGUMENT_NAME;
+  assertUpstreamToolHasProperty(tool, argumentName, "execution");
   const upstreamArguments: Record<string, unknown> = {};
   if (
     typeof upstreamArguments.fileKey !== "string" ||
@@ -4198,10 +4199,24 @@ function selectRequiredUpstreamTool(
   const tool = tools.find((item) => item.name === toolName);
   if (!tool) {
     throw new Error(
-      `Required official upstream Figma MCP ${kind} tool "${toolName}" was not found. Use "figma_repl_call_upstream_tool" for custom upstream calls. Available tools: ${tools.map((item) => item.name).join(", ")}`,
+      `Required official upstream Figma MCP ${kind} tool "${toolName}" was not found. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging. Available tools: ${tools.map((item) => item.name).join(", ")}`,
     );
   }
   return tool;
+}
+
+function assertUpstreamToolHasProperty(
+  tool: UpstreamToolInfo,
+  propertyName: string,
+  kind: string,
+): void {
+  const schema = isRecord(tool.inputSchema) ? tool.inputSchema : undefined;
+  const properties = isRecord(schema?.properties) ? schema.properties : undefined;
+  if (!properties || !(propertyName in properties)) {
+    throw new Error(
+      `Required official upstream Figma MCP ${kind} tool "${tool.name}" no longer advertises inputSchema.properties.${propertyName}. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging.`,
+    );
+  }
 }
 
 function buildAssetManifestUpstreamArguments(options: {
@@ -4212,14 +4227,14 @@ function buildAssetManifestUpstreamArguments(options: {
     return buildUploadAssetsArguments(options.asset);
   }
   throw new Error(
-    `Required official upstream Figma MCP asset upload/fill tool "${UPLOAD_ASSETS_TOOL_NAME}" was not found. Use "figma_repl_call_upstream_tool" for custom upstream calls.`,
+    `Required official upstream Figma MCP asset upload/fill tool "${UPLOAD_ASSETS_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging.`,
   );
 }
 
 function buildUploadAssetsArguments(asset: NormalizedAssetManifestAsset): Record<string, unknown> {
   if (!asset.fileKey) {
     throw new Error(
-      `Asset manifest entry for "${asset.path}" needs a fileKey for upload_assets. Open the session with file or use "figma_repl_call_upstream_tool" for custom upstream calls.`,
+      `Asset manifest entry for "${asset.path}" needs a fileKey for upload_assets. Open the session with file or use "figma_repl_call_upstream_tool" for explicit upstream debugging.`,
     );
   }
   const scaleMode = normalizeImageScaleMode(asset.scaleMode ?? "FILL", "scaleMode");
@@ -4239,7 +4254,7 @@ function buildCaptureUpstreamArguments(options: {
     return { nodeId: options.nodeId };
   }
   throw new Error(
-    `Required official upstream Figma MCP node screenshot tool "${SCREENSHOT_TOOL_NAME}" was not found. Use "figma_repl_call_upstream_tool" for custom upstream calls.`,
+    `Required official upstream Figma MCP node screenshot tool "${SCREENSHOT_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging.`,
   );
 }
 
@@ -4979,7 +4994,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Use <taskSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
-      "File-script responses use a fixed structured shape: parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, and file pointers stay in outputFiles. Non-dry-run script output writes outputFiles.upstreamFile with the upstream envelope when an outputFile exists.",
+      "Tool responses are structured-first: JSON data is in structuredContent, while content is reserved for MCP media items such as capture preview images. File-script parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, file pointers stay in outputFiles, and upstream sidecars use outputFiles.upstreamFile.",
       "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
     ],
   };
@@ -5049,7 +5064,7 @@ function createToolTierPayload(): Record<string, unknown> {
       tools: ["figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_run_task_plan"],
     },
     advancedEscapeHatches: {
-      summary: "Use only for short ephemeral calls, upstream-only capabilities, or routing/debug cases.",
+      summary: "Use only for short ephemeral calls or explicit uncovered upstream-only capabilities.",
       tools: ["figma_repl_eval", "figma_repl_call_upstream_tool"],
     },
   };
@@ -5100,7 +5115,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     eval: {
       tool: "figma_repl_eval",
       tier: "advancedEscapeHatches",
-      guidance: "Use only for small ephemeral calls. Prefer figma_repl_run_script_file for repairable scripts, multi-step work, and large structured results.",
+      guidance: "Use only for small ephemeral calls. Use prepare_task + figma_repl_run_script_file for repairable scripts, multi-step work, and large structured results.",
       recommendedCalls: {
         read: { title: "Inspect selected layout metadata", sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
         write: { title: "Apply the selected node updates", sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" },
@@ -5187,9 +5202,9 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     callUpstreamTool: {
       tool: "figma_repl_call_upstream_tool",
       tier: "advancedEscapeHatches",
-      guidance: "Explicit upstream escape hatch only; use when a required official Figma MCP capability is not covered by the REPL workflow tools.",
+      guidance: "Explicit upstream escape hatch only for uncovered official Figma MCP capabilities. Read figma-repl://upstream-tools, then figma-repl://upstream-tools/{name}, and do not use for use_figma/get_screenshot/upload_assets/download_assets wrappers.",
       recommendedCalls: {
-        explicit: { title: "Call the upstream-only Figma tool", sessionId: "<session>", toolName: "<official upstream tool>", arguments: {} },
+        explicit: { title: "Call the upstream-only Figma tool", sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} },
       },
       advancedArguments: ["outputFile", "inlineResultLimit", "refresh"],
       avoidUnless: {
@@ -5216,14 +5231,14 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through official upload_assets",
         "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
         "figma_repl_capture_node for final visual QA captures saved as local image files, WebP by default and PNG/JPEG when the outputFile extension requests it; add preview=true for a WebP MCP image preview",
-        "figma_repl_open only for lightweight session/context binding when a prepared task is not needed",
+        "figma_repl_open only for lightweight session/context binding when a prepared task is not needed; start new file tasks with figma_repl_prepare_task",
         "figma_repl_run_task_plan only for repeatable multi-step plans",
         "figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work",
         "figma_repl_call_upstream_tool only when a task explicitly needs an uncovered upstream Figma MCP tool",
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
-      upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma_repl_mcp interface.",
-      responseShape: "Fixed structured payloads without session.history. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and preview schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files.",
+      upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_screenshot, upload_assets, and download_assets.",
+      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent; content is empty except for MCP protocol media items such as capture preview images. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and preview schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files.",
     },
     toolTiers: createToolTierPayload(),
     patterns: {
@@ -5307,7 +5322,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         tool: "figma_repl_apply_asset_manifest",
         purpose: "Apply local generated image files to pre-created target nodes through official upstream upload_assets.",
         assetShape: "{ path, target, nodeUrl?, name?, metadata? }",
-        defaults: "Requires advertised official upload_assets, resolves target handles, and sends fileKey/count/nodeId/scaleMode upstream. Use figma_repl_call_upstream_tool for custom upstream calls.",
+        defaults: "Requires advertised official upload_assets, resolves target handles, and sends fileKey/count/nodeId/scaleMode upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
         result: "Inline assets are compact: ok, path, targetNodeId, handle, name, toolName, compact upload summary, validation, error, upstreamSummary. Explicit outputFile writes assetDetails with full per-asset upstream envelopes, upload details, and arguments.",
         validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload.",
       },
@@ -5321,11 +5336,12 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       capture: {
         tool: "figma_repl_capture_node",
         purpose: "Call official upstream get_screenshot and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
-        defaulting: "Requires advertised official get_screenshot and sends { nodeId } upstream. Use figma_repl_call_upstream_tool for custom upstream calls.",
+        defaulting: "Requires advertised official get_screenshot and sends { nodeId } upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
         metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, optional WebP preview metadata when preview=true, and optional metadataFile with the full upstream capture envelope.",
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",
+        stepShape: "{ id?, type?, args? }; put all tool-specific inputs inside args.",
         stepTypes: ["script-file", "asset-manifest", "upload_assets", "download-assets", "download_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
         references: "Later step arguments can reference prior outputs with {{outputs.stepId.outputFile.path}} or {{steps.stepId.outputFiles.outputFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, downloads expose {{steps.stepId.downloadOutputDir}} and {{steps.stepId.downloadTargets}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
@@ -5365,7 +5381,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       returns: ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"],
     },
     facadeRoutingDelegationBoundaries: [
-      "Keep the agent on figma_repl_mcp; use figma_repl_call_upstream_tool only for explicit upstream-tool calls.",
+      "Keep the agent on figma_repl_mcp; use figma_repl_call_upstream_tool only for explicit uncovered upstream-tool calls after reading figma-repl://upstream-tools/{name}.",
       "For small generated local PNG/JPEG assets in .figma.js, use $.imageAsset({ base64, parent, size, position, as }); for large assets, create target rectangles then route through an upstream official upload_assets workflow when available.",
       "Do not use PluginData APIs for agent state; use local session handles or a dedicated storage workflow.",
       "Use compact docs/API lookup as the exposed documentation surface; bundled corpus files stay internal.",
@@ -5505,7 +5521,8 @@ async function readReplResource(
           text: JSON.stringify({
             tools: tools.map((tool) => upstreamToolDirectoryEntry(tool)),
             detailTemplate: "figma-repl://upstream-tools/{name}",
-            guidance: "Compact read-only directory for official upstream Figma MCP tools. Read figma-repl://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability.",
+            categories: ["capture", "design-context", "execution", "assets", "code-connect", "libraries", "figjam", "generation", "account", "other"],
+            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-repl://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_repl_* wrappers for use_figma, get_screenshot, upload_assets, and download_assets.",
           }, null, 2),
         },
       ],
@@ -5529,7 +5546,7 @@ async function readReplResource(
             description: tool.description,
             inputSchema: tool.inputSchema,
             callTool: "figma_repl_call_upstream_tool",
-            guidance: "Full upstream tool contract. Use only for explicit uncovered official upstream capabilities; prefer dedicated figma_repl_* workflow tools when available.",
+            guidance: "Full upstream tool contract. Use figma_repl_call_upstream_tool only for explicit uncovered official upstream capabilities; prefer dedicated figma_repl_* workflow tools when available.",
           }, null, 2),
         },
       ],
@@ -5569,9 +5586,44 @@ async function readReplResource(
 function upstreamToolDirectoryEntry(tool: UpstreamToolInfo): Record<string, unknown> {
   return {
     name: tool.name,
+    category: upstreamToolDirectoryCategory(tool),
     description: upstreamToolDirectoryDescription(tool),
   };
 }
+
+type UpstreamToolDirectoryCategory =
+  | "capture"
+  | "design-context"
+  | "execution"
+  | "assets"
+  | "code-connect"
+  | "libraries"
+  | "figjam"
+  | "generation"
+  | "account"
+  | "other";
+
+const UPSTREAM_TOOL_DIRECTORY_CATEGORIES: Record<string, UpstreamToolDirectoryCategory> = {
+  get_screenshot: "capture",
+  get_design_context: "design-context",
+  get_metadata: "design-context",
+  get_variable_defs: "design-context",
+  get_figjam: "figjam",
+  generate_figma_design: "generation",
+  generate_diagram: "figjam",
+  get_code_connect_map: "code-connect",
+  whoami: "account",
+  add_code_connect_map: "code-connect",
+  get_code_connect_suggestions: "code-connect",
+  send_code_connect_mappings: "code-connect",
+  get_context_for_code_connect: "code-connect",
+  use_figma: "execution",
+  get_libraries: "libraries",
+  search_design_system: "libraries",
+  create_new_file: "generation",
+  upload_assets: "assets",
+  download_assets: "assets",
+};
 
 const UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS: Record<string, string> = {
   get_screenshot: "Capture a screenshot for a selected or specified Figma node.",
@@ -5594,6 +5646,10 @@ const UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS: Record<string, string> = {
   upload_assets: "Get upload URLs for image assets before applying them in Figma.",
   download_assets: "Download exported renders and source images for one Figma node.",
 };
+
+function upstreamToolDirectoryCategory(tool: UpstreamToolInfo): UpstreamToolDirectoryCategory {
+  return UPSTREAM_TOOL_DIRECTORY_CATEGORIES[tool.name] ?? "other";
+}
 
 function upstreamToolDirectoryDescription(tool: UpstreamToolInfo): string | undefined {
   return UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS[tool.name] ?? compactUpstreamToolDescription(tool.description);
@@ -6067,13 +6123,7 @@ function makeJsonToolResult(value: unknown, extraContent: Array<Record<string, u
   const structuredContent = removeUndefined(value);
   return {
     structuredContent,
-    content: [
-      {
-        type: "text",
-        text: summarizeToolResult(structuredContent),
-      },
-      ...extraContent,
-    ],
+    content: extraContent,
   };
 }
 
@@ -6089,14 +6139,6 @@ function parseJsonToolResult<T extends Record<string, unknown>>(result: Record<s
     return result as T;
   }
   return JSON.parse(firstText) as T;
-}
-
-function summarizeToolResult(value: unknown): string {
-  const record = asRecord(value);
-  if (record.ok === false) {
-    return "Figma REPL tool failed.";
-  }
-  return "Figma REPL tool completed.";
 }
 
 function normalizeOAuthCachePath(oauthCachePath: string): string {

@@ -42,7 +42,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_eval",
       description:
-        "Small ephemeral JavaScript call for quick reads or tightly scoped updates. Recommended call: { title, sessionId, code, mode, surface }. Prefer run_script_file for repairable or multi-step work; eval injects only AST-referenced $ helpers and supports outputFile/upstreamFile for large results.",
+        "Small ephemeral JavaScript call for quick reads or tightly scoped updates only. Recommended call: { title, sessionId, code, mode, surface }. Use prepare_task + run_script_file for repairable scripts, multi-step work, and large structured results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -58,7 +58,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_run_script_file",
       description:
-        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile, outputFile }. Use scriptPath, split output files, and inlineResultLimit only for advanced/debug workflows. Execution uses fixed upstream use_figma/code. Read figma-repl://capabilities for disabled dynamic helper syntax.",
+        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile, outputFile }. Use scriptPath, split output files, and inlineResultLimit only when a task explicitly needs those file/output controls. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
@@ -79,7 +79,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_apply_asset_manifest",
       description:
-        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Use figma_repl_call_upstream_tool for custom upstream calls.",
+        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Use figma_repl_call_upstream_tool only for explicit uncovered upstream capabilities.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -128,7 +128,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_run_task_plan",
       description:
-        "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Use for scripted script/asset/capture/upstream sequences; inline steps are advanced only.",
+        "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Steps use only { id?, type?, args? }; put tool-specific inputs inside args.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
@@ -199,11 +199,11 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_call_upstream_tool",
       description:
-        "Advanced escape hatch for proxying one official upstream Figma MCP tool call through figma_repl_mcp. Use only when a required official capability is not covered by prepare_task, run_script_file, inspect, capture, asset_manifest, or task_plan.",
+        "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}. Do not use for use_figma, get_screenshot, upload_assets, or download_assets because dedicated wrappers cover them.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
-        toolName: stringProperty("Official upstream Figma MCP tool name to call. Local figma_repl_* tools are rejected."),
+        toolName: stringProperty("Official upstream Figma MCP tool name to call for an uncovered capability. Local figma_repl_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         outputFile: stringProperty("Optional full result JSON file. Relative paths require an initialized workspace; omitted large results use an automatic upstream-<tool>-<timestamp>.result.json file."),
