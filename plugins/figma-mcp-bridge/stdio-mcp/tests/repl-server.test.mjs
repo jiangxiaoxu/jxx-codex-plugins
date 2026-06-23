@@ -798,15 +798,25 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("const { helper } = $")));
   assert.deepEqual(
     capabilities.fileWorkflow.workflowTools,
-    ["figma_repl_apply_asset_manifest", "figma_repl_capture_node", "figma_repl_run_task_plan"],
+    ["figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_capture_node", "figma_repl_run_task_plan"],
   );
   assert.equal(capabilities.workflowTools.assetManifest.tool, "figma_repl_apply_asset_manifest");
   assert.match(capabilities.workflowTools.assetManifest.result, /assetDetails/);
   assert.match(capabilities.workflowTools.assetManifest.result, /compact upload summary/);
+  assert.equal(capabilities.workflowTools.downloadAssets.tool, "figma_repl_download_assets");
+  assert.match(capabilities.workflowTools.downloadAssets.targetShape, /\{ target, name\?, defaultFormat\?, defaultScale\? \}/);
+  assert.match(capabilities.workflowTools.downloadAssets.result, /targetDetails/);
+  assert.deepEqual(
+    capabilities.toolArgumentGuidance.downloadAssets.recommendedCalls.downloadTargets,
+    { title: "Download source assets from targets", sessionId: "<session>", targets: [{ target: "$target", defaultFormat: "png" }], outputDir: "<downloads>", outputFile: "<downloads>.result.json" },
+  );
   assert.equal(capabilities.workflowTools.capture.tool, "figma_repl_capture_node");
   assert.match(capabilities.workflowTools.capture.metadata, /full upstream capture envelope/);
   assert.equal(capabilities.workflowTools.taskPlan.tool, "figma_repl_run_task_plan");
+  assert.ok(capabilities.workflowTools.taskPlan.stepTypes.includes("download-assets"));
+  assert.ok(capabilities.workflowTools.taskPlan.stepTypes.includes("download_assets"));
   assert.match(capabilities.workflowTools.taskPlan.references, /upstream\.payload/);
+  assert.match(capabilities.workflowTools.taskPlan.references, /downloadOutputDir/);
   assert.equal(capabilities.fileWorkflow.prepareTool, "figma_repl_prepare_task");
   assert.match(capabilities.fileWorkflow.workspaceLayout, /<fileKey-or-fileSlug>/);
   assert.match(capabilities.scriptWorkflow.options.outputFile, /result\.json/);
@@ -843,6 +853,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     "figma_repl_apply_asset_manifest",
     "figma_repl_call_upstream_tool",
     "figma_repl_capture_node",
+    "figma_repl_download_assets",
     "figma_repl_eval",
     "figma_repl_guidance",
     "figma_repl_inspect",
@@ -852,7 +863,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     "figma_repl_run_script_file",
     "figma_repl_run_task_plan",
   ]);
-  assert.equal(tools.tools.length, 11);
+  assert.equal(tools.tools.length, 12);
   for (const tool of tools.tools) {
     assert.equal(
       tool.inputSchema.properties.title.description,
@@ -930,6 +941,29 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(assetManifestTool.inputSchema.properties.inlineResultLimit, undefined);
   assert.ok(assetManifestTool.outputSchema.properties.assets.items.properties.upstreamSummary);
   assert.ok(assetManifestTool.outputSchema.properties.outputFiles.properties.outputFile);
+  const downloadAssetsTool = tools.tools.find((tool) => tool.name === "figma_repl_download_assets");
+  assert.ok(downloadAssetsTool);
+  assert.match(downloadAssetsTool.description, /official Figma asset downloads/);
+  assert.match(downloadAssetsTool.description, /targets:\[\{ target/);
+  assert.deepEqual(
+    Object.keys(downloadAssetsTool.inputSchema.properties).sort(),
+    ["manifestPath", "outputDir", "outputFile", "sessionId", "targets", "title"],
+  );
+  assert.equal(downloadAssetsTool.inputSchema.properties.target, undefined);
+  assert.equal(downloadAssetsTool.inputSchema.properties.assets, undefined);
+  assert.equal(downloadAssetsTool.inputSchema.properties.toolName, undefined);
+  assert.equal(downloadAssetsTool.inputSchema.properties.arguments, undefined);
+  assert.equal(downloadAssetsTool.inputSchema.properties.refresh, undefined);
+  assert.equal(downloadAssetsTool.inputSchema.properties.download, undefined);
+  assert.deepEqual(
+    Object.keys(downloadAssetsTool.inputSchema.properties.targets.items.properties).sort(),
+    ["defaultFormat", "defaultScale", "name", "target"],
+  );
+  assert.deepEqual(downloadAssetsTool.inputSchema.properties.targets.items.properties.defaultFormat.enum, ["png", "jpg", "svg", "pdf"]);
+  assert.equal(downloadAssetsTool.inputSchema.properties.targets.items.properties.defaultScale.minimum, 0.01);
+  assert.equal(downloadAssetsTool.inputSchema.properties.targets.items.properties.defaultScale.maximum, 4);
+  assert.ok(downloadAssetsTool.outputSchema.properties.targets.items.properties.downloadedFiles);
+  assert.ok(downloadAssetsTool.outputSchema.properties.outputFiles.properties.outputFile);
   const captureNodeTool = tools.tools.find((tool) => tool.name === "figma_repl_capture_node");
   assert.ok(captureNodeTool);
   assert.match(captureNodeTool.description, /outputFile\?/);
@@ -1089,6 +1123,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.deepEqual(workflow.helpers, ["$", ...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES.map((name) => `$.${name}`)]);
   assert.deepEqual(workflow.workflowTools, [
     "figma_repl_apply_asset_manifest",
+    "figma_repl_download_assets",
     "figma_repl_capture_node",
     "figma_repl_run_task_plan",
   ]);
@@ -1097,6 +1132,9 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const workflowTools = JSON.parse(workflowToolsResource.contents[0].text);
   assert.equal(workflowTools.assetManifest.tool, "figma_repl_apply_asset_manifest");
   assert.match(workflowTools.assetManifest.defaults, /explicit toolName/);
+  assert.equal(workflowTools.downloadAssets.tool, "figma_repl_download_assets");
+  assert.match(workflowTools.downloadAssets.defaults, /\{ targets: \[\.\.\.\] \}/);
+  assert.ok(workflowTools.taskPlan.stepTypes.includes("download_assets"));
   assert.equal(workflowTools.capture.tool, "figma_repl_capture_node");
 
   const cardsResource = await mcpClient.readResource({ uri: "figma-repl://api-cards" });
@@ -1654,6 +1692,46 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
   );
   await assert.rejects(
     mcpClient.callTool({
+      name: "figma_repl_download_assets",
+      arguments: {
+        title: "Reject download target alias",
+        target: "12:34",
+      },
+    }),
+    /Tool argument "target" was removed\. Use "targets"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_download_assets",
+      arguments: {
+        title: "Reject download assets alias",
+        assets: [{ target: "12:34" }],
+      },
+    }),
+    /Tool argument "assets" was removed\. Use "targets"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_download_assets",
+      arguments: {
+        title: "Reject download escape",
+        toolName: "download_assets",
+      },
+    }),
+    /Tool argument "toolName" was removed\. Use "figma_repl_call_upstream_tool"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_download_assets",
+      arguments: {
+        title: "Reject download target item alias",
+        targets: [{ nodeId: "12:34" }],
+      },
+    }),
+    /Tool argument "targets\[0\]\.nodeId\/targetNodeId\/targetHandle\/targetId" was removed\. Use "target"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
       name: "figma_repl_capture_node",
       arguments: {
         title: "Reject capture alias",
@@ -2005,6 +2083,222 @@ test("figma REPL submits local bytes when upload_assets returns a submit URL", a
         body: "fake png bytes",
       },
     ]);
+    await mcpClient.close();
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL downloads official exported and raw asset URLs per target", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-download-assets-"));
+  const outputDir = resolve(tempDir, "downloads");
+  const outputFile = resolve(tempDir, "downloads.result.json");
+  const exportBytes = Buffer.from("exported png bytes");
+  const rawBytes = Buffer.from("raw jpg bytes");
+  const originalFetch = globalThis.fetch;
+  const fetches = [];
+  globalThis.fetch = async (url) => {
+    fetches.push(String(url));
+    if (String(url).endsWith("/export.png")) {
+      return new Response(exportBytes, { status: 200, headers: { "Content-Type": "image/png" } });
+    }
+    if (String(url).endsWith("/raw.jpg")) {
+      return new Response(rawBytes, { status: 200, headers: { "Content-Type": "image/jpeg" } });
+    }
+    return new Response("missing", { status: 404, statusText: "Not Found" });
+  };
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      assert.equal(name, "download_assets");
+      assert.deepEqual(args, {
+        fileKey: "file123",
+        nodeId: "22:8",
+        defaultFormat: "png",
+        defaultScale: 2,
+      });
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            result: {
+              exports: [{ downloadUrl: "https://assets.example/export.png", format: "png" }],
+              sourceImages: [{ url: "https://assets.example/raw.jpg", format: "jpg" }],
+            },
+          }),
+        }],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "download_assets",
+          description: "Fake official download tool.",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Open download file context",
+        sessionId: "download",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+        handles: { "$hero": "22:8" },
+      },
+    });
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_download_assets",
+      arguments: {
+        title: "Download hero assets",
+        sessionId: "download",
+        targets: [{ target: "$hero", name: "Hero", defaultFormat: "png", defaultScale: 2 }],
+        outputDir,
+        outputFile,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.outputDir, outputDir);
+    assert.equal(json.targets.length, 1);
+    assert.equal(json.targets[0].targetNodeId, "22:8");
+    assert.equal(json.targets[0].handle, "$hero");
+    assert.equal(json.targets[0].downloadedFiles.length, 2);
+    assert.equal(json.targets[0].downloadedFiles[0].path, resolve(outputDir, "hero", "exported.png"));
+    assert.equal(json.targets[0].downloadedFiles[1].path, resolve(outputDir, "hero", "raw-1.jpg"));
+    assert.deepEqual(await readFile(resolve(outputDir, "hero", "exported.png")), exportBytes);
+    assert.deepEqual(await readFile(resolve(outputDir, "hero", "raw-1.jpg")), rawBytes);
+    const fileJson = await readPrettyJsonPointer(json.outputFiles.outputFile, outputFile);
+    assert.equal(fileJson.targetDetails[0].arguments.fileKey, "file123");
+    assert.equal(fileJson.targetDetails[0].arguments.nodeId, "22:8");
+    assert.equal(fileJson.targetDetails[0].links.length, 2);
+    assert.equal(fileJson.targetDetails[0].downloadedFiles[0].sourceUrl, "https://assets.example/export.png");
+    assert.deepEqual(fetches, ["https://assets.example/export.png", "https://assets.example/raw.jpg"]);
+    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+    await mcpClient.close();
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL download_assets manifest batches targets and continues after target failures", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-download-manifest-"));
+  const manifestPath = resolve(tempDir, "downloads.json");
+  const outputDir = resolve(tempDir, "downloads");
+  const outputFile = resolve(tempDir, "downloads.result.json");
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      targets: [
+        { target: "$hero", name: "Hero" },
+        { target: "22:9", name: "Missing" },
+      ],
+    }),
+    "utf8",
+  );
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(Buffer.from("asset"), { status: 200, headers: { "Content-Type": "image/png" } });
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      assert.equal(name, "download_assets");
+      if (args.nodeId === "22:8") {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({ exports: [{ url: "https://assets.example/hero.png", format: "png" }] }),
+          }],
+        };
+      }
+      assert.equal(args.nodeId, "22:9");
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ ok: false, error: { message: "missing node", code: "NOT_FOUND" } }),
+        }],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "download_assets",
+          description: "Fake official download tool.",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Open manifest download file context",
+        sessionId: "download-manifest",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+        handles: { "$hero": "22:8" },
+      },
+    });
+    await assert.rejects(
+      mcpClient.callTool({
+        name: "figma_repl_download_assets",
+        arguments: {
+          title: "Reject ambiguous download sources",
+          sessionId: "download-manifest",
+          targets: [{ target: "$hero" }],
+          manifestPath,
+        },
+      }),
+      /Pass either "targets" or "manifestPath", not both\./,
+    );
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_download_assets",
+      arguments: {
+        title: "Download manifest assets",
+        sessionId: "download-manifest",
+        manifestPath,
+        outputDir,
+        outputFile,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, false);
+    assert.equal(json.targets.length, 2);
+    assert.equal(json.targets[0].ok, true);
+    assert.equal(json.targets[1].ok, false);
+    assert.equal(json.targets[1].error.code, "NOT_FOUND");
+    assert.equal(json.failures.length, 1);
+    assert.equal(calls.filter((call) => call[0] === "callTool").length, 2);
+    const fileJson = await readPrettyJsonPointer(json.outputFiles.outputFile, outputFile);
+    assert.equal(fileJson.targetDetails.length, 2);
+    assert.equal(fileJson.targetDetails[1].upstreamError.code, "NOT_FOUND");
     await mcpClient.close();
   } finally {
     globalThis.fetch = originalFetch;
@@ -2608,6 +2902,121 @@ test("figma REPL task plans run steps in order and stop on failure by default", 
     );
     await mcpClient.close();
   } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL task plans route download_assets aliases with workspace defaults", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-plan-download-"));
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(Buffer.from("downloaded"), { status: 200, headers: { "Content-Type": "image/png" } });
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "fake_upstream_check") {
+        assert.deepEqual(args, {
+          dir: resolve(tempDir, "download-step.downloads"),
+          resultFile: resolve(tempDir, "download-step.downloads.result.json"),
+        });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, result: { checked: true } }) }],
+        };
+      }
+      assert.equal(name, "download_assets");
+      assert.deepEqual(args, {
+        fileKey: "file123",
+        nodeId: "22:8",
+        defaultFormat: "png",
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify({ exports: [{ url: "https://assets.example/plan.png", format: "png" }] }) }],
+      };
+    },
+    {
+      tools: [
+        { name: "download_assets", inputSchema: { type: "object", properties: {} } },
+        { name: "fake_upstream_check", inputSchema: { type: "object", properties: {} } },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    const prepared = await mcpClient.callTool({
+      name: "figma_repl_prepare_task",
+      arguments: {
+        title: "Prepare download plan",
+        sessionId: "download-plan",
+        workspaceDir: tempDir,
+        file: "https://www.figma.com/design/file123/Test",
+        task: "Download Assets",
+        overwrite: true,
+      },
+    });
+    const preparedJson = structuredToolResult(prepared);
+    const planPath = resolve(tempDir, "download-plan.json");
+    const planOutputFile = resolve(tempDir, "download-plan.result.json");
+    await writeFile(
+      planPath,
+      JSON.stringify({
+        steps: [
+          {
+            id: "download-step",
+            type: "download_assets",
+            args: {
+              targets: [{ target: "22:8", name: "Hero", defaultFormat: "png" }],
+            },
+          },
+          {
+            id: "check-step",
+            type: "upstream-tool",
+            args: {
+              toolName: "fake_upstream_check",
+              arguments: {
+                dir: "{{steps.download-step.downloadOutputDir}}",
+                resultFile: "{{steps.download-step.outputFiles.outputFile.path}}",
+              },
+            },
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_run_task_plan",
+      arguments: {
+        title: "Run download plan",
+        sessionId: "download-plan",
+        planPath,
+        outputFile: planOutputFile,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.steps[0].type, "download-assets");
+    assert.equal(json.steps[1].type, "upstream-tool");
+    assert.equal(json.steps[0].summary.files.outputFile.path, resolve(tempDir, "download-step.downloads.result.json"));
+    assert.equal(json.outputReferences["download-step"].outputFile.path, resolve(tempDir, "download-step.downloads.result.json"));
+    const stepResult = JSON.parse(await readFile(resolve(tempDir, "download-step.downloads.result.json"), "utf8"));
+    assert.equal(stepResult.outputDir, resolve(tempDir, "download-step.downloads"));
+    assert.equal(stepResult.targets[0].downloadedFiles[0].path, resolve(tempDir, "download-step.downloads", "hero", "exported.png"));
+    assert.deepEqual(
+      await readFile(resolve(tempDir, "download-step.downloads", "hero", "exported.png")),
+      Buffer.from("downloaded"),
+    );
+    assert.equal(preparedJson.session.fileKey, "file123");
+    await mcpClient.close();
+  } finally {
+    globalThis.fetch = originalFetch;
     await rm(tempDir, { recursive: true, force: true });
   }
 });

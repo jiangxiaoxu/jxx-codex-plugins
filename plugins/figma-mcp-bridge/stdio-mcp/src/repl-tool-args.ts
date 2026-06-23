@@ -83,6 +83,24 @@ export interface FigmaReplApplyAssetManifestArguments {
   outputFile?: string;
 }
 
+export interface FigmaReplDownloadAssetsTarget {
+  [key: string]: unknown;
+  target?: unknown;
+  name?: string;
+  defaultFormat?: "png" | "jpg" | "svg" | "pdf";
+  defaultScale?: number;
+}
+
+export interface FigmaReplDownloadAssetsArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  targets?: FigmaReplDownloadAssetsTarget[];
+  manifestPath?: string;
+  outputDir?: string;
+  outputFile?: string;
+}
+
 export interface FigmaReplCaptureNodeArguments {
   [key: string]: unknown;
   title?: string;
@@ -182,6 +200,7 @@ const FIGMA_REPL_EVAL_MODES = ["read", "write"] as const;
 const FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as const;
 const FIGMA_REPL_INSPECT_MODES = ["inspect", "validate", "style"] as const;
 const FIGMA_REPL_LOOKUP_KINDS = ["docs", "api"] as const;
+const FIGMA_REPL_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"] as const;
 
 function assertRemovedFileReferenceFields(record: Record<string, unknown>): void {
   const removed = ["fileUrl", "fileKey"].filter((field) => record[field] !== undefined);
@@ -272,6 +291,24 @@ export function asApplyAssetManifestArgs(args: unknown): FigmaReplApplyAssetMani
   ]);
   assertOptionalRecord(record, "arguments");
   assertOptionalAssets(record);
+  return record;
+}
+
+export function asDownloadAssetsArgs(args: unknown): FigmaReplDownloadAssetsArguments {
+  const record = parseToolArgs<FigmaReplDownloadAssetsArguments>(args);
+  assertRemovedArguments(record, ["target"], "targets");
+  assertRemovedArguments(record, ["assets"], "targets");
+  assertRemovedArguments(record, ["toolName", "arguments", "refresh", "download"], "figma_repl_call_upstream_tool");
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "manifestPath",
+    "outputDir",
+    "outputFile",
+  ]);
+  const targets = assertOptionalDownloadAssetTargets(record);
+  if (targets) {
+    record.targets = targets;
+  }
   return record;
 }
 
@@ -464,6 +501,41 @@ function assertOptionalAssets(record: Record<string, unknown>): void {
     assertOptionalTargetValue(target, `${assetName}.target`);
     assertOptionalRecord(asset, "metadata", `${assetName}.metadata`);
     assertOptionalRecord(asset, "arguments", `${assetName}.arguments`);
+  });
+}
+
+function assertOptionalDownloadAssetTargets(record: Record<string, unknown>): FigmaReplDownloadAssetsTarget[] | undefined {
+  const targets = assertOptionalArray(record, "targets");
+  if (!targets) {
+    return undefined;
+  }
+  return targets.map((target, index) => {
+    const targetName = `targets[${index}]`;
+    if (!isRecord(target)) {
+      throw new Error(`Tool argument "${targetName}" must be an object.`);
+    }
+    assertRemovedArguments(
+      target,
+      ["nodeId", "targetNodeId", "targetHandle", "targetId"],
+      "target",
+      `${targetName}.nodeId/targetNodeId/targetHandle/targetId`,
+    );
+    assertOptionalStringFieldsWithPrefix(target, targetName, ["name"]);
+    assertOptionalTargetValue(target.target, `${targetName}.target`);
+    const defaultFormat = target.defaultFormat;
+    if (defaultFormat !== undefined && (typeof defaultFormat !== "string" || !FIGMA_REPL_DOWNLOAD_ASSET_FORMATS.includes(defaultFormat as never))) {
+      throw new Error(`Tool argument "${targetName}.defaultFormat" must be one of: ${FIGMA_REPL_DOWNLOAD_ASSET_FORMATS.join(", ")}.`);
+    }
+    const defaultScale = target.defaultScale;
+    if (defaultScale !== undefined && (typeof defaultScale !== "number" || !Number.isFinite(defaultScale) || defaultScale < 0.01 || defaultScale > 4)) {
+      throw new Error(`Tool argument "${targetName}.defaultScale" must be a number from 0.01 to 4.`);
+    }
+    return {
+      target: target.target,
+      name: target.name as string | undefined,
+      defaultFormat: defaultFormat as FigmaReplDownloadAssetsTarget["defaultFormat"],
+      defaultScale: defaultScale as number | undefined,
+    };
   });
 }
 

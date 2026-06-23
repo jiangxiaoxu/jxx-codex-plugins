@@ -3,6 +3,7 @@ export const LOCAL_REPL_TOOL_NAMES = [
   "figma_repl_eval",
   "figma_repl_run_script_file",
   "figma_repl_apply_asset_manifest",
+  "figma_repl_download_assets",
   "figma_repl_capture_node",
   "figma_repl_run_task_plan",
   "figma_repl_prepare_task",
@@ -23,6 +24,7 @@ export function isLocalReplToolName(value: string): value is LocalReplToolName {
 export type FigmaReplTaskPlanStepType =
   | "script-file"
   | "asset-manifest"
+  | "download-assets"
   | "screenshot-capture"
   | "upstream-tool";
 
@@ -36,6 +38,10 @@ export const TASK_PLAN_STEP_TYPE_ALIASES: Readonly<Record<string, FigmaReplTaskP
   asset_manifest: "asset-manifest",
   upload_assets: "asset-manifest",
   "asset-manifest": "asset-manifest",
+  figma_repl_download_assets: "download-assets",
+  download_assets: "download-assets",
+  download_assets_from_figma: "download-assets",
+  "download-assets": "download-assets",
   figma_repl_capture_node: "screenshot-capture",
   capture_node: "screenshot-capture",
   screenshot: "screenshot-capture",
