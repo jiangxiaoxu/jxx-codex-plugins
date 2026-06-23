@@ -26,6 +26,13 @@ export interface FigmaReplScriptHelperSelection {
     helperNames: Set<FigmaReplScriptHelperName>;
     baseProperties: Set<string>;
     injectedHelpers: string[];
+    helperUsage: FigmaReplScriptHelperUsageReport;
+}
+export interface FigmaReplScriptHelperUsageReport {
+    direct: string[];
+    transitive: string[];
+    runtimeBase: string[];
+    injected: string[];
 }
 export interface CompiledFigmaReplScriptFile {
     code: string;
@@ -36,6 +43,7 @@ export interface CompiledFigmaReplScriptFile {
         sourceLineCount: number;
         helperApiVersion: string;
         injectedHelpers: string[];
+        helperUsage: FigmaReplScriptHelperUsageReport;
         targetPageId?: string;
         expectedSurface?: FigmaReplSurface;
         diagnosticsCount: number;

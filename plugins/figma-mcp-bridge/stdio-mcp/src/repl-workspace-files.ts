@@ -1,6 +1,7 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
+import sharp from "sharp";
 import type { FigmaReplDiagnostic } from "./repl-script-runner.js";
 import type {
   FigmaReplRunScriptFileArguments,
@@ -11,6 +12,11 @@ import { asTaskPlanSteps } from "./repl-tool-args.js";
 
 export const TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 export const DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
+const CAPTURE_WEBP_OPTIONS = { quality: 98, effort: 4 } as const;
+const CAPTURE_JPEG_OPTIONS = { quality: 98 } as const;
+
+type CaptureImageFormat = "webp" | "png" | "jpeg";
+type CaptureImageMimeType = "image/webp" | "image/png" | "image/jpeg";
 
 export interface FigmaReplSessionWorkspace {
   root: string;
@@ -165,24 +171,15 @@ export async function writeCaptureOutputFile(
   outputFile: string,
   upstream: unknown,
   parsed: ParsedCaptureResult,
-): Promise<{ kind: "image" | "text"; mimeType: string; bytes: number; lineCount: number; width?: number; height?: number; sourceUrl?: string }> {
+): Promise<{ path: string; kind: "image" | "text"; mimeType: string; bytes: number; lineCount: number; width?: number; height?: number; sourceUrl?: string }> {
   const rawContent = asRecord(upstream).content;
   const content = Array.isArray(rawContent)
     ? rawContent.filter(isRecord)
     : [];
   const image = content.find((item) => item.type === "image" && typeof item.data === "string");
-  await mkdir(dirname(outputFile), { recursive: true });
   if (image && typeof image.data === "string") {
     const buffer = Buffer.from(image.data, "base64");
-    await writeFile(outputFile, buffer);
-    const dimensions = imageDimensions(buffer, asOptionalString(image.mimeType) ?? "image/png");
-    return {
-      kind: "image",
-      mimeType: asOptionalString(image.mimeType) ?? "image/png",
-      bytes: buffer.byteLength,
-      lineCount: 0,
-      ...dimensions,
-    };
+    return writeCaptureImageOutputFile(outputFile, buffer);
   }
   const sourceUrl = extractCaptureImageUrl(upstream, parsed);
   if (sourceUrl) {
@@ -193,29 +190,96 @@ export async function writeCaptureOutputFile(
       );
     }
     const buffer = Buffer.from(await response.arrayBuffer());
-    await writeFile(outputFile, buffer);
-    const mimeType = response.headers.get("content-type") ?? "image/png";
-    const dimensions = imageDimensions(buffer, mimeType);
-    return {
-      kind: "image",
-      mimeType,
-      bytes: buffer.byteLength,
-      lineCount: 0,
-      ...dimensions,
-      sourceUrl,
-    };
+    return writeCaptureImageOutputFile(outputFile, buffer, sourceUrl);
   }
   const textItem = content.find((item) => item.type === "text" && typeof item.text === "string");
   const text = typeof textItem?.text === "string"
     ? textItem.text
     : parsed.text || JSON.stringify(removeUndefined(parsed.json ?? upstream), null, 2);
-  await writeFile(outputFile, text, "utf8");
+  const textOutputFile = captureTextOutputFilePath(outputFile);
+  await mkdir(dirname(textOutputFile), { recursive: true });
+  await writeFile(textOutputFile, text, "utf8");
   return {
+    path: textOutputFile,
     kind: "text",
     mimeType: "text/plain",
     bytes: Buffer.byteLength(text, "utf8"),
     lineCount: countTextLines(text),
   };
+}
+
+export function captureImageOutputFilePath(outputFile: string): string {
+  return resolveCaptureImageOutput(outputFile).path;
+}
+
+export function captureTextOutputFilePath(outputFile: string): string {
+  return withFileExtension(outputFile, ".txt");
+}
+
+export async function createCapturePreviewImage(
+  inputFile: string,
+): Promise<{ data: Buffer; mimeType: "image/webp"; bytes: number; width?: number; height?: number }> {
+  const input = await readFile(inputFile);
+  const { data, info } = await sharp(input)
+    .resize({ width: 320, height: 320, fit: "inside", withoutEnlargement: true })
+    .webp(CAPTURE_WEBP_OPTIONS)
+    .toBuffer({ resolveWithObject: true });
+  return {
+    data,
+    mimeType: "image/webp",
+    bytes: data.byteLength,
+    width: info.width,
+    height: info.height,
+  };
+}
+
+async function writeCaptureImageOutputFile(
+  outputFile: string,
+  buffer: Buffer,
+  sourceUrl?: string,
+): Promise<{ path: string; kind: "image"; mimeType: CaptureImageMimeType; bytes: number; lineCount: 0; width?: number; height?: number; sourceUrl?: string }> {
+  const output = resolveCaptureImageOutput(outputFile);
+  await mkdir(dirname(output.path), { recursive: true });
+  const pipeline = sharp(buffer);
+  const encoded = output.format === "png"
+    ? pipeline.png()
+    : output.format === "jpeg"
+      ? pipeline.flatten({ background: "#ffffff" }).jpeg(CAPTURE_JPEG_OPTIONS)
+      : pipeline.webp(CAPTURE_WEBP_OPTIONS);
+  const { data, info } = await encoded.toBuffer({ resolveWithObject: true });
+  await writeFile(output.path, data);
+  return {
+    path: output.path,
+    kind: "image",
+    mimeType: output.mimeType,
+    bytes: data.byteLength,
+    lineCount: 0,
+    width: info.width,
+    height: info.height,
+    sourceUrl,
+  };
+}
+
+function resolveCaptureImageOutput(path: string): { path: string; format: CaptureImageFormat; mimeType: CaptureImageMimeType } {
+  const extension = extname(path).toLowerCase();
+  if (extension === ".png") {
+    return { path, format: "png", mimeType: "image/png" };
+  }
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return { path, format: "jpeg", mimeType: "image/jpeg" };
+  }
+  if (extension === ".webp") {
+    return { path, format: "webp", mimeType: "image/webp" };
+  }
+  return { path: withFileExtension(path, ".webp"), format: "webp", mimeType: "image/webp" };
+}
+
+function withFileExtension(path: string, extension: ".webp" | ".txt"): string {
+  const currentExtension = extname(path);
+  if (!currentExtension) {
+    return `${path}${extension}`;
+  }
+  return `${path.slice(0, -currentExtension.length)}${extension}`;
 }
 
 export async function loadTaskPlan(
@@ -292,7 +356,7 @@ export function withTaskPlanDefaultFiles(
   }
   if (type === "screenshot-capture") {
     if (!asOptionalString(next.outputFile)) {
-      next.outputFile = `${stepSlug}.png`;
+      next.outputFile = stepSlug;
     }
     if (!asOptionalString(next.metadataFile)) {
       next.metadataFile = `${stepSlug}.capture.result.json`;
@@ -649,57 +713,6 @@ function normalizeFileContextDirectory(fileKey: string | undefined, fileSlug: st
     return fileKey;
   }
   return fileSlug;
-}
-
-function imageDimensions(buffer: Buffer, mimeType: string): { width?: number; height?: number } {
-  const lower = mimeType.toLowerCase();
-  if ((lower.includes("png") || hasPngSignature(buffer)) && buffer.byteLength >= 24 && hasPngSignature(buffer)) {
-    return {
-      width: buffer.readUInt32BE(16),
-      height: buffer.readUInt32BE(20),
-    };
-  }
-  if ((lower.includes("jpeg") || lower.includes("jpg") || hasJpegSignature(buffer)) && hasJpegSignature(buffer)) {
-    return jpegDimensions(buffer);
-  }
-  return {};
-}
-
-function hasPngSignature(buffer: Buffer): boolean {
-  return buffer.byteLength >= 8 &&
-    buffer[0] === 0x89 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x4e &&
-    buffer[3] === 0x47 &&
-    buffer[4] === 0x0d &&
-    buffer[5] === 0x0a &&
-    buffer[6] === 0x1a &&
-    buffer[7] === 0x0a;
-}
-
-function hasJpegSignature(buffer: Buffer): boolean {
-  return buffer.byteLength >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8;
-}
-
-function jpegDimensions(buffer: Buffer): { width?: number; height?: number } {
-  let offset = 2;
-  while (offset + 9 < buffer.byteLength) {
-    if (buffer[offset] !== 0xff) {
-      offset += 1;
-      continue;
-    }
-    const marker = buffer[offset + 1];
-    const length = buffer.readUInt16BE(offset + 2);
-    if (length < 2) return {};
-    if (marker >= 0xc0 && marker <= 0xc3) {
-      return {
-        height: buffer.readUInt16BE(offset + 5),
-        width: buffer.readUInt16BE(offset + 7),
-      };
-    }
-    offset += 2 + length;
-  }
-  return {};
 }
 
 function extractCaptureImageUrl(

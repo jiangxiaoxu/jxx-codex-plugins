@@ -59,6 +59,7 @@ for (const output of outputs) {
   await build({
     ...sharedBuildOptions,
     bundle: output.bundle,
+    external: output.bundle ? ["sharp"] : undefined,
     entryPoints: [output.entryPoint],
     outfile: output.outfile,
   });
