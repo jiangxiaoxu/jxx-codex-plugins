@@ -118,7 +118,7 @@ export function createReplToolDescriptions(
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         target: {
-          description: "Recommended target to capture. Accepts a Figma node id, node URL, local handle like $hero, or object like { handle: \"$hero\" }.",
+          description: "Recommended target to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:\"$hero\" }, or { fileKey, nodeId }.",
         },
         outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .webp; explicit .png, .jpg, and .jpeg extensions are preserved; extensionless or other extensions normalize to .webp. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.webp path for image captures."),
         preview: booleanProperty("Opt in to a WebP MCP image preview in the tool content. Defaults false. The structured result contains only compact preview metadata.", { default: false }),

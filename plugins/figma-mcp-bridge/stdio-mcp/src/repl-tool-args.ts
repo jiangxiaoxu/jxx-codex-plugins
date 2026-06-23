@@ -294,7 +294,7 @@ export function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments 
     "outputFile",
     "metadataFile",
   ]);
-  assertOptionalTargetValue(record.target, "target");
+  assertOptionalCaptureTargetValue(record.target, "target");
   return record;
 }
 
@@ -523,6 +523,26 @@ function assertOptionalTargetValue(value: unknown, displayName: string): void {
     `${displayName}.nodeId/targetNodeId/targetHandle/targetId`,
   );
   assertOptionalStringFieldsWithPrefix(value, displayName, ["handle"]);
+}
+
+function assertOptionalCaptureTargetValue(value: unknown, displayName: string): void {
+  if (value === undefined || typeof value === "string") {
+    return;
+  }
+  if (!isRecord(value)) {
+    throw new Error(`Tool argument "${displayName}" must be a string or object.`);
+  }
+  assertOptionalStringFieldsWithPrefix(value, displayName, [
+    "fileKey",
+    "handle",
+    "targetHandle",
+    "nodeId",
+    "targetNodeId",
+    "target",
+    "id",
+    "url",
+    "nodeUrl",
+  ]);
 }
 
 export function asTaskPlanSteps(value: unknown, displayName = "steps"): FigmaReplTaskPlanStep[] {

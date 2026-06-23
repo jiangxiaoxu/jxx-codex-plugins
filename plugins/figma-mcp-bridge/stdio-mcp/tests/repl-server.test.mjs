@@ -1103,6 +1103,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(captureNodeTool.inputSchema.properties.targetNodeId, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.handle, undefined);
   assert.match(captureNodeTool.inputSchema.properties.target.description, /Recommended target/);
+  assert.match(captureNodeTool.inputSchema.properties.target.description, /\{ fileKey, nodeId \}/);
   assert.match(captureNodeTool.inputSchema.properties.outputFile.description, /Recommended extension.*\.webp/);
   assert.match(captureNodeTool.inputSchema.properties.outputFile.description, /\.png, \.jpg, and \.jpeg extensions are preserved/);
   assert.match(captureNodeTool.inputSchema.properties.metadataFile.description, /metadata JSON/);
@@ -1281,6 +1282,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(workflowTools.taskPlan.stepTypes.includes("download_assets"));
   assert.equal(workflowTools.capture.tool, "figma_repl_capture_node");
   assert.match(workflowTools.capture.defaulting, /official get_screenshot/);
+  assert.match(workflowTools.capture.defaulting, /\{ fileKey, nodeId \}/);
 
   const cardsResource = await mcpClient.readResource({ uri: "figma-repl://api-cards" });
   const cards = JSON.parse(cardsResource.contents[0].text);
@@ -2318,7 +2320,15 @@ test("figma REPL submits local bytes when upload_assets returns a submit URL", a
         {
           name: "upload_assets",
           description: "Fake official upload tool.",
-          inputSchema: { type: "object", properties: {} },
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              count: { type: "number" },
+              nodeId: { type: "string" },
+              scaleMode: { type: "string" },
+            },
+          },
         },
       ],
     },
@@ -2533,6 +2543,70 @@ test("figma REPL asset manifest requires official upload_assets", async () => {
         },
       }),
       /Required official upstream Figma MCP asset upload\/fill tool "upload_assets" was not found/,
+    );
+    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL asset manifest rejects drifted upload_assets schema", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-drifted-upload-assets-"));
+  const assetPath = resolve(tempDir, "hero.png");
+  await writeFile(assetPath, "fake png bytes", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    () => {
+      throw new Error("unexpected upstream call");
+    },
+    {
+      tools: [
+        {
+          name: "upload_assets",
+          description: "Drifted upload tool.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              count: { type: "number" },
+              scaleMode: { type: "string" },
+            },
+          },
+        },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Open drifted upload file context",
+        sessionId: "drifted-upload",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+      },
+    });
+    await assert.rejects(
+      mcpClient.callTool({
+        name: "figma_repl_apply_asset_manifest",
+        arguments: {
+          title: "Apply drifted upload asset",
+          sessionId: "drifted-upload",
+          assets: [{ path: assetPath, target: "12:34" }],
+        },
+      }),
+      /inputSchema\.properties\.nodeId.*upstream contract drift/,
     );
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
     await mcpClient.close();
@@ -2775,6 +2849,63 @@ test("figma REPL download_assets manifest batches targets and continues after ta
   }
 });
 
+test("figma REPL download_assets rejects drifted official schema fields", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    () => {
+      throw new Error("unexpected upstream call");
+    },
+    {
+      tools: [
+        {
+          name: "download_assets",
+          description: "Drifted download tool.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              defaultScale: { type: "number" },
+            },
+          },
+        },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  await mcpClient.callTool({
+    name: "figma_repl_open",
+    arguments: {
+      title: "Open drifted download file context",
+      sessionId: "drifted-download",
+      connect: false,
+      file: "https://www.figma.com/design/file123/Test",
+    },
+  });
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_download_assets",
+      arguments: {
+        title: "Download drifted assets",
+        sessionId: "drifted-download",
+        targets: [{ target: "22:8", defaultFormat: "png" }],
+      },
+    }),
+    /inputSchema\.properties\.defaultFormat.*upstream contract drift/,
+  );
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
+  await mcpClient.close();
+});
+
 test("figma REPL captures node screenshot responses to a local file", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-"));
   const outputFile = resolve(tempDir, "node");
@@ -2785,7 +2916,7 @@ test("figma REPL captures node screenshot responses to a local file", async () =
     calls,
     ({ name, args }) => {
       assert.equal(name, "get_screenshot");
-      assert.deepEqual(args, { nodeId: "22:7" });
+      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:7" });
       return {
         content: [
           {
@@ -2801,7 +2932,7 @@ test("figma REPL captures node screenshot responses to a local file", async () =
         {
           name: "get_screenshot",
           description: "Official screenshot tool.",
-          inputSchema: { type: "object", properties: { nodeId: { type: "string" } } },
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] },
         },
       ],
     },
@@ -2821,7 +2952,7 @@ test("figma REPL captures node screenshot responses to a local file", async () =
       name: "figma_repl_capture_node",
       arguments: {
         title: "Capture node",
-        target: "22:7",
+        target: { fileKey: "file123", nodeId: "22:7" },
         outputFile,
       },
     });
@@ -2854,7 +2985,7 @@ test("figma REPL uses the stable official get_screenshot schema without override
     calls,
     ({ name, args }) => {
       assert.equal(name, "get_screenshot");
-      assert.deepEqual(args, { nodeId: "22:7" });
+      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:7" });
       return {
         content: [
           {
@@ -2873,9 +3004,10 @@ test("figma REPL uses the stable official get_screenshot schema without override
           inputSchema: {
             type: "object",
             properties: {
+              fileKey: { type: "string" },
               nodeId: { type: "string" },
             },
-            required: ["nodeId"],
+            required: ["fileKey", "nodeId"],
           },
         },
       ],
@@ -2892,10 +3024,20 @@ test("figma REPL uses the stable official get_screenshot schema without override
     await server.connect(serverTransport);
     await mcpClient.connect(clientTransport);
 
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        sessionId: "official-capture",
+        file: "https://www.figma.com/design/file123/Test",
+        connect: false,
+      },
+    });
+
     const result = await mcpClient.callTool({
       name: "figma_repl_capture_node",
       arguments: {
         title: "Capture with official get_screenshot",
+        sessionId: "official-capture",
         target: "22:7",
         outputFile,
       },
@@ -2925,7 +3067,7 @@ test("figma REPL capture node can return an opt-in WebP MCP preview", async () =
     calls,
     ({ name, args }) => {
       assert.equal(name, "get_screenshot");
-      assert.deepEqual(args, { nodeId: "22:71" });
+      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:71" });
       return {
         content: [
           {
@@ -2941,7 +3083,7 @@ test("figma REPL capture node can return an opt-in WebP MCP preview", async () =
         {
           name: "get_screenshot",
           description: "Official screenshot tool.",
-          inputSchema: { type: "object", properties: { nodeId: { type: "string" } } },
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] },
         },
       ],
     },
@@ -2962,7 +3104,7 @@ test("figma REPL capture node can return an opt-in WebP MCP preview", async () =
       arguments: {
         title: "Capture node preview",
         sessionId: "capture-preview",
-        target: "22:71",
+        target: "https://www.figma.com/design/file123/Test?node-id=22-71",
         preview: true,
       },
     });
@@ -3005,7 +3147,7 @@ test("figma REPL capture node saves text output as txt and omits preview image",
     calls,
     ({ name, args }) => {
       assert.equal(name, "get_screenshot");
-      assert.deepEqual(args, { nodeId: "22:72" });
+      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:72" });
       return {
         content: [
           {
@@ -3020,7 +3162,7 @@ test("figma REPL capture node saves text output as txt and omits preview image",
         {
           name: "get_screenshot",
           description: "Official screenshot tool.",
-          inputSchema: { type: "object", properties: { nodeId: { type: "string" } } },
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] },
         },
       ],
     },
@@ -3040,7 +3182,7 @@ test("figma REPL capture node saves text output as txt and omits preview image",
       name: "figma_repl_capture_node",
       arguments: {
         title: "Capture node text",
-        target: "22:72",
+        target: { fileKey: "file123", nodeId: "22:72" },
         outputFile,
         preview: true,
       },
@@ -3070,7 +3212,7 @@ test("figma REPL capture node reports planned output on upstream failure", async
     calls,
     ({ name, args }) => {
       assert.equal(name, "get_screenshot");
-      assert.deepEqual(args, { nodeId: "22:70" });
+      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:70" });
       return {
         content: [
           {
@@ -3091,7 +3233,7 @@ test("figma REPL capture node reports planned output on upstream failure", async
         {
           name: "get_screenshot",
           description: "Official screenshot tool.",
-          inputSchema: { type: "object", properties: { nodeId: { type: "string" } } },
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] },
         },
       ],
     },
@@ -3111,7 +3253,7 @@ test("figma REPL capture node reports planned output on upstream failure", async
       name: "figma_repl_capture_node",
       arguments: {
         title: "Capture node failure",
-        target: "22:70",
+        target: { fileKey: "file123", nodeId: "22:70" },
         outputFile,
         metadataFile,
       },
@@ -3174,7 +3316,7 @@ test("figma REPL downloads node screenshot URL responses to a local file", async
     calls,
     ({ name, args }) => {
       assert.equal(name, "get_screenshot");
-      assert.deepEqual(args, { nodeId: "22:8" });
+      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:8" });
       return {
         content: [
           {
@@ -3194,7 +3336,7 @@ test("figma REPL downloads node screenshot URL responses to a local file", async
         {
           name: "get_screenshot",
           description: "Official screenshot tool.",
-          inputSchema: { type: "object", properties: { nodeId: { type: "string" } } },
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] },
         },
       ],
     },
@@ -3214,7 +3356,7 @@ test("figma REPL downloads node screenshot URL responses to a local file", async
       name: "figma_repl_capture_node",
       arguments: {
         title: "Capture node",
-        target: "22:8",
+        target: { fileKey: "file123", nodeId: "22:8" },
         outputFile,
       },
     });
@@ -3277,10 +3419,55 @@ test("figma REPL capture node requires official get_screenshot", async () => {
       name: "figma_repl_capture_node",
       arguments: {
         title: "Capture node",
-        target: "22:9",
+        target: { fileKey: "file123", nodeId: "22:9" },
       },
     }),
     /Required official upstream Figma MCP node screenshot tool "get_screenshot" was not found/,
+  );
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
+  await mcpClient.close();
+});
+
+test("figma REPL capture node rejects drifted get_screenshot schema", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    () => {
+      throw new Error("unexpected upstream call");
+    },
+    {
+      tools: [
+        {
+          name: "get_screenshot",
+          description: "Drifted screenshot tool.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              nodeId: { type: "string" },
+            },
+          },
+        },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_capture_node",
+      arguments: {
+        title: "Capture drifted schema",
+        target: { fileKey: "file123", nodeId: "22:9" },
+      },
+    }),
+    /inputSchema\.properties\.fileKey.*upstream contract drift/,
   );
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
   await mcpClient.close();
@@ -3416,7 +3603,18 @@ test("figma REPL task plans route download_assets aliases with workspace default
     },
     {
       tools: [
-        { name: "download_assets", inputSchema: { type: "object", properties: {} } },
+        {
+          name: "download_assets",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              defaultFormat: { type: "string" },
+              defaultScale: { type: "number" },
+            },
+          },
+        },
         { name: "fake_upstream_check", inputSchema: { type: "object", properties: {} } },
       ],
     },
@@ -3539,7 +3737,7 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
         };
       }
       if (name === "get_screenshot") {
-        assert.deepEqual(args, { nodeId: "11:22" });
+        assert.deepEqual(args, { fileKey: "file123", nodeId: "11:22" });
         return {
           content: [
             {
@@ -3562,7 +3760,7 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
     {
       tools: [
         { name: "upload_assets", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
-        { name: "get_screenshot", inputSchema: { type: "object", properties: { nodeId: { type: "string" } } } },
+        { name: "get_screenshot", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] } },
         { name: "fake_reference", inputSchema: { type: "object", properties: {} } },
         { name: "use_figma", inputSchema: { type: "object", properties: { code: { type: "string" } } } },
       ],
@@ -5384,7 +5582,7 @@ test("figma REPL programmatic client returns typed output contracts", async () =
         };
       }
       if (name === "get_screenshot") {
-        assert.deepEqual(args, { nodeId: "12:35" });
+        assert.deepEqual(args, { fileKey: "file123", nodeId: "12:35" });
         return {
           content: [
             {
@@ -5409,7 +5607,7 @@ test("figma REPL programmatic client returns typed output contracts", async () =
       tools: [
         { name: "fake_upstream", inputSchema: { type: "object", properties: {} } },
         { name: "upload_assets", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
-        { name: "get_screenshot", inputSchema: { type: "object", properties: { nodeId: { type: "string" } } } },
+        { name: "get_screenshot", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] } },
       ],
     },
   );
