@@ -26666,15 +26666,15 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_capture_node",
-      description: "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { title, sessionId, target, outputFile? }. Image captures default to WebP; explicit .png/.jpg/.jpeg outputFile extensions are preserved. preview:true adds a WebP MCP image preview.",
+      description: "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { title, sessionId, target, outputFile? }. Image captures are saved as PNG; extensionless or non-.png outputFile values normalize to .png. preview:true adds a full-resolution PNG MCP image preview.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         target: {
           description: 'Recommended target to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:"$hero" }, or { fileKey, nodeId }.'
         },
-        outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .webp; explicit .png, .jpg, and .jpeg extensions are preserved; extensionless or other extensions normalize to .webp. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.webp path for image captures."),
-        preview: booleanProperty("Opt in to a WebP MCP image preview in the tool content. Defaults false. The structured result contains only compact preview metadata.", { default: false }),
+        outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .png; extensionless or non-.png values normalize to .png. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.png path for image captures."),
+        preview: booleanProperty("Opt in to a full-resolution PNG MCP image preview in the tool content. Defaults false. The structured result contains only compact preview metadata.", { default: false }),
         metadataFile: stringProperty("Advanced optional capture metadata JSON. Use only when separate metadata is explicitly needed.")
       })
     },
@@ -26828,8 +26828,8 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     nodeId: stringProperty("Captured Figma node id."),
     toolName: stringProperty("Upstream screenshot/capture tool name used."),
     kind: enumProperty(["image", "text"], "Saved output kind."),
-    mimeType: enumProperty(["image/webp", "image/png", "image/jpeg", "text/plain"], "Detected output MIME type."),
-    preview: capturePreviewProperty("Optional WebP MCP image preview metadata when preview:true is requested."),
+    mimeType: enumProperty(["image/png", "text/plain"], "Detected output MIME type."),
+    preview: capturePreviewProperty("Optional PNG MCP image preview metadata when preview:true is requested."),
     qa: objectProperty("Compact capture QA hints."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope, compact inline and complete in outputFile when requested."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
@@ -27100,7 +27100,7 @@ function capturePreviewProperty(description) {
     properties: {
       enabled: booleanProperty("Whether preview was requested."),
       kind: enumProperty(["mcp-image"], "Preview delivery kind when an image preview is returned."),
-      mimeType: enumProperty(["image/webp"], "Preview MIME type."),
+      mimeType: enumProperty(["image/png"], "Preview MIME type."),
       width: numberProperty("Preview width in pixels."),
       height: numberProperty("Preview height in pixels."),
       bytes: numberProperty("Preview payload size in bytes."),
@@ -27200,9 +27200,6 @@ import { tmpdir } from "node:os";
 import { basename, dirname as dirname4, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve4 } from "node:path";
 var TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 var DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
-var CAPTURE_WEBP_OPTIONS = { quality: 98, effort: 4 };
-var CAPTURE_JPEG_OPTIONS = { quality: 98 };
-var sharpFactoryPromise;
 function createScriptOutputWriter(args, session, formatSummaryMarkdown) {
   const files = resolveScriptOutputFiles(args, session);
   return {
@@ -27274,7 +27271,7 @@ async function writeCaptureOutputFile(outputFile, upstream, parsed) {
   const image = content.find((item) => item.type === "image" && typeof item.data === "string");
   if (image && typeof image.data === "string") {
     const buffer = Buffer.from(image.data, "base64");
-    return writeCaptureImageOutputFile(outputFile, buffer);
+    return writeCaptureImageOutputFile(outputFile, buffer, void 0, normalizeCaptureImageMimeType(image.mimeType));
   }
   const sourceUrl = extractCaptureImageUrl(upstream, parsed);
   if (sourceUrl) {
@@ -27285,7 +27282,12 @@ async function writeCaptureOutputFile(outputFile, upstream, parsed) {
       );
     }
     const buffer = Buffer.from(await response.arrayBuffer());
-    return writeCaptureImageOutputFile(outputFile, buffer, sourceUrl);
+    return writeCaptureImageOutputFile(
+      outputFile,
+      buffer,
+      sourceUrl,
+      normalizeCaptureImageMimeType(response.headers.get("content-type"))
+    );
   }
   const textItem = content.find((item) => item.type === "text" && typeof item.text === "string");
   const text = typeof textItem?.text === "string" ? textItem.text : parsed.text || JSON.stringify(removeUndefined(parsed.json ?? upstream), null, 2);
@@ -27307,55 +27309,72 @@ function captureTextOutputFilePath(outputFile) {
   return withFileExtension(outputFile, ".txt");
 }
 async function createCapturePreviewImage(inputFile) {
-  const input = await readFile3(inputFile);
-  const sharp = await loadSharpFactory();
-  const { data: data2, info } = await sharp(input).resize({ width: 320, height: 320, fit: "inside", withoutEnlargement: true }).webp(CAPTURE_WEBP_OPTIONS).toBuffer({ resolveWithObject: true });
+  const data2 = await readFile3(inputFile);
+  const dimensions = readPngDimensions(data2);
   return {
     data: data2,
-    mimeType: "image/webp",
+    mimeType: "image/png",
     bytes: data2.byteLength,
-    width: info.width,
-    height: info.height
+    width: dimensions?.width,
+    height: dimensions?.height
   };
 }
-async function writeCaptureImageOutputFile(outputFile, buffer, sourceUrl) {
+async function writeCaptureImageOutputFile(outputFile, buffer, sourceUrl, sourceMimeType) {
   const output = resolveCaptureImageOutput(outputFile);
   await mkdir2(dirname4(output.path), { recursive: true });
-  const sharp = await loadSharpFactory();
-  const pipeline = sharp(buffer);
-  const encoded = output.format === "png" ? pipeline.png() : output.format === "jpeg" ? pipeline.flatten({ background: "#ffffff" }).jpeg(CAPTURE_JPEG_OPTIONS) : pipeline.webp(CAPTURE_WEBP_OPTIONS);
-  const { data: data2, info } = await encoded.toBuffer({ resolveWithObject: true });
-  await writeFile2(output.path, data2);
+  const inputMimeType = sourceMimeType ?? detectCaptureImageMimeType(buffer);
+  if (inputMimeType !== "image/png") {
+    throw new Error(
+      `Capture image output currently supports official image/png screenshot payloads only; upstream returned ${inputMimeType ?? "unknown image data"}.`
+    );
+  }
+  const dimensions = readPngDimensions(buffer);
+  await writeFile2(output.path, buffer);
   return {
     path: output.path,
     kind: "image",
     mimeType: output.mimeType,
-    bytes: data2.byteLength,
+    bytes: buffer.byteLength,
     lineCount: 0,
-    width: info.width,
-    height: info.height,
+    width: dimensions?.width,
+    height: dimensions?.height,
     sourceUrl
   };
 }
-async function loadSharpFactory() {
-  sharpFactoryPromise ??= import("sharp").then((module) => module.default).catch((error2) => {
-    const message = error2 instanceof Error ? error2.message : String(error2);
-    throw new Error(`Image capture conversion requires the optional native dependency "sharp", but it could not be loaded: ${message}`);
-  });
-  return sharpFactoryPromise;
+function normalizeCaptureImageMimeType(value) {
+  if (typeof value !== "string") {
+    return void 0;
+  }
+  const mimeType = value.split(";")[0]?.trim().toLowerCase();
+  if (mimeType === "image/png") {
+    return mimeType;
+  }
+  return void 0;
+}
+function detectCaptureImageMimeType(buffer) {
+  if (isPngBuffer(buffer)) {
+    return "image/png";
+  }
+  return void 0;
+}
+function readPngDimensions(buffer) {
+  if (!isPngBuffer(buffer) || buffer.length < 24) {
+    return void 0;
+  }
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20)
+  };
+}
+function isPngBuffer(buffer) {
+  return buffer.length >= 8 && buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71 && buffer[4] === 13 && buffer[5] === 10 && buffer[6] === 26 && buffer[7] === 10;
 }
 function resolveCaptureImageOutput(path) {
   const extension = extname(path).toLowerCase();
   if (extension === ".png") {
-    return { path, format: "png", mimeType: "image/png" };
+    return { path, mimeType: "image/png" };
   }
-  if (extension === ".jpg" || extension === ".jpeg") {
-    return { path, format: "jpeg", mimeType: "image/jpeg" };
-  }
-  if (extension === ".webp") {
-    return { path, format: "webp", mimeType: "image/webp" };
-  }
-  return { path: withFileExtension(path, ".webp"), format: "webp", mimeType: "image/webp" };
+  return { path: withFileExtension(path, ".png"), mimeType: "image/png" };
 }
 function withFileExtension(path, extension) {
   const currentExtension = extname(path);
@@ -31734,7 +31753,7 @@ function createFileWorkflowPayload() {
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
       "Use figma_repl_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
-      "Use figma_repl_capture_node to write final visual QA captures to local image files; default and recommended image output is WebP, while explicit .png/.jpg/.jpeg outputFile extensions are preserved. Pass preview=true only when the MCP response should include a WebP image preview. Pass metadataFile when you need the complete upstream capture envelope.",
+      "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png outputFile values normalize to .png. Pass preview=true only when the MCP response should include the full-resolution PNG image as an MCP media item. Pass metadataFile when you need the complete upstream capture envelope.",
       "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.outputFile.path}}.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
@@ -31901,7 +31920,7 @@ function createToolArgumentGuidancePayload() {
       tool: "figma_repl_capture_node",
       tier: "normalPath",
       recommendedCalls: {
-        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.webp", preview: true }
+        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png", preview: true }
       },
       advancedArguments: ["metadataFile"],
       avoidUnless: {
@@ -31961,7 +31980,7 @@ function createCapabilitiesPayload() {
         "figma_repl_inspect with mode=inspect, mode=style, or mode=validate before mutation and after generated work",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through official upload_assets",
         "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
-        "figma_repl_capture_node for final visual QA captures saved as local image files, WebP by default and PNG/JPEG when the outputFile extension requests it; add preview=true for a WebP MCP image preview",
+        "figma_repl_capture_node for final visual QA captures saved as local PNG files; add preview=true for a full-resolution PNG MCP image preview",
         "figma_repl_open only for lightweight session/context binding when a prepared task is not needed; start new file tasks with figma_repl_prepare_task",
         "figma_repl_run_task_plan only for repeatable multi-step plans",
         "figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work",
@@ -32068,7 +32087,7 @@ function createCapabilitiesPayload() {
         tool: "figma_repl_capture_node",
         purpose: "Call official upstream get_screenshot and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
         defaulting: "Requires advertised official get_screenshot and sends { fileKey, nodeId } upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
-        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, optional WebP preview metadata when preview=true, and optional metadataFile with the full upstream capture envelope."
+        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, optional PNG preview metadata when preview=true, and optional metadataFile with the full upstream capture envelope."
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",
@@ -32076,7 +32095,7 @@ function createCapabilitiesPayload() {
         stepTypes: ["script-file", "asset-manifest", "upload_assets", "download-assets", "download_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
         references: "Later step arguments can reference prior outputs with {{outputs.stepId.outputFile.path}} or {{steps.stepId.outputFiles.outputFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, downloads expose {{steps.stepId.downloadOutputDir}} and {{steps.stepId.downloadTargets}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
-        result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, <step-id>.downloads.result.json plus <step-id>.downloads, <step-id>.webp for image captures, and <step-id>.capture.result.json."
+        result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, <step-id>.downloads.result.json plus <step-id>.downloads, <step-id>.png for image captures, and <step-id>.capture.result.json."
       }
     },
     queryStrategy: {

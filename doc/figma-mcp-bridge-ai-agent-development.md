@@ -65,6 +65,7 @@ Pin these facts when changing the router surface:
 3. For router wording, update runtime payload/tests first. Touch `SKILL.md` or README only for concise summary alignment.
 4. Keep changes reviewable. Separate broad guidance/runtime refactors from validation hardening and docs parity work when possible.
 5. Do not stage or commit `task-memory/` unless the user explicitly asks.
+6. Do not try to update or reinstall the locally installed Codex plugin cache from an agent session. In particular, do not run `codex plugin add` for `figma-mcp-bridge` as part of normal development or validation. Existing MCP server processes can hold cache files open; leave installed-cache refresh/reload to the user or a fresh Codex app session.
 
 ## Validation
 
@@ -75,12 +76,12 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs the build and the Node test suite. Use it before committing runtime, parser, generated output, or docs parity changes.
+`npm test` runs the build and the Node test suite. Use it before committing runtime, parser, generated output, or docs parity changes. The test suite must include a real SDK stdio startup probe for `dist/repl-stdio-cli.js`: start the CLI with `StdioClientTransport`, complete MCP `initialize`, and call `listTools`. This guards against startup-only failures such as top-level native dependency imports that close the connection before the initialize response.
 
 Useful test areas:
 
 - `tests/build-output.test.mjs`: package export and generated output contract.
-- `tests/repl-server.test.mjs`: MCP tools, typed client, resource payloads, parser validation, workspace flow, docs/API lookup, task plans, and parity smoke checks.
+- `tests/repl-server.test.mjs`: MCP tools, typed client, resource payloads, parser validation, workspace flow, docs/API lookup, task plans, stdio initialize/listTools startup probe, and parity smoke checks.
 
 ## Release Checklist
 

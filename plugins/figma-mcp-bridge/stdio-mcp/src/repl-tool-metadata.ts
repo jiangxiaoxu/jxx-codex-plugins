@@ -113,15 +113,15 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_capture_node",
       description:
-        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { title, sessionId, target, outputFile? }. Image captures default to WebP; explicit .png/.jpg/.jpeg outputFile extensions are preserved. preview:true adds a WebP MCP image preview.",
+        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { title, sessionId, target, outputFile? }. Image captures are saved as PNG; extensionless or non-.png outputFile values normalize to .png. preview:true adds a full-resolution PNG MCP image preview.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
         target: {
           description: "Recommended target to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:\"$hero\" }, or { fileKey, nodeId }.",
         },
-        outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .webp; explicit .png, .jpg, and .jpeg extensions are preserved; extensionless or other extensions normalize to .webp. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.webp path for image captures."),
-        preview: booleanProperty("Opt in to a WebP MCP image preview in the tool content. Defaults false. The structured result contains only compact preview metadata.", { default: false }),
+        outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .png; extensionless or non-.png values normalize to .png. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.png path for image captures."),
+        preview: booleanProperty("Opt in to a full-resolution PNG MCP image preview in the tool content. Defaults false. The structured result contains only compact preview metadata.", { default: false }),
         metadataFile: stringProperty("Advanced optional capture metadata JSON. Use only when separate metadata is explicitly needed."),
       }),
     },
@@ -282,8 +282,8 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     nodeId: stringProperty("Captured Figma node id."),
     toolName: stringProperty("Upstream screenshot/capture tool name used."),
     kind: enumProperty(["image", "text"], "Saved output kind."),
-    mimeType: enumProperty(["image/webp", "image/png", "image/jpeg", "text/plain"], "Detected output MIME type."),
-    preview: capturePreviewProperty("Optional WebP MCP image preview metadata when preview:true is requested."),
+    mimeType: enumProperty(["image/png", "text/plain"], "Detected output MIME type."),
+    preview: capturePreviewProperty("Optional PNG MCP image preview metadata when preview:true is requested."),
     qa: objectProperty("Compact capture QA hints."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope, compact inline and complete in outputFile when requested."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
@@ -582,7 +582,7 @@ function capturePreviewProperty(description: string): Record<string, unknown> {
     properties: {
       enabled: booleanProperty("Whether preview was requested."),
       kind: enumProperty(["mcp-image"], "Preview delivery kind when an image preview is returned."),
-      mimeType: enumProperty(["image/webp"], "Preview MIME type."),
+      mimeType: enumProperty(["image/png"], "Preview MIME type."),
       width: numberProperty("Preview width in pixels."),
       height: numberProperty("Preview height in pixels."),
       bytes: numberProperty("Preview payload size in bytes."),

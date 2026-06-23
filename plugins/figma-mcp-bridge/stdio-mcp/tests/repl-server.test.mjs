@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { deflateSync } from "node:zlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import sharp from "sharp";
 import {
   createFigmaReplClient,
   createFigmaReplMcpServer,
@@ -105,19 +105,47 @@ function countTextLines(content) {
 }
 
 async function createTestPngBuffer(width = 4, height = 3) {
-  return sharp({
-    create: {
-      width,
-      height,
-      channels: 4,
-      background: { r: 240, g: 64, b: 48, alpha: 1 },
-    },
-  }).png().toBuffer();
+  const pixel = Buffer.from([240, 64, 48, 255]);
+  const rows = [];
+  for (let y = 0; y < height; y += 1) {
+    const row = Buffer.alloc(1 + width * pixel.length);
+    row[0] = 0;
+    for (let x = 0; x < width; x += 1) {
+      pixel.copy(row, 1 + x * pixel.length);
+    }
+    rows.push(row);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(Buffer.concat(rows))),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
-function assertWebpBuffer(buffer) {
-  assert.equal(buffer.subarray(0, 4).toString("ascii"), "RIFF");
-  assert.equal(buffer.subarray(8, 12).toString("ascii"), "WEBP");
+function pngChunk(type, data) {
+  const typeBytes = Buffer.from(type, "ascii");
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBytes, data])), 0);
+  return Buffer.concat([length, typeBytes, data, crc]);
+}
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 function assertPngBuffer(buffer) {
@@ -860,7 +888,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(capabilities.toolArgumentGuidance.assetManifest.avoidUnless.upstreamTemplates, undefined);
   assert.deepEqual(
     capabilities.toolArgumentGuidance.captureNode.recommendedCalls.capture,
-    { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.webp", preview: true },
+    { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png", preview: true },
   );
   assert.ok(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("metadataFile"));
   assert.equal(capabilities.toolArgumentGuidance.captureNode.advancedArguments.includes("targetNodeId"), false);
@@ -1099,14 +1127,14 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const captureNodeTool = tools.tools.find((tool) => tool.name === "figma_repl_capture_node");
   assert.ok(captureNodeTool);
   assert.match(captureNodeTool.description, /outputFile\?/);
-  assert.match(captureNodeTool.description, /\.png\/\.jpg\/\.jpeg/);
+  assert.match(captureNodeTool.description, /saved as PNG/);
   assert.equal(captureNodeTool.inputSchema.properties.nodeId, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.targetNodeId, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.handle, undefined);
   assert.match(captureNodeTool.inputSchema.properties.target.description, /Recommended target/);
   assert.match(captureNodeTool.inputSchema.properties.target.description, /\{ fileKey, nodeId \}/);
-  assert.match(captureNodeTool.inputSchema.properties.outputFile.description, /Recommended extension.*\.webp/);
-  assert.match(captureNodeTool.inputSchema.properties.outputFile.description, /\.png, \.jpg, and \.jpeg extensions are preserved/);
+  assert.match(captureNodeTool.inputSchema.properties.outputFile.description, /Recommended extension.*\.png/);
+  assert.match(captureNodeTool.inputSchema.properties.outputFile.description, /non-\.png values normalize to \.png/);
   assert.match(captureNodeTool.inputSchema.properties.metadataFile.description, /metadata JSON/);
   assert.equal(captureNodeTool.inputSchema.properties.preview.default, false);
   assert.equal(captureNodeTool.inputSchema.properties.toolName, undefined);
@@ -1114,7 +1142,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(captureNodeTool.inputSchema.properties.refresh, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.inlineResultLimit, undefined);
   assert.deepEqual(captureNodeTool.outputSchema.properties.preview.properties.omittedReason.enum, ["not-image", "generation-failed"]);
-  assert.deepEqual(captureNodeTool.outputSchema.properties.mimeType.enum, ["image/webp", "image/png", "image/jpeg", "text/plain"]);
+  assert.deepEqual(captureNodeTool.outputSchema.properties.mimeType.enum, ["image/png", "text/plain"]);
+  assert.deepEqual(captureNodeTool.outputSchema.properties.preview.properties.mimeType.enum, ["image/png"]);
   assert.ok(captureNodeTool.outputSchema.properties.outputFiles.properties.metadataFile);
   const taskPlanTool = tools.tools.find((tool) => tool.name === "figma_repl_run_task_plan");
   assert.ok(taskPlanTool);
@@ -2910,7 +2939,7 @@ test("figma REPL download_assets rejects drifted official schema fields", async 
 test("figma REPL captures node screenshot responses to a local file", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-"));
   const outputFile = resolve(tempDir, "node");
-  const webpOutputFile = resolve(tempDir, "node.webp");
+  const pngOutputFile = resolve(tempDir, "node.png");
   const pngBytes = await createTestPngBuffer();
   const calls = [];
   const fakeClient = createFakeFigmaClient(
@@ -2960,16 +2989,16 @@ test("figma REPL captures node screenshot responses to a local file", async () =
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.equal(result.content.length, 0);
-    assert.equal(json.outputFile, webpOutputFile);
+    assert.equal(json.outputFile, pngOutputFile);
     assert.equal(json.file, undefined);
-    assertFilePointer(json.outputFiles.outputFile, webpOutputFile, { lineCount: 0 });
+    assertFilePointer(json.outputFiles.outputFile, pngOutputFile, { lineCount: 0 });
     assert.equal(json.nodeId, "22:7");
     assert.equal(json.toolName, "get_screenshot");
-    assert.equal(json.mimeType, "image/webp");
+    assert.equal(json.mimeType, "image/png");
     assert.equal(json.width, 4);
     assert.equal(json.height, 3);
     assert.equal(json.preview, undefined);
-    assertWebpBuffer(await readFile(webpOutputFile));
+    assertPngBuffer(await readFile(pngOutputFile));
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
     await mcpClient.close();
   } finally {
@@ -2979,7 +3008,7 @@ test("figma REPL captures node screenshot responses to a local file", async () =
 
 test("figma REPL uses the stable official get_screenshot schema without overrides", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-official-capture-"));
-  const outputFile = resolve(tempDir, "official-capture.webp");
+  const outputFile = resolve(tempDir, "official-capture.png");
   const pngBytes = await createTestPngBuffer(8, 6);
   const calls = [];
   const fakeClient = createFakeFigmaClient(
@@ -3048,9 +3077,9 @@ test("figma REPL uses the stable official get_screenshot schema without override
     assert.equal(json.toolName, "get_screenshot");
     assert.equal(json.nodeId, "22:7");
     assert.equal(json.outputFile, outputFile);
-    assert.equal(json.mimeType, "image/webp");
+    assert.equal(json.mimeType, "image/png");
     assertFilePointer(json.outputFiles.outputFile, outputFile, { lineCount: 0 });
-    assertWebpBuffer(await readFile(outputFile));
+    assertPngBuffer(await readFile(outputFile));
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
     await mcpClient.close();
   } finally {
@@ -3058,7 +3087,7 @@ test("figma REPL uses the stable official get_screenshot schema without override
   }
 });
 
-test("figma REPL capture node can return an opt-in WebP MCP preview", async () => {
+test("figma REPL capture node can return an opt-in full-resolution PNG MCP preview", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-preview-"));
   const previousTaskRoot = process.env.FIGMA_REPL_TASK_ROOT;
   process.env.FIGMA_REPL_TASK_ROOT = tempDir;
@@ -3111,23 +3140,23 @@ test("figma REPL capture node can return an opt-in WebP MCP preview", async () =
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.match(json.outputFile, /capture-results.*capture-preview.*capture-.*\.webp$/u);
+    assert.match(json.outputFile, /capture-results.*capture-preview.*capture-.*\.png$/u);
     assertFilePointer(json.outputFiles.outputFile, json.outputFile, { lineCount: 0 });
-    assert.equal(json.mimeType, "image/webp");
+    assert.equal(json.mimeType, "image/png");
     assert.equal(json.width, 24);
     assert.equal(json.height, 18);
     assert.equal(json.preview.enabled, true);
     assert.equal(json.preview.kind, "mcp-image");
-    assert.equal(json.preview.mimeType, "image/webp");
+    assert.equal(json.preview.mimeType, "image/png");
     assert.equal(json.preview.width, 24);
     assert.equal(json.preview.height, 18);
     assert.equal(json.preview.source, "outputFile");
     assert.equal(result.content.length, 1);
     assert.equal(result.content[0].type, "image");
-    assert.equal(result.content[0].mimeType, "image/webp");
+    assert.equal(result.content[0].mimeType, "image/png");
     assert.equal(json.preview.data, undefined);
-    assertWebpBuffer(Buffer.from(result.content[0].data, "base64"));
-    assertWebpBuffer(await readFile(json.outputFile));
+    assertPngBuffer(Buffer.from(result.content[0].data, "base64"));
+    assertPngBuffer(await readFile(json.outputFile));
     await mcpClient.close();
   } finally {
     if (previousTaskRoot === undefined) {
@@ -3135,6 +3164,75 @@ test("figma REPL capture node can return an opt-in WebP MCP preview", async () =
     } else {
       process.env.FIGMA_REPL_TASK_ROOT = previousTaskRoot;
     }
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL capture node normalizes non-PNG image output paths and returns PNG preview", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-capture-png-normalize-"));
+  const outputFile = resolve(tempDir, "node.png");
+  const requestedOutputFile = resolve(tempDir, "node.jpg");
+  const pngBytes = await createTestPngBuffer(16, 10);
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      assert.equal(name, "get_screenshot");
+      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:73" });
+      return {
+        content: [
+          {
+            type: "image",
+            mimeType: "image/png",
+            data: pngBytes.toString("base64"),
+          },
+        ],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "get_screenshot",
+          description: "Official screenshot tool.",
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] },
+        },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_capture_node",
+      arguments: {
+        title: "Capture node as PNG",
+        target: { fileKey: "file123", nodeId: "22:73" },
+        outputFile: requestedOutputFile,
+        preview: true,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(result.content.length, 1);
+    assert.equal(json.outputFile, outputFile);
+    assert.equal(json.mimeType, "image/png");
+    assert.equal(json.width, 16);
+    assert.equal(json.height, 10);
+    assert.equal(json.preview.enabled, true);
+    assert.equal(json.preview.mimeType, "image/png");
+    assert.equal(result.content[0].mimeType, "image/png");
+    assertPngBuffer(Buffer.from(result.content[0].data, "base64"));
+    assertPngBuffer(await readFile(outputFile));
+    await mcpClient.close();
+  } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
@@ -3751,7 +3849,7 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
       }
       if (name === "fake_reference") {
         assert.match(args.assetResult, /asset\.assets\.result\.json$/u);
-        assert.match(args.captureOutput, /capture\.webp$/u);
+        assert.match(args.captureOutput, /capture\.png$/u);
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: true, result: { summary: "referenced outputs" } }) }],
         };
@@ -3843,14 +3941,14 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
     assert.equal(planFile.outputFiles, undefined);
     assert.deepEqual(json.steps.map((step) => step.status), ["completed", "completed", "completed", "completed"]);
     assert.match(json.outputReferences.asset.outputFile.path, /asset\.assets\.result\.json$/u);
-    assert.match(json.outputReferences.capture.outputFile.path, /capture\.webp$/u);
+    assert.match(json.outputReferences.capture.outputFile.path, /capture\.png$/u);
     assert.equal(JSON.parse(await readFile(resolve(fileDir, "script.result.json"), "utf8")).upstream.payload.result.assetTargets.central, "11:22");
     assert.equal(JSON.parse(await readFile(resolve(fileDir, "asset.assets.result.json"), "utf8")).ok, true);
     const captureFile = JSON.parse(await readFile(resolve(fileDir, "capture.capture.result.json"), "utf8"));
-    assert.equal(captureFile.outputFile, resolve(fileDir, "capture.webp"));
+    assert.equal(captureFile.outputFile, resolve(fileDir, "capture.png"));
     assert.equal(captureFile.file, undefined);
     assert.equal(captureFile.outputFiles, undefined);
-    assertWebpBuffer(await readFile(resolve(fileDir, "capture.webp")));
+    assertPngBuffer(await readFile(resolve(fileDir, "capture.png")));
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
