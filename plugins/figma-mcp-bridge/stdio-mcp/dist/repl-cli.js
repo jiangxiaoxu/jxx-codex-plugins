@@ -27291,11 +27291,11 @@ function toolOutputSchema(properties) {
 import { mkdir as mkdir2, readFile as readFile3, unlink, writeFile as writeFile2 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname as dirname4, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve4 } from "node:path";
-import sharp from "sharp";
 var TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 var DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
 var CAPTURE_WEBP_OPTIONS = { quality: 98, effort: 4 };
 var CAPTURE_JPEG_OPTIONS = { quality: 98 };
+var sharpFactoryPromise;
 function createScriptOutputWriter(args, session, formatSummaryMarkdown) {
   const files = resolveScriptOutputFiles(args, session);
   return {
@@ -27401,6 +27401,7 @@ function captureTextOutputFilePath(outputFile) {
 }
 async function createCapturePreviewImage(inputFile) {
   const input = await readFile3(inputFile);
+  const sharp = await loadSharpFactory();
   const { data: data2, info } = await sharp(input).resize({ width: 320, height: 320, fit: "inside", withoutEnlargement: true }).webp(CAPTURE_WEBP_OPTIONS).toBuffer({ resolveWithObject: true });
   return {
     data: data2,
@@ -27413,6 +27414,7 @@ async function createCapturePreviewImage(inputFile) {
 async function writeCaptureImageOutputFile(outputFile, buffer, sourceUrl) {
   const output = resolveCaptureImageOutput(outputFile);
   await mkdir2(dirname4(output.path), { recursive: true });
+  const sharp = await loadSharpFactory();
   const pipeline = sharp(buffer);
   const encoded = output.format === "png" ? pipeline.png() : output.format === "jpeg" ? pipeline.flatten({ background: "#ffffff" }).jpeg(CAPTURE_JPEG_OPTIONS) : pipeline.webp(CAPTURE_WEBP_OPTIONS);
   const { data: data2, info } = await encoded.toBuffer({ resolveWithObject: true });
@@ -27427,6 +27429,13 @@ async function writeCaptureImageOutputFile(outputFile, buffer, sourceUrl) {
     height: info.height,
     sourceUrl
   };
+}
+async function loadSharpFactory() {
+  sharpFactoryPromise ??= import("sharp").then((module) => module.default).catch((error2) => {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    throw new Error(`Image capture conversion requires the optional native dependency "sharp", but it could not be loaded: ${message}`);
+  });
+  return sharpFactoryPromise;
 }
 function resolveCaptureImageOutput(path) {
   const extension = extname(path).toLowerCase();
