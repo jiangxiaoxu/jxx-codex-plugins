@@ -60,27 +60,12 @@ export declare function resolveRequiredWorkspaceAwareFile(value: unknown, sessio
 export declare function resolveWorkspaceAwareFile(value: unknown, session: FigmaReplWorkspaceFileSession, argumentName: string): string | undefined;
 export declare function writeCaptureOutputFile(outputFile: string, upstream: unknown, parsed: ParsedCaptureResult): Promise<{
     path: string;
-    kind: "image" | "text";
-    mimeType: string;
-    bytes: number;
-    lineCount: number;
-    width?: number;
-    height?: number;
-    sourceUrl?: string;
-}>;
-export declare function captureImageOutputFilePath(outputFile: string): string;
-export declare function captureTextOutputFilePath(outputFile: string): string;
-export declare function createCaptureThumbnailImage(inputFile: string, maxSize: number): Promise<{
-    path: string;
-    data: Buffer;
-    mimeType: "image/png";
     bytes: number;
     lineCount: 0;
-    width: number;
-    height: number;
-    sourceWidth: number;
-    sourceHeight: number;
+    width?: number;
+    height?: number;
 }>;
+export declare function captureImageOutputFilePath(outputFile: string): string;
 export declare function loadTaskPlan(args: FigmaReplRunTaskPlanArguments, session: FigmaReplWorkspaceFileSession): Promise<{
     planPath?: string;
     steps: FigmaReplTaskPlanStep[];

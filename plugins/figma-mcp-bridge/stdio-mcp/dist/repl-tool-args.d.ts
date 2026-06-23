@@ -83,9 +83,6 @@ export interface FigmaReplCaptureNodeArguments {
     sessionId?: string;
     target?: unknown;
     outputFile?: string;
-    thumbnail?: boolean;
-    thumbnailMaxSize?: number;
-    metadataFile?: string;
 }
 export interface FigmaReplTaskPlanStep {
     id?: string;

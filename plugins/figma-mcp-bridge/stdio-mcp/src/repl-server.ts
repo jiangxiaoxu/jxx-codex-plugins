@@ -98,7 +98,6 @@ import {
   DEFAULT_WORKSPACE_DIR_NAME,
   TASK_WORKSPACE_ROOT_ENV,
   captureImageOutputFilePath,
-  createCaptureThumbnailImage,
   createScriptOutputWriter,
   createSessionWorkspace,
   effectiveInlineResultLimit,
@@ -187,8 +186,6 @@ type FigmaReplEvalHelperPath = "$" | `$.${FigmaReplEvalCommonHelperName}`;
 const DEFAULT_HISTORY_LIMIT = 50;
 const DEFAULT_INLINE_RESULT_LIMIT = 4_000;
 const MAX_INLINE_RESULT_LIMIT = 30_000;
-const DEFAULT_CAPTURE_THUMBNAIL_MAX_SIZE = 512;
-const MAX_CAPTURE_THUMBNAIL_MAX_SIZE = 4_096;
 const UPLOAD_ASSETS_TOOL_NAME = "upload_assets";
 const DOWNLOAD_ASSETS_TOOL_NAME = "download_assets";
 const SCREENSHOT_TOOL_NAME = "get_screenshot";
@@ -230,13 +227,6 @@ export interface FigmaReplFilePointer {
   path: string;
   bytes: number;
   lineCount: number;
-}
-
-interface FigmaReplImageContent {
-  [key: string]: unknown;
-  type: "image";
-  data: string;
-  mimeType: string;
 }
 
 export interface FigmaReplOutputFiles {
@@ -348,11 +338,8 @@ export interface FigmaReplAssetManifestItem {
   targetNodeId: string;
   handle?: string;
   name?: string;
-  toolName: string;
-  upload?: unknown;
   validation?: unknown;
-  error?: FigmaReplPublicUpstreamError;
-  upstreamSummary?: string;
+  upstreamError?: FigmaReplPublicUpstreamError;
 }
 
 export interface FigmaReplApplyAssetManifestResult extends FigmaReplToolResultBase {
@@ -379,8 +366,8 @@ export interface FigmaReplDownloadAssetsTargetResult {
   name?: string;
   outputDir: string;
   downloadedFiles: FigmaReplDownloadedAssetFile[];
-  upstreamSummary?: string;
-  error?: FigmaReplPublicUpstreamError;
+  upstreamError?: FigmaReplPublicUpstreamError;
+  downloadError?: FigmaReplPublicUpstreamError;
 }
 
 export interface FigmaReplDownloadAssetsResult extends FigmaReplToolResultBase {
@@ -391,45 +378,14 @@ export interface FigmaReplDownloadAssetsResult extends FigmaReplToolResultBase {
   outputFiles: FigmaReplOutputFiles;
 }
 
-export interface FigmaReplCaptureQaResult {
-  [key: string]: unknown;
-  ok: boolean;
-  warnings: string[];
-}
-
-export interface FigmaReplCaptureThumbnailResult {
-  [key: string]: unknown;
-  enabled: boolean;
-  kind?: "mcp-image";
-  mimeType?: string;
-  path?: string;
-  width?: number;
-  height?: number;
-  bytes?: number;
-  maxSize?: number;
-  source?: string;
-  sourceWidth?: number;
-  sourceHeight?: number;
-  omittedReason?: string;
-}
-
-export interface FigmaReplCaptureNodeResult extends FigmaReplUpstreamBackedResult {
+export interface FigmaReplCaptureNodeResult extends FigmaReplToolResultBase {
   session: FigmaReplPublicSession;
   outputFile?: string;
-  plannedOutputFile?: string;
   nodeId: string;
-  handle?: string;
-  toolName: string;
-  kind?: string;
-  mimeType?: string;
   bytes?: number;
-  lineCount?: number;
   width?: number;
   height?: number;
-  sourceUrl?: string;
-  qa?: FigmaReplCaptureQaResult;
-  thumbnail?: FigmaReplCaptureThumbnailResult;
-  outputFiles?: FigmaReplOutputFiles;
+  upstreamError?: FigmaReplPublicUpstreamError;
 }
 
 export interface FigmaReplTaskPlanStepResult {
@@ -487,9 +443,10 @@ export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {
   suggestions?: Record<string, unknown>;
 }
 
-export interface FigmaReplInspectResult extends FigmaReplUpstreamBackedResult {
+export interface FigmaReplInspectResult extends FigmaReplToolResultBase {
   session: FigmaReplPublicSession;
   diagnostics: FigmaReplDiagnostic[];
+  upstreamError?: FigmaReplPublicUpstreamError;
 }
 
 export interface FigmaReplCallUpstreamToolResult extends FigmaReplUpstreamBackedResult {
@@ -1518,14 +1475,13 @@ async function executeApplyAssetManifest(
         targetNodeId: asset.targetNodeId,
         handle: asset.handle,
         name: asset.name,
-        toolName: tool.name,
-        upload: compactUploadSummary(upload),
-        error: upstreamError,
-        upstreamSummary: parsed.upstreamError ? parsed.upstreamError.message : summarizeParsedResult(parsed),
+        upstreamError,
       };
       const detail = {
         ...entry,
+        toolName: tool.name,
         upload,
+        uploadSummary: compactUploadSummary(upload),
         metadata: asset.metadata,
         arguments: upstreamArguments,
         upstream: upstreamEnvelope(parsed),
@@ -1541,8 +1497,7 @@ async function executeApplyAssetManifest(
           path: asset.path,
           targetNodeId: asset.targetNodeId,
           handle: asset.handle,
-          toolName: tool.name,
-          error: upstreamError,
+          upstreamError,
         });
       }
     } catch (error) {
@@ -1554,12 +1509,11 @@ async function executeApplyAssetManifest(
         targetNodeId: asset.targetNodeId,
         handle: asset.handle,
         name: asset.name,
-        toolName: tool.name,
-        error: responseError,
-        upstreamSummary: upstreamError.message,
+        upstreamError: responseError,
       };
       const detail = {
         ...entry,
+        toolName: tool.name,
         metadata: asset.metadata,
         arguments: upstreamArguments,
         upstreamError: responseError,
@@ -1573,8 +1527,7 @@ async function executeApplyAssetManifest(
         path: asset.path,
         targetNodeId: asset.targetNodeId,
         handle: asset.handle,
-        toolName: tool.name,
-        error: responseError,
+        upstreamError: responseError,
       });
     }
   }
@@ -1689,6 +1642,11 @@ async function executeDownloadAssets(
         : await downloadAssetLinks(links, targetOutputDir);
       const downloadFailures = downloadedFiles.filter((file) => file.ok === false);
       const ok = !parsed.upstreamError && links.length > 0 && downloadFailures.length === 0;
+      const downloadError = downloadFailures[0]?.error
+        ? responseUpstreamError(normalizeCaughtUpstreamError(downloadFailures[0].error))
+        : links.length === 0 && !parsed.upstreamError
+          ? { message: "Upstream download_assets returned no downloadable URLs." }
+          : undefined;
       const entry = removeUndefined({
         ok,
         targetNodeId: target.targetNodeId,
@@ -1696,8 +1654,8 @@ async function executeDownloadAssets(
         name: target.name,
         outputDir: targetOutputDir,
         downloadedFiles: compactDownloadedFiles(downloadedFiles),
-        upstreamSummary: parsed.upstreamError ? parsed.upstreamError.message : summarizeParsedResult(parsed),
-        error: upstreamError,
+        upstreamError,
+        downloadError,
       }) as Record<string, unknown>;
       const detail = removeUndefined({
         ...entry,
@@ -1719,8 +1677,9 @@ async function executeDownloadAssets(
           handle: target.handle,
           name: target.name,
           outputDir: targetOutputDir,
-          error: upstreamError ?? downloadFailures[0]?.error ?? {
-            message: links.length === 0 ? "Upstream download_assets returned no downloadable URLs." : "One or more asset downloads failed.",
+          upstreamError,
+          downloadError: downloadError ?? {
+            message: "One or more asset downloads failed.",
           },
         }) as Record<string, unknown>);
       }
@@ -1734,8 +1693,7 @@ async function executeDownloadAssets(
         name: target.name,
         outputDir: targetOutputDir,
         downloadedFiles: [],
-        upstreamSummary: upstreamError.message,
-        error: responseError,
+        upstreamError: responseError,
       }) as Record<string, unknown>;
       const detail = removeUndefined({
         ...entry,
@@ -1753,7 +1711,7 @@ async function executeDownloadAssets(
         handle: target.handle,
         name: target.name,
         outputDir: targetOutputDir,
-        error: responseError,
+        upstreamError: responseError,
       }) as Record<string, unknown>);
     }
   }
@@ -2090,27 +2048,21 @@ async function handleCaptureNode(
   args: FigmaReplCaptureNodeArguments,
   runtime: FigmaReplRuntime,
 ): Promise<Record<string, unknown>> {
-  const result = await executeCaptureNodeForTool(args, runtime);
-  return makeJsonToolResult(result.payload, result.thumbnailContent ? [result.thumbnailContent] : undefined);
+  return makeJsonToolResult(await executeCaptureNodeForTool(args, runtime));
 }
 
 async function executeCaptureNode(
   args: FigmaReplCaptureNodeArguments,
   runtime: FigmaReplRuntime,
 ): Promise<Record<string, unknown>> {
-  return (await executeCaptureNodeForTool(args, runtime)).payload;
+  return executeCaptureNodeForTool(args, runtime);
 }
 
 async function executeCaptureNodeForTool(
   args: FigmaReplCaptureNodeArguments,
   runtime: FigmaReplRuntime,
-): Promise<{ payload: Record<string, unknown>; thumbnailContent?: FigmaReplImageContent }> {
-  assertRequiredTitleArgument(args);
-  rejectRemovedCapturePreviewArgument(args);
-  const thumbnailEnabled = args.thumbnail !== false;
-  const thumbnailMaxSize = thumbnailEnabled
-    ? normalizeCaptureThumbnailMaxSize(args.thumbnailMaxSize)
-    : undefined;
+): Promise<Record<string, unknown>> {
+  rejectRemovedCaptureMediaArguments(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const targetResolution = resolveSessionTargetInput(args.target, session);
   const nodeId = targetResolution.nodeId;
@@ -2122,8 +2074,6 @@ async function executeCaptureNodeForTool(
     throw new Error('Tool argument "target" requires a fileKey for official get_screenshot. Pass a node URL, target:{ fileKey, nodeId }, or open the session with a Figma file URL first.');
   }
   const requestedOutputFile = resolveCaptureOutputFile(args, session);
-  const plannedImageOutputFile = captureImageOutputFilePath(requestedOutputFile);
-  const metadataFile = resolveWorkspaceAwareFile(args.metadataFile, session, "metadataFile");
   const tools = await runtime.upstreamToolCache.list(false);
   const tool = selectRequiredUpstreamTool(tools, SCREENSHOT_TOOL_NAME, "node screenshot");
   assertUpstreamToolHasProperties(tool, ["fileKey", "nodeId"], "node screenshot");
@@ -2136,39 +2086,24 @@ async function executeCaptureNodeForTool(
   const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
   const parsed = parseUpstreamToolResult(upstream);
   if (parsed.upstreamError) {
-    const outputFiles: Record<string, unknown> = {};
-    const payload = {
+    return {
       ok: false,
       session: responseSession(session),
-      plannedOutputFile: plannedImageOutputFile,
       nodeId,
-      handle: targetResolution.handle,
-      toolName: tool.name,
-      upstream: upstreamEnvelope(parsed, { includePayload: false }),
-      ...upstreamFailureFields(parsed),
-    };
-    if (metadataFile) {
-      outputFiles.metadataFile = await writeJsonFile(metadataFile, {
-        ...payload,
-        upstream: upstreamEnvelope(parsed),
-      });
-    }
-    return {
-      payload: {
-        ...payload,
-        outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
-      },
+      upstreamError: responseUpstreamError(parsed.upstreamError),
     };
   }
-  const saved = await writeCaptureOutputFile(requestedOutputFile, upstream, parsed);
-  const outputFileMetadata = {
-    path: saved.path,
-    bytes: saved.bytes,
-    lineCount: saved.lineCount,
-  };
-  const outputFiles: Record<string, unknown> = {
-    outputFile: outputFileMetadata,
-  };
+  let saved: Awaited<ReturnType<typeof writeCaptureOutputFile>>;
+  try {
+    saved = await writeCaptureOutputFile(requestedOutputFile, upstream, parsed);
+  } catch (error) {
+    return {
+      ok: false,
+      session: responseSession(session),
+      nodeId,
+      upstreamError: normalizeCaughtUpstreamError(error),
+    };
+  }
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -2178,50 +2113,30 @@ async function executeCaptureNodeForTool(
     summary: `Captured node ${nodeId} to ${saved.path}.`,
     nodeIds: [nodeId],
   });
-  const thumbnail = await maybeCreateCaptureThumbnail(saved, thumbnailEnabled, thumbnailMaxSize);
-  if (thumbnail.file) {
-    outputFiles.thumbnailFile = {
-      path: thumbnail.file.path,
-      bytes: thumbnail.file.bytes,
-      lineCount: thumbnail.file.lineCount,
-    };
-  }
   const payload = {
     ok: true,
     session: responseSession(session),
     outputFile: saved.path,
     nodeId,
-    handle: targetResolution.handle,
-    toolName: tool.name,
-    kind: saved.kind,
-    mimeType: saved.mimeType,
     bytes: saved.bytes,
-    lineCount: saved.lineCount,
     width: saved.width,
     height: saved.height,
-    sourceUrl: saved.sourceUrl,
-    qa: createCaptureQa(saved),
-    thumbnail: thumbnail.metadata,
-    upstream: upstreamEnvelope(parsed, { includePayload: false }),
   };
-  if (metadataFile) {
-    outputFiles.metadataFile = await writeJsonFile(metadataFile, {
-      ...payload,
-      upstream: upstreamEnvelope(parsed),
-    });
-  }
-  return {
-    payload: {
-      ...payload,
-      outputFiles,
-    },
-    thumbnailContent: thumbnail.content,
-  };
+  return payload;
 }
 
-function rejectRemovedCapturePreviewArgument(args: FigmaReplCaptureNodeArguments): void {
+function rejectRemovedCaptureMediaArguments(args: FigmaReplCaptureNodeArguments): void {
   if (Object.prototype.hasOwnProperty.call(args, "preview")) {
-    throw new Error('Tool argument "preview" was removed. Use "thumbnail": true and optional "thumbnailMaxSize" instead.');
+    throw new Error('Tool argument "preview" was removed. Capture results now return local file paths in structuredContent only.');
+  }
+  if (Object.prototype.hasOwnProperty.call(args, "thumbnail")) {
+    throw new Error('Tool argument "thumbnail" was removed. Capture results now return local file paths in structuredContent only.');
+  }
+  if (Object.prototype.hasOwnProperty.call(args, "thumbnailMaxSize")) {
+    throw new Error('Tool argument "thumbnailMaxSize" was removed. Capture results now return local file paths in structuredContent only.');
+  }
+  if (Object.prototype.hasOwnProperty.call(args, "metadataFile")) {
+    throw new Error('Tool argument "metadataFile" was removed. Use "figma_repl_call_upstream_tool" for full upstream get_screenshot debugging.');
   }
 }
 
@@ -2239,77 +2154,6 @@ function resolveCaptureOutputFile(args: FigmaReplCaptureNodeArguments, session: 
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve(root, "capture-results", session.slug, fileName);
-}
-
-async function maybeCreateCaptureThumbnail(
-  saved: { path: string; kind: "image" | "text"; mimeType: string },
-  enabled: boolean,
-  maxSizeInput: number | undefined,
-): Promise<{
-  metadata?: FigmaReplCaptureThumbnailResult;
-  content?: FigmaReplImageContent;
-  file?: { path: string; bytes: number; lineCount: 0 };
-}> {
-  if (!enabled) {
-    return {};
-  }
-  const maxSize = maxSizeInput ?? DEFAULT_CAPTURE_THUMBNAIL_MAX_SIZE;
-  if (saved.kind !== "image") {
-    return {
-      metadata: {
-        enabled: true,
-        omittedReason: "not-image",
-      },
-    };
-  }
-  try {
-    const thumbnail = await createCaptureThumbnailImage(saved.path, maxSize);
-    return {
-      metadata: {
-        enabled: true,
-        kind: "mcp-image",
-        mimeType: thumbnail.mimeType,
-        path: thumbnail.path,
-        width: thumbnail.width,
-        height: thumbnail.height,
-        bytes: thumbnail.bytes,
-        maxSize,
-        source: "thumbnailFile",
-        sourceWidth: thumbnail.sourceWidth,
-        sourceHeight: thumbnail.sourceHeight,
-      },
-      content: {
-        type: "image",
-        data: thumbnail.data.toString("base64"),
-        mimeType: thumbnail.mimeType,
-      },
-      file: {
-        path: thumbnail.path,
-        bytes: thumbnail.bytes,
-        lineCount: thumbnail.lineCount,
-      },
-    };
-  } catch (error) {
-    return {
-      metadata: {
-        enabled: true,
-        omittedReason: "generation-failed",
-        error: error instanceof Error ? error.message : String(error),
-      },
-    };
-  }
-}
-
-function normalizeCaptureThumbnailMaxSize(value: unknown): number {
-  if (value === undefined || value === null) {
-    return DEFAULT_CAPTURE_THUMBNAIL_MAX_SIZE;
-  }
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
-    throw new Error(
-      `Tool argument "thumbnailMaxSize" must be a positive number of pixels up to ${MAX_CAPTURE_THUMBNAIL_MAX_SIZE}.`,
-    );
-  }
-  return Math.min(Math.floor(value), MAX_CAPTURE_THUMBNAIL_MAX_SIZE);
 }
 
 async function handleRunTaskPlan(
@@ -2358,10 +2202,11 @@ async function executeRunTaskPlan(
         result,
       });
       references.steps[id] = reference;
-      references.outputs[id] = asRecord(reference).outputFiles ?? {};
+      const referenceOutputs = taskPlanStepOutputReferences(reference);
+      references.outputs[id] = referenceOutputs ?? {};
       references.last = reference;
-      if (asRecord(reference).outputFiles !== undefined) {
-        outputReferences[id] = asRecord(reference).outputFiles;
+      if (referenceOutputs !== undefined) {
+        outputReferences[id] = referenceOutputs;
       }
       steps.push({
         id,
@@ -2370,7 +2215,7 @@ async function executeRunTaskPlan(
         status,
         ok,
         summary: summarizeTaskPlanStepResult(result),
-        outputReferences: asRecord(reference).outputFiles,
+        outputReferences: referenceOutputs,
         finishedAt: new Date().toISOString(),
         startedAt,
       });
@@ -2681,11 +2526,7 @@ async function handleInspect(
     ok: !parsed.upstreamError,
     session: responseSession(session),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics),
-    ...upstreamResultFields({
-      parsed,
-      upstream,
-    }),
-    ...upstreamFailureFields(parsed),
+    ...inspectInlineResultFields(parsed),
   });
 }
 
@@ -2808,11 +2649,7 @@ async function executeInspectStyle(
     ok: !parsed.upstreamError,
     session: responseSession(session),
     diagnostics: diagnosticsForResponse(diagnostics),
-    ...upstreamResultFields({
-      parsed,
-      upstream,
-    }),
-    ...upstreamFailureFields(parsed),
+    ...inspectInlineResultFields(parsed),
   };
 }
 
@@ -2876,11 +2713,7 @@ async function executeValidateHandles(
     ok: !parsed.upstreamError,
     session: responseSession(session),
     diagnostics: diagnosticsForResponse(diagnostics),
-    ...upstreamResultFields({
-      parsed,
-      upstream,
-    }),
-    ...upstreamFailureFields(parsed),
+    ...inspectInlineResultFields(parsed),
   };
 }
 
@@ -4538,35 +4371,6 @@ function summarizeUploadResponse(text: string, json: unknown): unknown {
   return text.slice(0, 500);
 }
 
-function createCaptureQa(saved: {
-  kind: "image" | "text";
-  mimeType: string;
-  bytes: number;
-  width?: number;
-  height?: number;
-}): Record<string, unknown> {
-  const warnings: string[] = [];
-  if (saved.bytes === 0) {
-    warnings.push("capture output is empty");
-  }
-  if (saved.kind !== "image") {
-    warnings.push("capture output is text, not an image");
-  }
-  if (saved.kind === "image" && (!saved.width || !saved.height)) {
-    warnings.push("image dimensions could not be detected");
-  }
-  if (saved.kind === "image" && saved.bytes < 256) {
-    warnings.push("image payload is very small");
-  }
-  if (saved.width !== undefined && saved.height !== undefined && (saved.width < 16 || saved.height < 16)) {
-    warnings.push("image dimensions are very small");
-  }
-  return {
-    ok: warnings.length === 0,
-    warnings,
-  };
-}
-
 async function runTaskPlanStep(options: {
   id: string;
   step: FigmaReplTaskPlanStep;
@@ -4689,6 +4493,7 @@ function createTaskPlanStepReference(options: {
   result: Record<string, unknown>;
 }): Record<string, unknown> {
   const outputFiles = asRecord(options.result.outputFiles);
+  const outputFile = asOptionalString(options.result.outputFile);
   const upstream = asRecord(options.result.upstream);
   const upstreamPayload = runScriptUpstreamPayload(options.result);
   const result = asRecord(upstreamPayload);
@@ -4715,11 +4520,19 @@ function createTaskPlanStepReference(options: {
     assetTargets: nestedResult.assetTargets,
     captureTarget: nestedResult.captureTarget,
     createdNodeId: nestedResult.createdNodeId,
-    outputFile: options.result.outputFile,
-    plannedOutputFile: options.result.plannedOutputFile,
+    outputFile,
     outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
-    outputFilePath: asRecord(outputFiles.outputFile).path,
+    outputFilePath: asOptionalString(asRecord(outputFiles.outputFile).path) ?? outputFile,
   };
+}
+
+function taskPlanStepOutputReferences(reference: Record<string, unknown>): Record<string, unknown> | undefined {
+  const outputFiles = asRecord(reference.outputFiles);
+  if (Object.keys(outputFiles).length > 0) {
+    return outputFiles;
+  }
+  const outputFile = asOptionalString(reference.outputFile);
+  return outputFile ? { outputFile } : undefined;
 }
 
 function normalizeTaskPlanStepType(step: FigmaReplTaskPlanStep): string {
@@ -4742,10 +4555,7 @@ function summarizeTaskPlanStepResult(result: Record<string, unknown>): Record<st
   return {
     ok: result.ok !== false,
     outputFile: result.outputFile,
-    plannedOutputFile: result.plannedOutputFile,
     files: result.files ?? result.outputFiles,
-    toolName: result.toolName,
-    upstreamTool: result.upstreamTool,
     failures: Array.isArray(result.failures) ? result.failures.length : undefined,
     diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics.length : undefined,
   };
@@ -5065,12 +4875,12 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
       "Use figma_repl_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
-      "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png outputFile values normalize to .png. A capped PNG thumbnail media item is returned by default; pass thumbnail=false to suppress it. Pass metadataFile when you need the complete upstream capture envelope.",
-      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; initialized workspaces get default step output files and later steps can reference {{outputs.stepId.outputFile.path}}.",
+      "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png outputFile values normalize to .png. Capture results return the screenshot path in structuredContent.outputFile.",
+      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; initialized workspaces get default step output files and capture steps can be referenced with {{steps.stepId.outputFile}}.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Use <taskSlug>.result.json as the default complete output. Only pass diagnosticsFile or summaryFile when a task explicitly needs split files.",
-      "Tool responses are structured-first: JSON data is in structuredContent, while content is reserved for MCP media items such as capture thumbnail images. File-script parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, file pointers stay in outputFiles, and upstream sidecars use outputFiles.upstreamFile.",
+      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, file pointers stay in outputFiles, and upstream sidecars use outputFiles.upstreamFile.",
       "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
     ],
   };
@@ -5245,11 +5055,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       tool: "figma_repl_capture_node",
       tier: "normalPath",
       recommendedCalls: {
-        capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
-      },
-      advancedArguments: ["metadataFile"],
-      avoidUnless: {
-        metadataFile: "Use when you need the complete upstream capture envelope separate from the saved screenshot/text output.",
+        capture: { sessionId: "<session>", target: "$target", outputFile: "<capture>.png" },
       },
     },
     taskPlan: {
@@ -5306,7 +5112,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         "figma_repl_inspect with mode=inspect, mode=style, or mode=validate before mutation and after generated work",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through official upload_assets",
         "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
-        "figma_repl_capture_node for final visual QA captures saved as local PNG files with a default capped PNG MCP thumbnail image",
+        "figma_repl_capture_node for final visual QA captures saved as local PNG files",
         "figma_repl_open only for lightweight session/context binding when a prepared task is not needed; start new file tasks with figma_repl_prepare_task",
         "figma_repl_run_task_plan only for repeatable multi-step plans",
         "figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work",
@@ -5314,7 +5120,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent; content is empty except for MCP protocol media items such as capture thumbnail images. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and thumbnail schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files.",
+      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, and helperUsage for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files.",
     },
     toolTiers: createToolTierPayload(),
     patterns: {
@@ -5335,7 +5141,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       warningsReturnWithResult: true,
       allowDangerousOperations: "Bypasses only dynamic/destructive guards. It does not bypass API contract, surface, or read-mode guards.",
       diagnosticShape: "{ code, severity, message, suggestion, docsHint }",
-      upstreamFailureShape: "{ ok:false, upstreamError:{ message, code?, details? }, primaryFix }",
+      upstreamFailureShape: "{ ok:false, upstreamError:{ message, code?, details? } }; script/eval/debug tools may also include primaryFix",
     },
     scriptWorkflow: {
       primaryTool: "figma_repl_run_script_file",
@@ -5399,7 +5205,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         purpose: "Apply local generated image files to pre-created target nodes through official upstream upload_assets.",
         assetShape: "{ path, target, nodeUrl?, name?, metadata? }",
         defaults: "Requires advertised official upload_assets, resolves target handles, and sends fileKey/count/nodeId/scaleMode upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
-        result: "Inline assets are compact: ok, path, targetNodeId, handle, name, toolName, compact upload summary, validation, error, upstreamSummary. Explicit outputFile writes assetDetails with full per-asset upstream envelopes, upload details, and arguments.",
+        result: "Inline assets are compact business results: ok, path, targetNodeId, handle, name, validation, upstreamError. Explicit outputFile writes assetDetails with full per-asset upstream envelopes, upload details, toolName, primaryFix, and arguments.",
         validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload.",
       },
       downloadAssets: {
@@ -5407,21 +5213,21 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         purpose: "Call official upstream download_assets for one or more Figma targets and save exported renders plus raw/source image URLs locally.",
         targetShape: "{ target, name?, defaultFormat?, defaultScale? }; target accepts a node id, node URL, local handle like $hero, or { handle: \"$hero\" }.",
         defaults: "Use targets for inline calls or manifestPath pointing to { targets: [...] }. outputDir defaults to <slug>.downloads and outputFile defaults to <slug>.downloads.result.json in initialized workspaces.",
-        result: "Inline targets are compact: ok, targetNodeId, handle, name, outputDir, downloaded file pointers, upstreamSummary, and error. outputFile writes targetDetails with per-target upstream envelopes, arguments, discovered URLs, and download details.",
+        result: "Inline targets are compact business results: ok, targetNodeId, handle, name, outputDir, downloaded file pointers, upstreamError, and downloadError. outputFile writes targetDetails with per-target upstream envelopes, arguments, discovered URLs, toolName, primaryFix, and download details.",
       },
       capture: {
         tool: "figma_repl_capture_node",
-        purpose: "Call official upstream get_screenshot and save image, screenshot URL payload, or text response to outputFile for final visual QA.",
+        purpose: "Call official upstream get_screenshot and save one PNG screenshot to outputFile for final visual QA.",
         defaulting: "Requires advertised official get_screenshot and sends { fileKey, nodeId } upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
-        metadata: "Returns outputFile on success, plannedOutputFile on upstream failure, kind, saved image MIME for image captures, bytes, width/height, sourceUrl when downloaded, qa warnings, compact inline upstream, PNG thumbnail metadata and outputFiles.thumbnailFile by default unless thumbnail=false, and optional metadataFile with the full upstream capture envelope.",
+        metadata: "Returns outputFile on success plus bytes, width, and height. Failures return upstreamError; use figma_repl_call_upstream_tool for full upstream debugging.",
       },
       taskPlan: {
         tool: "figma_repl_run_task_plan",
         stepShape: "{ id?, type?, args? }; put all tool-specific inputs inside args.",
         stepTypes: ["script-file", "asset-manifest", "upload_assets", "download-assets", "download_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
-        references: "Later step arguments can reference prior outputs with {{outputs.stepId.outputFile.path}} or {{steps.stepId.outputFiles.outputFile.path}}; upstream JSON is available at {{steps.stepId.upstream.payload}}, downloads expose {{steps.stepId.downloadOutputDir}} and {{steps.stepId.downloadTargets}}, captures expose {{steps.stepId.outputFile}}, and failed captures expose {{steps.stepId.plannedOutputFile}}.",
-        result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, <step-id>.downloads.result.json plus <step-id>.downloads, <step-id>.png for image captures, and <step-id>.capture.result.json.",
+        references: "Later step arguments can reference prior outputs with {{outputs.stepId.outputFile}} for capture steps, {{outputs.stepId.outputFile.path}} for file-pointer outputs, or {{steps.stepId.outputFile}} for direct capture paths. Upstream JSON is available at {{steps.stepId.upstream.payload}}, and downloads expose {{steps.stepId.downloadOutputDir}} plus {{steps.stepId.downloadTargets}}.",
+        result: "Writes a compact plan result JSON and returns per-step status summaries plus outputReferences. In initialized workspaces, missing step outputs default to <step-id>.result.json, <step-id>.assets.result.json, <step-id>.downloads.result.json plus <step-id>.downloads, and <step-id>.png for image captures.",
       },
     },
     queryStrategy: {
@@ -6051,6 +5857,17 @@ function upstreamFailureFields(parsed: ParsedUpstreamToolResult): Record<string,
   };
 }
 
+function inspectInlineResultFields(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
+  if (parsed.upstreamError) {
+    return {
+      upstreamError: responseUpstreamError(parsed.upstreamError),
+    };
+  }
+  return {
+    ...asRecord(asRecord(parsed.json).result),
+  };
+}
+
 function upstreamEnvelope(
   parsed: ParsedUpstreamToolResult,
   options: { includePayload?: boolean } = {},
@@ -6204,11 +6021,11 @@ function sanitizeSessionId(sessionId: string): string {
   return value.slice(0, 120);
 }
 
-function makeJsonToolResult(value: unknown, extraContent: Array<Record<string, unknown>> = []): Record<string, unknown> {
+function makeJsonToolResult(value: unknown): Record<string, unknown> {
   const structuredContent = removeUndefined(value);
   return {
     structuredContent,
-    content: extraContent,
+    content: [],
   };
 }
 

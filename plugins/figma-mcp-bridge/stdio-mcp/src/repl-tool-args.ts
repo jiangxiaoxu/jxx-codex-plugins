@@ -93,9 +93,6 @@ export interface FigmaReplCaptureNodeArguments {
   sessionId?: string;
   target?: unknown;
   outputFile?: string;
-  thumbnail?: boolean;
-  thumbnailMaxSize?: number;
-  metadataFile?: string;
 }
 
 export interface FigmaReplTaskPlanStep {
@@ -288,12 +285,12 @@ export function asDownloadAssetsArgs(args: unknown): FigmaReplDownloadAssetsArgu
 export function asCaptureNodeArgs(args: unknown): FigmaReplCaptureNodeArguments {
   const record = parseToolArgs<FigmaReplCaptureNodeArguments>(args);
   assertRemovedArguments(record, ["nodeId", "targetNodeId", "handle"], "target");
-  assertRemovedArguments(record, ["resultFile"], "metadataFile");
+  assertRemovedArguments(record, ["resultFile"], "outputFile");
+  assertRemovedArguments(record, ["metadataFile"], "figma_repl_call_upstream_tool");
   assertRemovedArguments(record, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_repl_call_upstream_tool");
   assertOptionalStringFields(record, [
     "sessionId",
     "outputFile",
-    "metadataFile",
   ]);
   assertOptionalCaptureTargetValue(record.target, "target");
   return record;
