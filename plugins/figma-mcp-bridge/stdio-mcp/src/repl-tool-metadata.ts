@@ -36,9 +36,6 @@ export function createReplToolDescriptions(
         reset: booleanProperty("Reset local handles and history for this session before opening."),
         connect: booleanProperty("Connect to upstream Figma MCP during open. Defaults to true.", { default: true }),
         refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list."),
-        upstreamTool: stringProperty("Advanced upstream-routing debug override. Defaults to use_figma; ordinary agents should not set this."),
-        upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override. Usually code; ordinary agents should not set this."),
-        upstreamArguments: objectProperty("Advanced extra upstream arguments for routing debug, merged into every upstream eval call for this session; ordinary agents should not set this."),
         handles: objectProperty("Advanced bootstrap/import only: initial local handles, for example {\"$header\": \"12:34\"}."),
       }),
     },
@@ -55,16 +52,13 @@ export function createReplToolDescriptions(
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
         outputFile: stringProperty("Optional full result JSON file. Relative paths require an initialized workspace; omitted large results use an automatic eval-<timestamp>.result.json file."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
-        upstreamTool: stringProperty("Advanced upstream-routing debug override for this call; ordinary agents should not set this."),
-        upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
-        upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this."),
         handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code."),
       }, ["code"]),
     },
     {
       name: "figma_repl_run_script_file",
       description:
-        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile, outputFile }. Use scriptPath, upstream overrides, split output files, and inlineResultLimit only for advanced/debug workflows. Read figma-repl://capabilities for disabled dynamic helper syntax.",
+        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile, outputFile }. Use scriptPath, split output files, and inlineResultLimit only for advanced/debug workflows. Execution uses fixed upstream use_figma/code. Read figma-repl://capabilities for disabled dynamic helper syntax.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
@@ -75,9 +69,6 @@ export function createReplToolDescriptions(
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
-        upstreamTool: stringProperty("Advanced upstream-routing debug override; ordinary agents should not set this."),
-        upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override; ordinary agents should not set this."),
-        upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this."),
         outputDir: stringProperty("Advanced absolute directory escape hatch. Defaults to result.json only; pass diagnosticsFile or summaryFile for split files."),
         outputFile: stringProperty("Recommended normal result file name inside the initialized file-context directory. Defaults to the input script basename plus .result.json."),
         diagnosticsFile: stringProperty("Advanced opt-in split diagnostics JSON file. Leave unset for normal agent workflows."),
@@ -88,20 +79,17 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_apply_asset_manifest",
       description:
-        "Workflow add-on for applying local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, and refresh are advanced/debug only.",
+        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Use figma_repl_call_upstream_tool for custom upstream calls.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
-        manifestPath: stringProperty("Recommended manifest file path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of assets or an object with assets/toolName/arguments."),
+        manifestPath: stringProperty("Recommended manifest file path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of assets or an object with assets."),
         assets: {
           type: "array",
           description: "Advanced inline asset entries. Prefer manifestPath. Each entry uses { path, target }; target accepts a node id, node URL, local handle like $hero, or { handle: \"$hero\" }.",
           items: { type: "object", additionalProperties: true },
         },
-        toolName: stringProperty("Advanced upstream-tool override. Leave unset so the REPL selects an advertised asset-like tool such as upload_assets and infers recognizable args."),
-        arguments: objectProperty("Advanced upstream arguments template. Use {{path}}, {{target}}, {{name}}, {{metadata.foo}}, or {{asset}} placeholders only when adapting a custom upstream schema."),
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload.", { default: true }),
-        refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
         outputFile: stringProperty("Recommended manifest result JSON file name inside the initialized file-context workspace."),
       }),
     },
@@ -125,7 +113,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_capture_node",
       description:
-        "Capture one Figma node for final visual QA. Recommended call: { title, sessionId, target, outputFile? }. Image captures default to WebP; explicit .png/.jpg/.jpeg outputFile extensions are preserved. preview:true adds a WebP MCP image preview. metadataFile, custom upstream templates, and refresh are advanced/debug only.",
+        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { title, sessionId, target, outputFile? }. Image captures default to WebP; explicit .png/.jpg/.jpeg outputFile extensions are preserved. preview:true adds a WebP MCP image preview.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -135,9 +123,6 @@ export function createReplToolDescriptions(
         outputFile: stringProperty("Optional local output path. Recommended extension for image captures is .webp; explicit .png, .jpg, and .jpeg extensions are preserved; extensionless or other extensions normalize to .webp. Text captures normalize to .txt. Omitted outputFile auto-generates a capture-<timestamp>.webp path for image captures."),
         preview: booleanProperty("Opt in to a WebP MCP image preview in the tool content. Defaults false. The structured result contains only compact preview metadata.", { default: false }),
         metadataFile: stringProperty("Advanced optional capture metadata JSON. Use only when separate metadata is explicitly needed."),
-        toolName: stringProperty("Advanced upstream screenshot/capture tool override. Leave unset so the REPL selects an advertised screenshot-like tool and infers node id from recognizable schema fields."),
-        arguments: objectProperty("Advanced upstream arguments template. Use {{target}} only when adapting a custom upstream schema."),
-        refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list before dispatch."),
       }),
     },
     {
@@ -197,7 +182,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_inspect",
       description:
-        "Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Recommended calls: { title, sessionId, target } or { title, sessionId, mode:\"style\", target }. Use before mutation and after generated work; upstream overrides are debug-only.",
+        "Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Recommended calls: { title, sessionId, target } or { title, sessionId, mode:\"style\", target }. Uses fixed upstream use_figma execution.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -209,9 +194,6 @@ export function createReplToolDescriptions(
           description: "Optional handle names or raw node ids to validate. Defaults to all cached handles.",
           items: { type: "string" },
         },
-        upstreamTool: stringProperty("Advanced upstream-routing debug override for this call; ordinary agents should not set this."),
-        upstreamArgument: stringProperty("Advanced upstream JavaScript argument-name debug override for this call; ordinary agents should not set this."),
-        upstreamArguments: objectProperty("Advanced extra upstream arguments for routing/debug only; ordinary agents should not set this."),
       }),
     },
     {

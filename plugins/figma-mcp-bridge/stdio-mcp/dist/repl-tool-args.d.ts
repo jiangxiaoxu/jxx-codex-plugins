@@ -12,9 +12,6 @@ export interface FigmaReplOpenArguments {
     reset?: boolean;
     connect?: boolean;
     refresh?: boolean;
-    upstreamTool?: string;
-    upstreamArgument?: string;
-    upstreamArguments?: Record<string, unknown>;
     handles?: Record<string, string>;
 }
 export interface FigmaReplEvalArguments {
@@ -25,9 +22,6 @@ export interface FigmaReplEvalArguments {
     mode?: "read" | "write";
     surface?: FigmaReplSurface;
     allowDangerousOperations?: boolean;
-    upstreamTool?: string;
-    upstreamArgument?: string;
-    upstreamArguments?: Record<string, unknown>;
     handleUpdates?: Record<string, string>;
     outputFile?: string;
     inlineResultLimit?: number;
@@ -43,9 +37,6 @@ export interface FigmaReplRunScriptFileArguments {
     surface?: FigmaReplSurface;
     targetPageId?: string;
     allowDangerousOperations?: boolean;
-    upstreamTool?: string;
-    upstreamArgument?: string;
-    upstreamArguments?: Record<string, unknown>;
     outputDir?: string;
     outputFile?: string;
     diagnosticsFile?: string;
@@ -60,8 +51,6 @@ export interface FigmaReplAssetManifestAsset {
     url?: string;
     name?: string;
     metadata?: Record<string, unknown>;
-    toolName?: string;
-    arguments?: Record<string, unknown>;
 }
 export interface FigmaReplApplyAssetManifestArguments {
     [key: string]: unknown;
@@ -69,10 +58,7 @@ export interface FigmaReplApplyAssetManifestArguments {
     sessionId?: string;
     assets?: FigmaReplAssetManifestAsset[];
     manifestPath?: string;
-    toolName?: string;
-    arguments?: Record<string, unknown>;
     validateTargets?: boolean;
-    refresh?: boolean;
     outputFile?: string;
 }
 export interface FigmaReplDownloadAssetsTarget {
@@ -99,9 +85,6 @@ export interface FigmaReplCaptureNodeArguments {
     outputFile?: string;
     preview?: boolean;
     metadataFile?: string;
-    toolName?: string;
-    arguments?: Record<string, unknown>;
-    refresh?: boolean;
 }
 export interface FigmaReplTaskPlanStep {
     id?: string;
@@ -173,9 +156,6 @@ export interface FigmaReplInspectArguments {
     target?: string;
     depth?: number;
     handles?: string[];
-    upstreamTool?: string;
-    upstreamArgument?: string;
-    upstreamArguments?: Record<string, unknown>;
 }
 export declare function asOpenArgs(args: unknown): FigmaReplOpenArguments;
 export declare function asEvalArgs(args: unknown): FigmaReplEvalArguments;
