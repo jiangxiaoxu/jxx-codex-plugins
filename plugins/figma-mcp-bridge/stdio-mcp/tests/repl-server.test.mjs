@@ -428,12 +428,21 @@ test("figma REPL eval writes full result and upstream sidecar for large or reque
     assert.match(largeJson.outputFiles.outputFile.path, /eval-main/u);
     assert.match(largeJson.outputFiles.upstreamFile.path, /\.upstream\.json$/u);
     const fullResult = await readPrettyJsonPointer(largeJson.outputFiles.outputFile, largeJson.outputFiles.outputFile.path);
+    assert.equal(fullResult.kind, "figma_repl_result");
+    assert.equal(fullResult.tool, "figma_repl_eval");
+    assert.equal(fullResult.sessionId, "eval-main");
+    assert.equal(fullResult.ok, true);
+    assert.equal(fullResult.upstreamKind, "json");
+    assert.equal(fullResult.upstreamOk, true);
+    assert.equal(fullResult.diagnosticsCount, 0);
     assert.equal(fullResult.outputFiles, undefined);
-    assert.equal(fullResult.upstream.payload.result.payload.length, 200);
+    assert.equal(fullResult.session, undefined);
+    assert.equal(fullResult.upstream, undefined);
     const upstreamFile = await readPrettyJsonPointer(largeJson.outputFiles.upstreamFile, largeJson.outputFiles.upstreamFile.path);
     assert.equal(upstreamFile.kind, "json");
     assert.equal(upstreamFile.ok, true);
     assert.equal(upstreamFile.payload.result.summary, "large eval");
+    assert.equal(upstreamFile.payload.result.payload.length, 200);
 
     const explicitResult = await mcpClient.callTool({
       name: "figma_repl_eval",
@@ -449,7 +458,12 @@ test("figma REPL eval writes full result and upstream sidecar for large or reque
     assertFilePointer(explicitJson.outputFiles.outputFile, explicitOutputFile);
     assert.match(explicitJson.outputFiles.upstreamFile.path, /explicit-eval\.upstream\.json$/u);
     const explicitFile = await readPrettyJsonPointer(explicitJson.outputFiles.outputFile, explicitOutputFile);
-    assert.equal(explicitFile.upstream.payload.result.id, "10:1");
+    assert.equal(explicitFile.kind, "figma_repl_result");
+    assert.equal(explicitFile.tool, "figma_repl_eval");
+    assert.equal(explicitFile.sessionId, "eval-main");
+    assert.equal(explicitFile.upstream, undefined);
+    const explicitUpstreamFile = await readPrettyJsonPointer(explicitJson.outputFiles.upstreamFile, explicitJson.outputFiles.upstreamFile.path);
+    assert.equal(explicitUpstreamFile.payload.result.id, "10:1");
 
     await mcpClient.close();
   } finally {
@@ -1083,7 +1097,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(runScriptFileTool.inputSchema.properties.diagnosticsFile.description, /Advanced opt-in/);
   assert.match(runScriptFileTool.inputSchema.properties.summaryFile.description, /Advanced opt-in/);
   assert.match(runScriptFileTool.inputSchema.properties.inlineResultLimit.description, /30 KB/);
-  assert.match(runScriptFileTool.inputSchema.properties.inlineResultLimit.description, /complete payloads stay in outputFile/);
+  assert.match(runScriptFileTool.inputSchema.properties.inlineResultLimit.description, /complete upstream payloads stay in outputFiles\.upstreamFile/);
   assert.equal(runScriptFileTool.inputSchema.properties.inlineResultLimit.default, 4000);
   assert.equal(runScriptFileTool.inputSchema.properties.inlineResultLimit.maximum, 30000);
   assert.equal(runScriptFileTool.inputSchema.properties.inlineResultLimit.minimum, 0);
@@ -1098,7 +1112,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(evalTool.description, /Small ephemeral JavaScript call/);
   assert.match(evalTool.description, /prepare_task \+ run_script_file/);
   assert.doesNotMatch(evalTool.description, /\$\[name\]/);
-  assert.match(evalTool.inputSchema.properties.outputFile.description, /full result JSON file/);
+  assert.match(evalTool.inputSchema.properties.outputFile.description, /minimal result envelope JSON file/);
   assert.match(evalTool.inputSchema.properties.inlineResultLimit.description, /30 KB/);
   assert.equal(evalTool.inputSchema.properties.inlineResultLimit.default, 4000);
   assert.equal(evalTool.inputSchema.properties.inlineResultLimit.maximum, 30000);
@@ -1663,11 +1677,18 @@ test("figma REPL call_upstream_tool writes full result and upstream sidecar for 
     assert.match(largeResult.outputFiles.outputFile.path, /upstream-results.*upstream-main.*upstream-generate_diagram.*\.result\.json$/u);
     assert.match(largeResult.outputFiles.upstreamFile.path, /\.upstream\.json$/u);
     const largeResultFile = await readPrettyJsonPointer(largeResult.outputFiles.outputFile, largeResult.outputFiles.outputFile.path);
+    assert.equal(largeResultFile.kind, "figma_repl_result");
+    assert.equal(largeResultFile.tool, "figma_repl_call_upstream_tool");
+    assert.equal(largeResultFile.sessionId, "upstream-main");
+    assert.equal(largeResultFile.upstreamToolName, "generate_diagram");
+    assert.equal(largeResultFile.upstreamKind, "json");
+    assert.equal(largeResultFile.upstreamOk, true);
     assert.equal(largeResultFile.outputFiles, undefined);
-    assert.equal(largeResultFile.upstream.payload.result.summary, "large upstream");
-    assert.equal(largeResultFile.upstream.payload.result.blob.length, 200);
+    assert.equal(largeResultFile.session, undefined);
+    assert.equal(largeResultFile.upstream, undefined);
     const largeUpstreamFile = await readPrettyJsonPointer(largeResult.outputFiles.upstreamFile, largeResult.outputFiles.upstreamFile.path);
-    assert.deepEqual(largeUpstreamFile, largeResultFile.upstream);
+    assert.equal(largeUpstreamFile.payload.result.summary, "large upstream");
+    assert.equal(largeUpstreamFile.payload.result.blob.length, 200);
 
     const explicitResult = await repl.callUpstreamTool({
       toolName: "generate_diagram",
@@ -1681,9 +1702,10 @@ test("figma REPL call_upstream_tool writes full result and upstream sidecar for 
     assertFilePointer(explicitResult.outputFiles.upstreamFile, resolve(outputDir, "explicit-call.upstream.json"));
     const explicitResultFile = await readPrettyJsonPointer(explicitResult.outputFiles.outputFile, explicitOutput);
     assert.equal(explicitResultFile.outputFiles, undefined);
-    assert.equal(explicitResultFile.upstream.payload.result.summary, "explicit upstream");
+    assert.equal(explicitResultFile.upstream, undefined);
+    assert.equal(explicitResultFile.tool, "figma_repl_call_upstream_tool");
     const explicitUpstreamFile = await readPrettyJsonPointer(explicitResult.outputFiles.upstreamFile, resolve(outputDir, "explicit-call.upstream.json"));
-    assert.deepEqual(explicitUpstreamFile, explicitResultFile.upstream);
+    assert.equal(explicitUpstreamFile.payload.result.summary, "explicit upstream");
   } finally {
     await repl.close();
     if (originalTaskRoot === undefined) {
@@ -2332,8 +2354,15 @@ test("figma REPL applies asset manifests through official upload_assets", async 
     assert.equal(json.failures, undefined);
     assertFilePointer(json.outputFiles.outputFile, resultFile);
     const fileJson = await readPrettyJsonPointer(json.outputFiles.outputFile, resultFile);
+    assert.equal(fileJson.kind, "figma_repl_result");
+    assert.equal(fileJson.tool, "figma_repl_apply_asset_manifest");
+    assert.equal(fileJson.sessionId, "asset-output");
+    assert.equal(fileJson.assetCount, 1);
+    assert.equal(fileJson.failureCount, 0);
+    assert.equal(fileJson.assets, undefined);
+    assert.equal(fileJson.validation, undefined);
+    assert.equal(fileJson.session, undefined);
     assert.equal(fileJson.outputFiles, undefined);
-    assert.equal(fileJson.assets[0].result, undefined);
     assert.equal(fileJson.assetDetails[0].upstream.kind, "json");
     assert.equal(fileJson.assetDetails[0].upstream.ok, true);
     assert.equal(fileJson.assetDetails[0].toolName, "upload_assets");
@@ -2967,6 +2996,15 @@ test("figma REPL downloads official exported and raw asset URLs per target", asy
     assert.deepEqual(await readFile(resolve(outputDir, "hero", "exported.png")), exportBytes);
     assert.deepEqual(await readFile(resolve(outputDir, "hero", "raw-1.jpg")), rawBytes);
     const fileJson = await readPrettyJsonPointer(json.outputFiles.outputFile, outputFile);
+    assert.equal(fileJson.kind, "figma_repl_result");
+    assert.equal(fileJson.tool, "figma_repl_download_assets");
+    assert.equal(fileJson.sessionId, "download");
+    assert.equal(fileJson.targetCount, 1);
+    assert.equal(fileJson.failureCount, 0);
+    assert.equal(fileJson.session, undefined);
+    assert.equal(fileJson.targets, undefined);
+    assert.equal(fileJson.outputDir, undefined);
+    assert.equal(fileJson.outputFiles, undefined);
     assert.equal(fileJson.targetDetails[0].arguments.fileKey, "file123");
     assert.equal(fileJson.targetDetails[0].arguments.nodeId, "22:8");
     assert.equal(fileJson.targetDetails[0].links.length, 2);
@@ -3881,8 +3919,18 @@ test("figma REPL task plans run steps in order and stop on failure by default", 
     assert.deepEqual(json.failures[0], { id: "upstream-fail", index: 2, type: "upstream-tool", status: "failed" });
     const fileJson = JSON.parse(await readFile(resultFile, "utf8"));
     assert.equal(fileJson.stopOnFailure, undefined);
-    assert.deepEqual(fileJson, Object.fromEntries(Object.entries(json).filter(([key]) => key !== "outputFiles")));
-    assert.deepEqual(fileJson.steps.map((step) => step.id), ["dry-run", "upstream-ok", "upstream-fail"]);
+    assert.equal(fileJson.kind, "figma_repl_result");
+    assert.equal(fileJson.tool, "figma_repl_run_task_plan");
+    assert.equal(fileJson.sessionId, "default");
+    assert.equal(fileJson.ok, false);
+    assert.equal(fileJson.stopped, true);
+    assert.equal(fileJson.stepCount, 3);
+    assert.equal(fileJson.failureCount, 1);
+    assert.equal(fileJson.session, undefined);
+    assert.equal(fileJson.steps, undefined);
+    assert.equal(fileJson.outputReferences, undefined);
+    assert.equal(fileJson.outputFiles, undefined);
+    assert.deepEqual(fileJson.stepDetails.map((step) => step.id), ["dry-run", "upstream-ok", "upstream-fail"]);
     assert.deepEqual(
       calls.filter((call) => call[0] === "callTool").map((call) => call[1]),
       ["fake_upstream_ok", "fake_upstream_fail"],
@@ -4009,8 +4057,10 @@ test("figma REPL task plans route download_assets aliases with workspace default
     assert.equal(json.steps[1].summary.upstreamTool, undefined);
     assert.equal(json.outputReferences["download-step"].outputFile.path, resolve(tempDir, "download-step.downloads.result.json"));
     const stepResult = JSON.parse(await readFile(resolve(tempDir, "download-step.downloads.result.json"), "utf8"));
-    assert.equal(stepResult.outputDir, resolve(tempDir, "download-step.downloads"));
-    assert.equal(stepResult.targets[0].downloadedFiles[0].path, resolve(tempDir, "download-step.downloads", "hero", "exported.png"));
+    assert.equal(stepResult.outputDir, undefined);
+    assert.equal(stepResult.targets, undefined);
+    assert.equal(stepResult.targetDetails[0].outputDir, resolve(tempDir, "download-step.downloads", "hero"));
+    assert.equal(stepResult.targetDetails[0].downloadedFiles[0].path, resolve(tempDir, "download-step.downloads", "hero", "exported.png"));
     assert.deepEqual(
       await readFile(resolve(tempDir, "download-step.downloads", "hero", "exported.png")),
       Buffer.from("downloaded"),
@@ -4165,11 +4215,19 @@ test("figma REPL task plans resolve workspace-relative step files consistently",
     assert.equal(json.stopOnFailure, undefined);
     assert.equal(planFile.stopOnFailure, undefined);
     assert.equal(planFile.outputFiles, undefined);
-    assert.deepEqual(planFile, Object.fromEntries(Object.entries(json).filter(([key]) => key !== "outputFiles")));
+    assert.equal(planFile.kind, "figma_repl_result");
+    assert.equal(planFile.tool, "figma_repl_run_task_plan");
+    assert.equal(planFile.sessionId, "workspace-plan");
+    assert.equal(planFile.stepCount, 4);
+    assert.equal(planFile.failureCount, 0);
+    assert.equal(planFile.session, undefined);
+    assert.equal(planFile.steps, undefined);
+    assert.equal(planFile.outputReferences, undefined);
+    assert.deepEqual(planFile.stepDetails.map((step) => step.id), ["script", "asset", "capture", "reference"]);
     assert.deepEqual(json.steps.map((step) => step.status), ["completed", "completed", "completed", "completed"]);
     assert.match(json.outputReferences.asset.outputFile.path, /asset\.assets\.result\.json$/u);
     assert.match(json.outputReferences.capture.outputFile, /capture\.png$/u);
-    assert.equal(JSON.parse(await readFile(resolve(fileDir, "script.result.json"), "utf8")).upstream.payload.result.assetTargets.central, "11:22");
+    assert.equal(JSON.parse(await readFile(resolve(fileDir, "script.upstream.json"), "utf8")).payload.result.assetTargets.central, "11:22");
     assert.equal(JSON.parse(await readFile(resolve(fileDir, "asset.assets.result.json"), "utf8")).ok, true);
     assertPngBuffer(await readFile(resolve(fileDir, "capture.png")));
     await mcpClient.close();
@@ -4998,11 +5056,22 @@ test("figma REPL run_script_file structures upstream ok false errors", async () 
     const compiledFile = await readTextPointer(json.outputFiles.compiledScriptFile, compiledFilePath);
     const summaryFile = await readTextPointer(json.outputFiles.summaryFile, resolve(outputDir, "summary.md"));
     assert.equal(resultFile.ok, false);
+    assert.equal(resultFile.kind, "figma_repl_result");
+    assert.equal(resultFile.tool, "figma_repl_run_script_file");
+    assert.equal(resultFile.sessionId, "default");
+    assert.equal(resultFile.dryRun, false);
+    assert.equal(resultFile.executed, true);
+    assert.equal(resultFile.upstreamKind, "json");
+    assert.equal(resultFile.upstreamOk, false);
+    assert.equal(resultFile.diagnosticsCount, 0);
+    assert.equal(resultFile.session, undefined);
+    assert.equal(resultFile.outputFiles, undefined);
     assert.equal(resultFile.compiledScript, undefined);
     assert.equal(resultFile.raw, undefined);
-    assert.equal(resultFile.upstream.kind, "json");
-    assert.equal(resultFile.upstream.ok, false);
-    assert.deepEqual(resultFile.upstream.payload, {
+    assert.equal(resultFile.upstream, undefined);
+    assert.equal(resultFile.upstreamError.code, "FIGMA_INSTANCE_CHILD_REMOVE");
+    const upstreamFile = await readPrettyJsonPointer(json.outputFiles.upstreamFile, resolve(outputDir, "result.upstream.json"));
+    assert.deepEqual(upstreamFile.payload, {
       ok: false,
       error: {
         code: "FIGMA_INSTANCE_CHILD_REMOVE",
@@ -5168,11 +5237,14 @@ test("figma REPL run_script_file writes output files and limits inline result fi
     const upstreamFile = await readPrettyJsonPointer(json.outputFiles.upstreamFile, resolve(outputDir, "full-result.upstream.json"));
     assert.equal(json.outputFiles.diagnosticsFile, undefined);
     assert.equal(json.outputFiles.summaryFile, undefined);
-    assert.equal(resultFile.upstream.kind, "json");
-    assert.equal(resultFile.upstream.ok, true);
-    assert.equal(resultFile.upstream.payload.result.payload.length, 200);
-    assert.deepEqual(upstreamFile, resultFile.upstream);
-    assert.deepEqual(resultFile.upstream.payload, {
+    assert.equal(resultFile.kind, "figma_repl_result");
+    assert.equal(resultFile.tool, "figma_repl_run_script_file");
+    assert.equal(resultFile.upstreamKind, "json");
+    assert.equal(resultFile.upstreamOk, true);
+    assert.equal(resultFile.upstream, undefined);
+    assert.equal(resultFile.outputFiles, undefined);
+    assert.equal(upstreamFile.payload.result.payload.length, 200);
+    assert.deepEqual(upstreamFile.payload, {
       ok: true,
       result: {
         summary: "large result",
@@ -5305,9 +5377,15 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
       ["upstream.payload"],
     );
     const resultFile = await readPrettyJsonPointer(json.outputFiles.outputFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
-    assert.equal(resultFile.upstream.payload.result.payload.length, 160);
+    assert.equal(resultFile.kind, "figma_repl_result");
+    assert.equal(resultFile.tool, "figma_repl_run_script_file");
+    assert.equal(resultFile.sessionId, "settings-workspace");
+    assert.equal(resultFile.upstreamKind, "json");
+    assert.equal(resultFile.upstreamOk, true);
+    assert.equal(resultFile.upstream, undefined);
+    assert.equal(resultFile.outputFiles, undefined);
     const upstreamFile = await readPrettyJsonPointer(json.outputFiles.upstreamFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.upstream.json"));
-    assert.deepEqual(upstreamFile, resultFile.upstream);
+    assert.equal(upstreamFile.payload.result.payload.length, 160);
 
     await writeFile(
       resolve(initJson.task.workspace.fileDir, "settings-panel-polish.figma.js"),
