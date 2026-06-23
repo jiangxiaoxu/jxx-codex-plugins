@@ -54,13 +54,9 @@ const forbiddenRouterContractTerms = [
 ];
 
 function structuredToolResult(result) {
-  assert.equal(result.content?.[0]?.type, "text");
   assert.ok(result.structuredContent);
-  const expectedSummary = result.structuredContent.ok === false
-    ? "Figma REPL tool failed."
-    : "Figma REPL tool completed.";
-  assert.equal(result.content[0].text, expectedSummary);
-  assert.doesNotMatch(result.content[0].text, /structuredContent/i);
+  const content = Array.isArray(result.content) ? result.content : [];
+  assert.equal(content.some((item) => item?.type === "text"), false);
   return result.structuredContent;
 }
 
@@ -276,6 +272,42 @@ test("figma REPL eval ignores legacy routing overrides and always uses use_figma
       process.env.FIGMA_REPL_EVAL_TOOL_ARGUMENT = previousArgumentEnv;
     }
   }
+});
+
+test("figma REPL eval requires official use_figma code schema", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    () => {
+      throw new Error("unexpected upstream call");
+    },
+    {
+      tools: [
+        { name: "use_figma", inputSchema: { type: "object", properties: { script: { type: "string" } } } },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_eval",
+      arguments: {
+        title: "Reject drifted use_figma schema",
+        code: "return { ok: true };",
+      },
+    }),
+    /inputSchema\.properties\.code.*upstream contract drift/,
+  );
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
+  await mcpClient.close();
 });
 
 test("figma REPL eval writes full result and upstream sidecar for large or requested output", async () => {
@@ -761,6 +793,10 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work"));
   assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_call_upstream_tool only when a task explicitly needs an uncovered upstream Figma MCP tool"));
   assert.match(capabilities.guide.upstreamBridge, /figma_repl_call_upstream_tool/);
+  assert.match(capabilities.guide.upstreamBridge, /figma-repl:\/\/upstream-tools\/\{name\}/);
+  assert.match(capabilities.guide.upstreamBridge, /dedicated wrappers cover use_figma, get_screenshot, upload_assets, and download_assets/);
+  assert.match(capabilities.guide.responseShape, /Structured-first payloads/);
+  assert.match(capabilities.guide.responseShape, /content is empty except for MCP protocol media items/);
   assert.match(capabilities.guide.responseShape, /upstream\.payload/);
   assert.match(capabilities.guide.responseShape, /upstream\.text/);
   assert.match(capabilities.guide.responseShape, /outputFiles\.upstreamFile/);
@@ -847,6 +883,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(capabilities.toolArgumentGuidance.open.tier, "contextAndLookup");
   assert.equal(capabilities.toolArgumentGuidance.eval.tier, "advancedEscapeHatches");
   assert.match(capabilities.toolArgumentGuidance.eval.guidance, /small ephemeral calls/);
+  assert.match(capabilities.toolArgumentGuidance.eval.guidance, /prepare_task/);
   assert.ok(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("outputFile"));
   assert.ok(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("inlineResultLimit"));
   assert.equal(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("upstreamTool"), false);
@@ -867,6 +904,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(capabilities.toolArgumentGuidance.lookup.tier, "contextAndLookup");
   assert.deepEqual(capabilities.toolArgumentGuidance.lookup.preferredArguments.api, ["kind=api", "symbol"]);
   assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /Explicit upstream escape hatch/);
+  assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /figma-repl:\/\/upstream-tools/);
+  assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /do not use for use_figma\/get_screenshot\/upload_assets\/download_assets/);
   assert.equal(capabilities.toolArgumentGuidance.callUpstreamTool.tier, "advancedEscapeHatches");
   assert.ok(capabilities.toolArgumentGuidance.callUpstreamTool.advancedArguments.includes("outputFile"));
   assert.ok(capabilities.toolArgumentGuidance.callUpstreamTool.advancedArguments.includes("inlineResultLimit"));
@@ -898,6 +937,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(capabilities.workflowTools.capture.tool, "figma_repl_capture_node");
   assert.match(capabilities.workflowTools.capture.metadata, /full upstream capture envelope/);
   assert.equal(capabilities.workflowTools.taskPlan.tool, "figma_repl_run_task_plan");
+  assert.match(capabilities.workflowTools.taskPlan.stepShape, /\{ id\?, type\?, args\? \}/);
   assert.ok(capabilities.workflowTools.taskPlan.stepTypes.includes("download-assets"));
   assert.ok(capabilities.workflowTools.taskPlan.stepTypes.includes("download_assets"));
   assert.match(capabilities.workflowTools.taskPlan.references, /upstream\.payload/);
@@ -965,8 +1005,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(runScriptFileTool);
   assert.match(runScriptFileTool.description, /dry-run with \{ title, sessionId, inputFile/);
   assert.match(runScriptFileTool.description, /execute with \{ title, sessionId, inputFile, outputFile \}/);
-  assert.match(runScriptFileTool.description, /advanced\/debug workflows/);
-  assert.match(runScriptFileTool.description, /figma-repl:\/\/capabilities/);
+  assert.match(runScriptFileTool.description, /file\/output controls/);
+  assert.match(runScriptFileTool.description, /fixed upstream use_figma\/code/);
   assert.doesNotMatch(runScriptFileTool.description, /\$\[name\]/);
   assert.match(runScriptFileTool.inputSchema.properties.inputFile.description, /Recommended workspace script file name/);
   assert.match(runScriptFileTool.inputSchema.properties.inputFile.description, /preferred over scriptPath/);
@@ -993,7 +1033,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const evalTool = tools.tools.find((tool) => tool.name === "figma_repl_eval");
   assert.ok(evalTool);
   assert.match(evalTool.description, /Small ephemeral JavaScript call/);
-  assert.match(evalTool.description, /Prefer run_script_file/);
+  assert.match(evalTool.description, /prepare_task \+ run_script_file/);
   assert.doesNotMatch(evalTool.description, /\$\[name\]/);
   assert.match(evalTool.inputSchema.properties.outputFile.description, /full result JSON file/);
   assert.match(evalTool.inputSchema.properties.inlineResultLimit.description, /30 KB/);
@@ -1077,6 +1117,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const taskPlanTool = tools.tools.find((tool) => tool.name === "figma_repl_run_task_plan");
   assert.ok(taskPlanTool);
   assert.match(taskPlanTool.description, /Recommended file-plan call: \{ title, sessionId, planPath, outputFile \}/);
+  assert.match(taskPlanTool.description, /\{ id\?, type\?, args\? \}/);
   assert.match(taskPlanTool.inputSchema.properties.planPath.description, /Recommended JSON plan path/);
   assert.match(taskPlanTool.inputSchema.properties.steps.description, /Advanced inline steps/);
   assert.equal(taskPlanTool.inputSchema.properties.stopOnFailure.default, true);
@@ -1126,8 +1167,9 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(lookupMetadataTool.inputSchema.properties.maxResults.description, /Result-size control only/);
   const callUpstreamTool = tools.tools.find((tool) => tool.name === "figma_repl_call_upstream_tool");
   assert.ok(callUpstreamTool);
-  assert.match(callUpstreamTool.description, /Advanced escape hatch/);
-  assert.match(callUpstreamTool.description, /not covered by prepare_task/);
+  assert.match(callUpstreamTool.description, /Explicit upstream-only escape hatch/);
+  assert.match(callUpstreamTool.description, /figma-repl:\/\/upstream-tools\/\{name\}/);
+  assert.match(callUpstreamTool.description, /Do not use for use_figma, get_screenshot, upload_assets, or download_assets/);
   assert.ok(callUpstreamTool.inputSchema.properties.outputFile);
   assert.ok(callUpstreamTool.inputSchema.properties.inlineResultLimit);
   assert.equal(callUpstreamTool.inputSchema.properties.inlineResultLimit.default, 4000);
@@ -1279,10 +1321,14 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const upstream = JSON.parse(upstreamResource.contents[0].text);
   assert.ok(Array.isArray(upstream.tools));
   assert.equal(upstream.detailTemplate, "figma-repl://upstream-tools/{name}");
+  assert.deepEqual(upstream.categories, ["capture", "design-context", "execution", "assets", "code-connect", "libraries", "figjam", "generation", "account", "other"]);
   assert.match(upstream.guidance, /figma_repl_call_upstream_tool/);
+  assert.match(upstream.guidance, /dedicated figma_repl_\* wrappers/);
   assert.equal(upstream.tools[0].name, "use_figma");
+  assert.equal(upstream.tools[0].category, "execution");
   assert.equal(upstream.tools[0].description, "Run Plugin API JavaScript to create, inspect, or edit Figma content.");
   assert.ok(upstream.tools.every((tool) => !tool.description || tool.description.length <= 96));
+  assert.ok(upstream.tools.every((tool) => typeof tool.category === "string"));
   assert.equal(upstream.tools[0].resource, undefined);
   assert.equal(upstream.tools[0].inputSchema, undefined);
 
@@ -2781,7 +2827,7 @@ test("figma REPL captures node screenshot responses to a local file", async () =
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(result.content.length, 1);
+    assert.equal(result.content.length, 0);
     assert.equal(json.outputFile, webpOutputFile);
     assert.equal(json.file, undefined);
     assertFilePointer(json.outputFiles.outputFile, webpOutputFile, { lineCount: 0 });
@@ -2933,9 +2979,11 @@ test("figma REPL capture node can return an opt-in WebP MCP preview", async () =
     assert.equal(json.preview.width, 24);
     assert.equal(json.preview.height, 18);
     assert.equal(json.preview.source, "outputFile");
-    assert.equal(result.content[1].type, "image");
-    assert.equal(result.content[1].mimeType, "image/webp");
-    assertWebpBuffer(Buffer.from(result.content[1].data, "base64"));
+    assert.equal(result.content.length, 1);
+    assert.equal(result.content[0].type, "image");
+    assert.equal(result.content[0].mimeType, "image/webp");
+    assert.equal(json.preview.data, undefined);
+    assertWebpBuffer(Buffer.from(result.content[0].data, "base64"));
     assertWebpBuffer(await readFile(json.outputFile));
     await mcpClient.close();
   } finally {
@@ -2998,7 +3046,7 @@ test("figma REPL capture node saves text output as txt and omits preview image",
       },
     });
     const json = structuredToolResult(result);
-    assert.equal(result.content.length, 1);
+    assert.equal(result.content.length, 0);
     assert.equal(json.ok, true);
     assert.equal(json.outputFile, textOutputFile);
     assert.equal(json.kind, "text");
@@ -5002,7 +5050,7 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   assert.ok(cardJson.recommendedCards.includes("text.font"));
   assert.match(JSON.stringify(cardJson.cards), /loadFontAsync/);
   assert.ok(cardJson.cards.find((card) => card.id === "text.font").queryHints.some((hint) => /font/.test(hint)));
-  assert.doesNotMatch(cardResult.content[0].text, /text|Read text card|loadFontAsync/);
+  assert.equal(cardResult.content.length, 0);
 
   const planResult = await mcpClient.callTool({
     name: "figma_repl_guidance",

@@ -1,6 +1,6 @@
 {
   "name": "figma-mcp-bridge",
-  "version": "0.1.33",
+  "version": "0.1.34",
   "description": "Figma REPL MCP frontend with local Figma MCP login support.",
   "author": {
     "name": "Local developer"
