@@ -59,6 +59,7 @@ export interface FigmaReplOutputFiles {
     summaryFile?: FigmaReplFilePointer;
     compiledScriptFile?: FigmaReplFilePointer;
     outputFile?: FigmaReplFilePointer;
+    upstreamFile?: FigmaReplFilePointer;
     metadataFile?: FigmaReplFilePointer;
 }
 export interface FigmaReplPublicWorkspace {
@@ -116,6 +117,8 @@ export interface FigmaReplEvalResult extends FigmaReplUpstreamBackedResult {
     upstreamTool: string;
     upstreamArgument: string;
     diagnostics: FigmaReplDiagnostic[];
+    outputFiles?: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 export interface FigmaReplScriptMetadata {
     [key: string]: unknown;
@@ -128,10 +131,14 @@ export interface FigmaReplScriptMetadata {
 export interface FigmaReplInlineResultLimit {
     [key: string]: unknown;
     limit: number;
+    limitBytes: number;
+    limitHuman: string;
     omitted: Array<{
         field: string;
         bytes: number;
         limit: number;
+        bytesHuman: string;
+        limitHuman: string;
     }>;
     guidance?: string;
 }
@@ -245,6 +252,8 @@ export interface FigmaReplInspectResult extends FigmaReplUpstreamBackedResult {
 export interface FigmaReplCallUpstreamToolResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplPublicSession;
     toolName: string;
+    outputFiles?: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 export interface FigmaReplLookupResult extends FigmaReplToolResultBase {
     kind: "docs" | "api";

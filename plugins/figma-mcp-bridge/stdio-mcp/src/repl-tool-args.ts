@@ -33,6 +33,8 @@ export interface FigmaReplEvalArguments {
   upstreamArgument?: string;
   upstreamArguments?: Record<string, unknown>;
   handleUpdates?: Record<string, string>;
+  outputFile?: string;
+  inlineResultLimit?: number;
 }
 
 export interface FigmaReplRunScriptFileArguments {
@@ -116,6 +118,8 @@ export interface FigmaReplCallUpstreamToolArguments {
   toolName: string;
   arguments?: Record<string, unknown>;
   refresh?: boolean;
+  outputFile?: string;
+  inlineResultLimit?: number;
 }
 
 export interface FigmaReplLookupArguments {
@@ -163,7 +167,7 @@ export interface FigmaReplInspectArguments {
   [key: string]: unknown;
   title?: string;
   sessionId?: string;
-  mode?: "inspect" | "validate";
+  mode?: "inspect" | "validate" | "style";
   target?: string;
   depth?: number;
   handles?: string[];
@@ -175,7 +179,7 @@ export interface FigmaReplInspectArguments {
 const FIGMA_REPL_SURFACES = ["design", "figjam", "slides"] as const satisfies readonly FigmaReplSurface[];
 const FIGMA_REPL_EVAL_MODES = ["read", "write"] as const;
 const FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as const;
-const FIGMA_REPL_INSPECT_MODES = ["inspect", "validate"] as const;
+const FIGMA_REPL_INSPECT_MODES = ["inspect", "validate", "style"] as const;
 const FIGMA_REPL_LOOKUP_KINDS = ["docs", "api"] as const;
 
 function assertRemovedFileReferenceFields(record: Record<string, unknown>): void {
@@ -225,6 +229,7 @@ export function asEvalArgs(args: unknown): FigmaReplEvalArguments {
     "sessionId",
     "upstreamTool",
     "upstreamArgument",
+    "outputFile",
   ]);
   assertOptionalEnum(record, "mode", FIGMA_REPL_EVAL_MODES);
   assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
@@ -356,7 +361,7 @@ export function asInspectArgs(args: unknown): FigmaReplInspectArguments {
 
 export function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments {
   const record = parseToolArgs<FigmaReplCallUpstreamToolArguments>(args);
-  assertOptionalStringFields(record, ["sessionId", "toolName"]);
+  assertOptionalStringFields(record, ["sessionId", "toolName", "outputFile"]);
   assertOptionalRecord(record, "arguments");
   return record;
 }

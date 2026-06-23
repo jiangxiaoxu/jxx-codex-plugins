@@ -29,6 +29,8 @@ export interface FigmaReplEvalArguments {
     upstreamArgument?: string;
     upstreamArguments?: Record<string, unknown>;
     handleUpdates?: Record<string, string>;
+    outputFile?: string;
+    inlineResultLimit?: number;
 }
 export interface FigmaReplRunScriptFileArguments {
     [key: string]: unknown;
@@ -105,6 +107,8 @@ export interface FigmaReplCallUpstreamToolArguments {
     toolName: string;
     arguments?: Record<string, unknown>;
     refresh?: boolean;
+    outputFile?: string;
+    inlineResultLimit?: number;
 }
 export interface FigmaReplLookupArguments {
     [key: string]: unknown;
@@ -148,7 +152,7 @@ export interface FigmaReplInspectArguments {
     [key: string]: unknown;
     title?: string;
     sessionId?: string;
-    mode?: "inspect" | "validate";
+    mode?: "inspect" | "validate" | "style";
     target?: string;
     depth?: number;
     handles?: string[];
