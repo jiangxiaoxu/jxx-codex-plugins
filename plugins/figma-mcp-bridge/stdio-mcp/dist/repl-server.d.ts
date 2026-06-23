@@ -21,8 +21,6 @@ export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
     name?: string;
     version?: string;
     defaultSessionId?: string;
-    evalToolName?: string;
-    evalToolArgument?: string;
     historyLimit?: number;
     useBridgeOAuthCache?: boolean;
     openBrowser?: boolean;
@@ -90,9 +88,6 @@ export interface FigmaReplPublicSession {
     surface?: FigmaReplSurface;
     knownPages: Record<string, string>;
     currentPageId?: string;
-    evalToolName?: string;
-    evalToolArgument?: string;
-    upstreamArguments: Record<string, unknown>;
     handles: Record<string, string>;
     lastDiagnostics: FigmaReplDiagnostic[];
     workspace?: FigmaReplPublicWorkspace;
@@ -331,9 +326,6 @@ export interface FigmaReplSession {
     surface?: FigmaReplSurface;
     knownPages: Record<string, string>;
     currentPageId?: string;
-    evalToolName?: string;
-    evalToolArgument?: string;
-    upstreamArguments: Record<string, unknown>;
     handles: Record<string, string>;
     lastDiagnostics: FigmaReplDiagnostic[];
     history: FigmaReplHistoryEntry[];
