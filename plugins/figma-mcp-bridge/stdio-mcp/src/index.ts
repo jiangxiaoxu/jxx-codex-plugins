@@ -98,6 +98,7 @@ export {
   type FigmaReplSessionStore,
   type FigmaReplSurface,
   type FigmaReplTaskPlanStepResult,
+  type FigmaReplTaskPlanFailure,
   type FigmaReplToolResultBase,
   type FigmaReplUpstreamBackedResult,
   type FigmaReplUpstreamEnvelope,

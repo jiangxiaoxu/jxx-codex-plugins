@@ -26253,6 +26253,7 @@ function asOpenArgs(args) {
   assertRemovedFileReferenceFields(record2);
   assertRemovedArguments(record2, ["expectedSurface"], "surface");
   assertRemovedArguments(record2, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertRemovedArguments(record2, ["refresh"], "figma-repl://upstream-tools");
   assertOptionalStringFields(record2, [
     "sessionId",
     "label",
@@ -26689,7 +26690,7 @@ function createReplToolDescriptions(options) {
   const tools = [
     {
       name: "figma_repl_open",
-      description: "Context helper for creating or updating a local Figma REPL session. Recommended call: { title, sessionId, file, surface }. Use prepare_task + run_script_file for the primary file workflow; use open for lightweight session context, handle import, or file binding.",
+      description: "Context helper for creating or updating a local Figma REPL session. Recommended call: { title, sessionId, file, surface }. Use prepare_task + run_script_file for the primary file workflow; use open for lightweight session context, handle import, file binding, or upstream auth connection without tool discovery.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
@@ -26700,8 +26701,7 @@ function createReplToolDescriptions(options) {
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface; blocks mismatched Design/FigJam/Slides usage later."),
         currentPageId: stringProperty("Optional current Figma page id stored in local session metadata."),
         reset: booleanProperty("Reset local handles and history for this session before opening."),
-        connect: booleanProperty("Connect to upstream Figma MCP during open. Defaults to true.", { default: true }),
-        refresh: booleanProperty("Advanced/debug only: refresh cached upstream tool list."),
+        connect: booleanProperty("Connect to upstream Figma MCP during open without listing tools. Defaults to true.", { default: true }),
         handles: objectProperty('Advanced bootstrap/import only: initial local handles, for example {"$header": "12:34"}.')
       })
     },
@@ -26882,13 +26882,10 @@ function createReplToolDescriptions(options) {
 var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_open: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
-    diagnostics: arrayProperty("Session diagnostics."),
-    upstreamTools: stringArrayProperty("Known upstream tool names.")
+    diagnostics: arrayProperty("Session diagnostics.")
   }),
   figma_repl_eval: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
-    upstreamTool: stringProperty("Upstream eval tool name used."),
-    upstreamArgument: stringProperty("Upstream eval argument name used."),
     diagnostics: arrayProperty("Preflight diagnostics."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -26939,11 +26936,10 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_run_task_plan: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
-    stopOnFailure: booleanProperty("Whether the plan was configured to stop on first failure."),
     steps: arrayProperty("Compact per-step execution summaries."),
     outputReferences: objectProperty("Plan-level map of step id to output file pointers for later workflow references."),
     outputFiles: outputFilesProperty("Files written for plan result output.", ["outputFile"]),
-    failures: arrayProperty("Failed task-plan steps.")
+    failures: compactTaskPlanFailuresProperty("Compact failed task-plan step summaries.")
   }),
   figma_repl_prepare_task: toolOutputSchema({
     task: objectProperty("Prepared task workspace and script/result files."),
@@ -26953,17 +26949,18 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     next: stringArrayProperty("Suggested next actions.")
   }),
   figma_repl_guidance: toolOutputSchema({
-    mode: stringProperty("Guidance mode: guidance, plan, card, or catalog."),
     workflow: objectProperty("Preferred file workflow payload for plan mode."),
     steps: stringArrayProperty("Plan-mode workflow steps."),
     recommendedTools: stringArrayProperty("Plan-mode recommended tools."),
     suggestedCards: stringArrayProperty("Plan-mode suggested compact card ids."),
     cards: arrayProperty("Compact curated API cards."),
+    catalogSize: numberProperty("Total curated API card count when returned."),
+    guidance: stringProperty("Compact follow-up guidance text when returned."),
     recommendedCards: stringArrayProperty("Recommended curated card ids."),
     queryHints: stringArrayProperty("Suggested docs/API search hints."),
     apiSymbols: stringArrayProperty("Suggested exact API symbols."),
     avoid: stringArrayProperty("Common mistakes to avoid."),
-    suggestions: objectProperty("Ranked task/card suggestions with compact context.")
+    suggestions: guidanceSuggestionsProperty("Ranked task/card suggestions with compact context.")
   }),
   figma_repl_inspect: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
@@ -26973,8 +26970,8 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     handles: objectProperty("Known handle map returned by read-side inspection when available."),
     mode: stringProperty("Inspect mode marker when returned by the inspect mode."),
     nodeCount: numberProperty("Inspected node count for style audits."),
-    style: objectProperty("Compact visual-token/style audit for mode=style."),
-    validations: arrayProperty("Handle validation results for mode=validate."),
+    style: inspectStyleAuditProperty("Compact visual-token/style audit for mode=style."),
+    validations: inspectHandleValidationsProperty("Handle validation results for mode=validate."),
     validatedNodeIds: stringArrayProperty("Validated node ids for mode=validate."),
     upstreamError: objectProperty("Normalized upstream failure details when inspection failed.")
   }),
@@ -26991,11 +26988,6 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit.")
   }),
   figma_repl_lookup: toolOutputSchema({
-    kind: stringProperty("Lookup kind: docs or api."),
-    query: stringProperty("Normalized search query."),
-    symbol: stringProperty("Normalized API symbol query for api lookup."),
-    maxResults: numberProperty("Effective result cap."),
-    maxSnippetLines: numberProperty("Effective snippet line cap."),
     results: arrayProperty("Ranked compact corpus snippets."),
     guidance: stringProperty("Compact follow-up guidance.")
   })
@@ -27242,6 +27234,7 @@ function compactDownloadAssetResultsProperty(description) {
               path: stringProperty("Absolute local file path when saved."),
               bytes: numberProperty("File size in bytes when saved."),
               lineCount: numberProperty("Line count; downloaded binaries use 0."),
+              sourceUrl: stringProperty("Original upstream asset URL downloaded into this file."),
               mimeType: stringProperty("Detected response MIME type when available."),
               format: stringProperty("File extension/format used for the saved file."),
               error: objectProperty("Per-file download error when saving failed.")
@@ -27251,6 +27244,83 @@ function compactDownloadAssetResultsProperty(description) {
         },
         upstreamError: objectProperty("Compact per-target upstream error."),
         downloadError: objectProperty("Compact per-target local download error.")
+      },
+      additionalProperties: true
+    }
+  };
+}
+function compactTaskPlanFailuresProperty(description) {
+  return {
+    type: "array",
+    description,
+    items: {
+      type: "object",
+      properties: {
+        id: stringProperty("Task-plan step id."),
+        index: numberProperty("Task-plan step index."),
+        type: stringProperty("Normalized task-plan step type."),
+        status: stringProperty("Failed step status."),
+        error: objectProperty("Compact step error when available.")
+      },
+      additionalProperties: true
+    }
+  };
+}
+function guidanceSuggestionsProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      recommendedCards: stringArrayProperty("Recommended curated API card ids."),
+      queryHints: stringArrayProperty("Suggested docs/API search hints."),
+      apiSymbols: stringArrayProperty("Suggested exact API symbols."),
+      avoid: stringArrayProperty("Common mistakes to avoid."),
+      referenceContext: {
+        type: "array",
+        description: "Compact ranked reference snippets used for suggestions.",
+        items: {
+          type: "object",
+          properties: {
+            sourceId: stringProperty("Opaque reference source id."),
+            title: stringProperty("Reference result title."),
+            snippet: stringProperty("Compact reference snippet."),
+            matchType: stringProperty("Reference match type.")
+          },
+          additionalProperties: true
+        }
+      }
+    },
+    additionalProperties: true
+  };
+}
+function inspectStyleAuditProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      topColors: arrayProperty("Top color samples."),
+      textStyles: arrayProperty("Compact text style samples."),
+      imageNodes: arrayProperty("Compact image node samples."),
+      strokes: arrayProperty("Compact stroke samples."),
+      effects: arrayProperty("Compact effect samples."),
+      caps: objectProperty("Returned list caps.")
+    },
+    additionalProperties: true
+  };
+}
+function inspectHandleValidationsProperty(description) {
+  return {
+    type: "array",
+    description,
+    items: {
+      type: "object",
+      properties: {
+        handle: stringProperty("Requested handle or node id."),
+        status: stringProperty("Validation status: valid, missing, or stale."),
+        id: stringProperty("Resolved node id when valid."),
+        type: stringProperty("Resolved node type when valid."),
+        name: stringProperty("Resolved node name when valid."),
+        error: stringProperty("Validation error text when stale.")
       },
       additionalProperties: true
     }
@@ -28112,7 +28182,7 @@ function createFigmaReplMcpServer(options = {}) {
       case "figma_repl_open":
         return handleOpen(
           asOpenArgs(withMcpDefaultTitle(rawArgs, "Open Figma REPL session")),
-          { sessions, upstreamToolCache }
+          { sessions, client }
         );
       case "figma_repl_eval":
         return handleEval(
@@ -28320,16 +28390,13 @@ async function handleOpen(args, runtime) {
   }
   bindOpenWorkspaceIfAvailable(session, args);
   touchSession(session);
-  let upstreamTools;
   if (args.connect !== false) {
-    upstreamTools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
-    await resolveEvalSettings(session, args, runtime);
+    await runtime.client?.connect();
   }
   return makeJsonToolResult({
     ok: true,
     session: responseSession(session),
-    diagnostics: diagnosticsForResponse(session.lastDiagnostics),
-    upstreamTools: upstreamTools?.map((tool) => tool.name)
+    diagnostics: diagnosticsForResponse(session.lastDiagnostics)
   });
 }
 async function handleEval(args, runtime) {
@@ -28370,7 +28437,6 @@ async function handleEval(args, runtime) {
   const resultPayload = {
     ok: !parsed.upstreamError,
     session: responseSession(session),
-    ...responseEvalSettingsFields(evalSettings),
     diagnostics: diagnosticsForResponse(diagnostics),
     ...upstreamResultFields({
       parsed,
@@ -28559,7 +28625,6 @@ async function executeRunScriptFile(args, runtime) {
       ok: false,
       dryRun: false,
       session: responseSession(session),
-      ...responseEvalSettingsFields(evalSettings),
       diagnostics: diagnosticsForResponse(diagnostics),
       script: responseScript,
       upstreamError: responseUpstreamError(upstreamError),
@@ -28575,8 +28640,6 @@ async function executeRunScriptFile(args, runtime) {
         session,
         script: scriptMetadata,
         diagnostics,
-        upstreamTool: evalSettings.toolName,
-        upstreamArgument: evalSettings.argumentName,
         upstreamError,
         primaryFix: resultPayload2.primaryFix
       })
@@ -28597,7 +28660,6 @@ async function executeRunScriptFile(args, runtime) {
       ok: false,
       dryRun: false,
       session: responseSession(session),
-      ...responseEvalSettingsFields(evalSettings),
       diagnostics: diagnosticsForResponse(diagnostics),
       script: responseScript,
       ...runScriptUpstreamFields(parsed),
@@ -28614,8 +28676,6 @@ async function executeRunScriptFile(args, runtime) {
           session,
           script: scriptMetadata,
           diagnostics,
-          upstreamTool: evalSettings.toolName,
-          upstreamArgument: evalSettings.argumentName,
           parsed,
           upstreamError: parsed.upstreamError,
           primaryFix: parsed.primaryFix
@@ -28649,7 +28709,6 @@ async function executeRunScriptFile(args, runtime) {
     ok: true,
     dryRun: false,
     session: responseSession(session),
-    ...responseEvalSettingsFields(evalSettings),
     diagnostics: diagnosticsForResponse(diagnostics),
     script: responseScript,
     ...runScriptUpstreamFields(parsed)
@@ -28664,8 +28723,6 @@ async function executeRunScriptFile(args, runtime) {
         session,
         script: scriptMetadata,
         diagnostics,
-        upstreamTool: evalSettings.toolName,
-        upstreamArgument: evalSettings.argumentName,
         parsed
       })
     }),
@@ -29394,12 +29451,12 @@ async function executeRunTaskPlan(args, runtime) {
       }
     }
   }
-  const failures = steps.filter((step) => step.ok === false);
+  const failedSteps = steps.filter((step) => step.ok === false);
+  const failures = failedSteps.map(compactTaskPlanFailure);
   const payload = {
-    ok: failures.length === 0,
+    ok: failedSteps.length === 0,
     session: responseSession(session),
     stopped,
-    stopOnFailure,
     steps,
     outputReferences: Object.keys(outputReferences).length > 0 ? outputReferences : void 0,
     failures: failures.length > 0 ? failures : void 0
@@ -29413,13 +29470,22 @@ async function executeRunTaskPlan(args, runtime) {
     tool: "figma_repl_run_task_plan",
     title: args.title,
     mode: "task-plan",
-    summary: `Ran ${steps.length}/${plan.steps.length} task-plan steps with ${failures.length} failures.`,
+    summary: `Ran ${steps.length}/${plan.steps.length} task-plan steps with ${failedSteps.length} failures.`,
     nodeIds: []
   });
   return {
     ...payload,
     outputFiles
   };
+}
+function compactTaskPlanFailure(step) {
+  return removeUndefined2({
+    id: asOptionalString2(step.id) ?? "",
+    index: typeof step.index === "number" ? step.index : void 0,
+    type: asOptionalString2(step.type) ?? "",
+    status: asOptionalString2(step.status) ?? "failed",
+    error: isRecord5(step.error) ? step.error : void 0
+  });
 }
 async function handlePrepareTask(args, runtime) {
   assertRequiredTitleArgument(args);
@@ -29526,7 +29592,6 @@ async function handleGuidance(args) {
     const planIntent = intentSource ? normalizeLookupRankingQuery(intentSource.value, intentSource.name) : "figma file task";
     return makeJsonToolResult({
       ok: true,
-      mode: "plan",
       workflow: createFileWorkflowPayload(),
       steps: [
         "Prepare or reuse a task workspace with figma_repl_prepare_task.",
@@ -29557,7 +29622,6 @@ async function handleGuidance(args) {
   const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
   return makeJsonToolResult({
     ok: true,
-    mode,
     cards,
     catalogSize: FIGMA_REPL_API_CARDS.length,
     guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, avoid, and pitfalls for .figma.js file workflows.",
@@ -29876,10 +29940,6 @@ async function handleLookup(args) {
     });
     return makeJsonToolResult({
       ok: true,
-      kind: "docs",
-      query,
-      maxResults: matches2.maxResults,
-      maxSnippetLines: matches2.maxSnippetLines,
       results: matches2.results,
       guidance: "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_repl_lookup query or kind=api lookup when more detail is needed."
     });
@@ -29897,10 +29957,6 @@ async function handleLookup(args) {
   });
   return makeJsonToolResult({
     ok: true,
-    kind: "api",
-    symbol,
-    maxResults: matches.maxResults,
-    maxSnippetLines: matches.maxSnippetLines,
     results: matches.results,
     guidance: "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents."
   });
@@ -31466,8 +31522,6 @@ function createScriptRunSummary(options) {
     diagnosticsCount: options.diagnostics.length,
     fatalDiagnostics: options.diagnostics.filter((item) => item.severity === "fatal").length,
     warningDiagnostics: options.diagnostics.filter((item) => item.severity === "warning").length,
-    upstreamTool: options.upstreamTool,
-    upstreamArgument: options.upstreamArgument,
     upstreamError: options.upstreamError ? responseUpstreamError(options.upstreamError) : void 0,
     primaryFix: options.primaryFix,
     resultSummary: options.parsed ? summarizeParsedResult(options.parsed) : void 0,
@@ -31485,9 +31539,6 @@ function formatScriptRunSummaryMarkdown(summary) {
     `- fatalDiagnostics: ${String(summary.fatalDiagnostics ?? 0)}`,
     `- warningDiagnostics: ${String(summary.warningDiagnostics ?? 0)}`
   ];
-  if (summary.upstreamTool) {
-    lines.push(`- upstreamTool: ${String(summary.upstreamTool)}`);
-  }
   if (summary.resultSummary) {
     lines.push(`- resultSummary: ${String(summary.resultSummary)}`);
   }
@@ -31808,12 +31859,11 @@ function createToolArgumentGuidancePayload() {
       recommendedCalls: {
         session: { title: "Open the design file session", sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" }
       },
-      advancedArguments: ["cwd", "dirName", "connect", "refresh", "handles"],
+      advancedArguments: ["cwd", "dirName", "connect", "handles"],
       avoidUnless: {
         cwd: "Omit cwd for the MCP server process cwd; pass it only when the server cwd is not the intended project directory.",
         dirName: "Omit dirName for the default figma-mcp workspace directory.",
-        connect: "Leave at the default true unless intentionally updating only local metadata.",
-        refresh: "Use only for upstream tool-cache debug.",
+        connect: "Leave at the default true unless intentionally updating only local metadata; open connects without listing tools, and upstream tool discovery uses figma-repl://upstream-tools.",
         handles: "Use only when importing known node ids into a new session; prefer $.remember from scripts."
       }
     },
@@ -31938,7 +31988,7 @@ function createCapabilitiesPayload() {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, and helperUsage for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files."
+      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, and helperUsage for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests and download_assets keep compact inline entries and complete per-target upstream/download details in explicit result files."
     },
     toolTiers: createToolTierPayload(),
     patterns: {
@@ -32555,12 +32605,6 @@ function responseScriptMetadata(metadata) {
     helperUsage: metadata.helperUsage,
     compiledScriptBytes: metadata.compiledScriptBytes
   });
-}
-function responseEvalSettingsFields(evalSettings) {
-  return {
-    upstreamTool: evalSettings.toolName,
-    upstreamArgument: evalSettings.argumentName
-  };
 }
 function upstreamResultFields(options) {
   return {

@@ -100,7 +100,6 @@ export interface FigmaReplToolResultBase {
 export interface FigmaReplOpenResult extends FigmaReplToolResultBase {
     session: FigmaReplPublicSession;
     diagnostics: FigmaReplDiagnostic[];
-    upstreamTools?: string[];
 }
 export interface FigmaReplUpstreamBackedResult extends FigmaReplToolResultBase {
     upstream: FigmaReplUpstreamEnvelope;
@@ -109,8 +108,6 @@ export interface FigmaReplUpstreamBackedResult extends FigmaReplToolResultBase {
 }
 export interface FigmaReplEvalResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplPublicSession;
-    upstreamTool: string;
-    upstreamArgument: string;
     diagnostics: FigmaReplDiagnostic[];
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
@@ -213,14 +210,21 @@ export interface FigmaReplTaskPlanStepResult {
     startedAt?: string;
     finishedAt?: string;
 }
+export interface FigmaReplTaskPlanFailure {
+    [key: string]: unknown;
+    id: string;
+    index: number;
+    type: string;
+    status: string;
+    error?: FigmaReplPublicUpstreamError;
+}
 export interface FigmaReplRunTaskPlanResult extends FigmaReplToolResultBase {
     session: FigmaReplPublicSession;
     stopped: boolean;
-    stopOnFailure: boolean;
     steps: FigmaReplTaskPlanStepResult[];
     outputReferences?: Record<string, unknown>;
     outputFiles: FigmaReplOutputFiles;
-    failures?: FigmaReplTaskPlanStepResult[];
+    failures?: FigmaReplTaskPlanFailure[];
 }
 export interface FigmaReplPreparedTask {
     [key: string]: unknown;
@@ -238,12 +242,13 @@ export interface FigmaReplPrepareTaskResult extends FigmaReplToolResultBase {
     next: string[];
 }
 export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {
-    mode: string;
     workflow?: Record<string, unknown>;
     steps?: string[];
     recommendedTools?: string[];
     suggestedCards?: string[];
     cards?: Array<Record<string, unknown>>;
+    catalogSize?: number;
+    guidance?: string;
     recommendedCards?: string[];
     queryHints?: string[];
     apiSymbols?: string[];
@@ -262,11 +267,6 @@ export interface FigmaReplCallUpstreamToolResult extends FigmaReplUpstreamBacked
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 export interface FigmaReplLookupResult extends FigmaReplToolResultBase {
-    kind: "docs" | "api";
-    query?: string;
-    symbol?: string;
-    maxResults: number;
-    maxSnippetLines: number;
     results: ReferenceSearchResult[];
     guidance: string;
 }

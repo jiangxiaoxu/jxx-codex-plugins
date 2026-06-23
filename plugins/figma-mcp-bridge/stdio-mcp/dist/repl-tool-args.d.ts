@@ -11,7 +11,6 @@ export interface FigmaReplOpenArguments {
     currentPageId?: string;
     reset?: boolean;
     connect?: boolean;
-    refresh?: boolean;
     handles?: Record<string, string>;
 }
 export interface FigmaReplEvalArguments {
@@ -81,7 +80,7 @@ export interface FigmaReplCaptureNodeArguments {
     [key: string]: unknown;
     title?: string;
     sessionId?: string;
-    target?: unknown;
+    target: unknown;
     outputFile?: string;
 }
 export interface FigmaReplTaskPlanStep {
@@ -111,7 +110,7 @@ export interface FigmaReplCallUpstreamToolArguments {
 export interface FigmaReplLookupArguments {
     [key: string]: unknown;
     title?: string;
-    kind?: "docs" | "api";
+    kind: "docs" | "api";
     query?: string;
     symbol?: string;
     maxResults?: number;

@@ -14,7 +14,6 @@ export interface FigmaReplOpenArguments {
   currentPageId?: string;
   reset?: boolean;
   connect?: boolean;
-  refresh?: boolean;
   handles?: Record<string, string>;
 }
 
@@ -91,7 +90,7 @@ export interface FigmaReplCaptureNodeArguments {
   [key: string]: unknown;
   title?: string;
   sessionId?: string;
-  target?: unknown;
+  target: unknown;
   outputFile?: string;
 }
 
@@ -125,7 +124,7 @@ export interface FigmaReplCallUpstreamToolArguments {
 export interface FigmaReplLookupArguments {
   [key: string]: unknown;
   title?: string;
-  kind?: "docs" | "api";
+  kind: "docs" | "api";
   query?: string;
   symbol?: string;
   maxResults?: number;
@@ -204,6 +203,7 @@ export function asOpenArgs(args: unknown): FigmaReplOpenArguments {
   assertRemovedFileReferenceFields(record);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertRemovedArguments(record, ["refresh"], "figma-repl://upstream-tools");
   assertOptionalStringFields(record, [
     "sessionId",
     "label",
