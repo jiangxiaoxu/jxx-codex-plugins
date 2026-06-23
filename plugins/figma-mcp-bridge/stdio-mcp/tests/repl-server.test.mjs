@@ -679,6 +679,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.scriptWorkflow);
   assert.ok(capabilities.fileWorkflow);
   assert.ok(capabilities.workflowTools);
+  assert.ok(capabilities.toolTiers);
   assert.ok(capabilities.toolArgumentGuidance);
   assert.ok(capabilities.apiCards);
   assert.ok(capabilities.intents);
@@ -690,7 +691,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.queryStrategy.searchAnchors.includes("FigJam/Slides"));
   assert.match(capabilities.guide.purpose, /Unified Figma-facing MCP facade/);
   assert.match(capabilities.guide.purpose, /figma_repl_mcp/);
-  assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool"));
+  assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work"));
+  assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_call_upstream_tool only when a task explicitly needs an uncovered upstream Figma MCP tool"));
   assert.match(capabilities.guide.upstreamBridge, /figma_repl_call_upstream_tool/);
   assert.match(capabilities.guide.responseShape, /upstream\.payload/);
   assert.match(capabilities.guide.responseShape, /upstream\.text/);
@@ -701,6 +703,14 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.queryStrategy.commonCards.includes("surface.slides"));
   assert.equal(capabilities.scriptWorkflow.primaryTool, "figma_repl_run_script_file");
   assert.equal(capabilities.fileWorkflow.primaryTool, "figma_repl_run_script_file");
+  assert.deepEqual(
+    capabilities.toolTiers.normalPath.tools,
+    ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_inspect", "figma_repl_capture_node"],
+  );
+  assert.deepEqual(
+    capabilities.toolTiers.advancedEscapeHatches.tools,
+    ["figma_repl_eval", "figma_repl_call_upstream_tool"],
+  );
   assert.equal(capabilities.toolArgumentGuidance.title.optional, true);
   assert.equal(capabilities.toolArgumentGuidance.title.preferSupplying, true);
   assert.equal(
@@ -728,6 +738,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     { title: "Prepare the token audit workspace", file: "<figma file URL or file key>", task: "<task>", surface: "design" },
   );
   assert.ok(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("taskRoot"));
+  assert.equal(capabilities.toolArgumentGuidance.prepareTask.tier, "normalPath");
   assert.equal(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("taskDir"), false);
   assert.equal(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("scriptName"), false);
   assert.deepEqual(
@@ -754,6 +765,9 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("resultFile"), false);
   assert.equal(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("inlineResultLimit"), false);
   assert.match(capabilities.toolArgumentGuidance.open.avoidUnless.upstreamOverrides, /routing debug/);
+  assert.equal(capabilities.toolArgumentGuidance.open.tier, "contextAndLookup");
+  assert.equal(capabilities.toolArgumentGuidance.eval.tier, "advancedEscapeHatches");
+  assert.match(capabilities.toolArgumentGuidance.eval.guidance, /small ephemeral calls/);
   assert.ok(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("outputFile"));
   assert.ok(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("inlineResultLimit"));
   assert.match(capabilities.toolArgumentGuidance.eval.avoidUnless.inlineResultLimit, /30 KB/);
@@ -762,9 +776,13 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     capabilities.toolArgumentGuidance.inspect.recommendedCalls.inspectStyle,
     { title: "Inspect visual style tokens", sessionId: "<session>", mode: "style", target: "$selection" },
   );
+  assert.equal(capabilities.toolArgumentGuidance.inspect.tier, "normalPath");
   assert.match(capabilities.toolArgumentGuidance.inspect.avoidUnless.upstreamOverrides, /routing debug/);
+  assert.equal(capabilities.toolArgumentGuidance.guidance.tier, "contextAndLookup");
+  assert.equal(capabilities.toolArgumentGuidance.lookup.tier, "contextAndLookup");
   assert.deepEqual(capabilities.toolArgumentGuidance.lookup.preferredArguments.api, ["kind=api", "symbol"]);
   assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /Explicit upstream escape hatch/);
+  assert.equal(capabilities.toolArgumentGuidance.callUpstreamTool.tier, "advancedEscapeHatches");
   assert.ok(capabilities.toolArgumentGuidance.callUpstreamTool.advancedArguments.includes("outputFile"));
   assert.ok(capabilities.toolArgumentGuidance.callUpstreamTool.advancedArguments.includes("inlineResultLimit"));
   assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.avoidUnless.inlineResultLimit, /30 KB/);
@@ -878,8 +896,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   );
   const evalTool = tools.tools.find((tool) => tool.name === "figma_repl_eval");
   assert.ok(evalTool);
-  assert.match(evalTool.description, /AST-referenced \$ helpers/);
-  assert.match(evalTool.description, /figma-repl:\/\/capabilities/);
+  assert.match(evalTool.description, /Small ephemeral JavaScript call/);
+  assert.match(evalTool.description, /Prefer run_script_file/);
   assert.doesNotMatch(evalTool.description, /\$\[name\]/);
   assert.match(evalTool.inputSchema.properties.outputFile.description, /full result JSON file/);
   assert.match(evalTool.inputSchema.properties.inlineResultLimit.description, /30 KB/);
@@ -979,7 +997,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(lookupMetadataTool.inputSchema.properties.maxResults.description, /Result-size control only/);
   const callUpstreamTool = tools.tools.find((tool) => tool.name === "figma_repl_call_upstream_tool");
   assert.ok(callUpstreamTool);
-  assert.match(callUpstreamTool.description, /Explicit upstream escape hatch/);
+  assert.match(callUpstreamTool.description, /Advanced escape hatch/);
+  assert.match(callUpstreamTool.description, /not covered by prepare_task/);
   assert.ok(callUpstreamTool.inputSchema.properties.outputFile);
   assert.ok(callUpstreamTool.inputSchema.properties.inlineResultLimit);
   assert.equal(callUpstreamTool.inputSchema.properties.inlineResultLimit.default, 4000);

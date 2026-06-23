@@ -26518,7 +26518,7 @@ function createReplToolDescriptions(options) {
   const tools = [
     {
       name: "figma_repl_open",
-      description: "Create or update a local Figma REPL session. Recommended call: { title, sessionId, file, surface }. Records file/surface/page/workspace context and local handles; use upstream overrides only for routing debug.",
+      description: "Context helper for creating or updating a local Figma REPL session. Recommended call: { title, sessionId, file, surface }. Use prepare_task + run_script_file for the primary file workflow; use open for lightweight session context, handle import, or file binding.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
@@ -26539,7 +26539,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_eval",
-      description: "Run one batched JavaScript transaction through upstream use_figma. Recommended call: { title, sessionId, code, mode, surface }. The eval wrapper injects only AST-referenced $ helpers; read figma-repl://capabilities for disabled dynamic helper syntax and argument guidance.",
+      description: "Small ephemeral JavaScript call for quick reads or tightly scoped updates. Recommended call: { title, sessionId, code, mode, surface }. Prefer run_script_file for repairable or multi-step work; eval injects only AST-referenced $ helpers and supports outputFile/upstreamFile for large results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -26580,7 +26580,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_apply_asset_manifest",
-      description: "Apply local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, and refresh are advanced/debug only.",
+      description: "Workflow add-on for applying local generated assets to Figma target nodes. Recommended workspace call: { title, sessionId, manifestPath, outputFile? } after .figma.js creates target rectangles. Inline assets, custom upstream templates, and refresh are advanced/debug only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -26616,7 +26616,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_run_task_plan",
-      description: "Run a sequential local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Inline steps are advanced only. Later steps use { type, args } and can reference prior output files with templates.",
+      description: "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { title, sessionId, planPath, outputFile }. Use for scripted script/asset/capture/upstream sequences; inline steps are advanced only.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
@@ -26632,7 +26632,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_prepare_task",
-      description: "Create or reuse a task-specific .figma.js script and paired .result.json file. Recommended workspace call: { title, file, task, surface }. cwd is an optional override; taskSlug, workspaceDir, fileName, taskRoot, template, and overwrite are advanced only.",
+      description: "Core workflow entrypoint for creating or reusing a task-specific .figma.js script and paired .result.json file. Recommended workspace call: { title, file, task, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
@@ -26653,7 +26653,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_guidance",
-      description: "Return compact guidance, file-workflow planning, curated API cards, or catalog metadata before broader lookup. Use task for the natural-language request.",
+      description: "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { title, task, surface }. Use task for natural-language requests before writing .figma.js; pair with lookup only when exact docs/API snippets are needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
@@ -26667,7 +26667,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_inspect",
-      description: 'Inspect $selection, $currentPage, a stored handle, or validate cached handles through one read-mode use_figma call. Recommended calls: { title, sessionId, target } or { title, sessionId, mode:"validate" }; upstream overrides are debug-only.',
+      description: 'Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Recommended calls: { title, sessionId, target } or { title, sessionId, mode:"style", target }. Use before mutation and after generated work; upstream overrides are debug-only.',
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -26686,7 +26686,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_call_upstream_tool",
-      description: "Explicit upstream escape hatch: proxy one official upstream Figma MCP tool call through figma_repl_mcp for capabilities not covered by the file workflow.",
+      description: "Advanced escape hatch for proxying one official upstream Figma MCP tool call through figma_repl_mcp. Use only when a required official capability is not covered by prepare_task, run_script_file, inspect, capture, asset_manifest, or task_plan.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
@@ -26699,7 +26699,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_lookup",
-      description: "Look up compact docs snippets or targeted Figma Plugin API symbols from the internal corpus. For kind=docs use query; for kind=api use symbol.",
+      description: "Targeted lookup helper for compact docs snippets or exact Figma Plugin API symbols. For kind=docs use query; for kind=api use symbol. Use after guidance when exact API/docs context is still needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
@@ -31428,6 +31428,35 @@ function slugifyTaskName2(value) {
   const slug = source.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
   return slug || "figma-task";
 }
+function createToolTierPayload() {
+  return {
+    normalPath: {
+      summary: "Default path for non-trivial Figma work.",
+      tools: ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_inspect", "figma_repl_capture_node"],
+      order: [
+        "figma_repl_prepare_task",
+        "figma_repl_guidance",
+        "figma_repl_lookup",
+        "figma_repl_run_script_file(dryRun=true)",
+        "figma_repl_run_script_file",
+        "figma_repl_inspect",
+        "figma_repl_capture_node"
+      ]
+    },
+    contextAndLookup: {
+      summary: "Use to plan, bind lightweight session context, or fetch compact docs/API context.",
+      tools: ["figma_repl_open", "figma_repl_guidance", "figma_repl_lookup"]
+    },
+    workflowAddOns: {
+      summary: "Use when the primary script workflow needs generated assets or repeatable multi-step orchestration.",
+      tools: ["figma_repl_apply_asset_manifest", "figma_repl_run_task_plan"]
+    },
+    advancedEscapeHatches: {
+      summary: "Use only for short ephemeral calls, upstream-only capabilities, or routing/debug cases.",
+      tools: ["figma_repl_eval", "figma_repl_call_upstream_tool"]
+    }
+  };
+}
 function createToolArgumentGuidancePayload() {
   return {
     title: {
@@ -31443,6 +31472,7 @@ function createToolArgumentGuidancePayload() {
     },
     prepareTask: {
       tool: "figma_repl_prepare_task",
+      tier: "normalPath",
       recommendedCalls: {
         workspaceFromFile: { title: "Prepare the token audit workspace", file: "<figma file URL or file key>", task: "<task>", surface: "design" }
       },
@@ -31456,6 +31486,7 @@ function createToolArgumentGuidancePayload() {
     },
     open: {
       tool: "figma_repl_open",
+      tier: "contextAndLookup",
       recommendedCalls: {
         session: { title: "Open the design file session", sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" }
       },
@@ -31471,6 +31502,8 @@ function createToolArgumentGuidancePayload() {
     },
     eval: {
       tool: "figma_repl_eval",
+      tier: "advancedEscapeHatches",
+      guidance: "Use only for small ephemeral calls. Prefer figma_repl_run_script_file for repairable scripts, multi-step work, and large structured results.",
       recommendedCalls: {
         read: { title: "Inspect selected layout metadata", sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
         write: { title: "Apply the selected node updates", sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" }
@@ -31486,6 +31519,7 @@ function createToolArgumentGuidancePayload() {
     },
     inspect: {
       tool: "figma_repl_inspect",
+      tier: "normalPath",
       recommendedCalls: {
         inspectTarget: { title: "Inspect the current selection", sessionId: "<session>", target: "$selection" },
         inspectStyle: { title: "Inspect visual style tokens", sessionId: "<session>", mode: "style", target: "$selection" },
@@ -31499,6 +31533,7 @@ function createToolArgumentGuidancePayload() {
     },
     assetManifest: {
       tool: "figma_repl_apply_asset_manifest",
+      tier: "workflowAddOns",
       recommendedCalls: {
         applyManifest: { title: "Apply generated assets to target rectangles", sessionId: "<session>", manifestPath: "<assets>.json", outputFile: "<assets>.result.json" }
       },
@@ -31511,6 +31546,7 @@ function createToolArgumentGuidancePayload() {
     },
     captureNode: {
       tool: "figma_repl_capture_node",
+      tier: "normalPath",
       recommendedCalls: {
         capture: { title: "Capture the target node for visual QA", sessionId: "<session>", target: "$target", outputFile: "<capture>.webp", preview: true }
       },
@@ -31523,6 +31559,7 @@ function createToolArgumentGuidancePayload() {
     },
     taskPlan: {
       tool: "figma_repl_run_task_plan",
+      tier: "workflowAddOns",
       recommendedCalls: {
         filePlan: { title: "Run the repeatable asset QA plan", sessionId: "<session>", planPath: "<plan>.json", outputFile: "<plan>.result.json" }
       },
@@ -31534,15 +31571,18 @@ function createToolArgumentGuidancePayload() {
     },
     guidance: {
       tool: "figma_repl_guidance",
+      tier: "contextAndLookup",
       preferredArguments: ["task", "mode", "surface"]
     },
     lookup: {
       tool: "figma_repl_lookup",
+      tier: "contextAndLookup",
       preferredArguments: { docs: ["kind=docs", "query"], api: ["kind=api", "symbol"] },
       resultSizeControls: ["maxResults", "maxSnippetLines"]
     },
     callUpstreamTool: {
       tool: "figma_repl_call_upstream_tool",
+      tier: "advancedEscapeHatches",
       guidance: "Explicit upstream escape hatch only; use when a required official Figma MCP capability is not covered by the REPL workflow tools.",
       recommendedCalls: {
         explicit: { title: "Call the upstream-only Figma tool", sessionId: "<session>", toolName: "<official upstream tool>", arguments: {} }
@@ -31564,18 +31604,22 @@ function createCapabilitiesPayload() {
         "Read figma-repl://capabilities to choose the facade path",
         "figma_repl_prepare_task with file and task for repairable .figma.js workspaces; cwd is an optional override",
         "figma_repl_guidance with mode=plan for workflow planning or mode=guidance/card/catalog for compact local API cards",
-        "figma_repl_open with file and surface for stateful Plugin API work",
-        "figma_repl_inspect with mode=inspect, mode=style, or mode=validate before mutation",
+        "figma_repl_lookup only when exact docs/API snippets are still needed after guidance",
         "figma_repl_run_script_file with inputFile and dryRun=true for primary .figma.js workflows, output files, and line-aware repair",
+        "figma_repl_run_script_file without dryRun to execute the reviewed file workflow",
+        "figma_repl_inspect with mode=inspect, mode=style, or mode=validate before mutation and after generated work",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through a manifest or official upload_assets",
         "figma_repl_capture_node for final visual QA captures saved as local image files, WebP by default and PNG/JPEG when the outputFile extension requests it; add preview=true for a WebP MCP image preview",
-        "figma_repl_run_task_plan for sequential file plans that combine script dry-runs/exec, asset manifests, captures, and upstream tool calls",
-        "figma_repl_call_upstream_tool when a task explicitly needs an upstream Figma MCP tool"
+        "figma_repl_open only for lightweight session/context binding when a prepared task is not needed",
+        "figma_repl_run_task_plan only for repeatable multi-step plans",
+        "figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work",
+        "figma_repl_call_upstream_tool only when a task explicitly needs an uncovered upstream Figma MCP tool"
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call upstream tools through figma_repl_call_upstream_tool while keeping the agent on the figma_repl_mcp interface.",
       responseShape: "Fixed structured payloads without session.history. Tool metadata exposes machine-readable defaults, caps, file pointers, upstream envelopes, helperUsage, and preview schemas for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.upstreamFile sidecars when a full result file is written. Asset manifests keep compact inline assets and complete per-asset upstream envelopes in explicit result files."
     },
+    toolTiers: createToolTierPayload(),
     patterns: {
       text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
       createUi: "Use $.create for common Design nodes and native Plugin API calls for advanced construction.",
