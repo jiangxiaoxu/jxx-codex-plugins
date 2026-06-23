@@ -1,4 +1,3 @@
-import type { FigmaReplDiagnostic } from "./repl-script-runner.js";
 import type { FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplTaskPlanStep } from "./repl-tool-args.js";
 export declare const TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 export declare const DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
@@ -22,8 +21,6 @@ export interface FigmaReplSessionWorkspace {
 }
 export interface ScriptOutputFilePaths {
     resultFile?: string;
-    diagnosticsFile?: string;
-    summaryFile?: string;
     compiledScriptFile?: string;
 }
 export interface FilePointerMetadata {
@@ -32,9 +29,7 @@ export interface FilePointerMetadata {
     lineCount: number;
 }
 export interface ScriptOutputFileMetadata {
-    outputFile?: FilePointerMetadata;
-    diagnosticsFile?: FilePointerMetadata;
-    summaryFile?: FilePointerMetadata;
+    debugFile?: FilePointerMetadata;
     compiledScriptFile?: FilePointerMetadata;
 }
 export interface FigmaReplWorkspaceFileSession {
@@ -45,13 +40,11 @@ interface ParsedCaptureResult {
     text: string;
     json?: unknown;
 }
-export declare function createScriptOutputWriter(args: FigmaReplRunScriptFileArguments, session: FigmaReplWorkspaceFileSession | undefined, formatSummaryMarkdown: (summary: Record<string, unknown>) => string): {
+export declare function createScriptOutputWriter(args: FigmaReplRunScriptFileArguments, session: FigmaReplWorkspaceFileSession | undefined): {
     files: ScriptOutputFilePaths;
     cleanupCompiledScriptFile(): Promise<void>;
     write(payload: {
         result: unknown;
-        diagnostics: FigmaReplDiagnostic[];
-        summary: Record<string, unknown>;
         compiledScript?: string;
         writeResult?: boolean;
     }): Promise<ScriptOutputFileMetadata>;

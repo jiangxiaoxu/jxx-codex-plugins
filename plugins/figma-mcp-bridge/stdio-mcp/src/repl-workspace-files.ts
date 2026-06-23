@@ -1,7 +1,6 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
-import type { FigmaReplDiagnostic } from "./repl-script-runner.js";
 import type {
   FigmaReplRunScriptFileArguments,
   FigmaReplRunTaskPlanArguments,
@@ -35,8 +34,6 @@ export interface FigmaReplSessionWorkspace {
 
 export interface ScriptOutputFilePaths {
   resultFile?: string;
-  diagnosticsFile?: string;
-  summaryFile?: string;
   compiledScriptFile?: string;
 }
 
@@ -47,9 +44,7 @@ export interface FilePointerMetadata {
 }
 
 export interface ScriptOutputFileMetadata {
-  outputFile?: FilePointerMetadata;
-  diagnosticsFile?: FilePointerMetadata;
-  summaryFile?: FilePointerMetadata;
+  debugFile?: FilePointerMetadata;
   compiledScriptFile?: FilePointerMetadata;
 }
 
@@ -66,14 +61,11 @@ interface ParsedCaptureResult {
 export function createScriptOutputWriter(
   args: FigmaReplRunScriptFileArguments,
   session: FigmaReplWorkspaceFileSession | undefined,
-  formatSummaryMarkdown: (summary: Record<string, unknown>) => string,
 ): {
   files: ScriptOutputFilePaths;
   cleanupCompiledScriptFile(): Promise<void>;
   write(payload: {
     result: unknown;
-    diagnostics: FigmaReplDiagnostic[];
-    summary: Record<string, unknown>;
     compiledScript?: string;
     writeResult?: boolean;
   }): Promise<ScriptOutputFileMetadata>;
@@ -89,16 +81,7 @@ export function createScriptOutputWriter(
     async write(payload) {
       const written: ScriptOutputFileMetadata = {};
       if (payload.writeResult && files.resultFile) {
-        written.outputFile = await writeJsonFile(files.resultFile, payload.result);
-      }
-      if (files.diagnosticsFile) {
-        written.diagnosticsFile = await writeJsonFile(files.diagnosticsFile, {
-          diagnostics: payload.diagnostics,
-          count: payload.diagnostics.length,
-        });
-      }
-      if (files.summaryFile) {
-        written.summaryFile = await writeMarkdownFile(files.summaryFile, formatSummaryMarkdown(payload.summary));
+        written.debugFile = await writeJsonFile(files.resultFile, payload.result);
       }
       if (payload.compiledScript && files.compiledScriptFile) {
         written.compiledScriptFile = await writeTextFile(
@@ -370,9 +353,7 @@ export function effectiveInlineResultLimit(
   if (value !== undefined && value !== null) {
     return value;
   }
-  return files.resultFile || files.diagnosticsFile || files.summaryFile
-    ? defaultInlineResultLimit
-    : undefined;
+  return files.resultFile ? defaultInlineResultLimit : undefined;
 }
 
 export async function writeJsonFile(path: string, value: unknown): Promise<FilePointerMetadata> {
@@ -503,30 +484,17 @@ function resolveScriptOutputFiles(
   args: FigmaReplRunScriptFileArguments,
   session?: FigmaReplWorkspaceFileSession,
 ): ScriptOutputFilePaths {
-  const outputDir = asOptionalString(args.outputDir);
-  if (outputDir && !isAbsolute(outputDir)) {
-    throw new Error('Tool argument "outputDir" must be an absolute path.');
-  }
-  if (!outputDir && session?.workspace) {
+  if (session?.workspace) {
     const sessionDir = session.workspace.sessionDir;
     const inputFile = asOptionalString(args.inputFile);
     const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
     const resultFile = resolveWorkspaceOutputFile(undefined, sessionDir, defaultResult, "debugFile");
     return {
       resultFile,
-      diagnosticsFile: args.diagnosticsFile ? resolveWorkspaceOutputFile(args.diagnosticsFile, sessionDir, "diagnostics.json", "diagnosticsFile") : undefined,
-      summaryFile: args.summaryFile ? resolveWorkspaceOutputFile(args.summaryFile, sessionDir, "summary.md", "summaryFile") : undefined,
       compiledScriptFile: compiledFilePathForResultFile(resultFile),
     };
   }
-  const hasOutputDir = Boolean(outputDir);
-  const resultFile = resolveOptionalOutputFile(undefined, outputDir, hasOutputDir ? "result.json" : undefined, "debugFile");
-  return {
-    resultFile,
-    diagnosticsFile: resolveOptionalOutputFile(args.diagnosticsFile, outputDir, undefined, "diagnosticsFile"),
-    summaryFile: resolveOptionalOutputFile(args.summaryFile, outputDir, undefined, "summaryFile"),
-    compiledScriptFile: resultFile ? compiledFilePathForResultFile(resultFile) : undefined,
-  };
+  return {};
 }
 
 function compiledFilePathForResultFile(resultFile: string): string {
@@ -547,36 +515,6 @@ function resolveWorkspaceOutputFile(
 ): string {
   const raw = asOptionalString(value) ?? fallbackName;
   return isAbsolute(raw) ? raw : resolveWorkspaceFile(baseDir, raw, argumentName);
-}
-
-function resolveOptionalOutputFile(
-  value: unknown,
-  outputDir: string | undefined,
-  fallbackName: string | undefined,
-  name: string,
-): string | undefined {
-  const raw = asOptionalString(value) ?? fallbackName;
-  if (!raw) {
-    return undefined;
-  }
-  if (isAbsolute(raw)) {
-    return raw;
-  }
-  if (!outputDir) {
-    throw new Error(`Tool argument "${name}" must be absolute unless outputDir is provided.`);
-  }
-  const resolved = resolve(outputDir, raw);
-  if (!isPathInside(outputDir, resolved)) {
-    throw new Error(`Tool argument "${name}" must stay inside outputDir when relative.`);
-  }
-  return resolved;
-}
-
-async function writeMarkdownFile(path: string, value: string): Promise<FilePointerMetadata> {
-  await mkdir(dirname(path), { recursive: true });
-  const content = value.endsWith("\n") ? value : `${value}\n`;
-  await writeFile(path, content, "utf8");
-  return textFileMetadata(path, content);
 }
 
 async function writeTextFile(path: string, content: string): Promise<FilePointerMetadata> {

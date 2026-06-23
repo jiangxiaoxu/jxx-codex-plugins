@@ -67,9 +67,6 @@ export function createReplToolDescriptions(
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
-        outputDir: stringProperty("Advanced absolute directory escape hatch for on-demand debug files and split diagnostics/summary files."),
-        diagnosticsFile: stringProperty("Advanced opt-in split diagnostics JSON file. Leave unset for normal agent workflows."),
-        summaryFile: stringProperty("Advanced opt-in split Markdown summary file. Leave unset for normal agent workflows."),
         inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.payload/upstream.text only. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
       }),
     },
@@ -231,7 +228,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["outputFile", "upstreamFile"],
+      ["debugFile", "upstreamFile"],
     ),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
   }),
@@ -241,8 +238,8 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
     script: scriptMetadataProperty("Compiled script metadata."),
     outputFiles: outputFilesProperty(
-      "Debug files written on demand for failures, diagnostics, inline omissions, split diagnostics/summary, or failure-only compiled script.",
-      ["outputFile", "upstreamFile", "diagnosticsFile", "summaryFile", "compiledScriptFile"],
+      "Debug files written on demand for failures, diagnostics, inline omissions, or failure-only compiled script.",
+      ["debugFile", "upstreamFile", "compiledScriptFile"],
     ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
@@ -253,7 +250,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Public local REPL session metadata."),
     assets: compactAssetResultsProperty("Compact per-asset upload/fill results."),
     validation: objectProperty("Optional target validation result."),
-    outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["outputFile"]),
+    outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
     failures: arrayProperty("Per-asset or validation failures."),
   }),
   figma_repl_download_assets: toolOutputSchema({
@@ -261,7 +258,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     outputDir: stringProperty("Local directory containing per-target download folders."),
     targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
     failures: arrayProperty("Per-target download or upstream failures."),
-    outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["outputFile"]),
+    outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
   }),
   figma_repl_capture_node: toolOutputSchema({
     session: objectProperty("Public local REPL session metadata."),
@@ -277,7 +274,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     steps: arrayProperty("Compact per-step execution summaries."),
     outputReferences: objectProperty("Plan-level map of step id to output file pointers for later workflow references."),
-    outputFiles: outputFilesProperty("Files written for plan result output.", ["outputFile"]),
+    outputFiles: outputFilesProperty("Files written for plan result output.", ["debugFile"]),
     failures: compactTaskPlanFailuresProperty("Compact failed task-plan step summaries."),
   }),
   figma_repl_prepare_task: toolOutputSchema({
@@ -321,7 +318,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["outputFile", "upstreamFile"],
+      ["debugFile", "upstreamFile"],
     ),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
   }),
@@ -469,16 +466,12 @@ function outputFilesProperty(
 
 function outputFilePointerDescription(key: string): string {
   switch (key) {
-    case "outputFile":
-      return "Primary local output file pointer.";
+    case "debugFile":
+      return "Primary local debug/result JSON file pointer.";
     case "upstreamFile":
       return "Upstream envelope sidecar file pointer.";
     case "metadataFile":
       return "Capture metadata JSON file pointer.";
-    case "diagnosticsFile":
-      return "Split diagnostics JSON file pointer.";
-    case "summaryFile":
-      return "Split summary Markdown file pointer.";
     case "compiledScriptFile":
       return "Failure-only compiled script wrapper file pointer.";
     default:

@@ -53,10 +53,8 @@ export interface FigmaReplFilePointer {
 }
 export interface FigmaReplOutputFiles {
     [key: string]: unknown;
-    diagnosticsFile?: FigmaReplFilePointer;
-    summaryFile?: FigmaReplFilePointer;
+    debugFile?: FigmaReplFilePointer;
     compiledScriptFile?: FigmaReplFilePointer;
-    outputFile?: FigmaReplFilePointer;
     upstreamFile?: FigmaReplFilePointer;
     metadataFile?: FigmaReplFilePointer;
 }

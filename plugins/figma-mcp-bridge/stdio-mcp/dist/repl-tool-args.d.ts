@@ -35,9 +35,6 @@ export interface FigmaReplRunScriptFileArguments {
     surface?: FigmaReplSurface;
     targetPageId?: string;
     allowDangerousOperations?: boolean;
-    outputDir?: string;
-    diagnosticsFile?: string;
-    summaryFile?: string;
     inlineResultLimit?: number;
 }
 export interface FigmaReplAssetManifestAsset {
