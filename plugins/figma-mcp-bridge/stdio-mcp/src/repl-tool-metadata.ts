@@ -49,8 +49,8 @@ export function createReplToolDescriptions(
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
-        outputFile: stringProperty("Optional full result JSON file. Relative paths require an initialized workspace; omitted large results use an automatic eval-<timestamp>.result.json file."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
+        outputFile: stringProperty("Optional minimal result envelope JSON file. Relative paths require an initialized workspace; omitted large results use an automatic eval-<timestamp>.result.json file plus a paired upstream sidecar."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
         handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code."),
       }, ["code"]),
     },
@@ -72,7 +72,7 @@ export function createReplToolDescriptions(
         outputFile: stringProperty("Recommended normal result file name inside the initialized file-context directory. Defaults to the input script basename plus .result.json."),
         diagnosticsFile: stringProperty("Advanced opt-in split diagnostics JSON file. Leave unset for normal agent workflows."),
         summaryFile: stringProperty("Advanced opt-in split Markdown summary file. Leave unset for normal agent workflows."),
-        inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.payload/upstream.text only. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
+        inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.payload/upstream.text only. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
       }),
     },
     {
@@ -106,7 +106,7 @@ export function createReplToolDescriptions(
         },
         manifestPath: stringProperty("Optional batch manifest path. Accepts an absolute path or a file name inside the initialized file-context workspace. Manifest shape is exactly { targets: [...] }; assets aliases are rejected."),
         outputDir: stringProperty("Optional output directory. Relative paths require an initialized workspace. Defaults to <slug>.downloads in the workspace, or a temp download-results directory without a workspace."),
-        outputFile: stringProperty("Optional full result JSON path. Relative paths require an initialized workspace. Defaults to <slug>.downloads.result.json."),
+        outputFile: stringProperty("Optional result JSON path. Relative paths require an initialized workspace. Defaults to <slug>.downloads.result.json."),
       }),
     },
     {
@@ -203,8 +203,8 @@ export function createReplToolDescriptions(
         toolName: stringProperty("Official upstream Figma MCP tool name to call for an uncovered capability. Local figma_repl_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        outputFile: stringProperty("Optional full result JSON file. Relative paths require an initialized workspace; omitted large results use an automatic upstream-<tool>-<timestamp>.result.json file."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete payloads stay in outputFile."),
+        outputFile: stringProperty("Optional minimal result envelope JSON file. Relative paths require an initialized workspace; omitted large results use an automatic upstream-<tool>-<timestamp>.result.json file plus a paired upstream sidecar."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
       }, ["toolName", "arguments"]),
     },
     {
@@ -236,7 +236,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
-      "Files written for full result and upstream sidecar when inline fields are omitted or outputFile is requested.",
+      "Files written for minimal result envelope and upstream sidecar when inline fields are omitted or outputFile is requested.",
       ["outputFile", "upstreamFile"],
     ),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
@@ -327,7 +327,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
-      "Files written for full result and upstream sidecar when inline fields are omitted or outputFile is requested.",
+      "Files written for minimal result envelope and upstream sidecar when inline fields are omitted or outputFile is requested.",
       ["outputFile", "upstreamFile"],
     ),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
