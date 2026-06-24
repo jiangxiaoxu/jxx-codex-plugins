@@ -2473,10 +2473,187 @@ test("figma REPL validates asset manifest targets when upstream eval is availabl
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.equal(json.validation.ok, true);
+    assert.equal(json.validation.validationSource, "parsed.json.result");
     assert.equal(json.validation.validCount, 1);
     assert.equal(json.assets[0].validation.status, "valid");
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool"]);
     assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), ["upload_assets", "use_figma"]);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL asset manifest validation handles nested upstream eval results", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-assets-nested-validate-"));
+  const assetPath = resolve(tempDir, "hero.png");
+  await writeFile(assetPath, "fake image bytes", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name }) => {
+      if (name === "upload_assets") {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, result: { id: "12:34" } }) }],
+        };
+      }
+      if (name === "use_figma") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                result: {
+                  ok: true,
+                  result: {
+                    validations: [
+                      {
+                        targetNodeId: "12:34",
+                        status: "valid",
+                        nodeId: "12:34",
+                        nodeType: "RECTANGLE",
+                        fillCount: 1,
+                        imageFillCount: 1,
+                      },
+                    ],
+                    validCount: 1,
+                    invalidCount: 0,
+                  },
+                },
+              }),
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected tool ${name}`);
+    },
+    {
+      tools: [
+        { name: "upload_assets", description: "Official upload tool.", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
+        { name: "use_figma", description: "Fake eval tool.", inputSchema: { type: "object", properties: { code: { type: "string" } } } },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Open nested validate file context",
+        sessionId: "asset-nested-validate",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+      },
+    });
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_apply_asset_manifest",
+      arguments: {
+        title: "Apply and validate nested assets",
+        sessionId: "asset-nested-validate",
+        assets: [{ path: assetPath, target: "12:34" }],
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.validation.ok, true);
+    assert.equal(json.validation.validationSource, "parsed.json.result.result");
+    assert.equal(json.validation.expectedCount, 1);
+    assert.equal(json.validation.validCount, 1);
+    assert.equal(json.validation.missingValidationCount, 0);
+    assert.equal(json.assets[0].validation.status, "valid");
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL asset manifest validation is indeterminate when upstream eval returns no target records", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-assets-empty-validate-"));
+  const assetPath = resolve(tempDir, "hero.png");
+  await writeFile(assetPath, "fake image bytes", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name }) => {
+      if (name === "upload_assets") {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, result: { id: "12:34" } }) }],
+        };
+      }
+      if (name === "use_figma") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                result: {
+                  validations: [],
+                  validCount: 0,
+                  invalidCount: 0,
+                },
+              }),
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected tool ${name}`);
+    },
+    {
+      tools: [
+        { name: "upload_assets", description: "Official upload tool.", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
+        { name: "use_figma", description: "Fake eval tool.", inputSchema: { type: "object", properties: { code: { type: "string" } } } },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Open empty validate file context",
+        sessionId: "asset-empty-validate",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+      },
+    });
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_apply_asset_manifest",
+      arguments: {
+        title: "Apply and validate empty assets",
+        sessionId: "asset-empty-validate",
+        assets: [{ path: assetPath, target: "12:34" }],
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.validation.ok, undefined);
+    assert.equal(json.validation.reason, "validation result did not include every target record");
+    assert.equal(json.validation.validationSource, "parsed.json.result");
+    assert.equal(json.validation.expectedCount, 1);
+    assert.equal(json.validation.validCount, 0);
+    assert.equal(json.validation.invalidCount, 0);
+    assert.equal(json.validation.missingValidationCount, 1);
+    assert.equal(json.assets[0].validation, undefined);
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
