@@ -881,7 +881,10 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.guide.responseShape, /content is empty/);
   assert.doesNotMatch(capabilities.guide.responseShape, /MCP protocol media items/);
   assert.match(capabilities.guide.responseShape, /file pointers/);
-  assert.match(capabilities.guide.responseShape, /helperUsage/);
+  assert.match(capabilities.guide.responseShape, /compact session\/workspace/);
+  assert.match(capabilities.guide.responseShape, /figma-repl:\/\/sessions\/\{id\}/);
+  assert.doesNotMatch(capabilities.guide.responseShape, /verboseResults/);
+  assert.doesNotMatch(capabilities.guide.responseShape, /helperUsage/);
   assert.doesNotMatch(capabilities.guide.responseShape, /parsed JSON in result/);
   assert.deepEqual(capabilities.queryStrategy.outputFields, queryOutputFields);
   assert.ok(capabilities.queryStrategy.commonCards.includes("text.font"));
@@ -1084,6 +1087,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
       false,
       `${tool.name} does not require title`,
     );
+    assert.equal(tool.inputSchema.properties.debug, undefined, `${tool.name} does not expose debug`);
+    assert.equal(tool.inputSchema.properties.verboseResults, undefined, `${tool.name} does not expose verboseResults`);
   }
   const runScriptFileTool = tools.tools.find((tool) => tool.name === "figma_repl_run_script_file");
   assert.ok(runScriptFileTool);
@@ -1116,8 +1121,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(runScriptFileTool.outputSchema.properties.outputFiles.properties.summaryFile, undefined);
   assert.ok(runScriptFileTool.outputSchema.properties.inlineResultLimit.properties.omitted.items.properties.field);
   assert.deepEqual(
-    Object.keys(runScriptFileTool.outputSchema.properties.script.properties.helperUsage.properties).sort(),
-    ["direct", "injected", "runtimeBase", "transitive"],
+    Object.keys(runScriptFileTool.outputSchema.properties.script.properties).sort(),
+    ["compiledScriptBytes", "expectedSurface", "scriptPath"],
   );
   const evalTool = tools.tools.find((tool) => tool.name === "figma_repl_eval");
   assert.ok(evalTool);
@@ -4815,18 +4820,12 @@ test("figma REPL run_script_file executes helper-backed scripts through upstream
     assert.equal(json.script.executed, undefined);
     assert.equal(json.script.dryRun, undefined);
     assert.equal(json.script.diagnosticsCount, undefined);
-    assert.equal(json.script.targetPageId, "0:1");
-    assert.ok(json.script.injectedHelpers.includes("$.checkpoint"));
-    assert.ok(json.script.injectedHelpers.includes("$.create"));
-    assert.ok(json.script.injectedHelpers.includes("$.text"));
-    assert.ok(json.script.injectedHelpers.includes("$.layout"));
-    assert.equal(json.script.injectedHelpers.includes("$.find"), false);
-    assert.ok(json.script.helperUsage.direct.includes("$.create"));
-    assert.ok(json.script.helperUsage.direct.includes("$.text"));
-    assert.ok(json.script.helperUsage.direct.includes("$.layout"));
-    assert.ok(json.script.helperUsage.direct.includes("$.checkpoint"));
-    assert.ok(json.script.helperUsage.transitive.includes("$.placeNode"));
-    assert.deepEqual(json.script.helperUsage.injected, json.script.injectedHelpers);
+    assert.equal(json.script.targetPageId, undefined);
+    assert.equal(json.script.injectedHelpers, undefined);
+    assert.equal(json.script.helperUsage, undefined);
+    assert.equal(json.script.expectedSurface, "design");
+    assert.ok(json.script.compiledScriptBytes > 0);
+    assert.equal(json.verbose, undefined);
     assert.equal(json.upstream.kind, "json");
     assert.equal(json.upstream.ok, true);
     assert.equal(json.upstream.payload.result.resized.width, 360);
@@ -4898,8 +4897,8 @@ test("figma REPL run_script_file avoids helper injection for native Plugin API s
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.deepEqual(json.script.injectedHelpers, []);
-    assert.deepEqual(json.script.helperUsage, { direct: [], transitive: [], runtimeBase: [], injected: [] });
+    assert.equal(json.script.injectedHelpers, undefined);
+    assert.equal(json.script.helperUsage, undefined);
     assert.ok(json.script.compiledScriptBytes < 15_000);
     assert.equal(json.upstream.payload.result.name, "Native frame");
     assert.equal(json.result, undefined);
@@ -4955,11 +4954,9 @@ test("figma REPL run_script_file injects helper dependencies from AST usage", as
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.ok(json.script.injectedHelpers.includes("$.find"));
-    assert.ok(json.script.injectedHelpers.includes("$.findAll"));
-    assert.equal(json.script.injectedHelpers.includes("$.text"), false);
-    assert.deepEqual(json.script.helperUsage.direct, ["$.find"]);
-    assert.deepEqual(json.script.helperUsage.transitive, ["$.findAll"]);
+    assert.equal(json.script.injectedHelpers, undefined);
+    assert.equal(json.script.helperUsage, undefined);
+    assert.ok(json.script.compiledScriptBytes > 0);
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -5057,9 +5054,9 @@ test("figma REPL run_script_file allows literal computed helper access", async (
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.ok(json.script.injectedHelpers.includes("$.find"));
-    assert.ok(json.script.injectedHelpers.includes("$.findAll"));
-    assert.equal(json.script.injectedHelpers.includes("$.text"), false);
+    assert.equal(json.script.injectedHelpers, undefined);
+    assert.equal(json.script.helperUsage, undefined);
+    assert.ok(json.script.compiledScriptBytes > 0);
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -5126,7 +5123,8 @@ test("figma REPL run_script_file supports generated image asset helper without r
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.deepEqual(json.diagnostics, []);
-    assert.equal(json.script.injectedHelpers.includes("$.imageAsset"), true);
+    assert.equal(json.script.injectedHelpers, undefined);
+    assert.equal(json.script.helperUsage, undefined);
     assert.equal(json.session.handles.$icon, "40:2");
     await mcpClient.close();
   } finally {
@@ -5507,9 +5505,14 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.equal(json.dryRun, false);
-    assert.equal(json.session.workspace.fileContext, "ExampleFigmaFileKey012");
+    assert.equal(json.session.workspace.fileDir, undefined);
+    assert.equal(json.session.workspace.fileContext, undefined);
+    assert.equal(json.session.workspace.fileKey, undefined);
+    assert.equal(json.session.workspace.taskSlug, undefined);
     assert.deepEqual(json.session.workspace.files, initJson.task.workspace.files);
     assert.equal(json.session.workspace.sessionDir, initJson.task.workspace.sessionDir);
+    assert.equal(json.session.workspace.scriptPath, initJson.task.workspace.scriptPath);
+    assert.equal(json.session.workspace.workspaceRef, "figma-repl://sessions/settings-workspace");
     assert.equal(json.session.workspace.intentSlug, undefined);
     assert.equal(json.session.workspace.resultFile, undefined);
     assert.equal(json.session.surface, "design");
@@ -5680,10 +5683,9 @@ test("figma REPL open accepts unified file input and auto-binds a workspace", as
   assert.equal(result.ok, true);
   assert.equal(result.session.fileKey, "ExampleFigmaFileKey012");
   assert.equal(result.session.surface, "design");
-  assert.equal(
-    result.session.workspace.fileDir,
-    resolve(process.cwd(), "figma-mcp", "ExampleFigmaFileKey012"),
-  );
+  assert.equal(result.session.workspace.fileDir, undefined);
+  assert.equal(result.session.workspace.sessionDir, resolve(process.cwd(), "figma-mcp", "ExampleFigmaFileKey012"));
+  assert.equal(result.session.workspace.workspaceRef, "figma-repl://sessions/open-file-workspace");
   assert.equal(result.session.workspace.files.inputFile, "open-file-workspace.figma.js");
   assert.equal(result.session.workspace.files.outputFile, undefined);
   assert.equal(result.session.workspace.intentSlug, undefined);
@@ -6224,6 +6226,8 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(scriptResult.ok, true);
     assert.equal(scriptResult.dryRun, true);
     assert.equal("content" in scriptResult, false);
+    assert.equal(scriptResult.script.injectedHelpers, undefined);
+    assert.equal(scriptResult.verbose, undefined);
 
     const upstreamResult = await repl.callUpstreamTool({
       toolName: "fake_upstream",
@@ -6234,12 +6238,18 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(upstreamResult.result, undefined);
     assert.equal(upstreamResult.text, undefined);
     assert.equal("content" in upstreamResult, false);
+    assert.equal(upstreamResult.verbose, undefined);
 
-    await repl.open({
+    const openResult = await repl.open({
       sessionId: "typed",
       connect: false,
       file: "https://www.figma.com/design/file123/Test",
     });
+    assert.equal(openResult.session.slug, undefined);
+    assert.equal(openResult.session.label, undefined);
+    assert.deepEqual(openResult.session.knownPages, {});
+    assert.equal(openResult.session.workspace.workspaceRef, "figma-repl://sessions/typed");
+    assert.equal(openResult.verbose, undefined);
     const assetResult = await repl.applyAssetManifest({
       sessionId: "typed",
       assets: [{ path: assetPath, target: "12:34", name: "Asset" }],
@@ -6253,6 +6263,7 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(assetResult.assets[0].arguments, undefined);
     assert.equal(assetResult.assets[0].result, undefined);
     assert.equal(assetResult.assets[0].upstream, undefined);
+    assert.equal(assetResult.verbose, undefined);
 
     const captureResult = await repl.captureNode({
       sessionId: "typed",
@@ -6266,6 +6277,7 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(captureResult.upstreamError.code, "CAPTURE_FAILED");
     assert.equal(captureResult.upstreamError.parsed, undefined);
     assert.equal(captureResult.upstreamError.text, undefined);
+    assert.equal(captureResult.verbose, undefined);
     await assert.rejects(
       readFile(plannedCapturePath, "utf8"),
       /ENOENT/,
@@ -6289,6 +6301,10 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(preparedResult.outputFiles, undefined);
     assert.equal(preparedResult.task.workspaceDir, undefined);
     assert.equal(preparedResult.task.taskDir, undefined);
+    assert.equal(preparedResult.session.workspace.root, undefined);
+    assert.equal(preparedResult.session.workspace.fileDir, undefined);
+    assert.equal(preparedResult.session.workspace.workspaceRef, "figma-repl://sessions/default");
+    assert.equal(preparedResult.verbose, undefined);
 
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool", "callTool"]);
   } finally {

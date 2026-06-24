@@ -217,11 +217,11 @@ export function createReplToolDescriptions(
 
 const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_open: toolOutputSchema({
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     diagnostics: arrayProperty("Session diagnostics."),
   }),
   figma_repl_eval: toolOutputSchema({
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     diagnostics: arrayProperty("Preflight diagnostics."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -234,7 +234,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
     script: scriptMetadataProperty("Compiled script metadata."),
     outputFiles: outputFilesProperty(
@@ -247,21 +247,21 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     assets: compactAssetResultsProperty("Compact per-asset upload/fill results."),
     validation: objectProperty("Optional target validation result."),
     outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
     failures: arrayProperty("Per-asset or validation failures."),
   }),
   figma_repl_download_assets: toolOutputSchema({
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     outputDir: stringProperty("Local directory containing per-target download folders."),
     targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
     failures: arrayProperty("Per-target download or upstream failures."),
     outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
   }),
   figma_repl_capture_node: toolOutputSchema({
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     imageFile: stringProperty("Absolute local PNG screenshot path when capture succeeded."),
     nodeId: stringProperty("Captured Figma node id."),
     bytes: numberProperty("Saved PNG file size in bytes."),
@@ -270,7 +270,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
   }),
   figma_repl_run_task_plan: toolOutputSchema({
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     steps: arrayProperty("Compact per-step execution summaries."),
     outputReferences: objectProperty("Plan-level map of step id to output file pointers for later workflow references."),
@@ -279,7 +279,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_repl_prepare_task: toolOutputSchema({
     task: objectProperty("Prepared task workspace and script file."),
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata; task.workspace remains the full prepared workspace shape."),
     taskChange: taskChangeProperty("Previous/current task file pointers and whether the session active task changed."),
     next: stringArrayProperty("Suggested next actions."),
   }),
@@ -298,7 +298,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     suggestions: guidanceSuggestionsProperty("Ranked task/card suggestions with compact context."),
   }),
   figma_repl_inspect: toolOutputSchema({
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     diagnostics: arrayProperty("Read-mode diagnostics."),
     target: stringProperty("Inspected target selector or node id when returned by the inspect mode."),
     summary: jsonProperty("Compact inspected node or selection summary when returned by the inspect mode."),
@@ -311,7 +311,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when inspection failed."),
   }),
   figma_repl_call_upstream_tool: toolOutputSchema({
-    session: objectProperty("Public local REPL session metadata."),
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -541,11 +541,9 @@ function scriptMetadataProperty(description: string): Record<string, unknown> {
     type: "object",
     description,
     properties: {
-      inputFile: stringProperty("Workspace-relative input script file when available."),
       scriptPath: stringProperty("Absolute script path used by the runner."),
-      bytes: numberProperty("Source script size in bytes."),
-      injectedHelpers: stringArrayProperty("Final injected helper/property list."),
-      helperUsage: helperUsageProperty("Structured helper usage report."),
+      expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface used for diagnostics and execution."),
+      compiledScriptBytes: numberProperty("Compiled wrapper size in bytes."),
     },
     additionalProperties: true,
   };

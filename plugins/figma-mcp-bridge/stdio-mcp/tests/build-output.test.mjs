@@ -65,6 +65,20 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.match(replDeclarations, /captureNode\(args: FigmaReplCaptureNodeArguments\): Promise<FigmaReplCaptureNodeResult>/);
   assert.match(replDeclarations, /runTaskPlan\(args: FigmaReplRunTaskPlanArguments\): Promise<FigmaReplRunTaskPlanResult>/);
   assert.match(replDeclarations, /callUpstreamTool\(args: FigmaReplCallUpstreamToolArguments\): Promise<FigmaReplCallUpstreamToolResult>/);
+  assert.match(apiDeclarations, /FigmaReplCompactScriptMetadata/);
+  assert.doesNotMatch(apiDeclarations, /FigmaReplVerboseScriptMetadata/);
+  assert.doesNotMatch(replDeclarations, /verboseResults/);
+  assert.doesNotMatch(replDeclarations, /verbose\?:/);
+  assert.match(replDeclarations, /script: FigmaReplCompactScriptMetadata;/);
+  const compactScriptMetadata = replDeclarations.match(
+    /export interface FigmaReplCompactScriptMetadata \{([\s\S]*?)\n\}/,
+  )?.[1];
+  assert.notEqual(compactScriptMetadata, undefined);
+  assert.match(compactScriptMetadata, /scriptPath: string;/);
+  assert.match(compactScriptMetadata, /compiledScriptBytes: number;/);
+  assert.doesNotMatch(compactScriptMetadata, /targetPageId/);
+  assert.doesNotMatch(compactScriptMetadata, /injectedHelpers/);
+  assert.doesNotMatch(compactScriptMetadata, /helperUsage/);
   assert.match(replDeclarations, /@internal[\s\S]*Internal wrapper builder[\s\S]*buildFigmaEvalScript/);
   assert.match(replDeclarations, /@internal[\s\S]*Internal-facing helper-selection utility[\s\S]*resolveFigmaReplScriptHelperSelection/);
   assert.equal(distFiles.includes("node-repl.js"), true);
