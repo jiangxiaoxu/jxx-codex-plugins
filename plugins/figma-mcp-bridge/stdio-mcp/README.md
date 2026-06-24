@@ -81,7 +81,9 @@ await upstream.close();
 
 ## REPL Response Shape
 
-Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and JSON debug/result file pointers are under `outputFiles.debugFile` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return upstream JSON as `upstream.payload` and non-JSON upstream output as `upstream.text`; asset manifests keep compact inline asset entries and write full per-asset upstream details only to generated debug files.
+Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and JSON debug/result file pointers are under `outputFiles.debugFile` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return public upstream JSON as `upstream.payload` and non-JSON upstream output as `upstream.text`; eval/script payloads containing bridge-internal `__figmaRepl` metadata are unwrapped to their business result, while raw official payloads without `__figmaRepl` remain unchanged. Asset manifests keep compact inline asset entries and write full per-asset upstream details only to generated debug files.
+
+`ok` fields are layered. Top-level `ok` reports local wrapper/tool completion, `upstream.ok` reports official upstream MCP call success, and fields such as `upstream.payload.ok` are raw business evidence from the executed script or upstream tool payload. A nested business `ok: false` does not by itself make the wrapper result fail when the local wrapper and upstream call completed.
 
 Executed `figma_repl_run_script_file` result files use the same `upstream` envelope and do not duplicate upstream JSON into `raw`.
 

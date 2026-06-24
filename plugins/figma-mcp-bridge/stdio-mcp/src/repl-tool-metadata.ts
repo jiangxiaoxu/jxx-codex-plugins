@@ -223,7 +223,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_eval: toolOutputSchema({
     session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     diagnostics: arrayProperty("Preflight diagnostics."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback. upstream.ok reports official upstream call success; upstream.payload.*.ok remains raw business evidence. Bridge-internal __figmaRepl metadata is removed from public eval payloads."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -243,7 +243,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON payload or text fallback."),
+    upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON payload or text fallback. upstream.ok reports official upstream call success; upstream.payload.*.ok remains raw business evidence. Bridge-internal __figmaRepl metadata is removed from public script payloads."),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
@@ -313,7 +313,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_call_upstream_tool: toolOutputSchema({
     session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback. upstream.ok reports official upstream call success; upstream.payload.*.ok remains raw business evidence. Raw official payloads without __figmaRepl remain unchanged."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -485,8 +485,8 @@ function upstreamEnvelopeProperty(description: string): Record<string, unknown> 
     description,
     properties: {
       kind: enumProperty(["json", "text", "unknown"], "Upstream output representation kind."),
-      ok: booleanProperty("Whether the upstream envelope represents a successful upstream result."),
-      payload: jsonProperty("Parsed upstream JSON payload when kind is json and the field is not omitted inline."),
+      ok: booleanProperty("Whether the official upstream MCP call completed without a parsed upstream failure; this is separate from any upstream.payload.*.ok business evidence."),
+      payload: jsonProperty("Public parsed upstream JSON payload when kind is json and the field is not omitted inline. Payloads containing bridge-internal __figmaRepl metadata are unwrapped to their business result; raw official payloads without __figmaRepl remain unchanged. Nested ok fields are raw business evidence and do not decide wrapper success."),
       text: stringProperty("Upstream text output when kind is text and the field is not omitted inline."),
       upstreamError: objectProperty("Normalized upstream error when available."),
     },
@@ -706,7 +706,7 @@ function toolOutputSchema(properties: Record<string, unknown>): Record<string, u
   return {
     type: "object",
     properties: {
-      ok: booleanProperty("Whether the local Figma REPL tool completed successfully."),
+      ok: booleanProperty("Whether the local Figma REPL wrapper/tool completed successfully; upstream.ok reports official upstream call success, while upstream.payload.*.ok is raw business evidence."),
       ...properties,
     },
     required: ["ok"],

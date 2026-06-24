@@ -4698,10 +4698,6 @@ function taskPlanStepSucceeded(result: Record<string, unknown>): boolean {
   if (result.ok === false) {
     return false;
   }
-  const nestedResult = asRecord(runScriptUpstreamPayload(result));
-  if (nestedResult.ok === false) {
-    return false;
-  }
   return true;
 }
 
@@ -4976,7 +4972,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
-      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script parsed upstream JSON stays in upstream.payload, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
+      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.payload, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
       "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
     ],
   };
@@ -5215,7 +5211,12 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, and compact script metadata while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. Asset manifests and download_assets keep compact inline entries and write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
+      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, layered ok semantics, and public upstream payload shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, remove bridge-internal __figmaRepl metadata from public eval/script payloads, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. Raw official upstream payloads without __figmaRepl remain unchanged. Asset manifests and download_assets keep compact inline entries and write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
+      layeredOk: {
+        topLevel: "Top-level ok reports local wrapper/tool completion.",
+        upstreamOk: "upstream.ok reports whether the official upstream MCP call completed without a parsed upstream failure.",
+        upstreamPayloadOk: "upstream.payload.*.ok is raw business evidence from the executed Figma script or upstream tool payload; it does not decide wrapper success. Bridge-internal __figmaRepl metadata is used only for session updates and is not exposed in public upstream payloads.",
+      },
     },
     toolTiers: createToolTierPayload(),
     patterns: {
@@ -5265,7 +5266,19 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         inlineResultLimit: "Advanced payload-size control in bytes for large inline fields. Defaults to 4 KB and is capped at 30 KB; omitted upstream fields stay available in outputFiles.upstreamFile.",
       },
       responseExamples: {
-        jsonSuccess: { ok: true, dryRun: false, upstream: { kind: "json", ok: true, payload: { ok: true, result: {} } } },
+        jsonSuccess: { ok: true, dryRun: false, upstream: { kind: "json", ok: true, payload: {} } },
+        layeredOkBusinessFalse: {
+          ok: true,
+          dryRun: false,
+          upstream: {
+            kind: "json",
+            ok: true,
+            payload: {
+              ok: false,
+              reason: "business validation evidence only",
+            },
+          },
+        },
         textOutput: { ok: true, dryRun: false, upstream: { kind: "text", ok: true, text: "..." } },
         inlinePayloadOmitted: {
           ok: true,
@@ -5967,12 +5980,29 @@ function upstreamEnvelope(
   const ok = !parsed.upstreamError;
   if (parsed.json !== undefined) {
     return includePayload
-      ? { kind: "json", ok, payload: parsed.json }
+      ? { kind: "json", ok, payload: shapePublicUpstreamPayload(parsed.json) }
       : { kind: "json", ok };
   }
   return includePayload
     ? { kind: "text", ok, text: parsed.text || undefined }
     : { kind: "text", ok };
+}
+
+function shapePublicUpstreamPayload(value: unknown): unknown {
+  const record = asRecord(value);
+  if (!Object.prototype.hasOwnProperty.call(record, "__figmaRepl")) {
+    return value;
+  }
+  if (Object.prototype.hasOwnProperty.call(record, "result")) {
+    return record.result;
+  }
+  const payload: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(record)) {
+    if (key !== "__figmaRepl" && key !== "ok") {
+      payload[key] = item;
+    }
+  }
+  return Object.keys(payload).length > 0 ? payload : undefined;
 }
 
 function publicSession(
