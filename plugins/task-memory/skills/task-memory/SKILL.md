@@ -4,7 +4,7 @@ description: Maintain durable task state and handoff reports for wide-scope sear
 ---
 
 # Task Memory
-Task memory keeps long work resumable without chat history. It lives under `--workspace/task-memory/task-<task-id>/` with `task_state.md`, `reports/`, `reports/archive/`, and `artifacts/`. `init` creates the task folder, using `-001`, `-002`, etc. when needed, and prints `task_id=<actual-task-id>`; use that id afterward.
+Task memory keeps long work resumable without chat history. It lives under `--workspace/task-memory/<task-id>/` with `task_state.md`, `reports/`, `reports/archive/`, and `artifacts/`. `task-id` must start with `task-`, such as `task-thumbnail-cache`; the helper uses that id as the folder name and does not add another prefix. `init` creates the task folder, using `-001`, `-002`, etc. when needed, and prints `task_id=<actual-task-id>`; use that id afterward.
 
 ## Activation And Instruction Loading
 After this `SKILL.md` is loaded, use the loaded skill instructions from the current context. Do not reread this file only because the task-memory skill activates again. Reread only when the current context does not contain the needed skill text.
@@ -41,6 +41,7 @@ Only the task owner may run `init`, edit `task_state.md`, absorb, or archive. Ha
 Resolve the helper script as `<skill_dir>/scripts/task_memory.py`, with `<skill_dir>` equal to the directory containing this `SKILL.md`. The script is not at the plugin version root. Use an absolute script path after resolution, especially from installed cache locations. Always pass absolute `--workspace`; normal handoff briefs should not expose script paths or workspace args.
 
 `python <skill_dir>/scripts/task_memory.py {init,status,create-report,archive-report} ...`
+- `--task-id` is normalized to lowercase hyphen-case, must start with `task-`, and is used directly as `task-memory/<task-id>/`; the helper does not add a `task-` prefix.
 - `init --workspace <absolute-workspace> --task-id <task-id>` creates the task memory folder.
 - `status --workspace <absolute-workspace> --task-id <task-id>` prints task paths and live/unarchived report filenames without side effects; missing `reports/` or `archive/` are treated as empty.
 - `create-report --workspace <absolute-workspace> --task-id <task-id> --name <report-name>` creates one live/unarchived report template with `Status: in-progress` and `Last updated`.
@@ -63,7 +64,7 @@ Validation, review, build, test, and state-check results are non-durable. Do not
 `Goal` stores objective/success criteria. `State` stores phase, durable understanding, completed work, decisions, and high-signal evidence. `Open` stores active questions, blockers, risks, and handoff-ready gaps. `Reports` stores only pending/unabsorbed report notes; no absorbed/archive history and no `Validation` section.
 
 ## Artifact Storage
-After task memory is initialized, store agent-created task temporary assets in `--workspace/task-memory/task-<task-id>/artifacts/` unless the user or tool requires another location. Use this directory for files the agent intentionally creates for the current task, such as generated images, manual downloads, temporary cloned repositories, extracted archives, screenshots, scratch scripts, and intermediate bundles that may be useful for cleanup, handoff, resume, or audit.
+After task memory is initialized, store agent-created task temporary assets in `--workspace/task-memory/<task-id>/artifacts/` unless the user or tool requires another location. Use this directory for files the agent intentionally creates for the current task, such as generated images, manual downloads, temporary cloned repositories, extracted archives, screenshots, scratch scripts, and intermediate bundles that may be useful for cleanup, handoff, resume, or audit.
 
 Do not move, copy, or redirect normal outputs produced by existing repo tools just to centralize them. Build/test logs, compiler caches, package-manager caches, coverage output, framework-generated files, and other command side effects should stay where the tool normally writes them unless the user asks, the command explicitly supports a harmless output path, or the agent is creating a separate task-specific capture file.
 
@@ -97,14 +98,14 @@ Meaningful work starts once the child reads task/repo/source/config/docs, runs a
 ### Required Handoff Preamble
 For report-required handoffs, the spawned agent message must include all of these required elements. Markdown code formatting around commands is encouraged and still satisfies the gate:
 - `Use $task-memory`
-- `Task memory: task-id=<task-id>`
+- `Task memory: task-id=task-<name>`
 - `report name=<report-name>`
 - Instruction to run `status`, read `task_state`, then run `create-report` before substantive work.
 - Instruction to return only report path plus status.
 
 For command-only handoffs, the spawned agent message must include all of these required elements:
 - `Use $task-memory`
-- `Task memory: task-id=<task-id>`
+- `Task memory: task-id=task-<name>`
 - Instruction not to run `create-report` or write a report.
 - Exact command or command family
 - Expected pass/fail output shape
@@ -142,7 +143,7 @@ Command-only handoffs may run `status` only if task context is needed. They neve
 - `Status: stopped`, or externally stopped/cancelled/terminal: task owner reviews stable findings, moves still-relevant risks/actions to `Open`, discards unstable partial content, and archives if appropriate. External lifecycle states do not add report `Status` values.
 - Malformed, heading-incomplete, or half-written partial report: treat as `Status: in-progress` until the handoff is terminal. Do not absorb it while the child can still write.
 
-Absorb from `Conclusion`, `Absorbable Findings`, and `Open or Unresolved`. Preserve stable conclusions, decisions, risks, exact evidence pointers (`path:line-line`, symbols, config keys, API fields, source URLs, error signatures), one anti-reopen fact, and remaining blockers/actions. Before archiving, each durable item must be in `task_state.md`, intentionally discarded as non-durable, or left pending. Discard raw stdout, diffs, routine checks, repeated searches, reasoning traces, dead ends, and duplicates after capturing the conclusion. A report is absorbed only when `task_state.md` is enough to continue without reopening/regenerating it.
+Absorb from `Conclusion`, `Absorbable Findings`, and `Open or Unresolved`. Preserve stable conclusions, decisions, risks, exact evidence pointers (`path:line-line`, symbols, config keys, API fields, source URLs, error signatures), one anti-reopen fact, and remaining blockers/actions. Before archiving, each durable item must be in `task_state.md`, intentionally discarded as non-durable, or left pending. Discard raw stdout, diffs, routine checks, repeated searches, reasoning traces, dead ends, duplicates, per-version chronology, and routine validation history after capturing the conclusion. A report is absorbed only when `task_state.md` is enough to continue without reopening/regenerating it.
 
 Reports should be absorption-ready summaries, not audit logs. Use `None`, `N/A`, or `Not checked` when needed; prefer 1-5 high-signal bullets. `Status` is only `in-progress`, `completed`, `blocked`, or `stopped`; `Last updated` is the latest meaningful update time.
 
@@ -170,6 +171,8 @@ Summary is a task-owner rewrite of `task_state.md`, not a report workflow. Befor
 
 If options are not provided, default to `Balanced` summary, `Hard pointers` evidence, and `Current state only` history. Preserve `Goal`, `State`, `Open`, and `Reports`; keep active blockers, pending notes, next actions, unexpected side effects, and evidence for open decisions. Remove resolved blockers/risks/actions, stale pending notes, absorbed history, and validation/review/state-check history unless an active underlying issue remains.
 
+Compress verbose histories into a resumable decision/state summary. Keep final contract state, version boundaries, durable decisions, current behavior facts, known pitfalls that prevent reopening resolved paths, and future open items. Delete per-version ledger entries, chronological work logs, repeated attempts, routine validation history, and obsolete intermediate states unless they explain a still-active compatibility boundary, blocker, or decision.
+
 Resume after compaction/handoff/pause: run `status`; read `task_state.md`; check live/unarchived reports and pending notes including report `Status`; absorb eligible reports or review stopped partials; use still-running `in-progress` reports only to wait/follow up/stop/take over; archive in-progress only after the handoff is no longer running. Continue from `Goal`, `State`, `Open`, live report state, and pending notes. Archived reports are best-effort audit copies, not durable state; preserve resume-critical content in `task_state.md` before archiving and do not rely on archived reports during normal resume.
 
 ## Brief Templates
@@ -177,28 +180,28 @@ Choose report-required for exploration, investigation, mapping, impact analysis,
 
 Report-required handoff:
 ```text
-Use $task-memory for a report-required handoff to a subagent. Task memory: task-id=<task-id>; report name=<short report name>.
+Use $task-memory for a report-required handoff to a subagent. Task memory: task-id=task-<name>; report name=<short report name>.
 Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Keep required report headings intact on every save. <Assignment and boundaries.>
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status; do not repeat report content in chat. If blocked, write the blocker into the partial report first.
 ```
 
 Explorer handoff:
 ```text
-Use $task-memory for a report-required handoff to an explorer subagent. Task memory: task-id=<task-id>; report name=<short report name>.
+Use $task-memory for a report-required handoff to an explorer subagent. Task memory: task-id=task-<name>; report name=<short report name>.
 Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Own the evidence chain for <investigation question> within <boundaries>; inspect related code/config/docs/tests and external sources when allowed and needed.
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status; do not repeat report content in chat. If blocked, write the blocker into the partial report first.
 ```
 
 Implementation handoff:
 ```text
-Use $task-memory for a report-required implementation handoff to a worker subagent. Task memory: task-id=<task-id>; report name=<short report name>.
+Use $task-memory for a report-required implementation handoff to a worker subagent. Task memory: task-id=task-<name>; report name=<short report name>.
 Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Own the implementation for <goal> within <boundaries>; include related code/tests/config/public contracts/docs, and validate with <checks>.
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status. If blocked by non-validation issue or material scope change, write it and completed work into the report; validation status stays in chat unless it reveals an independently actionable issue.
 ```
 
 Command-only handoff:
 ```text
-Use $task-memory for a command-only handoff. Task memory: task-id=<task-id>.
+Use $task-memory for a command-only handoff. Task memory: task-id=task-<name>.
 Exact command or command family: <command family / exact command scope>. Expected pass/fail output shape: <pass/fail, exit code when available, and shortest useful output excerpt or error signature>.
 Run only the assigned command scope. Use `status` only if task context is needed. Do not run `create-report` or write a report.
 Return pass/fail, exit code when available, and the shortest useful output excerpt or error signature.

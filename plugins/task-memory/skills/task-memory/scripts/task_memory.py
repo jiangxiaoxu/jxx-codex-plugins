@@ -16,6 +16,13 @@ def normalize_token(value: str, field_name: str) -> str:
     return token
 
 
+def normalize_task_id(value: str) -> str:
+    token = normalize_token(value, "--task-id")
+    if not token.startswith("task-"):
+        raise ValueError("--task-id must start with task-")
+    return token
+
+
 def resolve_workspace(value: str) -> Path:
     workspace = Path(value).expanduser().resolve()
     if not workspace.exists() or not workspace.is_dir():
@@ -28,7 +35,7 @@ def task_memory_root_path(workspace: Path) -> Path:
 
 
 def task_dir_path(workspace: Path, normalized_task_id: str) -> Path:
-    return task_memory_root_path(workspace) / f"task-{normalized_task_id}"
+    return task_memory_root_path(workspace) / normalized_task_id
 
 
 def available_task_names(task_parent: Path) -> list[str]:
@@ -43,7 +50,7 @@ def task_dir_not_found_hint(workspace: Path) -> str:
 
 
 def resolve_task_dir(workspace: Path, task_id: str, must_exist: bool = True) -> Path:
-    normalized_task_id = normalize_token(task_id, "--task-id")
+    normalized_task_id = normalize_task_id(task_id)
     task_dir = task_dir_path(workspace, normalized_task_id)
     if task_dir.is_dir() or not must_exist:
         return task_dir
@@ -216,7 +223,7 @@ def next_archive_path(archive_dir: Path, report_name: str) -> Path:
 
 def command_init(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
-    task_id = normalize_token(args.task_id, "--task-id")
+    task_id = normalize_task_id(args.task_id)
     actual_task_id, task_dir = allocate_task_dir(workspace, task_id)
     reports_dir = reports_dir_path(task_dir)
     archive_dir = archive_dir_path(task_dir)
@@ -225,7 +232,7 @@ def command_init(args: argparse.Namespace) -> int:
 
     archive_dir.mkdir(parents=True)
     artifacts_dir.mkdir()
-    task_state.write_text(task_state_template(f"task-{actual_task_id}"), encoding="utf-8", newline="\n")
+    task_state.write_text(task_state_template(actual_task_id), encoding="utf-8", newline="\n")
 
     print(f"task_id={actual_task_id}")
     print(f"task_dir={task_dir}")
@@ -288,18 +295,18 @@ def command_archive_report(args: argparse.Namespace) -> int:
 
 
 def add_common_task_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--workspace", required=True, help="Absolute workspace path containing the task-memory/task-<task-id> folders.")
-    parser.add_argument("--task-id", required=True, help="Workspace-unique task id, normalized to lowercase hyphen-case.")
+    parser.add_argument("--workspace", required=True, help="Absolute workspace path containing task-memory/<task-id> folders.")
+    parser.add_argument("--task-id", required=True, help="Workspace-unique task id, normalized to lowercase hyphen-case and required to start with task-.")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Manage task-memory/task-<task-id>/task_state.md, reports/, reports/archive/, and artifacts/.",
+        description="Manage task-memory/<task-id>/task_state.md, reports/, reports/archive/, and artifacts/.",
         epilog="""Examples:
-  python <skill_dir>/scripts/task_memory.py init --workspace <absolute-workspace> --task-id <task-id>
-  python <skill_dir>/scripts/task_memory.py status --workspace <absolute-workspace> --task-id <task-id>
-  python <skill_dir>/scripts/task_memory.py create-report --workspace <absolute-workspace> --task-id <task-id> --name thumbnail-cache-check
-  python <skill_dir>/scripts/task_memory.py archive-report --workspace <absolute-workspace> --task-id <task-id> --report <report-filename>
+  python <skill_dir>/scripts/task_memory.py init --workspace <absolute-workspace> --task-id task-<name>
+  python <skill_dir>/scripts/task_memory.py status --workspace <absolute-workspace> --task-id task-<name>
+  python <skill_dir>/scripts/task_memory.py create-report --workspace <absolute-workspace> --task-id task-<name> --name thumbnail-cache-check
+  python <skill_dir>/scripts/task_memory.py archive-report --workspace <absolute-workspace> --task-id task-<name> --report <report-filename>
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
