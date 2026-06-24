@@ -89,4 +89,5 @@ export declare function resolveWorkspaceFile(baseDir: string, fileName: string, 
 export declare function normalizeTaskScriptName(value: unknown, taskSlug: string): string;
 export declare function resultFileNameForScript(scriptName: string): string;
 export declare function writeTaskFile(path: string, content: string, overwrite: boolean): Promise<FilePointerMetadata>;
+export declare function isMissingFileError(error: unknown): boolean;
 export {};

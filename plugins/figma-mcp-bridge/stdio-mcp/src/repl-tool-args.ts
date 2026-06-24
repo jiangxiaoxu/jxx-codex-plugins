@@ -112,6 +112,21 @@ export interface FigmaReplCallUpstreamToolArguments {
   inlineResultLimit?: number;
 }
 
+export interface FigmaReplGetMetadataArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  file?: string;
+  cwd?: string;
+  dirName?: string;
+  target?: unknown;
+  nodeId?: string;
+  refresh?: boolean;
+  inlineResultLimit?: number;
+  clientLanguages?: string;
+  clientFrameworks?: string;
+}
+
 export interface FigmaReplLookupArguments {
   [key: string]: unknown;
   title?: string;
@@ -373,6 +388,22 @@ export function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamTool
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, ["sessionId", "toolName"]);
   assertOptionalRecord(record, "arguments");
+  return record;
+}
+
+export function asGetMetadataArgs(args: unknown): FigmaReplGetMetadataArguments {
+  const record = parseToolArgs<FigmaReplGetMetadataArguments>(args);
+  assertRemovedFileReferenceFields(record);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile", "metadataFile"]);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "file",
+    "cwd",
+    "dirName",
+    "nodeId",
+    "clientLanguages",
+    "clientFrameworks",
+  ]);
   return record;
 }
 

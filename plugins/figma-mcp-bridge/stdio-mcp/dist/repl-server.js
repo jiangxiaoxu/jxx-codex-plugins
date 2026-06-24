@@ -18706,13 +18706,14 @@ function countTokens(tokens) {
 }
 async function resolveReferenceRoot() {
   const moduleDir = dirname3(fileURLToPath2(import.meta.url));
+  const cwd = typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : moduleDir;
   const candidates = [
     resolve3(moduleDir, "../skills/figma-router/references"),
     resolve3(moduleDir, "../../skills/figma-router/references"),
     resolve3(moduleDir, "../../../skills/figma-router/references"),
-    resolve3(process.cwd(), "skills/figma-router/references"),
-    resolve3(process.cwd(), "plugins/figma-mcp-bridge/skills/figma-router/references"),
-    resolve3(process.cwd(), "../skills/figma-router/references")
+    resolve3(cwd, "skills/figma-router/references"),
+    resolve3(cwd, "plugins/figma-mcp-bridge/skills/figma-router/references"),
+    resolve3(cwd, "../skills/figma-router/references")
   ];
   for (const candidate of candidates) {
     try {
@@ -26314,6 +26315,21 @@ function asCallUpstreamToolArgs(args) {
   assertOptionalRecord(record2, "arguments");
   return record2;
 }
+function asGetMetadataArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedFileReferenceFields(record2);
+  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile", "metadataFile"]);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "file",
+    "cwd",
+    "dirName",
+    "nodeId",
+    "clientLanguages",
+    "clientFrameworks"
+  ]);
+  return record2;
+}
 function asLookupArgs(args) {
   const record2 = parseToolArgs(args);
   assertOptionalEnum(record2, "kind", FIGMA_REPL_LOOKUP_KINDS);
@@ -26554,6 +26570,7 @@ var LOCAL_REPL_TOOL_NAMES = [
   "figma_repl_prepare_task",
   "figma_repl_guidance",
   "figma_repl_inspect",
+  "figma_repl_get_metadata",
   "figma_repl_call_upstream_tool",
   "figma_repl_lookup"
 ];
@@ -26590,7 +26607,7 @@ function normalizeTaskPlanStepType(value) {
 
 // src/repl-tool-metadata.ts
 var DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4e3;
-var MAX_INLINE_RESULT_LIMIT_BYTES = 3e4;
+var MAX_INLINE_RESULT_LIMIT_BYTES = 1e4;
 function createReplToolDescriptions(options) {
   const tools = [
     {
@@ -26620,7 +26637,7 @@ function createReplToolDescriptions(options) {
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
         handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code.")
       }, ["code"])
     },
@@ -26637,7 +26654,7 @@ function createReplToolDescriptions(options) {
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
-        inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.payload/upstream.text only. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile.")
+        inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.result/upstream.text only. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       })
     },
     {
@@ -26749,15 +26766,34 @@ function createReplToolDescriptions(options) {
       })
     },
     {
+      name: "figma_repl_get_metadata",
+      description: "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata and converts returned XML into a compact JSON node tree. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { title, sessionId, file?, target? }. Use inspect/style afterward for fills, text, and visual tokens.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
+        file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
+        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
+        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-mcp."),
+        target: {
+          description: 'Optional metadata root. Accepts a raw node id, node URL, local handle like $hero, or { handle:"$hero" }. Dynamic selectors such as $selection are not resolved here.'
+        },
+        nodeId: stringProperty("Optional raw Figma node id. Prefer target for handles or node URLs."),
+        clientLanguages: stringProperty("Optional official get_metadata clientLanguages hint. Defaults to unknown."),
+        clientFrameworks: stringProperty("Optional official get_metadata clientFrameworks hint. Defaults to unknown."),
+        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for converted metadata.json. Defaults to 4 KB and is capped at 10 KB; 0 forces metadata.json to outputFiles.metadataFile only.")
+      })
+    },
+    {
       name: "figma_repl_call_upstream_tool",
-      description: "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}. Do not use for use_figma, get_screenshot, upload_assets, or download_assets because dedicated wrappers cover them.",
+      description: "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, or download_assets because dedicated wrappers cover them.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
         toolName: stringProperty("Official upstream Figma MCP tool name to call for an uncovered capability. Local figma_repl_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile.")
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, ["toolName", "arguments"])
     },
     {
@@ -26783,14 +26819,14 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_eval: toolOutputSchema({
     session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     diagnostics: arrayProperty("Preflight diagnostics."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback. upstream.ok reports official upstream call success; upstream.payload.*.ok remains raw business evidence. Bridge-internal __figmaRepl metadata is removed from public eval payloads."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
       ["debugFile", "upstreamFile"]
     ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit.")
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
@@ -26803,8 +26839,8 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON payload or text fallback. upstream.ok reports official upstream call success; upstream.payload.*.ok remains raw business evidence. Bridge-internal __figmaRepl metadata is removed from public script payloads."),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit.")
+    upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public script results."),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
     session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
@@ -26870,17 +26906,31 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     validatedNodeIds: stringArrayProperty("Validated node ids for mode=validate."),
     upstreamError: objectProperty("Normalized upstream failure details when inspection failed.")
   }),
+  figma_repl_get_metadata: toolOutputSchema({
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    fileKey: stringProperty("Figma file key sent to official get_metadata."),
+    nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
+    metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
+    upstream: upstreamEnvelopeProperty("Compact upstream status envelope. Raw XML text is not returned inline by this wrapper."),
+    upstreamError: objectProperty("Normalized upstream or XML parse failure details when metadata conversion failed."),
+    primaryFix: stringProperty("Suggested primary repair when upstream execution failed."),
+    outputFiles: outputFilesProperty(
+      "Files written for metadata conversion when the converted JSON tree exceeds inlineResultLimit.",
+      ["metadataFile"]
+    ),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when metadata.json exceeds the byte limit.")
+  }),
   figma_repl_call_upstream_tool: toolOutputSchema({
     session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback. upstream.ok reports official upstream call success; upstream.payload.*.ok remains raw business evidence. Raw official payloads without __figmaRepl remain unchanged."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
       ["debugFile", "upstreamFile"]
     ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit.")
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
   }),
   figma_repl_lookup: toolOutputSchema({
     results: arrayProperty("Ranked compact corpus snippets."),
@@ -27008,7 +27058,7 @@ function outputFilePointerDescription(key) {
     case "upstreamFile":
       return "Upstream envelope sidecar file pointer.";
     case "metadataFile":
-      return "Capture metadata JSON file pointer.";
+      return "Metadata JSON file pointer.";
     case "compiledScriptFile":
       return "Failure-only compiled script wrapper file pointer.";
     default:
@@ -27021,8 +27071,8 @@ function upstreamEnvelopeProperty(description) {
     description,
     properties: {
       kind: enumProperty(["json", "text", "unknown"], "Upstream output representation kind."),
-      ok: booleanProperty("Whether the official upstream MCP call completed without a parsed upstream failure; this is separate from any upstream.payload.*.ok business evidence."),
-      payload: jsonProperty("Public parsed upstream JSON payload when kind is json and the field is not omitted inline. Payloads containing bridge-internal __figmaRepl metadata are unwrapped to their business result; raw official payloads without __figmaRepl remain unchanged. Nested ok fields are raw business evidence and do not decide wrapper success."),
+      ok: booleanProperty("Effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false."),
+      result: jsonProperty("Public parsed upstream JSON result when kind is json and the field is not omitted inline. Payloads containing bridge-internal __figmaRepl metadata are unwrapped to their business result; raw official JSON with top-level ok consumes and removes that ok, while raw JSON without top-level ok remains unchanged. When ok=false, result.source preserves failure provenance as call or business."),
       text: stringProperty("Upstream text output when kind is text and the field is not omitted inline."),
       upstreamError: objectProperty("Normalized upstream error when available.")
     },
@@ -27043,7 +27093,7 @@ function inlineResultLimitProperty(description) {
         items: {
           type: "object",
           properties: {
-            field: stringProperty("Omitted result field path, for example upstream.payload."),
+            field: stringProperty("Omitted result field path, for example upstream.result."),
             bytes: numberProperty("Omitted field size in bytes."),
             limit: numberProperty("Effective inline byte limit."),
             bytesHuman: stringProperty("Human-readable omitted field size."),
@@ -27218,7 +27268,7 @@ function toolOutputSchema(properties) {
   return {
     type: "object",
     properties: {
-      ok: booleanProperty("Whether the local Figma REPL wrapper/tool completed successfully; upstream.ok reports official upstream call success, while upstream.payload.*.ok is raw business evidence."),
+      ok: booleanProperty("Whether the local Figma REPL wrapper/tool completed successfully; upstream.ok reports effective upstream success after consuming public upstream result ok fields."),
       ...properties
     },
     required: ["ok"],
@@ -27232,6 +27282,12 @@ import { tmpdir } from "node:os";
 import { basename, dirname as dirname4, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve4 } from "node:path";
 var TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 var DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
+function readProcessEnv(name) {
+  return typeof process === "undefined" ? void 0 : process.env?.[name];
+}
+function defaultTaskWorkspaceRoot() {
+  return readProcessEnv(TASK_WORKSPACE_ROOT_ENV) ?? resolve4(tmpdir(), "figma-repl-mcp", "tasks");
+}
 function createScriptOutputWriter(args, session) {
   const files = resolveScriptOutputFiles(args, session);
   return {
@@ -27398,7 +27454,7 @@ function resolveTaskPlanResultFile(args, planPath, session) {
       "debugFile"
     );
   }
-  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve4(tmpdir(), "figma-repl-mcp", "tasks");
+  const root = defaultTaskWorkspaceRoot();
   if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
@@ -27571,7 +27627,7 @@ async function removeFileIfExists(path) {
   try {
     await unlink(path);
   } catch (error2) {
-    if (isNodeError(error2) && error2.code === "ENOENT") {
+    if (isMissingFileError(error2)) {
       return;
     }
     throw error2;
@@ -27598,6 +27654,13 @@ function compiledScriptSourceDescription(args, session) {
 function isNodeError(error2) {
   return error2 instanceof Error && "code" in error2;
 }
+function isMissingFileError(error2) {
+  if (isNodeError(error2) && error2.code === "ENOENT") {
+    return true;
+  }
+  const message = error2 instanceof Error ? error2.message : String(error2);
+  return /\bENOENT\b/.test(message);
+}
 function textFileMetadata(path, content) {
   return {
     path,
@@ -27621,7 +27684,7 @@ function resolveTaskWorkspace(options) {
     return explicitWorkspace;
   }
   const explicitRoot = asOptionalString(options.taskRoot);
-  const root = explicitRoot ?? process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve4(tmpdir(), "figma-repl-mcp", "tasks");
+  const root = explicitRoot ?? defaultTaskWorkspaceRoot();
   if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
@@ -27807,6 +27870,15 @@ function asOptionalString(value) {
 
 // src/repl-server.ts
 var FIGMA_REPL_DEFAULT_SESSION_ID = "default";
+function readProcessEnv2(name) {
+  return typeof process === "undefined" ? void 0 : process.env?.[name];
+}
+function currentWorkingDirectory() {
+  return typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : tmpdir2();
+}
+function defaultTaskWorkspaceRoot2() {
+  return readProcessEnv2(TASK_WORKSPACE_ROOT_ENV) ?? resolve5(tmpdir2(), "figma-repl-mcp", "tasks");
+}
 var resolveFigmaReplScriptHelperSelection2 = resolveFigmaReplScriptHelperSelection;
 var DEFAULT_EVAL_TOOL_NAME = "use_figma";
 var DEFAULT_EVAL_ARGUMENT_NAME = "code";
@@ -27832,10 +27904,11 @@ var FIGMA_REPL_EVAL_COMMON_HELPER_NAMES = [
 ];
 var DEFAULT_HISTORY_LIMIT = 50;
 var DEFAULT_INLINE_RESULT_LIMIT = 4e3;
-var MAX_INLINE_RESULT_LIMIT = 3e4;
+var MAX_INLINE_RESULT_LIMIT = 1e4;
 var UPLOAD_ASSETS_TOOL_NAME = "upload_assets";
 var DOWNLOAD_ASSETS_TOOL_NAME = "download_assets";
 var SCREENSHOT_TOOL_NAME = "get_screenshot";
+var GET_METADATA_TOOL_NAME = "get_metadata";
 function createFigmaReplSessionStore(options = {}) {
   const defaultSessionId = sanitizeSessionId(
     options.defaultSessionId ?? FIGMA_REPL_DEFAULT_SESSION_ID
@@ -27947,6 +28020,10 @@ function createFigmaReplClient(options = {}) {
     inspect: async (args = {}) => parseJsonToolResult(
       await handleInspect(asInspectArgs(withDefaultTitle(args, "Inspect Figma REPL target")), runtime)
     ),
+    getMetadata: async (args) => executeGetMetadata(
+      asGetMetadataArgs(withDefaultTitle(args, "Read Figma metadata as JSON")),
+      runtime
+    ),
     callUpstreamTool: async (args) => executeCallUpstreamTool(
       asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool")),
       runtime
@@ -28025,6 +28102,11 @@ function createFigmaReplMcpServer(options = {}) {
       case "figma_repl_inspect":
         return handleInspect(
           asInspectArgs(withMcpDefaultTitle(rawArgs, "Inspect Figma REPL target")),
+          runtime
+        );
+      case "figma_repl_get_metadata":
+        return handleGetMetadata(
+          asGetMetadataArgs(withMcpDefaultTitle(rawArgs, "Read Figma metadata as JSON")),
           runtime
         );
       case "figma_repl_call_upstream_tool":
@@ -28238,7 +28320,7 @@ async function handleEval(args, runtime) {
     ...upstreamFailureFields(parsed)
   };
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
-  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.payload", "upstream.text"]);
+  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
   const needsOutputFile = parsed.upstreamError || isRecord4(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return makeJsonToolResult(limitedPayload);
@@ -28281,7 +28363,7 @@ function resolveEvalOutputFile(session) {
   if (session.workspace) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
   }
-  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve5(tmpdir2(), "figma-repl-mcp", "tasks");
+  const root = defaultTaskWorkspaceRoot2();
   if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
@@ -28306,13 +28388,29 @@ async function writeCallUpstreamResultFiles(options) {
   outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstream));
   return outputFiles;
 }
+async function writeMetadataFile(options) {
+  const metadataFile = metadataResultFilePath(options.session, options.args.title);
+  return responseFilePointer(await writeJsonFile(metadataFile, options.metadata));
+}
+function metadataResultFilePath(session, title) {
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
+  const fileName = `${slugifyTaskName2(title ?? "metadata")}-${timestamp}.metadata.json`;
+  if (session.workspace) {
+    return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "metadataFile");
+  }
+  const root = defaultTaskWorkspaceRoot2();
+  if (!isAbsolute3(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve5(root, "metadata-results", session.slug, fileName);
+}
 function resolveCallUpstreamOutputFile(toolName, session) {
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
   const fileName = `upstream-${slugifyTaskName2(toolName || "tool")}-${timestamp}.result.json`;
   if (session.workspace) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
   }
-  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve5(tmpdir2(), "figma-repl-mcp", "tasks");
+  const root = defaultTaskWorkspaceRoot2();
   if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
@@ -28532,7 +28630,7 @@ async function executeRunScriptFile(args, runtime) {
           outputFiles: nonEmptyOutputFiles
         },
         inlineResultLimit,
-        ["upstream.payload", "upstream.text"]
+        ["upstream.result", "upstream.text"]
       )
     };
     return payload2;
@@ -28559,7 +28657,7 @@ async function executeRunScriptFile(args, runtime) {
   const limitedPayload = limitInlineScriptResult(
     resultPayload,
     inlineResultLimit,
-    ["upstream.payload", "upstream.text"]
+    ["upstream.result", "upstream.text"]
   );
   const needsOutputFile = diagnostics.length > 0 || isRecord4(limitedPayload.inlineResultLimit);
   const outputFiles = needsOutputFile ? await addUpstreamSidecar(await outputWriter.write({
@@ -28733,7 +28831,7 @@ function resolveAssetManifestDebugFile(args, session) {
   if (session.workspace) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
   }
-  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve5(tmpdir2(), "figma-repl-mcp", "tasks");
+  const root = defaultTaskWorkspaceRoot2();
   if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
@@ -28962,7 +29060,7 @@ function resolveDownloadAssetsOutputPaths(args, session) {
   return { outputDir, resultFile };
 }
 function resolveDownloadAssetsTempPath(session, fileName) {
-  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve5(tmpdir2(), "figma-repl-mcp", "tasks");
+  const root = defaultTaskWorkspaceRoot2();
   if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
@@ -29232,7 +29330,7 @@ function resolveCaptureOutputFile(args, session) {
   if (session.workspace) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "imageFile");
   }
-  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve5(tmpdir2(), "figma-repl-mcp", "tasks");
+  const root = defaultTaskWorkspaceRoot2();
   if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
@@ -29448,7 +29546,7 @@ function resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session) {
   const hasExplicitTaskWorkspace = Boolean(args.workspaceDir || args.taskRoot);
   if (hasFileContext && !session?.workspace && !hasExplicitTaskWorkspace) {
     return createSessionWorkspace({
-      cwd: process.cwd(),
+      cwd: currentWorkingDirectory(),
       dirName: args.dirName,
       fileKey,
       fileSlug,
@@ -29754,6 +29852,89 @@ async function executeValidateHandles(args, runtime) {
 async function handleCallUpstreamTool(args, runtime) {
   return makeJsonToolResult(await executeCallUpstreamTool(args, runtime));
 }
+async function handleGetMetadata(args, runtime) {
+  return makeJsonToolResult(await executeGetMetadata(args, runtime));
+}
+async function executeGetMetadata(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  applySessionFileReference(session, args.file);
+  if (args.cwd !== void 0 || args.dirName !== void 0 || args.file !== void 0 && !session.workspace) {
+    bindOpenWorkspaceIfAvailable(session, args);
+  }
+  touchSession(session);
+  const requested = resolveGetMetadataRequest(args, session);
+  const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
+  const tool = selectRequiredUpstreamTool(tools, GET_METADATA_TOOL_NAME, "metadata read");
+  assertUpstreamToolHasProperty(tool, "fileKey", "metadata read");
+  await runtime.client.connect();
+  const upstreamArgs = removeUndefined2({
+    fileKey: requested.fileKey,
+    nodeId: requested.nodeId,
+    clientLanguages: args.clientLanguages ?? "unknown",
+    clientFrameworks: args.clientFrameworks ?? "unknown"
+  });
+  const upstream = await runtime.client.callTool(GET_METADATA_TOOL_NAME, upstreamArgs);
+  const parsed = parseUpstreamToolResult(upstream);
+  const upstreamResult = upstreamEnvelope(parsed, { includePayload: false });
+  const xml = metadataXmlFromParsedResult(parsed);
+  const metadata = xml && !parsed.upstreamError ? metadataJsonFromXml(xml, requested.fileKey, requested.nodeId) : void 0;
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_get_metadata",
+    title: args.title,
+    mode: "read",
+    summary: `Read Figma metadata for ${requested.nodeId ?? requested.fileKey}.`,
+    nodeIds: requested.nodeId ? [requested.nodeId] : []
+  });
+  const jsonBytes = metadata ? Buffer.byteLength(JSON.stringify(removeUndefined2(metadata)), "utf8") : 0;
+  const metadataOk = Boolean(metadata?.root) && !parsed.upstreamError;
+  const xmlParseError = !metadataOk && !parsed.upstreamError ? responseUpstreamError({
+    message: "Upstream get_metadata did not return parseable XML metadata.",
+    code: "FIGMA_METADATA_XML_PARSE_FAILED",
+    text: parsed.text,
+    parsed: parsed.json
+  }) : void 0;
+  const resultPayload = removeUndefined2({
+    ok: metadataOk,
+    session: responseSession(session),
+    fileKey: requested.fileKey,
+    nodeId: requested.nodeId,
+    metadata: {
+      format: "figma-metadata-tree",
+      source: "get_metadata",
+      nodeCount: metadata?.nodeCount ?? 0,
+      jsonBytes,
+      json: metadata
+    },
+    upstream: upstreamResult,
+    ...upstreamFailureFields(parsed),
+    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError,
+    outputFiles: {}
+  });
+  const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
+  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["metadata.json"]);
+  if (metadataOk && metadata && isRecord4(limitedPayload.inlineResultLimit)) {
+    const outputFiles = asRecord2(limitedPayload.outputFiles);
+    outputFiles.metadataFile = await writeMetadataFile({ args, session, metadata });
+    limitedPayload.outputFiles = outputFiles;
+  }
+  return limitedPayload;
+}
+function resolveGetMetadataRequest(args, session) {
+  const fileReference = parseFigmaFileReference(args.file);
+  const target = resolveSessionTargetInput(args.target ?? args.nodeId ?? extractFigmaNodeId(args.file), session);
+  const fileKey = fileReference.fileKey ?? target.fileKey ?? session.fileKey ?? extractFigmaFileKey(session.fileUrl);
+  if (!fileKey) {
+    throw new Error('figma_repl_get_metadata requires a Figma file key. Pass "file" or open a session with file context first.');
+  }
+  const nodeId = target.nodeId;
+  if (nodeId?.startsWith("$")) {
+    throw new Error(`figma_repl_get_metadata cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, or cached handle.`);
+  }
+  return { fileKey, nodeId };
+}
 async function executeCallUpstreamTool(args, runtime) {
   assertRequiredTitleArgument(args);
   if (!args.toolName || typeof args.toolName !== "string") {
@@ -29796,7 +29977,7 @@ async function executeCallUpstreamTool(args, runtime) {
     ...upstreamFailureFields(parsed)
   };
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
-  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.payload", "upstream.text"]);
+  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
   const needsOutputFile = parsed.upstreamError || isRecord4(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
@@ -31382,7 +31563,7 @@ function isTaskPlanReferencePath(path) {
 }
 function runScriptUpstreamPayload(result) {
   const upstream = asRecord2(result.upstream);
-  return upstream.kind === "json" ? upstream.payload : void 0;
+  return upstream.kind === "json" ? upstream.result : void 0;
 }
 function createTaskPlanStepReference(options) {
   const outputFiles = asRecord2(options.result.outputFiles);
@@ -31448,6 +31629,101 @@ function summarizeTaskPlanStepResult(result) {
     diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics.length : void 0
   };
 }
+function metadataXmlFromParsedResult(parsed) {
+  const text = parsed.text.trim();
+  const start = text.indexOf("<");
+  if (start < 0) {
+    return void 0;
+  }
+  return text.slice(start);
+}
+function metadataJsonFromXml(xml, fileKey, nodeId) {
+  const root = parseMetadataXml(xml);
+  const tree = root ? metadataTreeFromXmlElement(root) : void 0;
+  const nodeCount = tree ? countMetadataTreeNodes(tree) : 0;
+  return removeUndefined2({
+    format: "figma-metadata-tree",
+    source: "get_metadata",
+    fileKey,
+    nodeId,
+    nodeCount,
+    root: tree
+  });
+}
+function parseMetadataXml(xml) {
+  const stack = [];
+  let root;
+  const tagPattern = /<([^!?/>\s]+)([^<>]*?)(\/?)>|<\/([^>\s]+)\s*>/gu;
+  for (const match of xml.matchAll(tagPattern)) {
+    const closeTag = match[4];
+    if (closeTag) {
+      const last = stack[stack.length - 1];
+      if (last?.tag === closeTag) {
+        stack.pop();
+      }
+      if (root && stack.length === 0) {
+        break;
+      }
+      continue;
+    }
+    const tag = match[1];
+    if (!tag) {
+      continue;
+    }
+    const element = {
+      tag,
+      attributes: parseMetadataXmlAttributes(match[2] ?? ""),
+      children: []
+    };
+    const parent = stack[stack.length - 1];
+    if (parent) {
+      parent.children.push(element);
+    } else if (!root) {
+      root = element;
+    }
+    if (match[3] !== "/") {
+      stack.push(element);
+    }
+  }
+  return root;
+}
+function parseMetadataXmlAttributes(source) {
+  const attributes = {};
+  const attrPattern = /([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*"([^"]*)"/gu;
+  for (const match of source.matchAll(attrPattern)) {
+    const name = match[1];
+    if (name) {
+      attributes[name] = decodeXmlEntities(match[2] ?? "");
+    }
+  }
+  return attributes;
+}
+function decodeXmlEntities(value) {
+  return value.replace(/&quot;/gu, '"').replace(/&apos;/gu, "'").replace(/&lt;/gu, "<").replace(/&gt;/gu, ">").replace(/&amp;/gu, "&");
+}
+function metadataTreeFromXmlElement(element) {
+  return removeUndefined2({
+    nodeId: element.attributes.id,
+    type: element.tag,
+    name: element.attributes.name,
+    x: numberAttribute(element.attributes.x),
+    y: numberAttribute(element.attributes.y),
+    width: numberAttribute(element.attributes.width),
+    height: numberAttribute(element.attributes.height),
+    children: element.children.length > 0 ? element.children.map(metadataTreeFromXmlElement) : void 0
+  });
+}
+function numberAttribute(value) {
+  if (value === void 0 || value.length === 0) {
+    return void 0;
+  }
+  const number4 = Number(value);
+  return Number.isFinite(number4) ? number4 : void 0;
+}
+function countMetadataTreeNodes(node) {
+  const children = Array.isArray(node.children) ? node.children : [];
+  return 1 + children.reduce((sum, child) => sum + countMetadataTreeNodes(child), 0);
+}
 function limitInlineScriptResult(payload, limitValue, fields) {
   const limit = normalizeInlineResultLimit(limitValue);
   if (limit === void 0) {
@@ -31478,7 +31754,7 @@ function limitInlineScriptResult(payload, limitValue, fields) {
       limitBytes: limit,
       limitHuman: formatBytesHuman(limit),
       omitted,
-      guidance: "Read outputFiles.upstreamFile when inline upstream fields are omitted."
+      guidance: "Read the corresponding outputFiles pointer when inline fields are omitted."
     };
   }
   return result;
@@ -31572,7 +31848,7 @@ function bindOpenWorkspaceIfAvailable(session, args) {
     session.fileKey ?? extractFigmaFileSlug(session.fileUrl) ?? session.slug ?? "figma-file"
   );
   session.workspace = createSessionWorkspace({
-    cwd: typeof args.cwd === "string" && args.cwd.length > 0 ? args.cwd : process.cwd(),
+    cwd: typeof args.cwd === "string" && args.cwd.length > 0 ? args.cwd : currentWorkingDirectory(),
     dirName: args.dirName,
     fileKey: session.fileKey,
     fileSlug,
@@ -31638,7 +31914,7 @@ function createFileWorkflowPayload() {
     planTool: "figma_repl_guidance",
     workspaceLayout: "<cwd>/figma-mcp/<fileKey-or-fileSlug>/<taskSlug>.figma.js; debug JSON files are generated on demand",
     outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
-    workflowTools: ["figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_capture_node", "figma_repl_run_task_plan"],
+    workflowTools: ["figma_repl_get_metadata", "figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_capture_node", "figma_repl_run_task_plan"],
     helpers: createEvalHelperPathList(),
     defaultTaskRoot: `${TASK_WORKSPACE_ROOT_ENV}, then OS temp figma-repl-mcp/tasks/<slug>`,
     guidance: [
@@ -31654,10 +31930,11 @@ function createFileWorkflowPayload() {
       "Use figma_repl_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
       "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
       "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
+      "Use figma_repl_get_metadata for broad layer-tree discovery: it calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
-      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.payload, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
+      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
       "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing."
     ]
   };
@@ -31695,11 +31972,12 @@ function createToolTierPayload() {
   return {
     normalPath: {
       summary: "Default path for non-trivial Figma work.",
-      tools: ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_inspect", "figma_repl_capture_node"],
+      tools: ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_get_metadata", "figma_repl_inspect", "figma_repl_capture_node"],
       order: [
         "figma_repl_prepare_task",
         "figma_repl_guidance",
         "figma_repl_lookup",
+        "figma_repl_get_metadata",
         "figma_repl_run_script_file(dryRun=true)",
         "figma_repl_run_script_file",
         "figma_repl_inspect",
@@ -31708,7 +31986,7 @@ function createToolTierPayload() {
     },
     contextAndLookup: {
       summary: "Use to plan, bind lightweight session context, or fetch compact docs/API context.",
-      tools: ["figma_repl_open", "figma_repl_guidance", "figma_repl_lookup"]
+      tools: ["figma_repl_open", "figma_repl_guidance", "figma_repl_lookup", "figma_repl_get_metadata"]
     },
     workflowAddOns: {
       summary: "Use when the primary script workflow needs generated assets, downloaded Figma assets, or repeatable multi-step orchestration.",
@@ -31772,7 +32050,7 @@ function createToolArgumentGuidancePayload() {
       advancedArguments: ["inlineResultLimit", "allowDangerousOperations", "handleUpdates"],
       avoidUnless: {
         debugFiles: "Do not request JSON result files; debug files are generated on demand for failures and inline omissions.",
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB and is capped at 30 KB; it does not bypass upstream Figma payload limits.",
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits.",
         allowDangerousOperations: "Use only after reviewing the exact code; it does not bypass API contract, surface, or read-mode guards.",
         handleUpdates: "Use only for handle import/repair; prefer $.remember inside code."
       }
@@ -31788,6 +32066,21 @@ function createToolArgumentGuidancePayload() {
       advancedArguments: ["handles"],
       avoidUnless: {
         handles: "Pass handles only to validate a subset; omit to validate all cached handles."
+      }
+    },
+    getMetadata: {
+      tool: "figma_repl_get_metadata",
+      tier: "contextAndLookup",
+      guidance: "Use for broad recursive layer-tree discovery before detailed style/fill/text inspection. It calls official get_metadata, converts XML to compact JSON, returns small trees inline, and writes oversized trees to outputFiles.metadataFile.",
+      recommendedCalls: {
+        fromSession: { title: "Read layer metadata", sessionId: "<session>", target: "<node id or $handle>" },
+        fromFile: { title: "Read layer metadata", file: "<figma file URL or file key>", target: "<node id>" }
+      },
+      advancedArguments: ["inlineResultLimit", "refresh", "clientLanguages", "clientFrameworks"],
+      avoidUnless: {
+        dynamicSelectors: "Do not pass $selection here; use figma_repl_inspect for live selection, then pass the resolved node id or cached handle.",
+        inlineResultLimit: "Use only for converted metadata.json payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces metadata.json to outputFiles.metadataFile only.",
+        refresh: "Use only for upstream tool-cache debug."
       }
     },
     assetManifest: {
@@ -31847,14 +32140,14 @@ function createToolArgumentGuidancePayload() {
     callUpstreamTool: {
       tool: "figma_repl_call_upstream_tool",
       tier: "advancedEscapeHatches",
-      guidance: "Explicit upstream escape hatch only for uncovered official Figma MCP capabilities. Read figma-repl://upstream-tools, then figma-repl://upstream-tools/{name}, and do not use for use_figma/get_screenshot/upload_assets/download_assets wrappers.",
+      guidance: "Explicit upstream escape hatch only for uncovered official Figma MCP capabilities. Read figma-repl://upstream-tools, then figma-repl://upstream-tools/{name}, and do not use for use_figma/get_metadata/get_screenshot/upload_assets/download_assets wrappers.",
       recommendedCalls: {
         explicit: { title: "Call the upstream-only Figma tool", sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} }
       },
       advancedArguments: ["inlineResultLimit", "refresh"],
       avoidUnless: {
         debugFiles: "Do not request JSON result files; debug files are generated on demand for failures and inline omissions.",
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB and is capped at 30 KB; it does not bypass upstream Figma payload limits.",
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits.",
         refresh: "Use only for upstream tool-cache debug."
       }
     }
@@ -31869,9 +32162,10 @@ function createCapabilitiesPayload() {
         "figma_repl_prepare_task with file and task for repairable .figma.js workspaces; cwd is an optional override",
         "figma_repl_guidance with mode=plan for workflow planning or mode=guidance/card/catalog for compact local API cards",
         "figma_repl_lookup only when exact docs/API snippets are still needed after guidance",
+        "figma_repl_get_metadata for broad recursive layer-tree discovery before detailed style/fill/text inspection",
         "figma_repl_run_script_file with inputFile and dryRun=true for primary .figma.js workflows, debug files, and line-aware repair",
         "figma_repl_run_script_file without dryRun to execute the reviewed file workflow",
-        "figma_repl_inspect with mode=inspect, mode=style, or mode=validate before mutation and after generated work",
+        "figma_repl_inspect with mode=inspect, mode=style, or mode=validate for targeted summaries, visual-token audits, and handle validation before mutation and after generated work",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through official upload_assets",
         "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
         "figma_repl_capture_node for final visual QA captures saved as local PNG files",
@@ -31881,12 +32175,12 @@ function createCapabilitiesPayload() {
         "figma_repl_call_upstream_tool only when a task explicitly needs an uncovered upstream Figma MCP tool"
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
-      upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, layered ok semantics, and public upstream payload shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, remove bridge-internal __figmaRepl metadata from public eval/script payloads, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. Raw official upstream payloads without __figmaRepl remain unchanged. Asset manifests and download_assets keep compact inline entries and write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
-      layeredOk: {
-        topLevel: "Top-level ok reports local wrapper/tool completion.",
-        upstreamOk: "upstream.ok reports whether the official upstream MCP call completed without a parsed upstream failure.",
-        upstreamPayloadOk: "upstream.payload.*.ok is raw business evidence from the executed Figma script or upstream tool payload; it does not decide wrapper success. Bridge-internal __figmaRepl metadata is used only for session updates and is not exposed in public upstream payloads."
+      upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, and download_assets.",
+      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests and download_assets keep compact inline entries and write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
+      statusSemantics: {
+        topLevelOk: "Top-level ok reports local wrapper/tool completion.",
+        upstreamOk: "upstream.ok reports effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false; false results include upstream.result.source as business when JSON supplied ok:false, or call for failures without a consumed result status.",
+        upstreamResult: "upstream.result contains public business/error details with consumed top-level ok removed. Bridge-internal __figmaRepl metadata is used only for session updates and is not exposed in public upstream results or sidecars."
       }
     },
     toolTiers: createToolTierPayload(),
@@ -31901,6 +32195,7 @@ function createCapabilitiesPayload() {
       pages: "Use targetPageId or one setCurrentPageAsync call; direct figma.currentPage assignment is blocked.",
       selection: "Use $.select instead of direct figma.currentPage.selection access in repairable scripts.",
       styleAudit: "Use figma_repl_inspect mode=style for compact visual-token audits before asking agents to match a layer style.",
+      metadata: "Use figma_repl_get_metadata for broad recursive layer-tree discovery; it returns a compact JSON node tree inline when small and writes oversized trees to outputFiles.metadataFile.",
       validation: "Use figma_repl_inspect mode=validate before mutating cached handles from an earlier call."
     },
     safety: {
@@ -31924,7 +32219,7 @@ function createCapabilitiesPayload() {
       ],
       avoidUnless: {
         scriptPath: "Use only for absolute-path escape hatches outside an initialized workspace; prefer inputFile.",
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB and is capped at 30 KB; it does not bypass upstream Figma payload limits."
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits."
       },
       options: {
         scriptPath: "Advanced absolute-path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
@@ -31934,18 +32229,18 @@ function createCapabilitiesPayload() {
         surface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
         targetPageId: "Switch once to a known page before the script body runs.",
         allowDangerousOperations: "Bypasses only dynamic/destructive guards after exact file review.",
-        inlineResultLimit: "Advanced payload-size control in bytes for large inline fields. Defaults to 4 KB and is capped at 30 KB; omitted upstream fields stay available in outputFiles.upstreamFile."
+        inlineResultLimit: "Advanced payload-size control in bytes for large inline fields. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; omitted upstream fields stay available in outputFiles.upstreamFile."
       },
       responseExamples: {
-        jsonSuccess: { ok: true, dryRun: false, upstream: { kind: "json", ok: true, payload: {} } },
-        layeredOkBusinessFalse: {
+        jsonSuccess: { ok: true, dryRun: false, upstream: { kind: "json", ok: true, result: {} } },
+        businessOkFalse: {
           ok: true,
           dryRun: false,
           upstream: {
             kind: "json",
-            ok: true,
-            payload: {
-              ok: false,
+            ok: false,
+            result: {
+              source: "business",
               reason: "business validation evidence only"
             }
           }
@@ -31959,7 +32254,7 @@ function createCapabilitiesPayload() {
             limit: 4e3,
             limitBytes: 4e3,
             limitHuman: "4 KB",
-            omitted: [{ field: "upstream.payload", bytes: 12e3, limit: 4e3, bytesHuman: "12 KB", limitHuman: "4 KB" }]
+            omitted: [{ field: "upstream.result", bytes: 12e3, limit: 4e3, bytesHuman: "12 KB", limitHuman: "4 KB" }]
           }
         }
       },
@@ -31995,7 +32290,7 @@ function createCapabilitiesPayload() {
         stepShape: "{ id?, type?, args? }; put all tool-specific inputs inside args.",
         stepTypes: ["script-file", "asset-manifest", "upload_assets", "download-assets", "download_assets", "screenshot-capture", "upstream-tool"],
         defaultFailureMode: "stopOnFailure=true",
-        references: "Later step arguments can reference prior outputs with {{outputs.stepId.imageFile}} for capture steps, {{outputs.stepId.debugFile.path}} for debug file-pointer outputs, or {{steps.stepId.imageFile}} for direct capture paths. Upstream JSON is available at {{steps.stepId.upstream.payload}}, and downloads expose {{steps.stepId.downloadOutputDir}} plus {{steps.stepId.downloadTargets}}.",
+        references: "Later step arguments can reference prior outputs with {{outputs.stepId.imageFile}} for capture steps, {{outputs.stepId.debugFile.path}} for debug file-pointer outputs, or {{steps.stepId.imageFile}} for direct capture paths. Upstream JSON is available at {{steps.stepId.upstream.result}}, and downloads expose {{steps.stepId.downloadOutputDir}} plus {{steps.stepId.downloadTargets}}.",
         result: "Writes a minimal plan result/debug envelope with stopped/step/failure counts, optional failures, and stepDetails. The plan file is debug/audit-only and does not copy inline business arrays. Inline responses still return per-step status summaries plus outputReferences. In initialized workspaces, missing download outputs default to <step-id>.downloads plus <step-id>.png for image captures."
       }
     },
@@ -32165,7 +32460,7 @@ async function readReplResource(uri, runtime) {
             tools: tools.map((tool) => upstreamToolDirectoryEntry(tool)),
             detailTemplate: "figma-repl://upstream-tools/{name}",
             categories: ["capture", "design-context", "execution", "assets", "code-connect", "libraries", "figjam", "generation", "account", "other"],
-            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-repl://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_repl_* wrappers for use_figma, get_screenshot, upload_assets, and download_assets."
+            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-repl://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_repl_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, and download_assets."
           }, null, 2)
         }
       ]
@@ -32294,6 +32589,9 @@ function parseUpstreamToolResult(value) {
     return annotateParsedUpstreamToolResult(JSON.stringify(structured), structured);
   }
   const text = Array.isArray(record2.content) ? record2.content.map((item) => asRecord2(item).text).filter((item) => typeof item === "string").join("\n") : JSON.stringify(value);
+  if (isTruncatedUpstreamText(text)) {
+    return annotateParsedUpstreamToolResult(text, void 0);
+  }
   return annotateParsedUpstreamToolResult(text, parseJsonLenient2(text));
 }
 function annotateParsedUpstreamToolResult(text, json) {
@@ -32306,6 +32604,16 @@ function annotateParsedUpstreamToolResult(text, json) {
   };
 }
 function extractParsedUpstreamError(text, json) {
+  const truncation = extractUpstreamTruncationMarker(text);
+  if (truncation) {
+    return {
+      message: `Upstream Figma output was truncated at ${truncation.size}.`,
+      code: "FIGMA_UPSTREAM_TRUNCATED",
+      details: { marker: truncation.marker, size: truncation.size },
+      text,
+      parsed: json
+    };
+  }
   const record2 = asRecord2(json);
   if (record2.ok !== false) {
     const trimmed = text.trim();
@@ -32329,6 +32637,18 @@ function extractParsedUpstreamError(text, json) {
     text,
     parsed: json
   };
+}
+function isTruncatedUpstreamText(text) {
+  return Boolean(extractUpstreamTruncationMarker(text));
+}
+function extractUpstreamTruncationMarker(text) {
+  const match = /(?:^|[\s/])((?:\/\/\s*)?truncated\s+to\s+([0-9]+(?:\.[0-9]+)?\s*(?:[kmgt]?b|bytes?)))\s*$/iu.exec(text);
+  if (!match) {
+    return void 0;
+  }
+  const marker = match[1]?.trim();
+  const size = match[2]?.replace(/\s+/gu, "");
+  return marker && size ? { marker, size } : void 0;
 }
 function extractFigmaDebugUuid(text) {
   const match = /Figma Debug UUID:\s*([0-9a-fA-F-]+)/u.exec(text);
@@ -32562,27 +32882,65 @@ function inspectInlineResultFields(parsed) {
 }
 function upstreamEnvelope(parsed, options = {}) {
   const includePayload = options.includePayload ?? true;
-  const ok = !parsed.upstreamError;
+  const callOk = !parsed.upstreamError;
   if (parsed.json !== void 0) {
-    return includePayload ? { kind: "json", ok, payload: shapePublicUpstreamPayload(parsed.json) } : { kind: "json", ok };
+    const shaped = shapePublicUpstreamResult(parsed.json);
+    const ok2 = callOk && shaped.consumedOk !== false;
+    const failureSource = shaped.consumedOk === false ? "business" : callOk ? "business" : "call";
+    const result = ok2 ? shaped.result : addFailureSourceToUpstreamResult(
+      shaped.result ?? (parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0),
+      failureSource
+    );
+    return includePayload ? { kind: "json", ok: ok2, result } : { kind: "json", ok: ok2 };
   }
-  return includePayload ? { kind: "text", ok, text: parsed.text || void 0 } : { kind: "text", ok };
+  const ok = callOk;
+  return includePayload ? {
+    kind: "text",
+    ok,
+    text: parsed.text || void 0,
+    result: ok ? void 0 : addFailureSourceToUpstreamResult(
+      parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0,
+      "call"
+    )
+  } : { kind: "text", ok };
 }
-function shapePublicUpstreamPayload(value) {
+function shapePublicUpstreamResult(value) {
   const record2 = asRecord2(value);
   if (!Object.prototype.hasOwnProperty.call(record2, "__figmaRepl")) {
-    return value;
+    return consumeTopLevelOk(value);
   }
   if (Object.prototype.hasOwnProperty.call(record2, "result")) {
-    return record2.result;
+    return consumeTopLevelOk(record2.result);
   }
-  const payload = {};
+  const result = {};
   for (const [key, item] of Object.entries(record2)) {
     if (key !== "__figmaRepl" && key !== "ok") {
-      payload[key] = item;
+      result[key] = item;
     }
   }
-  return Object.keys(payload).length > 0 ? payload : void 0;
+  return { result: Object.keys(result).length > 0 ? result : void 0 };
+}
+function consumeTopLevelOk(value) {
+  if (!isRecord4(value)) {
+    return { result: value };
+  }
+  if (!Object.prototype.hasOwnProperty.call(value, "ok")) {
+    return { result: value };
+  }
+  const { ok, ...rest } = value;
+  return {
+    result: Object.keys(rest).length > 0 ? rest : void 0,
+    consumedOk: typeof ok === "boolean" ? ok : void 0
+  };
+}
+function addFailureSourceToUpstreamResult(result, source) {
+  if (isRecord4(result)) {
+    return {
+      ...result,
+      source
+    };
+  }
+  return result === void 0 ? { source } : { source, value: result };
 }
 function publicSession(session, options = {}) {
   const includeHistory = options.includeHistory ?? true;
@@ -32861,5 +33219,6 @@ export {
   createFigmaReplMcpServer,
   createFigmaReplSessionStore,
   diagnoseFigmaReplCode,
+  isMissingFileError as isFigmaReplMissingFileErrorForTesting,
   resolveFigmaReplScriptHelperSelection2 as resolveFigmaReplScriptHelperSelection
 };

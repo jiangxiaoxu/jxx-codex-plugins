@@ -9,6 +9,7 @@ export const LOCAL_REPL_TOOL_NAMES = [
   "figma_repl_prepare_task",
   "figma_repl_guidance",
   "figma_repl_inspect",
+  "figma_repl_get_metadata",
   "figma_repl_call_upstream_tool",
   "figma_repl_lookup",
 ] as const;

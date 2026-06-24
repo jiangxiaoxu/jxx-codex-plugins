@@ -14,7 +14,7 @@ export type ReplToolDescriptionOptions = {
 };
 
 const DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4_000;
-const MAX_INLINE_RESULT_LIMIT_BYTES = 30_000;
+const MAX_INLINE_RESULT_LIMIT_BYTES = 10_000;
 
 export function createReplToolDescriptions(
   options: ReplToolDescriptionOptions,
@@ -49,7 +49,7 @@ export function createReplToolDescriptions(
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
         handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code."),
       }, ["code"]),
     },
@@ -67,7 +67,7 @@ export function createReplToolDescriptions(
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
-        inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.payload/upstream.text only. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
+        inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.result/upstream.text only. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
       }),
     },
     {
@@ -186,16 +186,36 @@ export function createReplToolDescriptions(
       }),
     },
     {
+      name: "figma_repl_get_metadata",
+      description:
+        "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata and converts returned XML into a compact JSON node tree. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { title, sessionId, file?, target? }. Use inspect/style afterward for fills, text, and visual tokens.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
+        file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
+        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
+        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-mcp."),
+        target: {
+          description: "Optional metadata root. Accepts a raw node id, node URL, local handle like $hero, or { handle:\"$hero\" }. Dynamic selectors such as $selection are not resolved here.",
+        },
+        nodeId: stringProperty("Optional raw Figma node id. Prefer target for handles or node URLs."),
+        clientLanguages: stringProperty("Optional official get_metadata clientLanguages hint. Defaults to unknown."),
+        clientFrameworks: stringProperty("Optional official get_metadata clientFrameworks hint. Defaults to unknown."),
+        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for converted metadata.json. Defaults to 4 KB and is capped at 10 KB; 0 forces metadata.json to outputFiles.metadataFile only."),
+      }),
+    },
+    {
       name: "figma_repl_call_upstream_tool",
       description:
-        "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}. Do not use for use_figma, get_screenshot, upload_assets, or download_assets because dedicated wrappers cover them.",
+        "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, or download_assets because dedicated wrappers cover them.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
         toolName: stringProperty("Official upstream Figma MCP tool name to call for an uncovered capability. Local figma_repl_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.payload/upstream.text. Defaults to 4 KB and is capped at 30 KB; complete upstream payloads stay in outputFiles.upstreamFile."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
       }, ["toolName", "arguments"]),
     },
     {
@@ -223,14 +243,14 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_eval: toolOutputSchema({
     session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     diagnostics: arrayProperty("Preflight diagnostics."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback. upstream.ok reports official upstream call success; upstream.payload.*.ok remains raw business evidence. Bridge-internal __figmaRepl metadata is removed from public eval payloads."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
       ["debugFile", "upstreamFile"],
     ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
@@ -243,8 +263,8 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON payload or text fallback. upstream.ok reports official upstream call success; upstream.payload.*.ok remains raw business evidence. Bridge-internal __figmaRepl metadata is removed from public script payloads."),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
+    upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public script results."),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
     session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
@@ -310,17 +330,31 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     validatedNodeIds: stringArrayProperty("Validated node ids for mode=validate."),
     upstreamError: objectProperty("Normalized upstream failure details when inspection failed."),
   }),
+  figma_repl_get_metadata: toolOutputSchema({
+    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    fileKey: stringProperty("Figma file key sent to official get_metadata."),
+    nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
+    metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
+    upstream: upstreamEnvelopeProperty("Compact upstream status envelope. Raw XML text is not returned inline by this wrapper."),
+    upstreamError: objectProperty("Normalized upstream or XML parse failure details when metadata conversion failed."),
+    primaryFix: stringProperty("Suggested primary repair when upstream execution failed."),
+    outputFiles: outputFilesProperty(
+      "Files written for metadata conversion when the converted JSON tree exceeds inlineResultLimit.",
+      ["metadataFile"],
+    ),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when metadata.json exceeds the byte limit."),
+  }),
   figma_repl_call_upstream_tool: toolOutputSchema({
     session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON payload or text fallback. upstream.ok reports official upstream call success; upstream.payload.*.ok remains raw business evidence. Raw official payloads without __figmaRepl remain unchanged."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
       ["debugFile", "upstreamFile"],
     ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.payload or upstream.text exceeds the byte limit."),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_repl_lookup: toolOutputSchema({
     results: arrayProperty("Ranked compact corpus snippets."),
@@ -471,7 +505,7 @@ function outputFilePointerDescription(key: string): string {
     case "upstreamFile":
       return "Upstream envelope sidecar file pointer.";
     case "metadataFile":
-      return "Capture metadata JSON file pointer.";
+      return "Metadata JSON file pointer.";
     case "compiledScriptFile":
       return "Failure-only compiled script wrapper file pointer.";
     default:
@@ -485,8 +519,8 @@ function upstreamEnvelopeProperty(description: string): Record<string, unknown> 
     description,
     properties: {
       kind: enumProperty(["json", "text", "unknown"], "Upstream output representation kind."),
-      ok: booleanProperty("Whether the official upstream MCP call completed without a parsed upstream failure; this is separate from any upstream.payload.*.ok business evidence."),
-      payload: jsonProperty("Public parsed upstream JSON payload when kind is json and the field is not omitted inline. Payloads containing bridge-internal __figmaRepl metadata are unwrapped to their business result; raw official payloads without __figmaRepl remain unchanged. Nested ok fields are raw business evidence and do not decide wrapper success."),
+      ok: booleanProperty("Effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false."),
+      result: jsonProperty("Public parsed upstream JSON result when kind is json and the field is not omitted inline. Payloads containing bridge-internal __figmaRepl metadata are unwrapped to their business result; raw official JSON with top-level ok consumes and removes that ok, while raw JSON without top-level ok remains unchanged. When ok=false, result.source preserves failure provenance as call or business."),
       text: stringProperty("Upstream text output when kind is text and the field is not omitted inline."),
       upstreamError: objectProperty("Normalized upstream error when available."),
     },
@@ -508,7 +542,7 @@ function inlineResultLimitProperty(description: string): Record<string, unknown>
         items: {
           type: "object",
           properties: {
-            field: stringProperty("Omitted result field path, for example upstream.payload."),
+            field: stringProperty("Omitted result field path, for example upstream.result."),
             bytes: numberProperty("Omitted field size in bytes."),
             limit: numberProperty("Effective inline byte limit."),
             bytesHuman: stringProperty("Human-readable omitted field size."),
@@ -706,7 +740,7 @@ function toolOutputSchema(properties: Record<string, unknown>): Record<string, u
   return {
     type: "object",
     properties: {
-      ok: booleanProperty("Whether the local Figma REPL wrapper/tool completed successfully; upstream.ok reports official upstream call success, while upstream.payload.*.ok is raw business evidence."),
+      ok: booleanProperty("Whether the local Figma REPL wrapper/tool completed successfully; upstream.ok reports effective upstream success after consuming public upstream result ok fields."),
       ...properties,
     },
     required: ["ok"],
