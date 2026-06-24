@@ -251,6 +251,16 @@ export interface FigmaReplPublicWorkspace {
   };
 }
 
+export interface FigmaReplCompactWorkspace {
+  [key: string]: unknown;
+  sessionDir: string;
+  scriptPath: string;
+  workspaceRef: string;
+  files: {
+    inputFile: string;
+  };
+}
+
 export interface FigmaReplPublicSession {
   [key: string]: unknown;
   id: string;
@@ -268,14 +278,26 @@ export interface FigmaReplPublicSession {
   workspace?: FigmaReplPublicWorkspace;
 }
 
+export interface FigmaReplCompactSession {
+  [key: string]: unknown;
+  id: string;
+  fileUrl?: string;
+  fileKey?: string;
+  surface?: FigmaReplSurface;
+  knownPages: Record<string, string>;
+  currentPageId?: string;
+  handles: Record<string, string>;
+  workspace?: FigmaReplCompactWorkspace;
+}
+
 export interface FigmaReplToolResultBase {
   [key: string]: unknown;
   ok: boolean;
-  session?: FigmaReplPublicSession;
+  session?: FigmaReplCompactSession;
 }
 
 export interface FigmaReplOpenResult extends FigmaReplToolResultBase {
-  session: FigmaReplPublicSession;
+  session: FigmaReplCompactSession;
   diagnostics: FigmaReplDiagnostic[];
 }
 
@@ -286,21 +308,21 @@ export interface FigmaReplUpstreamBackedResult extends FigmaReplToolResultBase {
 }
 
 export interface FigmaReplEvalResult extends FigmaReplUpstreamBackedResult {
-  session: FigmaReplPublicSession;
+  session: FigmaReplCompactSession;
   diagnostics: FigmaReplDiagnostic[];
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 
-export interface FigmaReplScriptMetadata {
+export interface FigmaReplCompactScriptMetadata {
   [key: string]: unknown;
   scriptPath: string;
-  targetPageId?: string;
   expectedSurface?: FigmaReplSurface;
-  injectedHelpers: string[];
-  helperUsage?: Record<string, unknown>;
   compiledScriptBytes: number;
 }
+
+/** @deprecated Use FigmaReplCompactScriptMetadata. */
+export type FigmaReplScriptMetadata = FigmaReplCompactScriptMetadata;
 
 export interface FigmaReplInlineResultLimit {
   [key: string]: unknown;
@@ -313,9 +335,9 @@ export interface FigmaReplInlineResultLimit {
 
 export interface FigmaReplRunScriptFileResult extends FigmaReplToolResultBase {
   dryRun: boolean;
-  session: FigmaReplPublicSession;
+  session: FigmaReplCompactSession;
   diagnostics: FigmaReplDiagnostic[];
-  script: FigmaReplScriptMetadata;
+  script: FigmaReplCompactScriptMetadata;
   outputFiles?: FigmaReplOutputFiles;
   upstream?: FigmaReplUpstreamEnvelope;
   upstreamError?: FigmaReplPublicUpstreamError;
@@ -335,7 +357,7 @@ export interface FigmaReplAssetManifestItem {
 }
 
 export interface FigmaReplApplyAssetManifestResult extends FigmaReplToolResultBase {
-  session: FigmaReplPublicSession;
+  session: FigmaReplCompactSession;
   assets: FigmaReplAssetManifestItem[];
   validation?: unknown;
   failures?: Array<Record<string, unknown>>;
@@ -363,7 +385,7 @@ export interface FigmaReplDownloadAssetsTargetResult {
 }
 
 export interface FigmaReplDownloadAssetsResult extends FigmaReplToolResultBase {
-  session: FigmaReplPublicSession;
+  session: FigmaReplCompactSession;
   outputDir: string;
   targets: FigmaReplDownloadAssetsTargetResult[];
   failures?: Array<Record<string, unknown>>;
@@ -371,7 +393,7 @@ export interface FigmaReplDownloadAssetsResult extends FigmaReplToolResultBase {
 }
 
 export interface FigmaReplCaptureNodeResult extends FigmaReplToolResultBase {
-  session: FigmaReplPublicSession;
+  session: FigmaReplCompactSession;
   imageFile?: string;
   nodeId: string;
   bytes?: number;
@@ -404,7 +426,7 @@ export interface FigmaReplTaskPlanFailure {
 }
 
 export interface FigmaReplRunTaskPlanResult extends FigmaReplToolResultBase {
-  session: FigmaReplPublicSession;
+  session: FigmaReplCompactSession;
   stopped: boolean;
   steps: FigmaReplTaskPlanStepResult[];
   outputReferences?: Record<string, unknown>;
@@ -443,13 +465,13 @@ export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {
 }
 
 export interface FigmaReplInspectResult extends FigmaReplToolResultBase {
-  session: FigmaReplPublicSession;
+  session: FigmaReplCompactSession;
   diagnostics: FigmaReplDiagnostic[];
   upstreamError?: FigmaReplPublicUpstreamError;
 }
 
 export interface FigmaReplCallUpstreamToolResult extends FigmaReplUpstreamBackedResult {
-  session: FigmaReplPublicSession;
+  session: FigmaReplCompactSession;
   toolName: string;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
@@ -794,61 +816,37 @@ export function createFigmaReplMcpServer(
       case "figma_repl_open":
         return handleOpen(
           asOpenArgs(withMcpDefaultTitle(rawArgs, "Open Figma REPL session")),
-          { sessions, client },
+          runtime,
         );
       case "figma_repl_eval":
         return handleEval(
           asEvalArgs(withMcpDefaultTitle(rawArgs, "Run Figma REPL JavaScript")),
-          { client, sessions, upstreamToolCache },
+          runtime,
         );
       case "figma_repl_run_script_file":
-        return handleRunScriptFile(asRunScriptFileArgs(withMcpDefaultTitle(rawArgs, "Run Figma JavaScript file")), {
-          client,
-          sessions,
-          upstreamToolCache,
-        });
+        return handleRunScriptFile(asRunScriptFileArgs(withMcpDefaultTitle(rawArgs, "Run Figma JavaScript file")), runtime);
       case "figma_repl_apply_asset_manifest":
-        return handleApplyAssetManifest(asApplyAssetManifestArgs(withMcpDefaultTitle(rawArgs, "Apply Figma asset manifest")), {
-          client,
-          sessions,
-          upstreamToolCache,
-        });
+        return handleApplyAssetManifest(asApplyAssetManifestArgs(withMcpDefaultTitle(rawArgs, "Apply Figma asset manifest")), runtime);
       case "figma_repl_download_assets":
-        return handleDownloadAssets(asDownloadAssetsArgs(withMcpDefaultTitle(rawArgs, "Download Figma assets")), {
-          client,
-          sessions,
-          upstreamToolCache,
-        });
+        return handleDownloadAssets(asDownloadAssetsArgs(withMcpDefaultTitle(rawArgs, "Download Figma assets")), runtime);
       case "figma_repl_capture_node":
-        return handleCaptureNode(asCaptureNodeArgs(withMcpDefaultTitle(rawArgs, "Capture Figma node")), {
-          client,
-          sessions,
-          upstreamToolCache,
-        });
+        return handleCaptureNode(asCaptureNodeArgs(withMcpDefaultTitle(rawArgs, "Capture Figma node")), runtime);
       case "figma_repl_run_task_plan":
-        return handleRunTaskPlan(asRunTaskPlanArgs(withMcpDefaultTitle(rawArgs, "Run Figma REPL task plan")), {
-          client,
-          sessions,
-          upstreamToolCache,
-        });
+        return handleRunTaskPlan(asRunTaskPlanArgs(withMcpDefaultTitle(rawArgs, "Run Figma REPL task plan")), runtime);
       case "figma_repl_prepare_task":
         return handlePrepareTask(
           asPrepareTaskArgs(withMcpDefaultTitle(rawArgs, "Prepare Figma REPL task")),
-          { sessions },
+          runtime,
         );
       case "figma_repl_guidance":
         return handleGuidance(asGuidanceArgs(withMcpDefaultTitle(rawArgs, "Read Figma REPL guidance")));
       case "figma_repl_inspect":
         return handleInspect(
           asInspectArgs(withMcpDefaultTitle(rawArgs, "Inspect Figma REPL target")),
-          { client, sessions, upstreamToolCache },
+          runtime,
         );
       case "figma_repl_call_upstream_tool":
-        return handleCallUpstreamTool(asCallUpstreamToolArgs(withMcpDefaultTitle(rawArgs, "Call upstream Figma MCP tool")), {
-          client,
-          sessions,
-          upstreamToolCache,
-        });
+        return handleCallUpstreamTool(asCallUpstreamToolArgs(withMcpDefaultTitle(rawArgs, "Call upstream Figma MCP tool")), runtime);
       case "figma_repl_lookup":
         return handleLookup(asLookupArgs(withMcpDefaultTitle(rawArgs, "Look up Figma REPL reference")));
       default:
@@ -1020,11 +1018,12 @@ async function handleOpen(
   if (args.connect !== false) {
     await runtime.client?.connect();
   }
-  return makeJsonToolResult({
+  const payload = {
     ok: true,
     session: responseSession(session),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics),
-  });
+  };
+  return makeJsonToolResult(payload);
 }
 
 async function handleEval(
@@ -1091,10 +1090,11 @@ async function handleEval(
     resultPayload,
     upstream: upstreamEnvelope(parsed),
   });
-  return makeJsonToolResult({
+  const payloadWithFiles = {
     ...limitedPayload,
     outputFiles,
-  });
+  };
+  return makeJsonToolResult(payloadWithFiles);
 }
 
 async function handleRunScriptFile(
@@ -1350,10 +1350,11 @@ async function executeRunScriptFile(
       }),
       writeResult: needsOutputFile,
     });
-    return {
+    const payload = {
       ...limitedPayload,
       outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
     };
+    return payload;
   }
 
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
@@ -1383,7 +1384,7 @@ async function executeRunScriptFile(
       writeResult: true,
     });
     const nonEmptyOutputFiles = Object.keys(outputFiles).length > 0 ? outputFiles : undefined;
-    return {
+    const payload = {
       ...limitInlineScriptResult(
         {
           ...resultPayload,
@@ -1393,6 +1394,7 @@ async function executeRunScriptFile(
         [],
       ),
     };
+    return payload;
   }
   if (parsed.upstreamError) {
     const upstreamResult = upstreamEnvelope(parsed);
@@ -1421,7 +1423,7 @@ async function executeRunScriptFile(
       upstreamResult,
     );
     const nonEmptyOutputFiles = Object.keys(outputFiles).length > 0 ? outputFiles : undefined;
-    return {
+    const payload = {
       ...limitInlineScriptResult(
         {
           ...resultPayload,
@@ -1431,6 +1433,7 @@ async function executeRunScriptFile(
         ["upstream.payload", "upstream.text"],
       ),
     };
+    return payload;
   }
   updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
@@ -1479,10 +1482,11 @@ async function executeRunScriptFile(
       }),
       writeResult: false,
     });
-  return {
+  const payload = {
     ...limitedPayload,
     outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
   };
+  return payload;
 }
 
 async function handleApplyAssetManifest(
@@ -1632,10 +1636,11 @@ async function executeApplyAssetManifest(
       .map((asset) => asOptionalString(asset.targetNodeId))
       .filter((nodeId): nodeId is string => nodeId !== undefined),
   });
-  return {
+  const response = {
     ...payload,
     outputFiles: Object.keys(files).length > 0 ? files : undefined,
   };
+  return response;
 }
 
 function resolveAssetManifestDebugFile(args: FigmaReplApplyAssetManifestArguments, session: FigmaReplSession): string {
@@ -1820,10 +1825,11 @@ async function executeDownloadAssets(
     summary: `Downloaded assets for ${targetResults.length} target(s) with ${failures.length} failures.`,
     nodeIds: manifest.targets.map((target) => target.targetNodeId),
   });
-  return {
+  const response = {
     ...payload,
     outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
   };
+  return response;
 }
 
 async function loadDownloadAssetsManifest(
@@ -2162,23 +2168,25 @@ async function executeCaptureNodeForTool(
   const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
   const parsed = parseUpstreamToolResult(upstream);
   if (parsed.upstreamError) {
-    return {
+    const payload = {
       ok: false,
       session: responseSession(session),
       nodeId,
       upstreamError: responseUpstreamError(parsed.upstreamError),
     };
+    return payload;
   }
   let saved: Awaited<ReturnType<typeof writeCaptureOutputFile>>;
   try {
     saved = await writeCaptureOutputFile(requestedOutputFile, upstream, parsed);
   } catch (error) {
-    return {
+    const payload = {
       ok: false,
       session: responseSession(session),
       nodeId,
       upstreamError: normalizeCaughtUpstreamError(error),
     };
+    return payload;
   }
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
@@ -2362,10 +2370,11 @@ async function executeRunTaskPlan(
     summary: `Ran ${steps.length}/${plan.steps.length} task-plan steps with ${failedSteps.length} failures.`,
     nodeIds: [],
   });
-  return {
+  const response = {
     ...payload,
     outputFiles,
   };
+  return response;
 }
 
 function compactTaskPlanFailure(step: Record<string, unknown>): Record<string, unknown> {
@@ -2414,7 +2423,7 @@ async function handlePrepareTask(
 
   await ensureWorkspaceDirectories(workspace);
   await writeTaskFile(scriptPath, createTaskScriptTemplate(taskSlug, args), Boolean(args.overwrite));
-  return makeJsonToolResult({
+  const payload = {
     ok: true,
     session: session ? responseSession(session) : undefined,
     task: {
@@ -2437,7 +2446,8 @@ async function handlePrepareTask(
       "Dry-run with figma_repl_run_script_file before upstream execution.",
       "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions.",
     ],
-  });
+  };
+  return makeJsonToolResult(payload);
 }
 
 function resolvePrepareTaskWorkspace(
@@ -2490,7 +2500,9 @@ function taskChangeSnapshot(
   };
 }
 
-async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<string, unknown>> {
+async function handleGuidance(
+  args: FigmaReplGuidanceArguments,
+): Promise<Record<string, unknown>> {
   assertRequiredTitleArgument(args);
   const intentSource = guidanceIntentSource(args);
   const cardSource = args.card ?? args.query;
@@ -2500,7 +2512,7 @@ async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<
     const planIntent = intentSource
       ? normalizeLookupRankingQuery(intentSource.value, intentSource.name)
       : "figma file task";
-    return makeJsonToolResult({
+    const payload = {
       ok: true,
       workflow: createFileWorkflowPayload(),
       steps: [
@@ -2517,7 +2529,8 @@ async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<
         "figma_repl_inspect",
       ],
       suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id),
-    });
+    };
+    return makeJsonToolResult(payload);
   }
   const intent = intentSource
     ? normalizeLookupRankingQuery(intentSource.value, intentSource.name)
@@ -2542,7 +2555,7 @@ async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<
       })
     : { results: [] };
   const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
-  return makeJsonToolResult({
+  const payload = {
     ok: true,
     cards,
     catalogSize: FIGMA_REPL_API_CARDS.length,
@@ -2552,7 +2565,8 @@ async function handleGuidance(args: FigmaReplGuidanceArguments): Promise<Record<
     apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
     avoid: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
     suggestions,
-  });
+  };
+  return makeJsonToolResult(payload);
 }
 
 function guidanceIntentSource(
@@ -2616,12 +2630,13 @@ async function handleInspect(
     summary: `Inspected ${target}.`,
     nodeIds: collectNodeIds(parsed.json),
   });
-  return makeJsonToolResult({
+  const payload = {
     ok: !parsed.upstreamError,
     session: responseSession(session),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics),
     ...inspectInlineResultFields(parsed),
-  });
+  };
+  return makeJsonToolResult(payload);
 }
 
 async function executeInspectStyle(
@@ -2739,12 +2754,13 @@ async function executeInspectStyle(
     summary: `Inspected style tokens for ${target}.`,
     nodeIds: collectNodeIds(parsed.json),
   });
-  return {
+  const payload = {
     ok: !parsed.upstreamError,
     session: responseSession(session),
     diagnostics: diagnosticsForResponse(diagnostics),
     ...inspectInlineResultFields(parsed),
   };
+  return payload;
 }
 
 async function executeValidateHandles(
@@ -2803,12 +2819,13 @@ async function executeValidateHandles(
     summary: `Validated ${requested.length} Figma REPL handle(s).`,
     nodeIds: collectNodeIds(parsed.json),
   });
-  return {
+  const payload = {
     ok: !parsed.upstreamError,
     session: responseSession(session),
     diagnostics: diagnosticsForResponse(diagnostics),
     ...inspectInlineResultFields(parsed),
   };
+  return payload;
 }
 
 async function handleCallUpstreamTool(
@@ -2882,10 +2899,11 @@ async function executeCallUpstreamTool(
     resultPayload,
     upstream: upstreamEnvelope(parsed),
   });
-  return {
+  const payload = {
     ...limitedPayload,
     outputFiles,
   };
+  return payload;
 }
 
 async function handleLookup(
@@ -2908,12 +2926,13 @@ async function handleLookup(
         MAX_DOCS_SEARCH_SNIPPET_LINES,
       ),
     });
-    return makeJsonToolResult({
+    const payload = {
       ok: true,
       results: matches.results,
       guidance:
         "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_repl_lookup query or kind=api lookup when more detail is needed.",
-    });
+    };
+    return makeJsonToolResult(payload);
   }
   if (args.kind !== "api") {
     throw new Error('Tool argument "kind" must be one of: docs, api.');
@@ -2926,12 +2945,13 @@ async function handleLookup(
     maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
     exactSymbol: true,
   });
-  return makeJsonToolResult({
+  const payload = {
     ok: true,
     results: matches.results,
     guidance:
       "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents.",
-  });
+  };
+  return makeJsonToolResult(payload);
 }
 
 async function callUpstreamEval(
@@ -4510,11 +4530,7 @@ async function runTaskPlanStep(options: {
   title: string;
   sessionId?: string;
   references?: TaskPlanReferenceContext;
-  runtime: {
-    client: FigmaMcpProxyClient;
-    sessions: FigmaReplSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  };
+  runtime: FigmaReplRuntime;
 }): Promise<Record<string, unknown>> {
   const rawStepArgs = expandTaskPlanStepReferences(
     taskPlanStepArguments(options.step),
@@ -4949,7 +4965,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Initialize a file workspace once, then keep task scripts in that file-context folder.",
       "Run dryRun first for file-aware diagnostics without upstream calls.",
       "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. File-script metadata includes helperUsage.direct/transitive/runtimeBase for audit.",
+      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; full session state remains available through figma-repl://sessions/{id}.",
       "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
@@ -5199,7 +5215,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads without session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, and helperUsage for stable fields while keeping payloads extensible. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. Asset manifests and download_assets keep compact inline entries and write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
+      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, and compact script metadata while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.payload or non-JSON output in upstream.text, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. Asset manifests and download_assets keep compact inline entries and write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
     },
     toolTiers: createToolTierPayload(),
     patterns: {
@@ -5846,7 +5862,27 @@ function diagnosticsForResponse(
 }
 
 function responseSession(session: FigmaReplSession): Record<string, unknown> {
-  return publicSession(session, { includeHistory: false });
+  return removeUndefined({
+    id: session.id,
+    fileUrl: session.fileUrl,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    knownPages: session.knownPages,
+    currentPageId: session.currentPageId,
+    handles: session.handles,
+    workspace: session.workspace ? responseCompactWorkspace(session.workspace, session.id) : undefined,
+  }) as Record<string, unknown>;
+}
+
+function responseCompactWorkspace(workspace: FigmaReplSessionWorkspace, sessionId: string): FigmaReplCompactWorkspace {
+  return removeUndefined({
+    sessionDir: workspace.sessionDir,
+    scriptPath: workspace.scriptPath,
+    workspaceRef: `figma-repl://sessions/${encodeURIComponent(sessionId)}`,
+    files: {
+      inputFile: workspace.files.script,
+    },
+  }) as FigmaReplCompactWorkspace;
 }
 
 function responseWorkspace(workspace: FigmaReplSessionWorkspace): FigmaReplPublicWorkspace {
@@ -5867,15 +5903,12 @@ function responseWorkspace(workspace: FigmaReplSessionWorkspace): FigmaReplPubli
 
 function responseScriptMetadata(
   metadata: Record<string, unknown>,
-): Record<string, unknown> {
+): FigmaReplCompactScriptMetadata {
   return removeUndefined({
     scriptPath: metadata.scriptPath,
-    targetPageId: metadata.targetPageId,
     expectedSurface: metadata.expectedSurface,
-    injectedHelpers: metadata.injectedHelpers,
-    helperUsage: metadata.helperUsage,
     compiledScriptBytes: metadata.compiledScriptBytes,
-  }) as Record<string, unknown>;
+  }) as FigmaReplCompactScriptMetadata;
 }
 
 function upstreamResultFields(options: {

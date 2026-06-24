@@ -60,6 +60,7 @@ export {
   type FigmaReplCaptureNodeResult,
   type FigmaReplClient,
   type FigmaReplClientOptions,
+  type FigmaReplCompactScriptMetadata,
   type FigmaReplDiagnostic,
   type FigmaReplDiagnosticsOptions,
   type FigmaReplDiagnosticSeverity,

@@ -72,6 +72,15 @@ export interface FigmaReplPublicWorkspace {
         inputFile: string;
     };
 }
+export interface FigmaReplCompactWorkspace {
+    [key: string]: unknown;
+    sessionDir: string;
+    scriptPath: string;
+    workspaceRef: string;
+    files: {
+        inputFile: string;
+    };
+}
 export interface FigmaReplPublicSession {
     [key: string]: unknown;
     id: string;
@@ -88,13 +97,24 @@ export interface FigmaReplPublicSession {
     lastDiagnostics: FigmaReplDiagnostic[];
     workspace?: FigmaReplPublicWorkspace;
 }
+export interface FigmaReplCompactSession {
+    [key: string]: unknown;
+    id: string;
+    fileUrl?: string;
+    fileKey?: string;
+    surface?: FigmaReplSurface;
+    knownPages: Record<string, string>;
+    currentPageId?: string;
+    handles: Record<string, string>;
+    workspace?: FigmaReplCompactWorkspace;
+}
 export interface FigmaReplToolResultBase {
     [key: string]: unknown;
     ok: boolean;
-    session?: FigmaReplPublicSession;
+    session?: FigmaReplCompactSession;
 }
 export interface FigmaReplOpenResult extends FigmaReplToolResultBase {
-    session: FigmaReplPublicSession;
+    session: FigmaReplCompactSession;
     diagnostics: FigmaReplDiagnostic[];
 }
 export interface FigmaReplUpstreamBackedResult extends FigmaReplToolResultBase {
@@ -103,20 +123,19 @@ export interface FigmaReplUpstreamBackedResult extends FigmaReplToolResultBase {
     primaryFix?: string;
 }
 export interface FigmaReplEvalResult extends FigmaReplUpstreamBackedResult {
-    session: FigmaReplPublicSession;
+    session: FigmaReplCompactSession;
     diagnostics: FigmaReplDiagnostic[];
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
-export interface FigmaReplScriptMetadata {
+export interface FigmaReplCompactScriptMetadata {
     [key: string]: unknown;
     scriptPath: string;
-    targetPageId?: string;
     expectedSurface?: FigmaReplSurface;
-    injectedHelpers: string[];
-    helperUsage?: Record<string, unknown>;
     compiledScriptBytes: number;
 }
+/** @deprecated Use FigmaReplCompactScriptMetadata. */
+export type FigmaReplScriptMetadata = FigmaReplCompactScriptMetadata;
 export interface FigmaReplInlineResultLimit {
     [key: string]: unknown;
     limit: number;
@@ -133,9 +152,9 @@ export interface FigmaReplInlineResultLimit {
 }
 export interface FigmaReplRunScriptFileResult extends FigmaReplToolResultBase {
     dryRun: boolean;
-    session: FigmaReplPublicSession;
+    session: FigmaReplCompactSession;
     diagnostics: FigmaReplDiagnostic[];
-    script: FigmaReplScriptMetadata;
+    script: FigmaReplCompactScriptMetadata;
     outputFiles?: FigmaReplOutputFiles;
     upstream?: FigmaReplUpstreamEnvelope;
     upstreamError?: FigmaReplPublicUpstreamError;
@@ -153,7 +172,7 @@ export interface FigmaReplAssetManifestItem {
     upstreamError?: FigmaReplPublicUpstreamError;
 }
 export interface FigmaReplApplyAssetManifestResult extends FigmaReplToolResultBase {
-    session: FigmaReplPublicSession;
+    session: FigmaReplCompactSession;
     assets: FigmaReplAssetManifestItem[];
     validation?: unknown;
     failures?: Array<Record<string, unknown>>;
@@ -178,14 +197,14 @@ export interface FigmaReplDownloadAssetsTargetResult {
     downloadError?: FigmaReplPublicUpstreamError;
 }
 export interface FigmaReplDownloadAssetsResult extends FigmaReplToolResultBase {
-    session: FigmaReplPublicSession;
+    session: FigmaReplCompactSession;
     outputDir: string;
     targets: FigmaReplDownloadAssetsTargetResult[];
     failures?: Array<Record<string, unknown>>;
     outputFiles?: FigmaReplOutputFiles;
 }
 export interface FigmaReplCaptureNodeResult extends FigmaReplToolResultBase {
-    session: FigmaReplPublicSession;
+    session: FigmaReplCompactSession;
     imageFile?: string;
     nodeId: string;
     bytes?: number;
@@ -215,7 +234,7 @@ export interface FigmaReplTaskPlanFailure {
     error?: FigmaReplPublicUpstreamError;
 }
 export interface FigmaReplRunTaskPlanResult extends FigmaReplToolResultBase {
-    session: FigmaReplPublicSession;
+    session: FigmaReplCompactSession;
     stopped: boolean;
     steps: FigmaReplTaskPlanStepResult[];
     outputReferences?: Record<string, unknown>;
@@ -250,12 +269,12 @@ export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {
     suggestions?: Record<string, unknown>;
 }
 export interface FigmaReplInspectResult extends FigmaReplToolResultBase {
-    session: FigmaReplPublicSession;
+    session: FigmaReplCompactSession;
     diagnostics: FigmaReplDiagnostic[];
     upstreamError?: FigmaReplPublicUpstreamError;
 }
 export interface FigmaReplCallUpstreamToolResult extends FigmaReplUpstreamBackedResult {
-    session: FigmaReplPublicSession;
+    session: FigmaReplCompactSession;
     toolName: string;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
