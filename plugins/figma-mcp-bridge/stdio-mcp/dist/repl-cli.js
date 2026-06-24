@@ -31210,9 +31210,24 @@ return {
         primaryFix: parsed.primaryFix
       };
     }
-    const result = asRecord2(asRecord2(parsed.json).result);
-    const validations = Array.isArray(result.validations) ? result.validations.filter(isRecord4) : [];
-    const invalidCount = Number(result.invalidCount ?? validations.filter((item) => item.status !== "valid").length);
+    const validationResult = findAssetManifestValidationResult(parsed.json);
+    if (!validationResult) {
+      return {
+        ok: void 0,
+        skipped: true,
+        reason: "validation result did not include target records",
+        validationSource: "not-found",
+        expectedCount: targetNodeIds.length,
+        validCount: 0,
+        invalidCount: 0,
+        missingValidationCount: targetNodeIds.length,
+        validations: []
+      };
+    }
+    const validations = Array.isArray(validationResult.result.validations) ? validationResult.result.validations.filter(isRecord4) : [];
+    const invalidCount = Number(validationResult.result.invalidCount ?? validations.filter((item) => item.status !== "valid").length);
+    const validatedTargetNodeIds = new Set(validations.map((item) => asOptionalString2(item.targetNodeId)).filter((nodeId) => nodeId !== void 0));
+    const missingValidationCount = targetNodeIds.filter((targetNodeId) => !validatedTargetNodeIds.has(targetNodeId)).length;
     for (const asset of options.assetResults) {
       const targetNodeId = asOptionalString2(asset.targetNodeId);
       const validation = validations.find((item) => item.targetNodeId === targetNodeId);
@@ -31221,9 +31236,13 @@ return {
       }
     }
     return {
-      ok: invalidCount === 0,
-      validCount: Number(result.validCount ?? validations.length - invalidCount),
+      ok: missingValidationCount === 0 ? invalidCount === 0 : invalidCount > 0 ? false : void 0,
+      reason: missingValidationCount > 0 ? "validation result did not include every target record" : void 0,
+      validationSource: validationResult.sourcePath,
+      expectedCount: targetNodeIds.length,
+      validCount: Number(validationResult.result.validCount ?? validations.length - invalidCount),
       invalidCount,
+      missingValidationCount,
       validations
     };
   } catch (error2) {
@@ -31232,6 +31251,24 @@ return {
       error: responseUpstreamError(normalizeCaughtUpstreamError(error2))
     };
   }
+}
+function findAssetManifestValidationResult(value, depth = 0, sourcePath = "parsed.json") {
+  if (depth > 3) {
+    return void 0;
+  }
+  const record2 = asRecord2(value);
+  if (Array.isArray(record2.validations) || record2.validCount !== void 0 || record2.invalidCount !== void 0) {
+    return { result: record2, sourcePath };
+  }
+  for (const key of ["result", "payload", "data"]) {
+    if (record2[key] !== void 0) {
+      const nested = findAssetManifestValidationResult(record2[key], depth + 1, `${sourcePath}.${key}`);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  return void 0;
 }
 async function submitLocalAssetUploadIfAvailable(asset, parsed) {
   const submitUrl = extractAssetSubmitUrl(parsed.json);
