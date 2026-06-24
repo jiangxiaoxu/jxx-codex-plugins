@@ -13,6 +13,14 @@ export const DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
 
 type CaptureImageMimeType = "image/png";
 
+function readProcessEnv(name: string): string | undefined {
+  return typeof process === "undefined" ? undefined : process.env?.[name];
+}
+
+function defaultTaskWorkspaceRoot(): string {
+  return readProcessEnv(TASK_WORKSPACE_ROOT_ENV) ?? resolve(tmpdir(), "figma-repl-mcp", "tasks");
+}
+
 export interface FigmaReplSessionWorkspace {
   root: string;
   fileDir: string;
@@ -306,7 +314,7 @@ export function resolveTaskPlanResultFile(
       "debugFile",
     );
   }
-  const root = process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve(tmpdir(), "figma-repl-mcp", "tasks");
+  const root = defaultTaskWorkspaceRoot();
   if (!isAbsolute(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
@@ -527,7 +535,7 @@ async function removeFileIfExists(path: string): Promise<void> {
   try {
     await unlink(path);
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
+    if (isMissingFileError(error)) {
       return;
     }
     throw error;
@@ -565,6 +573,14 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
 
+export function isMissingFileError(error: unknown): boolean {
+  if (isNodeError(error) && error.code === "ENOENT") {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /\bENOENT\b/.test(message);
+}
+
 function textFileMetadata(path: string, content: string): FilePointerMetadata {
   return {
     path,
@@ -594,7 +610,7 @@ function resolveTaskWorkspace(options: {
     return explicitWorkspace;
   }
   const explicitRoot = asOptionalString(options.taskRoot);
-  const root = explicitRoot ?? process.env[TASK_WORKSPACE_ROOT_ENV] ?? resolve(tmpdir(), "figma-repl-mcp", "tasks");
+  const root = explicitRoot ?? defaultTaskWorkspaceRoot();
   if (!isAbsolute(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }

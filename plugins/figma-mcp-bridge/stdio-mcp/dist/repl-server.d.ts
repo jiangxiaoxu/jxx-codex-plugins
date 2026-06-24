@@ -2,11 +2,16 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type RemoteMcpClientOptions } from "./client.js";
 import { type ReferenceSearchResult } from "./repl-doc-search.js";
 import { assertSafeFigmaReplCode, diagnoseFigmaReplCode, resolveFigmaReplScriptHelperSelection as resolveFigmaReplScriptHelperSelectionInternal, type FigmaReplDiagnostic, type FigmaReplDiagnosticsOptions, type FigmaReplDiagnosticSeverity, type FigmaReplFileDiagnostic, type FigmaReplSurface } from "./repl-script-runner.js";
-import type { FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplEvalArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments } from "./repl-tool-args.js";
-import { type FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
+import type { FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplEvalArguments, FigmaReplGetMetadataArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments } from "./repl-tool-args.js";
+import { isMissingFileError as isFigmaReplMissingFileErrorForTesting, type FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 import type { FigmaMcpProxyClient } from "./stdio-server.js";
 export declare const FIGMA_REPL_DEFAULT_SESSION_ID = "default";
 export { assertSafeFigmaReplCode, diagnoseFigmaReplCode, };
+/**
+ * @internal Missing-file matcher used by cleanup regression tests.
+ * This is not a stable package API.
+ */
+export { isFigmaReplMissingFileErrorForTesting };
 /**
  * @internal Internal-facing helper-selection utility for tests and payload debugging.
  * This is not a stable MCP tool input contract, and callers cannot use it to configure helper injection.
@@ -14,7 +19,7 @@ export { assertSafeFigmaReplCode, diagnoseFigmaReplCode, };
 export declare const resolveFigmaReplScriptHelperSelection: typeof resolveFigmaReplScriptHelperSelectionInternal;
 export type { FigmaReplDiagnostic, FigmaReplDiagnosticsOptions, FigmaReplDiagnosticSeverity, FigmaReplFileDiagnostic, FigmaReplSurface, };
 export type { FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
-export type { FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplDownloadAssetsTarget, FigmaReplEvalArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
+export type { FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplDownloadAssetsTarget, FigmaReplEvalArguments, FigmaReplGetMetadataArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
 export declare const FIGMA_REPL_EVAL_COMMON_HELPER_NAMES: readonly ["remember", "forget", "resolveId", "node", "select", "cloneNodeTree", "findAll", "find", "text", "layout", "create", "findFreeSlot", "placeNode", "replaceGeneratedFrame", "inspect", "screenshot", "imageAsset", "checkpoint"];
 export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
     client?: FigmaMcpProxyClient;
@@ -36,7 +41,7 @@ export interface FigmaReplUpstreamEnvelope {
     [key: string]: unknown;
     kind: "json" | "text";
     ok: boolean;
-    payload?: unknown;
+    result?: unknown;
     text?: string;
 }
 export interface FigmaReplPublicUpstreamError {
@@ -279,6 +284,44 @@ export interface FigmaReplCallUpstreamToolResult extends FigmaReplUpstreamBacked
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
+export interface FigmaReplMetadataTreeNode {
+    [key: string]: unknown;
+    nodeId?: string;
+    type: string;
+    name?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    children?: FigmaReplMetadataTreeNode[];
+}
+export interface FigmaReplMetadataJson {
+    [key: string]: unknown;
+    format: "figma-metadata-tree";
+    source: "get_metadata";
+    fileKey: string;
+    nodeId?: string;
+    nodeCount: number;
+    root?: FigmaReplMetadataTreeNode;
+}
+export interface FigmaReplGetMetadataResult extends FigmaReplToolResultBase {
+    session: FigmaReplCompactSession;
+    fileKey: string;
+    nodeId?: string;
+    metadata: {
+        [key: string]: unknown;
+        format: "figma-metadata-tree";
+        source: "get_metadata";
+        nodeCount: number;
+        jsonBytes: number;
+        json?: FigmaReplMetadataJson;
+    };
+    upstream: FigmaReplUpstreamEnvelope;
+    upstreamError?: FigmaReplPublicUpstreamError;
+    primaryFix?: string;
+    outputFiles: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
+}
 export interface FigmaReplLookupResult extends FigmaReplToolResultBase {
     results: ReferenceSearchResult[];
     guidance: string;
@@ -298,6 +341,7 @@ export interface FigmaReplClient {
     prepareTask(args: FigmaReplPrepareTaskArguments): Promise<FigmaReplPrepareTaskResult>;
     guidance(args: FigmaReplGuidanceArguments): Promise<FigmaReplGuidanceResult>;
     inspect(args?: FigmaReplInspectArguments): Promise<FigmaReplInspectResult>;
+    getMetadata(args: FigmaReplGetMetadataArguments): Promise<FigmaReplGetMetadataResult>;
     callUpstreamTool(args: FigmaReplCallUpstreamToolArguments): Promise<FigmaReplCallUpstreamToolResult>;
     lookup(args: FigmaReplLookupArguments): Promise<FigmaReplLookupResult>;
 }

@@ -98,6 +98,20 @@ export interface FigmaReplCallUpstreamToolArguments {
     refresh?: boolean;
     inlineResultLimit?: number;
 }
+export interface FigmaReplGetMetadataArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    file?: string;
+    cwd?: string;
+    dirName?: string;
+    target?: unknown;
+    nodeId?: string;
+    refresh?: boolean;
+    inlineResultLimit?: number;
+    clientLanguages?: string;
+    clientFrameworks?: string;
+}
 export interface FigmaReplLookupArguments {
     [key: string]: unknown;
     title?: string;
@@ -156,6 +170,7 @@ export declare function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskAr
 export declare function asGuidanceArgs(args: unknown): FigmaReplGuidanceArguments;
 export declare function asInspectArgs(args: unknown): FigmaReplInspectArguments;
 export declare function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments;
+export declare function asGetMetadataArgs(args: unknown): FigmaReplGetMetadataArguments;
 export declare function asLookupArgs(args: unknown): FigmaReplLookupArguments;
 export declare function asTaskPlanSteps(value: unknown, displayName?: string): FigmaReplTaskPlanStep[];
 export declare function assertRequiredTitleArgument(args: Record<string, unknown>): void;

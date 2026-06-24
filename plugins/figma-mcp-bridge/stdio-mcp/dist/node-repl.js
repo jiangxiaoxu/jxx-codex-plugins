@@ -307,8 +307,8 @@ function esc(str) {
 function slugify(input) {
   return input.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
 }
-function isObject(data) {
-  return typeof data === "object" && data !== null && !Array.isArray(data);
+function isObject(data2) {
+  return typeof data2 === "object" && data2 !== null && !Array.isArray(data2);
 }
 function isPlainObject(o) {
   if (isObject(o) === false)
@@ -337,10 +337,10 @@ function shallowClone(o) {
     return new Set(o);
   return o;
 }
-function numKeys(data) {
+function numKeys(data2) {
   let keyCount = 0;
-  for (const key in data) {
-    if (Object.prototype.hasOwnProperty.call(data, key)) {
+  for (const key in data2) {
+    if (Object.prototype.hasOwnProperty.call(data2, key)) {
       keyCount++;
     }
   }
@@ -645,20 +645,20 @@ function getLengthableOrigin(input) {
     return "string";
   return "unknown";
 }
-function parsedType(data) {
-  const t = typeof data;
+function parsedType(data2) {
+  const t = typeof data2;
   switch (t) {
     case "number": {
-      return Number.isNaN(data) ? "nan" : "number";
+      return Number.isNaN(data2) ? "nan" : "number";
     }
     case "object": {
-      if (data === null) {
+      if (data2 === null) {
         return "null";
       }
-      if (Array.isArray(data)) {
+      if (Array.isArray(data2)) {
         return "array";
       }
-      const obj = data;
+      const obj = data2;
       if (obj && Object.getPrototypeOf(obj) !== Object.prototype && "constructor" in obj && obj.constructor) {
         return obj.constructor.name;
       }
@@ -742,15 +742,15 @@ var init_util = __esm({
         return false;
       }
     });
-    getParsedType = (data) => {
-      const t = typeof data;
+    getParsedType = (data2) => {
+      const t = typeof data2;
       switch (t) {
         case "undefined":
           return "undefined";
         case "string":
           return "string";
         case "number":
-          return Number.isNaN(data) ? "nan" : "number";
+          return Number.isNaN(data2) ? "nan" : "number";
         case "boolean":
           return "boolean";
         case "function":
@@ -760,25 +760,25 @@ var init_util = __esm({
         case "symbol":
           return "symbol";
         case "object":
-          if (Array.isArray(data)) {
+          if (Array.isArray(data2)) {
             return "array";
           }
-          if (data === null) {
+          if (data2 === null) {
             return "null";
           }
-          if (data.then && typeof data.then === "function" && data.catch && typeof data.catch === "function") {
+          if (data2.then && typeof data2.then === "function" && data2.catch && typeof data2.catch === "function") {
             return "promise";
           }
-          if (typeof Map !== "undefined" && data instanceof Map) {
+          if (typeof Map !== "undefined" && data2 instanceof Map) {
             return "map";
           }
-          if (typeof Set !== "undefined" && data instanceof Set) {
+          if (typeof Set !== "undefined" && data2 instanceof Set) {
             return "set";
           }
-          if (typeof Date !== "undefined" && data instanceof Date) {
+          if (typeof Date !== "undefined" && data2 instanceof Date) {
             return "date";
           }
-          if (typeof File !== "undefined" && data instanceof File) {
+          if (typeof File !== "undefined" && data2 instanceof File) {
             return "file";
           }
           return "object";
@@ -1008,10 +1008,10 @@ var init_regexes = __esm({
     nanoid = /^[a-zA-Z0-9_-]{21}$/;
     duration = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
     guid = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
-    uuid = (version2) => {
-      if (!version2)
+    uuid = (version3) => {
+      if (!version3)
         return /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
-      return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version2}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
+      return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version3}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
     };
     email = /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/;
     _emoji = `^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$`;
@@ -1491,24 +1491,24 @@ var init_versions = __esm({
 });
 
 // node_modules/zod/v4/core/schemas.js
-function isValidBase64(data) {
-  if (data === "")
+function isValidBase64(data2) {
+  if (data2 === "")
     return true;
-  if (/\s/.test(data))
+  if (/\s/.test(data2))
     return false;
-  if (data.length % 4 !== 0)
+  if (data2.length % 4 !== 0)
     return false;
   try {
-    atob(data);
+    atob(data2);
     return true;
   } catch {
     return false;
   }
 }
-function isValidBase64URL(data) {
-  if (!base64url.test(data))
+function isValidBase64URL(data2) {
+  if (!base64url.test(data2))
     return false;
-  const base642 = data.replace(/[-_]/g, (c) => c === "-" ? "+" : "/");
+  const base642 = data2.replace(/[-_]/g, (c) => c === "-" ? "+" : "/");
   const padded = base642.padEnd(Math.ceil(base642.length / 4) * 4, "=");
   return isValidBase64(padded);
 }
@@ -3905,7 +3905,7 @@ function extractDefs(ctx, schema) {
       return;
     }
     const seen = entry[1];
-    const { ref, defId } = makeURI(entry);
+    const { ref: ref2, defId } = makeURI(entry);
     seen.def = { ...seen.schema };
     if (defId)
       seen.defId = defId;
@@ -3913,7 +3913,7 @@ function extractDefs(ctx, schema) {
     for (const key in schema2) {
       delete schema2[key];
     }
-    schema2.$ref = ref;
+    schema2.$ref = ref2;
   };
   if (ctx.cycles === "throw") {
     for (const entry of ctx.seen.entries()) {
@@ -3965,11 +3965,11 @@ function finalize(ctx, schema) {
       return;
     const schema2 = seen.def ?? seen.schema;
     const _cached = { ...schema2 };
-    const ref = seen.ref;
+    const ref2 = seen.ref;
     seen.ref = null;
-    if (ref) {
-      flattenRef(ref);
-      const refSeen = ctx.seen.get(ref);
+    if (ref2) {
+      flattenRef(ref2);
+      const refSeen = ctx.seen.get(ref2);
       const refSchema = refSeen.schema;
       if (refSchema.$ref && (ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0")) {
         schema2.allOf = schema2.allOf ?? [];
@@ -3978,7 +3978,7 @@ function finalize(ctx, schema) {
         Object.assign(schema2, refSchema);
       }
       Object.assign(schema2, _cached);
-      const isParentRef = zodSchema._zod.parent === ref;
+      const isParentRef = zodSchema._zod.parent === ref2;
       if (isParentRef) {
         for (const key in schema2) {
           if (key === "$ref" || key === "allOf")
@@ -3999,7 +3999,7 @@ function finalize(ctx, schema) {
       }
     }
     const parent = zodSchema._zod.parent;
-    if (parent && parent !== ref) {
+    if (parent && parent !== ref2) {
       flattenRef(parent);
       const parentSeen = ctx.seen.get(parent);
       if (parentSeen?.schema.$ref) {
@@ -4588,13 +4588,13 @@ function isZ4Schema(s) {
   const schema = s;
   return !!schema._zod;
 }
-function safeParse2(schema, data) {
+function safeParse2(schema, data2) {
   if (isZ4Schema(schema)) {
-    const result2 = safeParse(schema, data);
+    const result2 = safeParse(schema, data2);
     return result2;
   }
   const v3Schema = schema;
-  const result = v3Schema.safeParse(data);
+  const result = v3Schema.safeParse(data2);
   return result;
 }
 function getObjectShape(schema) {
@@ -5019,19 +5019,19 @@ var init_schemas3 = __esm({
       inst.def = def;
       inst.type = def.type;
       Object.defineProperty(inst, "_def", { value: def });
-      inst.parse = (data, params) => parse2(inst, data, params, { callee: inst.parse });
-      inst.safeParse = (data, params) => safeParse3(inst, data, params);
-      inst.parseAsync = async (data, params) => parseAsync2(inst, data, params, { callee: inst.parseAsync });
-      inst.safeParseAsync = async (data, params) => safeParseAsync2(inst, data, params);
+      inst.parse = (data2, params) => parse2(inst, data2, params, { callee: inst.parse });
+      inst.safeParse = (data2, params) => safeParse3(inst, data2, params);
+      inst.parseAsync = async (data2, params) => parseAsync2(inst, data2, params, { callee: inst.parseAsync });
+      inst.safeParseAsync = async (data2, params) => safeParseAsync2(inst, data2, params);
       inst.spa = inst.safeParseAsync;
-      inst.encode = (data, params) => encode2(inst, data, params);
-      inst.decode = (data, params) => decode2(inst, data, params);
-      inst.encodeAsync = async (data, params) => encodeAsync2(inst, data, params);
-      inst.decodeAsync = async (data, params) => decodeAsync2(inst, data, params);
-      inst.safeEncode = (data, params) => safeEncode2(inst, data, params);
-      inst.safeDecode = (data, params) => safeDecode2(inst, data, params);
-      inst.safeEncodeAsync = async (data, params) => safeEncodeAsync2(inst, data, params);
-      inst.safeDecodeAsync = async (data, params) => safeDecodeAsync2(inst, data, params);
+      inst.encode = (data2, params) => encode2(inst, data2, params);
+      inst.decode = (data2, params) => decode2(inst, data2, params);
+      inst.encodeAsync = async (data2, params) => encodeAsync2(inst, data2, params);
+      inst.decodeAsync = async (data2, params) => decodeAsync2(inst, data2, params);
+      inst.safeEncode = (data2, params) => safeEncode2(inst, data2, params);
+      inst.safeDecode = (data2, params) => safeDecode2(inst, data2, params);
+      inst.safeEncodeAsync = async (data2, params) => safeEncodeAsync2(inst, data2, params);
+      inst.safeDecodeAsync = async (data2, params) => safeDecodeAsync2(inst, data2, params);
       _installLazyMethods(inst, "ZodType", {
         check(...chks) {
           const def2 = this.def;
@@ -7250,23 +7250,23 @@ var init_types = __esm({
       CreateTaskResultSchema
     ]);
     McpError = class _McpError extends Error {
-      constructor(code, message, data) {
+      constructor(code, message, data2) {
         super(`MCP error ${code}: ${message}`);
         this.code = code;
-        this.data = data;
+        this.data = data2;
         this.name = "McpError";
       }
       /**
        * Factory method to create the appropriate error type based on the error code and data
        */
-      static fromError(code, message, data) {
-        if (code === ErrorCode.UrlElicitationRequired && data) {
-          const errorData = data;
+      static fromError(code, message, data2) {
+        if (code === ErrorCode.UrlElicitationRequired && data2) {
+          const errorData = data2;
           if (errorData.elicitations) {
             return new UrlElicitationRequiredError(errorData.elicitations, message);
           }
         }
-        return new _McpError(code, message, data);
+        return new _McpError(code, message, data2);
       }
     };
     UrlElicitationRequiredError = class extends McpError {
@@ -7652,8 +7652,8 @@ function getMethodLiteral(schema) {
   }
   return value;
 }
-function parseWithCompat(schema, data) {
-  const result = safeParse2(schema, data);
+function parseWithCompat(schema, data2) {
+  const result = safeParse2(schema, data2);
   if (!result.success) {
     throw result.error;
   }
@@ -8192,7 +8192,7 @@ var init_protocol = __esm({
               return;
             }
             const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-            await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+            await new Promise((resolve7) => setTimeout(resolve7, pollInterval));
             options?.signal?.throwIfAborted();
           }
         } catch (error2) {
@@ -8209,7 +8209,7 @@ var init_protocol = __esm({
        */
       request(request, resultSchema, options) {
         const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve7, reject) => {
           const earlyReject = (error2) => {
             reject(error2);
           };
@@ -8287,7 +8287,7 @@ var init_protocol = __esm({
               if (!parseResult.success) {
                 reject(parseResult.error);
               } else {
-                resolve3(parseResult.data);
+                resolve7(parseResult.data);
               }
             } catch (error2) {
               reject(error2);
@@ -8548,12 +8548,12 @@ var init_protocol = __esm({
           }
         } catch {
         }
-        return new Promise((resolve3, reject) => {
+        return new Promise((resolve7, reject) => {
           if (signal.aborted) {
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
             return;
           }
-          const timeoutId = setTimeout(resolve3, interval);
+          const timeoutId = setTimeout(resolve7, interval);
           signal.addEventListener("abort", () => {
             clearTimeout(timeoutId);
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -8806,7 +8806,7 @@ var require_scope = __commonJS({
       let: new code_1.Name("let"),
       var: new code_1.Name("var")
     };
-    var Scope = class {
+    var Scope3 = class {
       constructor({ prefixes, parent } = {}) {
         this._names = {};
         this._prefixes = prefixes;
@@ -8830,7 +8830,7 @@ var require_scope = __commonJS({
         return this._names[prefix] = { prefix, index: 0 };
       }
     };
-    exports.Scope = Scope;
+    exports.Scope = Scope3;
     var ValueScopeName = class extends code_1.Name {
       constructor(prefix, nameStr) {
         super(nameStr);
@@ -8843,7 +8843,7 @@ var require_scope = __commonJS({
     };
     exports.ValueScopeName = ValueScopeName;
     var line = (0, code_1._)`\n`;
-    var ValueScope = class extends Scope {
+    var ValueScope = class extends Scope3 {
       constructor(opts) {
         super(opts);
         this._values = {};
@@ -8986,7 +8986,7 @@ var require_codegen = __commonJS({
       AND: new code_1._Code("&&"),
       ADD: new code_1._Code("+")
     };
-    var Node = class {
+    var Node3 = class {
       optimizeNodes() {
         return this;
       }
@@ -8994,7 +8994,7 @@ var require_codegen = __commonJS({
         return this;
       }
     };
-    var Def = class extends Node {
+    var Def = class extends Node3 {
       constructor(varKind, name, rhs) {
         super();
         this.varKind = varKind;
@@ -9017,7 +9017,7 @@ var require_codegen = __commonJS({
         return this.rhs instanceof code_1._CodeOrName ? this.rhs.names : {};
       }
     };
-    var Assign = class extends Node {
+    var Assign = class extends Node3 {
       constructor(lhs, rhs, sideEffects) {
         super();
         this.lhs = lhs;
@@ -9047,7 +9047,7 @@ var require_codegen = __commonJS({
         return `${this.lhs} ${this.op}= ${this.rhs};` + _n;
       }
     };
-    var Label = class extends Node {
+    var Label = class extends Node3 {
       constructor(label) {
         super();
         this.label = label;
@@ -9057,7 +9057,7 @@ var require_codegen = __commonJS({
         return `${this.label}:` + _n;
       }
     };
-    var Break = class extends Node {
+    var Break = class extends Node3 {
       constructor(label) {
         super();
         this.label = label;
@@ -9068,7 +9068,7 @@ var require_codegen = __commonJS({
         return `break${label};` + _n;
       }
     };
-    var Throw = class extends Node {
+    var Throw = class extends Node3 {
       constructor(error2) {
         super();
         this.error = error2;
@@ -9080,7 +9080,7 @@ var require_codegen = __commonJS({
         return this.error.names;
       }
     };
-    var AnyCode = class extends Node {
+    var AnyCode = class extends Node3 {
       constructor(code) {
         super();
         this.code = code;
@@ -9099,7 +9099,7 @@ var require_codegen = __commonJS({
         return this.code instanceof code_1._CodeOrName ? this.code.names : {};
       }
     };
-    var ParentNode = class extends Node {
+    var ParentNode = class extends Node3 {
       constructor(nodes = []) {
         super();
         this.nodes = nodes;
@@ -9895,7 +9895,7 @@ var require_errors = __commonJS({
       gen.if((0, codegen_1._)`${names_1.default.vErrors} !== null`, () => gen.if(errsCount, () => gen.assign((0, codegen_1._)`${names_1.default.vErrors}.length`, errsCount), () => gen.assign(names_1.default.vErrors, null)));
     }
     exports.resetErrorsCount = resetErrorsCount;
-    function extendErrors({ gen, keyword, schemaValue, data, errsCount, it }) {
+    function extendErrors({ gen, keyword, schemaValue, data: data2, errsCount, it }) {
       if (errsCount === void 0)
         throw new Error("ajv implementation error");
       const err = gen.name("err");
@@ -9905,7 +9905,7 @@ var require_errors = __commonJS({
         gen.assign((0, codegen_1._)`${err}.schemaPath`, (0, codegen_1.str)`${it.errSchemaPath}/${keyword}`);
         if (it.opts.verbose) {
           gen.assign((0, codegen_1._)`${err}.schema`, schemaValue);
-          gen.assign((0, codegen_1._)`${err}.data`, data);
+          gen.assign((0, codegen_1._)`${err}.data`, data2);
         }
       });
     }
@@ -9961,14 +9961,14 @@ var require_errors = __commonJS({
       return [E.schemaPath, schPath];
     }
     function extraErrorProps(cxt, { params, message }, keyValues) {
-      const { keyword, data, schemaValue, it } = cxt;
+      const { keyword, data: data2, schemaValue, it } = cxt;
       const { opts, propertyName, topSchemaRef, schemaPath } = it;
       keyValues.push([E.keyword, keyword], [E.params, typeof params == "function" ? params(cxt) : params || (0, codegen_1._)`{}`]);
       if (opts.messages) {
         keyValues.push([E.message, typeof message == "function" ? message(cxt) : message]);
       }
       if (opts.verbose) {
-        keyValues.push([E.schema, schemaValue], [E.parentSchema, (0, codegen_1._)`${topSchemaRef}${schemaPath}`], [names_1.default.data, data]);
+        keyValues.push([E.schema, schemaValue], [E.parentSchema, (0, codegen_1._)`${topSchemaRef}${schemaPath}`], [names_1.default.data, data2]);
       }
       if (propertyName)
         keyValues.push([E.propertyName, propertyName]);
@@ -10011,11 +10011,11 @@ var require_boolSchema = __commonJS({
     }
     exports.boolOrEmptySchema = boolOrEmptySchema;
     function falseSchemaError(it, overrideAllErrors) {
-      const { gen, data } = it;
+      const { gen, data: data2 } = it;
       const cxt = {
         gen,
         keyword: "false schema",
-        data,
+        data: data2,
         schema: false,
         schemaCode: false,
         schemaValue: false,
@@ -10098,37 +10098,37 @@ var require_dataType = __commonJS({
       DataType2[DataType2["Wrong"] = 1] = "Wrong";
     })(DataType || (exports.DataType = DataType = {}));
     function getSchemaTypes(schema) {
-      const types = getJSONTypes(schema.type);
-      const hasNull = types.includes("null");
+      const types2 = getJSONTypes(schema.type);
+      const hasNull = types2.includes("null");
       if (hasNull) {
         if (schema.nullable === false)
           throw new Error("type: null contradicts nullable: false");
       } else {
-        if (!types.length && schema.nullable !== void 0) {
+        if (!types2.length && schema.nullable !== void 0) {
           throw new Error('"nullable" cannot be used without "type"');
         }
         if (schema.nullable === true)
-          types.push("null");
+          types2.push("null");
       }
-      return types;
+      return types2;
     }
     exports.getSchemaTypes = getSchemaTypes;
     function getJSONTypes(ts) {
-      const types = Array.isArray(ts) ? ts : ts ? [ts] : [];
-      if (types.every(rules_1.isJSONType))
-        return types;
-      throw new Error("type must be JSONType or JSONType[]: " + types.join(","));
+      const types2 = Array.isArray(ts) ? ts : ts ? [ts] : [];
+      if (types2.every(rules_1.isJSONType))
+        return types2;
+      throw new Error("type must be JSONType or JSONType[]: " + types2.join(","));
     }
     exports.getJSONTypes = getJSONTypes;
-    function coerceAndCheckDataType(it, types) {
-      const { gen, data, opts } = it;
-      const coerceTo = coerceToTypes(types, opts.coerceTypes);
-      const checkTypes = types.length > 0 && !(coerceTo.length === 0 && types.length === 1 && (0, applicability_1.schemaHasRulesForType)(it, types[0]));
+    function coerceAndCheckDataType(it, types2) {
+      const { gen, data: data2, opts } = it;
+      const coerceTo = coerceToTypes(types2, opts.coerceTypes);
+      const checkTypes = types2.length > 0 && !(coerceTo.length === 0 && types2.length === 1 && (0, applicability_1.schemaHasRulesForType)(it, types2[0]));
       if (checkTypes) {
-        const wrongType = checkDataTypes(types, data, opts.strictNumbers, DataType.Wrong);
+        const wrongType = checkDataTypes(types2, data2, opts.strictNumbers, DataType.Wrong);
         gen.if(wrongType, () => {
           if (coerceTo.length)
-            coerceData(it, types, coerceTo);
+            coerceData(it, types2, coerceTo);
           else
             reportTypeError(it);
         });
@@ -10137,15 +10137,15 @@ var require_dataType = __commonJS({
     }
     exports.coerceAndCheckDataType = coerceAndCheckDataType;
     var COERCIBLE = /* @__PURE__ */ new Set(["string", "number", "integer", "boolean", "null"]);
-    function coerceToTypes(types, coerceTypes) {
-      return coerceTypes ? types.filter((t) => COERCIBLE.has(t) || coerceTypes === "array" && t === "array") : [];
+    function coerceToTypes(types2, coerceTypes) {
+      return coerceTypes ? types2.filter((t) => COERCIBLE.has(t) || coerceTypes === "array" && t === "array") : [];
     }
-    function coerceData(it, types, coerceTo) {
-      const { gen, data, opts } = it;
-      const dataType = gen.let("dataType", (0, codegen_1._)`typeof ${data}`);
+    function coerceData(it, types2, coerceTo) {
+      const { gen, data: data2, opts } = it;
+      const dataType = gen.let("dataType", (0, codegen_1._)`typeof ${data2}`);
       const coerced = gen.let("coerced", (0, codegen_1._)`undefined`);
       if (opts.coerceTypes === "array") {
-        gen.if((0, codegen_1._)`${dataType} == 'object' && Array.isArray(${data}) && ${data}.length == 1`, () => gen.assign(data, (0, codegen_1._)`${data}[0]`).assign(dataType, (0, codegen_1._)`typeof ${data}`).if(checkDataTypes(types, data, opts.strictNumbers), () => gen.assign(coerced, data)));
+        gen.if((0, codegen_1._)`${dataType} == 'object' && Array.isArray(${data2}) && ${data2}.length == 1`, () => gen.assign(data2, (0, codegen_1._)`${data2}[0]`).assign(dataType, (0, codegen_1._)`typeof ${data2}`).if(checkDataTypes(types2, data2, opts.strictNumbers), () => gen.assign(coerced, data2)));
       }
       gen.if((0, codegen_1._)`${coerced} !== undefined`);
       for (const t of coerceTo) {
@@ -10157,84 +10157,84 @@ var require_dataType = __commonJS({
       reportTypeError(it);
       gen.endIf();
       gen.if((0, codegen_1._)`${coerced} !== undefined`, () => {
-        gen.assign(data, coerced);
+        gen.assign(data2, coerced);
         assignParentData(it, coerced);
       });
       function coerceSpecificType(t) {
         switch (t) {
           case "string":
-            gen.elseIf((0, codegen_1._)`${dataType} == "number" || ${dataType} == "boolean"`).assign(coerced, (0, codegen_1._)`"" + ${data}`).elseIf((0, codegen_1._)`${data} === null`).assign(coerced, (0, codegen_1._)`""`);
+            gen.elseIf((0, codegen_1._)`${dataType} == "number" || ${dataType} == "boolean"`).assign(coerced, (0, codegen_1._)`"" + ${data2}`).elseIf((0, codegen_1._)`${data2} === null`).assign(coerced, (0, codegen_1._)`""`);
             return;
           case "number":
-            gen.elseIf((0, codegen_1._)`${dataType} == "boolean" || ${data} === null
-              || (${dataType} == "string" && ${data} && ${data} == +${data})`).assign(coerced, (0, codegen_1._)`+${data}`);
+            gen.elseIf((0, codegen_1._)`${dataType} == "boolean" || ${data2} === null
+              || (${dataType} == "string" && ${data2} && ${data2} == +${data2})`).assign(coerced, (0, codegen_1._)`+${data2}`);
             return;
           case "integer":
-            gen.elseIf((0, codegen_1._)`${dataType} === "boolean" || ${data} === null
-              || (${dataType} === "string" && ${data} && ${data} == +${data} && !(${data} % 1))`).assign(coerced, (0, codegen_1._)`+${data}`);
+            gen.elseIf((0, codegen_1._)`${dataType} === "boolean" || ${data2} === null
+              || (${dataType} === "string" && ${data2} && ${data2} == +${data2} && !(${data2} % 1))`).assign(coerced, (0, codegen_1._)`+${data2}`);
             return;
           case "boolean":
-            gen.elseIf((0, codegen_1._)`${data} === "false" || ${data} === 0 || ${data} === null`).assign(coerced, false).elseIf((0, codegen_1._)`${data} === "true" || ${data} === 1`).assign(coerced, true);
+            gen.elseIf((0, codegen_1._)`${data2} === "false" || ${data2} === 0 || ${data2} === null`).assign(coerced, false).elseIf((0, codegen_1._)`${data2} === "true" || ${data2} === 1`).assign(coerced, true);
             return;
           case "null":
-            gen.elseIf((0, codegen_1._)`${data} === "" || ${data} === 0 || ${data} === false`);
+            gen.elseIf((0, codegen_1._)`${data2} === "" || ${data2} === 0 || ${data2} === false`);
             gen.assign(coerced, null);
             return;
           case "array":
             gen.elseIf((0, codegen_1._)`${dataType} === "string" || ${dataType} === "number"
-              || ${dataType} === "boolean" || ${data} === null`).assign(coerced, (0, codegen_1._)`[${data}]`);
+              || ${dataType} === "boolean" || ${data2} === null`).assign(coerced, (0, codegen_1._)`[${data2}]`);
         }
       }
     }
     function assignParentData({ gen, parentData, parentDataProperty }, expr) {
       gen.if((0, codegen_1._)`${parentData} !== undefined`, () => gen.assign((0, codegen_1._)`${parentData}[${parentDataProperty}]`, expr));
     }
-    function checkDataType(dataType, data, strictNums, correct = DataType.Correct) {
+    function checkDataType(dataType, data2, strictNums, correct = DataType.Correct) {
       const EQ = correct === DataType.Correct ? codegen_1.operators.EQ : codegen_1.operators.NEQ;
       let cond;
       switch (dataType) {
         case "null":
-          return (0, codegen_1._)`${data} ${EQ} null`;
+          return (0, codegen_1._)`${data2} ${EQ} null`;
         case "array":
-          cond = (0, codegen_1._)`Array.isArray(${data})`;
+          cond = (0, codegen_1._)`Array.isArray(${data2})`;
           break;
         case "object":
-          cond = (0, codegen_1._)`${data} && typeof ${data} == "object" && !Array.isArray(${data})`;
+          cond = (0, codegen_1._)`${data2} && typeof ${data2} == "object" && !Array.isArray(${data2})`;
           break;
         case "integer":
-          cond = numCond((0, codegen_1._)`!(${data} % 1) && !isNaN(${data})`);
+          cond = numCond((0, codegen_1._)`!(${data2} % 1) && !isNaN(${data2})`);
           break;
         case "number":
           cond = numCond();
           break;
         default:
-          return (0, codegen_1._)`typeof ${data} ${EQ} ${dataType}`;
+          return (0, codegen_1._)`typeof ${data2} ${EQ} ${dataType}`;
       }
       return correct === DataType.Correct ? cond : (0, codegen_1.not)(cond);
       function numCond(_cond = codegen_1.nil) {
-        return (0, codegen_1.and)((0, codegen_1._)`typeof ${data} == "number"`, _cond, strictNums ? (0, codegen_1._)`isFinite(${data})` : codegen_1.nil);
+        return (0, codegen_1.and)((0, codegen_1._)`typeof ${data2} == "number"`, _cond, strictNums ? (0, codegen_1._)`isFinite(${data2})` : codegen_1.nil);
       }
     }
     exports.checkDataType = checkDataType;
-    function checkDataTypes(dataTypes, data, strictNums, correct) {
+    function checkDataTypes(dataTypes, data2, strictNums, correct) {
       if (dataTypes.length === 1) {
-        return checkDataType(dataTypes[0], data, strictNums, correct);
+        return checkDataType(dataTypes[0], data2, strictNums, correct);
       }
       let cond;
-      const types = (0, util_1.toHash)(dataTypes);
-      if (types.array && types.object) {
-        const notObj = (0, codegen_1._)`typeof ${data} != "object"`;
-        cond = types.null ? notObj : (0, codegen_1._)`!${data} || ${notObj}`;
-        delete types.null;
-        delete types.array;
-        delete types.object;
+      const types2 = (0, util_1.toHash)(dataTypes);
+      if (types2.array && types2.object) {
+        const notObj = (0, codegen_1._)`typeof ${data2} != "object"`;
+        cond = types2.null ? notObj : (0, codegen_1._)`!${data2} || ${notObj}`;
+        delete types2.null;
+        delete types2.array;
+        delete types2.object;
       } else {
         cond = codegen_1.nil;
       }
-      if (types.number)
-        delete types.integer;
-      for (const t in types)
-        cond = (0, codegen_1.and)(cond, checkDataType(t, data, strictNums, correct));
+      if (types2.number)
+        delete types2.integer;
+      for (const t in types2)
+        cond = (0, codegen_1.and)(cond, checkDataType(t, data2, strictNums, correct));
       return cond;
     }
     exports.checkDataTypes = checkDataTypes;
@@ -10248,12 +10248,12 @@ var require_dataType = __commonJS({
     }
     exports.reportTypeError = reportTypeError;
     function getTypeErrorContext(it) {
-      const { gen, data, schema } = it;
+      const { gen, data: data2, schema } = it;
       const schemaCode = (0, util_1.schemaRefOrVal)(it, schema, "type");
       return {
         gen,
         keyword: "type",
-        data,
+        data: data2,
         schema: schema.type,
         schemaCode,
         schemaValue: schemaCode,
@@ -10285,10 +10285,10 @@ var require_defaults = __commonJS({
     }
     exports.assignDefaults = assignDefaults;
     function assignDefault(it, prop, defaultValue) {
-      const { gen, compositeRule, data, opts } = it;
+      const { gen, compositeRule, data: data2, opts } = it;
       if (defaultValue === void 0)
         return;
-      const childData = (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(prop)}`;
+      const childData = (0, codegen_1._)`${data2}${(0, codegen_1.getProperty)(prop)}`;
       if (compositeRule) {
         (0, util_1.checkStrictMode)(it, `default is ignored for: ${childData}`);
         return;
@@ -10313,15 +10313,15 @@ var require_code2 = __commonJS({
     var names_1 = require_names();
     var util_2 = require_util();
     function checkReportMissingProp(cxt, prop) {
-      const { gen, data, it } = cxt;
-      gen.if(noPropertyInData(gen, data, prop, it.opts.ownProperties), () => {
+      const { gen, data: data2, it } = cxt;
+      gen.if(noPropertyInData(gen, data2, prop, it.opts.ownProperties), () => {
         cxt.setParams({ missingProperty: (0, codegen_1._)`${prop}` }, true);
         cxt.error();
       });
     }
     exports.checkReportMissingProp = checkReportMissingProp;
-    function checkMissingProp({ gen, data, it: { opts } }, properties, missing) {
-      return (0, codegen_1.or)(...properties.map((prop) => (0, codegen_1.and)(noPropertyInData(gen, data, prop, opts.ownProperties), (0, codegen_1._)`${missing} = ${prop}`)));
+    function checkMissingProp({ gen, data: data2, it: { opts } }, properties, missing) {
+      return (0, codegen_1.or)(...properties.map((prop) => (0, codegen_1.and)(noPropertyInData(gen, data2, prop, opts.ownProperties), (0, codegen_1._)`${missing} = ${prop}`)));
     }
     exports.checkMissingProp = checkMissingProp;
     function reportMissingProp(cxt, missing) {
@@ -10337,18 +10337,18 @@ var require_code2 = __commonJS({
       });
     }
     exports.hasPropFunc = hasPropFunc;
-    function isOwnProperty(gen, data, property) {
-      return (0, codegen_1._)`${hasPropFunc(gen)}.call(${data}, ${property})`;
+    function isOwnProperty(gen, data2, property) {
+      return (0, codegen_1._)`${hasPropFunc(gen)}.call(${data2}, ${property})`;
     }
     exports.isOwnProperty = isOwnProperty;
-    function propertyInData(gen, data, property, ownProperties) {
-      const cond = (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(property)} !== undefined`;
-      return ownProperties ? (0, codegen_1._)`${cond} && ${isOwnProperty(gen, data, property)}` : cond;
+    function propertyInData(gen, data2, property, ownProperties) {
+      const cond = (0, codegen_1._)`${data2}${(0, codegen_1.getProperty)(property)} !== undefined`;
+      return ownProperties ? (0, codegen_1._)`${cond} && ${isOwnProperty(gen, data2, property)}` : cond;
     }
     exports.propertyInData = propertyInData;
-    function noPropertyInData(gen, data, property, ownProperties) {
-      const cond = (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(property)} === undefined`;
-      return ownProperties ? (0, codegen_1.or)(cond, (0, codegen_1.not)(isOwnProperty(gen, data, property))) : cond;
+    function noPropertyInData(gen, data2, property, ownProperties) {
+      const cond = (0, codegen_1._)`${data2}${(0, codegen_1.getProperty)(property)} === undefined`;
+      return ownProperties ? (0, codegen_1.or)(cond, (0, codegen_1.not)(isOwnProperty(gen, data2, property))) : cond;
     }
     exports.noPropertyInData = noPropertyInData;
     function allSchemaProperties(schemaMap) {
@@ -10359,8 +10359,8 @@ var require_code2 = __commonJS({
       return allSchemaProperties(schemaMap).filter((p) => !(0, util_1.alwaysValidSchema)(it, schemaMap[p]));
     }
     exports.schemaProperties = schemaProperties;
-    function callValidateCode({ schemaCode, data, it: { gen, topSchemaRef, schemaPath, errorPath }, it }, func, context, passSchema) {
-      const dataAndSchema = passSchema ? (0, codegen_1._)`${schemaCode}, ${data}, ${topSchemaRef}${schemaPath}` : data;
+    function callValidateCode({ schemaCode, data: data2, it: { gen, topSchemaRef, schemaPath, errorPath }, it }, func, context, passSchema) {
+      const dataAndSchema = passSchema ? (0, codegen_1._)`${schemaCode}, ${data2}, ${topSchemaRef}${schemaPath}` : data2;
       const valCxt = [
         [names_1.default.instancePath, (0, codegen_1.strConcat)(names_1.default.instancePath, errorPath)],
         [names_1.default.parentData, it.parentData],
@@ -10386,7 +10386,7 @@ var require_code2 = __commonJS({
     }
     exports.usePattern = usePattern;
     function validateArray(cxt) {
-      const { gen, data, keyword, it } = cxt;
+      const { gen, data: data2, keyword, it } = cxt;
       const valid = gen.name("valid");
       if (it.allErrors) {
         const validArr = gen.let("valid", true);
@@ -10397,7 +10397,7 @@ var require_code2 = __commonJS({
       validateItems(() => gen.break());
       return valid;
       function validateItems(notValid) {
-        const len = gen.const("len", (0, codegen_1._)`${data}.length`);
+        const len = gen.const("len", (0, codegen_1._)`${data2}.length`);
         gen.forRange("i", 0, len, (i) => {
           cxt.subschema({
             keyword,
@@ -10507,8 +10507,8 @@ var require_keyword = __commonJS({
     }
     exports.funcKeywordCode = funcKeywordCode;
     function modifyData(cxt) {
-      const { gen, data, it } = cxt;
-      gen.if(it.parentData, () => gen.assign(data, (0, codegen_1._)`${it.parentData}[${it.parentDataProperty}]`));
+      const { gen, data: data2, it } = cxt;
+      gen.if(it.parentData, () => gen.assign(data2, (0, codegen_1._)`${it.parentData}[${it.parentDataProperty}]`));
     }
     function addErrs(cxt, errs) {
       const { gen } = cxt;
@@ -10591,8 +10591,8 @@ var require_subschema = __commonJS({
       throw new Error('either "keyword" or "schema" must be passed');
     }
     exports.getSubschema = getSubschema;
-    function extendSubschemaData(subschema, it, { dataProp, dataPropType: dpType, data, dataTypes, propertyName }) {
-      if (data !== void 0 && dataProp !== void 0) {
+    function extendSubschemaData(subschema, it, { dataProp, dataPropType: dpType, data: data2, dataTypes, propertyName }) {
+      if (data2 !== void 0 && dataProp !== void 0) {
         throw new Error('both "data" and "dataProp" passed, only one allowed');
       }
       const { gen } = it;
@@ -10604,8 +10604,8 @@ var require_subschema = __commonJS({
         subschema.parentDataProperty = (0, codegen_1._)`${dataProp}`;
         subschema.dataPathArr = [...dataPathArr, subschema.parentDataProperty];
       }
-      if (data !== void 0) {
-        const nextData = data instanceof codegen_1.Name ? data : gen.let("data", data, true);
+      if (data2 !== void 0) {
+        const nextData = data2 instanceof codegen_1.Name ? data2 : gen.let("data", data2, true);
         dataContextProps(nextData);
         if (propertyName !== void 0)
           subschema.propertyName = propertyName;
@@ -10873,26 +10873,26 @@ var require_resolve = __commonJS({
         addAnchor.call(this, sch.$anchor);
         addAnchor.call(this, sch.$dynamicAnchor);
         baseIds[jsonPtr] = innerBaseId;
-        function addRef(ref) {
+        function addRef(ref2) {
           const _resolve = this.opts.uriResolver.resolve;
-          ref = normalizeId(innerBaseId ? _resolve(innerBaseId, ref) : ref);
-          if (schemaRefs.has(ref))
-            throw ambiguos(ref);
-          schemaRefs.add(ref);
-          let schOrRef = this.refs[ref];
+          ref2 = normalizeId(innerBaseId ? _resolve(innerBaseId, ref2) : ref2);
+          if (schemaRefs.has(ref2))
+            throw ambiguos(ref2);
+          schemaRefs.add(ref2);
+          let schOrRef = this.refs[ref2];
           if (typeof schOrRef == "string")
             schOrRef = this.refs[schOrRef];
           if (typeof schOrRef == "object") {
-            checkAmbiguosRef(sch, schOrRef.schema, ref);
-          } else if (ref !== normalizeId(fullPath)) {
-            if (ref[0] === "#") {
-              checkAmbiguosRef(sch, localRefs[ref], ref);
-              localRefs[ref] = sch;
+            checkAmbiguosRef(sch, schOrRef.schema, ref2);
+          } else if (ref2 !== normalizeId(fullPath)) {
+            if (ref2[0] === "#") {
+              checkAmbiguosRef(sch, localRefs[ref2], ref2);
+              localRefs[ref2] = sch;
             } else {
-              this.refs[ref] = fullPath;
+              this.refs[ref2] = fullPath;
             }
           }
-          return ref;
+          return ref2;
         }
         function addAnchor(anchor) {
           if (typeof anchor == "string") {
@@ -10903,12 +10903,12 @@ var require_resolve = __commonJS({
         }
       });
       return localRefs;
-      function checkAmbiguosRef(sch1, sch2, ref) {
+      function checkAmbiguosRef(sch1, sch2, ref2) {
         if (sch2 !== void 0 && !equal(sch1, sch2))
-          throw ambiguos(ref);
+          throw ambiguos(ref2);
       }
-      function ambiguos(ref) {
-        return new Error(`reference "${ref}" resolves to more than one schema`);
+      function ambiguos(ref2) {
+        return new Error(`reference "${ref2}" resolves to more than one schema`);
       }
     }
     exports.getSchemaRefs = getSchemaRefs;
@@ -11038,9 +11038,9 @@ var require_validate = __commonJS({
     function typeAndKeywords(it, errsCount) {
       if (it.opts.jtd)
         return schemaKeywords(it, [], false, errsCount);
-      const types = (0, dataType_1.getSchemaTypes)(it.schema);
-      const checkedTypes = (0, dataType_1.coerceAndCheckDataType)(it, types);
-      schemaKeywords(it, types, !checkedTypes, errsCount);
+      const types2 = (0, dataType_1.getSchemaTypes)(it.schema);
+      const checkedTypes = (0, dataType_1.coerceAndCheckDataType)(it, types2);
+      schemaKeywords(it, types2, !checkedTypes, errsCount);
     }
     function checkRefsAndKeywords(it) {
       const { schema, errSchemaPath, opts, self } = it;
@@ -11090,15 +11090,15 @@ var require_validate = __commonJS({
       if (items instanceof codegen_1.Name)
         gen.assign((0, codegen_1._)`${evaluated}.items`, items);
     }
-    function schemaKeywords(it, types, typeErrors, errsCount) {
-      const { gen, schema, data, allErrors, opts, self } = it;
+    function schemaKeywords(it, types2, typeErrors, errsCount) {
+      const { gen, schema, data: data2, allErrors, opts, self } = it;
       const { RULES } = self;
       if (schema.$ref && (opts.ignoreKeywordsWithRef || !(0, util_1.schemaHasRulesButRef)(schema, RULES))) {
         gen.block(() => keywordCode(it, "$ref", RULES.all.$ref.definition));
         return;
       }
       if (!opts.jtd)
-        checkStrictTypes(it, types);
+        checkStrictTypes(it, types2);
       gen.block(() => {
         for (const group of RULES.rules)
           groupKeywords(group);
@@ -11108,9 +11108,9 @@ var require_validate = __commonJS({
         if (!(0, applicability_1.shouldUseGroup)(schema, group))
           return;
         if (group.type) {
-          gen.if((0, dataType_2.checkDataType)(group.type, data, opts.strictNumbers));
+          gen.if((0, dataType_2.checkDataType)(group.type, data2, opts.strictNumbers));
           iterateKeywords(it, group);
-          if (types.length === 1 && types[0] === group.type && typeErrors) {
+          if (types2.length === 1 && types2[0] === group.type && typeErrors) {
             gen.else();
             (0, dataType_2.reportTypeError)(it);
           }
@@ -11134,27 +11134,27 @@ var require_validate = __commonJS({
         }
       });
     }
-    function checkStrictTypes(it, types) {
+    function checkStrictTypes(it, types2) {
       if (it.schemaEnv.meta || !it.opts.strictTypes)
         return;
-      checkContextTypes(it, types);
+      checkContextTypes(it, types2);
       if (!it.opts.allowUnionTypes)
-        checkMultipleTypes(it, types);
+        checkMultipleTypes(it, types2);
       checkKeywordTypes(it, it.dataTypes);
     }
-    function checkContextTypes(it, types) {
-      if (!types.length)
+    function checkContextTypes(it, types2) {
+      if (!types2.length)
         return;
       if (!it.dataTypes.length) {
-        it.dataTypes = types;
+        it.dataTypes = types2;
         return;
       }
-      types.forEach((t) => {
+      types2.forEach((t) => {
         if (!includesType(it.dataTypes, t)) {
           strictTypesError(it, `type "${t}" not allowed by context "${it.dataTypes.join(",")}"`);
         }
       });
-      narrowSchemaTypes(it, types);
+      narrowSchemaTypes(it, types2);
     }
     function checkMultipleTypes(it, ts) {
       if (ts.length > 1 && !(ts.length === 2 && ts.includes("null"))) {
@@ -11381,14 +11381,14 @@ var require_validate = __commonJS({
     var RELATIVE_JSON_POINTER = /^([0-9]+)(#|\/(?:[^~]|~0|~1)*)?$/;
     function getData($data, { dataLevel, dataNames, dataPathArr }) {
       let jsonPointer;
-      let data;
+      let data2;
       if ($data === "")
         return names_1.default.rootData;
       if ($data[0] === "/") {
         if (!JSON_POINTER.test($data))
           throw new Error(`Invalid JSON-pointer: ${$data}`);
         jsonPointer = $data;
-        data = names_1.default.rootData;
+        data2 = names_1.default.rootData;
       } else {
         const matches = RELATIVE_JSON_POINTER.exec($data);
         if (!matches)
@@ -11402,16 +11402,16 @@ var require_validate = __commonJS({
         }
         if (up > dataLevel)
           throw new Error(errorMsg("data", up));
-        data = dataNames[dataLevel - up];
+        data2 = dataNames[dataLevel - up];
         if (!jsonPointer)
-          return data;
+          return data2;
       }
-      let expr = data;
+      let expr = data2;
       const segments = jsonPointer.split("/");
       for (const segment of segments) {
         if (segment) {
-          data = (0, codegen_1._)`${data}${(0, codegen_1.getProperty)((0, util_1.unescapeJsonPointer)(segment))}`;
-          expr = (0, codegen_1._)`${expr} && ${data}`;
+          data2 = (0, codegen_1._)`${data2}${(0, codegen_1.getProperty)((0, util_1.unescapeJsonPointer)(segment))}`;
+          expr = (0, codegen_1._)`${expr} && ${data2}`;
         }
       }
       return expr;
@@ -11446,9 +11446,9 @@ var require_ref_error = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     var resolve_1 = require_resolve();
     var MissingRefError = class extends Error {
-      constructor(resolver, baseId, ref, msg) {
-        super(msg || `can't resolve reference ${ref} from id ${baseId}`);
-        this.missingRef = (0, resolve_1.resolveUrl)(resolver, baseId, ref);
+      constructor(resolver, baseId, ref2, msg) {
+        super(msg || `can't resolve reference ${ref2} from id ${baseId}`);
+        this.missingRef = (0, resolve_1.resolveUrl)(resolver, baseId, ref2);
         this.missingSchema = (0, resolve_1.normalizeId)((0, resolve_1.getFullPath)(resolver, this.missingRef));
       }
     };
@@ -11574,22 +11574,22 @@ var require_compile = __commonJS({
       }
     }
     exports.compileSchema = compileSchema;
-    function resolveRef(root, baseId, ref) {
+    function resolveRef(root, baseId, ref2) {
       var _a3;
-      ref = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, ref);
-      const schOrFunc = root.refs[ref];
+      ref2 = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, ref2);
+      const schOrFunc = root.refs[ref2];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve7.call(this, root, ref2);
       if (_sch === void 0) {
-        const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
+        const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref2];
         const { schemaId } = this.opts;
         if (schema)
           _sch = new SchemaEnv({ schema, schemaId, root, baseId });
       }
       if (_sch === void 0)
         return;
-      return root.refs[ref] = inlineOrCompile.call(this, _sch);
+      return root.refs[ref2] = inlineOrCompile.call(this, _sch);
     }
     exports.resolveRef = resolveRef;
     function inlineOrCompile(sch) {
@@ -11607,14 +11607,14 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve7(root, ref2) {
       let sch;
-      while (typeof (sch = this.refs[ref]) == "string")
-        ref = sch;
-      return sch || this.schemas[ref] || resolveSchema.call(this, root, ref);
+      while (typeof (sch = this.refs[ref2]) == "string")
+        ref2 = sch;
+      return sch || this.schemas[ref2] || resolveSchema.call(this, root, ref2);
     }
-    function resolveSchema(root, ref) {
-      const p = this.opts.uriResolver.parse(ref);
+    function resolveSchema(root, ref2) {
+      const p = this.opts.uriResolver.parse(ref2);
       const refPath = (0, resolve_1._getFullPath)(this.opts.uriResolver, p);
       let baseId = (0, resolve_1.getFullPath)(this.opts.uriResolver, root.baseId, void 0);
       if (Object.keys(root.schema).length > 0 && refPath === baseId) {
@@ -11632,7 +11632,7 @@ var require_compile = __commonJS({
         return;
       if (!schOrRef.validate)
         compileSchema.call(this, schOrRef);
-      if (id === (0, resolve_1.normalizeId)(ref)) {
+      if (id === (0, resolve_1.normalizeId)(ref2)) {
         const { schema } = schOrRef;
         const { schemaId } = this.opts;
         const schId = schema[schemaId];
@@ -12234,59 +12234,59 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse3(serialize(uri, options), options);
+        parse6(serialize(uri, options), options);
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve7(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
-      const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
+      const resolved = resolveComponent(parse6(baseURI, schemelessOptions), parse6(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse3(serialize(base, options), options);
-        relative = parse3(serialize(relative, options), options);
+        base = parse6(serialize(base, options), options);
+        relative4 = parse6(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative.scheme) {
-        target.scheme = relative.scheme;
-        target.userinfo = relative.userinfo;
-        target.host = relative.host;
-        target.port = relative.port;
-        target.path = removeDotSegments(relative.path || "");
-        target.query = relative.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative.userinfo !== void 0 || relative.host !== void 0 || relative.port !== void 0) {
-          target.userinfo = relative.userinfo;
-          target.host = relative.host;
-          target.port = relative.port;
-          target.path = removeDotSegments(relative.path || "");
-          target.query = relative.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative.query !== void 0) {
-              target.query = relative.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative.path[0] === "/") {
-              target.path = removeDotSegments(relative.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -12294,7 +12294,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -12471,7 +12471,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort };
     }
-    function parse3(uri, opts) {
+    function parse6(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -12496,11 +12496,11 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve7,
       resolveComponent,
       equal,
       serialize,
-      parse: parse3
+      parse: parse6
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -12674,7 +12674,7 @@ var require_core = __commonJS({
         const { meta: meta2, schemaId } = this.opts;
         return this.opts.defaultMeta = typeof meta2 == "object" ? meta2[schemaId] || meta2 : void 0;
       }
-      validate(schemaKeyRef, data) {
+      validate(schemaKeyRef, data2) {
         let v;
         if (typeof schemaKeyRef == "string") {
           v = this.getSchema(schemaKeyRef);
@@ -12683,7 +12683,7 @@ var require_core = __commonJS({
         } else {
           v = this.compile(schemaKeyRef);
         }
-        const valid = v(data);
+        const valid = v(data2);
         if (!("$async" in v))
           this.errors = v.errors;
         return valid;
@@ -12719,26 +12719,26 @@ var require_core = __commonJS({
             return _compileAsync.call(this, sch);
           }
         }
-        function checkLoaded({ missingSchema: ref, missingRef }) {
-          if (this.refs[ref]) {
-            throw new Error(`AnySchema ${ref} is loaded but ${missingRef} cannot be resolved`);
+        function checkLoaded({ missingSchema: ref2, missingRef }) {
+          if (this.refs[ref2]) {
+            throw new Error(`AnySchema ${ref2} is loaded but ${missingRef} cannot be resolved`);
           }
         }
-        async function loadMissingSchema(ref) {
-          const _schema = await _loadSchema.call(this, ref);
-          if (!this.refs[ref])
+        async function loadMissingSchema(ref2) {
+          const _schema = await _loadSchema.call(this, ref2);
+          if (!this.refs[ref2])
             await loadMetaSchema.call(this, _schema.$schema);
-          if (!this.refs[ref])
-            this.addSchema(_schema, ref, meta2);
+          if (!this.refs[ref2])
+            this.addSchema(_schema, ref2, meta2);
         }
-        async function _loadSchema(ref) {
-          const p = this._loading[ref];
+        async function _loadSchema(ref2) {
+          const p = this._loading[ref2];
           if (p)
             return p;
           try {
-            return await (this._loading[ref] = loadSchema(ref));
+            return await (this._loading[ref2] = loadSchema(ref2));
           } finally {
-            delete this._loading[ref];
+            delete this._loading[ref2];
           }
         }
       }
@@ -12918,17 +12918,17 @@ var require_core = __commonJS({
         metaSchema = JSON.parse(JSON.stringify(metaSchema));
         for (const jsonPointer of keywordsJsonPointers) {
           const segments = jsonPointer.split("/").slice(1);
-          let keywords = metaSchema;
+          let keywords2 = metaSchema;
           for (const seg of segments)
-            keywords = keywords[seg];
+            keywords2 = keywords2[seg];
           for (const key in rules) {
             const rule = rules[key];
             if (typeof rule != "object")
               continue;
             const { $data } = rule.definition;
-            const schema = keywords[key];
+            const schema = keywords2[key];
             if ($data && schema)
-              keywords[key] = schemaOrData(schema);
+              keywords2[key] = schemaOrData(schema);
           }
         }
         return metaSchema;
@@ -13312,8 +13312,8 @@ var require_limitNumber = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { keyword, data, schemaCode } = cxt;
-        cxt.fail$data((0, codegen_1._)`${data} ${KWDs[keyword].fail} ${schemaCode} || isNaN(${data})`);
+        const { keyword, data: data2, schemaCode } = cxt;
+        cxt.fail$data((0, codegen_1._)`${data2} ${KWDs[keyword].fail} ${schemaCode} || isNaN(${data2})`);
       }
     };
     exports.default = def;
@@ -13337,11 +13337,11 @@ var require_multipleOf = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, schemaCode, it } = cxt;
+        const { gen, data: data2, schemaCode, it } = cxt;
         const prec = it.opts.multipleOfPrecision;
         const res = gen.let("res");
         const invalid = prec ? (0, codegen_1._)`Math.abs(Math.round(${res}) - ${res}) > 1e-${prec}` : (0, codegen_1._)`${res} !== parseInt(${res})`;
-        cxt.fail$data((0, codegen_1._)`(${schemaCode} === 0 || (${res} = ${data}/${schemaCode}, ${invalid}))`);
+        cxt.fail$data((0, codegen_1._)`(${schemaCode} === 0 || (${res} = ${data2}/${schemaCode}, ${invalid}))`);
       }
     };
     exports.default = def;
@@ -13396,9 +13396,9 @@ var require_limitLength = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { keyword, data, schemaCode, it } = cxt;
+        const { keyword, data: data2, schemaCode, it } = cxt;
         const op = keyword === "maxLength" ? codegen_1.operators.GT : codegen_1.operators.LT;
-        const len = it.opts.unicode === false ? (0, codegen_1._)`${data}.length` : (0, codegen_1._)`${(0, util_1.useFunc)(cxt.gen, ucs2length_1.default)}(${data})`;
+        const len = it.opts.unicode === false ? (0, codegen_1._)`${data2}.length` : (0, codegen_1._)`${(0, util_1.useFunc)(cxt.gen, ucs2length_1.default)}(${data2})`;
         cxt.fail$data((0, codegen_1._)`${len} ${op} ${schemaCode}`);
       }
     };
@@ -13425,17 +13425,17 @@ var require_pattern = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schema, schemaCode, it } = cxt;
+        const { gen, data: data2, $data, schema, schemaCode, it } = cxt;
         const u = it.opts.unicodeRegExp ? "u" : "";
         if ($data) {
           const { regExp } = it.opts.code;
           const regExpCode = regExp.code === "new RegExp" ? (0, codegen_1._)`new RegExp` : (0, util_1.useFunc)(gen, regExp);
           const valid = gen.let("valid");
-          gen.try(() => gen.assign(valid, (0, codegen_1._)`${regExpCode}(${schemaCode}, ${u}).test(${data})`), () => gen.assign(valid, false));
+          gen.try(() => gen.assign(valid, (0, codegen_1._)`${regExpCode}(${schemaCode}, ${u}).test(${data2})`), () => gen.assign(valid, false));
           cxt.fail$data((0, codegen_1._)`!${valid}`);
         } else {
           const regExp = (0, code_1.usePattern)(cxt, schema);
-          cxt.fail$data((0, codegen_1._)`!${regExp}.test(${data})`);
+          cxt.fail$data((0, codegen_1._)`!${regExp}.test(${data2})`);
         }
       }
     };
@@ -13463,9 +13463,9 @@ var require_limitProperties = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { keyword, data, schemaCode } = cxt;
+        const { keyword, data: data2, schemaCode } = cxt;
         const op = keyword === "maxProperties" ? codegen_1.operators.GT : codegen_1.operators.LT;
-        cxt.fail$data((0, codegen_1._)`Object.keys(${data}).length ${op} ${schemaCode}`);
+        cxt.fail$data((0, codegen_1._)`Object.keys(${data2}).length ${op} ${schemaCode}`);
       }
     };
     exports.default = def;
@@ -13491,7 +13491,7 @@ var require_required = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, schemaCode, data, $data, it } = cxt;
+        const { gen, schema, schemaCode, data: data2, $data, it } = cxt;
         const { opts } = it;
         if (!$data && schema.length === 0)
           return;
@@ -13535,13 +13535,13 @@ var require_required = __commonJS({
         function loopAllRequired() {
           gen.forOf("prop", schemaCode, (prop) => {
             cxt.setParams({ missingProperty: prop });
-            gen.if((0, code_1.noPropertyInData)(gen, data, prop, opts.ownProperties), () => cxt.error());
+            gen.if((0, code_1.noPropertyInData)(gen, data2, prop, opts.ownProperties), () => cxt.error());
           });
         }
         function loopUntilMissing(missing, valid) {
           cxt.setParams({ missingProperty: missing });
           gen.forOf(missing, schemaCode, () => {
-            gen.assign(valid, (0, code_1.propertyInData)(gen, data, missing, opts.ownProperties));
+            gen.assign(valid, (0, code_1.propertyInData)(gen, data2, missing, opts.ownProperties));
             gen.if((0, codegen_1.not)(valid), () => {
               cxt.error();
               gen.break();
@@ -13574,9 +13574,9 @@ var require_limitItems = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { keyword, data, schemaCode } = cxt;
+        const { keyword, data: data2, schemaCode } = cxt;
         const op = keyword === "maxItems" ? codegen_1.operators.GT : codegen_1.operators.LT;
-        cxt.fail$data((0, codegen_1._)`${data}.length ${op} ${schemaCode}`);
+        cxt.fail$data((0, codegen_1._)`${data2}.length ${op} ${schemaCode}`);
       }
     };
     exports.default = def;
@@ -13614,7 +13614,7 @@ var require_uniqueItems = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schema, parentSchema, schemaCode, it } = cxt;
+        const { gen, data: data2, $data, schema, parentSchema, schemaCode, it } = cxt;
         if (!$data && !schema)
           return;
         const valid = gen.let("valid");
@@ -13622,7 +13622,7 @@ var require_uniqueItems = __commonJS({
         cxt.block$data(valid, validateUniqueItems, (0, codegen_1._)`${schemaCode} === false`);
         cxt.ok(valid);
         function validateUniqueItems() {
-          const i = gen.let("i", (0, codegen_1._)`${data}.length`);
+          const i = gen.let("i", (0, codegen_1._)`${data2}.length`);
           const j = gen.let("j");
           cxt.setParams({ i, j });
           gen.assign(valid, true);
@@ -13636,7 +13636,7 @@ var require_uniqueItems = __commonJS({
           const wrongType = (0, dataType_1.checkDataTypes)(itemTypes, item, it.opts.strictNumbers, dataType_1.DataType.Wrong);
           const indices = gen.const("indices", (0, codegen_1._)`{}`);
           gen.for((0, codegen_1._)`;${i}--;`, () => {
-            gen.let(item, (0, codegen_1._)`${data}[${i}]`);
+            gen.let(item, (0, codegen_1._)`${data2}[${i}]`);
             gen.if(wrongType, (0, codegen_1._)`continue`);
             if (itemTypes.length > 1)
               gen.if((0, codegen_1._)`typeof ${item} == "string"`, (0, codegen_1._)`${item} += "_"`);
@@ -13650,7 +13650,7 @@ var require_uniqueItems = __commonJS({
         function loopN2(i, j) {
           const eql = (0, util_1.useFunc)(gen, equal_1.default);
           const outer = gen.name("outer");
-          gen.label(outer).for((0, codegen_1._)`;${i}--;`, () => gen.for((0, codegen_1._)`${j} = ${i}; ${j}--;`, () => gen.if((0, codegen_1._)`${eql}(${data}[${i}], ${data}[${j}])`, () => {
+          gen.label(outer).for((0, codegen_1._)`;${i}--;`, () => gen.for((0, codegen_1._)`${j} = ${i}; ${j}--;`, () => gen.if((0, codegen_1._)`${eql}(${data2}[${i}], ${data2}[${j}])`, () => {
             cxt.error();
             gen.assign(valid, false).break(outer);
           })));
@@ -13678,11 +13678,11 @@ var require_const = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schemaCode, schema } = cxt;
+        const { gen, data: data2, $data, schemaCode, schema } = cxt;
         if ($data || schema && typeof schema == "object") {
-          cxt.fail$data((0, codegen_1._)`!${(0, util_1.useFunc)(gen, equal_1.default)}(${data}, ${schemaCode})`);
+          cxt.fail$data((0, codegen_1._)`!${(0, util_1.useFunc)(gen, equal_1.default)}(${data2}, ${schemaCode})`);
         } else {
-          cxt.fail((0, codegen_1._)`${schema} !== ${data}`);
+          cxt.fail((0, codegen_1._)`${schema} !== ${data2}`);
         }
       }
     };
@@ -13708,7 +13708,7 @@ var require_enum = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schema, schemaCode, it } = cxt;
+        const { gen, data: data2, $data, schema, schemaCode, it } = cxt;
         if (!$data && schema.length === 0)
           throw new Error("enum must have non-empty array");
         const useLoop = schema.length >= it.opts.loopEnum;
@@ -13727,11 +13727,11 @@ var require_enum = __commonJS({
         cxt.pass(valid);
         function loopEnum() {
           gen.assign(valid, false);
-          gen.forOf("v", schemaCode, (v) => gen.if((0, codegen_1._)`${getEql()}(${data}, ${v})`, () => gen.assign(valid, true).break()));
+          gen.forOf("v", schemaCode, (v) => gen.if((0, codegen_1._)`${getEql()}(${data2}, ${v})`, () => gen.assign(valid, true).break()));
         }
         function equalCode(vSchema, i) {
           const sch = schema[i];
-          return typeof sch === "object" && sch !== null ? (0, codegen_1._)`${getEql()}(${data}, ${vSchema}[${i}])` : (0, codegen_1._)`${data} === ${sch}`;
+          return typeof sch === "object" && sch !== null ? (0, codegen_1._)`${getEql()}(${data2}, ${vSchema}[${i}])` : (0, codegen_1._)`${data2} === ${sch}`;
         }
       }
     };
@@ -13806,9 +13806,9 @@ var require_additionalItems = __commonJS({
       }
     };
     function validateAdditionalItems(cxt, items) {
-      const { gen, schema, data, keyword, it } = cxt;
+      const { gen, schema, data: data2, keyword, it } = cxt;
       it.items = true;
-      const len = gen.const("len", (0, codegen_1._)`${data}.length`);
+      const len = gen.const("len", (0, codegen_1._)`${data2}.length`);
       if (schema === false) {
         cxt.setParams({ len: items.length });
         cxt.pass((0, codegen_1._)`${len} <= ${items.length}`);
@@ -13855,13 +13855,13 @@ var require_items = __commonJS({
       }
     };
     function validateTuple(cxt, extraItems, schArr = cxt.schema) {
-      const { gen, parentSchema, data, keyword, it } = cxt;
+      const { gen, parentSchema, data: data2, keyword, it } = cxt;
       checkStrictTuple(parentSchema);
       if (it.opts.unevaluated && schArr.length && it.items !== true) {
         it.items = util_1.mergeEvaluated.items(gen, schArr.length, it.items);
       }
       const valid = gen.name("valid");
-      const len = gen.const("len", (0, codegen_1._)`${data}.length`);
+      const len = gen.const("len", (0, codegen_1._)`${data2}.length`);
       schArr.forEach((sch, i) => {
         if ((0, util_1.alwaysValidSchema)(it, sch))
           return;
@@ -13958,7 +13958,7 @@ var require_contains = __commonJS({
       trackErrors: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, parentSchema, data, it } = cxt;
+        const { gen, schema, parentSchema, data: data2, it } = cxt;
         let min;
         let max;
         const { minContains, maxContains } = parentSchema;
@@ -13968,7 +13968,7 @@ var require_contains = __commonJS({
         } else {
           min = 1;
         }
-        const len = gen.const("len", (0, codegen_1._)`${data}.length`);
+        const len = gen.const("len", (0, codegen_1._)`${data2}.length`);
         cxt.setParams({ min, max });
         if (max === void 0 && min === 0) {
           (0, util_1.checkStrictMode)(it, `"minContains" == 0 without "maxContains": "contains" keyword ignored`);
@@ -13993,7 +13993,7 @@ var require_contains = __commonJS({
         } else if (min === 0) {
           gen.let(valid, true);
           if (max !== void 0)
-            gen.if((0, codegen_1._)`${data}.length > 0`, validateItemsWithCount);
+            gen.if((0, codegen_1._)`${data2}.length > 0`, validateItemsWithCount);
         } else {
           gen.let(valid, false);
           validateItemsWithCount();
@@ -14076,7 +14076,7 @@ var require_dependencies = __commonJS({
       return [propertyDeps, schemaDeps];
     }
     function validatePropertyDeps(cxt, propertyDeps = cxt.schema) {
-      const { gen, data, it } = cxt;
+      const { gen, data: data2, it } = cxt;
       if (Object.keys(propertyDeps).length === 0)
         return;
       const missing = gen.let("missing");
@@ -14084,7 +14084,7 @@ var require_dependencies = __commonJS({
         const deps = propertyDeps[prop];
         if (deps.length === 0)
           continue;
-        const hasProperty = (0, code_1.propertyInData)(gen, data, prop, it.opts.ownProperties);
+        const hasProperty = (0, code_1.propertyInData)(gen, data2, prop, it.opts.ownProperties);
         cxt.setParams({
           property: prop,
           depsCount: deps.length,
@@ -14105,13 +14105,13 @@ var require_dependencies = __commonJS({
     }
     exports.validatePropertyDeps = validatePropertyDeps;
     function validateSchemaDeps(cxt, schemaDeps = cxt.schema) {
-      const { gen, data, keyword, it } = cxt;
+      const { gen, data: data2, keyword, it } = cxt;
       const valid = gen.name("valid");
       for (const prop in schemaDeps) {
         if ((0, util_1.alwaysValidSchema)(it, schemaDeps[prop]))
           continue;
         gen.if(
-          (0, code_1.propertyInData)(gen, data, prop, it.opts.ownProperties),
+          (0, code_1.propertyInData)(gen, data2, prop, it.opts.ownProperties),
           () => {
             const schCxt = cxt.subschema({ keyword, schemaProp: prop }, valid);
             cxt.mergeValidEvaluated(schCxt, valid);
@@ -14144,11 +14144,11 @@ var require_propertyNames = __commonJS({
       schemaType: ["object", "boolean"],
       error: error2,
       code(cxt) {
-        const { gen, schema, data, it } = cxt;
+        const { gen, schema, data: data2, it } = cxt;
         if ((0, util_1.alwaysValidSchema)(it, schema))
           return;
         const valid = gen.name("valid");
-        gen.forIn("key", data, (key) => {
+        gen.forIn("key", data2, (key) => {
           cxt.setParams({ propertyName: key });
           cxt.subschema({
             keyword: "propertyNames",
@@ -14191,7 +14191,7 @@ var require_additionalProperties = __commonJS({
       trackErrors: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, parentSchema, data, errsCount, it } = cxt;
+        const { gen, schema, parentSchema, data: data2, errsCount, it } = cxt;
         if (!errsCount)
           throw new Error("ajv implementation error");
         const { allErrors, opts } = it;
@@ -14203,7 +14203,7 @@ var require_additionalProperties = __commonJS({
         checkAdditionalProperties();
         cxt.ok((0, codegen_1._)`${errsCount} === ${names_1.default.errors}`);
         function checkAdditionalProperties() {
-          gen.forIn("key", data, (key) => {
+          gen.forIn("key", data2, (key) => {
             if (!props.length && !patProps.length)
               additionalPropertyCode(key);
             else
@@ -14226,7 +14226,7 @@ var require_additionalProperties = __commonJS({
           return (0, codegen_1.not)(definedProp);
         }
         function deleteAdditional(key) {
-          gen.code((0, codegen_1._)`delete ${data}[${key}]`);
+          gen.code((0, codegen_1._)`delete ${data2}[${key}]`);
         }
         function additionalPropertyCode(key) {
           if (opts.removeAdditional === "all" || opts.removeAdditional && schema === false) {
@@ -14290,7 +14290,7 @@ var require_properties = __commonJS({
       type: "object",
       schemaType: "object",
       code(cxt) {
-        const { gen, schema, parentSchema, data, it } = cxt;
+        const { gen, schema, parentSchema, data: data2, it } = cxt;
         if (it.opts.removeAdditional === "all" && parentSchema.additionalProperties === void 0) {
           additionalProperties_1.default.code(new validate_1.KeywordCxt(it, additionalProperties_1.default, "additionalProperties"));
         }
@@ -14309,7 +14309,7 @@ var require_properties = __commonJS({
           if (hasDefault(prop)) {
             applyPropertySchema(prop);
           } else {
-            gen.if((0, code_1.propertyInData)(gen, data, prop, it.opts.ownProperties));
+            gen.if((0, code_1.propertyInData)(gen, data2, prop, it.opts.ownProperties));
             applyPropertySchema(prop);
             if (!it.allErrors)
               gen.else().var(valid, true);
@@ -14348,7 +14348,7 @@ var require_patternProperties = __commonJS({
       type: "object",
       schemaType: "object",
       code(cxt) {
-        const { gen, schema, data, parentSchema, it } = cxt;
+        const { gen, schema, data: data2, parentSchema, it } = cxt;
         const { opts } = it;
         const patterns = (0, code_1.allSchemaProperties)(schema);
         const alwaysValidPatterns = patterns.filter((p) => (0, util_1.alwaysValidSchema)(it, schema[p]));
@@ -14383,7 +14383,7 @@ var require_patternProperties = __commonJS({
           }
         }
         function validateProperties(pat) {
-          gen.forIn("key", data, (key) => {
+          gen.forIn("key", data2, (key) => {
             gen.if((0, codegen_1._)`${(0, code_1.usePattern)(cxt, pat)}.test(${key})`, () => {
               const alwaysValid = alwaysValidPatterns.includes(pat);
               if (!alwaysValid) {
@@ -14693,7 +14693,7 @@ var require_format = __commonJS({
       $data: true,
       error: error2,
       code(cxt, ruleType) {
-        const { gen, data, $data, schema, schemaCode, it } = cxt;
+        const { gen, data: data2, $data, schema, schemaCode, it } = cxt;
         const { opts, errSchemaPath, schemaEnv, self } = it;
         if (!opts.validateFormats)
           return;
@@ -14717,8 +14717,8 @@ var require_format = __commonJS({
             return (0, codegen_1._)`${schemaCode} && !${format}`;
           }
           function invalidFmt() {
-            const callFormat = schemaEnv.$async ? (0, codegen_1._)`(${fDef}.async ? await ${format}(${data}) : ${format}(${data}))` : (0, codegen_1._)`${format}(${data})`;
-            const validData = (0, codegen_1._)`(typeof ${format} == "function" ? ${callFormat} : ${format}.test(${data}))`;
+            const callFormat = schemaEnv.$async ? (0, codegen_1._)`(${fDef}.async ? await ${format}(${data2}) : ${format}(${data2}))` : (0, codegen_1._)`${format}(${data2})`;
+            const validData = (0, codegen_1._)`(typeof ${format} == "function" ? ${callFormat} : ${format}.test(${data2}))`;
             return (0, codegen_1._)`${format} && ${format} !== true && ${fType} === ${ruleType} && !${validData}`;
           }
         }
@@ -14755,9 +14755,9 @@ var require_format = __commonJS({
             if (typeof formatDef == "object" && !(formatDef instanceof RegExp) && formatDef.async) {
               if (!schemaEnv.$async)
                 throw new Error("async format in sync schema");
-              return (0, codegen_1._)`await ${fmtRef}(${data})`;
+              return (0, codegen_1._)`await ${fmtRef}(${data2})`;
             }
-            return typeof format == "function" ? (0, codegen_1._)`${fmtRef}(${data})` : (0, codegen_1._)`${fmtRef}.test(${data})`;
+            return typeof format == "function" ? (0, codegen_1._)`${fmtRef}(${data2})` : (0, codegen_1._)`${fmtRef}.test(${data2})`;
           }
         }
       }
@@ -14856,7 +14856,7 @@ var require_discriminator = __commonJS({
       schemaType: "object",
       error: error2,
       code(cxt) {
-        const { gen, data, schema, parentSchema, it } = cxt;
+        const { gen, data: data2, schema, parentSchema, it } = cxt;
         const { oneOf } = parentSchema;
         if (!it.opts.discriminator) {
           throw new Error("discriminator: requires discriminator option");
@@ -14869,7 +14869,7 @@ var require_discriminator = __commonJS({
         if (!oneOf)
           throw new Error("discriminator: requires oneOf keyword");
         const valid = gen.let("valid", false);
-        const tag = gen.const("tag", (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(tagName)}`);
+        const tag = gen.const("tag", (0, codegen_1._)`${data2}${(0, codegen_1.getProperty)(tagName)}`);
         gen.if((0, codegen_1._)`typeof ${tag} == "string"`, () => validateMapping(), () => cxt.error(false, { discrError: types_1.DiscrError.Tag, tag, tagName }));
         cxt.ok(valid);
         function validateMapping() {
@@ -14897,12 +14897,12 @@ var require_discriminator = __commonJS({
           for (let i = 0; i < oneOf.length; i++) {
             let sch = oneOf[i];
             if ((sch === null || sch === void 0 ? void 0 : sch.$ref) && !(0, util_1.schemaHasRulesButRef)(sch, it.self.RULES)) {
-              const ref = sch.$ref;
-              sch = compile_1.resolveRef.call(it.self, it.schemaEnv.root, it.baseId, ref);
+              const ref2 = sch.$ref;
+              sch = compile_1.resolveRef.call(it.self, it.schemaEnv.root, it.baseId, ref2);
               if (sch instanceof compile_1.SchemaEnv)
                 sch = sch.schema;
               if (sch === void 0)
-                throw new ref_error_1.default(it.opts.uriResolver, it.baseId, ref);
+                throw new ref_error_1.default(it.opts.uriResolver, it.baseId, ref2);
             }
             const propSch = (_a3 = sch === null || sch === void 0 ? void 0 : sch.properties) === null || _a3 === void 0 ? void 0 : _a3[tagName];
             if (typeof propSch != "object") {
@@ -15397,7 +15397,7 @@ var require_limit = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, schemaCode, keyword, it } = cxt;
+        const { gen, data: data2, schemaCode, keyword, it } = cxt;
         const { opts, self } = it;
         if (!opts.validateFormats)
           return;
@@ -15430,7 +15430,7 @@ var require_limit = __commonJS({
           cxt.fail$data(compareCode(fmt));
         }
         function compareCode(fmt) {
-          return (0, codegen_1._)`${fmt}.compare(${data}, ${schemaCode}) ${KWDs[keyword].fail} 0`;
+          return (0, codegen_1._)`${fmt}.compare(${data2}, ${schemaCode}) ${KWDs[keyword].fail} 0`;
         }
       },
       dependencies: ["format"]
@@ -15758,11 +15758,11 @@ var init_helpers = __esm({
 });
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js
-function applyElicitationDefaults(schema, data) {
-  if (!schema || data === null || typeof data !== "object")
+function applyElicitationDefaults(schema, data2) {
+  if (!schema || data2 === null || typeof data2 !== "object")
     return;
   if (schema.type === "object" && schema.properties && typeof schema.properties === "object") {
-    const obj = data;
+    const obj = data2;
     const props = schema.properties;
     for (const key of Object.keys(props)) {
       const propSchema = props[key];
@@ -15777,14 +15777,14 @@ function applyElicitationDefaults(schema, data) {
   if (Array.isArray(schema.anyOf)) {
     for (const sub of schema.anyOf) {
       if (typeof sub !== "boolean") {
-        applyElicitationDefaults(sub, data);
+        applyElicitationDefaults(sub, data2);
       }
     }
   }
   if (Array.isArray(schema.oneOf)) {
     for (const sub of schema.oneOf) {
       if (typeof sub !== "boolean") {
-        applyElicitationDefaults(sub, data);
+        applyElicitationDefaults(sub, data2);
       }
     }
   }
@@ -17201,7 +17201,7 @@ function createParser(config2) {
       "`config` must be an object, got a function instead. Did you mean `createParser({onEvent: fn})`?"
     );
   const { onEvent = noop, onError = noop, onRetry = noop, onComment, maxBufferSize } = config2, pendingFragments = [];
-  let pendingFragmentsLength = 0, isFirstChunk = true, id, data = "", dataLines = 0, eventType, terminated = false;
+  let pendingFragmentsLength = 0, isFirstChunk = true, id, data2 = "", dataLines = 0, eventType, terminated = false;
   function feed(chunk) {
     if (terminated)
       throw new Error(
@@ -17224,7 +17224,7 @@ function createParser(config2) {
     trailing !== "" && (pendingFragments.push(trailing), pendingFragmentsLength = trailing.length), checkBufferSize();
   }
   function checkBufferSize() {
-    maxBufferSize !== void 0 && (pendingFragmentsLength + data.length <= maxBufferSize || (terminated = true, pendingFragments.length = 0, pendingFragmentsLength = 0, id = void 0, data = "", dataLines = 0, eventType = void 0, onError(
+    maxBufferSize !== void 0 && (pendingFragmentsLength + data2.length <= maxBufferSize || (terminated = true, pendingFragments.length = 0, pendingFragmentsLength = 0, id = void 0, data2 = "", dataLines = 0, eventType = void 0, onError(
       new ParseError(`Buffered data exceeded max buffer size of ${maxBufferSize} characters`, {
         type: "max-buffer-size-exceeded"
       })
@@ -17237,7 +17237,7 @@ function createParser(config2) {
 `, searchIndex);
       for (; lfIndex !== -1; ) {
         if (searchIndex === lfIndex) {
-          dataLines > 0 && onEvent({ id, event: eventType, data }), id = void 0, data = "", dataLines = 0, eventType = void 0, searchIndex = lfIndex + 1, lfIndex = chunk.indexOf(`
+          dataLines > 0 && onEvent({ id, event: eventType, data: data2 }), id = void 0, data2 = "", dataLines = 0, eventType = void 0, searchIndex = lfIndex + 1, lfIndex = chunk.indexOf(`
 `, searchIndex);
           continue;
         }
@@ -17245,11 +17245,11 @@ function createParser(config2) {
         if (isDataPrefix(chunk, searchIndex, firstCharCode)) {
           const valueStart = chunk.charCodeAt(searchIndex + 5) === SPACE ? searchIndex + 6 : searchIndex + 5, value = chunk.slice(valueStart, lfIndex);
           if (dataLines === 0 && chunk.charCodeAt(lfIndex + 1) === LF) {
-            onEvent({ id, event: eventType, data: value }), id = void 0, data = "", eventType = void 0, searchIndex = lfIndex + 2, lfIndex = chunk.indexOf(`
+            onEvent({ id, event: eventType, data: value }), id = void 0, data2 = "", eventType = void 0, searchIndex = lfIndex + 2, lfIndex = chunk.indexOf(`
 `, searchIndex);
             continue;
           }
-          data = dataLines === 0 ? value : `${data}
+          data2 = dataLines === 0 ? value : `${data2}
 ${value}`, dataLines++;
         } else isEventPrefix(chunk, searchIndex, firstCharCode) ? eventType = chunk.slice(
           chunk.charCodeAt(searchIndex + 6) === SPACE ? searchIndex + 7 : searchIndex + 6,
@@ -17278,7 +17278,7 @@ ${value}`, dataLines++;
     const firstCharCode = chunk.charCodeAt(start);
     if (isDataPrefix(chunk, start, firstCharCode)) {
       const valueStart = chunk.charCodeAt(start + 5) === SPACE ? start + 6 : start + 5, value2 = chunk.slice(valueStart, end);
-      data = dataLines === 0 ? value2 : `${data}
+      data2 = dataLines === 0 ? value2 : `${data2}
 ${value2}`, dataLines++;
       return;
     }
@@ -17303,7 +17303,7 @@ ${value2}`, dataLines++;
       processField(line, "", line);
       return;
     }
-    const field = line.slice(0, fieldSeparatorIndex), offset = line.charCodeAt(fieldSeparatorIndex + 1) === SPACE ? 2 : 1, value = line.slice(fieldSeparatorIndex + offset);
+    const field = line.slice(0, fieldSeparatorIndex), offset2 = line.charCodeAt(fieldSeparatorIndex + 1) === SPACE ? 2 : 1, value = line.slice(fieldSeparatorIndex + offset2);
     processField(field, value, line);
   }
   function processField(field, value, line) {
@@ -17312,7 +17312,7 @@ ${value2}`, dataLines++;
         eventType = value || void 0;
         break;
       case "data":
-        data = dataLines === 0 ? value : `${data}
+        data2 = dataLines === 0 ? value : `${data2}
 ${value}`, dataLines++;
         break;
       case "id":
@@ -17341,17 +17341,17 @@ ${value}`, dataLines++;
     dataLines > 0 && onEvent({
       id,
       event: eventType,
-      data
-    }), id = void 0, data = "", dataLines = 0, eventType = void 0;
+      data: data2
+    }), id = void 0, data2 = "", dataLines = 0, eventType = void 0;
   }
-  function reset(options = {}) {
+  function reset2(options = {}) {
     if (options.consume && pendingFragments.length > 0) {
       const incompleteLine = pendingFragments.join("");
       parseLine(incompleteLine, 0, incompleteLine.length);
     }
-    isFirstChunk = true, id = void 0, data = "", dataLines = 0, eventType = void 0, pendingFragments.length = 0, pendingFragmentsLength = 0, terminated = false;
+    isFirstChunk = true, id = void 0, data2 = "", dataLines = 0, eventType = void 0, pendingFragments.length = 0, pendingFragmentsLength = 0, terminated = false;
   }
-  return { feed, reset };
+  return { feed, reset: reset2 };
 }
 function isDataPrefix(chunk, i, firstCharCode) {
   return firstCharCode === 100 && chunk.charCodeAt(i + 1) === 97 && chunk.charCodeAt(i + 2) === 116 && chunk.charCodeAt(i + 3) === 97 && chunk.charCodeAt(i + 4) === 58;
@@ -17732,8 +17732,8 @@ var init_streamableHttp = __esm({
             if (contentType?.includes("text/event-stream")) {
               this._handleSseStream(response.body, { onresumptiontoken }, false);
             } else if (contentType?.includes("application/json")) {
-              const data = await response.json();
-              const responseMessages = Array.isArray(data) ? data.map((msg) => JSONRPCMessageSchema.parse(msg)) : [JSONRPCMessageSchema.parse(data)];
+              const data2 = await response.json();
+              const responseMessages = Array.isArray(data2) ? data2.map((msg) => JSONRPCMessageSchema.parse(msg)) : [JSONRPCMessageSchema.parse(data2)];
               for (const msg of responseMessages) {
                 this.onmessage?.(msg);
               }
@@ -17786,8 +17786,8 @@ var init_streamableHttp = __esm({
           throw error2;
         }
       }
-      setProtocolVersion(version2) {
-        this._protocolVersion = version2;
+      setProtocolVersion(version3) {
+        this._protocolVersion = version3;
       }
       get protocolVersion() {
         return this._protocolVersion;
@@ -17817,16 +17817,16 @@ async function openBrowser(url2) {
   const os = platform();
   const command = os === "darwin" ? "open" : os === "win32" ? "cmd.exe" : "xdg-open";
   const args = os === "win32" ? ["/c", "start", "", href] : [href];
-  return new Promise((resolve3) => {
+  return new Promise((resolve7) => {
     const child = spawn(command, args, {
       detached: true,
       stdio: "ignore",
       windowsHide: true
     });
-    child.on("error", () => resolve3(false));
+    child.on("error", () => resolve7(false));
     child.on("spawn", () => {
       child.unref();
-      resolve3(true);
+      resolve7(true);
     });
   });
 }
@@ -18034,7 +18034,7 @@ ${authorizationUrl.toString()}`
       }
       async state() {
         const state = randomBytes(16).toString("hex");
-        await this.store.update((current) => ({ ...current, lastState: state }));
+        await this.store.update((current2) => ({ ...current2, lastState: state }));
         return state;
       }
       async savedState() {
@@ -18047,19 +18047,19 @@ ${authorizationUrl.toString()}`
         return (await this.store.read()).clientInformation;
       }
       async saveClientInformation(clientInformation) {
-        await this.store.update((current) => ({ ...current, clientInformation }));
+        await this.store.update((current2) => ({ ...current2, clientInformation }));
       }
       async tokens() {
         return (await this.store.read()).tokens;
       }
       async saveTokens(tokens) {
-        await this.store.update((current) => ({ ...current, tokens }));
+        await this.store.update((current2) => ({ ...current2, tokens }));
       }
       async redirectToAuthorization(authorizationUrl) {
         await this.redirectHandler(authorizationUrl);
       }
       async saveCodeVerifier(codeVerifier) {
-        await this.store.update((current) => ({ ...current, codeVerifier }));
+        await this.store.update((current2) => ({ ...current2, codeVerifier }));
       }
       async codeVerifier() {
         const codeVerifier = (await this.store.read()).codeVerifier;
@@ -18069,7 +18069,7 @@ ${authorizationUrl.toString()}`
         return codeVerifier;
       }
       async saveDiscoveryState(discoveryState) {
-        await this.store.update((current) => ({ ...current, discoveryState }));
+        await this.store.update((current2) => ({ ...current2, discoveryState }));
       }
       async discoveryState() {
         return (await this.store.read()).discoveryState;
@@ -18079,8 +18079,8 @@ ${authorizationUrl.toString()}`
           await this.store.clear();
           return;
         }
-        await this.store.update((current) => {
-          const next = { ...current };
+        await this.store.update((current2) => {
+          const next = { ...current2 };
           if (scope === "client") {
             delete next.clientInformation;
           }
@@ -18114,8 +18114,8 @@ async function closeServer(server) {
   if (!server.listening) {
     return;
   }
-  await new Promise((resolve3, reject) => {
-    server.close((error2) => error2 ? reject(error2) : resolve3());
+  await new Promise((resolve7, reject) => {
+    server.close((error2) => error2 ? reject(error2) : resolve7());
   });
 }
 async function startOAuthCallbackServer(options) {
@@ -18125,8 +18125,8 @@ async function startOAuthCallbackServer(options) {
   let closePromise;
   let resolveCode;
   let rejectCode;
-  const codePromise = new Promise((resolve3, reject) => {
-    resolveCode = resolve3;
+  const codePromise = new Promise((resolve7, reject) => {
+    resolveCode = resolve7;
     rejectCode = reject;
   });
   codePromise.catch(() => void 0);
@@ -18205,11 +18205,11 @@ async function startOAuthCallbackServer(options) {
     rejectCode(error2);
     requestClose().catch(() => void 0);
   };
-  await new Promise((resolve3, reject) => {
+  await new Promise((resolve7, reject) => {
     server.once("error", reject);
     server.listen(options.port, options.host, () => {
       server.off("error", reject);
-      resolve3();
+      resolve7();
     });
   });
   timeout = setTimeout(() => {
@@ -18519,12 +18519,15563 @@ ${authorizationUrl.toString()}`
   }
 });
 
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js
+var ExperimentalServerTasks;
+var init_server = __esm({
+  "node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/server.js"() {
+    init_types();
+    ExperimentalServerTasks = class {
+      constructor(_server) {
+        this._server = _server;
+      }
+      /**
+       * Sends a request and returns an AsyncGenerator that yields response messages.
+       * The generator is guaranteed to end with either a 'result' or 'error' message.
+       *
+       * This method provides streaming access to request processing, allowing you to
+       * observe intermediate task status updates for task-augmented requests.
+       *
+       * @param request - The request to send
+       * @param resultSchema - Zod schema for validating the result
+       * @param options - Optional request options (timeout, signal, task creation params, etc.)
+       * @returns AsyncGenerator that yields ResponseMessage objects
+       *
+       * @experimental
+       */
+      requestStream(request, resultSchema, options) {
+        return this._server.requestStream(request, resultSchema, options);
+      }
+      /**
+       * Sends a sampling request and returns an AsyncGenerator that yields response messages.
+       * The generator is guaranteed to end with either a 'result' or 'error' message.
+       *
+       * For task-augmented requests, yields 'taskCreated' and 'taskStatus' messages
+       * before the final result.
+       *
+       * @example
+       * ```typescript
+       * const stream = server.experimental.tasks.createMessageStream({
+       *     messages: [{ role: 'user', content: { type: 'text', text: 'Hello' } }],
+       *     maxTokens: 100
+       * }, {
+       *     onprogress: (progress) => {
+       *         // Handle streaming tokens via progress notifications
+       *         console.log('Progress:', progress.message);
+       *     }
+       * });
+       *
+       * for await (const message of stream) {
+       *     switch (message.type) {
+       *         case 'taskCreated':
+       *             console.log('Task created:', message.task.taskId);
+       *             break;
+       *         case 'taskStatus':
+       *             console.log('Task status:', message.task.status);
+       *             break;
+       *         case 'result':
+       *             console.log('Final result:', message.result);
+       *             break;
+       *         case 'error':
+       *             console.error('Error:', message.error);
+       *             break;
+       *     }
+       * }
+       * ```
+       *
+       * @param params - The sampling request parameters
+       * @param options - Optional request options (timeout, signal, task creation params, onprogress, etc.)
+       * @returns AsyncGenerator that yields ResponseMessage objects
+       *
+       * @experimental
+       */
+      createMessageStream(params, options) {
+        const clientCapabilities = this._server.getClientCapabilities();
+        if ((params.tools || params.toolChoice) && !clientCapabilities?.sampling?.tools) {
+          throw new Error("Client does not support sampling tools capability.");
+        }
+        if (params.messages.length > 0) {
+          const lastMessage = params.messages[params.messages.length - 1];
+          const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
+          const hasToolResults = lastContent.some((c) => c.type === "tool_result");
+          const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
+          const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
+          const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
+          if (hasToolResults) {
+            if (lastContent.some((c) => c.type !== "tool_result")) {
+              throw new Error("The last message must contain only tool_result content if any is present");
+            }
+            if (!hasPreviousToolUse) {
+              throw new Error("tool_result blocks are not matching any tool_use from the previous message");
+            }
+          }
+          if (hasPreviousToolUse) {
+            const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
+            const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
+            if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+              throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
+            }
+          }
+        }
+        return this.requestStream({
+          method: "sampling/createMessage",
+          params
+        }, CreateMessageResultSchema, options);
+      }
+      /**
+       * Sends an elicitation request and returns an AsyncGenerator that yields response messages.
+       * The generator is guaranteed to end with either a 'result' or 'error' message.
+       *
+       * For task-augmented requests (especially URL-based elicitation), yields 'taskCreated'
+       * and 'taskStatus' messages before the final result.
+       *
+       * @example
+       * ```typescript
+       * const stream = server.experimental.tasks.elicitInputStream({
+       *     mode: 'url',
+       *     message: 'Please authenticate',
+       *     elicitationId: 'auth-123',
+       *     url: 'https://example.com/auth'
+       * }, {
+       *     task: { ttl: 300000 } // Task-augmented for long-running auth flow
+       * });
+       *
+       * for await (const message of stream) {
+       *     switch (message.type) {
+       *         case 'taskCreated':
+       *             console.log('Task created:', message.task.taskId);
+       *             break;
+       *         case 'taskStatus':
+       *             console.log('Task status:', message.task.status);
+       *             break;
+       *         case 'result':
+       *             console.log('User action:', message.result.action);
+       *             break;
+       *         case 'error':
+       *             console.error('Error:', message.error);
+       *             break;
+       *     }
+       * }
+       * ```
+       *
+       * @param params - The elicitation request parameters
+       * @param options - Optional request options (timeout, signal, task creation params, etc.)
+       * @returns AsyncGenerator that yields ResponseMessage objects
+       *
+       * @experimental
+       */
+      elicitInputStream(params, options) {
+        const clientCapabilities = this._server.getClientCapabilities();
+        const mode = params.mode ?? "form";
+        switch (mode) {
+          case "url": {
+            if (!clientCapabilities?.elicitation?.url) {
+              throw new Error("Client does not support url elicitation.");
+            }
+            break;
+          }
+          case "form": {
+            if (!clientCapabilities?.elicitation?.form) {
+              throw new Error("Client does not support form elicitation.");
+            }
+            break;
+          }
+        }
+        const normalizedParams = mode === "form" && params.mode === void 0 ? { ...params, mode: "form" } : params;
+        return this.requestStream({
+          method: "elicitation/create",
+          params: normalizedParams
+        }, ElicitResultSchema, options);
+      }
+      /**
+       * Gets the current status of a task.
+       *
+       * @param taskId - The task identifier
+       * @param options - Optional request options
+       * @returns The task status
+       *
+       * @experimental
+       */
+      async getTask(taskId, options) {
+        return this._server.getTask({ taskId }, options);
+      }
+      /**
+       * Retrieves the result of a completed task.
+       *
+       * @param taskId - The task identifier
+       * @param resultSchema - Zod schema for validating the result
+       * @param options - Optional request options
+       * @returns The task result
+       *
+       * @experimental
+       */
+      async getTaskResult(taskId, resultSchema, options) {
+        return this._server.getTaskResult({ taskId }, resultSchema, options);
+      }
+      /**
+       * Lists tasks with optional pagination.
+       *
+       * @param cursor - Optional pagination cursor
+       * @param options - Optional request options
+       * @returns List of tasks with optional next cursor
+       *
+       * @experimental
+       */
+      async listTasks(cursor, options) {
+        return this._server.listTasks(cursor ? { cursor } : void 0, options);
+      }
+      /**
+       * Cancels a running task.
+       *
+       * @param taskId - The task identifier
+       * @param options - Optional request options
+       *
+       * @experimental
+       */
+      async cancelTask(taskId, options) {
+        return this._server.cancelTask({ taskId }, options);
+      }
+    };
+  }
+});
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js
+var Server;
+var init_server2 = __esm({
+  "node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js"() {
+    init_protocol();
+    init_types();
+    init_ajv_provider();
+    init_zod_compat();
+    init_server();
+    init_helpers();
+    Server = class extends Protocol {
+      /**
+       * Initializes this server with the given name and version information.
+       */
+      constructor(_serverInfo, options) {
+        super(options);
+        this._serverInfo = _serverInfo;
+        this._loggingLevels = /* @__PURE__ */ new Map();
+        this.LOG_LEVEL_SEVERITY = new Map(LoggingLevelSchema.options.map((level, index) => [level, index]));
+        this.isMessageIgnored = (level, sessionId) => {
+          const currentLevel = this._loggingLevels.get(sessionId);
+          return currentLevel ? this.LOG_LEVEL_SEVERITY.get(level) < this.LOG_LEVEL_SEVERITY.get(currentLevel) : false;
+        };
+        this._capabilities = options?.capabilities ?? {};
+        this._instructions = options?.instructions;
+        this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
+        this.setRequestHandler(InitializeRequestSchema, (request) => this._oninitialize(request));
+        this.setNotificationHandler(InitializedNotificationSchema, () => this.oninitialized?.());
+        if (this._capabilities.logging) {
+          this.setRequestHandler(SetLevelRequestSchema, async (request, extra) => {
+            const transportSessionId = extra.sessionId || extra.requestInfo?.headers["mcp-session-id"] || void 0;
+            const { level } = request.params;
+            const parseResult = LoggingLevelSchema.safeParse(level);
+            if (parseResult.success) {
+              this._loggingLevels.set(transportSessionId, parseResult.data);
+            }
+            return {};
+          });
+        }
+      }
+      /**
+       * Access experimental features.
+       *
+       * WARNING: These APIs are experimental and may change without notice.
+       *
+       * @experimental
+       */
+      get experimental() {
+        if (!this._experimental) {
+          this._experimental = {
+            tasks: new ExperimentalServerTasks(this)
+          };
+        }
+        return this._experimental;
+      }
+      /**
+       * Registers new capabilities. This can only be called before connecting to a transport.
+       *
+       * The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
+       */
+      registerCapabilities(capabilities) {
+        if (this.transport) {
+          throw new Error("Cannot register capabilities after connecting to transport");
+        }
+        this._capabilities = mergeCapabilities(this._capabilities, capabilities);
+      }
+      /**
+       * Override request handler registration to enforce server-side validation for tools/call.
+       */
+      setRequestHandler(requestSchema, handler) {
+        const shape = getObjectShape(requestSchema);
+        const methodSchema = shape?.method;
+        if (!methodSchema) {
+          throw new Error("Schema is missing a method literal");
+        }
+        let methodValue;
+        if (isZ4Schema(methodSchema)) {
+          const v4Schema = methodSchema;
+          const v4Def = v4Schema._zod?.def;
+          methodValue = v4Def?.value ?? v4Schema.value;
+        } else {
+          const v3Schema = methodSchema;
+          const legacyDef = v3Schema._def;
+          methodValue = legacyDef?.value ?? v3Schema.value;
+        }
+        if (typeof methodValue !== "string") {
+          throw new Error("Schema method literal must be a string");
+        }
+        const method = methodValue;
+        if (method === "tools/call") {
+          const wrappedHandler = async (request, extra) => {
+            const validatedRequest = safeParse2(CallToolRequestSchema, request);
+            if (!validatedRequest.success) {
+              const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+              throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
+            }
+            const { params } = validatedRequest.data;
+            const result = await Promise.resolve(handler(request, extra));
+            if (params.task) {
+              const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
+              if (!taskValidationResult.success) {
+                const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+                throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+              }
+              return taskValidationResult.data;
+            }
+            const validationResult = safeParse2(CallToolResultSchema, result);
+            if (!validationResult.success) {
+              const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+              throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage}`);
+            }
+            return validationResult.data;
+          };
+          return super.setRequestHandler(requestSchema, wrappedHandler);
+        }
+        return super.setRequestHandler(requestSchema, handler);
+      }
+      assertCapabilityForMethod(method) {
+        switch (method) {
+          case "sampling/createMessage":
+            if (!this._clientCapabilities?.sampling) {
+              throw new Error(`Client does not support sampling (required for ${method})`);
+            }
+            break;
+          case "elicitation/create":
+            if (!this._clientCapabilities?.elicitation) {
+              throw new Error(`Client does not support elicitation (required for ${method})`);
+            }
+            break;
+          case "roots/list":
+            if (!this._clientCapabilities?.roots) {
+              throw new Error(`Client does not support listing roots (required for ${method})`);
+            }
+            break;
+          case "ping":
+            break;
+        }
+      }
+      assertNotificationCapability(method) {
+        switch (method) {
+          case "notifications/message":
+            if (!this._capabilities.logging) {
+              throw new Error(`Server does not support logging (required for ${method})`);
+            }
+            break;
+          case "notifications/resources/updated":
+          case "notifications/resources/list_changed":
+            if (!this._capabilities.resources) {
+              throw new Error(`Server does not support notifying about resources (required for ${method})`);
+            }
+            break;
+          case "notifications/tools/list_changed":
+            if (!this._capabilities.tools) {
+              throw new Error(`Server does not support notifying of tool list changes (required for ${method})`);
+            }
+            break;
+          case "notifications/prompts/list_changed":
+            if (!this._capabilities.prompts) {
+              throw new Error(`Server does not support notifying of prompt list changes (required for ${method})`);
+            }
+            break;
+          case "notifications/elicitation/complete":
+            if (!this._clientCapabilities?.elicitation?.url) {
+              throw new Error(`Client does not support URL elicitation (required for ${method})`);
+            }
+            break;
+          case "notifications/cancelled":
+            break;
+          case "notifications/progress":
+            break;
+        }
+      }
+      assertRequestHandlerCapability(method) {
+        if (!this._capabilities) {
+          return;
+        }
+        switch (method) {
+          case "completion/complete":
+            if (!this._capabilities.completions) {
+              throw new Error(`Server does not support completions (required for ${method})`);
+            }
+            break;
+          case "logging/setLevel":
+            if (!this._capabilities.logging) {
+              throw new Error(`Server does not support logging (required for ${method})`);
+            }
+            break;
+          case "prompts/get":
+          case "prompts/list":
+            if (!this._capabilities.prompts) {
+              throw new Error(`Server does not support prompts (required for ${method})`);
+            }
+            break;
+          case "resources/list":
+          case "resources/templates/list":
+          case "resources/read":
+            if (!this._capabilities.resources) {
+              throw new Error(`Server does not support resources (required for ${method})`);
+            }
+            break;
+          case "tools/call":
+          case "tools/list":
+            if (!this._capabilities.tools) {
+              throw new Error(`Server does not support tools (required for ${method})`);
+            }
+            break;
+          case "tasks/get":
+          case "tasks/list":
+          case "tasks/result":
+          case "tasks/cancel":
+            if (!this._capabilities.tasks) {
+              throw new Error(`Server does not support tasks capability (required for ${method})`);
+            }
+            break;
+          case "ping":
+          case "initialize":
+            break;
+        }
+      }
+      assertTaskCapability(method) {
+        assertClientRequestTaskCapability(this._clientCapabilities?.tasks?.requests, method, "Client");
+      }
+      assertTaskHandlerCapability(method) {
+        if (!this._capabilities) {
+          return;
+        }
+        assertToolsCallTaskCapability(this._capabilities.tasks?.requests, method, "Server");
+      }
+      async _oninitialize(request) {
+        const requestedVersion = request.params.protocolVersion;
+        this._clientCapabilities = request.params.capabilities;
+        this._clientVersion = request.params.clientInfo;
+        const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion) ? requestedVersion : LATEST_PROTOCOL_VERSION;
+        return {
+          protocolVersion,
+          capabilities: this.getCapabilities(),
+          serverInfo: this._serverInfo,
+          ...this._instructions && { instructions: this._instructions }
+        };
+      }
+      /**
+       * After initialization has completed, this will be populated with the client's reported capabilities.
+       */
+      getClientCapabilities() {
+        return this._clientCapabilities;
+      }
+      /**
+       * After initialization has completed, this will be populated with information about the client's name and version.
+       */
+      getClientVersion() {
+        return this._clientVersion;
+      }
+      getCapabilities() {
+        return this._capabilities;
+      }
+      async ping() {
+        return this.request({ method: "ping" }, EmptyResultSchema);
+      }
+      // Implementation
+      async createMessage(params, options) {
+        if (params.tools || params.toolChoice) {
+          if (!this._clientCapabilities?.sampling?.tools) {
+            throw new Error("Client does not support sampling tools capability.");
+          }
+        }
+        if (params.messages.length > 0) {
+          const lastMessage = params.messages[params.messages.length - 1];
+          const lastContent = Array.isArray(lastMessage.content) ? lastMessage.content : [lastMessage.content];
+          const hasToolResults = lastContent.some((c) => c.type === "tool_result");
+          const previousMessage = params.messages.length > 1 ? params.messages[params.messages.length - 2] : void 0;
+          const previousContent = previousMessage ? Array.isArray(previousMessage.content) ? previousMessage.content : [previousMessage.content] : [];
+          const hasPreviousToolUse = previousContent.some((c) => c.type === "tool_use");
+          if (hasToolResults) {
+            if (lastContent.some((c) => c.type !== "tool_result")) {
+              throw new Error("The last message must contain only tool_result content if any is present");
+            }
+            if (!hasPreviousToolUse) {
+              throw new Error("tool_result blocks are not matching any tool_use from the previous message");
+            }
+          }
+          if (hasPreviousToolUse) {
+            const toolUseIds = new Set(previousContent.filter((c) => c.type === "tool_use").map((c) => c.id));
+            const toolResultIds = new Set(lastContent.filter((c) => c.type === "tool_result").map((c) => c.toolUseId));
+            if (toolUseIds.size !== toolResultIds.size || ![...toolUseIds].every((id) => toolResultIds.has(id))) {
+              throw new Error("ids of tool_result blocks and tool_use blocks from previous message do not match");
+            }
+          }
+        }
+        if (params.tools) {
+          return this.request({ method: "sampling/createMessage", params }, CreateMessageResultWithToolsSchema, options);
+        }
+        return this.request({ method: "sampling/createMessage", params }, CreateMessageResultSchema, options);
+      }
+      /**
+       * Creates an elicitation request for the given parameters.
+       * For backwards compatibility, `mode` may be omitted for form requests and will default to `'form'`.
+       * @param params The parameters for the elicitation request.
+       * @param options Optional request options.
+       * @returns The result of the elicitation request.
+       */
+      async elicitInput(params, options) {
+        const mode = params.mode ?? "form";
+        switch (mode) {
+          case "url": {
+            if (!this._clientCapabilities?.elicitation?.url) {
+              throw new Error("Client does not support url elicitation.");
+            }
+            const urlParams = params;
+            return this.request({ method: "elicitation/create", params: urlParams }, ElicitResultSchema, options);
+          }
+          case "form": {
+            if (!this._clientCapabilities?.elicitation?.form) {
+              throw new Error("Client does not support form elicitation.");
+            }
+            const formParams = params.mode === "form" ? params : { ...params, mode: "form" };
+            const result = await this.request({ method: "elicitation/create", params: formParams }, ElicitResultSchema, options);
+            if (result.action === "accept" && result.content && formParams.requestedSchema) {
+              try {
+                const validator = this._jsonSchemaValidator.getValidator(formParams.requestedSchema);
+                const validationResult = validator(result.content);
+                if (!validationResult.valid) {
+                  throw new McpError(ErrorCode.InvalidParams, `Elicitation response content does not match requested schema: ${validationResult.errorMessage}`);
+                }
+              } catch (error2) {
+                if (error2 instanceof McpError) {
+                  throw error2;
+                }
+                throw new McpError(ErrorCode.InternalError, `Error validating elicitation response: ${error2 instanceof Error ? error2.message : String(error2)}`);
+              }
+            }
+            return result;
+          }
+        }
+      }
+      /**
+       * Creates a reusable callback that, when invoked, will send a `notifications/elicitation/complete`
+       * notification for the specified elicitation ID.
+       *
+       * @param elicitationId The ID of the elicitation to mark as complete.
+       * @param options Optional notification options. Useful when the completion notification should be related to a prior request.
+       * @returns A function that emits the completion notification when awaited.
+       */
+      createElicitationCompletionNotifier(elicitationId, options) {
+        if (!this._clientCapabilities?.elicitation?.url) {
+          throw new Error("Client does not support URL elicitation (required for notifications/elicitation/complete)");
+        }
+        return () => this.notification({
+          method: "notifications/elicitation/complete",
+          params: {
+            elicitationId
+          }
+        }, options);
+      }
+      async listRoots(params, options) {
+        return this.request({ method: "roots/list", params }, ListRootsResultSchema, options);
+      }
+      /**
+       * Sends a logging message to the client, if connected.
+       * Note: You only need to send the parameters object, not the entire JSON RPC message
+       * @see LoggingMessageNotification
+       * @param params
+       * @param sessionId optional for stateless and backward compatibility
+       */
+      async sendLoggingMessage(params, sessionId) {
+        if (this._capabilities.logging) {
+          if (!this.isMessageIgnored(params.level, sessionId)) {
+            return this.notification({ method: "notifications/message", params });
+          }
+        }
+      }
+      async sendResourceUpdated(params) {
+        return this.notification({
+          method: "notifications/resources/updated",
+          params
+        });
+      }
+      async sendResourceListChanged() {
+        return this.notification({
+          method: "notifications/resources/list_changed"
+        });
+      }
+      async sendToolListChanged() {
+        return this.notification({ method: "notifications/tools/list_changed" });
+      }
+      async sendPromptListChanged() {
+        return this.notification({ method: "notifications/prompts/list_changed" });
+      }
+    };
+  }
+});
+
+// src/repl-doc-search.ts
+import { readFile as readFile2 } from "node:fs/promises";
+import { dirname as dirname3, isAbsolute, relative, resolve as resolve3 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+async function searchReferenceFiles(options) {
+  const searchRoot = await resolveReferenceRoot();
+  const queryTokens = tokenizeQuery(options.query);
+  const chunks = [];
+  for (const file of options.files) {
+    const path = resolve3(searchRoot, file);
+    if (!isPathInside(searchRoot, path)) {
+      continue;
+    }
+    let text;
+    try {
+      text = await readFile2(path, "utf8");
+    } catch {
+      continue;
+    }
+    chunks.push(...buildReferenceChunks(file, text));
+  }
+  const results = scoreReferenceChunks({
+    chunks,
+    query: options.query,
+    queryTokens,
+    maxSnippetLines: options.maxSnippetLines,
+    exactSymbol: Boolean(options.exactSymbol)
+  });
+  results.sort((left, right) => right.score - left.score || left.sourceId.localeCompare(right.sourceId) || left.lineStart - right.lineStart);
+  return {
+    maxResults: options.maxResults,
+    maxSnippetLines: options.maxSnippetLines,
+    results: results.slice(0, options.maxResults)
+  };
+}
+function normalizeLookupQuery(value, name) {
+  if (typeof value !== "string") {
+    throw new Error(`Tool argument "${name}" is required and must be a string.`);
+  }
+  const query = value.trim();
+  if (!query) {
+    throw new Error(`Tool argument "${name}" must not be empty.`);
+  }
+  if (query.length > MAX_LOOKUP_QUERY_LENGTH) {
+    throw new Error(`Tool argument "${name}" must be ${MAX_LOOKUP_QUERY_LENGTH} characters or fewer.`);
+  }
+  return query;
+}
+function normalizeLookupRankingQuery(value, name) {
+  if (typeof value !== "string") {
+    throw new Error(`Tool argument "${name}" is required and must be a string.`);
+  }
+  const query = value.trim();
+  if (!query) {
+    throw new Error(`Tool argument "${name}" must not be empty.`);
+  }
+  return query.slice(0, MAX_LOOKUP_QUERY_LENGTH).trimEnd();
+}
+function tokenizeQuery(query) {
+  return query.toLowerCase().split(/[^a-z0-9_$:.-]+/u).map((token) => token.trim()).filter((token) => token.length >= 2);
+}
+function buildReferenceChunks(file, text) {
+  const lines = text.split(/\r?\n/u);
+  if (file.endsWith(".d.ts")) {
+    return buildDtsReferenceChunks(file, lines);
+  }
+  return buildMarkdownReferenceChunks(file, lines);
+}
+function buildMarkdownReferenceChunks(file, lines) {
+  const sections = [];
+  let sectionStart = 0;
+  let sectionTitle;
+  for (let index = 0; index < lines.length; index += 1) {
+    const heading = /^(#{1,6})\s+(.+)\s*$/u.exec(lines[index]);
+    if (!heading) {
+      continue;
+    }
+    if (index > sectionStart) {
+      sections.push({ title: sectionTitle, start: sectionStart, end: index });
+    }
+    sectionStart = index;
+    sectionTitle = heading[2].trim();
+  }
+  if (sectionStart < lines.length) {
+    sections.push({ title: sectionTitle, start: sectionStart, end: lines.length });
+  }
+  if (sections.length === 0) {
+    sections.push({ start: 0, end: lines.length });
+  }
+  return sections.flatMap(
+    (section, sectionIndex) => createWindowedReferenceChunks({
+      file,
+      lines,
+      start: section.start,
+      end: section.end,
+      title: section.title,
+      idPrefix: `md-${sectionIndex}`
+    })
+  );
+}
+function buildDtsReferenceChunks(file, lines) {
+  const chunks = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!isDtsSymbolLine(lines[index])) {
+      continue;
+    }
+    const start = findDtsChunkStart(lines, index);
+    const end = findDtsChunkEnd(lines, index);
+    const key = `${start}:${end}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    const title = extractDtsChunkTitle(lines[index]);
+    chunks.push(createReferenceChunk({
+      file,
+      lines,
+      start,
+      end,
+      title,
+      id: `dts-${chunks.length}`
+    }));
+  }
+  return chunks;
+}
+function createWindowedReferenceChunks(options) {
+  const chunks = [];
+  const size = Math.max(1, MAX_REFERENCE_CHUNK_LINES);
+  const step = Math.max(1, size - REFERENCE_CHUNK_OVERLAP_LINES);
+  for (let start = options.start; start < options.end; start += step) {
+    const end = Math.min(options.end, start + size);
+    chunks.push(createReferenceChunk({
+      file: options.file,
+      lines: options.lines,
+      start,
+      end,
+      title: options.title,
+      id: `${options.idPrefix}-${chunks.length}`
+    }));
+    if (end >= options.end) {
+      break;
+    }
+  }
+  return chunks;
+}
+function createReferenceChunk(options) {
+  const chunkLines = options.lines.slice(options.start, options.end);
+  const titlePrefix = options.title ? `${options.title}
+` : "";
+  const text = `${titlePrefix}${chunkLines.join("\n")}`;
+  const tokens = tokenizeReferenceText(text);
+  return {
+    id: `${options.file}:${options.id}`,
+    file: options.file,
+    title: options.title,
+    lineStart: options.start + 1,
+    lineEnd: options.end,
+    text,
+    lines: chunkLines,
+    tokens,
+    tokenCounts: countTokens(tokens)
+  };
+}
+function isDtsSymbolLine(line) {
+  return /^\s*(?:export\s+)?(?:declare\s+)?(?:interface|type|class|enum|namespace)\s+[$A-Z_a-z][$\w]*/u.test(line) || /^\s*(?:readonly\s+)?[$A-Z_a-z][$\w]*\??\s*(?:\(|:)/u.test(line);
+}
+function findDtsChunkStart(lines, symbolIndex) {
+  let start = symbolIndex;
+  for (let index = symbolIndex - 1; index >= Math.max(0, symbolIndex - 18); index -= 1) {
+    const line = lines[index].trim();
+    if (line === "" || line.startsWith("*") || line.startsWith("/**") || line.startsWith("*/")) {
+      start = index;
+      continue;
+    }
+    break;
+  }
+  return start;
+}
+function findDtsChunkEnd(lines, symbolIndex) {
+  let end = Math.min(lines.length, symbolIndex + 1);
+  for (let index = symbolIndex + 1; index < Math.min(lines.length, symbolIndex + 10); index += 1) {
+    const line = lines[index].trim();
+    end = index + 1;
+    if (line === "" || isDtsSymbolLine(lines[index])) {
+      break;
+    }
+  }
+  return end;
+}
+function extractDtsChunkTitle(line) {
+  const normalized = line.trim().replace(/\s+/gu, " ");
+  const match = /^(?:export\s+)?(?:declare\s+)?(?:(interface|type|class|enum|namespace)\s+([$A-Z_a-z][$\w]*)|(?:readonly\s+)?([$A-Z_a-z][$\w]*)\??\s*(?:\(|:))/u.exec(normalized);
+  return match ? match[2] ?? match[3] : void 0;
+}
+function scoreReferenceChunks(options) {
+  if (options.queryTokens.length === 0 || options.chunks.length === 0) {
+    return [];
+  }
+  const documentFrequencies = /* @__PURE__ */ new Map();
+  for (const chunk of options.chunks) {
+    for (const token of new Set(chunk.tokens)) {
+      documentFrequencies.set(token, (documentFrequencies.get(token) ?? 0) + 1);
+    }
+  }
+  const averageLength = options.chunks.reduce((sum, chunk) => sum + chunk.tokens.length, 0) / options.chunks.length;
+  const lowerQuery = options.query.toLowerCase();
+  const exactPattern = options.exactSymbol ? new RegExp(`\\b${escapeRegExp(options.query)}\\b`, "iu") : void 0;
+  const scored = options.chunks.map((chunk) => {
+    const lowerText = chunk.text.toLowerCase();
+    const exactHit = exactPattern?.test(chunk.text) ?? false;
+    const phraseHit = lowerText.includes(lowerQuery);
+    const tokenHits = options.queryTokens.filter((token) => chunk.tokenCounts.has(token));
+    if (!exactHit && !phraseHit && tokenHits.length === 0) {
+      return void 0;
+    }
+    const bm25 = calculateBm25Score({
+      chunk,
+      queryTokens: options.queryTokens,
+      documentFrequencies,
+      documentCount: options.chunks.length,
+      averageLength
+    });
+    const score = bm25 + (exactHit ? 12 : 0) + (phraseHit ? 4 : 0) + (chunk.file.endsWith(".d.ts") && exactHit ? 2 : 0);
+    const matchType = exactHit ? "exact-symbol" : phraseHit ? "phrase" : "token";
+    return {
+      chunk,
+      score,
+      matchType,
+      confidence: confidenceForReferenceScore(score, matchType)
+    };
+  }).filter((entry) => entry !== void 0);
+  return scored.map((entry) => scoredChunkToResult(entry, {
+    query: options.query,
+    queryTokens: options.queryTokens,
+    maxSnippetLines: options.maxSnippetLines,
+    exactPattern
+  }));
+}
+function calculateBm25Score(options) {
+  const k1 = 1.5;
+  const b = 0.75;
+  let score = 0;
+  for (const token of options.queryTokens) {
+    const frequency = options.chunk.tokenCounts.get(token) ?? 0;
+    if (frequency === 0) {
+      continue;
+    }
+    const documentFrequency = options.documentFrequencies.get(token) ?? 0;
+    const idf = Math.log(1 + (options.documentCount - documentFrequency + 0.5) / (documentFrequency + 0.5));
+    const lengthRatio = options.averageLength > 0 ? options.chunk.tokens.length / options.averageLength : 1;
+    score += idf * (frequency * (k1 + 1) / (frequency + k1 * (1 - b + b * lengthRatio)));
+  }
+  return score;
+}
+function scoredChunkToResult(entry, options) {
+  const bestLine = findBestSnippetLine(entry.chunk, options);
+  const contextBefore = Math.floor((options.maxSnippetLines - 1) / 2);
+  const start = Math.max(0, bestLine - contextBefore);
+  const end = Math.min(entry.chunk.lines.length, start + options.maxSnippetLines);
+  const snippet = entry.chunk.lines.slice(start, end).join("\n").slice(0, 2400);
+  return {
+    sourceId: publicReferenceSourceId(entry.chunk.file, entry.chunk.id),
+    lineStart: entry.chunk.lineStart + start,
+    lineEnd: entry.chunk.lineStart + end - 1,
+    score: Number(entry.score.toFixed(3)),
+    matchType: entry.matchType,
+    confidence: entry.confidence,
+    chunkTitle: entry.chunk.title,
+    snippet
+  };
+}
+function publicReferenceSourceId(file, chunkId) {
+  const normalized = file.replace(/^official-figma-skills\//u, "").replace(/\/references\//gu, "/").replace(/\/SKILL\.source\.md$/u, "/skill").replace(/\.source\.md$/u, "").replace(/\.(?:md|d\.ts)$/u, "").replace(/[^A-Za-z0-9_:/.-]+/gu, "-");
+  const chunk = chunkId.split(":").pop() ?? "chunk";
+  return `internal:${normalized}#${chunk}`;
+}
+function findBestSnippetLine(chunk, options) {
+  const lowerQuery = options.query.toLowerCase();
+  let bestIndex = 0;
+  let bestScore = -1;
+  for (let index = 0; index < chunk.lines.length; index += 1) {
+    const line = chunk.lines[index];
+    const lowerLine = line.toLowerCase();
+    const score = (options.exactPattern?.test(line) ? 20 : 0) + (lowerLine.includes(lowerQuery) ? 8 : 0) + options.queryTokens.filter((token) => lowerLine.includes(token)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  }
+  return bestIndex;
+}
+function confidenceForReferenceScore(score, matchType) {
+  if (matchType === "exact-symbol" || score >= 8) {
+    return "high";
+  }
+  if (score >= 3) {
+    return "medium";
+  }
+  return "low";
+}
+function tokenizeReferenceText(text) {
+  return text.toLowerCase().split(/[^a-z0-9_$:.-]+/u).map((token) => token.trim()).filter((token) => token.length >= 2);
+}
+function countTokens(tokens) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const token of tokens) {
+    counts.set(token, (counts.get(token) ?? 0) + 1);
+  }
+  return counts;
+}
+async function resolveReferenceRoot() {
+  const moduleDir = dirname3(fileURLToPath2(import.meta.url));
+  const cwd = typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : moduleDir;
+  const candidates = [
+    resolve3(moduleDir, "../skills/figma-router/references"),
+    resolve3(moduleDir, "../../skills/figma-router/references"),
+    resolve3(moduleDir, "../../../skills/figma-router/references"),
+    resolve3(cwd, "skills/figma-router/references"),
+    resolve3(cwd, "plugins/figma-mcp-bridge/skills/figma-router/references"),
+    resolve3(cwd, "../skills/figma-router/references")
+  ];
+  for (const candidate of candidates) {
+    try {
+      await readFile2(resolve3(candidate, "official-figma-skills/figma-use/SKILL.source.md"), "utf8");
+      return candidate;
+    } catch {
+    }
+  }
+  throw new Error(
+    "Unable to locate internal Figma corpus for figma_repl_mcp docs/API lookup."
+  );
+}
+function isPathInside(root, path) {
+  const rel = relative(root, path);
+  return rel === "" || !rel.startsWith("..") && !isAbsolute(rel);
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+var DEFAULT_DOCS_SEARCH_MAX_RESULTS, DEFAULT_DOCS_SEARCH_SNIPPET_LINES, MAX_DOCS_SEARCH_RESULTS, MAX_DOCS_SEARCH_SNIPPET_LINES, DEFAULT_REFERENCE_CONTEXT_SNIPPETS, MAX_LOOKUP_QUERY_LENGTH, MAX_REFERENCE_CHUNK_LINES, REFERENCE_CHUNK_OVERLAP_LINES, DOCS_SEARCH_ALLOWLIST, API_LOOKUP_FILES;
+var init_repl_doc_search = __esm({
+  "src/repl-doc-search.ts"() {
+    "use strict";
+    DEFAULT_DOCS_SEARCH_MAX_RESULTS = 5;
+    DEFAULT_DOCS_SEARCH_SNIPPET_LINES = 3;
+    MAX_DOCS_SEARCH_RESULTS = 10;
+    MAX_DOCS_SEARCH_SNIPPET_LINES = 8;
+    DEFAULT_REFERENCE_CONTEXT_SNIPPETS = 2;
+    MAX_LOOKUP_QUERY_LENGTH = 120;
+    MAX_REFERENCE_CHUNK_LINES = 24;
+    REFERENCE_CHUNK_OVERLAP_LINES = 4;
+    DOCS_SEARCH_ALLOWLIST = [
+      "official-figma-skills/figma-use/SKILL.source.md",
+      "official-figma-skills/figma-use/references/api-reference.md",
+      "official-figma-skills/figma-use/references/common-patterns.md",
+      "official-figma-skills/figma-use/references/component-patterns.md",
+      "official-figma-skills/figma-use/references/effect-style-patterns.md",
+      "official-figma-skills/figma-use/references/gotchas.md",
+      "official-figma-skills/figma-use/references/plugin-api-patterns.md",
+      "official-figma-skills/figma-use/references/text-style-patterns.md",
+      "official-figma-skills/figma-use/references/validation-and-recovery.md",
+      "official-figma-skills/figma-use/references/variable-patterns.md",
+      "official-figma-skills/figma-use/references/working-with-design-systems/wwds.md",
+      "official-figma-skills/figma-use/references/working-with-design-systems/wwds-components.md",
+      "official-figma-skills/figma-use/references/working-with-design-systems/wwds-variables.md",
+      "official-figma-skills/figma-generate-library/SKILL.source.md",
+      "official-figma-skills/figma-generate-library/references/component-creation.md",
+      "official-figma-skills/figma-generate-library/references/discovery-phase.md",
+      "official-figma-skills/figma-generate-library/references/token-creation.md",
+      "official-figma-skills/figma-code-connect/SKILL.source.md",
+      "official-figma-skills/figma-code-connect/references/api.md",
+      "official-figma-skills/figma-use-figjam/SKILL.source.md",
+      "official-figma-skills/figma-use-slides/SKILL.source.md"
+    ];
+    API_LOOKUP_FILES = [
+      "official-figma-skills/figma-use/references/plugin-api-standalone.index.md",
+      "official-figma-skills/figma-use/references/api-reference.md",
+      "official-figma-skills/figma-use/references/plugin-api-standalone.d.ts"
+    ];
+  }
+});
+
+// src/repl-guidance-catalog.ts
+function searchApiCards(query, maxCards) {
+  const tokens = tokenizeCatalogQuery(query);
+  const lowerQuery = query.toLowerCase();
+  return FIGMA_REPL_API_CARDS.map((card) => ({
+    card,
+    score: scoreApiCard(card, tokens, lowerQuery)
+  })).filter((entry) => entry.score > 0).sort((left, right) => right.score - left.score || left.card.id.localeCompare(right.card.id)).slice(0, maxCards).map((entry) => entry.card);
+}
+function chooseApiCardsForIntent(intent, maxCards) {
+  const cards = searchApiCards(intent, maxCards);
+  return cards.length > 0 ? cards : FIGMA_REPL_API_CARDS.slice(0, maxCards);
+}
+function uniqueStrings(values, maxItems) {
+  const seen = /* @__PURE__ */ new Set();
+  const results = [];
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    results.push(normalized);
+    if (results.length >= maxItems) {
+      break;
+    }
+  }
+  return results;
+}
+function scoreApiCard(card, tokens, lowerQuery) {
+  const lowerId = card.id.toLowerCase();
+  const haystack = [
+    card.id,
+    card.title,
+    card.surface,
+    ...card.intents,
+    ...card.helpers,
+    ...card.pluginApi,
+    ...card.apiSymbols,
+    ...card.queryHints,
+    ...card.avoid,
+    ...card.pitfalls
+  ].join(" ").toLowerCase();
+  return (lowerId === lowerQuery ? 120 : 0) + (lowerId.startsWith(`${lowerQuery}.`) ? 100 : 0) + (haystack.includes(lowerQuery) ? 50 : 0) + tokens.filter((token) => haystack.includes(token)).length * 10;
+}
+function tokenizeCatalogQuery(query) {
+  return query.toLowerCase().split(/[^a-z0-9_$:.-]+/u).map((token) => token.trim()).filter((token) => token.length >= 2);
+}
+var FIGMA_REPL_QUERY_SEARCH_ANCHORS, FIGMA_REPL_QUERY_OUTPUT_FIELDS, FIGMA_REPL_COMMON_TASK_LABELS, FIGMA_REPL_INTENT_EXAMPLE_QUERIES, FIGMA_REPL_API_CARDS;
+var init_repl_guidance_catalog = __esm({
+  "src/repl-guidance-catalog.ts"() {
+    "use strict";
+    FIGMA_REPL_QUERY_SEARCH_ANCHORS = [
+      "text/font",
+      "auto layout",
+      "variables/tokens",
+      "styles",
+      "components/variants",
+      "instances/properties",
+      "images/fills",
+      "selection",
+      "capture/QA",
+      "FigJam/Slides"
+    ];
+    FIGMA_REPL_QUERY_OUTPUT_FIELDS = [
+      "recommendedCards",
+      "queryHints",
+      "apiSymbols",
+      "avoid",
+      "referenceContext"
+    ];
+    FIGMA_REPL_COMMON_TASK_LABELS = [
+      "font-safe text edits",
+      "auto-layout UI construction",
+      "variable binding",
+      "style application",
+      "component variants",
+      "instance properties",
+      "generated image fills",
+      "screenshot QA",
+      "FigJam board work",
+      "Slides deck work"
+    ];
+    FIGMA_REPL_INTENT_EXAMPLE_QUERIES = [
+      "create UI card with auto layout and text",
+      "make component variants",
+      "update color token"
+    ];
+    FIGMA_REPL_API_CARDS = [
+      {
+        id: "nodes",
+        title: "Create and update Design nodes",
+        intents: ["create", "frame", "rectangle", "ui", "layout"],
+        surface: "design",
+        helpers: ["$.create", "$.checkpoint"],
+        pluginApi: ["figma.createFrame", "figma.createRectangle", "resize", "appendChild"],
+        apiSymbols: ["figma.createFrame", "figma.createRectangle", "SceneNode.resize", "ChildrenMixin.appendChild"],
+        queryHints: ["create frame or rectangle", "resize node before layout", "append child to frame"],
+        avoid: ["Root-wide construction without handles", "Changing layout-sensitive size after applying auto layout"],
+        pitfalls: ["Set size before auto-layout if fixed dimensions matter.", "Remember handles with `as` for later repair."]
+      },
+      {
+        id: "text.font",
+        title: "Text and font-safe edits",
+        intents: ["text", "font", "copy", "label", "typography"],
+        surface: "design",
+        helpers: ["$.text", "figma_repl_lookup(kind=api)"],
+        pluginApi: ["figma.createText", "figma.loadFontAsync", "TextNode.characters"],
+        apiSymbols: ["figma.createText", "figma.loadFontAsync", "TextNode.characters", "TextNode.fontName"],
+        queryHints: ["load font before changing text", "create text node", "set characters safely"],
+        avoid: ["Changing TextNode.characters before loadFontAsync", "Guessing unavailable font style names"],
+        pitfalls: ["Always load the target font before changing characters or fontName.", "Use text styles for reusable typography."]
+      },
+      {
+        id: "layout.auto",
+        title: "Auto layout",
+        intents: ["layout", "spacing", "padding", "stack", "responsive"],
+        surface: "design",
+        helpers: ["$.layout", "$.create"],
+        pluginApi: ["layoutMode", "itemSpacing", "paddingLeft", "primaryAxisSizingMode"],
+        apiSymbols: ["AutoLayoutMixin.layoutMode", "AutoLayoutMixin.itemSpacing", "AutoLayoutMixin.paddingLeft", "AutoLayoutMixin.primaryAxisSizingMode"],
+        queryHints: ["auto layout frame", "padding item spacing", "responsive stack"],
+        avoid: ["Lowercase layout mode values", "Applying auto layout to unsupported node types"],
+        pitfalls: ["Use valid uppercase layout modes.", "Apply layout to frames, components, or component sets only."]
+      },
+      {
+        id: "variables.bind",
+        title: "Variables and bindings",
+        intents: ["variable", "variables", "bind", "binding", "token", "color", "theme", "mode"],
+        surface: "design",
+        helpers: ["figma_repl_lookup(kind=api)", "figma_repl_run_script_file"],
+        pluginApi: ["figma.variables.createVariableCollection", "figma.variables.createVariable", "setValueForMode", "setBoundVariable"],
+        apiSymbols: ["figma.variables.createVariableCollection", "figma.variables.createVariable", "Variable.setValueForMode", "VariablesAPI.setBoundVariableForPaint", "SceneNodeMixin.setBoundVariable"],
+        queryHints: ["create variable collection", "bind color variable to fill", "set variable value for mode"],
+        avoid: ["Binding raw values instead of Variable objects", "Assuming every node field is variable-bindable"],
+        pitfalls: ["Variable APIs require Design files.", "Use native Plugin API calls in .figma.js for token creation and binding."]
+      },
+      {
+        id: "styles.apply",
+        title: "Create and apply styles",
+        intents: ["style", "styles", "paint", "typography", "library", "apply style"],
+        surface: "design",
+        helpers: ["figma_repl_lookup(kind=api)", "figma_repl_run_script_file"],
+        pluginApi: ["figma.createTextStyle", "figma.createPaintStyle", "TextNode.textStyleId", "fills"],
+        apiSymbols: ["figma.createTextStyle", "figma.createPaintStyle", "TextNode.textStyleId", "TextNode.setTextStyleIdAsync", "MinimalFillsMixin.fills"],
+        queryHints: ["create text style", "apply paint style", "set textStyleId"],
+        avoid: ["Publishing assumptions for local styles", "Changing style font properties without loading fonts"],
+        pitfalls: ["Style creation is local to the file until published.", "Load fonts before setting text style font names."]
+      },
+      {
+        id: "components.variants",
+        title: "Components and variants",
+        intents: ["component", "components", "variant", "variants", "component set", "design system"],
+        surface: "design",
+        helpers: ["$.create", "figma_repl_lookup(kind=api)"],
+        pluginApi: ["figma.createComponent", "figma.combineAsVariants", "ComponentNode.createInstance"],
+        apiSymbols: ["figma.createComponent", "figma.combineAsVariants", "ComponentNode.createInstance", "ComponentSetNode"],
+        queryHints: ["create component", "combine as variants", "component set"],
+        avoid: ["Combining non-component nodes as variants", "Creating instances before remembering the source component"],
+        pitfalls: ["Variant combining requires component nodes.", "Use handles for source components before creating instances."]
+      },
+      {
+        id: "instances.properties",
+        title: "Instance properties",
+        intents: ["instance", "instances", "property", "properties", "component property", "set properties", "variant property"],
+        surface: "design",
+        helpers: ["figma_repl_lookup(kind=api)", "figma_repl_run_script_file"],
+        pluginApi: ["InstanceNode.componentProperties", "InstanceNode.setProperties", "ComponentNode.componentPropertyDefinitions"],
+        apiSymbols: ["InstanceNode.componentProperties", "InstanceNode.setProperties", "ComponentNode.componentPropertyDefinitions", "ComponentPropertiesMixin"],
+        queryHints: ["set instance properties", "read component property definitions", "variant property values"],
+        avoid: ["Using display labels instead of property keys with #uid suffixes", "Assuming setProperties throws when a key is wrong"],
+        pitfalls: ["Read componentPropertyDefinitions before setProperties.", "TEXT, BOOLEAN, and INSTANCE_SWAP property names can include #uid suffixes."]
+      },
+      {
+        id: "images.fill",
+        title: "Image fills and generated assets",
+        intents: ["image", "images", "fill", "asset", "assets", "png", "jpeg", "upload", "generated"],
+        surface: "design",
+        helpers: ["$.imageAsset", "$.findFreeSlot", "$.placeNode", "$.replaceGeneratedFrame", "figma_repl_apply_asset_manifest", "figma_repl_run_task_plan"],
+        pluginApi: ["figma.createImage", "Image.hash", "fills", "ImagePaint"],
+        apiSymbols: ["figma.createImage", "figma.createImageAsync", "Image.hash", "ImagePaint", "MinimalFillsMixin.fills"],
+        queryHints: ["create image fill", "upload local asset manifest", "official upload_assets", "set rectangle fills to image hash"],
+        avoid: ["Embedding large base64 images in use_figma code payloads", "Using figma.createImage as a Slides upload path"],
+        pitfalls: ["Use $.imageAsset for small inline images only.", "For large generated files, create target rectangles and use figma_repl_apply_asset_manifest/upload_assets.", "Use $.replaceGeneratedFrame when swapping a generated frame for a repaired version."]
+      },
+      {
+        id: "capture.qa",
+        title: "Screenshot capture and visual QA",
+        intents: ["capture", "screenshot", "qa", "visual", "review", "inspect image"],
+        surface: "any",
+        helpers: ["figma_repl_capture_node", "$.screenshot", "figma_repl_run_task_plan"],
+        pluginApi: ["node.screenshot", "ExportSettingsImage"],
+        apiSymbols: ["SceneNode.screenshot", "ExportSettingsImage", "figma.viewport"],
+        queryHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
+        avoid: ["Treating opportunistic $.screenshot as final QA when no image payload is returned", "Relying only on inline MCP image payloads"],
+        pitfalls: ["Prefer figma_repl_capture_node for final QA files.", "Inspect the saved local image/result when layout correctness matters."]
+      },
+      {
+        id: "surface.figjam",
+        title: "FigJam board APIs",
+        intents: ["figjam", "board", "sticky", "connector", "shape with text", "brainstorm"],
+        surface: "figjam",
+        helpers: ["figma_repl_open(surface=figjam)", "figma_repl_lookup(kind=api)"],
+        pluginApi: ["figma.createSticky", "figma.createConnector", "figma.createShapeWithText"],
+        apiSymbols: ["figma.createSticky", "figma.createConnector", "figma.createShapeWithText", "StickyNode", "ConnectorNode"],
+        queryHints: ["create sticky notes", "connect FigJam nodes", "surface figjam"],
+        avoid: ["Running Design-only frame/component APIs in FigJam sessions", "Opening a FigJam board with surface design"],
+        pitfalls: ["Open with surface='figjam'.", "FigJam creation APIs are surface-specific."]
+      },
+      {
+        id: "surface.slides",
+        title: "Slides deck APIs",
+        intents: ["slides", "slide", "deck", "presentation", "speaker notes", "slide row"],
+        surface: "slides",
+        helpers: ["figma_repl_open(surface=slides)", "figma_repl_lookup(kind=api)", "figma_repl_capture_node"],
+        pluginApi: ["figma.createSlide", "figma.createSlideRow", "figma.getSlideGrid", "figma.setSlideGrid"],
+        apiSymbols: ["figma.createSlide", "figma.createSlideRow", "figma.getSlideGrid", "figma.setSlideGrid", "SlideNode", "SlideRowNode"],
+        queryHints: ["create slide", "organize slide grid", "surface slides"],
+        avoid: ["Calling figma.createPage in Slides", "Using figma.createImage as a Slides upload entrypoint"],
+        pitfalls: ["Slides use slide grid APIs instead of createPage.", "Use upload/capture tooling for images and visual review."]
+      },
+      {
+        id: "selection",
+        title: "Selection, query, and inspection",
+        intents: ["find", "select", "inspect", "query", "validate"],
+        surface: "any",
+        helpers: ["$.find", "$.findAll", "$.select", "$.inspect", "figma_repl_inspect(mode=validate)"],
+        pluginApi: ["figma.currentPage.selection", "findAll", "getNodeByIdAsync"],
+        apiSymbols: ["figma.currentPage.selection", "ChildrenMixin.findAll", "figma.getNodeByIdAsync"],
+        queryHints: ["find one scoped node", "select remembered handle", "validate cached handles"],
+        avoid: ["Root-wide figma.root.findAll scans", "Direct selection mutation in repairable scripts"],
+        pitfalls: ["Avoid root-wide searches in large files.", "Use $.select instead of direct figma.currentPage.selection writes.", "Validate stale handles before mutation."]
+      },
+      {
+        id: "clone",
+        title: "Clone an existing node tree",
+        intents: ["clone", "copy", "duplicate", "side by side", "preserve instance"],
+        surface: "design",
+        helpers: ["$.cloneNodeTree", "$.findFreeSlot", "$.placeNode", "$.replaceGeneratedFrame", "$.select", "$.checkpoint"],
+        pluginApi: ["SceneNode.clone", "appendChild", "remove"],
+        apiSymbols: ["SceneNode.clone", "ChildrenMixin.appendChild", "BaseNodeMixin.remove"],
+        queryHints: ["clone node tree", "preserve instance subtree", "duplicate beside source", "replace generated frame"],
+        avoid: ["Rebuilding internal children of an InstanceNode", "Losing handles for cloned roots"],
+        pitfalls: ["Clone outer-to-inner when rebuilding children.", "Preserve instance subtrees whole; Figma does not allow rebuilding internal instance children."]
+      },
+      {
+        id: "pages",
+        title: "Page targeting",
+        intents: ["page", "surface", "current page", "navigation"],
+        surface: "any",
+        helpers: ["targetPageId", "figma_repl_open"],
+        pluginApi: ["figma.setCurrentPageAsync", "PageNode"],
+        apiSymbols: ["figma.setCurrentPageAsync", "PageNode", "figma.currentPage"],
+        queryHints: ["switch current page once", "targetPageId", "page-scoped script"],
+        avoid: ["Assigning figma.currentPage directly", "Multiple page switches in one transaction"],
+        pitfalls: ["Do not assign `figma.currentPage` directly.", "Use one page switch per transaction."]
+      }
+    ];
+  }
+});
+
+// node_modules/acorn/dist/acorn.mjs
+function isInAstralSet(code, set) {
+  var pos = 65536;
+  for (var i = 0; i < set.length; i += 2) {
+    pos += set[i];
+    if (pos > code) {
+      return false;
+    }
+    pos += set[i + 1];
+    if (pos >= code) {
+      return true;
+    }
+  }
+  return false;
+}
+function isIdentifierStart(code, astral) {
+  if (code < 65) {
+    return code === 36;
+  }
+  if (code < 91) {
+    return true;
+  }
+  if (code < 97) {
+    return code === 95;
+  }
+  if (code < 123) {
+    return true;
+  }
+  if (code <= 65535) {
+    return code >= 170 && nonASCIIidentifierStart.test(String.fromCharCode(code));
+  }
+  if (astral === false) {
+    return false;
+  }
+  return isInAstralSet(code, astralIdentifierStartCodes);
+}
+function isIdentifierChar(code, astral) {
+  if (code < 48) {
+    return code === 36;
+  }
+  if (code < 58) {
+    return true;
+  }
+  if (code < 65) {
+    return false;
+  }
+  if (code < 91) {
+    return true;
+  }
+  if (code < 97) {
+    return code === 95;
+  }
+  if (code < 123) {
+    return true;
+  }
+  if (code <= 65535) {
+    return code >= 170 && nonASCIIidentifier.test(String.fromCharCode(code));
+  }
+  if (astral === false) {
+    return false;
+  }
+  return isInAstralSet(code, astralIdentifierStartCodes) || isInAstralSet(code, astralIdentifierCodes);
+}
+function binop(name, prec) {
+  return new TokenType(name, { beforeExpr: true, binop: prec });
+}
+function kw(name, options) {
+  if (options === void 0) options = {};
+  options.keyword = name;
+  return keywords[name] = new TokenType(name, options);
+}
+function isNewLine(code) {
+  return code === 10 || code === 13 || code === 8232 || code === 8233;
+}
+function nextLineBreak(code, from, end) {
+  if (end === void 0) end = code.length;
+  for (var i = from; i < end; i++) {
+    var next = code.charCodeAt(i);
+    if (isNewLine(next)) {
+      return i < end - 1 && next === 13 && code.charCodeAt(i + 1) === 10 ? i + 2 : i + 1;
+    }
+  }
+  return -1;
+}
+function wordsRegexp(words) {
+  return regexpCache[words] || (regexpCache[words] = new RegExp("^(?:" + words.replace(/ /g, "|") + ")$"));
+}
+function codePointToString(code) {
+  if (code <= 65535) {
+    return String.fromCharCode(code);
+  }
+  code -= 65536;
+  return String.fromCharCode((code >> 10) + 55296, (code & 1023) + 56320);
+}
+function getLineInfo(input, offset2) {
+  for (var line = 1, cur = 0; ; ) {
+    var nextBreak = nextLineBreak(input, cur, offset2);
+    if (nextBreak < 0) {
+      return new Position(line, offset2 - cur);
+    }
+    ++line;
+    cur = nextBreak;
+  }
+}
+function getOptions(opts) {
+  var options = {};
+  for (var opt in defaultOptions) {
+    options[opt] = opts && hasOwn(opts, opt) ? opts[opt] : defaultOptions[opt];
+  }
+  if (options.ecmaVersion === "latest") {
+    options.ecmaVersion = 1e8;
+  } else if (options.ecmaVersion == null) {
+    if (!warnedAboutEcmaVersion && typeof console === "object" && console.warn) {
+      warnedAboutEcmaVersion = true;
+      console.warn("Since Acorn 8.0.0, options.ecmaVersion is required.\nDefaulting to 2020, but this will stop working in the future.");
+    }
+    options.ecmaVersion = 11;
+  } else if (options.ecmaVersion >= 2015) {
+    options.ecmaVersion -= 2009;
+  }
+  if (options.allowReserved == null) {
+    options.allowReserved = options.ecmaVersion < 5;
+  }
+  if (!opts || opts.allowHashBang == null) {
+    options.allowHashBang = options.ecmaVersion >= 14;
+  }
+  if (isArray(options.onToken)) {
+    var tokens = options.onToken;
+    options.onToken = function(token) {
+      return tokens.push(token);
+    };
+  }
+  if (isArray(options.onComment)) {
+    options.onComment = pushComment(options, options.onComment);
+  }
+  if (options.sourceType === "commonjs" && options.allowAwaitOutsideFunction) {
+    throw new Error("Cannot use allowAwaitOutsideFunction with sourceType: commonjs");
+  }
+  return options;
+}
+function pushComment(options, array2) {
+  return function(block, text, start, end, startLoc, endLoc) {
+    var comment = {
+      type: block ? "Block" : "Line",
+      value: text,
+      start,
+      end
+    };
+    if (options.locations) {
+      comment.loc = new SourceLocation(this, startLoc, endLoc);
+    }
+    if (options.ranges) {
+      comment.range = [start, end];
+    }
+    array2.push(comment);
+  };
+}
+function functionFlags(async, generator) {
+  return SCOPE_FUNCTION | (async ? SCOPE_ASYNC : 0) | (generator ? SCOPE_GENERATOR : 0);
+}
+function isPrivateNameConflicted(privateNameMap, element) {
+  var name = element.key.name;
+  var curr = privateNameMap[name];
+  var next = "true";
+  if (element.type === "MethodDefinition" && (element.kind === "get" || element.kind === "set")) {
+    next = (element.static ? "s" : "i") + element.kind;
+  }
+  if (curr === "iget" && next === "iset" || curr === "iset" && next === "iget" || curr === "sget" && next === "sset" || curr === "sset" && next === "sget") {
+    privateNameMap[name] = "true";
+    return false;
+  } else if (!curr) {
+    privateNameMap[name] = next;
+    return false;
+  } else {
+    return true;
+  }
+}
+function checkKeyName(node, name) {
+  var computed = node.computed;
+  var key = node.key;
+  return !computed && (key.type === "Identifier" && key.name === name || key.type === "Literal" && key.value === name);
+}
+function isLocalVariableAccess(node) {
+  return node.type === "Identifier" || node.type === "ParenthesizedExpression" && isLocalVariableAccess(node.expression);
+}
+function isPrivateFieldAccess(node) {
+  return node.type === "MemberExpression" && node.property.type === "PrivateIdentifier" || node.type === "ChainExpression" && isPrivateFieldAccess(node.expression) || node.type === "ParenthesizedExpression" && isPrivateFieldAccess(node.expression);
+}
+function finishNodeAt(node, type, pos, loc) {
+  node.type = type;
+  node.end = pos;
+  if (this.options.locations) {
+    node.loc.end = loc;
+  }
+  if (this.options.ranges) {
+    node.range[1] = pos;
+  }
+  return node;
+}
+function buildUnicodeData(ecmaVersion) {
+  var d = data[ecmaVersion] = {
+    binary: wordsRegexp(unicodeBinaryProperties[ecmaVersion] + " " + unicodeGeneralCategoryValues),
+    binaryOfStrings: wordsRegexp(unicodeBinaryPropertiesOfStrings[ecmaVersion]),
+    nonBinary: {
+      General_Category: wordsRegexp(unicodeGeneralCategoryValues),
+      Script: wordsRegexp(unicodeScriptValues[ecmaVersion])
+    }
+  };
+  d.nonBinary.Script_Extensions = d.nonBinary.Script;
+  d.nonBinary.gc = d.nonBinary.General_Category;
+  d.nonBinary.sc = d.nonBinary.Script;
+  d.nonBinary.scx = d.nonBinary.Script_Extensions;
+}
+function hasProp(obj) {
+  for (var _ in obj) {
+    return true;
+  }
+  return false;
+}
+function isRegularExpressionModifier(ch) {
+  return ch === 105 || ch === 109 || ch === 115;
+}
+function isSyntaxCharacter(ch) {
+  return ch === 36 || ch >= 40 && ch <= 43 || ch === 46 || ch === 63 || ch >= 91 && ch <= 94 || ch >= 123 && ch <= 125;
+}
+function isRegExpIdentifierStart(ch) {
+  return isIdentifierStart(ch, true) || ch === 36 || ch === 95;
+}
+function isRegExpIdentifierPart(ch) {
+  return isIdentifierChar(ch, true) || ch === 36 || ch === 95 || ch === 8204 || ch === 8205;
+}
+function isControlLetter(ch) {
+  return ch >= 65 && ch <= 90 || ch >= 97 && ch <= 122;
+}
+function isValidUnicode(ch) {
+  return ch >= 0 && ch <= 1114111;
+}
+function isCharacterClassEscape(ch) {
+  return ch === 100 || ch === 68 || ch === 115 || ch === 83 || ch === 119 || ch === 87;
+}
+function isUnicodePropertyNameCharacter(ch) {
+  return isControlLetter(ch) || ch === 95;
+}
+function isUnicodePropertyValueCharacter(ch) {
+  return isUnicodePropertyNameCharacter(ch) || isDecimalDigit(ch);
+}
+function isClassSetReservedDoublePunctuatorCharacter(ch) {
+  return ch === 33 || ch >= 35 && ch <= 38 || ch >= 42 && ch <= 44 || ch === 46 || ch >= 58 && ch <= 64 || ch === 94 || ch === 96 || ch === 126;
+}
+function isClassSetSyntaxCharacter(ch) {
+  return ch === 40 || ch === 41 || ch === 45 || ch === 47 || ch >= 91 && ch <= 93 || ch >= 123 && ch <= 125;
+}
+function isClassSetReservedPunctuator(ch) {
+  return ch === 33 || ch === 35 || ch === 37 || ch === 38 || ch === 44 || ch === 45 || ch >= 58 && ch <= 62 || ch === 64 || ch === 96 || ch === 126;
+}
+function isDecimalDigit(ch) {
+  return ch >= 48 && ch <= 57;
+}
+function isHexDigit(ch) {
+  return ch >= 48 && ch <= 57 || ch >= 65 && ch <= 70 || ch >= 97 && ch <= 102;
+}
+function hexToInt(ch) {
+  if (ch >= 65 && ch <= 70) {
+    return 10 + (ch - 65);
+  }
+  if (ch >= 97 && ch <= 102) {
+    return 10 + (ch - 97);
+  }
+  return ch - 48;
+}
+function isOctalDigit(ch) {
+  return ch >= 48 && ch <= 55;
+}
+function stringToNumber(str, isLegacyOctalNumericLiteral) {
+  if (isLegacyOctalNumericLiteral) {
+    return parseInt(str, 8);
+  }
+  return parseFloat(str.replace(/_/g, ""));
+}
+function stringToBigInt(str) {
+  if (typeof BigInt !== "function") {
+    return null;
+  }
+  return BigInt(str.replace(/_/g, ""));
+}
+function parse5(input, options) {
+  return Parser.parse(input, options);
+}
+var astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_CLASS_FIELD_INIT, SCOPE_SWITCH, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal2, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version2;
+var init_acorn = __esm({
+  "node_modules/acorn/dist/acorn.mjs"() {
+    astralIdentifierCodes = [509, 0, 227, 0, 150, 4, 294, 9, 1368, 2, 2, 1, 6, 3, 41, 2, 5, 0, 166, 1, 574, 3, 9, 9, 7, 9, 32, 4, 318, 1, 78, 5, 71, 10, 50, 3, 123, 2, 54, 14, 32, 10, 3, 1, 11, 3, 46, 10, 8, 0, 46, 9, 7, 2, 37, 13, 2, 9, 6, 1, 45, 0, 13, 2, 49, 13, 9, 3, 2, 11, 83, 11, 7, 0, 3, 0, 158, 11, 6, 9, 7, 3, 56, 1, 2, 6, 3, 1, 3, 2, 10, 0, 11, 1, 3, 6, 4, 4, 68, 8, 2, 0, 3, 0, 2, 3, 2, 4, 2, 0, 15, 1, 83, 17, 10, 9, 5, 0, 82, 19, 13, 9, 214, 6, 3, 8, 28, 1, 83, 16, 16, 9, 82, 12, 9, 9, 7, 19, 58, 14, 5, 9, 243, 14, 166, 9, 71, 5, 2, 1, 3, 3, 2, 0, 2, 1, 13, 9, 120, 6, 3, 6, 4, 0, 29, 9, 41, 6, 2, 3, 9, 0, 10, 10, 47, 15, 199, 7, 137, 9, 54, 7, 2, 7, 17, 9, 57, 21, 2, 13, 123, 5, 4, 0, 2, 1, 2, 6, 2, 0, 9, 9, 49, 4, 2, 1, 2, 4, 9, 9, 55, 9, 266, 3, 10, 1, 2, 0, 49, 6, 4, 4, 14, 10, 5350, 0, 7, 14, 11465, 27, 2343, 9, 87, 9, 39, 4, 60, 6, 26, 9, 535, 9, 470, 0, 2, 54, 8, 3, 82, 0, 12, 1, 19628, 1, 4178, 9, 519, 45, 3, 22, 543, 4, 4, 5, 9, 7, 3, 6, 31, 3, 149, 2, 1418, 49, 513, 54, 5, 49, 9, 0, 15, 0, 23, 4, 2, 14, 1361, 6, 2, 16, 3, 6, 2, 1, 2, 4, 101, 0, 161, 6, 10, 9, 357, 0, 62, 13, 499, 13, 245, 1, 2, 9, 233, 0, 3, 0, 8, 1, 6, 0, 475, 6, 110, 6, 6, 9, 4759, 9, 787719, 239];
+    astralIdentifierStartCodes = [0, 11, 2, 25, 2, 18, 2, 1, 2, 14, 3, 13, 35, 122, 70, 52, 268, 28, 4, 48, 48, 31, 14, 29, 6, 37, 11, 29, 3, 35, 5, 7, 2, 4, 43, 157, 19, 35, 5, 35, 5, 39, 9, 51, 13, 10, 2, 14, 2, 6, 2, 1, 2, 10, 2, 14, 2, 6, 2, 1, 4, 51, 13, 310, 10, 21, 11, 7, 25, 5, 2, 41, 2, 8, 70, 5, 3, 0, 2, 43, 2, 1, 4, 0, 3, 22, 11, 22, 10, 30, 66, 18, 2, 1, 11, 21, 11, 25, 7, 25, 39, 55, 7, 1, 65, 0, 16, 3, 2, 2, 2, 28, 43, 28, 4, 28, 36, 7, 2, 27, 28, 53, 11, 21, 11, 18, 14, 17, 111, 72, 56, 50, 14, 50, 14, 35, 39, 27, 10, 22, 251, 41, 7, 1, 17, 5, 57, 28, 11, 0, 9, 21, 43, 17, 47, 20, 28, 22, 13, 52, 58, 1, 3, 0, 14, 44, 33, 24, 27, 35, 30, 0, 3, 0, 9, 34, 4, 0, 13, 47, 15, 3, 22, 0, 2, 0, 36, 17, 2, 24, 20, 1, 64, 6, 2, 0, 2, 3, 2, 14, 2, 9, 8, 46, 39, 7, 3, 1, 3, 21, 2, 6, 2, 1, 2, 4, 4, 0, 19, 0, 13, 4, 31, 9, 2, 0, 3, 0, 2, 37, 2, 0, 26, 0, 2, 0, 45, 52, 19, 3, 21, 2, 31, 47, 21, 1, 2, 0, 185, 46, 42, 3, 37, 47, 21, 0, 60, 42, 14, 0, 72, 26, 38, 6, 186, 43, 117, 63, 32, 7, 3, 0, 3, 7, 2, 1, 2, 23, 16, 0, 2, 0, 95, 7, 3, 38, 17, 0, 2, 0, 29, 0, 11, 39, 8, 0, 22, 0, 12, 45, 20, 0, 19, 72, 200, 32, 32, 8, 2, 36, 18, 0, 50, 29, 113, 6, 2, 1, 2, 37, 22, 0, 26, 5, 2, 1, 2, 31, 15, 0, 24, 43, 261, 18, 16, 0, 2, 12, 2, 33, 125, 0, 80, 921, 103, 110, 18, 195, 2637, 96, 16, 1071, 18, 5, 26, 3994, 6, 582, 6842, 29, 1763, 568, 8, 30, 18, 78, 18, 29, 19, 47, 17, 3, 32, 20, 6, 18, 433, 44, 212, 63, 33, 24, 3, 24, 45, 74, 6, 0, 67, 12, 65, 1, 2, 0, 15, 4, 10, 7381, 42, 31, 98, 114, 8702, 3, 2, 6, 2, 1, 2, 290, 16, 0, 30, 2, 3, 0, 15, 3, 9, 395, 2309, 106, 6, 12, 4, 8, 8, 9, 5991, 84, 2, 70, 2, 1, 3, 0, 3, 1, 3, 3, 2, 11, 2, 0, 2, 6, 2, 64, 2, 3, 3, 7, 2, 6, 2, 27, 2, 3, 2, 4, 2, 0, 4, 6, 2, 339, 3, 24, 2, 24, 2, 30, 2, 24, 2, 30, 2, 24, 2, 30, 2, 24, 2, 30, 2, 24, 2, 7, 1845, 30, 7, 5, 262, 61, 147, 44, 11, 6, 17, 0, 322, 29, 19, 43, 485, 27, 229, 29, 3, 0, 208, 30, 2, 2, 2, 1, 2, 6, 3, 4, 10, 1, 225, 6, 2, 3, 2, 1, 2, 14, 2, 196, 60, 67, 8, 0, 1205, 3, 2, 26, 2, 1, 2, 0, 3, 0, 2, 9, 2, 3, 2, 0, 2, 0, 7, 0, 5, 0, 2, 0, 2, 0, 2, 2, 2, 1, 2, 0, 3, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 1, 2, 0, 3, 3, 2, 6, 2, 3, 2, 3, 2, 0, 2, 9, 2, 16, 6, 2, 2, 4, 2, 16, 4421, 42719, 33, 4381, 3, 5773, 3, 7472, 16, 621, 2467, 541, 1507, 4938, 6, 8489];
+    nonASCIIidentifierChars = "\u200C\u200D\xB7\u0300-\u036F\u0387\u0483-\u0487\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7\u0610-\u061A\u064B-\u0669\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u06F0-\u06F9\u0711\u0730-\u074A\u07A6-\u07B0\u07C0-\u07C9\u07EB-\u07F3\u07FD\u0816-\u0819\u081B-\u0823\u0825-\u0827\u0829-\u082D\u0859-\u085B\u0897-\u089F\u08CA-\u08E1\u08E3-\u0903\u093A-\u093C\u093E-\u094F\u0951-\u0957\u0962\u0963\u0966-\u096F\u0981-\u0983\u09BC\u09BE-\u09C4\u09C7\u09C8\u09CB-\u09CD\u09D7\u09E2\u09E3\u09E6-\u09EF\u09FE\u0A01-\u0A03\u0A3C\u0A3E-\u0A42\u0A47\u0A48\u0A4B-\u0A4D\u0A51\u0A66-\u0A71\u0A75\u0A81-\u0A83\u0ABC\u0ABE-\u0AC5\u0AC7-\u0AC9\u0ACB-\u0ACD\u0AE2\u0AE3\u0AE6-\u0AEF\u0AFA-\u0AFF\u0B01-\u0B03\u0B3C\u0B3E-\u0B44\u0B47\u0B48\u0B4B-\u0B4D\u0B55-\u0B57\u0B62\u0B63\u0B66-\u0B6F\u0B82\u0BBE-\u0BC2\u0BC6-\u0BC8\u0BCA-\u0BCD\u0BD7\u0BE6-\u0BEF\u0C00-\u0C04\u0C3C\u0C3E-\u0C44\u0C46-\u0C48\u0C4A-\u0C4D\u0C55\u0C56\u0C62\u0C63\u0C66-\u0C6F\u0C81-\u0C83\u0CBC\u0CBE-\u0CC4\u0CC6-\u0CC8\u0CCA-\u0CCD\u0CD5\u0CD6\u0CE2\u0CE3\u0CE6-\u0CEF\u0CF3\u0D00-\u0D03\u0D3B\u0D3C\u0D3E-\u0D44\u0D46-\u0D48\u0D4A-\u0D4D\u0D57\u0D62\u0D63\u0D66-\u0D6F\u0D81-\u0D83\u0DCA\u0DCF-\u0DD4\u0DD6\u0DD8-\u0DDF\u0DE6-\u0DEF\u0DF2\u0DF3\u0E31\u0E34-\u0E3A\u0E47-\u0E4E\u0E50-\u0E59\u0EB1\u0EB4-\u0EBC\u0EC8-\u0ECE\u0ED0-\u0ED9\u0F18\u0F19\u0F20-\u0F29\u0F35\u0F37\u0F39\u0F3E\u0F3F\u0F71-\u0F84\u0F86\u0F87\u0F8D-\u0F97\u0F99-\u0FBC\u0FC6\u102B-\u103E\u1040-\u1049\u1056-\u1059\u105E-\u1060\u1062-\u1064\u1067-\u106D\u1071-\u1074\u1082-\u108D\u108F-\u109D\u135D-\u135F\u1369-\u1371\u1712-\u1715\u1732-\u1734\u1752\u1753\u1772\u1773\u17B4-\u17D3\u17DD\u17E0-\u17E9\u180B-\u180D\u180F-\u1819\u18A9\u1920-\u192B\u1930-\u193B\u1946-\u194F\u19D0-\u19DA\u1A17-\u1A1B\u1A55-\u1A5E\u1A60-\u1A7C\u1A7F-\u1A89\u1A90-\u1A99\u1AB0-\u1ABD\u1ABF-\u1ADD\u1AE0-\u1AEB\u1B00-\u1B04\u1B34-\u1B44\u1B50-\u1B59\u1B6B-\u1B73\u1B80-\u1B82\u1BA1-\u1BAD\u1BB0-\u1BB9\u1BE6-\u1BF3\u1C24-\u1C37\u1C40-\u1C49\u1C50-\u1C59\u1CD0-\u1CD2\u1CD4-\u1CE8\u1CED\u1CF4\u1CF7-\u1CF9\u1DC0-\u1DFF\u200C\u200D\u203F\u2040\u2054\u20D0-\u20DC\u20E1\u20E5-\u20F0\u2CEF-\u2CF1\u2D7F\u2DE0-\u2DFF\u302A-\u302F\u3099\u309A\u30FB\uA620-\uA629\uA66F\uA674-\uA67D\uA69E\uA69F\uA6F0\uA6F1\uA802\uA806\uA80B\uA823-\uA827\uA82C\uA880\uA881\uA8B4-\uA8C5\uA8D0-\uA8D9\uA8E0-\uA8F1\uA8FF-\uA909\uA926-\uA92D\uA947-\uA953\uA980-\uA983\uA9B3-\uA9C0\uA9D0-\uA9D9\uA9E5\uA9F0-\uA9F9\uAA29-\uAA36\uAA43\uAA4C\uAA4D\uAA50-\uAA59\uAA7B-\uAA7D\uAAB0\uAAB2-\uAAB4\uAAB7\uAAB8\uAABE\uAABF\uAAC1\uAAEB-\uAAEF\uAAF5\uAAF6\uABE3-\uABEA\uABEC\uABED\uABF0-\uABF9\uFB1E\uFE00-\uFE0F\uFE20-\uFE2F\uFE33\uFE34\uFE4D-\uFE4F\uFF10-\uFF19\uFF3F\uFF65";
+    nonASCIIidentifierStartChars = "\xAA\xB5\xBA\xC0-\xD6\xD8-\xF6\xF8-\u02C1\u02C6-\u02D1\u02E0-\u02E4\u02EC\u02EE\u0370-\u0374\u0376\u0377\u037A-\u037D\u037F\u0386\u0388-\u038A\u038C\u038E-\u03A1\u03A3-\u03F5\u03F7-\u0481\u048A-\u052F\u0531-\u0556\u0559\u0560-\u0588\u05D0-\u05EA\u05EF-\u05F2\u0620-\u064A\u066E\u066F\u0671-\u06D3\u06D5\u06E5\u06E6\u06EE\u06EF\u06FA-\u06FC\u06FF\u0710\u0712-\u072F\u074D-\u07A5\u07B1\u07CA-\u07EA\u07F4\u07F5\u07FA\u0800-\u0815\u081A\u0824\u0828\u0840-\u0858\u0860-\u086A\u0870-\u0887\u0889-\u088F\u08A0-\u08C9\u0904-\u0939\u093D\u0950\u0958-\u0961\u0971-\u0980\u0985-\u098C\u098F\u0990\u0993-\u09A8\u09AA-\u09B0\u09B2\u09B6-\u09B9\u09BD\u09CE\u09DC\u09DD\u09DF-\u09E1\u09F0\u09F1\u09FC\u0A05-\u0A0A\u0A0F\u0A10\u0A13-\u0A28\u0A2A-\u0A30\u0A32\u0A33\u0A35\u0A36\u0A38\u0A39\u0A59-\u0A5C\u0A5E\u0A72-\u0A74\u0A85-\u0A8D\u0A8F-\u0A91\u0A93-\u0AA8\u0AAA-\u0AB0\u0AB2\u0AB3\u0AB5-\u0AB9\u0ABD\u0AD0\u0AE0\u0AE1\u0AF9\u0B05-\u0B0C\u0B0F\u0B10\u0B13-\u0B28\u0B2A-\u0B30\u0B32\u0B33\u0B35-\u0B39\u0B3D\u0B5C\u0B5D\u0B5F-\u0B61\u0B71\u0B83\u0B85-\u0B8A\u0B8E-\u0B90\u0B92-\u0B95\u0B99\u0B9A\u0B9C\u0B9E\u0B9F\u0BA3\u0BA4\u0BA8-\u0BAA\u0BAE-\u0BB9\u0BD0\u0C05-\u0C0C\u0C0E-\u0C10\u0C12-\u0C28\u0C2A-\u0C39\u0C3D\u0C58-\u0C5A\u0C5C\u0C5D\u0C60\u0C61\u0C80\u0C85-\u0C8C\u0C8E-\u0C90\u0C92-\u0CA8\u0CAA-\u0CB3\u0CB5-\u0CB9\u0CBD\u0CDC-\u0CDE\u0CE0\u0CE1\u0CF1\u0CF2\u0D04-\u0D0C\u0D0E-\u0D10\u0D12-\u0D3A\u0D3D\u0D4E\u0D54-\u0D56\u0D5F-\u0D61\u0D7A-\u0D7F\u0D85-\u0D96\u0D9A-\u0DB1\u0DB3-\u0DBB\u0DBD\u0DC0-\u0DC6\u0E01-\u0E30\u0E32\u0E33\u0E40-\u0E46\u0E81\u0E82\u0E84\u0E86-\u0E8A\u0E8C-\u0EA3\u0EA5\u0EA7-\u0EB0\u0EB2\u0EB3\u0EBD\u0EC0-\u0EC4\u0EC6\u0EDC-\u0EDF\u0F00\u0F40-\u0F47\u0F49-\u0F6C\u0F88-\u0F8C\u1000-\u102A\u103F\u1050-\u1055\u105A-\u105D\u1061\u1065\u1066\u106E-\u1070\u1075-\u1081\u108E\u10A0-\u10C5\u10C7\u10CD\u10D0-\u10FA\u10FC-\u1248\u124A-\u124D\u1250-\u1256\u1258\u125A-\u125D\u1260-\u1288\u128A-\u128D\u1290-\u12B0\u12B2-\u12B5\u12B8-\u12BE\u12C0\u12C2-\u12C5\u12C8-\u12D6\u12D8-\u1310\u1312-\u1315\u1318-\u135A\u1380-\u138F\u13A0-\u13F5\u13F8-\u13FD\u1401-\u166C\u166F-\u167F\u1681-\u169A\u16A0-\u16EA\u16EE-\u16F8\u1700-\u1711\u171F-\u1731\u1740-\u1751\u1760-\u176C\u176E-\u1770\u1780-\u17B3\u17D7\u17DC\u1820-\u1878\u1880-\u18A8\u18AA\u18B0-\u18F5\u1900-\u191E\u1950-\u196D\u1970-\u1974\u1980-\u19AB\u19B0-\u19C9\u1A00-\u1A16\u1A20-\u1A54\u1AA7\u1B05-\u1B33\u1B45-\u1B4C\u1B83-\u1BA0\u1BAE\u1BAF\u1BBA-\u1BE5\u1C00-\u1C23\u1C4D-\u1C4F\u1C5A-\u1C7D\u1C80-\u1C8A\u1C90-\u1CBA\u1CBD-\u1CBF\u1CE9-\u1CEC\u1CEE-\u1CF3\u1CF5\u1CF6\u1CFA\u1D00-\u1DBF\u1E00-\u1F15\u1F18-\u1F1D\u1F20-\u1F45\u1F48-\u1F4D\u1F50-\u1F57\u1F59\u1F5B\u1F5D\u1F5F-\u1F7D\u1F80-\u1FB4\u1FB6-\u1FBC\u1FBE\u1FC2-\u1FC4\u1FC6-\u1FCC\u1FD0-\u1FD3\u1FD6-\u1FDB\u1FE0-\u1FEC\u1FF2-\u1FF4\u1FF6-\u1FFC\u2071\u207F\u2090-\u209C\u2102\u2107\u210A-\u2113\u2115\u2118-\u211D\u2124\u2126\u2128\u212A-\u2139\u213C-\u213F\u2145-\u2149\u214E\u2160-\u2188\u2C00-\u2CE4\u2CEB-\u2CEE\u2CF2\u2CF3\u2D00-\u2D25\u2D27\u2D2D\u2D30-\u2D67\u2D6F\u2D80-\u2D96\u2DA0-\u2DA6\u2DA8-\u2DAE\u2DB0-\u2DB6\u2DB8-\u2DBE\u2DC0-\u2DC6\u2DC8-\u2DCE\u2DD0-\u2DD6\u2DD8-\u2DDE\u3005-\u3007\u3021-\u3029\u3031-\u3035\u3038-\u303C\u3041-\u3096\u309B-\u309F\u30A1-\u30FA\u30FC-\u30FF\u3105-\u312F\u3131-\u318E\u31A0-\u31BF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\uA48C\uA4D0-\uA4FD\uA500-\uA60C\uA610-\uA61F\uA62A\uA62B\uA640-\uA66E\uA67F-\uA69D\uA6A0-\uA6EF\uA717-\uA71F\uA722-\uA788\uA78B-\uA7DC\uA7F1-\uA801\uA803-\uA805\uA807-\uA80A\uA80C-\uA822\uA840-\uA873\uA882-\uA8B3\uA8F2-\uA8F7\uA8FB\uA8FD\uA8FE\uA90A-\uA925\uA930-\uA946\uA960-\uA97C\uA984-\uA9B2\uA9CF\uA9E0-\uA9E4\uA9E6-\uA9EF\uA9FA-\uA9FE\uAA00-\uAA28\uAA40-\uAA42\uAA44-\uAA4B\uAA60-\uAA76\uAA7A\uAA7E-\uAAAF\uAAB1\uAAB5\uAAB6\uAAB9-\uAABD\uAAC0\uAAC2\uAADB-\uAADD\uAAE0-\uAAEA\uAAF2-\uAAF4\uAB01-\uAB06\uAB09-\uAB0E\uAB11-\uAB16\uAB20-\uAB26\uAB28-\uAB2E\uAB30-\uAB5A\uAB5C-\uAB69\uAB70-\uABE2\uAC00-\uD7A3\uD7B0-\uD7C6\uD7CB-\uD7FB\uF900-\uFA6D\uFA70-\uFAD9\uFB00-\uFB06\uFB13-\uFB17\uFB1D\uFB1F-\uFB28\uFB2A-\uFB36\uFB38-\uFB3C\uFB3E\uFB40\uFB41\uFB43\uFB44\uFB46-\uFBB1\uFBD3-\uFD3D\uFD50-\uFD8F\uFD92-\uFDC7\uFDF0-\uFDFB\uFE70-\uFE74\uFE76-\uFEFC\uFF21-\uFF3A\uFF41-\uFF5A\uFF66-\uFFBE\uFFC2-\uFFC7\uFFCA-\uFFCF\uFFD2-\uFFD7\uFFDA-\uFFDC";
+    reservedWords = {
+      3: "abstract boolean byte char class double enum export extends final float goto implements import int interface long native package private protected public short static super synchronized throws transient volatile",
+      5: "class enum extends super const export import",
+      6: "enum",
+      strict: "implements interface let package private protected public static yield",
+      strictBind: "eval arguments"
+    };
+    ecma5AndLessKeywords = "break case catch continue debugger default do else finally for function if return switch throw try var while with null true false instanceof typeof void delete new in this";
+    keywords$1 = {
+      5: ecma5AndLessKeywords,
+      "5module": ecma5AndLessKeywords + " export import",
+      6: ecma5AndLessKeywords + " const class extends export import super"
+    };
+    keywordRelationalOperator = /^in(stanceof)?$/;
+    nonASCIIidentifierStart = new RegExp("[" + nonASCIIidentifierStartChars + "]");
+    nonASCIIidentifier = new RegExp("[" + nonASCIIidentifierStartChars + nonASCIIidentifierChars + "]");
+    TokenType = function TokenType2(label, conf) {
+      if (conf === void 0) conf = {};
+      this.label = label;
+      this.keyword = conf.keyword;
+      this.beforeExpr = !!conf.beforeExpr;
+      this.startsExpr = !!conf.startsExpr;
+      this.isLoop = !!conf.isLoop;
+      this.isAssign = !!conf.isAssign;
+      this.prefix = !!conf.prefix;
+      this.postfix = !!conf.postfix;
+      this.binop = conf.binop || null;
+      this.updateContext = null;
+    };
+    beforeExpr = { beforeExpr: true };
+    startsExpr = { startsExpr: true };
+    keywords = {};
+    types$1 = {
+      num: new TokenType("num", startsExpr),
+      regexp: new TokenType("regexp", startsExpr),
+      string: new TokenType("string", startsExpr),
+      name: new TokenType("name", startsExpr),
+      privateId: new TokenType("privateId", startsExpr),
+      eof: new TokenType("eof"),
+      // Punctuation token types.
+      bracketL: new TokenType("[", { beforeExpr: true, startsExpr: true }),
+      bracketR: new TokenType("]"),
+      braceL: new TokenType("{", { beforeExpr: true, startsExpr: true }),
+      braceR: new TokenType("}"),
+      parenL: new TokenType("(", { beforeExpr: true, startsExpr: true }),
+      parenR: new TokenType(")"),
+      comma: new TokenType(",", beforeExpr),
+      semi: new TokenType(";", beforeExpr),
+      colon: new TokenType(":", beforeExpr),
+      dot: new TokenType("."),
+      question: new TokenType("?", beforeExpr),
+      questionDot: new TokenType("?."),
+      arrow: new TokenType("=>", beforeExpr),
+      template: new TokenType("template"),
+      invalidTemplate: new TokenType("invalidTemplate"),
+      ellipsis: new TokenType("...", beforeExpr),
+      backQuote: new TokenType("`", startsExpr),
+      dollarBraceL: new TokenType("${", { beforeExpr: true, startsExpr: true }),
+      // Operators. These carry several kinds of properties to help the
+      // parser use them properly (the presence of these properties is
+      // what categorizes them as operators).
+      //
+      // `binop`, when present, specifies that this operator is a binary
+      // operator, and will refer to its precedence.
+      //
+      // `prefix` and `postfix` mark the operator as a prefix or postfix
+      // unary operator.
+      //
+      // `isAssign` marks all of `=`, `+=`, `-=` etcetera, which act as
+      // binary operators with a very low precedence, that should result
+      // in AssignmentExpression nodes.
+      eq: new TokenType("=", { beforeExpr: true, isAssign: true }),
+      assign: new TokenType("_=", { beforeExpr: true, isAssign: true }),
+      incDec: new TokenType("++/--", { prefix: true, postfix: true, startsExpr: true }),
+      prefix: new TokenType("!/~", { beforeExpr: true, prefix: true, startsExpr: true }),
+      logicalOR: binop("||", 1),
+      logicalAND: binop("&&", 2),
+      bitwiseOR: binop("|", 3),
+      bitwiseXOR: binop("^", 4),
+      bitwiseAND: binop("&", 5),
+      equality: binop("==/!=/===/!==", 6),
+      relational: binop("</>/<=/>=", 7),
+      bitShift: binop("<</>>/>>>", 8),
+      plusMin: new TokenType("+/-", { beforeExpr: true, binop: 9, prefix: true, startsExpr: true }),
+      modulo: binop("%", 10),
+      star: binop("*", 10),
+      slash: binop("/", 10),
+      starstar: new TokenType("**", { beforeExpr: true }),
+      coalesce: binop("??", 1),
+      // Keyword token types.
+      _break: kw("break"),
+      _case: kw("case", beforeExpr),
+      _catch: kw("catch"),
+      _continue: kw("continue"),
+      _debugger: kw("debugger"),
+      _default: kw("default", beforeExpr),
+      _do: kw("do", { isLoop: true, beforeExpr: true }),
+      _else: kw("else", beforeExpr),
+      _finally: kw("finally"),
+      _for: kw("for", { isLoop: true }),
+      _function: kw("function", startsExpr),
+      _if: kw("if"),
+      _return: kw("return", beforeExpr),
+      _switch: kw("switch"),
+      _throw: kw("throw", beforeExpr),
+      _try: kw("try"),
+      _var: kw("var"),
+      _const: kw("const"),
+      _while: kw("while", { isLoop: true }),
+      _with: kw("with"),
+      _new: kw("new", { beforeExpr: true, startsExpr: true }),
+      _this: kw("this", startsExpr),
+      _super: kw("super", startsExpr),
+      _class: kw("class", startsExpr),
+      _extends: kw("extends", beforeExpr),
+      _export: kw("export"),
+      _import: kw("import", startsExpr),
+      _null: kw("null", startsExpr),
+      _true: kw("true", startsExpr),
+      _false: kw("false", startsExpr),
+      _in: kw("in", { beforeExpr: true, binop: 7 }),
+      _instanceof: kw("instanceof", { beforeExpr: true, binop: 7 }),
+      _typeof: kw("typeof", { beforeExpr: true, prefix: true, startsExpr: true }),
+      _void: kw("void", { beforeExpr: true, prefix: true, startsExpr: true }),
+      _delete: kw("delete", { beforeExpr: true, prefix: true, startsExpr: true })
+    };
+    lineBreak = /\r\n?|\n|\u2028|\u2029/;
+    lineBreakG = new RegExp(lineBreak.source, "g");
+    nonASCIIwhitespace = /[\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff]/;
+    skipWhiteSpace = /(?:\s|\/\/.*|\/\*[^]*?\*\/)*/g;
+    ref = Object.prototype;
+    hasOwnProperty = ref.hasOwnProperty;
+    toString = ref.toString;
+    hasOwn = Object.hasOwn || (function(obj, propName) {
+      return hasOwnProperty.call(obj, propName);
+    });
+    isArray = Array.isArray || (function(obj) {
+      return toString.call(obj) === "[object Array]";
+    });
+    regexpCache = /* @__PURE__ */ Object.create(null);
+    loneSurrogate = /(?:[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])/;
+    Position = function Position2(line, col) {
+      this.line = line;
+      this.column = col;
+    };
+    Position.prototype.offset = function offset(n) {
+      return new Position(this.line, this.column + n);
+    };
+    SourceLocation = function SourceLocation2(p, start, end) {
+      this.start = start;
+      this.end = end;
+      if (p.sourceFile !== null) {
+        this.source = p.sourceFile;
+      }
+    };
+    defaultOptions = {
+      // `ecmaVersion` indicates the ECMAScript version to parse. Must be
+      // either 3, 5, 6 (or 2015), 7 (2016), 8 (2017), 9 (2018), 10
+      // (2019), 11 (2020), 12 (2021), 13 (2022), 14 (2023), or `"latest"`
+      // (the latest version the library supports). This influences
+      // support for strict mode, the set of reserved words, and support
+      // for new syntax features.
+      ecmaVersion: null,
+      // `sourceType` indicates the mode the code should be parsed in.
+      // Can be either `"script"`, `"module"` or `"commonjs"`. This influences global
+      // strict mode and parsing of `import` and `export` declarations.
+      sourceType: "script",
+      // When set to true, enable strict parsing mode even if `sourceType`
+      // is `"script"`.
+      strict: false,
+      // `onInsertedSemicolon` can be a callback that will be called when
+      // a semicolon is automatically inserted. It will be passed the
+      // position of the inserted semicolon as an offset, and if
+      // `locations` is enabled, it is given the location as a `{line,
+      // column}` object as second argument.
+      onInsertedSemicolon: null,
+      // `onTrailingComma` is similar to `onInsertedSemicolon`, but for
+      // trailing commas.
+      onTrailingComma: null,
+      // By default, reserved words are only enforced if ecmaVersion >= 5.
+      // Set `allowReserved` to a boolean value to explicitly turn this on
+      // an off. When this option has the value "never", reserved words
+      // and keywords can also not be used as property names.
+      allowReserved: null,
+      // When enabled, a return at the top level is not considered an
+      // error.
+      allowReturnOutsideFunction: false,
+      // When enabled, import/export statements are not constrained to
+      // appearing at the top of the program, and an import.meta expression
+      // in a script isn't considered an error.
+      allowImportExportEverywhere: false,
+      // By default, await identifiers are allowed to appear at the top-level scope only if ecmaVersion >= 2022.
+      // When enabled, await identifiers are allowed to appear at the top-level scope,
+      // but they are still not allowed in non-async functions.
+      allowAwaitOutsideFunction: null,
+      // When enabled, super identifiers are not constrained to
+      // appearing in methods and do not raise an error when they appear elsewhere.
+      allowSuperOutsideMethod: null,
+      // When enabled, hashbang directive in the beginning of file is
+      // allowed and treated as a line comment. Enabled by default when
+      // `ecmaVersion` >= 2023.
+      allowHashBang: false,
+      // By default, the parser will verify that private properties are
+      // only used in places where they are valid and have been declared.
+      // Set this to false to turn such checks off.
+      checkPrivateFields: true,
+      // When `locations` is on, `loc` properties holding objects with
+      // `start` and `end` properties in `{line, column}` form (with
+      // line being 1-based and column 0-based) will be attached to the
+      // nodes.
+      locations: false,
+      // A function can be passed as `onToken` option, which will
+      // cause Acorn to call that function with object in the same
+      // format as tokens returned from `tokenizer().getToken()`. Note
+      // that you are not allowed to call the parser from the
+      // callback—that will corrupt its internal state.
+      onToken: null,
+      // A function can be passed as `onComment` option, which will
+      // cause Acorn to call that function with `(block, text, start,
+      // end)` parameters whenever a comment is skipped. `block` is a
+      // boolean indicating whether this is a block (`/* */`) comment,
+      // `text` is the content of the comment, and `start` and `end` are
+      // character offsets that denote the start and end of the comment.
+      // When the `locations` option is on, two more parameters are
+      // passed, the full `{line, column}` locations of the start and
+      // end of the comments. Note that you are not allowed to call the
+      // parser from the callback—that will corrupt its internal state.
+      // When this option has an array as value, objects representing the
+      // comments are pushed to it.
+      onComment: null,
+      // Nodes have their start and end characters offsets recorded in
+      // `start` and `end` properties (directly on the node, rather than
+      // the `loc` object, which holds line/column data. To also add a
+      // [semi-standardized][range] `range` property holding a `[start,
+      // end]` array with the same numbers, set the `ranges` option to
+      // `true`.
+      //
+      // [range]: https://bugzilla.mozilla.org/show_bug.cgi?id=745678
+      ranges: false,
+      // It is possible to parse multiple files into a single AST by
+      // passing the tree produced by parsing the first file as
+      // `program` option in subsequent parses. This will add the
+      // toplevel forms of the parsed file to the `Program` (top) node
+      // of an existing parse tree.
+      program: null,
+      // When `locations` is on, you can pass this to record the source
+      // file in every node's `loc` object.
+      sourceFile: null,
+      // This value, if given, is stored in every node, whether
+      // `locations` is on or off.
+      directSourceFile: null,
+      // When enabled, parenthesized expressions are represented by
+      // (non-standard) ParenthesizedExpression nodes
+      preserveParens: false
+    };
+    warnedAboutEcmaVersion = false;
+    SCOPE_TOP = 1;
+    SCOPE_FUNCTION = 2;
+    SCOPE_ASYNC = 4;
+    SCOPE_GENERATOR = 8;
+    SCOPE_ARROW = 16;
+    SCOPE_SIMPLE_CATCH = 32;
+    SCOPE_SUPER = 64;
+    SCOPE_DIRECT_SUPER = 128;
+    SCOPE_CLASS_STATIC_BLOCK = 256;
+    SCOPE_CLASS_FIELD_INIT = 512;
+    SCOPE_SWITCH = 1024;
+    SCOPE_VAR = SCOPE_TOP | SCOPE_FUNCTION | SCOPE_CLASS_STATIC_BLOCK;
+    BIND_NONE = 0;
+    BIND_VAR = 1;
+    BIND_LEXICAL = 2;
+    BIND_FUNCTION = 3;
+    BIND_SIMPLE_CATCH = 4;
+    BIND_OUTSIDE = 5;
+    Parser = function Parser2(options, input, startPos) {
+      this.options = options = getOptions(options);
+      this.sourceFile = options.sourceFile;
+      this.keywords = wordsRegexp(keywords$1[options.ecmaVersion >= 6 ? 6 : options.sourceType === "module" ? "5module" : 5]);
+      var reserved = "";
+      if (options.allowReserved !== true) {
+        reserved = reservedWords[options.ecmaVersion >= 6 ? 6 : options.ecmaVersion === 5 ? 5 : 3];
+        if (options.sourceType === "module") {
+          reserved += " await";
+        }
+      }
+      this.reservedWords = wordsRegexp(reserved);
+      var reservedStrict = (reserved ? reserved + " " : "") + reservedWords.strict;
+      this.reservedWordsStrict = wordsRegexp(reservedStrict);
+      this.reservedWordsStrictBind = wordsRegexp(reservedStrict + " " + reservedWords.strictBind);
+      this.input = String(input);
+      this.containsEsc = false;
+      if (startPos) {
+        this.pos = startPos;
+        this.lineStart = this.input.lastIndexOf("\n", startPos - 1) + 1;
+        this.curLine = this.input.slice(0, this.lineStart).split(lineBreak).length;
+      } else {
+        this.pos = this.lineStart = 0;
+        this.curLine = 1;
+      }
+      this.type = types$1.eof;
+      this.value = null;
+      this.start = this.end = this.pos;
+      this.startLoc = this.endLoc = this.curPosition();
+      this.lastTokEndLoc = this.lastTokStartLoc = null;
+      this.lastTokStart = this.lastTokEnd = this.pos;
+      this.context = this.initialContext();
+      this.exprAllowed = true;
+      this.inModule = options.sourceType === "module";
+      this.strict = this.inModule || options.strict === true || this.strictDirective(this.pos);
+      this.potentialArrowAt = -1;
+      this.potentialArrowInForAwait = false;
+      this.yieldPos = this.awaitPos = this.awaitIdentPos = 0;
+      this.labels = [];
+      this.undefinedExports = /* @__PURE__ */ Object.create(null);
+      if (this.pos === 0 && options.allowHashBang && this.input.slice(0, 2) === "#!") {
+        this.skipLineComment(2);
+      }
+      this.scopeStack = [];
+      this.enterScope(
+        this.options.sourceType === "commonjs" ? SCOPE_FUNCTION : SCOPE_TOP
+      );
+      this.regexpState = null;
+      this.privateNameStack = [];
+    };
+    prototypeAccessors = { inFunction: { configurable: true }, inGenerator: { configurable: true }, inAsync: { configurable: true }, canAwait: { configurable: true }, allowReturn: { configurable: true }, allowSuper: { configurable: true }, allowDirectSuper: { configurable: true }, treatFunctionsAsVar: { configurable: true }, allowNewDotTarget: { configurable: true }, allowUsing: { configurable: true }, inClassStaticBlock: { configurable: true } };
+    Parser.prototype.parse = function parse3() {
+      var this$1$1 = this;
+      var node = this.options.program || this.startNode();
+      this.nextToken();
+      return this.catchStackOverflow(function() {
+        return this$1$1.parseTopLevel(node);
+      });
+    };
+    prototypeAccessors.inFunction.get = function() {
+      return (this.currentVarScope().flags & SCOPE_FUNCTION) > 0;
+    };
+    prototypeAccessors.inGenerator.get = function() {
+      return (this.currentVarScope().flags & SCOPE_GENERATOR) > 0;
+    };
+    prototypeAccessors.inAsync.get = function() {
+      return (this.currentVarScope().flags & SCOPE_ASYNC) > 0;
+    };
+    prototypeAccessors.canAwait.get = function() {
+      for (var i = this.scopeStack.length - 1; i >= 0; i--) {
+        var ref2 = this.scopeStack[i];
+        var flags = ref2.flags;
+        if (flags & (SCOPE_CLASS_STATIC_BLOCK | SCOPE_CLASS_FIELD_INIT)) {
+          return false;
+        }
+        if (flags & SCOPE_FUNCTION) {
+          return (flags & SCOPE_ASYNC) > 0;
+        }
+      }
+      return this.inModule && this.options.ecmaVersion >= 13 || this.options.allowAwaitOutsideFunction;
+    };
+    prototypeAccessors.allowReturn.get = function() {
+      if (this.inFunction) {
+        return true;
+      }
+      if (this.options.allowReturnOutsideFunction && this.currentVarScope().flags & SCOPE_TOP) {
+        return true;
+      }
+      return false;
+    };
+    prototypeAccessors.allowSuper.get = function() {
+      var ref2 = this.currentThisScope();
+      var flags = ref2.flags;
+      return (flags & SCOPE_SUPER) > 0 || this.options.allowSuperOutsideMethod;
+    };
+    prototypeAccessors.allowDirectSuper.get = function() {
+      return (this.currentThisScope().flags & SCOPE_DIRECT_SUPER) > 0;
+    };
+    prototypeAccessors.treatFunctionsAsVar.get = function() {
+      return this.treatFunctionsAsVarInScope(this.currentScope());
+    };
+    prototypeAccessors.allowNewDotTarget.get = function() {
+      for (var i = this.scopeStack.length - 1; i >= 0; i--) {
+        var ref2 = this.scopeStack[i];
+        var flags = ref2.flags;
+        if (flags & (SCOPE_CLASS_STATIC_BLOCK | SCOPE_CLASS_FIELD_INIT) || flags & SCOPE_FUNCTION && !(flags & SCOPE_ARROW)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    prototypeAccessors.allowUsing.get = function() {
+      var ref2 = this.currentScope();
+      var flags = ref2.flags;
+      if (flags & SCOPE_SWITCH) {
+        return false;
+      }
+      if (!this.inModule && flags & SCOPE_TOP) {
+        return false;
+      }
+      return true;
+    };
+    prototypeAccessors.inClassStaticBlock.get = function() {
+      return (this.currentVarScope().flags & SCOPE_CLASS_STATIC_BLOCK) > 0;
+    };
+    Parser.extend = function extend2() {
+      var plugins = [], len = arguments.length;
+      while (len--) plugins[len] = arguments[len];
+      var cls = this;
+      for (var i = 0; i < plugins.length; i++) {
+        cls = plugins[i](cls);
+      }
+      return cls;
+    };
+    Parser.parse = function parse4(input, options) {
+      return new this(options, input).parse();
+    };
+    Parser.parseExpressionAt = function parseExpressionAt(input, pos, options) {
+      var parser = new this(options, input, pos);
+      parser.nextToken();
+      return parser.parseExpression();
+    };
+    Parser.tokenizer = function tokenizer(input, options) {
+      return new this(options, input);
+    };
+    Object.defineProperties(Parser.prototype, prototypeAccessors);
+    pp$9 = Parser.prototype;
+    literal2 = /^(?:'((?:\\[^]|[^'\\])*?)'|"((?:\\[^]|[^"\\])*?)")/;
+    pp$9.strictDirective = function(start) {
+      if (this.options.ecmaVersion < 5) {
+        return false;
+      }
+      for (; ; ) {
+        skipWhiteSpace.lastIndex = start;
+        start += skipWhiteSpace.exec(this.input)[0].length;
+        var match = literal2.exec(this.input.slice(start));
+        if (!match) {
+          return false;
+        }
+        if ((match[1] || match[2]) === "use strict") {
+          skipWhiteSpace.lastIndex = start + match[0].length;
+          var spaceAfter = skipWhiteSpace.exec(this.input), end = spaceAfter.index + spaceAfter[0].length;
+          var next = this.input.charAt(end);
+          return next === ";" || next === "}" || lineBreak.test(spaceAfter[0]) && !(/[(`.[+\-/*%<>=,?^&]/.test(next) || next === "!" && this.input.charAt(end + 1) === "=");
+        }
+        start += match[0].length;
+        skipWhiteSpace.lastIndex = start;
+        start += skipWhiteSpace.exec(this.input)[0].length;
+        if (this.input[start] === ";") {
+          start++;
+        }
+      }
+    };
+    pp$9.eat = function(type) {
+      if (this.type === type) {
+        this.next();
+        return true;
+      } else {
+        return false;
+      }
+    };
+    pp$9.isContextual = function(name) {
+      return this.type === types$1.name && this.value === name && !this.containsEsc;
+    };
+    pp$9.eatContextual = function(name) {
+      if (!this.isContextual(name)) {
+        return false;
+      }
+      this.next();
+      return true;
+    };
+    pp$9.catchStackOverflow = function(f) {
+      try {
+        return f();
+      } catch (e) {
+        if (e instanceof Error && (/\bstack\b.*\b(exceeded|overflow)\b/i.test(e.message) || /\btoo much recursion\b/i.test(e.message))) {
+          this.raise(this.start, "Not enough stack space to parse input");
+        } else {
+          throw e;
+        }
+      }
+    };
+    pp$9.expectContextual = function(name) {
+      if (!this.eatContextual(name)) {
+        this.unexpected();
+      }
+    };
+    pp$9.canInsertSemicolon = function() {
+      return this.type === types$1.eof || this.type === types$1.braceR || lineBreak.test(this.input.slice(this.lastTokEnd, this.start));
+    };
+    pp$9.insertSemicolon = function() {
+      if (this.canInsertSemicolon()) {
+        if (this.options.onInsertedSemicolon) {
+          this.options.onInsertedSemicolon(this.lastTokEnd, this.lastTokEndLoc);
+        }
+        return true;
+      }
+    };
+    pp$9.semicolon = function() {
+      if (!this.eat(types$1.semi) && !this.insertSemicolon()) {
+        this.unexpected();
+      }
+    };
+    pp$9.afterTrailingComma = function(tokType, notNext) {
+      if (this.type === tokType) {
+        if (this.options.onTrailingComma) {
+          this.options.onTrailingComma(this.lastTokStart, this.lastTokStartLoc);
+        }
+        if (!notNext) {
+          this.next();
+        }
+        return true;
+      }
+    };
+    pp$9.expect = function(type) {
+      this.eat(type) || this.unexpected();
+    };
+    pp$9.unexpected = function(pos) {
+      this.raise(pos != null ? pos : this.start, "Unexpected token");
+    };
+    DestructuringErrors = function DestructuringErrors2() {
+      this.shorthandAssign = this.trailingComma = this.parenthesizedAssign = this.parenthesizedBind = this.doubleProto = -1;
+    };
+    pp$9.checkPatternErrors = function(refDestructuringErrors, isAssign) {
+      if (!refDestructuringErrors) {
+        return;
+      }
+      if (refDestructuringErrors.trailingComma > -1) {
+        this.raiseRecoverable(refDestructuringErrors.trailingComma, "Comma is not permitted after the rest element");
+      }
+      var parens = isAssign ? refDestructuringErrors.parenthesizedAssign : refDestructuringErrors.parenthesizedBind;
+      if (parens > -1) {
+        this.raiseRecoverable(parens, isAssign ? "Assigning to rvalue" : "Parenthesized pattern");
+      }
+    };
+    pp$9.checkExpressionErrors = function(refDestructuringErrors, andThrow) {
+      if (!refDestructuringErrors) {
+        return false;
+      }
+      var shorthandAssign = refDestructuringErrors.shorthandAssign;
+      var doubleProto = refDestructuringErrors.doubleProto;
+      if (!andThrow) {
+        return shorthandAssign >= 0 || doubleProto >= 0;
+      }
+      if (shorthandAssign >= 0) {
+        this.raise(shorthandAssign, "Shorthand property assignments are valid only in destructuring patterns");
+      }
+      if (doubleProto >= 0) {
+        this.raiseRecoverable(doubleProto, "Redefinition of __proto__ property");
+      }
+    };
+    pp$9.checkYieldAwaitInDefaultParams = function() {
+      if (this.yieldPos && (!this.awaitPos || this.yieldPos < this.awaitPos)) {
+        this.raise(this.yieldPos, "Yield expression cannot be a default value");
+      }
+      if (this.awaitPos) {
+        this.raise(this.awaitPos, "Await expression cannot be a default value");
+      }
+    };
+    pp$9.isSimpleAssignTarget = function(expr) {
+      if (expr.type === "ParenthesizedExpression") {
+        return this.isSimpleAssignTarget(expr.expression);
+      }
+      return expr.type === "Identifier" || expr.type === "MemberExpression";
+    };
+    pp$8 = Parser.prototype;
+    pp$8.parseTopLevel = function(node) {
+      var exports$1 = /* @__PURE__ */ Object.create(null);
+      if (!node.body) {
+        node.body = [];
+      }
+      while (this.type !== types$1.eof) {
+        var stmt = this.parseStatement(null, true, exports$1);
+        node.body.push(stmt);
+      }
+      if (this.inModule) {
+        for (var i = 0, list = Object.keys(this.undefinedExports); i < list.length; i += 1) {
+          var name = list[i];
+          this.raiseRecoverable(this.undefinedExports[name].start, "Export '" + name + "' is not defined");
+        }
+      }
+      this.adaptDirectivePrologue(node.body);
+      this.next();
+      node.sourceType = this.options.sourceType === "commonjs" ? "script" : this.options.sourceType;
+      return this.finishNode(node, "Program");
+    };
+    loopLabel = { kind: "loop" };
+    switchLabel = { kind: "switch" };
+    pp$8.isLet = function(context) {
+      if (this.options.ecmaVersion < 6 || !this.isContextual("let")) {
+        return false;
+      }
+      skipWhiteSpace.lastIndex = this.pos;
+      var skip = skipWhiteSpace.exec(this.input);
+      var next = this.pos + skip[0].length, nextCh = this.fullCharCodeAt(next);
+      if (nextCh === 91 || nextCh === 92) {
+        return true;
+      }
+      if (context) {
+        return false;
+      }
+      if (nextCh === 123) {
+        return true;
+      }
+      if (isIdentifierStart(nextCh)) {
+        var start = next;
+        do {
+          next += nextCh <= 65535 ? 1 : 2;
+        } while (isIdentifierChar(nextCh = this.fullCharCodeAt(next)));
+        if (nextCh === 92) {
+          return true;
+        }
+        var ident = this.input.slice(start, next);
+        if (!keywordRelationalOperator.test(ident)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    pp$8.isAsyncFunction = function() {
+      if (this.options.ecmaVersion < 8 || !this.isContextual("async")) {
+        return false;
+      }
+      skipWhiteSpace.lastIndex = this.pos;
+      var skip = skipWhiteSpace.exec(this.input);
+      var next = this.pos + skip[0].length, after;
+      return !lineBreak.test(this.input.slice(this.pos, next)) && this.input.slice(next, next + 8) === "function" && (next + 8 === this.input.length || !(isIdentifierChar(after = this.fullCharCodeAt(next + 8)) || after === 92));
+    };
+    pp$8.isUsingKeyword = function(isAwaitUsing, isFor) {
+      if (this.options.ecmaVersion < 17 || !this.isContextual(isAwaitUsing ? "await" : "using")) {
+        return false;
+      }
+      skipWhiteSpace.lastIndex = this.pos;
+      var skip = skipWhiteSpace.exec(this.input);
+      var next = this.pos + skip[0].length;
+      if (lineBreak.test(this.input.slice(this.pos, next))) {
+        return false;
+      }
+      if (isAwaitUsing) {
+        var usingEndPos = next + 5, after;
+        if (this.input.slice(next, usingEndPos) !== "using" || usingEndPos === this.input.length || isIdentifierChar(after = this.fullCharCodeAt(usingEndPos)) || after === 92) {
+          return false;
+        }
+        skipWhiteSpace.lastIndex = usingEndPos;
+        var skipAfterUsing = skipWhiteSpace.exec(this.input);
+        next = usingEndPos + skipAfterUsing[0].length;
+        if (skipAfterUsing && lineBreak.test(this.input.slice(usingEndPos, next))) {
+          return false;
+        }
+      }
+      var ch = this.fullCharCodeAt(next);
+      if (!isIdentifierStart(ch) && ch !== 92) {
+        return false;
+      }
+      var idStart = next;
+      do {
+        next += ch <= 65535 ? 1 : 2;
+      } while (isIdentifierChar(ch = this.fullCharCodeAt(next)));
+      if (ch === 92) {
+        return true;
+      }
+      var id = this.input.slice(idStart, next);
+      if (keywordRelationalOperator.test(id)) {
+        return false;
+      }
+      if (isFor && !isAwaitUsing && id === "of") {
+        skipWhiteSpace.lastIndex = next;
+        var skipAfterOf = skipWhiteSpace.exec(this.input);
+        next = next + skipAfterOf[0].length;
+        if (this.input.charCodeAt(next) !== 61 || // Check for ==, === and => operators
+        (ch = this.input.charCodeAt(next + 1)) === 61 || ch === 62) {
+          return false;
+        }
+      }
+      return true;
+    };
+    pp$8.isAwaitUsing = function(isFor) {
+      return this.isUsingKeyword(true, isFor);
+    };
+    pp$8.isUsing = function(isFor) {
+      return this.isUsingKeyword(false, isFor);
+    };
+    pp$8.parseStatement = function(context, topLevel, exports$1) {
+      var starttype = this.type, node = this.startNode(), kind;
+      if (this.isLet(context)) {
+        starttype = types$1._var;
+        kind = "let";
+      }
+      switch (starttype) {
+        case types$1._break:
+        case types$1._continue:
+          return this.parseBreakContinueStatement(node, starttype.keyword);
+        case types$1._debugger:
+          return this.parseDebuggerStatement(node);
+        case types$1._do:
+          return this.parseDoStatement(node);
+        case types$1._for:
+          return this.parseForStatement(node);
+        case types$1._function:
+          if (context && (this.strict || context !== "if" && context !== "label") && this.options.ecmaVersion >= 6) {
+            this.unexpected();
+          }
+          return this.parseFunctionStatement(node, false, !context);
+        case types$1._class:
+          if (context) {
+            this.unexpected();
+          }
+          return this.parseClass(node, true);
+        case types$1._if:
+          return this.parseIfStatement(node);
+        case types$1._return:
+          return this.parseReturnStatement(node);
+        case types$1._switch:
+          return this.parseSwitchStatement(node);
+        case types$1._throw:
+          return this.parseThrowStatement(node);
+        case types$1._try:
+          return this.parseTryStatement(node);
+        case types$1._const:
+        case types$1._var:
+          kind = kind || this.value;
+          if (context && kind !== "var") {
+            this.unexpected();
+          }
+          return this.parseVarStatement(node, kind);
+        case types$1._while:
+          return this.parseWhileStatement(node);
+        case types$1._with:
+          return this.parseWithStatement(node);
+        case types$1.braceL:
+          return this.parseBlock(true, node);
+        case types$1.semi:
+          return this.parseEmptyStatement(node);
+        case types$1._export:
+        case types$1._import:
+          if (this.options.ecmaVersion > 10 && starttype === types$1._import) {
+            skipWhiteSpace.lastIndex = this.pos;
+            var skip = skipWhiteSpace.exec(this.input);
+            var next = this.pos + skip[0].length, nextCh = this.input.charCodeAt(next);
+            if (nextCh === 40 || nextCh === 46) {
+              return this.parseExpressionStatement(node, this.parseExpression());
+            }
+          }
+          if (!this.options.allowImportExportEverywhere) {
+            if (!topLevel) {
+              this.raise(this.start, "'import' and 'export' may only appear at the top level");
+            }
+            if (!this.inModule) {
+              this.raise(this.start, "'import' and 'export' may appear only with 'sourceType: module'");
+            }
+          }
+          return starttype === types$1._import ? this.parseImport(node) : this.parseExport(node, exports$1);
+        // If the statement does not start with a statement keyword or a
+        // brace, it's an ExpressionStatement or LabeledStatement. We
+        // simply start parsing an expression, and afterwards, if the
+        // next token is a colon and the expression was a simple
+        // Identifier node, we switch to interpreting it as a label.
+        default:
+          if (this.isAsyncFunction()) {
+            if (context) {
+              this.unexpected();
+            }
+            this.next();
+            return this.parseFunctionStatement(node, true, !context);
+          }
+          var usingKind = this.isAwaitUsing(false) ? "await using" : this.isUsing(false) ? "using" : null;
+          if (usingKind) {
+            if (!this.allowUsing) {
+              this.raise(this.start, "Using declaration cannot appear in the top level when source type is `script` or in the bare case statement");
+            }
+            if (context) {
+              this.raise(this.start, "Using declaration is not allowed in single-statement positions");
+            }
+            if (usingKind === "await using") {
+              if (!this.canAwait) {
+                this.raise(this.start, "Await using cannot appear outside of async function");
+              }
+              this.next();
+            }
+            this.next();
+            this.parseVar(node, false, usingKind);
+            this.semicolon();
+            return this.finishNode(node, "VariableDeclaration");
+          }
+          var maybeName = this.value, expr = this.parseExpression();
+          if (starttype === types$1.name && expr.type === "Identifier" && this.eat(types$1.colon)) {
+            return this.parseLabeledStatement(node, maybeName, expr, context);
+          } else {
+            return this.parseExpressionStatement(node, expr);
+          }
+      }
+    };
+    pp$8.parseBreakContinueStatement = function(node, keyword) {
+      var isBreak = keyword === "break";
+      this.next();
+      if (this.eat(types$1.semi) || this.insertSemicolon()) {
+        node.label = null;
+      } else if (this.type !== types$1.name) {
+        this.unexpected();
+      } else {
+        node.label = this.parseIdent();
+        this.semicolon();
+      }
+      var i = 0;
+      for (; i < this.labels.length; ++i) {
+        var lab = this.labels[i];
+        if (node.label == null || lab.name === node.label.name) {
+          if (lab.kind != null && (isBreak || lab.kind === "loop")) {
+            break;
+          }
+          if (node.label && isBreak) {
+            break;
+          }
+        }
+      }
+      if (i === this.labels.length) {
+        this.raise(node.start, "Unsyntactic " + keyword);
+      }
+      return this.finishNode(node, isBreak ? "BreakStatement" : "ContinueStatement");
+    };
+    pp$8.parseDebuggerStatement = function(node) {
+      this.next();
+      this.semicolon();
+      return this.finishNode(node, "DebuggerStatement");
+    };
+    pp$8.parseDoStatement = function(node) {
+      this.next();
+      this.labels.push(loopLabel);
+      node.body = this.parseStatement("do");
+      this.labels.pop();
+      this.expect(types$1._while);
+      node.test = this.parseParenExpression();
+      if (this.options.ecmaVersion >= 6) {
+        this.eat(types$1.semi);
+      } else {
+        this.semicolon();
+      }
+      return this.finishNode(node, "DoWhileStatement");
+    };
+    pp$8.parseForStatement = function(node) {
+      this.next();
+      var awaitAt = this.options.ecmaVersion >= 9 && this.canAwait && this.eatContextual("await") ? this.lastTokStart : -1;
+      this.labels.push(loopLabel);
+      this.enterScope(0);
+      this.expect(types$1.parenL);
+      if (this.type === types$1.semi) {
+        if (awaitAt > -1) {
+          this.unexpected(awaitAt);
+        }
+        return this.parseFor(node, null);
+      }
+      var isLet = this.isLet();
+      if (this.type === types$1._var || this.type === types$1._const || isLet) {
+        var init$1 = this.startNode(), kind = isLet ? "let" : this.value;
+        this.next();
+        this.parseVar(init$1, true, kind);
+        this.finishNode(init$1, "VariableDeclaration");
+        return this.parseForAfterInit(node, init$1, awaitAt);
+      }
+      var startsWithLet = this.isContextual("let"), isForOf = false;
+      var usingKind = this.isUsing(true) ? "using" : this.isAwaitUsing(true) ? "await using" : null;
+      if (usingKind) {
+        var init$2 = this.startNode();
+        this.next();
+        if (usingKind === "await using") {
+          if (!this.canAwait) {
+            this.raise(this.start, "Await using cannot appear outside of async function");
+          }
+          this.next();
+        }
+        this.parseVar(init$2, true, usingKind);
+        this.finishNode(init$2, "VariableDeclaration");
+        return this.parseForAfterInit(node, init$2, awaitAt);
+      }
+      var containsEsc = this.containsEsc;
+      var refDestructuringErrors = new DestructuringErrors();
+      var initPos = this.start;
+      var init = awaitAt > -1 ? this.parseExprSubscripts(refDestructuringErrors, "await") : this.parseExpression(true, refDestructuringErrors);
+      if (this.type === types$1._in || (isForOf = this.options.ecmaVersion >= 6 && this.isContextual("of"))) {
+        if (awaitAt > -1) {
+          if (this.type === types$1._in) {
+            this.unexpected(awaitAt);
+          }
+          node.await = true;
+        } else if (isForOf && this.options.ecmaVersion >= 8) {
+          if (init.start === initPos && !containsEsc && init.type === "Identifier" && init.name === "async") {
+            this.unexpected();
+          } else if (this.options.ecmaVersion >= 9) {
+            node.await = false;
+          }
+        }
+        if (startsWithLet && isForOf) {
+          this.raise(init.start, "The left-hand side of a for-of loop may not start with 'let'.");
+        }
+        this.toAssignable(init, false, refDestructuringErrors);
+        this.checkLValPattern(init);
+        return this.parseForIn(node, init);
+      } else {
+        this.checkExpressionErrors(refDestructuringErrors, true);
+      }
+      if (awaitAt > -1) {
+        this.unexpected(awaitAt);
+      }
+      return this.parseFor(node, init);
+    };
+    pp$8.parseForAfterInit = function(node, init, awaitAt) {
+      if ((this.type === types$1._in || this.options.ecmaVersion >= 6 && this.isContextual("of")) && init.declarations.length === 1) {
+        if (this.type === types$1._in) {
+          if ((init.kind === "using" || init.kind === "await using") && !init.declarations[0].init) {
+            this.raise(this.start, "Using declaration is not allowed in for-in loops");
+          }
+          if (this.options.ecmaVersion >= 9 && awaitAt > -1) {
+            this.unexpected(awaitAt);
+          }
+        } else if (this.options.ecmaVersion >= 9) {
+          node.await = awaitAt > -1;
+        }
+        return this.parseForIn(node, init);
+      }
+      if (awaitAt > -1) {
+        this.unexpected(awaitAt);
+      }
+      return this.parseFor(node, init);
+    };
+    pp$8.parseFunctionStatement = function(node, isAsync, declarationPosition) {
+      this.next();
+      return this.parseFunction(node, FUNC_STATEMENT | (declarationPosition ? 0 : FUNC_HANGING_STATEMENT), false, isAsync);
+    };
+    pp$8.parseIfStatement = function(node) {
+      this.next();
+      node.test = this.parseParenExpression();
+      node.consequent = this.parseStatement("if");
+      node.alternate = this.eat(types$1._else) ? this.parseStatement("if") : null;
+      return this.finishNode(node, "IfStatement");
+    };
+    pp$8.parseReturnStatement = function(node) {
+      if (!this.allowReturn) {
+        this.raise(this.start, "'return' outside of function");
+      }
+      this.next();
+      if (this.eat(types$1.semi) || this.insertSemicolon()) {
+        node.argument = null;
+      } else {
+        node.argument = this.parseExpression();
+        this.semicolon();
+      }
+      return this.finishNode(node, "ReturnStatement");
+    };
+    pp$8.parseSwitchStatement = function(node) {
+      this.next();
+      node.discriminant = this.parseParenExpression();
+      node.cases = [];
+      this.expect(types$1.braceL);
+      this.labels.push(switchLabel);
+      this.enterScope(SCOPE_SWITCH);
+      var cur;
+      for (var sawDefault = false; this.type !== types$1.braceR; ) {
+        if (this.type === types$1._case || this.type === types$1._default) {
+          var isCase = this.type === types$1._case;
+          if (cur) {
+            this.finishNode(cur, "SwitchCase");
+          }
+          node.cases.push(cur = this.startNode());
+          cur.consequent = [];
+          this.next();
+          if (isCase) {
+            cur.test = this.parseExpression();
+          } else {
+            if (sawDefault) {
+              this.raiseRecoverable(this.lastTokStart, "Multiple default clauses");
+            }
+            sawDefault = true;
+            cur.test = null;
+          }
+          this.expect(types$1.colon);
+        } else {
+          if (!cur) {
+            this.unexpected();
+          }
+          cur.consequent.push(this.parseStatement(null));
+        }
+      }
+      this.exitScope();
+      if (cur) {
+        this.finishNode(cur, "SwitchCase");
+      }
+      this.next();
+      this.labels.pop();
+      return this.finishNode(node, "SwitchStatement");
+    };
+    pp$8.parseThrowStatement = function(node) {
+      this.next();
+      if (lineBreak.test(this.input.slice(this.lastTokEnd, this.start))) {
+        this.raise(this.lastTokEnd, "Illegal newline after throw");
+      }
+      node.argument = this.parseExpression();
+      this.semicolon();
+      return this.finishNode(node, "ThrowStatement");
+    };
+    empty$1 = [];
+    pp$8.parseCatchClauseParam = function() {
+      var param = this.parseBindingAtom();
+      var simple = param.type === "Identifier";
+      this.enterScope(simple ? SCOPE_SIMPLE_CATCH : 0);
+      this.checkLValPattern(param, simple ? BIND_SIMPLE_CATCH : BIND_LEXICAL);
+      this.expect(types$1.parenR);
+      return param;
+    };
+    pp$8.parseTryStatement = function(node) {
+      this.next();
+      node.block = this.parseBlock();
+      node.handler = null;
+      if (this.type === types$1._catch) {
+        var clause = this.startNode();
+        this.next();
+        if (this.eat(types$1.parenL)) {
+          clause.param = this.parseCatchClauseParam();
+        } else {
+          if (this.options.ecmaVersion < 10) {
+            this.unexpected();
+          }
+          clause.param = null;
+          this.enterScope(0);
+        }
+        clause.body = this.parseBlock(false);
+        this.exitScope();
+        node.handler = this.finishNode(clause, "CatchClause");
+      }
+      node.finalizer = this.eat(types$1._finally) ? this.parseBlock() : null;
+      if (!node.handler && !node.finalizer) {
+        this.raise(node.start, "Missing catch or finally clause");
+      }
+      return this.finishNode(node, "TryStatement");
+    };
+    pp$8.parseVarStatement = function(node, kind, allowMissingInitializer) {
+      this.next();
+      this.parseVar(node, false, kind, allowMissingInitializer);
+      this.semicolon();
+      return this.finishNode(node, "VariableDeclaration");
+    };
+    pp$8.parseWhileStatement = function(node) {
+      this.next();
+      node.test = this.parseParenExpression();
+      this.labels.push(loopLabel);
+      node.body = this.parseStatement("while");
+      this.labels.pop();
+      return this.finishNode(node, "WhileStatement");
+    };
+    pp$8.parseWithStatement = function(node) {
+      if (this.strict) {
+        this.raise(this.start, "'with' in strict mode");
+      }
+      this.next();
+      node.object = this.parseParenExpression();
+      node.body = this.parseStatement("with");
+      return this.finishNode(node, "WithStatement");
+    };
+    pp$8.parseEmptyStatement = function(node) {
+      this.next();
+      return this.finishNode(node, "EmptyStatement");
+    };
+    pp$8.parseLabeledStatement = function(node, maybeName, expr, context) {
+      for (var i$1 = 0, list = this.labels; i$1 < list.length; i$1 += 1) {
+        var label = list[i$1];
+        if (label.name === maybeName) {
+          this.raise(expr.start, "Label '" + maybeName + "' is already declared");
+        }
+      }
+      var kind = this.type.isLoop ? "loop" : this.type === types$1._switch ? "switch" : null;
+      for (var i = this.labels.length - 1; i >= 0; i--) {
+        var label$1 = this.labels[i];
+        if (label$1.statementStart === node.start) {
+          label$1.statementStart = this.start;
+          label$1.kind = kind;
+        } else {
+          break;
+        }
+      }
+      this.labels.push({ name: maybeName, kind, statementStart: this.start });
+      node.body = this.parseStatement(context ? context.indexOf("label") === -1 ? context + "label" : context : "label");
+      this.labels.pop();
+      node.label = expr;
+      return this.finishNode(node, "LabeledStatement");
+    };
+    pp$8.parseExpressionStatement = function(node, expr) {
+      node.expression = expr;
+      this.semicolon();
+      return this.finishNode(node, "ExpressionStatement");
+    };
+    pp$8.parseBlock = function(createNewLexicalScope, node, exitStrict) {
+      if (createNewLexicalScope === void 0) createNewLexicalScope = true;
+      if (node === void 0) node = this.startNode();
+      node.body = [];
+      this.expect(types$1.braceL);
+      if (createNewLexicalScope) {
+        this.enterScope(0);
+      }
+      while (this.type !== types$1.braceR) {
+        var stmt = this.parseStatement(null);
+        node.body.push(stmt);
+      }
+      if (exitStrict) {
+        this.strict = false;
+      }
+      this.next();
+      if (createNewLexicalScope) {
+        this.exitScope();
+      }
+      return this.finishNode(node, "BlockStatement");
+    };
+    pp$8.parseFor = function(node, init) {
+      node.init = init;
+      this.expect(types$1.semi);
+      node.test = this.type === types$1.semi ? null : this.parseExpression();
+      this.expect(types$1.semi);
+      node.update = this.type === types$1.parenR ? null : this.parseExpression();
+      this.expect(types$1.parenR);
+      node.body = this.parseStatement("for");
+      this.exitScope();
+      this.labels.pop();
+      return this.finishNode(node, "ForStatement");
+    };
+    pp$8.parseForIn = function(node, init) {
+      var isForIn = this.type === types$1._in;
+      this.next();
+      if (init.type === "VariableDeclaration" && init.declarations[0].init != null && (!isForIn || this.options.ecmaVersion < 8 || this.strict || init.kind !== "var" || init.declarations[0].id.type !== "Identifier")) {
+        this.raise(
+          init.start,
+          (isForIn ? "for-in" : "for-of") + " loop variable declaration may not have an initializer"
+        );
+      }
+      node.left = init;
+      node.right = isForIn ? this.parseExpression() : this.parseMaybeAssign();
+      this.expect(types$1.parenR);
+      node.body = this.parseStatement("for");
+      this.exitScope();
+      this.labels.pop();
+      return this.finishNode(node, isForIn ? "ForInStatement" : "ForOfStatement");
+    };
+    pp$8.parseVar = function(node, isFor, kind, allowMissingInitializer) {
+      node.declarations = [];
+      node.kind = kind;
+      for (; ; ) {
+        var decl = this.startNode();
+        this.parseVarId(decl, kind);
+        if (this.eat(types$1.eq)) {
+          decl.init = this.parseMaybeAssign(isFor);
+        } else if (!allowMissingInitializer && kind === "const" && !(this.type === types$1._in || this.options.ecmaVersion >= 6 && this.isContextual("of"))) {
+          this.unexpected();
+        } else if (!allowMissingInitializer && (kind === "using" || kind === "await using") && this.options.ecmaVersion >= 17 && this.type !== types$1._in && !this.isContextual("of")) {
+          this.raise(this.lastTokEnd, "Missing initializer in " + kind + " declaration");
+        } else if (!allowMissingInitializer && decl.id.type !== "Identifier" && !(isFor && (this.type === types$1._in || this.isContextual("of")))) {
+          this.raise(this.lastTokEnd, "Complex binding patterns require an initialization value");
+        } else {
+          decl.init = null;
+        }
+        node.declarations.push(this.finishNode(decl, "VariableDeclarator"));
+        if (!this.eat(types$1.comma)) {
+          break;
+        }
+      }
+      return node;
+    };
+    pp$8.parseVarId = function(decl, kind) {
+      decl.id = kind === "using" || kind === "await using" ? this.parseIdent() : this.parseBindingAtom();
+      this.checkLValPattern(decl.id, kind === "var" ? BIND_VAR : BIND_LEXICAL, false);
+    };
+    FUNC_STATEMENT = 1;
+    FUNC_HANGING_STATEMENT = 2;
+    FUNC_NULLABLE_ID = 4;
+    pp$8.parseFunction = function(node, statement, allowExpressionBody, isAsync, forInit) {
+      this.initFunction(node);
+      if (this.options.ecmaVersion >= 9 || this.options.ecmaVersion >= 6 && !isAsync) {
+        if (this.type === types$1.star && statement & FUNC_HANGING_STATEMENT) {
+          this.unexpected();
+        }
+        node.generator = this.eat(types$1.star);
+      }
+      if (this.options.ecmaVersion >= 8) {
+        node.async = !!isAsync;
+      }
+      if (statement & FUNC_STATEMENT) {
+        node.id = statement & FUNC_NULLABLE_ID && this.type !== types$1.name ? null : this.parseIdent();
+        if (node.id && !(statement & FUNC_HANGING_STATEMENT)) {
+          this.checkLValSimple(node.id, this.strict || node.generator || node.async ? this.treatFunctionsAsVar ? BIND_VAR : BIND_LEXICAL : BIND_FUNCTION);
+        }
+      }
+      var oldYieldPos = this.yieldPos, oldAwaitPos = this.awaitPos, oldAwaitIdentPos = this.awaitIdentPos;
+      this.yieldPos = 0;
+      this.awaitPos = 0;
+      this.awaitIdentPos = 0;
+      this.enterScope(functionFlags(node.async, node.generator));
+      if (!(statement & FUNC_STATEMENT)) {
+        node.id = this.type === types$1.name ? this.parseIdent() : null;
+      }
+      this.parseFunctionParams(node);
+      this.parseFunctionBody(node, allowExpressionBody, false, forInit);
+      this.yieldPos = oldYieldPos;
+      this.awaitPos = oldAwaitPos;
+      this.awaitIdentPos = oldAwaitIdentPos;
+      return this.finishNode(node, statement & FUNC_STATEMENT ? "FunctionDeclaration" : "FunctionExpression");
+    };
+    pp$8.parseFunctionParams = function(node) {
+      this.expect(types$1.parenL);
+      node.params = this.parseBindingList(types$1.parenR, false, this.options.ecmaVersion >= 8);
+      this.checkYieldAwaitInDefaultParams();
+    };
+    pp$8.parseClass = function(node, isStatement) {
+      this.next();
+      var oldStrict = this.strict;
+      this.strict = true;
+      this.parseClassId(node, isStatement);
+      this.parseClassSuper(node);
+      var privateNameMap = this.enterClassBody();
+      var classBody = this.startNode();
+      var hadConstructor = false;
+      classBody.body = [];
+      this.expect(types$1.braceL);
+      while (this.type !== types$1.braceR) {
+        var element = this.parseClassElement(node.superClass !== null);
+        if (element) {
+          classBody.body.push(element);
+          if (element.type === "MethodDefinition" && element.kind === "constructor") {
+            if (hadConstructor) {
+              this.raiseRecoverable(element.start, "Duplicate constructor in the same class");
+            }
+            hadConstructor = true;
+          } else if (element.key && element.key.type === "PrivateIdentifier" && isPrivateNameConflicted(privateNameMap, element)) {
+            this.raiseRecoverable(element.key.start, "Identifier '#" + element.key.name + "' has already been declared");
+          }
+        }
+      }
+      this.strict = oldStrict;
+      this.next();
+      node.body = this.finishNode(classBody, "ClassBody");
+      this.exitClassBody();
+      return this.finishNode(node, isStatement ? "ClassDeclaration" : "ClassExpression");
+    };
+    pp$8.parseClassElement = function(constructorAllowsSuper) {
+      if (this.eat(types$1.semi)) {
+        return null;
+      }
+      var ecmaVersion = this.options.ecmaVersion;
+      var node = this.startNode();
+      var keyName = "";
+      var isGenerator = false;
+      var isAsync = false;
+      var kind = "method";
+      var isStatic = false;
+      if (this.eatContextual("static")) {
+        if (ecmaVersion >= 13 && this.eat(types$1.braceL)) {
+          this.parseClassStaticBlock(node);
+          return node;
+        }
+        if (this.isClassElementNameStart() || this.type === types$1.star) {
+          isStatic = true;
+        } else {
+          keyName = "static";
+        }
+      }
+      node.static = isStatic;
+      if (!keyName && ecmaVersion >= 8 && this.eatContextual("async")) {
+        if ((this.isClassElementNameStart() || this.type === types$1.star) && !this.canInsertSemicolon()) {
+          isAsync = true;
+        } else {
+          keyName = "async";
+        }
+      }
+      if (!keyName && (ecmaVersion >= 9 || !isAsync) && this.eat(types$1.star)) {
+        isGenerator = true;
+      }
+      if (!keyName && !isAsync && !isGenerator) {
+        var lastValue = this.value;
+        if (this.eatContextual("get") || this.eatContextual("set")) {
+          if (this.isClassElementNameStart()) {
+            kind = lastValue;
+          } else {
+            keyName = lastValue;
+          }
+        }
+      }
+      if (keyName) {
+        node.computed = false;
+        node.key = this.startNodeAt(this.lastTokStart, this.lastTokStartLoc);
+        node.key.name = keyName;
+        this.finishNode(node.key, "Identifier");
+      } else {
+        this.parseClassElementName(node);
+      }
+      if (ecmaVersion < 13 || this.type === types$1.parenL || kind !== "method" || isGenerator || isAsync) {
+        var isConstructor = !node.static && checkKeyName(node, "constructor");
+        var allowsDirectSuper = isConstructor && constructorAllowsSuper;
+        if (isConstructor && kind !== "method") {
+          this.raise(node.key.start, "Constructor can't have get/set modifier");
+        }
+        node.kind = isConstructor ? "constructor" : kind;
+        this.parseClassMethod(node, isGenerator, isAsync, allowsDirectSuper);
+      } else {
+        this.parseClassField(node);
+      }
+      return node;
+    };
+    pp$8.isClassElementNameStart = function() {
+      return this.type === types$1.name || this.type === types$1.privateId || this.type === types$1.num || this.type === types$1.string || this.type === types$1.bracketL || this.type.keyword;
+    };
+    pp$8.parseClassElementName = function(element) {
+      if (this.type === types$1.privateId) {
+        if (this.value === "constructor") {
+          this.raise(this.start, "Classes can't have an element named '#constructor'");
+        }
+        element.computed = false;
+        element.key = this.parsePrivateIdent();
+      } else {
+        this.parsePropertyName(element);
+      }
+    };
+    pp$8.parseClassMethod = function(method, isGenerator, isAsync, allowsDirectSuper) {
+      var key = method.key;
+      if (method.kind === "constructor") {
+        if (isGenerator) {
+          this.raise(key.start, "Constructor can't be a generator");
+        }
+        if (isAsync) {
+          this.raise(key.start, "Constructor can't be an async method");
+        }
+      } else if (method.static && checkKeyName(method, "prototype")) {
+        this.raise(key.start, "Classes may not have a static property named prototype");
+      }
+      var value = method.value = this.parseMethod(isGenerator, isAsync, allowsDirectSuper);
+      if (method.kind === "get" && value.params.length !== 0) {
+        this.raiseRecoverable(value.start, "getter should have no params");
+      }
+      if (method.kind === "set" && value.params.length !== 1) {
+        this.raiseRecoverable(value.start, "setter should have exactly one param");
+      }
+      if (method.kind === "set" && value.params[0].type === "RestElement") {
+        this.raiseRecoverable(value.params[0].start, "Setter cannot use rest params");
+      }
+      return this.finishNode(method, "MethodDefinition");
+    };
+    pp$8.parseClassField = function(field) {
+      if (checkKeyName(field, "constructor")) {
+        this.raise(field.key.start, "Classes can't have a field named 'constructor'");
+      } else if (field.static && checkKeyName(field, "prototype")) {
+        this.raise(field.key.start, "Classes can't have a static field named 'prototype'");
+      }
+      if (this.eat(types$1.eq)) {
+        this.enterScope(SCOPE_CLASS_FIELD_INIT | SCOPE_SUPER);
+        field.value = this.parseMaybeAssign();
+        this.exitScope();
+      } else {
+        field.value = null;
+      }
+      this.semicolon();
+      return this.finishNode(field, "PropertyDefinition");
+    };
+    pp$8.parseClassStaticBlock = function(node) {
+      node.body = [];
+      var oldLabels = this.labels;
+      this.labels = [];
+      this.enterScope(SCOPE_CLASS_STATIC_BLOCK | SCOPE_SUPER);
+      while (this.type !== types$1.braceR) {
+        var stmt = this.parseStatement(null);
+        node.body.push(stmt);
+      }
+      this.next();
+      this.exitScope();
+      this.labels = oldLabels;
+      return this.finishNode(node, "StaticBlock");
+    };
+    pp$8.parseClassId = function(node, isStatement) {
+      if (this.type === types$1.name) {
+        node.id = this.parseIdent();
+        if (isStatement) {
+          this.checkLValSimple(node.id, BIND_LEXICAL, false);
+        }
+      } else {
+        if (isStatement === true) {
+          this.unexpected();
+        }
+        node.id = null;
+      }
+    };
+    pp$8.parseClassSuper = function(node) {
+      node.superClass = this.eat(types$1._extends) ? this.parseExprSubscripts(null, false) : null;
+    };
+    pp$8.enterClassBody = function() {
+      var element = { declared: /* @__PURE__ */ Object.create(null), used: [] };
+      this.privateNameStack.push(element);
+      return element.declared;
+    };
+    pp$8.exitClassBody = function() {
+      var ref2 = this.privateNameStack.pop();
+      var declared = ref2.declared;
+      var used = ref2.used;
+      if (!this.options.checkPrivateFields) {
+        return;
+      }
+      var len = this.privateNameStack.length;
+      var parent = len === 0 ? null : this.privateNameStack[len - 1];
+      for (var i = 0; i < used.length; ++i) {
+        var id = used[i];
+        if (!hasOwn(declared, id.name)) {
+          if (parent) {
+            parent.used.push(id);
+          } else {
+            this.raiseRecoverable(id.start, "Private field '#" + id.name + "' must be declared in an enclosing class");
+          }
+        }
+      }
+    };
+    pp$8.parseExportAllDeclaration = function(node, exports$1) {
+      if (this.options.ecmaVersion >= 11) {
+        if (this.eatContextual("as")) {
+          node.exported = this.parseModuleExportName();
+          this.checkExport(exports$1, node.exported, this.lastTokStart);
+        } else {
+          node.exported = null;
+        }
+      }
+      this.expectContextual("from");
+      if (this.type !== types$1.string) {
+        this.unexpected();
+      }
+      node.source = this.parseExprAtom();
+      if (this.options.ecmaVersion >= 16) {
+        node.attributes = this.parseWithClause();
+      }
+      this.semicolon();
+      return this.finishNode(node, "ExportAllDeclaration");
+    };
+    pp$8.parseExport = function(node, exports$1) {
+      this.next();
+      if (this.eat(types$1.star)) {
+        return this.parseExportAllDeclaration(node, exports$1);
+      }
+      if (this.eat(types$1._default)) {
+        this.checkExport(exports$1, "default", this.lastTokStart);
+        node.declaration = this.parseExportDefaultDeclaration();
+        return this.finishNode(node, "ExportDefaultDeclaration");
+      }
+      if (this.shouldParseExportStatement()) {
+        node.declaration = this.parseExportDeclaration(node);
+        if (node.declaration.type === "VariableDeclaration") {
+          this.checkVariableExport(exports$1, node.declaration.declarations);
+        } else {
+          this.checkExport(exports$1, node.declaration.id, node.declaration.id.start);
+        }
+        node.specifiers = [];
+        node.source = null;
+        if (this.options.ecmaVersion >= 16) {
+          node.attributes = [];
+        }
+      } else {
+        node.declaration = null;
+        node.specifiers = this.parseExportSpecifiers(exports$1);
+        if (this.eatContextual("from")) {
+          if (this.type !== types$1.string) {
+            this.unexpected();
+          }
+          node.source = this.parseExprAtom();
+          if (this.options.ecmaVersion >= 16) {
+            node.attributes = this.parseWithClause();
+          }
+        } else {
+          for (var i = 0, list = node.specifiers; i < list.length; i += 1) {
+            var spec = list[i];
+            this.checkUnreserved(spec.local);
+            this.checkLocalExport(spec.local);
+            if (spec.local.type === "Literal") {
+              this.raise(spec.local.start, "A string literal cannot be used as an exported binding without `from`.");
+            }
+          }
+          node.source = null;
+          if (this.options.ecmaVersion >= 16) {
+            node.attributes = [];
+          }
+        }
+        this.semicolon();
+      }
+      return this.finishNode(node, "ExportNamedDeclaration");
+    };
+    pp$8.parseExportDeclaration = function(node) {
+      return this.parseStatement(null);
+    };
+    pp$8.parseExportDefaultDeclaration = function() {
+      var isAsync;
+      if (this.type === types$1._function || (isAsync = this.isAsyncFunction())) {
+        var fNode = this.startNode();
+        this.next();
+        if (isAsync) {
+          this.next();
+        }
+        return this.parseFunction(fNode, FUNC_STATEMENT | FUNC_NULLABLE_ID, false, isAsync);
+      } else if (this.type === types$1._class) {
+        var cNode = this.startNode();
+        return this.parseClass(cNode, "nullableID");
+      } else {
+        var declaration = this.parseMaybeAssign();
+        this.semicolon();
+        return declaration;
+      }
+    };
+    pp$8.checkExport = function(exports$1, name, pos) {
+      if (!exports$1) {
+        return;
+      }
+      if (typeof name !== "string") {
+        name = name.type === "Identifier" ? name.name : name.value;
+      }
+      if (hasOwn(exports$1, name)) {
+        this.raiseRecoverable(pos, "Duplicate export '" + name + "'");
+      }
+      exports$1[name] = true;
+    };
+    pp$8.checkPatternExport = function(exports$1, pat) {
+      var type = pat.type;
+      if (type === "Identifier") {
+        this.checkExport(exports$1, pat, pat.start);
+      } else if (type === "ObjectPattern") {
+        for (var i = 0, list = pat.properties; i < list.length; i += 1) {
+          var prop = list[i];
+          this.checkPatternExport(exports$1, prop);
+        }
+      } else if (type === "ArrayPattern") {
+        for (var i$1 = 0, list$1 = pat.elements; i$1 < list$1.length; i$1 += 1) {
+          var elt = list$1[i$1];
+          if (elt) {
+            this.checkPatternExport(exports$1, elt);
+          }
+        }
+      } else if (type === "Property") {
+        this.checkPatternExport(exports$1, pat.value);
+      } else if (type === "AssignmentPattern") {
+        this.checkPatternExport(exports$1, pat.left);
+      } else if (type === "RestElement") {
+        this.checkPatternExport(exports$1, pat.argument);
+      }
+    };
+    pp$8.checkVariableExport = function(exports$1, decls) {
+      if (!exports$1) {
+        return;
+      }
+      for (var i = 0, list = decls; i < list.length; i += 1) {
+        var decl = list[i];
+        this.checkPatternExport(exports$1, decl.id);
+      }
+    };
+    pp$8.shouldParseExportStatement = function() {
+      return this.type.keyword === "var" || this.type.keyword === "const" || this.type.keyword === "class" || this.type.keyword === "function" || this.isLet() || this.isAsyncFunction();
+    };
+    pp$8.parseExportSpecifier = function(exports$1) {
+      var node = this.startNode();
+      node.local = this.parseModuleExportName();
+      node.exported = this.eatContextual("as") ? this.parseModuleExportName() : node.local;
+      this.checkExport(
+        exports$1,
+        node.exported,
+        node.exported.start
+      );
+      return this.finishNode(node, "ExportSpecifier");
+    };
+    pp$8.parseExportSpecifiers = function(exports$1) {
+      var nodes = [], first = true;
+      this.expect(types$1.braceL);
+      while (!this.eat(types$1.braceR)) {
+        if (!first) {
+          this.expect(types$1.comma);
+          if (this.afterTrailingComma(types$1.braceR)) {
+            break;
+          }
+        } else {
+          first = false;
+        }
+        nodes.push(this.parseExportSpecifier(exports$1));
+      }
+      return nodes;
+    };
+    pp$8.parseImport = function(node) {
+      this.next();
+      if (this.type === types$1.string) {
+        node.specifiers = empty$1;
+        node.source = this.parseExprAtom();
+      } else {
+        node.specifiers = this.parseImportSpecifiers();
+        this.expectContextual("from");
+        node.source = this.type === types$1.string ? this.parseExprAtom() : this.unexpected();
+      }
+      if (this.options.ecmaVersion >= 16) {
+        node.attributes = this.parseWithClause();
+      }
+      this.semicolon();
+      return this.finishNode(node, "ImportDeclaration");
+    };
+    pp$8.parseImportSpecifier = function() {
+      var node = this.startNode();
+      node.imported = this.parseModuleExportName();
+      if (this.eatContextual("as")) {
+        node.local = this.parseIdent();
+      } else {
+        this.checkUnreserved(node.imported);
+        node.local = node.imported;
+      }
+      this.checkLValSimple(node.local, BIND_LEXICAL);
+      return this.finishNode(node, "ImportSpecifier");
+    };
+    pp$8.parseImportDefaultSpecifier = function() {
+      var node = this.startNode();
+      node.local = this.parseIdent();
+      this.checkLValSimple(node.local, BIND_LEXICAL);
+      return this.finishNode(node, "ImportDefaultSpecifier");
+    };
+    pp$8.parseImportNamespaceSpecifier = function() {
+      var node = this.startNode();
+      this.next();
+      this.expectContextual("as");
+      node.local = this.parseIdent();
+      this.checkLValSimple(node.local, BIND_LEXICAL);
+      return this.finishNode(node, "ImportNamespaceSpecifier");
+    };
+    pp$8.parseImportSpecifiers = function() {
+      var nodes = [], first = true;
+      if (this.type === types$1.name) {
+        nodes.push(this.parseImportDefaultSpecifier());
+        if (!this.eat(types$1.comma)) {
+          return nodes;
+        }
+      }
+      if (this.type === types$1.star) {
+        nodes.push(this.parseImportNamespaceSpecifier());
+        return nodes;
+      }
+      this.expect(types$1.braceL);
+      while (!this.eat(types$1.braceR)) {
+        if (!first) {
+          this.expect(types$1.comma);
+          if (this.afterTrailingComma(types$1.braceR)) {
+            break;
+          }
+        } else {
+          first = false;
+        }
+        nodes.push(this.parseImportSpecifier());
+      }
+      return nodes;
+    };
+    pp$8.parseWithClause = function() {
+      var nodes = [];
+      if (!this.eat(types$1._with)) {
+        return nodes;
+      }
+      this.expect(types$1.braceL);
+      var attributeKeys = {};
+      var first = true;
+      while (!this.eat(types$1.braceR)) {
+        if (!first) {
+          this.expect(types$1.comma);
+          if (this.afterTrailingComma(types$1.braceR)) {
+            break;
+          }
+        } else {
+          first = false;
+        }
+        var attr = this.parseImportAttribute();
+        var keyName = attr.key.type === "Identifier" ? attr.key.name : attr.key.value;
+        if (hasOwn(attributeKeys, keyName)) {
+          this.raiseRecoverable(attr.key.start, "Duplicate attribute key '" + keyName + "'");
+        }
+        attributeKeys[keyName] = true;
+        nodes.push(attr);
+      }
+      return nodes;
+    };
+    pp$8.parseImportAttribute = function() {
+      var node = this.startNode();
+      node.key = this.type === types$1.string ? this.parseExprAtom() : this.parseIdent(this.options.allowReserved !== "never");
+      this.expect(types$1.colon);
+      if (this.type !== types$1.string) {
+        this.unexpected();
+      }
+      node.value = this.parseExprAtom();
+      return this.finishNode(node, "ImportAttribute");
+    };
+    pp$8.parseModuleExportName = function() {
+      if (this.options.ecmaVersion >= 13 && this.type === types$1.string) {
+        var stringLiteral = this.parseLiteral(this.value);
+        if (loneSurrogate.test(stringLiteral.value)) {
+          this.raise(stringLiteral.start, "An export name cannot include a lone surrogate.");
+        }
+        return stringLiteral;
+      }
+      return this.parseIdent(true);
+    };
+    pp$8.adaptDirectivePrologue = function(statements) {
+      for (var i = 0; i < statements.length && this.isDirectiveCandidate(statements[i]); ++i) {
+        statements[i].directive = statements[i].expression.raw.slice(1, -1);
+      }
+    };
+    pp$8.isDirectiveCandidate = function(statement) {
+      return this.options.ecmaVersion >= 5 && statement.type === "ExpressionStatement" && statement.expression.type === "Literal" && typeof statement.expression.value === "string" && // Reject parenthesized strings.
+      (this.input[statement.start] === '"' || this.input[statement.start] === "'");
+    };
+    pp$7 = Parser.prototype;
+    pp$7.toAssignable = function(node, isBinding, refDestructuringErrors) {
+      if (this.options.ecmaVersion >= 6 && node) {
+        switch (node.type) {
+          case "Identifier":
+            if (this.inAsync && node.name === "await") {
+              this.raise(node.start, "Cannot use 'await' as identifier inside an async function");
+            }
+            break;
+          case "ObjectPattern":
+          case "ArrayPattern":
+          case "AssignmentPattern":
+          case "RestElement":
+            break;
+          case "ObjectExpression":
+            node.type = "ObjectPattern";
+            if (refDestructuringErrors) {
+              this.checkPatternErrors(refDestructuringErrors, true);
+            }
+            for (var i = 0, list = node.properties; i < list.length; i += 1) {
+              var prop = list[i];
+              this.toAssignable(prop, isBinding);
+              if (prop.type === "RestElement" && (prop.argument.type === "ArrayPattern" || prop.argument.type === "ObjectPattern")) {
+                this.raise(prop.argument.start, "Unexpected token");
+              }
+            }
+            break;
+          case "Property":
+            if (node.kind !== "init") {
+              this.raise(node.key.start, "Object pattern can't contain getter or setter");
+            }
+            this.toAssignable(node.value, isBinding);
+            break;
+          case "ArrayExpression":
+            node.type = "ArrayPattern";
+            if (refDestructuringErrors) {
+              this.checkPatternErrors(refDestructuringErrors, true);
+            }
+            this.toAssignableList(node.elements, isBinding);
+            break;
+          case "SpreadElement":
+            node.type = "RestElement";
+            this.toAssignable(node.argument, isBinding);
+            if (node.argument.type === "AssignmentPattern") {
+              this.raise(node.argument.start, "Rest elements cannot have a default value");
+            }
+            break;
+          case "AssignmentExpression":
+            if (node.operator !== "=") {
+              this.raise(node.left.end, "Only '=' operator can be used for specifying default value.");
+            }
+            node.type = "AssignmentPattern";
+            delete node.operator;
+            this.toAssignable(node.left, isBinding);
+            break;
+          case "ParenthesizedExpression":
+            this.toAssignable(node.expression, isBinding, refDestructuringErrors);
+            break;
+          case "ChainExpression":
+            this.raiseRecoverable(node.start, "Optional chaining cannot appear in left-hand side");
+            break;
+          case "MemberExpression":
+            if (!isBinding) {
+              break;
+            }
+          default:
+            this.raise(node.start, "Assigning to rvalue");
+        }
+      } else if (refDestructuringErrors) {
+        this.checkPatternErrors(refDestructuringErrors, true);
+      }
+      return node;
+    };
+    pp$7.toAssignableList = function(exprList, isBinding) {
+      var end = exprList.length;
+      for (var i = 0; i < end; i++) {
+        var elt = exprList[i];
+        if (elt) {
+          this.toAssignable(elt, isBinding);
+        }
+      }
+      if (end) {
+        var last = exprList[end - 1];
+        if (this.options.ecmaVersion === 6 && isBinding && last && last.type === "RestElement" && last.argument.type !== "Identifier") {
+          this.unexpected(last.argument.start);
+        }
+      }
+      return exprList;
+    };
+    pp$7.parseSpread = function(refDestructuringErrors) {
+      var node = this.startNode();
+      this.next();
+      node.argument = this.parseMaybeAssign(false, refDestructuringErrors);
+      return this.finishNode(node, "SpreadElement");
+    };
+    pp$7.parseRestBinding = function() {
+      var node = this.startNode();
+      this.next();
+      if (this.options.ecmaVersion === 6 && this.type !== types$1.name) {
+        this.unexpected();
+      }
+      node.argument = this.parseBindingAtom();
+      return this.finishNode(node, "RestElement");
+    };
+    pp$7.parseBindingAtom = function() {
+      if (this.options.ecmaVersion >= 6) {
+        switch (this.type) {
+          case types$1.bracketL:
+            var node = this.startNode();
+            this.next();
+            node.elements = this.parseBindingList(types$1.bracketR, true, true);
+            return this.finishNode(node, "ArrayPattern");
+          case types$1.braceL:
+            return this.parseObj(true);
+        }
+      }
+      return this.parseIdent();
+    };
+    pp$7.parseBindingList = function(close, allowEmpty, allowTrailingComma, allowModifiers) {
+      var elts = [], first = true;
+      while (!this.eat(close)) {
+        if (first) {
+          first = false;
+        } else {
+          this.expect(types$1.comma);
+        }
+        if (allowEmpty && this.type === types$1.comma) {
+          elts.push(null);
+        } else if (allowTrailingComma && this.afterTrailingComma(close)) {
+          break;
+        } else if (this.type === types$1.ellipsis) {
+          var rest = this.parseRestBinding();
+          this.parseBindingListItem(rest);
+          elts.push(rest);
+          if (this.type === types$1.comma) {
+            this.raiseRecoverable(this.start, "Comma is not permitted after the rest element");
+          }
+          this.expect(close);
+          break;
+        } else {
+          elts.push(this.parseAssignableListItem(allowModifiers));
+        }
+      }
+      return elts;
+    };
+    pp$7.parseAssignableListItem = function(allowModifiers) {
+      var elem = this.parseMaybeDefault(this.start, this.startLoc);
+      this.parseBindingListItem(elem);
+      return elem;
+    };
+    pp$7.parseBindingListItem = function(param) {
+      return param;
+    };
+    pp$7.parseMaybeDefault = function(startPos, startLoc, left) {
+      left = left || this.parseBindingAtom();
+      if (this.options.ecmaVersion < 6 || !this.eat(types$1.eq)) {
+        return left;
+      }
+      var node = this.startNodeAt(startPos, startLoc);
+      node.left = left;
+      node.right = this.parseMaybeAssign();
+      return this.finishNode(node, "AssignmentPattern");
+    };
+    pp$7.checkLValSimple = function(expr, bindingType, checkClashes) {
+      if (bindingType === void 0) bindingType = BIND_NONE;
+      var isBind = bindingType !== BIND_NONE;
+      switch (expr.type) {
+        case "Identifier":
+          if (this.strict && this.reservedWordsStrictBind.test(expr.name)) {
+            this.raiseRecoverable(expr.start, (isBind ? "Binding " : "Assigning to ") + expr.name + " in strict mode");
+          }
+          if (isBind) {
+            if (bindingType === BIND_LEXICAL && expr.name === "let") {
+              this.raiseRecoverable(expr.start, "let is disallowed as a lexically bound name");
+            }
+            if (checkClashes) {
+              if (hasOwn(checkClashes, expr.name)) {
+                this.raiseRecoverable(expr.start, "Argument name clash");
+              }
+              checkClashes[expr.name] = true;
+            }
+            if (bindingType !== BIND_OUTSIDE) {
+              this.declareName(expr.name, bindingType, expr.start);
+            }
+          }
+          break;
+        case "ChainExpression":
+          this.raiseRecoverable(expr.start, "Optional chaining cannot appear in left-hand side");
+          break;
+        case "MemberExpression":
+          if (isBind) {
+            this.raiseRecoverable(expr.start, "Binding member expression");
+          }
+          break;
+        case "ParenthesizedExpression":
+          if (isBind) {
+            this.raiseRecoverable(expr.start, "Binding parenthesized expression");
+          }
+          return this.checkLValSimple(expr.expression, bindingType, checkClashes);
+        default:
+          this.raise(expr.start, (isBind ? "Binding" : "Assigning to") + " rvalue");
+      }
+    };
+    pp$7.checkLValPattern = function(expr, bindingType, checkClashes) {
+      if (bindingType === void 0) bindingType = BIND_NONE;
+      switch (expr.type) {
+        case "ObjectPattern":
+          for (var i = 0, list = expr.properties; i < list.length; i += 1) {
+            var prop = list[i];
+            this.checkLValInnerPattern(prop, bindingType, checkClashes);
+          }
+          break;
+        case "ArrayPattern":
+          for (var i$1 = 0, list$1 = expr.elements; i$1 < list$1.length; i$1 += 1) {
+            var elem = list$1[i$1];
+            if (elem) {
+              this.checkLValInnerPattern(elem, bindingType, checkClashes);
+            }
+          }
+          break;
+        default:
+          this.checkLValSimple(expr, bindingType, checkClashes);
+      }
+    };
+    pp$7.checkLValInnerPattern = function(expr, bindingType, checkClashes) {
+      if (bindingType === void 0) bindingType = BIND_NONE;
+      switch (expr.type) {
+        case "Property":
+          this.checkLValInnerPattern(expr.value, bindingType, checkClashes);
+          break;
+        case "AssignmentPattern":
+          this.checkLValPattern(expr.left, bindingType, checkClashes);
+          break;
+        case "RestElement":
+          this.checkLValPattern(expr.argument, bindingType, checkClashes);
+          break;
+        default:
+          this.checkLValPattern(expr, bindingType, checkClashes);
+      }
+    };
+    TokContext = function TokContext2(token, isExpr, preserveSpace, override, generator) {
+      this.token = token;
+      this.isExpr = !!isExpr;
+      this.preserveSpace = !!preserveSpace;
+      this.override = override;
+      this.generator = !!generator;
+    };
+    types = {
+      b_stat: new TokContext("{", false),
+      b_expr: new TokContext("{", true),
+      b_tmpl: new TokContext("${", false),
+      p_stat: new TokContext("(", false),
+      p_expr: new TokContext("(", true),
+      q_tmpl: new TokContext("`", true, true, function(p) {
+        return p.tryReadTemplateToken();
+      }),
+      f_stat: new TokContext("function", false),
+      f_expr: new TokContext("function", true),
+      f_expr_gen: new TokContext("function", true, false, null, true),
+      f_gen: new TokContext("function", false, false, null, true)
+    };
+    pp$6 = Parser.prototype;
+    pp$6.initialContext = function() {
+      return [types.b_stat];
+    };
+    pp$6.curContext = function() {
+      return this.context[this.context.length - 1];
+    };
+    pp$6.braceIsBlock = function(prevType) {
+      var parent = this.curContext();
+      if (parent === types.f_expr || parent === types.f_stat) {
+        return true;
+      }
+      if (prevType === types$1.colon && (parent === types.b_stat || parent === types.b_expr)) {
+        return !parent.isExpr;
+      }
+      if (prevType === types$1._return || prevType === types$1.name && this.exprAllowed) {
+        return lineBreak.test(this.input.slice(this.lastTokEnd, this.start));
+      }
+      if (prevType === types$1._else || prevType === types$1.semi || prevType === types$1.eof || prevType === types$1.parenR || prevType === types$1.arrow) {
+        return true;
+      }
+      if (prevType === types$1.braceL) {
+        return parent === types.b_stat;
+      }
+      if (prevType === types$1._var || prevType === types$1._const || prevType === types$1.name) {
+        return false;
+      }
+      return !this.exprAllowed;
+    };
+    pp$6.inGeneratorContext = function() {
+      for (var i = this.context.length - 1; i >= 1; i--) {
+        var context = this.context[i];
+        if (context.token === "function") {
+          return context.generator;
+        }
+      }
+      return false;
+    };
+    pp$6.updateContext = function(prevType) {
+      var update, type = this.type;
+      if (type.keyword && prevType === types$1.dot) {
+        this.exprAllowed = false;
+      } else if (update = type.updateContext) {
+        update.call(this, prevType);
+      } else {
+        this.exprAllowed = type.beforeExpr;
+      }
+    };
+    pp$6.overrideContext = function(tokenCtx) {
+      if (this.curContext() !== tokenCtx) {
+        this.context[this.context.length - 1] = tokenCtx;
+      }
+    };
+    types$1.parenR.updateContext = types$1.braceR.updateContext = function() {
+      if (this.context.length === 1) {
+        this.exprAllowed = true;
+        return;
+      }
+      var out = this.context.pop();
+      if (out === types.b_stat && this.curContext().token === "function") {
+        out = this.context.pop();
+      }
+      this.exprAllowed = !out.isExpr;
+    };
+    types$1.braceL.updateContext = function(prevType) {
+      this.context.push(this.braceIsBlock(prevType) ? types.b_stat : types.b_expr);
+      this.exprAllowed = true;
+    };
+    types$1.dollarBraceL.updateContext = function() {
+      this.context.push(types.b_tmpl);
+      this.exprAllowed = true;
+    };
+    types$1.parenL.updateContext = function(prevType) {
+      var statementParens = prevType === types$1._if || prevType === types$1._for || prevType === types$1._with || prevType === types$1._while;
+      this.context.push(statementParens ? types.p_stat : types.p_expr);
+      this.exprAllowed = true;
+    };
+    types$1.incDec.updateContext = function() {
+    };
+    types$1._function.updateContext = types$1._class.updateContext = function(prevType) {
+      if (prevType.beforeExpr && prevType !== types$1._else && !(prevType === types$1.semi && this.curContext() !== types.p_stat) && !(prevType === types$1._return && lineBreak.test(this.input.slice(this.lastTokEnd, this.start))) && !((prevType === types$1.colon || prevType === types$1.braceL) && this.curContext() === types.b_stat)) {
+        this.context.push(types.f_expr);
+      } else {
+        this.context.push(types.f_stat);
+      }
+      this.exprAllowed = false;
+    };
+    types$1.colon.updateContext = function() {
+      if (this.curContext().token === "function") {
+        this.context.pop();
+      }
+      this.exprAllowed = true;
+    };
+    types$1.backQuote.updateContext = function() {
+      if (this.curContext() === types.q_tmpl) {
+        this.context.pop();
+      } else {
+        this.context.push(types.q_tmpl);
+      }
+      this.exprAllowed = false;
+    };
+    types$1.star.updateContext = function(prevType) {
+      if (prevType === types$1._function) {
+        var index = this.context.length - 1;
+        if (this.context[index] === types.f_expr) {
+          this.context[index] = types.f_expr_gen;
+        } else {
+          this.context[index] = types.f_gen;
+        }
+      }
+      this.exprAllowed = true;
+    };
+    types$1.name.updateContext = function(prevType) {
+      var allowed = false;
+      if (this.options.ecmaVersion >= 6 && prevType !== types$1.dot) {
+        if (this.value === "of" && !this.exprAllowed || this.value === "yield" && this.inGeneratorContext()) {
+          allowed = true;
+        }
+      }
+      this.exprAllowed = allowed;
+    };
+    pp$5 = Parser.prototype;
+    pp$5.checkPropClash = function(prop, propHash, refDestructuringErrors) {
+      if (this.options.ecmaVersion >= 9 && prop.type === "SpreadElement") {
+        return;
+      }
+      if (this.options.ecmaVersion >= 6 && (prop.computed || prop.method || prop.shorthand)) {
+        return;
+      }
+      var key = prop.key;
+      var name;
+      switch (key.type) {
+        case "Identifier":
+          name = key.name;
+          break;
+        case "Literal":
+          name = String(key.value);
+          break;
+        default:
+          return;
+      }
+      var kind = prop.kind;
+      if (this.options.ecmaVersion >= 6) {
+        if (name === "__proto__" && kind === "init") {
+          if (propHash.proto) {
+            if (refDestructuringErrors) {
+              if (refDestructuringErrors.doubleProto < 0) {
+                refDestructuringErrors.doubleProto = key.start;
+              }
+            } else {
+              this.raiseRecoverable(key.start, "Redefinition of __proto__ property");
+            }
+          }
+          propHash.proto = true;
+        }
+        return;
+      }
+      name = "$" + name;
+      var other = propHash[name];
+      if (other) {
+        var redefinition;
+        if (kind === "init") {
+          redefinition = this.strict && other.init || other.get || other.set;
+        } else {
+          redefinition = other.init || other[kind];
+        }
+        if (redefinition) {
+          this.raiseRecoverable(key.start, "Redefinition of property");
+        }
+      } else {
+        other = propHash[name] = {
+          init: false,
+          get: false,
+          set: false
+        };
+      }
+      other[kind] = true;
+    };
+    pp$5.parseExpression = function(forInit, refDestructuringErrors) {
+      var this$1$1 = this;
+      return this.catchStackOverflow(function() {
+        var startPos = this$1$1.start, startLoc = this$1$1.startLoc;
+        var expr = this$1$1.parseMaybeAssign(forInit, refDestructuringErrors);
+        if (this$1$1.type === types$1.comma) {
+          var node = this$1$1.startNodeAt(startPos, startLoc);
+          node.expressions = [expr];
+          while (this$1$1.eat(types$1.comma)) {
+            node.expressions.push(this$1$1.parseMaybeAssign(forInit, refDestructuringErrors));
+          }
+          return this$1$1.finishNode(node, "SequenceExpression");
+        }
+        return expr;
+      });
+    };
+    pp$5.parseMaybeAssign = function(forInit, refDestructuringErrors, afterLeftParse) {
+      if (this.isContextual("yield")) {
+        if (this.inGenerator) {
+          return this.parseYield(forInit);
+        } else {
+          this.exprAllowed = false;
+        }
+      }
+      var ownDestructuringErrors = false, oldParenAssign = -1, oldTrailingComma = -1, oldDoubleProto = -1;
+      if (refDestructuringErrors) {
+        oldParenAssign = refDestructuringErrors.parenthesizedAssign;
+        oldTrailingComma = refDestructuringErrors.trailingComma;
+        oldDoubleProto = refDestructuringErrors.doubleProto;
+        refDestructuringErrors.parenthesizedAssign = refDestructuringErrors.trailingComma = -1;
+      } else {
+        refDestructuringErrors = new DestructuringErrors();
+        ownDestructuringErrors = true;
+      }
+      var startPos = this.start, startLoc = this.startLoc;
+      if (this.type === types$1.parenL || this.type === types$1.name) {
+        this.potentialArrowAt = this.start;
+        this.potentialArrowInForAwait = forInit === "await";
+      }
+      var left = this.parseMaybeConditional(forInit, refDestructuringErrors);
+      if (afterLeftParse) {
+        left = afterLeftParse.call(this, left, startPos, startLoc);
+      }
+      if (this.type.isAssign) {
+        var node = this.startNodeAt(startPos, startLoc);
+        node.operator = this.value;
+        if (this.type === types$1.eq) {
+          left = this.toAssignable(left, false, refDestructuringErrors);
+        }
+        if (!ownDestructuringErrors) {
+          refDestructuringErrors.parenthesizedAssign = refDestructuringErrors.trailingComma = refDestructuringErrors.doubleProto = -1;
+        }
+        if (refDestructuringErrors.shorthandAssign >= left.start) {
+          refDestructuringErrors.shorthandAssign = -1;
+        }
+        if (this.type === types$1.eq) {
+          this.checkLValPattern(left);
+        } else {
+          this.checkLValSimple(left);
+        }
+        node.left = left;
+        this.next();
+        node.right = this.parseMaybeAssign(forInit);
+        if (oldDoubleProto > -1) {
+          refDestructuringErrors.doubleProto = oldDoubleProto;
+        }
+        return this.finishNode(node, "AssignmentExpression");
+      } else {
+        if (ownDestructuringErrors) {
+          this.checkExpressionErrors(refDestructuringErrors, true);
+        }
+      }
+      if (oldParenAssign > -1) {
+        refDestructuringErrors.parenthesizedAssign = oldParenAssign;
+      }
+      if (oldTrailingComma > -1) {
+        refDestructuringErrors.trailingComma = oldTrailingComma;
+      }
+      return left;
+    };
+    pp$5.parseMaybeConditional = function(forInit, refDestructuringErrors) {
+      var startPos = this.start, startLoc = this.startLoc;
+      var expr = this.parseExprOps(forInit, refDestructuringErrors);
+      if (this.checkExpressionErrors(refDestructuringErrors)) {
+        return expr;
+      }
+      if (!(expr.type === "ArrowFunctionExpression" && expr.start === startPos) && this.eat(types$1.question)) {
+        var node = this.startNodeAt(startPos, startLoc);
+        node.test = expr;
+        node.consequent = this.parseMaybeAssign();
+        this.expect(types$1.colon);
+        node.alternate = this.parseMaybeAssign(forInit);
+        return this.finishNode(node, "ConditionalExpression");
+      }
+      return expr;
+    };
+    pp$5.parseExprOps = function(forInit, refDestructuringErrors) {
+      var startPos = this.start, startLoc = this.startLoc;
+      var expr = this.parseMaybeUnary(refDestructuringErrors, false, false, forInit);
+      if (this.checkExpressionErrors(refDestructuringErrors)) {
+        return expr;
+      }
+      return expr.start === startPos && expr.type === "ArrowFunctionExpression" ? expr : this.parseExprOp(expr, startPos, startLoc, -1, forInit);
+    };
+    pp$5.parseExprOp = function(left, leftStartPos, leftStartLoc, minPrec, forInit) {
+      var prec = this.type.binop;
+      if (prec != null && (!forInit || this.type !== types$1._in)) {
+        if (prec > minPrec) {
+          var logical = this.type === types$1.logicalOR || this.type === types$1.logicalAND;
+          var coalesce = this.type === types$1.coalesce;
+          if (coalesce) {
+            prec = types$1.logicalAND.binop;
+          }
+          var op = this.value;
+          this.next();
+          var startPos = this.start, startLoc = this.startLoc;
+          var right = this.parseExprOp(this.parseMaybeUnary(null, false, false, forInit), startPos, startLoc, prec, forInit);
+          var node = this.buildBinary(leftStartPos, leftStartLoc, left, right, op, logical || coalesce);
+          if (logical && this.type === types$1.coalesce || coalesce && (this.type === types$1.logicalOR || this.type === types$1.logicalAND)) {
+            this.raiseRecoverable(this.start, "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses");
+          }
+          return this.parseExprOp(node, leftStartPos, leftStartLoc, minPrec, forInit);
+        }
+      }
+      return left;
+    };
+    pp$5.buildBinary = function(startPos, startLoc, left, right, op, logical) {
+      if (right.type === "PrivateIdentifier") {
+        this.raise(right.start, "Private identifier can only be left side of binary expression");
+      }
+      var node = this.startNodeAt(startPos, startLoc);
+      node.left = left;
+      node.operator = op;
+      node.right = right;
+      return this.finishNode(node, logical ? "LogicalExpression" : "BinaryExpression");
+    };
+    pp$5.parseMaybeUnary = function(refDestructuringErrors, sawUnary, incDec, forInit) {
+      var startPos = this.start, startLoc = this.startLoc, expr;
+      if (this.isContextual("await") && this.canAwait) {
+        expr = this.parseAwait(forInit);
+        sawUnary = true;
+      } else if (this.type.prefix) {
+        var node = this.startNode(), update = this.type === types$1.incDec;
+        node.operator = this.value;
+        node.prefix = true;
+        this.next();
+        node.argument = this.parseMaybeUnary(null, true, update, forInit);
+        this.checkExpressionErrors(refDestructuringErrors, true);
+        if (update) {
+          this.checkLValSimple(node.argument);
+        } else if (this.strict && node.operator === "delete" && isLocalVariableAccess(node.argument)) {
+          this.raiseRecoverable(node.start, "Deleting local variable in strict mode");
+        } else if (node.operator === "delete" && isPrivateFieldAccess(node.argument)) {
+          this.raiseRecoverable(node.start, "Private fields can not be deleted");
+        } else {
+          sawUnary = true;
+        }
+        expr = this.finishNode(node, update ? "UpdateExpression" : "UnaryExpression");
+      } else if (!sawUnary && this.type === types$1.privateId) {
+        if ((forInit || this.privateNameStack.length === 0) && this.options.checkPrivateFields) {
+          this.unexpected();
+        }
+        expr = this.parsePrivateIdent();
+        if (this.type !== types$1._in) {
+          this.unexpected();
+        }
+      } else {
+        expr = this.parseExprSubscripts(refDestructuringErrors, forInit);
+        if (this.checkExpressionErrors(refDestructuringErrors)) {
+          return expr;
+        }
+        while (this.type.postfix && !this.canInsertSemicolon()) {
+          var node$1 = this.startNodeAt(startPos, startLoc);
+          node$1.operator = this.value;
+          node$1.prefix = false;
+          node$1.argument = expr;
+          this.checkLValSimple(expr);
+          this.next();
+          expr = this.finishNode(node$1, "UpdateExpression");
+        }
+      }
+      if (!incDec && this.eat(types$1.starstar)) {
+        if (sawUnary) {
+          this.unexpected(this.lastTokStart);
+        } else {
+          return this.buildBinary(startPos, startLoc, expr, this.parseMaybeUnary(null, false, false, forInit), "**", false);
+        }
+      } else {
+        return expr;
+      }
+    };
+    pp$5.parseExprSubscripts = function(refDestructuringErrors, forInit) {
+      var startPos = this.start, startLoc = this.startLoc;
+      var expr = this.parseExprAtom(refDestructuringErrors, forInit);
+      if (expr.type === "ArrowFunctionExpression" && this.input.slice(this.lastTokStart, this.lastTokEnd) !== ")") {
+        return expr;
+      }
+      var result = this.parseSubscripts(expr, startPos, startLoc, false, forInit);
+      if (refDestructuringErrors && result.type === "MemberExpression") {
+        if (refDestructuringErrors.parenthesizedAssign >= result.start) {
+          refDestructuringErrors.parenthesizedAssign = -1;
+        }
+        if (refDestructuringErrors.parenthesizedBind >= result.start) {
+          refDestructuringErrors.parenthesizedBind = -1;
+        }
+        if (refDestructuringErrors.trailingComma >= result.start) {
+          refDestructuringErrors.trailingComma = -1;
+        }
+      }
+      return result;
+    };
+    pp$5.parseSubscripts = function(base, startPos, startLoc, noCalls, forInit) {
+      var maybeAsyncArrow = this.options.ecmaVersion >= 8 && base.type === "Identifier" && base.name === "async" && this.lastTokEnd === base.end && !this.canInsertSemicolon() && base.end - base.start === 5 && this.potentialArrowAt === base.start;
+      var optionalChained = false;
+      while (true) {
+        var element = this.parseSubscript(base, startPos, startLoc, noCalls, maybeAsyncArrow, optionalChained, forInit);
+        if (element.optional) {
+          optionalChained = true;
+        }
+        if (element === base || element.type === "ArrowFunctionExpression") {
+          if (optionalChained) {
+            var chainNode = this.startNodeAt(startPos, startLoc);
+            chainNode.expression = element;
+            element = this.finishNode(chainNode, "ChainExpression");
+          }
+          return element;
+        }
+        base = element;
+      }
+    };
+    pp$5.shouldParseAsyncArrow = function() {
+      return !this.canInsertSemicolon() && this.eat(types$1.arrow);
+    };
+    pp$5.parseSubscriptAsyncArrow = function(startPos, startLoc, exprList, forInit) {
+      return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), exprList, true, forInit);
+    };
+    pp$5.parseSubscript = function(base, startPos, startLoc, noCalls, maybeAsyncArrow, optionalChained, forInit) {
+      var optionalSupported = this.options.ecmaVersion >= 11;
+      var optional2 = optionalSupported && this.eat(types$1.questionDot);
+      if (noCalls && optional2) {
+        this.raise(this.lastTokStart, "Optional chaining cannot appear in the callee of new expressions");
+      }
+      var computed = this.eat(types$1.bracketL);
+      if (computed || optional2 && this.type !== types$1.parenL && this.type !== types$1.backQuote || this.eat(types$1.dot)) {
+        var node = this.startNodeAt(startPos, startLoc);
+        node.object = base;
+        if (computed) {
+          node.property = this.parseExpression();
+          this.expect(types$1.bracketR);
+        } else if (this.type === types$1.privateId && base.type !== "Super") {
+          node.property = this.parsePrivateIdent();
+        } else {
+          node.property = this.parseIdent(this.options.allowReserved !== "never");
+        }
+        node.computed = !!computed;
+        if (optionalSupported) {
+          node.optional = optional2;
+        }
+        base = this.finishNode(node, "MemberExpression");
+      } else if (!noCalls && this.eat(types$1.parenL)) {
+        var refDestructuringErrors = new DestructuringErrors(), oldYieldPos = this.yieldPos, oldAwaitPos = this.awaitPos, oldAwaitIdentPos = this.awaitIdentPos;
+        this.yieldPos = 0;
+        this.awaitPos = 0;
+        this.awaitIdentPos = 0;
+        var exprList = this.parseExprList(types$1.parenR, this.options.ecmaVersion >= 8, false, refDestructuringErrors);
+        if (maybeAsyncArrow && !optional2 && this.shouldParseAsyncArrow()) {
+          this.checkPatternErrors(refDestructuringErrors, false);
+          this.checkYieldAwaitInDefaultParams();
+          if (this.awaitIdentPos > 0) {
+            this.raise(this.awaitIdentPos, "Cannot use 'await' as identifier inside an async function");
+          }
+          this.yieldPos = oldYieldPos;
+          this.awaitPos = oldAwaitPos;
+          this.awaitIdentPos = oldAwaitIdentPos;
+          return this.parseSubscriptAsyncArrow(startPos, startLoc, exprList, forInit);
+        }
+        this.checkExpressionErrors(refDestructuringErrors, true);
+        this.yieldPos = oldYieldPos || this.yieldPos;
+        this.awaitPos = oldAwaitPos || this.awaitPos;
+        this.awaitIdentPos = oldAwaitIdentPos || this.awaitIdentPos;
+        var node$1 = this.startNodeAt(startPos, startLoc);
+        node$1.callee = base;
+        node$1.arguments = exprList;
+        if (optionalSupported) {
+          node$1.optional = optional2;
+        }
+        base = this.finishNode(node$1, "CallExpression");
+      } else if (this.type === types$1.backQuote) {
+        if (optional2 || optionalChained) {
+          this.raise(this.start, "Optional chaining cannot appear in the tag of tagged template expressions");
+        }
+        var node$2 = this.startNodeAt(startPos, startLoc);
+        node$2.tag = base;
+        node$2.quasi = this.parseTemplate({ isTagged: true });
+        base = this.finishNode(node$2, "TaggedTemplateExpression");
+      }
+      return base;
+    };
+    pp$5.parseExprAtom = function(refDestructuringErrors, forInit, forNew) {
+      if (this.type === types$1.slash) {
+        this.readRegexp();
+      }
+      var node, canBeArrow = this.potentialArrowAt === this.start;
+      switch (this.type) {
+        case types$1._super:
+          if (!this.allowSuper) {
+            this.raise(this.start, "'super' keyword outside a method");
+          }
+          node = this.startNode();
+          this.next();
+          if (this.type === types$1.parenL && !this.allowDirectSuper) {
+            this.raise(node.start, "super() call outside constructor of a subclass");
+          }
+          if (this.type !== types$1.dot && this.type !== types$1.bracketL && this.type !== types$1.parenL) {
+            this.unexpected();
+          }
+          return this.finishNode(node, "Super");
+        case types$1._this:
+          node = this.startNode();
+          this.next();
+          return this.finishNode(node, "ThisExpression");
+        case types$1.name:
+          var startPos = this.start, startLoc = this.startLoc, containsEsc = this.containsEsc;
+          var id = this.parseIdent(false);
+          if (this.options.ecmaVersion >= 8 && !containsEsc && id.name === "async" && !this.canInsertSemicolon() && this.eat(types$1._function)) {
+            this.overrideContext(types.f_expr);
+            return this.parseFunction(this.startNodeAt(startPos, startLoc), 0, false, true, forInit);
+          }
+          if (canBeArrow && !this.canInsertSemicolon()) {
+            if (this.eat(types$1.arrow)) {
+              return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), [id], false, forInit);
+            }
+            if (this.options.ecmaVersion >= 8 && id.name === "async" && this.type === types$1.name && !containsEsc && (!this.potentialArrowInForAwait || this.value !== "of" || this.containsEsc)) {
+              id = this.parseIdent(false);
+              if (this.canInsertSemicolon() || !this.eat(types$1.arrow)) {
+                this.unexpected();
+              }
+              return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), [id], true, forInit);
+            }
+          }
+          return id;
+        case types$1.regexp:
+          var value = this.value;
+          node = this.parseLiteral(value.value);
+          node.regex = { pattern: value.pattern, flags: value.flags };
+          return node;
+        case types$1.num:
+        case types$1.string:
+          return this.parseLiteral(this.value);
+        case types$1._null:
+        case types$1._true:
+        case types$1._false:
+          node = this.startNode();
+          node.value = this.type === types$1._null ? null : this.type === types$1._true;
+          node.raw = this.type.keyword;
+          this.next();
+          return this.finishNode(node, "Literal");
+        case types$1.parenL:
+          var start = this.start, expr = this.parseParenAndDistinguishExpression(canBeArrow, forInit);
+          if (refDestructuringErrors) {
+            if (refDestructuringErrors.parenthesizedAssign < 0 && !this.isSimpleAssignTarget(expr)) {
+              refDestructuringErrors.parenthesizedAssign = start;
+            }
+            if (refDestructuringErrors.parenthesizedBind < 0) {
+              refDestructuringErrors.parenthesizedBind = start;
+            }
+          }
+          return expr;
+        case types$1.bracketL:
+          node = this.startNode();
+          this.next();
+          node.elements = this.parseExprList(types$1.bracketR, true, true, refDestructuringErrors);
+          return this.finishNode(node, "ArrayExpression");
+        case types$1.braceL:
+          this.overrideContext(types.b_expr);
+          return this.parseObj(false, refDestructuringErrors);
+        case types$1._function:
+          node = this.startNode();
+          this.next();
+          return this.parseFunction(node, 0);
+        case types$1._class:
+          return this.parseClass(this.startNode(), false);
+        case types$1._new:
+          return this.parseNew();
+        case types$1.backQuote:
+          return this.parseTemplate();
+        case types$1._import:
+          if (this.options.ecmaVersion >= 11) {
+            return this.parseExprImport(forNew);
+          } else {
+            return this.unexpected();
+          }
+        default:
+          return this.parseExprAtomDefault();
+      }
+    };
+    pp$5.parseExprAtomDefault = function() {
+      this.unexpected();
+    };
+    pp$5.parseExprImport = function(forNew) {
+      var node = this.startNode();
+      if (this.containsEsc) {
+        this.raiseRecoverable(this.start, "Escape sequence in keyword import");
+      }
+      this.next();
+      if (this.type === types$1.parenL && !forNew) {
+        return this.parseDynamicImport(node);
+      } else if (this.type === types$1.dot) {
+        var meta2 = this.startNodeAt(node.start, node.loc && node.loc.start);
+        meta2.name = "import";
+        node.meta = this.finishNode(meta2, "Identifier");
+        return this.parseImportMeta(node);
+      } else {
+        this.unexpected();
+      }
+    };
+    pp$5.parseDynamicImport = function(node) {
+      this.next();
+      node.source = this.parseMaybeAssign();
+      if (this.options.ecmaVersion >= 16) {
+        if (!this.eat(types$1.parenR)) {
+          this.expect(types$1.comma);
+          if (!this.afterTrailingComma(types$1.parenR)) {
+            node.options = this.parseMaybeAssign();
+            if (!this.eat(types$1.parenR)) {
+              this.expect(types$1.comma);
+              if (!this.afterTrailingComma(types$1.parenR)) {
+                this.unexpected();
+              }
+            }
+          } else {
+            node.options = null;
+          }
+        } else {
+          node.options = null;
+        }
+      } else {
+        if (!this.eat(types$1.parenR)) {
+          var errorPos = this.start;
+          if (this.eat(types$1.comma) && this.eat(types$1.parenR)) {
+            this.raiseRecoverable(errorPos, "Trailing comma is not allowed in import()");
+          } else {
+            this.unexpected(errorPos);
+          }
+        }
+      }
+      return this.finishNode(node, "ImportExpression");
+    };
+    pp$5.parseImportMeta = function(node) {
+      this.next();
+      var containsEsc = this.containsEsc;
+      node.property = this.parseIdent(true);
+      if (node.property.name !== "meta") {
+        this.raiseRecoverable(node.property.start, "The only valid meta property for import is 'import.meta'");
+      }
+      if (containsEsc) {
+        this.raiseRecoverable(node.start, "'import.meta' must not contain escaped characters");
+      }
+      if (this.options.sourceType !== "module" && !this.options.allowImportExportEverywhere) {
+        this.raiseRecoverable(node.start, "Cannot use 'import.meta' outside a module");
+      }
+      return this.finishNode(node, "MetaProperty");
+    };
+    pp$5.parseLiteral = function(value) {
+      var node = this.startNode();
+      node.value = value;
+      node.raw = this.input.slice(this.start, this.end);
+      if (node.raw.charCodeAt(node.raw.length - 1) === 110) {
+        node.bigint = node.value != null ? node.value.toString() : node.raw.slice(0, -1).replace(/_/g, "");
+      }
+      this.next();
+      return this.finishNode(node, "Literal");
+    };
+    pp$5.parseParenExpression = function() {
+      this.expect(types$1.parenL);
+      var val = this.parseExpression();
+      this.expect(types$1.parenR);
+      return val;
+    };
+    pp$5.shouldParseArrow = function(exprList) {
+      return !this.canInsertSemicolon();
+    };
+    pp$5.parseParenAndDistinguishExpression = function(canBeArrow, forInit) {
+      var startPos = this.start, startLoc = this.startLoc, val, allowTrailingComma = this.options.ecmaVersion >= 8;
+      if (this.options.ecmaVersion >= 6) {
+        this.next();
+        var innerStartPos = this.start, innerStartLoc = this.startLoc;
+        var exprList = [], first = true, lastIsComma = false;
+        var refDestructuringErrors = new DestructuringErrors(), oldYieldPos = this.yieldPos, oldAwaitPos = this.awaitPos, spreadStart;
+        this.yieldPos = 0;
+        this.awaitPos = 0;
+        while (this.type !== types$1.parenR) {
+          first ? first = false : this.expect(types$1.comma);
+          if (allowTrailingComma && this.afterTrailingComma(types$1.parenR, true)) {
+            lastIsComma = true;
+            break;
+          } else if (this.type === types$1.ellipsis) {
+            spreadStart = this.start;
+            exprList.push(this.parseParenItem(this.parseRestBinding()));
+            if (this.type === types$1.comma) {
+              this.raiseRecoverable(
+                this.start,
+                "Comma is not permitted after the rest element"
+              );
+            }
+            break;
+          } else {
+            exprList.push(this.parseMaybeAssign(false, refDestructuringErrors, this.parseParenItem));
+          }
+        }
+        var innerEndPos = this.lastTokEnd, innerEndLoc = this.lastTokEndLoc;
+        this.expect(types$1.parenR);
+        if (canBeArrow && this.shouldParseArrow(exprList) && this.eat(types$1.arrow)) {
+          this.checkPatternErrors(refDestructuringErrors, false);
+          this.checkYieldAwaitInDefaultParams();
+          this.yieldPos = oldYieldPos;
+          this.awaitPos = oldAwaitPos;
+          return this.parseParenArrowList(startPos, startLoc, exprList, forInit);
+        }
+        if (!exprList.length || lastIsComma) {
+          this.unexpected(this.lastTokStart);
+        }
+        if (spreadStart) {
+          this.unexpected(spreadStart);
+        }
+        this.checkExpressionErrors(refDestructuringErrors, true);
+        this.yieldPos = oldYieldPos || this.yieldPos;
+        this.awaitPos = oldAwaitPos || this.awaitPos;
+        if (exprList.length > 1) {
+          val = this.startNodeAt(innerStartPos, innerStartLoc);
+          val.expressions = exprList;
+          this.finishNodeAt(val, "SequenceExpression", innerEndPos, innerEndLoc);
+        } else {
+          val = exprList[0];
+        }
+      } else {
+        val = this.parseParenExpression();
+      }
+      if (this.options.preserveParens) {
+        var par = this.startNodeAt(startPos, startLoc);
+        par.expression = val;
+        return this.finishNode(par, "ParenthesizedExpression");
+      } else {
+        return val;
+      }
+    };
+    pp$5.parseParenItem = function(item) {
+      return item;
+    };
+    pp$5.parseParenArrowList = function(startPos, startLoc, exprList, forInit) {
+      return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), exprList, false, forInit);
+    };
+    empty = [];
+    pp$5.parseNew = function() {
+      if (this.containsEsc) {
+        this.raiseRecoverable(this.start, "Escape sequence in keyword new");
+      }
+      var node = this.startNode();
+      this.next();
+      if (this.options.ecmaVersion >= 6 && this.type === types$1.dot) {
+        var meta2 = this.startNodeAt(node.start, node.loc && node.loc.start);
+        meta2.name = "new";
+        node.meta = this.finishNode(meta2, "Identifier");
+        this.next();
+        var containsEsc = this.containsEsc;
+        node.property = this.parseIdent(true);
+        if (node.property.name !== "target") {
+          this.raiseRecoverable(node.property.start, "The only valid meta property for new is 'new.target'");
+        }
+        if (containsEsc) {
+          this.raiseRecoverable(node.start, "'new.target' must not contain escaped characters");
+        }
+        if (!this.allowNewDotTarget) {
+          this.raiseRecoverable(node.start, "'new.target' can only be used in functions and class static block");
+        }
+        return this.finishNode(node, "MetaProperty");
+      }
+      var startPos = this.start, startLoc = this.startLoc;
+      node.callee = this.parseSubscripts(this.parseExprAtom(null, false, true), startPos, startLoc, true, false);
+      if (node.callee.type === "Super") {
+        this.raiseRecoverable(startPos, "Invalid use of 'super'");
+      }
+      if (this.eat(types$1.parenL)) {
+        node.arguments = this.parseExprList(types$1.parenR, this.options.ecmaVersion >= 8, false);
+      } else {
+        node.arguments = empty;
+      }
+      return this.finishNode(node, "NewExpression");
+    };
+    pp$5.parseTemplateElement = function(ref2) {
+      var isTagged = ref2.isTagged;
+      var elem = this.startNode();
+      if (this.type === types$1.invalidTemplate) {
+        if (!isTagged) {
+          this.raiseRecoverable(this.start, "Bad escape sequence in untagged template literal");
+        }
+        elem.value = {
+          raw: this.value.replace(/\r\n?/g, "\n"),
+          cooked: null
+        };
+      } else {
+        elem.value = {
+          raw: this.input.slice(this.start, this.end).replace(/\r\n?/g, "\n"),
+          cooked: this.value
+        };
+      }
+      this.next();
+      elem.tail = this.type === types$1.backQuote;
+      return this.finishNode(elem, "TemplateElement");
+    };
+    pp$5.parseTemplate = function(ref2) {
+      if (ref2 === void 0) ref2 = {};
+      var isTagged = ref2.isTagged;
+      if (isTagged === void 0) isTagged = false;
+      var node = this.startNode();
+      this.next();
+      node.expressions = [];
+      var curElt = this.parseTemplateElement({ isTagged });
+      node.quasis = [curElt];
+      while (!curElt.tail) {
+        if (this.type === types$1.eof) {
+          this.raise(this.pos, "Unterminated template literal");
+        }
+        this.expect(types$1.dollarBraceL);
+        node.expressions.push(this.parseExpression());
+        this.expect(types$1.braceR);
+        node.quasis.push(curElt = this.parseTemplateElement({ isTagged }));
+      }
+      this.next();
+      return this.finishNode(node, "TemplateLiteral");
+    };
+    pp$5.isAsyncProp = function(prop) {
+      return !prop.computed && prop.key.type === "Identifier" && prop.key.name === "async" && (this.type === types$1.name || this.type === types$1.num || this.type === types$1.string || this.type === types$1.bracketL || this.type.keyword || this.options.ecmaVersion >= 9 && this.type === types$1.star) && !lineBreak.test(this.input.slice(this.lastTokEnd, this.start));
+    };
+    pp$5.parseObj = function(isPattern, refDestructuringErrors) {
+      var node = this.startNode(), first = true, propHash = {};
+      node.properties = [];
+      this.next();
+      while (!this.eat(types$1.braceR)) {
+        if (!first) {
+          this.expect(types$1.comma);
+          if (this.options.ecmaVersion >= 5 && this.afterTrailingComma(types$1.braceR)) {
+            break;
+          }
+        } else {
+          first = false;
+        }
+        var prop = this.parseProperty(isPattern, refDestructuringErrors);
+        if (!isPattern) {
+          this.checkPropClash(prop, propHash, refDestructuringErrors);
+        }
+        node.properties.push(prop);
+      }
+      return this.finishNode(node, isPattern ? "ObjectPattern" : "ObjectExpression");
+    };
+    pp$5.parseProperty = function(isPattern, refDestructuringErrors) {
+      var prop = this.startNode(), isGenerator, isAsync, startPos, startLoc;
+      if (this.options.ecmaVersion >= 9 && this.eat(types$1.ellipsis)) {
+        if (isPattern) {
+          prop.argument = this.parseIdent(false);
+          if (this.type === types$1.comma) {
+            this.raiseRecoverable(this.start, "Comma is not permitted after the rest element");
+          }
+          return this.finishNode(prop, "RestElement");
+        }
+        prop.argument = this.parseMaybeAssign(false, refDestructuringErrors);
+        if (this.type === types$1.comma && refDestructuringErrors && refDestructuringErrors.trailingComma < 0) {
+          refDestructuringErrors.trailingComma = this.start;
+        }
+        return this.finishNode(prop, "SpreadElement");
+      }
+      if (this.options.ecmaVersion >= 6) {
+        prop.method = false;
+        prop.shorthand = false;
+        if (isPattern || refDestructuringErrors) {
+          startPos = this.start;
+          startLoc = this.startLoc;
+        }
+        if (!isPattern) {
+          isGenerator = this.eat(types$1.star);
+        }
+      }
+      var containsEsc = this.containsEsc;
+      this.parsePropertyName(prop);
+      if (!isPattern && !containsEsc && this.options.ecmaVersion >= 8 && !isGenerator && this.isAsyncProp(prop)) {
+        isAsync = true;
+        isGenerator = this.options.ecmaVersion >= 9 && this.eat(types$1.star);
+        this.parsePropertyName(prop);
+      } else {
+        isAsync = false;
+      }
+      this.parsePropertyValue(prop, isPattern, isGenerator, isAsync, startPos, startLoc, refDestructuringErrors, containsEsc);
+      return this.finishNode(prop, "Property");
+    };
+    pp$5.parseGetterSetter = function(prop) {
+      var kind = prop.key.name;
+      this.parsePropertyName(prop);
+      prop.value = this.parseMethod(false);
+      prop.kind = kind;
+      var paramCount = prop.kind === "get" ? 0 : 1;
+      if (prop.value.params.length !== paramCount) {
+        var start = prop.value.start;
+        if (prop.kind === "get") {
+          this.raiseRecoverable(start, "getter should have no params");
+        } else {
+          this.raiseRecoverable(start, "setter should have exactly one param");
+        }
+      } else {
+        if (prop.kind === "set" && prop.value.params[0].type === "RestElement") {
+          this.raiseRecoverable(prop.value.params[0].start, "Setter cannot use rest params");
+        }
+      }
+    };
+    pp$5.parsePropertyValue = function(prop, isPattern, isGenerator, isAsync, startPos, startLoc, refDestructuringErrors, containsEsc) {
+      if ((isGenerator || isAsync) && this.type === types$1.colon) {
+        this.unexpected();
+      }
+      if (this.eat(types$1.colon)) {
+        prop.value = isPattern ? this.parseMaybeDefault(this.start, this.startLoc) : this.parseMaybeAssign(false, refDestructuringErrors);
+        prop.kind = "init";
+      } else if (this.options.ecmaVersion >= 6 && this.type === types$1.parenL) {
+        if (isPattern) {
+          this.unexpected();
+        }
+        prop.method = true;
+        prop.value = this.parseMethod(isGenerator, isAsync);
+        prop.kind = "init";
+      } else if (!isPattern && !containsEsc && this.options.ecmaVersion >= 5 && !prop.computed && prop.key.type === "Identifier" && (prop.key.name === "get" || prop.key.name === "set") && (this.type !== types$1.comma && this.type !== types$1.braceR && this.type !== types$1.eq)) {
+        if (isGenerator || isAsync) {
+          this.unexpected();
+        }
+        this.parseGetterSetter(prop);
+      } else if (this.options.ecmaVersion >= 6 && !prop.computed && prop.key.type === "Identifier") {
+        if (isGenerator || isAsync) {
+          this.unexpected();
+        }
+        this.checkUnreserved(prop.key);
+        if (prop.key.name === "await" && !this.awaitIdentPos) {
+          this.awaitIdentPos = startPos;
+        }
+        if (isPattern) {
+          prop.value = this.parseMaybeDefault(startPos, startLoc, this.copyNode(prop.key));
+        } else if (this.type === types$1.eq && refDestructuringErrors) {
+          if (refDestructuringErrors.shorthandAssign < 0) {
+            refDestructuringErrors.shorthandAssign = this.start;
+          }
+          prop.value = this.parseMaybeDefault(startPos, startLoc, this.copyNode(prop.key));
+        } else {
+          prop.value = this.copyNode(prop.key);
+        }
+        prop.kind = "init";
+        prop.shorthand = true;
+      } else {
+        this.unexpected();
+      }
+    };
+    pp$5.parsePropertyName = function(prop) {
+      if (this.options.ecmaVersion >= 6) {
+        if (this.eat(types$1.bracketL)) {
+          prop.computed = true;
+          prop.key = this.parseMaybeAssign();
+          this.expect(types$1.bracketR);
+          return prop.key;
+        } else {
+          prop.computed = false;
+        }
+      }
+      return prop.key = this.type === types$1.num || this.type === types$1.string ? this.parseExprAtom() : this.parseIdent(this.options.allowReserved !== "never");
+    };
+    pp$5.initFunction = function(node) {
+      node.id = null;
+      if (this.options.ecmaVersion >= 6) {
+        node.generator = node.expression = false;
+      }
+      if (this.options.ecmaVersion >= 8) {
+        node.async = false;
+      }
+    };
+    pp$5.parseMethod = function(isGenerator, isAsync, allowDirectSuper) {
+      var node = this.startNode(), oldYieldPos = this.yieldPos, oldAwaitPos = this.awaitPos, oldAwaitIdentPos = this.awaitIdentPos;
+      this.initFunction(node);
+      if (this.options.ecmaVersion >= 6) {
+        node.generator = isGenerator;
+      }
+      if (this.options.ecmaVersion >= 8) {
+        node.async = !!isAsync;
+      }
+      this.yieldPos = 0;
+      this.awaitPos = 0;
+      this.awaitIdentPos = 0;
+      this.enterScope(functionFlags(isAsync, node.generator) | SCOPE_SUPER | (allowDirectSuper ? SCOPE_DIRECT_SUPER : 0));
+      this.expect(types$1.parenL);
+      node.params = this.parseBindingList(types$1.parenR, false, this.options.ecmaVersion >= 8);
+      this.checkYieldAwaitInDefaultParams();
+      this.parseFunctionBody(node, false, true, false);
+      this.yieldPos = oldYieldPos;
+      this.awaitPos = oldAwaitPos;
+      this.awaitIdentPos = oldAwaitIdentPos;
+      return this.finishNode(node, "FunctionExpression");
+    };
+    pp$5.parseArrowExpression = function(node, params, isAsync, forInit) {
+      var oldYieldPos = this.yieldPos, oldAwaitPos = this.awaitPos, oldAwaitIdentPos = this.awaitIdentPos;
+      this.enterScope(functionFlags(isAsync, false) | SCOPE_ARROW);
+      this.initFunction(node);
+      if (this.options.ecmaVersion >= 8) {
+        node.async = !!isAsync;
+      }
+      this.yieldPos = 0;
+      this.awaitPos = 0;
+      this.awaitIdentPos = 0;
+      node.params = this.toAssignableList(params, true);
+      this.parseFunctionBody(node, true, false, forInit);
+      this.yieldPos = oldYieldPos;
+      this.awaitPos = oldAwaitPos;
+      this.awaitIdentPos = oldAwaitIdentPos;
+      return this.finishNode(node, "ArrowFunctionExpression");
+    };
+    pp$5.parseFunctionBody = function(node, isArrowFunction, isMethod, forInit) {
+      var isExpression = isArrowFunction && this.type !== types$1.braceL;
+      var oldStrict = this.strict, useStrict = false;
+      if (isExpression) {
+        node.body = this.parseMaybeAssign(forInit);
+        node.expression = true;
+        this.checkParams(node, false);
+      } else {
+        var nonSimple = this.options.ecmaVersion >= 7 && !this.isSimpleParamList(node.params);
+        if (!oldStrict || nonSimple) {
+          useStrict = this.strictDirective(this.end);
+          if (useStrict && nonSimple) {
+            this.raiseRecoverable(node.start, "Illegal 'use strict' directive in function with non-simple parameter list");
+          }
+        }
+        var oldLabels = this.labels;
+        this.labels = [];
+        if (useStrict) {
+          this.strict = true;
+        }
+        this.checkParams(node, !oldStrict && !useStrict && !isArrowFunction && !isMethod && this.isSimpleParamList(node.params));
+        if (this.strict && node.id) {
+          this.checkLValSimple(node.id, BIND_OUTSIDE);
+        }
+        node.body = this.parseBlock(false, void 0, useStrict && !oldStrict);
+        node.expression = false;
+        this.adaptDirectivePrologue(node.body.body);
+        this.labels = oldLabels;
+      }
+      this.exitScope();
+    };
+    pp$5.isSimpleParamList = function(params) {
+      for (var i = 0, list = params; i < list.length; i += 1) {
+        var param = list[i];
+        if (param.type !== "Identifier") {
+          return false;
+        }
+      }
+      return true;
+    };
+    pp$5.checkParams = function(node, allowDuplicates) {
+      var nameHash = /* @__PURE__ */ Object.create(null);
+      for (var i = 0, list = node.params; i < list.length; i += 1) {
+        var param = list[i];
+        this.checkLValInnerPattern(param, BIND_VAR, allowDuplicates ? null : nameHash);
+      }
+    };
+    pp$5.parseExprList = function(close, allowTrailingComma, allowEmpty, refDestructuringErrors) {
+      var elts = [], first = true;
+      while (!this.eat(close)) {
+        if (!first) {
+          this.expect(types$1.comma);
+          if (allowTrailingComma && this.afterTrailingComma(close)) {
+            break;
+          }
+        } else {
+          first = false;
+        }
+        var elt = void 0;
+        if (allowEmpty && this.type === types$1.comma) {
+          elt = null;
+        } else if (this.type === types$1.ellipsis) {
+          elt = this.parseSpread(refDestructuringErrors);
+          if (refDestructuringErrors && this.type === types$1.comma && refDestructuringErrors.trailingComma < 0) {
+            refDestructuringErrors.trailingComma = this.start;
+          }
+        } else {
+          elt = this.parseMaybeAssign(false, refDestructuringErrors);
+        }
+        elts.push(elt);
+      }
+      return elts;
+    };
+    pp$5.checkUnreserved = function(ref2) {
+      var start = ref2.start;
+      var end = ref2.end;
+      var name = ref2.name;
+      if (this.inGenerator && name === "yield") {
+        this.raiseRecoverable(start, "Cannot use 'yield' as identifier inside a generator");
+      }
+      if (this.inAsync && name === "await") {
+        this.raiseRecoverable(start, "Cannot use 'await' as identifier inside an async function");
+      }
+      if (!(this.currentThisScope().flags & SCOPE_VAR) && name === "arguments") {
+        this.raiseRecoverable(start, "Cannot use 'arguments' in class field initializer");
+      }
+      if (this.inClassStaticBlock && (name === "arguments" || name === "await")) {
+        this.raise(start, "Cannot use " + name + " in class static initialization block");
+      }
+      if (this.keywords.test(name)) {
+        this.raise(start, "Unexpected keyword '" + name + "'");
+      }
+      if (this.options.ecmaVersion < 6 && this.input.slice(start, end).indexOf("\\") !== -1) {
+        return;
+      }
+      var re = this.strict ? this.reservedWordsStrict : this.reservedWords;
+      if (re.test(name)) {
+        if (!this.inAsync && name === "await") {
+          this.raiseRecoverable(start, "Cannot use keyword 'await' outside an async function");
+        }
+        this.raiseRecoverable(start, "The keyword '" + name + "' is reserved");
+      }
+    };
+    pp$5.parseIdent = function(liberal) {
+      var node = this.parseIdentNode();
+      this.next(!!liberal);
+      this.finishNode(node, "Identifier");
+      if (!liberal) {
+        this.checkUnreserved(node);
+        if (node.name === "await" && !this.awaitIdentPos) {
+          this.awaitIdentPos = node.start;
+        }
+      }
+      return node;
+    };
+    pp$5.parseIdentNode = function() {
+      var node = this.startNode();
+      if (this.type === types$1.name) {
+        node.name = this.value;
+      } else if (this.type.keyword) {
+        node.name = this.type.keyword;
+        if ((node.name === "class" || node.name === "function") && (this.lastTokEnd !== this.lastTokStart + 1 || this.input.charCodeAt(this.lastTokStart) !== 46)) {
+          this.context.pop();
+        }
+        this.type = types$1.name;
+      } else {
+        this.unexpected();
+      }
+      return node;
+    };
+    pp$5.parsePrivateIdent = function() {
+      var node = this.startNode();
+      if (this.type === types$1.privateId) {
+        node.name = this.value;
+      } else {
+        this.unexpected();
+      }
+      this.next();
+      this.finishNode(node, "PrivateIdentifier");
+      if (this.options.checkPrivateFields) {
+        if (this.privateNameStack.length === 0) {
+          this.raise(node.start, "Private field '#" + node.name + "' must be declared in an enclosing class");
+        } else {
+          this.privateNameStack[this.privateNameStack.length - 1].used.push(node);
+        }
+      }
+      return node;
+    };
+    pp$5.parseYield = function(forInit) {
+      if (!this.yieldPos) {
+        this.yieldPos = this.start;
+      }
+      var node = this.startNode();
+      this.next();
+      if (this.type === types$1.semi || this.canInsertSemicolon() || this.type !== types$1.star && !this.type.startsExpr) {
+        node.delegate = false;
+        node.argument = null;
+      } else {
+        node.delegate = this.eat(types$1.star);
+        node.argument = this.parseMaybeAssign(forInit);
+      }
+      return this.finishNode(node, "YieldExpression");
+    };
+    pp$5.parseAwait = function(forInit) {
+      if (!this.awaitPos) {
+        this.awaitPos = this.start;
+      }
+      var node = this.startNode();
+      this.next();
+      node.argument = this.parseMaybeUnary(null, true, false, forInit);
+      return this.finishNode(node, "AwaitExpression");
+    };
+    pp$4 = Parser.prototype;
+    pp$4.raise = function(pos, message) {
+      var loc = getLineInfo(this.input, pos);
+      message += " (" + loc.line + ":" + loc.column + ")";
+      if (this.sourceFile) {
+        message += " in " + this.sourceFile;
+      }
+      var err = new SyntaxError(message);
+      err.pos = pos;
+      err.loc = loc;
+      err.raisedAt = this.pos;
+      throw err;
+    };
+    pp$4.raiseRecoverable = pp$4.raise;
+    pp$4.curPosition = function() {
+      if (this.options.locations) {
+        return new Position(this.curLine, this.pos - this.lineStart);
+      }
+    };
+    pp$3 = Parser.prototype;
+    Scope = function Scope2(flags) {
+      this.flags = flags;
+      this.var = [];
+      this.lexical = [];
+      this.functions = [];
+    };
+    pp$3.enterScope = function(flags) {
+      this.scopeStack.push(new Scope(flags));
+    };
+    pp$3.exitScope = function() {
+      this.scopeStack.pop();
+    };
+    pp$3.treatFunctionsAsVarInScope = function(scope) {
+      return scope.flags & SCOPE_FUNCTION || !this.inModule && scope.flags & SCOPE_TOP;
+    };
+    pp$3.declareName = function(name, bindingType, pos) {
+      var redeclared = false;
+      if (bindingType === BIND_LEXICAL) {
+        var scope = this.currentScope();
+        redeclared = scope.lexical.indexOf(name) > -1 || scope.functions.indexOf(name) > -1 || scope.var.indexOf(name) > -1;
+        scope.lexical.push(name);
+        if (this.inModule && scope.flags & SCOPE_TOP) {
+          delete this.undefinedExports[name];
+        }
+      } else if (bindingType === BIND_SIMPLE_CATCH) {
+        var scope$1 = this.currentScope();
+        scope$1.lexical.push(name);
+      } else if (bindingType === BIND_FUNCTION) {
+        var scope$2 = this.currentScope();
+        if (this.treatFunctionsAsVar) {
+          redeclared = scope$2.lexical.indexOf(name) > -1;
+        } else {
+          redeclared = scope$2.lexical.indexOf(name) > -1 || scope$2.var.indexOf(name) > -1;
+        }
+        scope$2.functions.push(name);
+      } else {
+        for (var i = this.scopeStack.length - 1; i >= 0; --i) {
+          var scope$3 = this.scopeStack[i];
+          if (scope$3.lexical.indexOf(name) > -1 && !(scope$3.flags & SCOPE_SIMPLE_CATCH && scope$3.lexical[0] === name) || !this.treatFunctionsAsVarInScope(scope$3) && scope$3.functions.indexOf(name) > -1) {
+            redeclared = true;
+            break;
+          }
+          scope$3.var.push(name);
+          if (this.inModule && scope$3.flags & SCOPE_TOP) {
+            delete this.undefinedExports[name];
+          }
+          if (scope$3.flags & SCOPE_VAR) {
+            break;
+          }
+        }
+      }
+      if (redeclared) {
+        this.raiseRecoverable(pos, "Identifier '" + name + "' has already been declared");
+      }
+    };
+    pp$3.checkLocalExport = function(id) {
+      if (this.scopeStack[0].lexical.indexOf(id.name) === -1 && this.scopeStack[0].var.indexOf(id.name) === -1) {
+        this.undefinedExports[id.name] = id;
+      }
+    };
+    pp$3.currentScope = function() {
+      return this.scopeStack[this.scopeStack.length - 1];
+    };
+    pp$3.currentVarScope = function() {
+      for (var i = this.scopeStack.length - 1; ; i--) {
+        var scope = this.scopeStack[i];
+        if (scope.flags & (SCOPE_VAR | SCOPE_CLASS_FIELD_INIT | SCOPE_CLASS_STATIC_BLOCK)) {
+          return scope;
+        }
+      }
+    };
+    pp$3.currentThisScope = function() {
+      for (var i = this.scopeStack.length - 1; ; i--) {
+        var scope = this.scopeStack[i];
+        if (scope.flags & (SCOPE_VAR | SCOPE_CLASS_FIELD_INIT | SCOPE_CLASS_STATIC_BLOCK) && !(scope.flags & SCOPE_ARROW)) {
+          return scope;
+        }
+      }
+    };
+    Node = function Node2(parser, pos, loc) {
+      this.type = "";
+      this.start = pos;
+      this.end = 0;
+      if (parser.options.locations) {
+        this.loc = new SourceLocation(parser, loc);
+      }
+      if (parser.options.directSourceFile) {
+        this.sourceFile = parser.options.directSourceFile;
+      }
+      if (parser.options.ranges) {
+        this.range = [pos, 0];
+      }
+    };
+    pp$2 = Parser.prototype;
+    pp$2.startNode = function() {
+      return new Node(this, this.start, this.startLoc);
+    };
+    pp$2.startNodeAt = function(pos, loc) {
+      return new Node(this, pos, loc);
+    };
+    pp$2.finishNode = function(node, type) {
+      return finishNodeAt.call(this, node, type, this.lastTokEnd, this.lastTokEndLoc);
+    };
+    pp$2.finishNodeAt = function(node, type, pos, loc) {
+      return finishNodeAt.call(this, node, type, pos, loc);
+    };
+    pp$2.copyNode = function(node) {
+      var newNode = new Node(this, node.start, this.startLoc);
+      for (var prop in node) {
+        newNode[prop] = node[prop];
+      }
+      return newNode;
+    };
+    scriptValuesAddedInUnicode = "Berf Beria_Erfe Gara Garay Gukh Gurung_Khema Hrkt Katakana_Or_Hiragana Kawi Kirat_Rai Krai Nag_Mundari Nagm Ol_Onal Onao Sidetic Sidt Sunu Sunuwar Tai_Yo Tayo Todhri Todr Tolong_Siki Tols Tulu_Tigalari Tutg Unknown Zzzz";
+    ecma9BinaryProperties = "ASCII ASCII_Hex_Digit AHex Alphabetic Alpha Any Assigned Bidi_Control Bidi_C Bidi_Mirrored Bidi_M Case_Ignorable CI Cased Changes_When_Casefolded CWCF Changes_When_Casemapped CWCM Changes_When_Lowercased CWL Changes_When_NFKC_Casefolded CWKCF Changes_When_Titlecased CWT Changes_When_Uppercased CWU Dash Default_Ignorable_Code_Point DI Deprecated Dep Diacritic Dia Emoji Emoji_Component Emoji_Modifier Emoji_Modifier_Base Emoji_Presentation Extender Ext Grapheme_Base Gr_Base Grapheme_Extend Gr_Ext Hex_Digit Hex IDS_Binary_Operator IDSB IDS_Trinary_Operator IDST ID_Continue IDC ID_Start IDS Ideographic Ideo Join_Control Join_C Logical_Order_Exception LOE Lowercase Lower Math Noncharacter_Code_Point NChar Pattern_Syntax Pat_Syn Pattern_White_Space Pat_WS Quotation_Mark QMark Radical Regional_Indicator RI Sentence_Terminal STerm Soft_Dotted SD Terminal_Punctuation Term Unified_Ideograph UIdeo Uppercase Upper Variation_Selector VS White_Space space XID_Continue XIDC XID_Start XIDS";
+    ecma10BinaryProperties = ecma9BinaryProperties + " Extended_Pictographic";
+    ecma11BinaryProperties = ecma10BinaryProperties;
+    ecma12BinaryProperties = ecma11BinaryProperties + " EBase EComp EMod EPres ExtPict";
+    ecma13BinaryProperties = ecma12BinaryProperties;
+    ecma14BinaryProperties = ecma13BinaryProperties;
+    unicodeBinaryProperties = {
+      9: ecma9BinaryProperties,
+      10: ecma10BinaryProperties,
+      11: ecma11BinaryProperties,
+      12: ecma12BinaryProperties,
+      13: ecma13BinaryProperties,
+      14: ecma14BinaryProperties
+    };
+    ecma14BinaryPropertiesOfStrings = "Basic_Emoji Emoji_Keycap_Sequence RGI_Emoji_Modifier_Sequence RGI_Emoji_Flag_Sequence RGI_Emoji_Tag_Sequence RGI_Emoji_ZWJ_Sequence RGI_Emoji";
+    unicodeBinaryPropertiesOfStrings = {
+      9: "",
+      10: "",
+      11: "",
+      12: "",
+      13: "",
+      14: ecma14BinaryPropertiesOfStrings
+    };
+    unicodeGeneralCategoryValues = "Cased_Letter LC Close_Punctuation Pe Connector_Punctuation Pc Control Cc cntrl Currency_Symbol Sc Dash_Punctuation Pd Decimal_Number Nd digit Enclosing_Mark Me Final_Punctuation Pf Format Cf Initial_Punctuation Pi Letter L Letter_Number Nl Line_Separator Zl Lowercase_Letter Ll Mark M Combining_Mark Math_Symbol Sm Modifier_Letter Lm Modifier_Symbol Sk Nonspacing_Mark Mn Number N Open_Punctuation Ps Other C Other_Letter Lo Other_Number No Other_Punctuation Po Other_Symbol So Paragraph_Separator Zp Private_Use Co Punctuation P punct Separator Z Space_Separator Zs Spacing_Mark Mc Surrogate Cs Symbol S Titlecase_Letter Lt Unassigned Cn Uppercase_Letter Lu";
+    ecma9ScriptValues = "Adlam Adlm Ahom Anatolian_Hieroglyphs Hluw Arabic Arab Armenian Armn Avestan Avst Balinese Bali Bamum Bamu Bassa_Vah Bass Batak Batk Bengali Beng Bhaiksuki Bhks Bopomofo Bopo Brahmi Brah Braille Brai Buginese Bugi Buhid Buhd Canadian_Aboriginal Cans Carian Cari Caucasian_Albanian Aghb Chakma Cakm Cham Cham Cherokee Cher Common Zyyy Coptic Copt Qaac Cuneiform Xsux Cypriot Cprt Cyrillic Cyrl Deseret Dsrt Devanagari Deva Duployan Dupl Egyptian_Hieroglyphs Egyp Elbasan Elba Ethiopic Ethi Georgian Geor Glagolitic Glag Gothic Goth Grantha Gran Greek Grek Gujarati Gujr Gurmukhi Guru Han Hani Hangul Hang Hanunoo Hano Hatran Hatr Hebrew Hebr Hiragana Hira Imperial_Aramaic Armi Inherited Zinh Qaai Inscriptional_Pahlavi Phli Inscriptional_Parthian Prti Javanese Java Kaithi Kthi Kannada Knda Katakana Kana Kayah_Li Kali Kharoshthi Khar Khmer Khmr Khojki Khoj Khudawadi Sind Lao Laoo Latin Latn Lepcha Lepc Limbu Limb Linear_A Lina Linear_B Linb Lisu Lisu Lycian Lyci Lydian Lydi Mahajani Mahj Malayalam Mlym Mandaic Mand Manichaean Mani Marchen Marc Masaram_Gondi Gonm Meetei_Mayek Mtei Mende_Kikakui Mend Meroitic_Cursive Merc Meroitic_Hieroglyphs Mero Miao Plrd Modi Mongolian Mong Mro Mroo Multani Mult Myanmar Mymr Nabataean Nbat New_Tai_Lue Talu Newa Newa Nko Nkoo Nushu Nshu Ogham Ogam Ol_Chiki Olck Old_Hungarian Hung Old_Italic Ital Old_North_Arabian Narb Old_Permic Perm Old_Persian Xpeo Old_South_Arabian Sarb Old_Turkic Orkh Oriya Orya Osage Osge Osmanya Osma Pahawh_Hmong Hmng Palmyrene Palm Pau_Cin_Hau Pauc Phags_Pa Phag Phoenician Phnx Psalter_Pahlavi Phlp Rejang Rjng Runic Runr Samaritan Samr Saurashtra Saur Sharada Shrd Shavian Shaw Siddham Sidd SignWriting Sgnw Sinhala Sinh Sora_Sompeng Sora Soyombo Soyo Sundanese Sund Syloti_Nagri Sylo Syriac Syrc Tagalog Tglg Tagbanwa Tagb Tai_Le Tale Tai_Tham Lana Tai_Viet Tavt Takri Takr Tamil Taml Tangut Tang Telugu Telu Thaana Thaa Thai Thai Tibetan Tibt Tifinagh Tfng Tirhuta Tirh Ugaritic Ugar Vai Vaii Warang_Citi Wara Yi Yiii Zanabazar_Square Zanb";
+    ecma10ScriptValues = ecma9ScriptValues + " Dogra Dogr Gunjala_Gondi Gong Hanifi_Rohingya Rohg Makasar Maka Medefaidrin Medf Old_Sogdian Sogo Sogdian Sogd";
+    ecma11ScriptValues = ecma10ScriptValues + " Elymaic Elym Nandinagari Nand Nyiakeng_Puachue_Hmong Hmnp Wancho Wcho";
+    ecma12ScriptValues = ecma11ScriptValues + " Chorasmian Chrs Diak Dives_Akuru Khitan_Small_Script Kits Yezi Yezidi";
+    ecma13ScriptValues = ecma12ScriptValues + " Cypro_Minoan Cpmn Old_Uyghur Ougr Tangsa Tnsa Toto Vithkuqi Vith";
+    ecma14ScriptValues = ecma13ScriptValues + " " + scriptValuesAddedInUnicode;
+    unicodeScriptValues = {
+      9: ecma9ScriptValues,
+      10: ecma10ScriptValues,
+      11: ecma11ScriptValues,
+      12: ecma12ScriptValues,
+      13: ecma13ScriptValues,
+      14: ecma14ScriptValues
+    };
+    data = {};
+    for (i = 0, list = [9, 10, 11, 12, 13, 14]; i < list.length; i += 1) {
+      ecmaVersion = list[i];
+      buildUnicodeData(ecmaVersion);
+    }
+    pp$1 = Parser.prototype;
+    BranchID = function BranchID2(parent, base) {
+      this.parent = parent;
+      this.base = base || this;
+    };
+    BranchID.prototype.separatedFrom = function separatedFrom(alt) {
+      for (var self = this; self; self = self.parent) {
+        for (var other = alt; other; other = other.parent) {
+          if (self.base === other.base && self !== other) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+    BranchID.prototype.sibling = function sibling() {
+      return new BranchID(this.parent, this.base);
+    };
+    RegExpValidationState = function RegExpValidationState2(parser) {
+      this.parser = parser;
+      this.validFlags = "gim" + (parser.options.ecmaVersion >= 6 ? "uy" : "") + (parser.options.ecmaVersion >= 9 ? "s" : "") + (parser.options.ecmaVersion >= 13 ? "d" : "") + (parser.options.ecmaVersion >= 15 ? "v" : "");
+      this.unicodeProperties = data[parser.options.ecmaVersion >= 14 ? 14 : parser.options.ecmaVersion];
+      this.source = "";
+      this.flags = "";
+      this.start = 0;
+      this.switchU = false;
+      this.switchV = false;
+      this.switchN = false;
+      this.pos = 0;
+      this.lastIntValue = 0;
+      this.lastStringValue = "";
+      this.lastAssertionIsQuantifiable = false;
+      this.numCapturingParens = 0;
+      this.maxBackReference = 0;
+      this.groupNames = /* @__PURE__ */ Object.create(null);
+      this.backReferenceNames = [];
+      this.branchID = null;
+    };
+    RegExpValidationState.prototype.reset = function reset(start, pattern, flags) {
+      var unicodeSets = flags.indexOf("v") !== -1;
+      var unicode = flags.indexOf("u") !== -1;
+      this.start = start | 0;
+      this.source = pattern + "";
+      this.flags = flags;
+      if (unicodeSets && this.parser.options.ecmaVersion >= 15) {
+        this.switchU = true;
+        this.switchV = true;
+        this.switchN = true;
+      } else {
+        this.switchU = unicode && this.parser.options.ecmaVersion >= 6;
+        this.switchV = false;
+        this.switchN = unicode && this.parser.options.ecmaVersion >= 9;
+      }
+    };
+    RegExpValidationState.prototype.raise = function raise(message) {
+      this.parser.raiseRecoverable(this.start, "Invalid regular expression: /" + this.source + "/: " + message);
+    };
+    RegExpValidationState.prototype.at = function at(i, forceU) {
+      if (forceU === void 0) forceU = false;
+      var s = this.source;
+      var l = s.length;
+      if (i >= l) {
+        return -1;
+      }
+      var c = s.charCodeAt(i);
+      if (!(forceU || this.switchU) || c <= 55295 || c >= 57344 || i + 1 >= l) {
+        return c;
+      }
+      var next = s.charCodeAt(i + 1);
+      return next >= 56320 && next <= 57343 ? (c << 10) + next - 56613888 : c;
+    };
+    RegExpValidationState.prototype.nextIndex = function nextIndex(i, forceU) {
+      if (forceU === void 0) forceU = false;
+      var s = this.source;
+      var l = s.length;
+      if (i >= l) {
+        return l;
+      }
+      var c = s.charCodeAt(i), next;
+      if (!(forceU || this.switchU) || c <= 55295 || c >= 57344 || i + 1 >= l || (next = s.charCodeAt(i + 1)) < 56320 || next > 57343) {
+        return i + 1;
+      }
+      return i + 2;
+    };
+    RegExpValidationState.prototype.current = function current(forceU) {
+      if (forceU === void 0) forceU = false;
+      return this.at(this.pos, forceU);
+    };
+    RegExpValidationState.prototype.lookahead = function lookahead(forceU) {
+      if (forceU === void 0) forceU = false;
+      return this.at(this.nextIndex(this.pos, forceU), forceU);
+    };
+    RegExpValidationState.prototype.advance = function advance(forceU) {
+      if (forceU === void 0) forceU = false;
+      this.pos = this.nextIndex(this.pos, forceU);
+    };
+    RegExpValidationState.prototype.eat = function eat(ch, forceU) {
+      if (forceU === void 0) forceU = false;
+      if (this.current(forceU) === ch) {
+        this.advance(forceU);
+        return true;
+      }
+      return false;
+    };
+    RegExpValidationState.prototype.eatChars = function eatChars(chs, forceU) {
+      if (forceU === void 0) forceU = false;
+      var pos = this.pos;
+      for (var i = 0, list = chs; i < list.length; i += 1) {
+        var ch = list[i];
+        var current2 = this.at(pos, forceU);
+        if (current2 === -1 || current2 !== ch) {
+          return false;
+        }
+        pos = this.nextIndex(pos, forceU);
+      }
+      this.pos = pos;
+      return true;
+    };
+    pp$1.validateRegExpFlags = function(state) {
+      var validFlags = state.validFlags;
+      var flags = state.flags;
+      var u = false;
+      var v = false;
+      for (var i = 0; i < flags.length; i++) {
+        var flag = flags.charAt(i);
+        if (validFlags.indexOf(flag) === -1) {
+          this.raise(state.start, "Invalid regular expression flag");
+        }
+        if (flags.indexOf(flag, i + 1) > -1) {
+          this.raise(state.start, "Duplicate regular expression flag");
+        }
+        if (flag === "u") {
+          u = true;
+        }
+        if (flag === "v") {
+          v = true;
+        }
+      }
+      if (this.options.ecmaVersion >= 15 && u && v) {
+        this.raise(state.start, "Invalid regular expression flag");
+      }
+    };
+    pp$1.validateRegExpPattern = function(state) {
+      this.regexp_pattern(state);
+      if (!state.switchN && this.options.ecmaVersion >= 9 && hasProp(state.groupNames)) {
+        state.switchN = true;
+        this.regexp_pattern(state);
+      }
+    };
+    pp$1.regexp_pattern = function(state) {
+      state.pos = 0;
+      state.lastIntValue = 0;
+      state.lastStringValue = "";
+      state.lastAssertionIsQuantifiable = false;
+      state.numCapturingParens = 0;
+      state.maxBackReference = 0;
+      state.groupNames = /* @__PURE__ */ Object.create(null);
+      state.backReferenceNames.length = 0;
+      state.branchID = null;
+      this.regexp_disjunction(state);
+      if (state.pos !== state.source.length) {
+        if (state.eat(
+          41
+          /* ) */
+        )) {
+          state.raise("Unmatched ')'");
+        }
+        if (state.eat(
+          93
+          /* ] */
+        ) || state.eat(
+          125
+          /* } */
+        )) {
+          state.raise("Lone quantifier brackets");
+        }
+      }
+      if (state.maxBackReference > state.numCapturingParens) {
+        state.raise("Invalid escape");
+      }
+      for (var i = 0, list = state.backReferenceNames; i < list.length; i += 1) {
+        var name = list[i];
+        if (!state.groupNames[name]) {
+          state.raise("Invalid named capture referenced");
+        }
+      }
+    };
+    pp$1.regexp_disjunction = function(state) {
+      var trackDisjunction = this.options.ecmaVersion >= 16;
+      if (trackDisjunction) {
+        state.branchID = new BranchID(state.branchID, null);
+      }
+      this.regexp_alternative(state);
+      while (state.eat(
+        124
+        /* | */
+      )) {
+        if (trackDisjunction) {
+          state.branchID = state.branchID.sibling();
+        }
+        this.regexp_alternative(state);
+      }
+      if (trackDisjunction) {
+        state.branchID = state.branchID.parent;
+      }
+      if (this.regexp_eatQuantifier(state, true)) {
+        state.raise("Nothing to repeat");
+      }
+      if (state.eat(
+        123
+        /* { */
+      )) {
+        state.raise("Lone quantifier brackets");
+      }
+    };
+    pp$1.regexp_alternative = function(state) {
+      while (state.pos < state.source.length && this.regexp_eatTerm(state)) {
+      }
+    };
+    pp$1.regexp_eatTerm = function(state) {
+      if (this.regexp_eatAssertion(state)) {
+        if (state.lastAssertionIsQuantifiable && this.regexp_eatQuantifier(state)) {
+          if (state.switchU) {
+            state.raise("Invalid quantifier");
+          }
+        }
+        return true;
+      }
+      if (state.switchU ? this.regexp_eatAtom(state) : this.regexp_eatExtendedAtom(state)) {
+        this.regexp_eatQuantifier(state);
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatAssertion = function(state) {
+      var start = state.pos;
+      state.lastAssertionIsQuantifiable = false;
+      if (state.eat(
+        94
+        /* ^ */
+      ) || state.eat(
+        36
+        /* $ */
+      )) {
+        return true;
+      }
+      if (state.eat(
+        92
+        /* \ */
+      )) {
+        if (state.eat(
+          66
+          /* B */
+        ) || state.eat(
+          98
+          /* b */
+        )) {
+          return true;
+        }
+        state.pos = start;
+      }
+      if (state.eat(
+        40
+        /* ( */
+      ) && state.eat(
+        63
+        /* ? */
+      )) {
+        var lookbehind = false;
+        if (this.options.ecmaVersion >= 9) {
+          lookbehind = state.eat(
+            60
+            /* < */
+          );
+        }
+        if (state.eat(
+          61
+          /* = */
+        ) || state.eat(
+          33
+          /* ! */
+        )) {
+          this.regexp_disjunction(state);
+          if (!state.eat(
+            41
+            /* ) */
+          )) {
+            state.raise("Unterminated group");
+          }
+          state.lastAssertionIsQuantifiable = !lookbehind;
+          return true;
+        }
+      }
+      state.pos = start;
+      return false;
+    };
+    pp$1.regexp_eatQuantifier = function(state, noError) {
+      if (noError === void 0) noError = false;
+      if (this.regexp_eatQuantifierPrefix(state, noError)) {
+        state.eat(
+          63
+          /* ? */
+        );
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatQuantifierPrefix = function(state, noError) {
+      return state.eat(
+        42
+        /* * */
+      ) || state.eat(
+        43
+        /* + */
+      ) || state.eat(
+        63
+        /* ? */
+      ) || this.regexp_eatBracedQuantifier(state, noError);
+    };
+    pp$1.regexp_eatBracedQuantifier = function(state, noError) {
+      var start = state.pos;
+      if (state.eat(
+        123
+        /* { */
+      )) {
+        var min = 0, max = -1;
+        if (this.regexp_eatDecimalDigits(state)) {
+          min = state.lastIntValue;
+          if (state.eat(
+            44
+            /* , */
+          ) && this.regexp_eatDecimalDigits(state)) {
+            max = state.lastIntValue;
+          }
+          if (state.eat(
+            125
+            /* } */
+          )) {
+            if (max !== -1 && max < min && !noError) {
+              state.raise("numbers out of order in {} quantifier");
+            }
+            return true;
+          }
+        }
+        if (state.switchU && !noError) {
+          state.raise("Incomplete quantifier");
+        }
+        state.pos = start;
+      }
+      return false;
+    };
+    pp$1.regexp_eatAtom = function(state) {
+      return this.regexp_eatPatternCharacters(state) || state.eat(
+        46
+        /* . */
+      ) || this.regexp_eatReverseSolidusAtomEscape(state) || this.regexp_eatCharacterClass(state) || this.regexp_eatUncapturingGroup(state) || this.regexp_eatCapturingGroup(state);
+    };
+    pp$1.regexp_eatReverseSolidusAtomEscape = function(state) {
+      var start = state.pos;
+      if (state.eat(
+        92
+        /* \ */
+      )) {
+        if (this.regexp_eatAtomEscape(state)) {
+          return true;
+        }
+        state.pos = start;
+      }
+      return false;
+    };
+    pp$1.regexp_eatUncapturingGroup = function(state) {
+      var start = state.pos;
+      if (state.eat(
+        40
+        /* ( */
+      )) {
+        if (state.eat(
+          63
+          /* ? */
+        )) {
+          if (this.options.ecmaVersion >= 16) {
+            var addModifiers = this.regexp_eatModifiers(state);
+            var hasHyphen = state.eat(
+              45
+              /* - */
+            );
+            if (addModifiers || hasHyphen) {
+              for (var i = 0; i < addModifiers.length; i++) {
+                var modifier = addModifiers.charAt(i);
+                if (addModifiers.indexOf(modifier, i + 1) > -1) {
+                  state.raise("Duplicate regular expression modifiers");
+                }
+              }
+              if (hasHyphen) {
+                var removeModifiers = this.regexp_eatModifiers(state);
+                if (!addModifiers && !removeModifiers && state.current() === 58) {
+                  state.raise("Invalid regular expression modifiers");
+                }
+                for (var i$1 = 0; i$1 < removeModifiers.length; i$1++) {
+                  var modifier$1 = removeModifiers.charAt(i$1);
+                  if (removeModifiers.indexOf(modifier$1, i$1 + 1) > -1 || addModifiers.indexOf(modifier$1) > -1) {
+                    state.raise("Duplicate regular expression modifiers");
+                  }
+                }
+              }
+            }
+          }
+          if (state.eat(
+            58
+            /* : */
+          )) {
+            this.regexp_disjunction(state);
+            if (state.eat(
+              41
+              /* ) */
+            )) {
+              return true;
+            }
+            state.raise("Unterminated group");
+          }
+        }
+        state.pos = start;
+      }
+      return false;
+    };
+    pp$1.regexp_eatCapturingGroup = function(state) {
+      if (state.eat(
+        40
+        /* ( */
+      )) {
+        if (this.options.ecmaVersion >= 9) {
+          this.regexp_groupSpecifier(state);
+        } else if (state.current() === 63) {
+          state.raise("Invalid group");
+        }
+        this.regexp_disjunction(state);
+        if (state.eat(
+          41
+          /* ) */
+        )) {
+          state.numCapturingParens += 1;
+          return true;
+        }
+        state.raise("Unterminated group");
+      }
+      return false;
+    };
+    pp$1.regexp_eatModifiers = function(state) {
+      var modifiers = "";
+      var ch = 0;
+      while ((ch = state.current()) !== -1 && isRegularExpressionModifier(ch)) {
+        modifiers += codePointToString(ch);
+        state.advance();
+      }
+      return modifiers;
+    };
+    pp$1.regexp_eatExtendedAtom = function(state) {
+      return state.eat(
+        46
+        /* . */
+      ) || this.regexp_eatReverseSolidusAtomEscape(state) || this.regexp_eatCharacterClass(state) || this.regexp_eatUncapturingGroup(state) || this.regexp_eatCapturingGroup(state) || this.regexp_eatInvalidBracedQuantifier(state) || this.regexp_eatExtendedPatternCharacter(state);
+    };
+    pp$1.regexp_eatInvalidBracedQuantifier = function(state) {
+      if (this.regexp_eatBracedQuantifier(state, true)) {
+        state.raise("Nothing to repeat");
+      }
+      return false;
+    };
+    pp$1.regexp_eatSyntaxCharacter = function(state) {
+      var ch = state.current();
+      if (isSyntaxCharacter(ch)) {
+        state.lastIntValue = ch;
+        state.advance();
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatPatternCharacters = function(state) {
+      var start = state.pos;
+      var ch = 0;
+      while ((ch = state.current()) !== -1 && !isSyntaxCharacter(ch)) {
+        state.advance();
+      }
+      return state.pos !== start;
+    };
+    pp$1.regexp_eatExtendedPatternCharacter = function(state) {
+      var ch = state.current();
+      if (ch !== -1 && ch !== 36 && !(ch >= 40 && ch <= 43) && ch !== 46 && ch !== 63 && ch !== 91 && ch !== 94 && ch !== 124) {
+        state.advance();
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_groupSpecifier = function(state) {
+      if (state.eat(
+        63
+        /* ? */
+      )) {
+        if (!this.regexp_eatGroupName(state)) {
+          state.raise("Invalid group");
+        }
+        var trackDisjunction = this.options.ecmaVersion >= 16;
+        var known = state.groupNames[state.lastStringValue];
+        if (known) {
+          if (trackDisjunction) {
+            for (var i = 0, list = known; i < list.length; i += 1) {
+              var altID = list[i];
+              if (!altID.separatedFrom(state.branchID)) {
+                state.raise("Duplicate capture group name");
+              }
+            }
+          } else {
+            state.raise("Duplicate capture group name");
+          }
+        }
+        if (trackDisjunction) {
+          (known || (state.groupNames[state.lastStringValue] = [])).push(state.branchID);
+        } else {
+          state.groupNames[state.lastStringValue] = true;
+        }
+      }
+    };
+    pp$1.regexp_eatGroupName = function(state) {
+      state.lastStringValue = "";
+      if (state.eat(
+        60
+        /* < */
+      )) {
+        if (this.regexp_eatRegExpIdentifierName(state) && state.eat(
+          62
+          /* > */
+        )) {
+          return true;
+        }
+        state.raise("Invalid capture group name");
+      }
+      return false;
+    };
+    pp$1.regexp_eatRegExpIdentifierName = function(state) {
+      state.lastStringValue = "";
+      if (this.regexp_eatRegExpIdentifierStart(state)) {
+        state.lastStringValue += codePointToString(state.lastIntValue);
+        while (this.regexp_eatRegExpIdentifierPart(state)) {
+          state.lastStringValue += codePointToString(state.lastIntValue);
+        }
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatRegExpIdentifierStart = function(state) {
+      var start = state.pos;
+      var forceU = this.options.ecmaVersion >= 11;
+      var ch = state.current(forceU);
+      state.advance(forceU);
+      if (ch === 92 && this.regexp_eatRegExpUnicodeEscapeSequence(state, forceU)) {
+        ch = state.lastIntValue;
+      }
+      if (isRegExpIdentifierStart(ch)) {
+        state.lastIntValue = ch;
+        return true;
+      }
+      state.pos = start;
+      return false;
+    };
+    pp$1.regexp_eatRegExpIdentifierPart = function(state) {
+      var start = state.pos;
+      var forceU = this.options.ecmaVersion >= 11;
+      var ch = state.current(forceU);
+      state.advance(forceU);
+      if (ch === 92 && this.regexp_eatRegExpUnicodeEscapeSequence(state, forceU)) {
+        ch = state.lastIntValue;
+      }
+      if (isRegExpIdentifierPart(ch)) {
+        state.lastIntValue = ch;
+        return true;
+      }
+      state.pos = start;
+      return false;
+    };
+    pp$1.regexp_eatAtomEscape = function(state) {
+      if (this.regexp_eatBackReference(state) || this.regexp_eatCharacterClassEscape(state) || this.regexp_eatCharacterEscape(state) || state.switchN && this.regexp_eatKGroupName(state)) {
+        return true;
+      }
+      if (state.switchU) {
+        if (state.current() === 99) {
+          state.raise("Invalid unicode escape");
+        }
+        state.raise("Invalid escape");
+      }
+      return false;
+    };
+    pp$1.regexp_eatBackReference = function(state) {
+      var start = state.pos;
+      if (this.regexp_eatDecimalEscape(state)) {
+        var n = state.lastIntValue;
+        if (state.switchU) {
+          if (n > state.maxBackReference) {
+            state.maxBackReference = n;
+          }
+          return true;
+        }
+        if (n <= state.numCapturingParens) {
+          return true;
+        }
+        state.pos = start;
+      }
+      return false;
+    };
+    pp$1.regexp_eatKGroupName = function(state) {
+      if (state.eat(
+        107
+        /* k */
+      )) {
+        if (this.regexp_eatGroupName(state)) {
+          state.backReferenceNames.push(state.lastStringValue);
+          return true;
+        }
+        state.raise("Invalid named reference");
+      }
+      return false;
+    };
+    pp$1.regexp_eatCharacterEscape = function(state) {
+      return this.regexp_eatControlEscape(state) || this.regexp_eatCControlLetter(state) || this.regexp_eatZero(state) || this.regexp_eatHexEscapeSequence(state) || this.regexp_eatRegExpUnicodeEscapeSequence(state, false) || !state.switchU && this.regexp_eatLegacyOctalEscapeSequence(state) || this.regexp_eatIdentityEscape(state);
+    };
+    pp$1.regexp_eatCControlLetter = function(state) {
+      var start = state.pos;
+      if (state.eat(
+        99
+        /* c */
+      )) {
+        if (this.regexp_eatControlLetter(state)) {
+          return true;
+        }
+        state.pos = start;
+      }
+      return false;
+    };
+    pp$1.regexp_eatZero = function(state) {
+      if (state.current() === 48 && !isDecimalDigit(state.lookahead())) {
+        state.lastIntValue = 0;
+        state.advance();
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatControlEscape = function(state) {
+      var ch = state.current();
+      if (ch === 116) {
+        state.lastIntValue = 9;
+        state.advance();
+        return true;
+      }
+      if (ch === 110) {
+        state.lastIntValue = 10;
+        state.advance();
+        return true;
+      }
+      if (ch === 118) {
+        state.lastIntValue = 11;
+        state.advance();
+        return true;
+      }
+      if (ch === 102) {
+        state.lastIntValue = 12;
+        state.advance();
+        return true;
+      }
+      if (ch === 114) {
+        state.lastIntValue = 13;
+        state.advance();
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatControlLetter = function(state) {
+      var ch = state.current();
+      if (isControlLetter(ch)) {
+        state.lastIntValue = ch % 32;
+        state.advance();
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatRegExpUnicodeEscapeSequence = function(state, forceU) {
+      if (forceU === void 0) forceU = false;
+      var start = state.pos;
+      var switchU = forceU || state.switchU;
+      if (state.eat(
+        117
+        /* u */
+      )) {
+        if (this.regexp_eatFixedHexDigits(state, 4)) {
+          var lead = state.lastIntValue;
+          if (switchU && lead >= 55296 && lead <= 56319) {
+            var leadSurrogateEnd = state.pos;
+            if (state.eat(
+              92
+              /* \ */
+            ) && state.eat(
+              117
+              /* u */
+            ) && this.regexp_eatFixedHexDigits(state, 4)) {
+              var trail = state.lastIntValue;
+              if (trail >= 56320 && trail <= 57343) {
+                state.lastIntValue = (lead - 55296) * 1024 + (trail - 56320) + 65536;
+                return true;
+              }
+            }
+            state.pos = leadSurrogateEnd;
+            state.lastIntValue = lead;
+          }
+          return true;
+        }
+        if (switchU && state.eat(
+          123
+          /* { */
+        ) && this.regexp_eatHexDigits(state) && state.eat(
+          125
+          /* } */
+        ) && isValidUnicode(state.lastIntValue)) {
+          return true;
+        }
+        if (switchU) {
+          state.raise("Invalid unicode escape");
+        }
+        state.pos = start;
+      }
+      return false;
+    };
+    pp$1.regexp_eatIdentityEscape = function(state) {
+      if (state.switchU) {
+        if (this.regexp_eatSyntaxCharacter(state)) {
+          return true;
+        }
+        if (state.eat(
+          47
+          /* / */
+        )) {
+          state.lastIntValue = 47;
+          return true;
+        }
+        return false;
+      }
+      var ch = state.current();
+      if (ch !== 99 && (!state.switchN || ch !== 107)) {
+        state.lastIntValue = ch;
+        state.advance();
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatDecimalEscape = function(state) {
+      state.lastIntValue = 0;
+      var ch = state.current();
+      if (ch >= 49 && ch <= 57) {
+        do {
+          state.lastIntValue = 10 * state.lastIntValue + (ch - 48);
+          state.advance();
+        } while ((ch = state.current()) >= 48 && ch <= 57);
+        return true;
+      }
+      return false;
+    };
+    CharSetNone = 0;
+    CharSetOk = 1;
+    CharSetString = 2;
+    pp$1.regexp_eatCharacterClassEscape = function(state) {
+      var ch = state.current();
+      if (isCharacterClassEscape(ch)) {
+        state.lastIntValue = -1;
+        state.advance();
+        return CharSetOk;
+      }
+      var negate = false;
+      if (state.switchU && this.options.ecmaVersion >= 9 && ((negate = ch === 80) || ch === 112)) {
+        state.lastIntValue = -1;
+        state.advance();
+        var result;
+        if (state.eat(
+          123
+          /* { */
+        ) && (result = this.regexp_eatUnicodePropertyValueExpression(state)) && state.eat(
+          125
+          /* } */
+        )) {
+          if (negate && result === CharSetString) {
+            state.raise("Invalid property name");
+          }
+          return result;
+        }
+        state.raise("Invalid property name");
+      }
+      return CharSetNone;
+    };
+    pp$1.regexp_eatUnicodePropertyValueExpression = function(state) {
+      var start = state.pos;
+      if (this.regexp_eatUnicodePropertyName(state) && state.eat(
+        61
+        /* = */
+      )) {
+        var name = state.lastStringValue;
+        if (this.regexp_eatUnicodePropertyValue(state)) {
+          var value = state.lastStringValue;
+          this.regexp_validateUnicodePropertyNameAndValue(state, name, value);
+          return CharSetOk;
+        }
+      }
+      state.pos = start;
+      if (this.regexp_eatLoneUnicodePropertyNameOrValue(state)) {
+        var nameOrValue = state.lastStringValue;
+        return this.regexp_validateUnicodePropertyNameOrValue(state, nameOrValue);
+      }
+      return CharSetNone;
+    };
+    pp$1.regexp_validateUnicodePropertyNameAndValue = function(state, name, value) {
+      if (!hasOwn(state.unicodeProperties.nonBinary, name)) {
+        state.raise("Invalid property name");
+      }
+      if (!state.unicodeProperties.nonBinary[name].test(value)) {
+        state.raise("Invalid property value");
+      }
+    };
+    pp$1.regexp_validateUnicodePropertyNameOrValue = function(state, nameOrValue) {
+      if (state.unicodeProperties.binary.test(nameOrValue)) {
+        return CharSetOk;
+      }
+      if (state.switchV && state.unicodeProperties.binaryOfStrings.test(nameOrValue)) {
+        return CharSetString;
+      }
+      state.raise("Invalid property name");
+    };
+    pp$1.regexp_eatUnicodePropertyName = function(state) {
+      var ch = 0;
+      state.lastStringValue = "";
+      while (isUnicodePropertyNameCharacter(ch = state.current())) {
+        state.lastStringValue += codePointToString(ch);
+        state.advance();
+      }
+      return state.lastStringValue !== "";
+    };
+    pp$1.regexp_eatUnicodePropertyValue = function(state) {
+      var ch = 0;
+      state.lastStringValue = "";
+      while (isUnicodePropertyValueCharacter(ch = state.current())) {
+        state.lastStringValue += codePointToString(ch);
+        state.advance();
+      }
+      return state.lastStringValue !== "";
+    };
+    pp$1.regexp_eatLoneUnicodePropertyNameOrValue = function(state) {
+      return this.regexp_eatUnicodePropertyValue(state);
+    };
+    pp$1.regexp_eatCharacterClass = function(state) {
+      if (state.eat(
+        91
+        /* [ */
+      )) {
+        var negate = state.eat(
+          94
+          /* ^ */
+        );
+        var result = this.regexp_classContents(state);
+        if (!state.eat(
+          93
+          /* ] */
+        )) {
+          state.raise("Unterminated character class");
+        }
+        if (negate && result === CharSetString) {
+          state.raise("Negated character class may contain strings");
+        }
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_classContents = function(state) {
+      if (state.current() === 93) {
+        return CharSetOk;
+      }
+      if (state.switchV) {
+        return this.regexp_classSetExpression(state);
+      }
+      this.regexp_nonEmptyClassRanges(state);
+      return CharSetOk;
+    };
+    pp$1.regexp_nonEmptyClassRanges = function(state) {
+      while (this.regexp_eatClassAtom(state)) {
+        var left = state.lastIntValue;
+        if (state.eat(
+          45
+          /* - */
+        ) && this.regexp_eatClassAtom(state)) {
+          var right = state.lastIntValue;
+          if (state.switchU && (left === -1 || right === -1)) {
+            state.raise("Invalid character class");
+          }
+          if (left !== -1 && right !== -1 && left > right) {
+            state.raise("Range out of order in character class");
+          }
+        }
+      }
+    };
+    pp$1.regexp_eatClassAtom = function(state) {
+      var start = state.pos;
+      if (state.eat(
+        92
+        /* \ */
+      )) {
+        if (this.regexp_eatClassEscape(state)) {
+          return true;
+        }
+        if (state.switchU) {
+          var ch$1 = state.current();
+          if (ch$1 === 99 || isOctalDigit(ch$1)) {
+            state.raise("Invalid class escape");
+          }
+          state.raise("Invalid escape");
+        }
+        state.pos = start;
+      }
+      var ch = state.current();
+      if (ch !== 93) {
+        state.lastIntValue = ch;
+        state.advance();
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatClassEscape = function(state) {
+      var start = state.pos;
+      if (state.eat(
+        98
+        /* b */
+      )) {
+        state.lastIntValue = 8;
+        return true;
+      }
+      if (state.switchU && state.eat(
+        45
+        /* - */
+      )) {
+        state.lastIntValue = 45;
+        return true;
+      }
+      if (!state.switchU && state.eat(
+        99
+        /* c */
+      )) {
+        if (this.regexp_eatClassControlLetter(state)) {
+          return true;
+        }
+        state.pos = start;
+      }
+      return this.regexp_eatCharacterClassEscape(state) || this.regexp_eatCharacterEscape(state);
+    };
+    pp$1.regexp_classSetExpression = function(state) {
+      var result = CharSetOk, subResult;
+      if (this.regexp_eatClassSetRange(state)) ;
+      else if (subResult = this.regexp_eatClassSetOperand(state)) {
+        if (subResult === CharSetString) {
+          result = CharSetString;
+        }
+        var start = state.pos;
+        while (state.eatChars(
+          [38, 38]
+          /* && */
+        )) {
+          if (state.current() !== 38 && (subResult = this.regexp_eatClassSetOperand(state))) {
+            if (subResult !== CharSetString) {
+              result = CharSetOk;
+            }
+            continue;
+          }
+          state.raise("Invalid character in character class");
+        }
+        if (start !== state.pos) {
+          return result;
+        }
+        while (state.eatChars(
+          [45, 45]
+          /* -- */
+        )) {
+          if (this.regexp_eatClassSetOperand(state)) {
+            continue;
+          }
+          state.raise("Invalid character in character class");
+        }
+        if (start !== state.pos) {
+          return result;
+        }
+      } else {
+        state.raise("Invalid character in character class");
+      }
+      for (; ; ) {
+        if (this.regexp_eatClassSetRange(state)) {
+          continue;
+        }
+        subResult = this.regexp_eatClassSetOperand(state);
+        if (!subResult) {
+          return result;
+        }
+        if (subResult === CharSetString) {
+          result = CharSetString;
+        }
+      }
+    };
+    pp$1.regexp_eatClassSetRange = function(state) {
+      var start = state.pos;
+      if (this.regexp_eatClassSetCharacter(state)) {
+        var left = state.lastIntValue;
+        if (state.eat(
+          45
+          /* - */
+        ) && this.regexp_eatClassSetCharacter(state)) {
+          var right = state.lastIntValue;
+          if (left !== -1 && right !== -1 && left > right) {
+            state.raise("Range out of order in character class");
+          }
+          return true;
+        }
+        state.pos = start;
+      }
+      return false;
+    };
+    pp$1.regexp_eatClassSetOperand = function(state) {
+      if (this.regexp_eatClassSetCharacter(state)) {
+        return CharSetOk;
+      }
+      return this.regexp_eatClassStringDisjunction(state) || this.regexp_eatNestedClass(state);
+    };
+    pp$1.regexp_eatNestedClass = function(state) {
+      var start = state.pos;
+      if (state.eat(
+        91
+        /* [ */
+      )) {
+        var negate = state.eat(
+          94
+          /* ^ */
+        );
+        var result = this.regexp_classContents(state);
+        if (state.eat(
+          93
+          /* ] */
+        )) {
+          if (negate && result === CharSetString) {
+            state.raise("Negated character class may contain strings");
+          }
+          return result;
+        }
+        state.pos = start;
+      }
+      if (state.eat(
+        92
+        /* \ */
+      )) {
+        var result$1 = this.regexp_eatCharacterClassEscape(state);
+        if (result$1) {
+          return result$1;
+        }
+        state.pos = start;
+      }
+      return null;
+    };
+    pp$1.regexp_eatClassStringDisjunction = function(state) {
+      var start = state.pos;
+      if (state.eatChars(
+        [92, 113]
+        /* \q */
+      )) {
+        if (state.eat(
+          123
+          /* { */
+        )) {
+          var result = this.regexp_classStringDisjunctionContents(state);
+          if (state.eat(
+            125
+            /* } */
+          )) {
+            return result;
+          }
+        } else {
+          state.raise("Invalid escape");
+        }
+        state.pos = start;
+      }
+      return null;
+    };
+    pp$1.regexp_classStringDisjunctionContents = function(state) {
+      var result = this.regexp_classString(state);
+      while (state.eat(
+        124
+        /* | */
+      )) {
+        if (this.regexp_classString(state) === CharSetString) {
+          result = CharSetString;
+        }
+      }
+      return result;
+    };
+    pp$1.regexp_classString = function(state) {
+      var count = 0;
+      while (this.regexp_eatClassSetCharacter(state)) {
+        count++;
+      }
+      return count === 1 ? CharSetOk : CharSetString;
+    };
+    pp$1.regexp_eatClassSetCharacter = function(state) {
+      var start = state.pos;
+      if (state.eat(
+        92
+        /* \ */
+      )) {
+        if (this.regexp_eatCharacterEscape(state) || this.regexp_eatClassSetReservedPunctuator(state)) {
+          return true;
+        }
+        if (state.eat(
+          98
+          /* b */
+        )) {
+          state.lastIntValue = 8;
+          return true;
+        }
+        state.pos = start;
+        return false;
+      }
+      var ch = state.current();
+      if (ch < 0 || ch === state.lookahead() && isClassSetReservedDoublePunctuatorCharacter(ch)) {
+        return false;
+      }
+      if (isClassSetSyntaxCharacter(ch)) {
+        return false;
+      }
+      state.advance();
+      state.lastIntValue = ch;
+      return true;
+    };
+    pp$1.regexp_eatClassSetReservedPunctuator = function(state) {
+      var ch = state.current();
+      if (isClassSetReservedPunctuator(ch)) {
+        state.lastIntValue = ch;
+        state.advance();
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatClassControlLetter = function(state) {
+      var ch = state.current();
+      if (isDecimalDigit(ch) || ch === 95) {
+        state.lastIntValue = ch % 32;
+        state.advance();
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatHexEscapeSequence = function(state) {
+      var start = state.pos;
+      if (state.eat(
+        120
+        /* x */
+      )) {
+        if (this.regexp_eatFixedHexDigits(state, 2)) {
+          return true;
+        }
+        if (state.switchU) {
+          state.raise("Invalid escape");
+        }
+        state.pos = start;
+      }
+      return false;
+    };
+    pp$1.regexp_eatDecimalDigits = function(state) {
+      var start = state.pos;
+      var ch = 0;
+      state.lastIntValue = 0;
+      while (isDecimalDigit(ch = state.current())) {
+        state.lastIntValue = 10 * state.lastIntValue + (ch - 48);
+        state.advance();
+      }
+      return state.pos !== start;
+    };
+    pp$1.regexp_eatHexDigits = function(state) {
+      var start = state.pos;
+      var ch = 0;
+      state.lastIntValue = 0;
+      while (isHexDigit(ch = state.current())) {
+        state.lastIntValue = 16 * state.lastIntValue + hexToInt(ch);
+        state.advance();
+      }
+      return state.pos !== start;
+    };
+    pp$1.regexp_eatLegacyOctalEscapeSequence = function(state) {
+      if (this.regexp_eatOctalDigit(state)) {
+        var n1 = state.lastIntValue;
+        if (this.regexp_eatOctalDigit(state)) {
+          var n2 = state.lastIntValue;
+          if (n1 <= 3 && this.regexp_eatOctalDigit(state)) {
+            state.lastIntValue = n1 * 64 + n2 * 8 + state.lastIntValue;
+          } else {
+            state.lastIntValue = n1 * 8 + n2;
+          }
+        } else {
+          state.lastIntValue = n1;
+        }
+        return true;
+      }
+      return false;
+    };
+    pp$1.regexp_eatOctalDigit = function(state) {
+      var ch = state.current();
+      if (isOctalDigit(ch)) {
+        state.lastIntValue = ch - 48;
+        state.advance();
+        return true;
+      }
+      state.lastIntValue = 0;
+      return false;
+    };
+    pp$1.regexp_eatFixedHexDigits = function(state, length) {
+      var start = state.pos;
+      state.lastIntValue = 0;
+      for (var i = 0; i < length; ++i) {
+        var ch = state.current();
+        if (!isHexDigit(ch)) {
+          state.pos = start;
+          return false;
+        }
+        state.lastIntValue = 16 * state.lastIntValue + hexToInt(ch);
+        state.advance();
+      }
+      return true;
+    };
+    Token = function Token2(p) {
+      this.type = p.type;
+      this.value = p.value;
+      this.start = p.start;
+      this.end = p.end;
+      if (p.options.locations) {
+        this.loc = new SourceLocation(p, p.startLoc, p.endLoc);
+      }
+      if (p.options.ranges) {
+        this.range = [p.start, p.end];
+      }
+    };
+    pp = Parser.prototype;
+    pp.next = function(ignoreEscapeSequenceInKeyword) {
+      if (!ignoreEscapeSequenceInKeyword && this.type.keyword && this.containsEsc) {
+        this.raiseRecoverable(this.start, "Escape sequence in keyword " + this.type.keyword);
+      }
+      if (this.options.onToken) {
+        this.options.onToken(new Token(this));
+      }
+      this.lastTokEnd = this.end;
+      this.lastTokStart = this.start;
+      this.lastTokEndLoc = this.endLoc;
+      this.lastTokStartLoc = this.startLoc;
+      this.nextToken();
+    };
+    pp.getToken = function() {
+      this.next();
+      return new Token(this);
+    };
+    if (typeof Symbol !== "undefined") {
+      pp[Symbol.iterator] = function() {
+        var this$1$1 = this;
+        return {
+          next: function() {
+            var token = this$1$1.getToken();
+            return {
+              done: token.type === types$1.eof,
+              value: token
+            };
+          }
+        };
+      };
+    }
+    pp.nextToken = function() {
+      var curContext = this.curContext();
+      if (!curContext || !curContext.preserveSpace) {
+        this.skipSpace();
+      }
+      this.start = this.pos;
+      if (this.options.locations) {
+        this.startLoc = this.curPosition();
+      }
+      if (this.pos >= this.input.length) {
+        return this.finishToken(types$1.eof);
+      }
+      if (curContext.override) {
+        return curContext.override(this);
+      } else {
+        this.readToken(this.fullCharCodeAtPos());
+      }
+    };
+    pp.readToken = function(code) {
+      if (isIdentifierStart(code, this.options.ecmaVersion >= 6) || code === 92) {
+        return this.readWord();
+      }
+      return this.getTokenFromCode(code);
+    };
+    pp.fullCharCodeAt = function(pos) {
+      var code = this.input.charCodeAt(pos);
+      if (code <= 55295 || code >= 56320) {
+        return code;
+      }
+      var next = this.input.charCodeAt(pos + 1);
+      return next <= 56319 || next >= 57344 ? code : (code << 10) + next - 56613888;
+    };
+    pp.fullCharCodeAtPos = function() {
+      return this.fullCharCodeAt(this.pos);
+    };
+    pp.skipBlockComment = function() {
+      var startLoc = this.options.onComment && this.curPosition();
+      var start = this.pos, end = this.input.indexOf("*/", this.pos += 2);
+      if (end === -1) {
+        this.raise(this.pos - 2, "Unterminated comment");
+      }
+      this.pos = end + 2;
+      if (this.options.locations) {
+        for (var nextBreak = void 0, pos = start; (nextBreak = nextLineBreak(this.input, pos, this.pos)) > -1; ) {
+          ++this.curLine;
+          pos = this.lineStart = nextBreak;
+        }
+      }
+      if (this.options.onComment) {
+        this.options.onComment(
+          true,
+          this.input.slice(start + 2, end),
+          start,
+          this.pos,
+          startLoc,
+          this.curPosition()
+        );
+      }
+    };
+    pp.skipLineComment = function(startSkip) {
+      var start = this.pos;
+      var startLoc = this.options.onComment && this.curPosition();
+      var ch = this.input.charCodeAt(this.pos += startSkip);
+      while (this.pos < this.input.length && !isNewLine(ch)) {
+        ch = this.input.charCodeAt(++this.pos);
+      }
+      if (this.options.onComment) {
+        this.options.onComment(
+          false,
+          this.input.slice(start + startSkip, this.pos),
+          start,
+          this.pos,
+          startLoc,
+          this.curPosition()
+        );
+      }
+    };
+    pp.skipSpace = function() {
+      loop: while (this.pos < this.input.length) {
+        var ch = this.input.charCodeAt(this.pos);
+        switch (ch) {
+          case 32:
+          case 160:
+            ++this.pos;
+            break;
+          case 13:
+            if (this.input.charCodeAt(this.pos + 1) === 10) {
+              ++this.pos;
+            }
+          case 10:
+          case 8232:
+          case 8233:
+            ++this.pos;
+            if (this.options.locations) {
+              ++this.curLine;
+              this.lineStart = this.pos;
+            }
+            break;
+          case 47:
+            switch (this.input.charCodeAt(this.pos + 1)) {
+              case 42:
+                this.skipBlockComment();
+                break;
+              case 47:
+                this.skipLineComment(2);
+                break;
+              default:
+                break loop;
+            }
+            break;
+          default:
+            if (ch > 8 && ch < 14 || ch >= 5760 && nonASCIIwhitespace.test(String.fromCharCode(ch))) {
+              ++this.pos;
+            } else {
+              break loop;
+            }
+        }
+      }
+    };
+    pp.finishToken = function(type, val) {
+      this.end = this.pos;
+      if (this.options.locations) {
+        this.endLoc = this.curPosition();
+      }
+      var prevType = this.type;
+      this.type = type;
+      this.value = val;
+      this.updateContext(prevType);
+    };
+    pp.readToken_dot = function() {
+      var next = this.input.charCodeAt(this.pos + 1);
+      if (next >= 48 && next <= 57) {
+        return this.readNumber(true);
+      }
+      var next2 = this.input.charCodeAt(this.pos + 2);
+      if (this.options.ecmaVersion >= 6 && next === 46 && next2 === 46) {
+        this.pos += 3;
+        return this.finishToken(types$1.ellipsis);
+      } else {
+        ++this.pos;
+        return this.finishToken(types$1.dot);
+      }
+    };
+    pp.readToken_slash = function() {
+      var next = this.input.charCodeAt(this.pos + 1);
+      if (this.exprAllowed) {
+        ++this.pos;
+        return this.readRegexp();
+      }
+      if (next === 61) {
+        return this.finishOp(types$1.assign, 2);
+      }
+      return this.finishOp(types$1.slash, 1);
+    };
+    pp.readToken_mult_modulo_exp = function(code) {
+      var next = this.input.charCodeAt(this.pos + 1);
+      var size = 1;
+      var tokentype = code === 42 ? types$1.star : types$1.modulo;
+      if (this.options.ecmaVersion >= 7 && code === 42 && next === 42) {
+        ++size;
+        tokentype = types$1.starstar;
+        next = this.input.charCodeAt(this.pos + 2);
+      }
+      if (next === 61) {
+        return this.finishOp(types$1.assign, size + 1);
+      }
+      return this.finishOp(tokentype, size);
+    };
+    pp.readToken_pipe_amp = function(code) {
+      var next = this.input.charCodeAt(this.pos + 1);
+      if (next === code) {
+        if (this.options.ecmaVersion >= 12) {
+          var next2 = this.input.charCodeAt(this.pos + 2);
+          if (next2 === 61) {
+            return this.finishOp(types$1.assign, 3);
+          }
+        }
+        return this.finishOp(code === 124 ? types$1.logicalOR : types$1.logicalAND, 2);
+      }
+      if (next === 61) {
+        return this.finishOp(types$1.assign, 2);
+      }
+      return this.finishOp(code === 124 ? types$1.bitwiseOR : types$1.bitwiseAND, 1);
+    };
+    pp.readToken_caret = function() {
+      var next = this.input.charCodeAt(this.pos + 1);
+      if (next === 61) {
+        return this.finishOp(types$1.assign, 2);
+      }
+      return this.finishOp(types$1.bitwiseXOR, 1);
+    };
+    pp.readToken_plus_min = function(code) {
+      var next = this.input.charCodeAt(this.pos + 1);
+      if (next === code) {
+        if (next === 45 && !this.inModule && this.input.charCodeAt(this.pos + 2) === 62 && (this.lastTokEnd === 0 || lineBreak.test(this.input.slice(this.lastTokEnd, this.pos)))) {
+          this.skipLineComment(3);
+          this.skipSpace();
+          return this.nextToken();
+        }
+        return this.finishOp(types$1.incDec, 2);
+      }
+      if (next === 61) {
+        return this.finishOp(types$1.assign, 2);
+      }
+      return this.finishOp(types$1.plusMin, 1);
+    };
+    pp.readToken_lt_gt = function(code) {
+      var next = this.input.charCodeAt(this.pos + 1);
+      var size = 1;
+      if (next === code) {
+        size = code === 62 && this.input.charCodeAt(this.pos + 2) === 62 ? 3 : 2;
+        if (this.input.charCodeAt(this.pos + size) === 61) {
+          return this.finishOp(types$1.assign, size + 1);
+        }
+        return this.finishOp(types$1.bitShift, size);
+      }
+      if (next === 33 && code === 60 && !this.inModule && this.input.charCodeAt(this.pos + 2) === 45 && this.input.charCodeAt(this.pos + 3) === 45) {
+        this.skipLineComment(4);
+        this.skipSpace();
+        return this.nextToken();
+      }
+      if (next === 61) {
+        size = 2;
+      }
+      return this.finishOp(types$1.relational, size);
+    };
+    pp.readToken_eq_excl = function(code) {
+      var next = this.input.charCodeAt(this.pos + 1);
+      if (next === 61) {
+        return this.finishOp(types$1.equality, this.input.charCodeAt(this.pos + 2) === 61 ? 3 : 2);
+      }
+      if (code === 61 && next === 62 && this.options.ecmaVersion >= 6) {
+        this.pos += 2;
+        return this.finishToken(types$1.arrow);
+      }
+      return this.finishOp(code === 61 ? types$1.eq : types$1.prefix, 1);
+    };
+    pp.readToken_question = function() {
+      var ecmaVersion = this.options.ecmaVersion;
+      if (ecmaVersion >= 11) {
+        var next = this.input.charCodeAt(this.pos + 1);
+        if (next === 46) {
+          var next2 = this.input.charCodeAt(this.pos + 2);
+          if (next2 < 48 || next2 > 57) {
+            return this.finishOp(types$1.questionDot, 2);
+          }
+        }
+        if (next === 63) {
+          if (ecmaVersion >= 12) {
+            var next2$1 = this.input.charCodeAt(this.pos + 2);
+            if (next2$1 === 61) {
+              return this.finishOp(types$1.assign, 3);
+            }
+          }
+          return this.finishOp(types$1.coalesce, 2);
+        }
+      }
+      return this.finishOp(types$1.question, 1);
+    };
+    pp.readToken_numberSign = function() {
+      var ecmaVersion = this.options.ecmaVersion;
+      var code = 35;
+      if (ecmaVersion >= 13) {
+        ++this.pos;
+        code = this.fullCharCodeAtPos();
+        if (isIdentifierStart(code, true) || code === 92) {
+          return this.finishToken(types$1.privateId, this.readWord1());
+        }
+      }
+      this.raise(this.pos, "Unexpected character '" + codePointToString(code) + "'");
+    };
+    pp.getTokenFromCode = function(code) {
+      switch (code) {
+        // The interpretation of a dot depends on whether it is followed
+        // by a digit or another two dots.
+        case 46:
+          return this.readToken_dot();
+        // Punctuation tokens.
+        case 40:
+          ++this.pos;
+          return this.finishToken(types$1.parenL);
+        case 41:
+          ++this.pos;
+          return this.finishToken(types$1.parenR);
+        case 59:
+          ++this.pos;
+          return this.finishToken(types$1.semi);
+        case 44:
+          ++this.pos;
+          return this.finishToken(types$1.comma);
+        case 91:
+          ++this.pos;
+          return this.finishToken(types$1.bracketL);
+        case 93:
+          ++this.pos;
+          return this.finishToken(types$1.bracketR);
+        case 123:
+          ++this.pos;
+          return this.finishToken(types$1.braceL);
+        case 125:
+          ++this.pos;
+          return this.finishToken(types$1.braceR);
+        case 58:
+          ++this.pos;
+          return this.finishToken(types$1.colon);
+        case 96:
+          if (this.options.ecmaVersion < 6) {
+            break;
+          }
+          ++this.pos;
+          return this.finishToken(types$1.backQuote);
+        case 48:
+          var next = this.input.charCodeAt(this.pos + 1);
+          if (next === 120 || next === 88) {
+            return this.readRadixNumber(16);
+          }
+          if (this.options.ecmaVersion >= 6) {
+            if (next === 111 || next === 79) {
+              return this.readRadixNumber(8);
+            }
+            if (next === 98 || next === 66) {
+              return this.readRadixNumber(2);
+            }
+          }
+        // Anything else beginning with a digit is an integer, octal
+        // number, or float.
+        case 49:
+        case 50:
+        case 51:
+        case 52:
+        case 53:
+        case 54:
+        case 55:
+        case 56:
+        case 57:
+          return this.readNumber(false);
+        // Quotes produce strings.
+        case 34:
+        case 39:
+          return this.readString(code);
+        // Operators are parsed inline in tiny state machines. '=' (61) is
+        // often referred to. `finishOp` simply skips the amount of
+        // characters it is given as second argument, and returns a token
+        // of the type given by its first argument.
+        case 47:
+          return this.readToken_slash();
+        case 37:
+        case 42:
+          return this.readToken_mult_modulo_exp(code);
+        case 124:
+        case 38:
+          return this.readToken_pipe_amp(code);
+        case 94:
+          return this.readToken_caret();
+        case 43:
+        case 45:
+          return this.readToken_plus_min(code);
+        case 60:
+        case 62:
+          return this.readToken_lt_gt(code);
+        case 61:
+        case 33:
+          return this.readToken_eq_excl(code);
+        case 63:
+          return this.readToken_question();
+        case 126:
+          return this.finishOp(types$1.prefix, 1);
+        case 35:
+          return this.readToken_numberSign();
+      }
+      this.raise(this.pos, "Unexpected character '" + codePointToString(code) + "'");
+    };
+    pp.finishOp = function(type, size) {
+      var str = this.input.slice(this.pos, this.pos + size);
+      this.pos += size;
+      return this.finishToken(type, str);
+    };
+    pp.readRegexp = function() {
+      var escaped, inClass, start = this.pos;
+      for (; ; ) {
+        if (this.pos >= this.input.length) {
+          this.raise(start, "Unterminated regular expression");
+        }
+        var ch = this.input.charAt(this.pos);
+        if (lineBreak.test(ch)) {
+          this.raise(start, "Unterminated regular expression");
+        }
+        if (!escaped) {
+          if (ch === "[") {
+            inClass = true;
+          } else if (ch === "]" && inClass) {
+            inClass = false;
+          } else if (ch === "/" && !inClass) {
+            break;
+          }
+          escaped = ch === "\\";
+        } else {
+          escaped = false;
+        }
+        ++this.pos;
+      }
+      var pattern = this.input.slice(start, this.pos);
+      ++this.pos;
+      var flagsStart = this.pos;
+      var flags = this.readWord1();
+      if (this.containsEsc) {
+        this.unexpected(flagsStart);
+      }
+      var state = this.regexpState || (this.regexpState = new RegExpValidationState(this));
+      state.reset(start, pattern, flags);
+      this.validateRegExpFlags(state);
+      this.validateRegExpPattern(state);
+      var value = null;
+      try {
+        value = new RegExp(pattern, flags);
+      } catch (e) {
+      }
+      return this.finishToken(types$1.regexp, { pattern, flags, value });
+    };
+    pp.readInt = function(radix, len, maybeLegacyOctalNumericLiteral) {
+      var allowSeparators = this.options.ecmaVersion >= 12 && len === void 0;
+      var isLegacyOctalNumericLiteral = maybeLegacyOctalNumericLiteral && this.input.charCodeAt(this.pos) === 48;
+      var start = this.pos, total = 0, lastCode = 0;
+      for (var i = 0, e = len == null ? Infinity : len; i < e; ++i, ++this.pos) {
+        var code = this.input.charCodeAt(this.pos), val = void 0;
+        if (allowSeparators && code === 95) {
+          if (isLegacyOctalNumericLiteral) {
+            this.raiseRecoverable(this.pos, "Numeric separator is not allowed in legacy octal numeric literals");
+          }
+          if (lastCode === 95) {
+            this.raiseRecoverable(this.pos, "Numeric separator must be exactly one underscore");
+          }
+          if (i === 0) {
+            this.raiseRecoverable(this.pos, "Numeric separator is not allowed at the first of digits");
+          }
+          lastCode = code;
+          continue;
+        }
+        if (code >= 97) {
+          val = code - 97 + 10;
+        } else if (code >= 65) {
+          val = code - 65 + 10;
+        } else if (code >= 48 && code <= 57) {
+          val = code - 48;
+        } else {
+          val = Infinity;
+        }
+        if (val >= radix) {
+          break;
+        }
+        lastCode = code;
+        total = total * radix + val;
+      }
+      if (allowSeparators && lastCode === 95) {
+        this.raiseRecoverable(this.pos - 1, "Numeric separator is not allowed at the last of digits");
+      }
+      if (this.pos === start || len != null && this.pos - start !== len) {
+        return null;
+      }
+      return total;
+    };
+    pp.readRadixNumber = function(radix) {
+      var start = this.pos;
+      this.pos += 2;
+      var val = this.readInt(radix);
+      if (val == null) {
+        this.raise(this.start + 2, "Expected number in radix " + radix);
+      }
+      if (this.options.ecmaVersion >= 11 && this.input.charCodeAt(this.pos) === 110) {
+        val = stringToBigInt(this.input.slice(start, this.pos));
+        ++this.pos;
+      } else if (isIdentifierStart(this.fullCharCodeAtPos())) {
+        this.raise(this.pos, "Identifier directly after number");
+      }
+      return this.finishToken(types$1.num, val);
+    };
+    pp.readNumber = function(startsWithDot) {
+      var start = this.pos;
+      if (!startsWithDot && this.readInt(10, void 0, true) === null) {
+        this.raise(start, "Invalid number");
+      }
+      var octal = this.pos - start >= 2 && this.input.charCodeAt(start) === 48;
+      if (octal && this.strict) {
+        this.raise(start, "Invalid number");
+      }
+      var next = this.input.charCodeAt(this.pos);
+      if (!octal && !startsWithDot && this.options.ecmaVersion >= 11 && next === 110) {
+        var val$1 = stringToBigInt(this.input.slice(start, this.pos));
+        ++this.pos;
+        if (isIdentifierStart(this.fullCharCodeAtPos())) {
+          this.raise(this.pos, "Identifier directly after number");
+        }
+        return this.finishToken(types$1.num, val$1);
+      }
+      if (octal && /[89]/.test(this.input.slice(start, this.pos))) {
+        octal = false;
+      }
+      if (next === 46 && !octal) {
+        ++this.pos;
+        this.readInt(10);
+        next = this.input.charCodeAt(this.pos);
+      }
+      if ((next === 69 || next === 101) && !octal) {
+        next = this.input.charCodeAt(++this.pos);
+        if (next === 43 || next === 45) {
+          ++this.pos;
+        }
+        if (this.readInt(10) === null) {
+          this.raise(start, "Invalid number");
+        }
+      }
+      if (isIdentifierStart(this.fullCharCodeAtPos())) {
+        this.raise(this.pos, "Identifier directly after number");
+      }
+      var val = stringToNumber(this.input.slice(start, this.pos), octal);
+      return this.finishToken(types$1.num, val);
+    };
+    pp.readCodePoint = function() {
+      var ch = this.input.charCodeAt(this.pos), code;
+      if (ch === 123) {
+        if (this.options.ecmaVersion < 6) {
+          this.unexpected();
+        }
+        var codePos = ++this.pos;
+        code = this.readHexChar(this.input.indexOf("}", this.pos) - this.pos);
+        ++this.pos;
+        if (code > 1114111) {
+          this.invalidStringToken(codePos, "Code point out of bounds");
+        }
+      } else {
+        code = this.readHexChar(4);
+      }
+      return code;
+    };
+    pp.readString = function(quote) {
+      var out = "", chunkStart = ++this.pos;
+      for (; ; ) {
+        if (this.pos >= this.input.length) {
+          this.raise(this.start, "Unterminated string constant");
+        }
+        var ch = this.input.charCodeAt(this.pos);
+        if (ch === quote) {
+          break;
+        }
+        if (ch === 92) {
+          out += this.input.slice(chunkStart, this.pos);
+          out += this.readEscapedChar(false);
+          chunkStart = this.pos;
+        } else if (ch === 8232 || ch === 8233) {
+          if (this.options.ecmaVersion < 10) {
+            this.raise(this.start, "Unterminated string constant");
+          }
+          ++this.pos;
+          if (this.options.locations) {
+            this.curLine++;
+            this.lineStart = this.pos;
+          }
+        } else {
+          if (isNewLine(ch)) {
+            this.raise(this.start, "Unterminated string constant");
+          }
+          ++this.pos;
+        }
+      }
+      out += this.input.slice(chunkStart, this.pos++);
+      return this.finishToken(types$1.string, out);
+    };
+    INVALID_TEMPLATE_ESCAPE_ERROR = {};
+    pp.tryReadTemplateToken = function() {
+      this.inTemplateElement = true;
+      try {
+        this.readTmplToken();
+      } catch (err) {
+        if (err === INVALID_TEMPLATE_ESCAPE_ERROR) {
+          this.readInvalidTemplateToken();
+        } else {
+          throw err;
+        }
+      }
+      this.inTemplateElement = false;
+    };
+    pp.invalidStringToken = function(position, message) {
+      if (this.inTemplateElement && this.options.ecmaVersion >= 9) {
+        throw INVALID_TEMPLATE_ESCAPE_ERROR;
+      } else {
+        this.raise(position, message);
+      }
+    };
+    pp.readTmplToken = function() {
+      var out = "", chunkStart = this.pos;
+      for (; ; ) {
+        if (this.pos >= this.input.length) {
+          this.raise(this.start, "Unterminated template");
+        }
+        var ch = this.input.charCodeAt(this.pos);
+        if (ch === 96 || ch === 36 && this.input.charCodeAt(this.pos + 1) === 123) {
+          if (this.pos === this.start && (this.type === types$1.template || this.type === types$1.invalidTemplate)) {
+            if (ch === 36) {
+              this.pos += 2;
+              return this.finishToken(types$1.dollarBraceL);
+            } else {
+              ++this.pos;
+              return this.finishToken(types$1.backQuote);
+            }
+          }
+          out += this.input.slice(chunkStart, this.pos);
+          return this.finishToken(types$1.template, out);
+        }
+        if (ch === 92) {
+          out += this.input.slice(chunkStart, this.pos);
+          out += this.readEscapedChar(true);
+          chunkStart = this.pos;
+        } else if (isNewLine(ch)) {
+          out += this.input.slice(chunkStart, this.pos);
+          ++this.pos;
+          switch (ch) {
+            case 13:
+              if (this.input.charCodeAt(this.pos) === 10) {
+                ++this.pos;
+              }
+            case 10:
+              out += "\n";
+              break;
+            default:
+              out += String.fromCharCode(ch);
+              break;
+          }
+          if (this.options.locations) {
+            ++this.curLine;
+            this.lineStart = this.pos;
+          }
+          chunkStart = this.pos;
+        } else {
+          ++this.pos;
+        }
+      }
+    };
+    pp.readInvalidTemplateToken = function() {
+      for (; this.pos < this.input.length; this.pos++) {
+        switch (this.input[this.pos]) {
+          case "\\":
+            ++this.pos;
+            break;
+          case "$":
+            if (this.input[this.pos + 1] !== "{") {
+              break;
+            }
+          // fall through
+          case "`":
+            return this.finishToken(types$1.invalidTemplate, this.input.slice(this.start, this.pos));
+          case "\r":
+            if (this.input[this.pos + 1] === "\n") {
+              ++this.pos;
+            }
+          // fall through
+          case "\n":
+          case "\u2028":
+          case "\u2029":
+            ++this.curLine;
+            this.lineStart = this.pos + 1;
+            break;
+        }
+      }
+      this.raise(this.start, "Unterminated template");
+    };
+    pp.readEscapedChar = function(inTemplate) {
+      var ch = this.input.charCodeAt(++this.pos);
+      ++this.pos;
+      switch (ch) {
+        case 110:
+          return "\n";
+        // 'n' -> '\n'
+        case 114:
+          return "\r";
+        // 'r' -> '\r'
+        case 120:
+          return String.fromCharCode(this.readHexChar(2));
+        // 'x'
+        case 117:
+          return codePointToString(this.readCodePoint());
+        // 'u'
+        case 116:
+          return "	";
+        // 't' -> '\t'
+        case 98:
+          return "\b";
+        // 'b' -> '\b'
+        case 118:
+          return "\v";
+        // 'v' -> '\u000b'
+        case 102:
+          return "\f";
+        // 'f' -> '\f'
+        case 13:
+          if (this.input.charCodeAt(this.pos) === 10) {
+            ++this.pos;
+          }
+        // '\r\n'
+        case 10:
+          if (this.options.locations) {
+            this.lineStart = this.pos;
+            ++this.curLine;
+          }
+          return "";
+        case 56:
+        case 57:
+          if (this.strict) {
+            this.invalidStringToken(
+              this.pos - 1,
+              "Invalid escape sequence"
+            );
+          }
+          if (inTemplate) {
+            var codePos = this.pos - 1;
+            this.invalidStringToken(
+              codePos,
+              "Invalid escape sequence in template string"
+            );
+          }
+        default:
+          if (ch >= 48 && ch <= 55) {
+            var octalStr = this.input.substr(this.pos - 1, 3).match(/^[0-7]+/)[0];
+            var octal = parseInt(octalStr, 8);
+            if (octal > 255) {
+              octalStr = octalStr.slice(0, -1);
+              octal = parseInt(octalStr, 8);
+            }
+            this.pos += octalStr.length - 1;
+            ch = this.input.charCodeAt(this.pos);
+            if ((octalStr !== "0" || ch === 56 || ch === 57) && (this.strict || inTemplate)) {
+              this.invalidStringToken(
+                this.pos - 1 - octalStr.length,
+                inTemplate ? "Octal literal in template string" : "Octal literal in strict mode"
+              );
+            }
+            return String.fromCharCode(octal);
+          }
+          if (isNewLine(ch)) {
+            if (this.options.locations) {
+              this.lineStart = this.pos;
+              ++this.curLine;
+            }
+            return "";
+          }
+          return String.fromCharCode(ch);
+      }
+    };
+    pp.readHexChar = function(len) {
+      var codePos = this.pos;
+      var n = this.readInt(16, len);
+      if (n === null) {
+        this.invalidStringToken(codePos, "Bad character escape sequence");
+      }
+      return n;
+    };
+    pp.readWord1 = function() {
+      this.containsEsc = false;
+      var word = "", first = true, chunkStart = this.pos;
+      var astral = this.options.ecmaVersion >= 6;
+      while (this.pos < this.input.length) {
+        var ch = this.fullCharCodeAtPos();
+        if (isIdentifierChar(ch, astral)) {
+          this.pos += ch <= 65535 ? 1 : 2;
+        } else if (ch === 92) {
+          this.containsEsc = true;
+          word += this.input.slice(chunkStart, this.pos);
+          var escStart = this.pos;
+          if (this.input.charCodeAt(++this.pos) !== 117) {
+            this.invalidStringToken(this.pos, "Expecting Unicode escape sequence \\uXXXX");
+          }
+          ++this.pos;
+          var esc2 = this.readCodePoint();
+          if (!(first ? isIdentifierStart : isIdentifierChar)(esc2, astral)) {
+            this.invalidStringToken(escStart, "Invalid Unicode escape");
+          }
+          word += codePointToString(esc2);
+          chunkStart = this.pos;
+        } else {
+          break;
+        }
+        first = false;
+      }
+      return word + this.input.slice(chunkStart, this.pos);
+    };
+    pp.readWord = function() {
+      var word = this.readWord1();
+      var type = types$1.name;
+      if (this.keywords.test(word)) {
+        type = keywords[word];
+      }
+      return this.finishToken(type, word);
+    };
+    version2 = "8.17.0";
+    Parser.acorn = {
+      Parser,
+      version: version2,
+      defaultOptions,
+      Position,
+      SourceLocation,
+      getLineInfo,
+      Node,
+      TokenType,
+      tokTypes: types$1,
+      keywordTypes: keywords,
+      TokContext,
+      tokContexts: types,
+      isIdentifierChar,
+      isIdentifierStart,
+      Token,
+      isNewLine,
+      lineBreak,
+      lineBreakG,
+      nonASCIIwhitespace
+    };
+  }
+});
+
+// src/repl-script-runner.ts
+function compileFigmaReplScriptFile(options) {
+  const helperSelection = resolveFigmaReplScriptHelperSelection(options.source);
+  const diagnosticOptions = {
+    allowDangerousOperations: options.allowDangerousOperations,
+    expectedSurface: options.expectedSurface,
+    mode: "write",
+    strict: options.strict
+  };
+  const diagnostics = toFileDiagnostics(
+    options.scriptPath,
+    options.source,
+    diagnoseFigmaReplCode(options.source, diagnosticOptions),
+    diagnosticOptions
+  );
+  const lines = [createFigmaReplScriptHelperBootstrap(helperSelection)];
+  if (options.targetPageId) {
+    lines.push(`{ const __targetPage = await getNodeById(${literal3(options.targetPageId)}); if (__targetPage.type !== "PAGE") throw new Error("targetPageId must resolve to a PAGE node."); await figma.setCurrentPageAsync(__targetPage); }`);
+  }
+  lines.push(`// figma_repl_run_script_file source: ${options.scriptPath}`);
+  lines.push(options.source);
+  return {
+    code: lines.join("\n"),
+    diagnostics,
+    metadata: {
+      scriptPath: options.scriptPath,
+      sourceBytes: Buffer.byteLength(options.source, "utf8"),
+      sourceLineCount: countLines(options.source),
+      helperApiVersion: "1",
+      injectedHelpers: helperSelection.injectedHelpers,
+      helperUsage: helperSelection.helperUsage,
+      targetPageId: options.targetPageId,
+      expectedSurface: options.expectedSurface,
+      diagnosticsCount: diagnostics.length
+    }
+  };
+}
+function resolveFigmaReplScriptHelperSelection(source) {
+  const usage = analyzeFigmaReplScriptHelperUsage(source);
+  const directHelperNames = new Set(usage.helperNames);
+  const directBaseProperties = new Set(usage.baseProperties);
+  const helperNames = new Set(usage.helperNames);
+  expandFigmaReplScriptHelperDependencies(helperNames);
+  const baseProperties = new Set(usage.baseProperties);
+  if (helperNames.size > 0) {
+    for (const property of FIGMA_REPL_BASE_HELPER_PROPERTIES) baseProperties.add(property);
+  }
+  const injectedHelpers = [
+    helperNames.size > 0 || baseProperties.size > 0 || usage.usesDollarFunction ? "$" : void 0,
+    ...Array.from(baseProperties).sort().map((property) => `$.${property}`),
+    ...FIGMA_REPL_SCRIPT_HELPERS.filter((helper) => helperNames.has(helper)).map((helper) => `$.${helper}`)
+  ].filter((item) => item !== void 0);
+  const direct = [
+    usage.usesDollarFunction ? "$" : void 0,
+    ...Array.from(directBaseProperties).sort().map((property) => `$.${property}`),
+    ...FIGMA_REPL_SCRIPT_HELPERS.filter((helper) => directHelperNames.has(helper)).map((helper) => `$.${helper}`)
+  ].filter((item) => item !== void 0);
+  const transitive = FIGMA_REPL_SCRIPT_HELPERS.filter((helper) => helperNames.has(helper) && !directHelperNames.has(helper)).map((helper) => `$.${helper}`);
+  const runtimeBase = Array.from(baseProperties).sort().map((property) => `$.${property}`);
+  return {
+    helperNames,
+    baseProperties,
+    injectedHelpers,
+    helperUsage: {
+      direct,
+      transitive,
+      runtimeBase,
+      injected: injectedHelpers
+    }
+  };
+}
+function analyzeFigmaReplScriptHelperUsage(source) {
+  const parsed = parseFigmaReplCodeForDiagnostics(source);
+  const helperNames = /* @__PURE__ */ new Set();
+  const baseProperties = /* @__PURE__ */ new Set();
+  let dynamicHelperAccess = false;
+  let usesDollarFunction = false;
+  if (!parsed.ast) {
+    return { helperNames, baseProperties, dynamicHelperAccess: true, usesDollarFunction };
+  }
+  if (astContainsBindingIdentifier(parsed.ast, "$")) {
+    return { helperNames, baseProperties, dynamicHelperAccess: true, usesDollarFunction };
+  }
+  const recordProperty = (property, dynamic = false) => {
+    if (dynamic) {
+      dynamicHelperAccess = true;
+      return;
+    }
+    if (!property) return;
+    if (property === "checkpoints") {
+      helperNames.add("checkpoint");
+      return;
+    }
+    if (FIGMA_REPL_SCRIPT_HELPER_SET.has(property)) {
+      helperNames.add(property);
+      return;
+    }
+    if (FIGMA_REPL_BASE_HELPER_PROPERTIES.has(property)) {
+      baseProperties.add(property);
+    }
+  };
+  visitAst(parsed.ast, (node) => {
+    if ((node.type === "CallExpression" || node.type === "NewExpression") && getIdentifierName(node.callee) === "$") {
+      usesDollarFunction = true;
+    }
+    if (node.type === "MemberExpression" && getIdentifierName(node.object) === "$") {
+      recordProperty(readMemberPropertyName(node), node.computed === true && readMemberPropertyName(node) === void 0);
+    }
+    if (node.type === "VariableDeclarator" && getIdentifierName(node.init) === "$") {
+      if (!isAstRecord(node.id) || node.id.type !== "ObjectPattern") {
+        dynamicHelperAccess = true;
+      } else {
+        for (const property of Array.isArray(node.id.properties) ? node.id.properties : []) {
+          if (!isAstRecord(property)) continue;
+          if (property.type === "RestElement") {
+            dynamicHelperAccess = true;
+            continue;
+          }
+          recordProperty(readObjectPatternPropertyName(property));
+        }
+      }
+    }
+    if (node.type === "AssignmentExpression" && getIdentifierName(node.right) === "$") {
+      dynamicHelperAccess = true;
+    }
+  });
+  return { helperNames, baseProperties, dynamicHelperAccess, usesDollarFunction };
+}
+function expandFigmaReplScriptHelperDependencies(helperNames) {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const add = (name) => {
+      if (!helperNames.has(name)) {
+        helperNames.add(name);
+        changed = true;
+      }
+    };
+    if (helperNames.has("find")) add("findAll");
+    if (helperNames.has("create")) {
+      add("placeNode");
+      add("findFreeSlot");
+    }
+    if (helperNames.has("placeNode")) add("findFreeSlot");
+    if (helperNames.has("replaceGeneratedFrame")) {
+      add("placeNode");
+      add("findFreeSlot");
+      add("select");
+    }
+    if (helperNames.has("cloneNodeTree")) add("select");
+  }
+}
+function readObjectPatternPropertyName(property) {
+  const key = property.key;
+  if (!isAstRecord(key)) return void 0;
+  if (key.type === "Identifier" && typeof key.name === "string") return key.name;
+  if (key.type === "Literal" && typeof key.value === "string") return key.value;
+  return void 0;
+}
+function astContainsBindingIdentifier(ast, name) {
+  let found = false;
+  visitAst(ast, (node) => {
+    if (!found && findDeclaredBindingIdentifier(node, name)) {
+      found = true;
+    }
+  });
+  return found;
+}
+function findDeclaredBindingIdentifier(node, name) {
+  if (node.type === "VariableDeclarator") {
+    return findBindingIdentifier(node.id, name);
+  }
+  if (node.type === "FunctionDeclaration" || node.type === "FunctionExpression") {
+    return findBindingIdentifier(node.id, name) ?? findFirstBindingIdentifier(node.params, name);
+  }
+  if (node.type === "ArrowFunctionExpression") {
+    return findFirstBindingIdentifier(node.params, name);
+  }
+  if (node.type === "ClassDeclaration" || node.type === "ClassExpression") {
+    return findBindingIdentifier(node.id, name);
+  }
+  if (node.type === "CatchClause") {
+    return findBindingIdentifier(node.param, name);
+  }
+  return void 0;
+}
+function findFirstBindingIdentifier(values, name) {
+  if (!Array.isArray(values)) {
+    return void 0;
+  }
+  for (const value of values) {
+    const found = findBindingIdentifier(value, name);
+    if (found) return found;
+  }
+  return void 0;
+}
+function findBindingIdentifier(value, name) {
+  if (!isAstRecord(value)) {
+    return void 0;
+  }
+  if (value.type === "Identifier") {
+    return value.name === name ? value : void 0;
+  }
+  if (value.type === "RestElement") {
+    return findBindingIdentifier(value.argument, name);
+  }
+  if (value.type === "AssignmentPattern") {
+    return findBindingIdentifier(value.left, name);
+  }
+  if (value.type === "ArrayPattern") {
+    return findFirstBindingIdentifier(value.elements, name);
+  }
+  if (value.type === "ObjectPattern" && Array.isArray(value.properties)) {
+    for (const property of value.properties) {
+      if (!isAstRecord(property)) continue;
+      const found = property.type === "RestElement" ? findBindingIdentifier(property.argument, name) : findBindingIdentifier(property.value, name);
+      if (found) return found;
+    }
+  }
+  return void 0;
+}
+function createFigmaReplScriptHelperBootstrap(options) {
+  if (options.helperNames.size === 0 && options.baseProperties.size === 0) {
+    return "";
+  }
+  let bootstrap = `const __figmaReplScriptCheckpoints = [];
+$.handles = __figmaRepl.handles;
+$.remember = remember;
+$.forget = forget;
+$.resolveId = resolveHandleId;
+$.node = $;
+$.select = async function select(targets = "$selection", options = {}) {
+  const input = Array.isArray(targets) ? targets : [targets];
+  const nodes = [];
+  for (const target of input) {
+    const resolved = target && typeof target === "object" && "type" in target ? target : await $(target);
+    const list = Array.isArray(resolved) ? resolved : [resolved];
+    for (const node of list) {
+      if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+        throw new Error("$.select targets must resolve to selectable scene nodes.");
+      }
+      nodes.push(node);
+    }
+  }
+  if (nodes.length === 0 && options.allowEmpty !== true) {
+    throw new Error("$.select resolved no nodes; pass { allowEmpty: true } to intentionally clear selection.");
+  }
+  if (nodes.length === 0) {
+    figma.currentPage.selection = [];
+    return { selectedNodeIds: [], summaries: [] };
+  }
+  const targetPage = pageForNode(nodes[0]);
+  if (!targetPage) {
+    throw new Error("$.select target is not attached to a page.");
+  }
+  for (const node of nodes) {
+    const page = pageForNode(node);
+    if (!page || page.id !== targetPage.id) {
+      throw new Error("$.select cannot select nodes from multiple pages at once.");
+    }
+  }
+  if (figma.currentPage.id !== targetPage.id) {
+    await figma.setCurrentPageAsync(targetPage);
+  }
+  figma.currentPage.selection = nodes;
+  if (nodes.length > 0 && options.zoom !== false) figma.viewport.scrollAndZoomIntoView(nodes);
+  return {
+    selectedNodeIds: nodes.map((node) => node.id),
+    summaries: nodes.map((node) => summarizeNode(node, options.depth || 0)),
+  };
+};
+$.findAll = async function findAll(criteria = {}) {
+  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
+  const root = input.within ? await $(input.within) : figma.currentPage;
+  const matches = queryNodes(root, {
+    name: input.name,
+    type: input.type,
+    includeInvisible: input.includeInvisible,
+    limit: input.limit || 50,
+  });
+  if (input.as && matches[0]) remember(input.as, matches[0]);
+  return matches;
+};
+$.find = async function find(criteria = {}) {
+  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
+  const matches = await $.findAll({ ...input, limit: input.limit || 1 });
+  const node = matches[0] || null;
+  if (!node && input.required !== false) {
+    throw new Error("No Figma node matched $.find criteria.");
+  }
+  if (node && input.as) remember(input.as, node);
+  return node;
+};
+$.text = async function text(targetOrOptions, textValue, options = {}) {
+  const input = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions)
+    ? targetOrOptions
+    : { target: targetOrOptions, text: textValue, ...options };
+  let node;
+  if (input.target) {
+    node = await $(input.target);
+    if (node.type !== "TEXT") throw new Error("$.text target must resolve to a TEXT node.");
+  } else {
+    node = figma.createText();
+    if (input.parent) {
+      const parent = await $(input.parent);
+      parent.appendChild(node);
+    } else {
+      figma.currentPage.appendChild(node);
+    }
+  }
+  const font = input.font || (input.fontFamily || input.fontStyle ? { family: input.fontFamily || "Inter", style: input.fontStyle || "Regular" } : undefined);
+  if (font) {
+    const fontName = fontFromHelperInput(font);
+    await loadFont(fontName);
+    node.fontName = fontName;
+    if (font.size !== undefined) node.fontSize = readFiniteNumber(font.size, "font.size");
+  } else {
+    await loadNodeFont(node);
+  }
+  if (input.text !== undefined) node.characters = String(input.text);
+  if (input.name !== undefined) node.name = String(input.name);
+  if (input.appearance !== undefined) applyAppearance(node, input.appearance);
+  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
+  if (input.size !== undefined) setNodeSizeFromInput(node, input.size);
+  if (input.as) remember(input.as, node);
+  return node;
+};
+$.layout = async function layout(target, layoutOptions = {}) {
+  const node = await $(target);
+  applyAutoLayout(node, layoutOptions);
+  return node;
+};
+$.create = async function create(options = {}) {
+  const type = String(options.type || "FRAME").toUpperCase();
+  const node = createHelperNode(type);
+  if (options.name !== undefined) node.name = String(options.name);
+  if (type === "TEXT") {
+    await applyTextHelper(node, { text: options.text || "", font: options.font, style: options.style });
+    if (options.appearance !== undefined) applyAppearance(node, options.appearance);
+  } else if (options.size !== undefined) {
+    setNodeSizeFromInput(node, options.size);
+  }
+  if (options.layout !== undefined) applyAutoLayout(node, options.layout);
+  if (options.appearance !== undefined && type !== "TEXT") applyAppearance(node, options.appearance);
+  if (options.parent) {
+    const parent = await $(options.parent);
+    parent.appendChild(node);
+  } else {
+    figma.currentPage.appendChild(node);
+  }
+  if (options.placement && options.placement.avoidOverlap) {
+    await $.placeNode(node, { ...options.placement, size: options.placement.size || (options.size || { width: node.width, height: node.height }), exclude: node });
+  } else if (options.position !== undefined) {
+    setNodePositionFromInput(node, options.position);
+  }
+  if (options.as) remember(options.as, node);
+  return node;
+};
+function __figmaReplResolveSceneNodeForPlacement(value, name) {
+  if (!value) throw new Error(name + " is required.");
+  if (typeof value === "object" && "type" in value) return value;
+  return $(value);
+}
+function __figmaReplCanPosition(node) {
+  return node && "x" in node && "y" in node && "width" in node && "height" in node;
+}
+function __figmaReplReadSize(input, fallback) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    width: readFiniteNumber(source.width ?? fallback.width, "size.width"),
+    height: readFiniteNumber(source.height ?? fallback.height, "size.height"),
+  };
+}
+function __figmaReplBounds(node) {
+  return { x: node.x, y: node.y, width: node.width, height: node.height };
+}
+function __figmaReplIntersects(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+async function __figmaReplResolvePlacementParent(inputParent, node) {
+  if (inputParent) return await __figmaReplResolveSceneNodeForPlacement(inputParent, "placement.parent");
+  return node && node.parent ? node.parent : figma.currentPage;
+}
+async function __figmaReplFindFreeSlot(options = {}) {
+  const input = options || {};
+  const preferred = input.preferred || input.position || {};
+  const parent = await __figmaReplResolvePlacementParent(input.parent);
+  const size = __figmaReplReadSize(input.size, { width: 1, height: 1 });
+  const gap = input.gap === undefined ? 40 : readFiniteNumber(input.gap, "gap");
+  const direction = String(input.direction || "down");
+  let x = readFiniteNumber(preferred.x ?? 0, "preferred.x");
+  let y = readFiniteNumber(preferred.y ?? 0, "preferred.y");
+  let shiftedSlots = 0;
+  let collidedNodeIds = [];
+  const children = "children" in parent ? Array.from(parent.children).filter((child) => child.visible !== false && __figmaReplCanPosition(child) && child !== input.exclude) : [];
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const candidate = { x, y, width: size.width, height: size.height };
+    const collisions = children.filter((child) => __figmaReplIntersects(candidate, __figmaReplBounds(child)));
+    if (collisions.length === 0) {
+      return { x, y, width: size.width, height: size.height, shiftedSlots, collidedNodeIds };
+    }
+    collidedNodeIds = collisions.map((child) => child.id);
+    shiftedSlots += 1;
+    if (direction === "right") x += size.width + gap;
+    else if (direction === "left") x -= size.width + gap;
+    else if (direction === "up") y -= size.height + gap;
+    else y += size.height + gap;
+  }
+  throw new Error("$.findFreeSlot could not find a free slot after 500 attempts.");
+}
+$.findFreeSlot = __figmaReplFindFreeSlot;
+$.placeNode = async function placeNode(target, options = {}) {
+  const node = await __figmaReplResolveSceneNodeForPlacement(target, "$.placeNode target");
+  if (!__figmaReplCanPosition(node)) {
+    throw new Error("$.placeNode target must resolve to a positionable scene node.");
+  }
+  const input = options || {};
+  const preferred = input.preferred || input.position || { x: node.x, y: node.y };
+  let placement = { x: preferred.x, y: preferred.y, shiftedSlots: 0, collidedNodeIds: [] };
+  if (input.avoidOverlap) {
+    placement = await __figmaReplFindFreeSlot({ ...input, preferred, size: input.size || __figmaReplBounds(node), parent: input.parent, exclude: node });
+  }
+  node.x = readFiniteNumber(placement.x, "placement.x");
+  node.y = readFiniteNumber(placement.y, "placement.y");
+  if (input.as) remember(input.as, node);
+  return placement;
+};
+$.replaceGeneratedFrame = async function replaceGeneratedFrame(options = {}) {
+  const input = options || {};
+  const name = String(input.name || "");
+  if (!name) throw new Error("$.replaceGeneratedFrame requires an exact name.");
+  const guardPrefixes = input.guardPrefix ? [String(input.guardPrefix)] : ["Variant ", "Codex Generated ", "Generated "];
+  if (!guardPrefixes.some((prefix) => name.startsWith(prefix))) {
+    throw new Error("$.replaceGeneratedFrame name must start with guardPrefix or one of: Variant , Codex Generated , Generated .");
+  }
+  const parent = input.parent
+    ? await __figmaReplResolveSceneNodeForPlacement(input.parent, "$.replaceGeneratedFrame parent")
+    : figma.currentPage;
+  if (!parent || !("appendChild" in parent)) {
+    throw new Error("$.replaceGeneratedFrame requires a writable parent.");
+  }
+  const children = "children" in parent ? Array.from(parent.children) : [];
+  const existingFrames = children.filter((child) => child.type === "FRAME" && child.name === name);
+  if (input.dryRun) {
+    return {
+      dryRun: true,
+      name,
+      matches: existingFrames.map((node) => summarizeNode(node, input.depth || 0)),
+    };
+  }
+  let frame = figma.createFrame();
+  frame.name = name;
+  if (input.size !== undefined) setNodeSizeFromInput(frame, input.size);
+  if (input.position !== undefined) setNodePositionFromInput(frame, input.position);
+  const firstExisting = existingFrames[0];
+  const insertIndex = firstExisting ? children.indexOf(firstExisting) : -1;
+  if (firstExisting && input.size === undefined) frame.resize(firstExisting.width, firstExisting.height);
+  if (firstExisting && input.position === undefined) {
+    frame.x = firstExisting.x;
+    frame.y = firstExisting.y;
+  }
+  if (insertIndex >= 0 && "insertChild" in parent) parent.insertChild(insertIndex, frame);
+  else parent.appendChild(frame);
+  for (const existing of existingFrames) existing.remove();
+  if (input.placement && input.placement.avoidOverlap) {
+    await $.placeNode(frame, { ...input.placement, size: __figmaReplBounds(frame), exclude: frame });
+  }
+  if (input.as) remember(input.as, frame);
+  const selection = input.select === false ? undefined : await $.select([frame], { zoom: input.zoom !== false, depth: 0 });
+  return {
+    replaced: existingFrames.map((node) => node.id),
+    frame: summarizeNode(frame, input.depth || 0),
+    selectedNodeIds: selection ? selection.selectedNodeIds : [],
+    handle: input.as,
+  };
+};
+function __figmaReplDecodeBase64(input) {
+  const source = String(input || "").replace(/^data:[^,]+,/u, "").replace(/\\s+/gu, "");
+  if (!source) throw new Error("$.imageAsset requires a non-empty base64 string or bytes array.");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = source.replace(/=+$/u, "");
+  const bytes = [];
+  let buffer = 0;
+  let bits = 0;
+  for (const char of clean) {
+    const value = alphabet.indexOf(char);
+    if (value < 0) throw new Error("$.imageAsset received invalid base64 data.");
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((buffer >> bits) & 0xff);
+    }
+  }
+  return new Uint8Array(bytes);
+}
+$.imageAsset = async function imageAsset(options = {}) {
+  const input = typeof options === "string" ? { base64: options } : (options || {});
+  const bytes = input.bytes instanceof Uint8Array
+    ? input.bytes
+    : Array.isArray(input.bytes)
+      ? new Uint8Array(input.bytes)
+      : __figmaReplDecodeBase64(input.base64);
+  const image = figma.createImage(bytes);
+  const node = input.target ? await $(input.target) : figma.createRectangle();
+  if (!("fills" in node)) throw new Error("$.imageAsset target must support fills.");
+  if (!input.target) {
+    if (input.parent) {
+      const parent = await $(input.parent);
+      parent.appendChild(node);
+    } else {
+      figma.currentPage.appendChild(node);
+    }
+  }
+  if (input.name !== undefined) node.name = String(input.name);
+  if (input.size !== undefined) {
+    setNodeSizeFromInput(node, input.size);
+  } else if (!input.target) {
+    node.resize(160, 160);
+  }
+  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
+  const scaleMode = String(input.scaleMode || input.fit || "FILL").toUpperCase();
+  if (!["FILL", "FIT", "CROP", "TILE"].includes(scaleMode)) {
+    throw new Error("$.imageAsset scaleMode must be FILL, FIT, CROP, or TILE.");
+  }
+  const paint = { type: "IMAGE", scaleMode, imageHash: image.hash };
+  if (input.opacity !== undefined) paint.opacity = readFiniteNumber(input.opacity, "opacity");
+  node.fills = [paint];
+  if (input.as) remember(input.as, node);
+  return node;
+};
+$.inspect = async function inspect(target, depth = 1) {
+  const node = await $(target);
+  return summarizeNode(node, depth);
+};
+$.screenshot = async function screenshot(target, options = {}) {
+  const node = await $(target);
+  if (!node || typeof node.screenshot !== "function") {
+    throw new Error("$.screenshot target does not support node.screenshot().");
+  }
+  return await node.screenshot(options);
+};
+$.cloneNodeTree = async function cloneNodeTree(targetOrOptions, maybeOptions = {}) {
+  const looksLikeOptions = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions) && !("type" in targetOrOptions);
+  const input = looksLikeOptions ? targetOrOptions : { source: targetOrOptions, ...maybeOptions };
+  const sourceValue = input.source || input.target;
+  const source = sourceValue && typeof sourceValue === "object" && "type" in sourceValue ? sourceValue : await $(sourceValue);
+  if (!source || source.type === "DOCUMENT" || source.type === "PAGE") {
+    throw new Error("$.cloneNodeTree source must resolve to a scene node.");
+  }
+  const parent = input.parent ? await $(input.parent) : source.parent;
+  if (!parent || !("appendChild" in parent)) {
+    throw new Error("$.cloneNodeTree requires a writable parent.");
+  }
+  const cloneLog = [];
+  const fallbackWholeSubtrees = [];
+  const preserveInstanceSubtrees = input.preserveInstanceSubtrees !== false;
+  function getChildren(node) {
+    return "children" in node ? Array.from(node.children) : [];
+  }
+  function cloneOuterToInner(sourceNode, depth = 0) {
+    const clone = sourceNode.clone();
+    clone.name = sourceNode.name;
+    cloneLog.push({
+      depth,
+      sourceId: sourceNode.id,
+      sourceName: sourceNode.name,
+      sourceType: sourceNode.type,
+      cloneId: clone.id,
+    });
+    if (preserveInstanceSubtrees && sourceNode.type === "INSTANCE") {
+      fallbackWholeSubtrees.push({
+        sourceId: sourceNode.id,
+        sourceName: sourceNode.name,
+        sourceType: sourceNode.type,
+        cloneId: clone.id,
+        reason: "Preserved instance subtree whole; Figma does not allow safe rebuild of internal instance children.",
+      });
+      return clone;
+    }
+    if ("children" in clone) {
+      try {
+        for (const child of Array.from(clone.children)) child.remove();
+      } catch (error) {
+        fallbackWholeSubtrees.push({
+          sourceId: sourceNode.id,
+          sourceName: sourceNode.name,
+          sourceType: sourceNode.type,
+          cloneId: clone.id,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        return clone;
+      }
+    }
+    if ("appendChild" in clone) {
+      for (const sourceChild of getChildren(sourceNode)) {
+        clone.appendChild(cloneOuterToInner(sourceChild, depth + 1));
+      }
+    }
+    return clone;
+  }
+  const rootClone = cloneOuterToInner(source, 0);
+  parent.appendChild(rootClone);
+  if (input.name !== undefined) rootClone.name = String(input.name);
+  if (input.position !== undefined) {
+    setNodePositionFromInput(rootClone, input.position);
+  } else if (input.offset !== undefined && "x" in rootClone && "y" in rootClone) {
+    rootClone.x = source.x + readFiniteNumber(input.offset.x || 0, "offset.x");
+    rootClone.y = source.y + readFiniteNumber(input.offset.y || 0, "offset.y");
+  } else if (input.placement !== "none" && "x" in rootClone && "y" in rootClone) {
+    const gap = input.gap === undefined ? 80 : readFiniteNumber(input.gap, "gap");
+    const placement = input.placement || "right";
+    if (placement === "left") {
+      rootClone.x = source.x - rootClone.width - gap;
+      rootClone.y = source.y;
+    } else if (placement === "below") {
+      rootClone.x = source.x;
+      rootClone.y = source.y + source.height + gap;
+    } else if (placement === "above") {
+      rootClone.x = source.x;
+      rootClone.y = source.y - rootClone.height - gap;
+    } else {
+      rootClone.x = source.x + source.width + gap;
+      rootClone.y = source.y;
+    }
+  }
+  if (input.as) remember(input.as, rootClone);
+  const selection = input.select === false ? undefined : await $.select([rootClone], { zoom: input.zoom !== false, depth: 0 });
+  return {
+    source: summarizeNode(source, input.depth || 0),
+    clone: summarizeNode(rootClone, input.depth || 0),
+    copiedNodeCount: cloneLog.length,
+    order: cloneLog,
+    fallbackWholeSubtrees,
+    selectedNodeIds: selection ? selection.selectedNodeIds : [],
+    handle: input.as,
+  };
+};
+$.checkpoint = async function checkpoint(name, targets = [], options = {}) {
+  const list = Array.isArray(targets) ? targets : [targets];
+  const summaries = [];
+  for (const target of list) {
+    const node = await $(target);
+    summaries.push({ target, summary: summarizeNode(node, options.depth || 1) });
+  }
+  const checkpoint = {
+    name: String(name || "checkpoint"),
+    handles: { ...__figmaRepl.handles },
+    summaries,
+  };
+  __figmaReplScriptCheckpoints.push(checkpoint);
+  return checkpoint;
+};
+$.checkpoints = __figmaReplScriptCheckpoints;`;
+  if (!options.helperNames.has("select")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.select = async function select", "$.findAll = async function findAll", "");
+  }
+  if (!options.helperNames.has("findAll")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.findAll = async function findAll", "$.find = async function find", "");
+  }
+  if (!options.helperNames.has("find")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.find = async function find", "$.text = async function text", "");
+  }
+  if (!options.helperNames.has("text")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.text = async function text", "$.layout = async function layout", "");
+  }
+  if (!options.helperNames.has("layout")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.layout = async function layout", "$.create = async function create", "");
+  }
+  if (!options.helperNames.has("create")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.create = async function create", "function __figmaReplResolveSceneNodeForPlacement", "");
+  }
+  if (!options.helperNames.has("findFreeSlot")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "function __figmaReplResolveSceneNodeForPlacement(value, name) {", "$.placeNode = async function placeNode", "");
+  }
+  if (!options.helperNames.has("placeNode")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.placeNode = async function placeNode", "$.replaceGeneratedFrame = async function replaceGeneratedFrame", "");
+  }
+  if (!options.helperNames.has("replaceGeneratedFrame")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.replaceGeneratedFrame = async function replaceGeneratedFrame", "function __figmaReplDecodeBase64(input) {", "");
+  }
+  if (!options.helperNames.has("imageAsset")) {
+    bootstrap = replaceHelperBootstrapBlock(
+      bootstrap,
+      "function __figmaReplDecodeBase64(input) {",
+      "$.inspect = async function inspect",
+      ""
+    );
+  }
+  if (!options.helperNames.has("inspect")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.inspect = async function inspect", "$.screenshot = async function screenshot", "");
+  }
+  if (!options.helperNames.has("screenshot")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.screenshot = async function screenshot", "$.cloneNodeTree = async function cloneNodeTree", "");
+  }
+  if (!options.helperNames.has("cloneNodeTree")) {
+    bootstrap = replaceHelperBootstrapBlock(
+      bootstrap,
+      "$.cloneNodeTree = async function cloneNodeTree",
+      "$.checkpoint = async function checkpoint",
+      ""
+    );
+  }
+  if (!options.helperNames.has("checkpoint")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.checkpoint = async function checkpoint", "$.checkpoints = __figmaReplScriptCheckpoints;", "");
+    bootstrap = bootstrap.replace("const __figmaReplScriptCheckpoints = [];\n", "");
+    bootstrap = bootstrap.replace("$.checkpoints = __figmaReplScriptCheckpoints;", "");
+  }
+  return bootstrap;
+}
+function replaceHelperBootstrapBlock(source, startMarker, endMarker, replacement) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker);
+  if (start < 0 || end < 0 || end <= start) {
+    return source;
+  }
+  return `${source.slice(0, start)}${replacement}${source.slice(end)}`;
+}
+function assertSafeFigmaReplCode(code, options = {}) {
+  throwIfFatalDiagnostics(diagnoseFigmaReplCode(code, options));
+}
+function diagnoseFigmaReplCode(code, options = {}) {
+  const diagnostics = [];
+  const add = (diagnostic) => {
+    diagnostics.push(options.strict && diagnostic.severity === "warning" ? { ...diagnostic, severity: "fatal" } : diagnostic);
+  };
+  const parsed = parseFigmaReplCodeForDiagnostics(code);
+  if (!parsed.ast) {
+    if (parsed.diagnostic) {
+      add(parsed.diagnostic);
+    }
+    return dedupeDiagnostics(diagnostics);
+  }
+  const analysis = analyzeFigmaReplAst(parsed.ast, options, code.length);
+  if (!options.allowDangerousOperations) {
+    for (const diagnostic of DANGEROUS_DIAGNOSTICS) {
+      if (options.generatedCode && diagnostic.code === "FIGMA_REPL_NODE_REMOVAL") {
+        continue;
+      }
+      if (analysis.codes.has(diagnostic.code)) {
+        add(createDiagnostic(diagnostic.code, "fatal", diagnostic.message, diagnostic.suggestion, diagnostic.docsHint));
+      }
+    }
+  }
+  for (const diagnostic of API_CONTRACT_DIAGNOSTICS) {
+    if (analysis.codes.has(diagnostic.code)) {
+      add(createDiagnostic(diagnostic.code, "fatal", diagnostic.message, diagnostic.suggestion, diagnostic.docsHint));
+    }
+  }
+  if (analysis.setCurrentPageAsyncCalls > 1) {
+    add(createDiagnostic(
+      "FIGMA_REPL_MULTIPLE_PAGE_SWITCH",
+      "fatal",
+      "Multiple figma.setCurrentPageAsync() calls in one transaction are error-prone.",
+      "Use one targetPageId on figma_repl_run_script_file or split page changes into separate script files.",
+      "figma-repl://safety#page-context"
+    ));
+  }
+  if (!options.generatedCode && analysis.codes.has("FIGMA_REPL_DIRECT_SELECTION_ACCESS")) {
+    add(createDiagnostic(
+      "FIGMA_REPL_DIRECT_SELECTION_ACCESS",
+      "warning",
+      "Direct figma.currentPage.selection access is brittle in agent scripts.",
+      "Use $.select([...]) for writes, $.inspect('$selection') for summaries, or resolve explicit node ids/handles.",
+      "figma-repl://scripts#helpers"
+    ));
+  }
+  if (options.mode === "read") {
+    for (const diagnostic of READ_MODE_WRITE_DIAGNOSTICS) {
+      if (analysis.codes.has(diagnostic.code)) {
+        add(createDiagnostic(diagnostic.code, "fatal", diagnostic.message, diagnostic.suggestion, diagnostic.docsHint));
+      }
+    }
+    if (analysis.codes.has("FIGMA_REPL_READ_MODE_ASSIGNMENT")) {
+      add(createDiagnostic(
+        "FIGMA_REPL_READ_MODE_ASSIGNMENT",
+        "fatal",
+        "read mode rejected a likely property assignment.",
+        "Use mode=write or a .figma.js script when mutation is intended.",
+        "figma-repl://safety#read-mode"
+      ));
+    }
+  }
+  if (analysis.codes.has("FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT")) {
+    add(createDiagnostic(
+      "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT",
+      "warning",
+      "Text mutation usually requires figma.loadFontAsync() before changing characters or fontName.",
+      "Use $.text, or await figma.loadFontAsync({ family, style }) before changing text.",
+      "figma-repl://patterns#text"
+    ));
+  }
+  if (analysis.oversizedImageAssetBase64Length !== void 0) {
+    add(createDiagnostic(
+      "FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE",
+      "warning",
+      `Inline $.imageAsset base64 is ${analysis.oversizedImageAssetBase64Length} characters and may exceed upstream MCP payload limits.`,
+      "For large generated PNG/JPEG assets, create target rectangles in .figma.js and use the official upload_assets/upstream asset workflow to fill them.",
+      "figma-repl://scripts#helpers"
+    ));
+  }
+  if (analysis.codes.has("FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME")) {
+    add(createDiagnostic(
+      "FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME",
+      "warning",
+      "$.checkpoint() appears to receive a handle as its first argument, but the first argument is the checkpoint name.",
+      "Use $.checkpoint('meaningful-name', ['$handleOrNodeId'], { depth: 1 }).",
+      "figma-repl://scripts#helpers"
+    ));
+  }
+  for (const diagnostic of diagnoseSurfaceCode(analysis, options.expectedSurface)) {
+    add(diagnostic);
+  }
+  return dedupeDiagnostics(diagnostics);
+}
+function diagnoseWrappedScriptSize(scriptPath, wrappedScript, strict) {
+  const byteLength = Buffer.byteLength(wrappedScript, "utf8");
+  if (byteLength < UPSTREAM_EVAL_CODE_WARNING_BYTES) {
+    return [];
+  }
+  const overLimit = byteLength > UPSTREAM_EVAL_CODE_LIMIT_BYTES;
+  return [{
+    code: "FIGMA_REPL_SCRIPT_PAYLOAD_TOO_LARGE",
+    severity: overLimit || strict ? "fatal" : "warning",
+    message: `Compiled Figma script payload is ${byteLength} bytes; upstream use_figma accepts at most about ${UPSTREAM_EVAL_CODE_LIMIT_BYTES} characters.`,
+    suggestion: "Split the work into smaller .figma.js files, for example skeleton, asset targets, upload fills, and visual fixes.",
+    docsHint: "figma-repl://scripts#file-workflow",
+    source: { scriptPath }
+  }];
+}
+function throwIfFatalDiagnostics(diagnostics) {
+  const fatal = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
+  if (fatal.length === 0) {
+    return;
+  }
+  throw new Error(
+    `Figma REPL diagnostics blocked execution: ${fatal.map((item) => item.code).join(", ")}. ${fatal[0]?.suggestion ?? ""}`
+  );
+}
+function parseFigmaReplCodeForDiagnostics(code) {
+  try {
+    const ast = parse5(`${DIAGNOSTIC_PROBE_PREFIX}${code}
+}`, {
+      ecmaVersion: "latest",
+      sourceType: "script"
+    });
+    return isAstRecord(ast) ? { ast } : {
+      diagnostic: createDiagnostic(
+        "FIGMA_REPL_PARSE_ERROR",
+        "fatal",
+        "Script could not be parsed as JavaScript.",
+        "Fix JavaScript syntax before running the Figma REPL script.",
+        "figma-repl://safety#diagnostics"
+      )
+    };
+  } catch (error2) {
+    const detail = error2 instanceof Error && error2.message ? ` ${error2.message}` : "";
+    return {
+      diagnostic: createDiagnostic(
+        "FIGMA_REPL_PARSE_ERROR",
+        "fatal",
+        `Script could not be parsed as JavaScript.${detail}`,
+        "Fix JavaScript syntax before running the Figma REPL script.",
+        "figma-repl://safety#diagnostics"
+      )
+    };
+  }
+}
+function analyzeFigmaReplAst(ast, options, sourceLength) {
+  const codes = /* @__PURE__ */ new Set();
+  const codeOffsets = /* @__PURE__ */ new Map();
+  let setCurrentPageAsyncCalls = 0;
+  let hasTextMutation = false;
+  let firstTextMutationNode;
+  let hasLoadFontAsyncCall = false;
+  let oversizedImageAssetBase64Length;
+  const recordCode = (code, node) => {
+    codes.add(code);
+    const offset2 = astNodeSourceOffset(node, sourceLength);
+    if (offset2 !== void 0 && !codeOffsets.has(code)) {
+      codeOffsets.set(code, offset2);
+    }
+  };
+  const recordTextMutation = (node) => {
+    hasTextMutation = true;
+    firstTextMutationNode ??= node;
+  };
+  visitAst(ast, (node) => {
+    const dollarBinding = findDeclaredBindingIdentifier(node, "$");
+    if (dollarBinding) {
+      recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", dollarBinding);
+    }
+    if (node.type === "CallExpression" || node.type === "NewExpression") {
+      const callee = node.callee;
+      const calleePath = getMemberPath(callee);
+      const calleeName = calleePath?.at(-1) ?? getIdentifierName(callee);
+      if (calleeName === "eval" || calleeName === "Function" || node.type === "NewExpression" && calleeName === "Function") {
+        recordCode("FIGMA_REPL_DYNAMIC_EVAL", callee);
+      }
+      if (calleeName === "fetch" || calleeName === "XMLHttpRequest" || calleeName === "WebSocket") {
+        recordCode("FIGMA_REPL_NETWORK_ACCESS", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "setCurrentPageAsync"])) {
+        setCurrentPageAsyncCalls += 1;
+        recordCode("FIGMA_REPL_MULTIPLE_PAGE_SWITCH", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "root", "findAll"])) {
+        recordCode("FIGMA_REPL_ROOT_FIND_ALL", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "loadFontAsync"])) {
+        hasLoadFontAsyncCall = true;
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "createText"])) {
+        recordTextMutation(callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "createImage"])) {
+        recordCode("FIGMA_REPL_IMAGE_CREATION", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["figma", "createImageAsync"])) {
+        recordCode("FIGMA_REPL_IMAGE_CREATION", callee);
+      }
+      if (calleePath?.[0] === "figma" && calleePath.length === 2 && isReadModeCreateMethod(calleePath[1])) {
+        recordCode("FIGMA_REPL_READ_MODE_CREATE", callee);
+      }
+      if (calleeName === "appendChild" || calleeName === "insertChild") {
+        recordCode("FIGMA_REPL_READ_MODE_APPEND", callee);
+      }
+      if (calleeName === "remove") {
+        recordCode("FIGMA_REPL_NODE_REMOVAL", callee);
+        recordCode("FIGMA_REPL_READ_MODE_REMOVE", callee);
+      }
+      if (calleeName === "resize" || calleeName === "resizeWithoutConstraints") {
+        recordCode("FIGMA_REPL_READ_MODE_RESIZE", callee);
+      }
+      if (calleeName === "detachInstance" || calleeName === "flatten") {
+        recordCode("FIGMA_REPL_DESTRUCTIVE_OPERATION", callee);
+      }
+      if (calleeName === "getPluginData" || calleeName === "setPluginData" || calleeName === "getSharedPluginData" || calleeName === "setSharedPluginData") {
+        recordCode("FIGMA_REPL_PLUGIN_DATA", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["$", "checkpoint"]) && isHandleString(readCallArgument(node, 0))) {
+        recordCode("FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME", callee);
+      }
+      if (calleePath && pathEquals(calleePath, ["$", "imageAsset"])) {
+        const base642 = readImageAssetBase64Argument(node);
+        const base64Length = base642?.replace(/\s+/gu, "").length;
+        if (base64Length !== void 0 && base64Length > MAX_INLINE_IMAGE_ASSET_BASE64_CHARS && oversizedImageAssetBase64Length === void 0) {
+          oversizedImageAssetBase64Length = base64Length;
+          recordCode("FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE", callee);
+        }
+      }
+      recordSurfaceCall(recordCode, calleePath, options.expectedSurface, callee);
+    }
+    if (node.type === "VariableDeclarator" && getIdentifierName(node.init) === "$") {
+      if (!isAstRecord(node.id) || node.id.type !== "ObjectPattern") {
+        recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", node);
+      } else {
+        for (const property of Array.isArray(node.id.properties) ? node.id.properties : []) {
+          if (isAstRecord(property) && property.type === "RestElement") {
+            recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", property);
+          }
+        }
+      }
+    }
+    if (node.type === "AssignmentExpression" && getIdentifierName(node.right) === "$") {
+      recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", node);
+    }
+    if (node.type === "ImportExpression" || node.type === "Import") {
+      recordCode("FIGMA_REPL_DYNAMIC_IMPORT", node);
+    }
+    if (node.type === "AssignmentExpression") {
+      const leftPath = getMemberPath(node.left);
+      if (leftPath && pathEquals(leftPath, ["figma", "currentPage"])) {
+        recordCode("FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT", node.left);
+      }
+      if (isReadModeMutableMember(node.left)) {
+        recordCode("FIGMA_REPL_READ_MODE_ASSIGNMENT", node.left);
+      }
+      if (isTextMutationMember(node.left)) {
+        recordTextMutation(node.left);
+      }
+    }
+    if (node.type === "UpdateExpression" && isReadModeMutableMember(node.argument)) {
+      recordCode("FIGMA_REPL_READ_MODE_ASSIGNMENT", node.argument);
+    }
+    if (node.type === "UnaryExpression" && node.operator === "delete") {
+      const argumentPath = getMemberPath(node.argument);
+      if (argumentPath?.[0] === "figma") {
+        recordCode("FIGMA_REPL_FIGMA_DELETE", node);
+      }
+    }
+    if (node.type === "MemberExpression") {
+      const memberPath = getMemberPath(node);
+      if (memberPath && pathEquals(memberPath, ["figma", "currentPage", "selection"])) {
+        recordCode("FIGMA_REPL_DIRECT_SELECTION_ACCESS", node);
+      }
+      if (getIdentifierName(node.object) === "$" && node.computed === true && readMemberPropertyName(node) === void 0) {
+        recordCode("FIGMA_REPL_DYNAMIC_HELPER_ACCESS", node);
+      }
+    }
+  });
+  if (hasTextMutation && !hasLoadFontAsyncCall) {
+    recordCode("FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT", firstTextMutationNode);
+  }
+  return { codes, codeOffsets, setCurrentPageAsyncCalls, oversizedImageAssetBase64Length };
+}
+function visitAst(value, visitor) {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      visitAst(item, visitor);
+    }
+    return;
+  }
+  if (!isAstRecord(value)) {
+    return;
+  }
+  visitor(value);
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "type" || key === "start" || key === "end" || key === "loc" || key === "range") {
+      continue;
+    }
+    visitAst(child, visitor);
+  }
+}
+function recordSurfaceCall(recordCode, calleePath, expectedSurface, node) {
+  if (!expectedSurface || !calleePath || calleePath[0] !== "figma" || calleePath.length !== 2) {
+    return;
+  }
+  const method = calleePath[1];
+  if (expectedSurface === "design" && FIGJAM_CREATION_METHODS.has(method)) {
+    recordCode("FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN", node);
+  }
+  if (expectedSurface === "figjam" && DESIGN_CREATION_METHODS.has(method)) {
+    recordCode("FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM", node);
+  }
+  if (expectedSurface === "slides" && SLIDES_BLOCKED_CREATION_METHODS.has(method)) {
+    recordCode("FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES", node);
+  }
+}
+function isReadModeCreateMethod(name) {
+  const suffixStart = "create".length;
+  const firstSuffix = name.at(suffixStart);
+  return name.startsWith("create") && firstSuffix !== void 0 && firstSuffix >= "A" && firstSuffix <= "Z";
+}
+function isTextMutationMember(value) {
+  const path = getMemberPath(value);
+  const property = path?.at(-1);
+  return property === "characters" || property === "fontName";
+}
+function readImageAssetBase64Argument(callExpression) {
+  const firstArgument = readCallArgument(callExpression, 0);
+  const directBase64 = readStringLiteral(firstArgument);
+  if (directBase64 !== void 0) {
+    return directBase64;
+  }
+  if (!isAstRecord(firstArgument) || firstArgument.type !== "ObjectExpression") {
+    return void 0;
+  }
+  return readStringLiteral(readObjectPropertyValue(firstArgument, "base64"));
+}
+function readCallArgument(callExpression, index) {
+  return Array.isArray(callExpression.arguments) ? callExpression.arguments[index] : void 0;
+}
+function readObjectPropertyValue(objectExpression, propertyName) {
+  if (!Array.isArray(objectExpression.properties)) {
+    return void 0;
+  }
+  for (const property of objectExpression.properties) {
+    if (!isAstRecord(property) || property.type !== "Property") {
+      continue;
+    }
+    const key = readPropertyKeyName(property);
+    if (key === propertyName) {
+      return property.value;
+    }
+  }
+  return void 0;
+}
+function readPropertyKeyName(property) {
+  const key = property.key;
+  if (!isAstRecord(key)) {
+    return void 0;
+  }
+  if (key.type === "Identifier" && typeof key.name === "string" && property.computed !== true) {
+    return key.name;
+  }
+  if (key.type === "Literal" && typeof key.value === "string") {
+    return key.value;
+  }
+  return void 0;
+}
+function readStringLiteral(value) {
+  if (!isAstRecord(value)) {
+    return void 0;
+  }
+  if (value.type === "Literal" && typeof value.value === "string") {
+    return value.value;
+  }
+  if (value.type === "TemplateLiteral" && Array.isArray(value.expressions) && value.expressions.length === 0) {
+    const quasi = Array.isArray(value.quasis) ? value.quasis[0] : void 0;
+    if (isAstRecord(quasi) && isAstRecord(quasi.value) && typeof quasi.value.cooked === "string") {
+      return quasi.value.cooked;
+    }
+  }
+  return void 0;
+}
+function isHandleString(value) {
+  return readStringLiteral(value)?.startsWith("$") === true;
+}
+function getMemberPath(value) {
+  if (!isAstRecord(value)) {
+    return void 0;
+  }
+  if (value.type === "Identifier" && typeof value.name === "string") {
+    return [value.name];
+  }
+  if (value.type !== "MemberExpression") {
+    return void 0;
+  }
+  const objectPath = getMemberPath(value.object);
+  const propertyName = readMemberPropertyName(value);
+  return objectPath && propertyName ? [...objectPath, propertyName] : void 0;
+}
+function getIdentifierName(value) {
+  return isAstRecord(value) && value.type === "Identifier" && typeof value.name === "string" ? value.name : void 0;
+}
+function pathEquals(actual, expected) {
+  return actual.length === expected.length && actual.every((part, index) => part === expected[index]);
+}
+function isReadModeMutableMember(value) {
+  if (!isAstRecord(value) || value.type !== "MemberExpression") {
+    return false;
+  }
+  const property = readMemberPropertyName(value);
+  return property !== void 0 && READ_MODE_ASSIGNMENT_PROPERTIES.has(property);
+}
+function readMemberPropertyName(memberExpression) {
+  const property = memberExpression.property;
+  if (!isAstRecord(property)) {
+    return void 0;
+  }
+  if (property.type === "Identifier" && typeof property.name === "string" && memberExpression.computed !== true) {
+    return property.name;
+  }
+  if (property.type === "Literal" && typeof property.value === "string") {
+    return property.value;
+  }
+  return void 0;
+}
+function isAstRecord(value) {
+  return Boolean(value && typeof value === "object");
+}
+function astNodeSourceOffset(value, sourceLength) {
+  if (!isAstRecord(value) || typeof value.start !== "number") {
+    return void 0;
+  }
+  const offset2 = value.start - DIAGNOSTIC_PROBE_PREFIX.length;
+  return Number.isInteger(offset2) && offset2 >= 0 && offset2 < sourceLength ? offset2 : void 0;
+}
+function toFileDiagnostics(scriptPath, source, diagnostics, options) {
+  const astSources = locateAstDiagnosticSources(source, diagnostics, options);
+  return diagnostics.map((diagnostic) => ({
+    ...diagnostic,
+    source: {
+      scriptPath,
+      ...astSources.get(diagnostic.code) ?? locateDiagnosticSource(source, diagnostic.code)
+    }
+  }));
+}
+function locateAstDiagnosticSources(source, diagnostics, options) {
+  if (diagnostics.length === 0) {
+    return /* @__PURE__ */ new Map();
+  }
+  const parsed = parseFigmaReplCodeForDiagnostics(source);
+  if (!parsed.ast) {
+    return /* @__PURE__ */ new Map();
+  }
+  const analysis = analyzeFigmaReplAst(parsed.ast, options, source.length);
+  const located = /* @__PURE__ */ new Map();
+  for (const diagnostic of diagnostics) {
+    const offset2 = analysis.codeOffsets.get(diagnostic.code);
+    if (offset2 !== void 0) {
+      located.set(diagnostic.code, offsetToLineColumn(source, offset2));
+    }
+  }
+  return located;
+}
+function locateDiagnosticSource(source, code) {
+  const pattern = diagnosticPatternForCode(code);
+  if (!pattern) {
+    return {};
+  }
+  const match = pattern.exec(source);
+  if (!match || match.index < 0) {
+    return {};
+  }
+  return offsetToLineColumn(source, match.index);
+}
+function diagnosticPatternForCode(code) {
+  return DIAGNOSTIC_SOURCE_PATTERNS.find((item) => item.code === code)?.re;
+}
+function offsetToLineColumn(source, offset2) {
+  let line = 1;
+  let column = 1;
+  for (let index = 0; index < offset2; index += 1) {
+    if (source[index] === "\n") {
+      line += 1;
+      column = 1;
+    } else {
+      column += 1;
+    }
+  }
+  return { line, column };
+}
+function countLines(source) {
+  if (source.length === 0) {
+    return 0;
+  }
+  return source.split(/\r?\n/u).length;
+}
+function diagnoseSurfaceCode(analysis, expectedSurface) {
+  if (!expectedSurface) {
+    return [];
+  }
+  const diagnostics = [];
+  if (analysis.codes.has("FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN")) {
+    diagnostics.push(createDiagnostic(
+      "FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN",
+      "fatal",
+      "FigJam creation APIs were used while the session expects a Design file.",
+      "Use a FigJam-specific workflow or open the session with surface='figjam'.",
+      "figma-repl://safety#surface"
+    ));
+  }
+  if (analysis.codes.has("FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM")) {
+    diagnostics.push(createDiagnostic(
+      "FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM",
+      "fatal",
+      "Design canvas APIs were used while the session expects a FigJam board.",
+      "Use FigJam-specific helpers for boards or open the session with surface='design'.",
+      "figma-repl://safety#surface"
+    ));
+  }
+  if (analysis.codes.has("FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES")) {
+    diagnostics.push(createDiagnostic(
+      "FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES",
+      "fatal",
+      "Canvas mutation APIs were used while the session expects Slides.",
+      "Use the official Slides workflow rather than the REPL mutation layer.",
+      "figma-repl://safety#surface"
+    ));
+  }
+  return diagnostics;
+}
+function diagnoseFigmaReplContext(options) {
+  if (options.expectedSurface && options.derivedSurface && options.expectedSurface !== options.derivedSurface) {
+    return [
+      createDiagnostic(
+        "FIGMA_REPL_SURFACE_MISMATCH",
+        "fatal",
+        `Open expected ${options.expectedSurface} but the Figma URL looks like ${options.derivedSurface}.`,
+        "Check the file URL or surface before running mutations.",
+        "figma-repl://safety#surface"
+      )
+    ];
+  }
+  return [];
+}
+function createDiagnostic(code, severity, message, suggestion, docsHint) {
+  return { code, severity, message, suggestion, docsHint };
+}
+function dedupeDiagnostics(diagnostics) {
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const diagnostic of diagnostics) {
+    const key = `${diagnostic.code}:${diagnostic.severity}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(diagnostic);
+    }
+  }
+  return result;
+}
+function literal3(value) {
+  return JSON.stringify(value);
+}
+var FIGMA_REPL_SCRIPT_HELPERS, FIGMA_REPL_SCRIPT_HELPER_SET, FIGMA_REPL_BASE_HELPER_PROPERTIES, DANGEROUS_DIAGNOSTICS, READ_MODE_WRITE_DIAGNOSTICS, READ_MODE_ASSIGNMENT_PROPERTIES, DIAGNOSTIC_PROBE_PREFIX, API_CONTRACT_DIAGNOSTICS, FIGJAM_CREATION_METHODS, DESIGN_CREATION_METHODS, SLIDES_BLOCKED_CREATION_METHODS, MAX_INLINE_IMAGE_ASSET_BASE64_CHARS, UPSTREAM_EVAL_CODE_LIMIT_BYTES, UPSTREAM_EVAL_CODE_WARNING_BYTES, DIAGNOSTIC_SOURCE_PATTERNS;
+var init_repl_script_runner = __esm({
+  "src/repl-script-runner.ts"() {
+    "use strict";
+    init_acorn();
+    FIGMA_REPL_SCRIPT_HELPERS = [
+      "select",
+      "findAll",
+      "find",
+      "text",
+      "layout",
+      "create",
+      "findFreeSlot",
+      "placeNode",
+      "replaceGeneratedFrame",
+      "imageAsset",
+      "inspect",
+      "screenshot",
+      "cloneNodeTree",
+      "checkpoint"
+    ];
+    FIGMA_REPL_SCRIPT_HELPER_SET = new Set(FIGMA_REPL_SCRIPT_HELPERS);
+    FIGMA_REPL_BASE_HELPER_PROPERTIES = /* @__PURE__ */ new Set(["handles", "remember", "forget", "resolveId", "node"]);
+    DANGEROUS_DIAGNOSTICS = [
+      {
+        code: "FIGMA_REPL_DYNAMIC_EVAL",
+        message: "Dynamic JavaScript evaluation is disabled by default.",
+        suggestion: "Pass allowDangerousOperations=true only after reviewing the exact script.",
+        docsHint: "figma-repl://safety#dynamic-code"
+      },
+      {
+        code: "FIGMA_REPL_NETWORK_ACCESS",
+        message: "Network access from REPL code is disabled by default.",
+        suggestion: "Fetch data outside Figma or pass allowDangerousOperations=true after review.",
+        docsHint: "figma-repl://safety#network"
+      },
+      {
+        code: "FIGMA_REPL_DYNAMIC_IMPORT",
+        message: "Dynamic import is disabled by default.",
+        suggestion: "Inline the required logic or pass allowDangerousOperations=true after review.",
+        docsHint: "figma-repl://safety#dynamic-code"
+      },
+      {
+        code: "FIGMA_REPL_NODE_REMOVAL",
+        message: "Direct remove() is destructive and can break clone rebuilds, especially inside instance subtrees.",
+        suggestion: "Use $.replaceGeneratedFrame for guarded generated-frame replacement, or $.cloneNodeTree for copy/rebuild workflows.",
+        docsHint: "figma-repl://safety#destructive"
+      },
+      {
+        code: "FIGMA_REPL_FIGMA_DELETE",
+        message: "Deleting properties on the figma object is not supported.",
+        suggestion: "Use documented Plugin API calls only.",
+        docsHint: "figma-repl://safety#api-contract"
+      },
+      {
+        code: "FIGMA_REPL_DESTRUCTIVE_OPERATION",
+        message: "Destructive Figma operation is disabled by default.",
+        suggestion: "Pass allowDangerousOperations=true only after reviewing the exact effect.",
+        docsHint: "figma-repl://safety#destructive"
+      }
+    ];
+    READ_MODE_WRITE_DIAGNOSTICS = [
+      {
+        code: "FIGMA_REPL_READ_MODE_CREATE",
+        message: "read mode rejected node creation.",
+        suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
+        docsHint: "figma-repl://safety#read-mode"
+      },
+      {
+        code: "FIGMA_REPL_READ_MODE_APPEND",
+        message: "read mode rejected child insertion.",
+        suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
+        docsHint: "figma-repl://safety#read-mode"
+      },
+      {
+        code: "FIGMA_REPL_READ_MODE_REMOVE",
+        message: "read mode rejected node removal.",
+        suggestion: "Use mode=write with allowDangerousOperations only after review.",
+        docsHint: "figma-repl://safety#read-mode"
+      },
+      {
+        code: "FIGMA_REPL_READ_MODE_RESIZE",
+        message: "read mode rejected resize.",
+        suggestion: "Use mode=write or a .figma.js script when mutation is intended.",
+        docsHint: "figma-repl://safety#read-mode"
+      }
+    ];
+    READ_MODE_ASSIGNMENT_PROPERTIES = /* @__PURE__ */ new Set([
+      "name",
+      "fills",
+      "strokes",
+      "characters",
+      "layoutMode",
+      "itemSpacing",
+      "paddingLeft",
+      "paddingRight",
+      "paddingTop",
+      "paddingBottom"
+    ]);
+    DIAGNOSTIC_PROBE_PREFIX = "async function __figmaReplDiagnosticsProbe() {\n";
+    API_CONTRACT_DIAGNOSTICS = [
+      {
+        code: "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT",
+        message: "figma.currentPage is not assigned directly in the Plugin API.",
+        suggestion: "Use await figma.setCurrentPageAsync(page) or figma_repl_run_script_file targetPageId.",
+        docsHint: "figma-repl://safety#page-context"
+      },
+      {
+        code: "FIGMA_REPL_ROOT_FIND_ALL",
+        message: "figma.root.findAll() can scan the whole file and is not allowed through this layer.",
+        suggestion: "Use $.find or $.findAll scoped to currentPage or a handle.",
+        docsHint: "figma-repl://patterns#query"
+      },
+      {
+        code: "FIGMA_REPL_PLUGIN_DATA",
+        message: "Plugin data APIs are not a reliable agent-facing persistence layer for this REPL.",
+        suggestion: "Use local handles/session metadata or a dedicated upstream workflow.",
+        docsHint: "figma-repl://safety#facade-routing-delegation-boundaries"
+      },
+      {
+        code: "FIGMA_REPL_IMAGE_CREATION",
+        message: "Raw image creation is outside the supported script-file asset workflow.",
+        suggestion: "Use $.imageAsset({ base64, parent, size, position, as }) in .figma.js, or route unusual asset uploads through an upstream official tool.",
+        docsHint: "figma-repl://scripts#helpers"
+      },
+      {
+        code: "FIGMA_REPL_DYNAMIC_HELPER_ACCESS",
+        message: "Dynamic $ helper access cannot be statically analyzed for on-demand helper injection.",
+        suggestion: 'Use a literal helper access such as $.find(...) or $["find"](...); avoid $[name](...), object rest destructuring, aliasing $, or declaring a local $.',
+        docsHint: "figma-repl://scripts#helpers"
+      }
+    ];
+    FIGJAM_CREATION_METHODS = /* @__PURE__ */ new Set(["createSticky", "createConnector", "createShapeWithText", "createCodeBlock", "createTable"]);
+    DESIGN_CREATION_METHODS = /* @__PURE__ */ new Set(["createFrame", "createComponent", "createComponentSet", "createInstance"]);
+    SLIDES_BLOCKED_CREATION_METHODS = /* @__PURE__ */ new Set(["createFrame", "createComponent", "createSticky", "createConnector", "createShapeWithText"]);
+    MAX_INLINE_IMAGE_ASSET_BASE64_CHARS = 96 * 1024;
+    UPSTREAM_EVAL_CODE_LIMIT_BYTES = 5e4;
+    UPSTREAM_EVAL_CODE_WARNING_BYTES = 49e3;
+    DIAGNOSTIC_SOURCE_PATTERNS = [
+      { code: "FIGMA_REPL_DYNAMIC_EVAL", re: /\b(?:eval|Function)\s*\(/u },
+      { code: "FIGMA_REPL_NETWORK_ACCESS", re: /\b(?:fetch|XMLHttpRequest|WebSocket)\b/u },
+      { code: "FIGMA_REPL_DYNAMIC_IMPORT", re: /\bimport\s*\(/u },
+      { code: "FIGMA_REPL_NODE_REMOVAL", re: /\.remove\s*\(/u },
+      { code: "FIGMA_REPL_FIGMA_DELETE", re: /\bdelete\s+figma\./u },
+      { code: "FIGMA_REPL_DESTRUCTIVE_OPERATION", re: /\.(?:detachInstance|flatten)\s*\(/u },
+      { code: "FIGMA_REPL_READ_MODE_CREATE", re: /figma\.create[A-Z]/u },
+      { code: "FIGMA_REPL_READ_MODE_APPEND", re: /\.(?:appendChild|insertChild)\s*\(/u },
+      { code: "FIGMA_REPL_READ_MODE_REMOVE", re: /\.remove\s*\(/u },
+      { code: "FIGMA_REPL_READ_MODE_ASSIGNMENT", re: /\.(?:name|fills|strokes|characters|layoutMode|itemSpacing|paddingLeft|paddingRight|paddingTop|paddingBottom)\s*(?:=|\+\+|--)/u },
+      { code: "FIGMA_REPL_READ_MODE_RESIZE", re: /\.resize(?:WithoutConstraints)?\s*\(/u },
+      { code: "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT", re: /\bfigma\.currentPage\s*=/u },
+      { code: "FIGMA_REPL_ROOT_FIND_ALL", re: /\bfigma\.root\.findAll\s*\(/u },
+      { code: "FIGMA_REPL_PLUGIN_DATA", re: /\.(?:getPluginData|setPluginData|getSharedPluginData|setSharedPluginData)\s*\(/u },
+      { code: "FIGMA_REPL_IMAGE_CREATION", re: /\bfigma\.createImage(?:Async)?\s*\(/u },
+      { code: "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT", re: /(?:\.characters\s*=|\.fontName\s*=|figma\.createText\s*\()/u },
+      { code: "FIGMA_REPL_MULTIPLE_PAGE_SWITCH", re: /\bfigma\.setCurrentPageAsync\s*\(/u },
+      { code: "FIGMA_REPL_DIRECT_SELECTION_ACCESS", re: /\bfigma\.currentPage\.selection\b/u },
+      { code: "FIGMA_REPL_IMAGE_ASSET_INLINE_TOO_LARGE", re: /\$\.imageAsset\s*\(/u },
+      { code: "FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME", re: /\$\.checkpoint\s*\(/u },
+      { code: "FIGMA_REPL_SURFACE_FIGJAM_API_IN_DESIGN", re: /\bfigma\.create(?:Sticky|Connector|ShapeWithText|CodeBlock|Table)\s*\(/u },
+      { code: "FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM", re: /\bfigma\.create(?:Frame|Component|ComponentSet|Instance)\s*\(/u },
+      { code: "FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES", re: /\bfigma\.create(?:Frame|Component|Sticky|Connector|ShapeWithText)\s*\(/u }
+    ];
+  }
+});
+
+// src/repl-tool-args.ts
+function assertRemovedFileReferenceFields(record2) {
+  const removed = ["fileUrl", "fileKey"].filter((field) => record2[field] !== void 0);
+  if (removed.length > 0) {
+    throw new Error(`Tool argument "${removed.join("/")}" was removed. Use "file" with a Figma URL or file key.`);
+  }
+}
+function assertRemovedArguments(record2, fields, replacement, displayName) {
+  const removed = fields.filter((field) => record2[field] !== void 0);
+  if (removed.length > 0) {
+    throw new Error(`Tool argument "${displayName ?? removed.join("/")}" was removed. Use "${replacement}".`);
+  }
+}
+function assertRemovedDebugOutputArguments(record2, fields) {
+  const removed = fields.filter((field) => record2[field] !== void 0);
+  if (removed.length > 0) {
+    throw new Error(
+      `Tool argument "${removed.join("/")}" was removed. Debug files are generated on demand for failures, diagnostics, and inline omissions.`
+    );
+  }
+}
+function assertRemovedRunScriptOutputLayoutArguments(record2) {
+  const removed = ["outputDir", "diagnosticsFile", "summaryFile"].filter((field) => record2[field] !== void 0);
+  if (removed.length > 0) {
+    throw new Error(
+      `Tool argument "${removed.join("/")}" was removed for figma_repl_run_script_file. Debug files are generated on demand for failures, diagnostics, and inline omissions; diagnostics are included in outputFiles.debugFile.`
+    );
+  }
+}
+function asOpenArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedFileReferenceFields(record2);
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
+  assertRemovedArguments(record2, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertRemovedArguments(record2, ["refresh"], "figma-repl://upstream-tools");
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "label",
+    "file",
+    "cwd",
+    "dirName",
+    "currentPageId"
+  ]);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
+  assertOptionalRecord(record2, "handles");
+  return record2;
+}
+function asEvalArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
+  assertRemovedArguments(record2, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record2, [
+    "code",
+    "sessionId"
+  ]);
+  assertOptionalEnum(record2, "mode", FIGMA_REPL_EVAL_MODES);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
+  assertOptionalRecord(record2, "handleUpdates");
+  return record2;
+}
+function asRunScriptFileArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
+  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
+  assertRemovedRunScriptOutputLayoutArguments(record2);
+  assertRemovedArguments(record2, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "scriptPath",
+    "inputFile",
+    "targetPageId"
+  ]);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
+  return record2;
+}
+function asApplyAssetManifestArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_repl_call_upstream_tool");
+  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "manifestPath"
+  ]);
+  assertOptionalAssets(record2);
+  return record2;
+}
+function asDownloadAssetsArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["target"], "targets");
+  assertRemovedArguments(record2, ["assets"], "targets");
+  assertRemovedArguments(record2, ["toolName", "arguments", "refresh", "download"], "figma_repl_call_upstream_tool");
+  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "manifestPath",
+    "outputDir"
+  ]);
+  const targets = assertOptionalDownloadAssetTargets(record2);
+  if (targets) {
+    record2.targets = targets;
+  }
+  return record2;
+}
+function asCaptureNodeArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["nodeId", "targetNodeId", "handle"], "target");
+  assertRemovedArguments(record2, ["outputFile"], "imageFile");
+  assertRemovedArguments(record2, ["resultFile"], "imageFile");
+  assertRemovedArguments(record2, ["metadataFile"], "figma_repl_call_upstream_tool");
+  assertRemovedArguments(record2, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_repl_call_upstream_tool");
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "imageFile"
+  ]);
+  assertOptionalCaptureTargetValue(record2.target, "target");
+  return record2;
+}
+function asRunTaskPlanArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "planPath"
+  ]);
+  const steps = assertOptionalTaskPlanSteps(record2);
+  if (steps) {
+    record2.steps = steps;
+  }
+  return record2;
+}
+function asPrepareTaskArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedFileReferenceFields(record2);
+  assertRemovedArguments(record2, ["intent", "goal", "taskName"], "task");
+  assertRemovedArguments(record2, ["taskDir"], "workspaceDir");
+  assertRemovedArguments(record2, ["scriptName"], "fileName");
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "task",
+    "file",
+    "fileSlug",
+    "cwd",
+    "dirName",
+    "taskSlug",
+    "workspaceDir",
+    "fileName",
+    "taskRoot",
+    "targetPageId",
+    "template"
+  ]);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
+  return record2;
+}
+function asGuidanceArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["intent", "goal"], "task");
+  assertRemovedArguments(record2, ["expectedSurface"], "surface");
+  assertOptionalStringFields(record2, ["card", "query", "task", "workflow"]);
+  assertOptionalEnum(record2, "mode", FIGMA_REPL_GUIDANCE_MODES);
+  assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
+  return record2;
+}
+function asInspectArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedArguments(record2, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "target"
+  ]);
+  assertOptionalEnum(record2, "mode", FIGMA_REPL_INSPECT_MODES);
+  const handles = assertOptionalArray(record2, "handles");
+  handles?.forEach((handle, index) => {
+    if (typeof handle !== "string") {
+      throw new Error(`Tool argument "handles[${index}]" must be a string.`);
+    }
+  });
+  return record2;
+}
+function asCallUpstreamToolArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record2, ["sessionId", "toolName"]);
+  assertOptionalRecord(record2, "arguments");
+  return record2;
+}
+function asGetMetadataArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertRemovedFileReferenceFields(record2);
+  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile", "metadataFile"]);
+  assertOptionalStringFields(record2, [
+    "sessionId",
+    "file",
+    "cwd",
+    "dirName",
+    "nodeId",
+    "clientLanguages",
+    "clientFrameworks"
+  ]);
+  return record2;
+}
+function asLookupArgs(args) {
+  const record2 = parseToolArgs(args);
+  assertOptionalEnum(record2, "kind", FIGMA_REPL_LOOKUP_KINDS);
+  assertOptionalStringFields(record2, ["query", "symbol"]);
+  return record2;
+}
+function parseToolArgs(value) {
+  if (value === void 0) {
+    return {};
+  }
+  if (!isRecord2(value)) {
+    throw new Error("Tool arguments must be an object.");
+  }
+  return { ...value };
+}
+function assertOptionalEnum(record2, key, values) {
+  const value = record2[key];
+  if (value === void 0) {
+    return;
+  }
+  if (typeof value !== "string" || !values.includes(value)) {
+    throw new Error(`Tool argument "${key}" must be one of: ${values.join(", ")}.`);
+  }
+}
+function assertOptionalRecord(record2, key, displayName = key) {
+  const value = record2[key];
+  if (value === void 0) {
+    return;
+  }
+  if (!isRecord2(value)) {
+    throw new Error(`Tool argument "${displayName}" must be an object.`);
+  }
+}
+function assertOptionalArray(record2, key) {
+  const value = record2[key];
+  if (value === void 0) {
+    return void 0;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`Tool argument "${key}" must be an array.`);
+  }
+  return value;
+}
+function assertOptionalStringFields(record2, keys) {
+  for (const key of keys) {
+    const value = record2[key];
+    if (value === void 0) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      throw new Error(`Tool argument "${key}" must be a string.`);
+    }
+  }
+}
+function assertOptionalAssets(record2) {
+  const assets = assertOptionalArray(record2, "assets");
+  if (!assets) {
+    return;
+  }
+  assets.forEach((asset, index) => {
+    const assetName = `assets[${index}]`;
+    if (!isRecord2(asset)) {
+      throw new Error(`Tool argument "${assetName}" must be an object.`);
+    }
+    assertOptionalStringFieldsWithPrefix(asset, assetName, [
+      "path",
+      "nodeUrl",
+      "url",
+      "scaleMode",
+      "name"
+    ]);
+    assertRemovedArguments(asset, ["toolName", "arguments"], "figma_repl_call_upstream_tool", `${assetName}.toolName/arguments`);
+    assertRemovedArguments(asset, ["filePath", "localPath"], "path", `${assetName}.filePath/localPath`);
+    assertRemovedArguments(
+      asset,
+      ["targetNodeId", "nodeId", "targetHandle", "targetId"],
+      "target",
+      `${assetName}.targetNodeId/nodeId/targetHandle/targetId`
+    );
+    const target = asset.target;
+    assertOptionalTargetValue(target, `${assetName}.target`);
+    assertOptionalRecord(asset, "metadata", `${assetName}.metadata`);
+  });
+}
+function assertOptionalDownloadAssetTargets(record2) {
+  const targets = assertOptionalArray(record2, "targets");
+  if (!targets) {
+    return void 0;
+  }
+  return targets.map((target, index) => {
+    const targetName = `targets[${index}]`;
+    if (!isRecord2(target)) {
+      throw new Error(`Tool argument "${targetName}" must be an object.`);
+    }
+    assertRemovedArguments(
+      target,
+      ["nodeId", "targetNodeId", "targetHandle", "targetId"],
+      "target",
+      `${targetName}.nodeId/targetNodeId/targetHandle/targetId`
+    );
+    assertOptionalStringFieldsWithPrefix(target, targetName, ["name"]);
+    assertOptionalTargetValue(target.target, `${targetName}.target`);
+    const defaultFormat = target.defaultFormat;
+    if (defaultFormat !== void 0 && (typeof defaultFormat !== "string" || !FIGMA_REPL_DOWNLOAD_ASSET_FORMATS.includes(defaultFormat))) {
+      throw new Error(`Tool argument "${targetName}.defaultFormat" must be one of: ${FIGMA_REPL_DOWNLOAD_ASSET_FORMATS.join(", ")}.`);
+    }
+    const defaultScale = target.defaultScale;
+    if (defaultScale !== void 0 && (typeof defaultScale !== "number" || !Number.isFinite(defaultScale) || defaultScale < 0.01 || defaultScale > 4)) {
+      throw new Error(`Tool argument "${targetName}.defaultScale" must be a number from 0.01 to 4.`);
+    }
+    return {
+      target: target.target,
+      name: target.name,
+      defaultFormat,
+      defaultScale
+    };
+  });
+}
+function assertOptionalTargetValue(value, displayName) {
+  if (value === void 0) {
+    return;
+  }
+  if (typeof value === "string") {
+    return;
+  }
+  if (!isRecord2(value)) {
+    throw new Error(`Tool argument "${displayName}" must be a string or object.`);
+  }
+  assertRemovedArguments(
+    value,
+    ["nodeId", "targetNodeId", "targetHandle", "targetId"],
+    "handle",
+    `${displayName}.nodeId/targetNodeId/targetHandle/targetId`
+  );
+  assertOptionalStringFieldsWithPrefix(value, displayName, ["handle"]);
+}
+function assertOptionalCaptureTargetValue(value, displayName) {
+  if (value === void 0 || typeof value === "string") {
+    return;
+  }
+  if (!isRecord2(value)) {
+    throw new Error(`Tool argument "${displayName}" must be a string or object.`);
+  }
+  assertOptionalStringFieldsWithPrefix(value, displayName, [
+    "fileKey",
+    "handle",
+    "targetHandle",
+    "nodeId",
+    "targetNodeId",
+    "target",
+    "id",
+    "url",
+    "nodeUrl"
+  ]);
+}
+function asTaskPlanSteps(value, displayName = "steps") {
+  if (!Array.isArray(value)) {
+    throw new Error(`Tool argument "${displayName}" must be an array.`);
+  }
+  return value.map((step, index) => asTaskPlanStep(step, `${displayName}[${index}]`));
+}
+function assertOptionalTaskPlanSteps(record2) {
+  const steps = assertOptionalArray(record2, "steps");
+  if (!steps) {
+    return void 0;
+  }
+  return asTaskPlanSteps(steps);
+}
+function asTaskPlanStep(value, displayName) {
+  if (!isRecord2(value)) {
+    throw new Error(`Tool argument "${displayName}" must be an object.`);
+  }
+  assertRemovedArguments(value, ["tool"], "type", `${displayName}.tool`);
+  assertRemovedArguments(value, ["arguments"], "args", `${displayName}.arguments`);
+  assertOnlyTaskPlanStepFields(value, displayName);
+  assertOptionalStringFieldsWithPrefix(value, displayName, ["id", "type"]);
+  assertOptionalRecord(value, "args", `${displayName}.args`);
+  const step = {};
+  if (value.id !== void 0) {
+    step.id = value.id;
+  }
+  if (value.type !== void 0) {
+    step.type = value.type;
+  }
+  if (value.args !== void 0) {
+    step.args = value.args;
+  }
+  return step;
+}
+function assertOnlyTaskPlanStepFields(record2, displayName) {
+  for (const key of Object.keys(record2)) {
+    if (!["id", "type", "args"].includes(key)) {
+      throw new Error(`Tool argument "${displayName}.${key}" is not supported. Put step tool inputs under "args".`);
+    }
+  }
+}
+function assertOptionalStringFieldsWithPrefix(record2, prefix, keys) {
+  for (const key of keys) {
+    const value = record2[key];
+    if (value === void 0) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      throw new Error(`Tool argument "${prefix}.${key}" must be a string.`);
+    }
+  }
+}
+function isRecord2(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function assertRequiredTitleArgument(args) {
+  if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
+    throw new Error('Tool argument "title" is required and must be a string.');
+  }
+}
+function withDefaultTitle(args, title) {
+  if (!isRecord2(args)) {
+    throw new Error("Tool arguments must be an object.");
+  }
+  if (args.title !== void 0 && typeof args.title !== "string") {
+    throw new Error('Tool argument "title" must be a string.');
+  }
+  return {
+    ...args,
+    title: args.title ?? title
+  };
+}
+var TOOL_TITLE_ARGUMENT, FIGMA_REPL_SURFACES, FIGMA_REPL_EVAL_MODES, FIGMA_REPL_GUIDANCE_MODES, FIGMA_REPL_INSPECT_MODES, FIGMA_REPL_LOOKUP_KINDS, FIGMA_REPL_DOWNLOAD_ASSET_FORMATS;
+var init_repl_tool_args = __esm({
+  "src/repl-tool-args.ts"() {
+    "use strict";
+    TOOL_TITLE_ARGUMENT = "title";
+    FIGMA_REPL_SURFACES = ["design", "figjam", "slides"];
+    FIGMA_REPL_EVAL_MODES = ["read", "write"];
+    FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"];
+    FIGMA_REPL_INSPECT_MODES = ["inspect", "validate", "style"];
+    FIGMA_REPL_LOOKUP_KINDS = ["docs", "api"];
+    FIGMA_REPL_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"];
+  }
+});
+
+// src/repl-tool-registry.ts
+function isLocalReplToolName(value) {
+  return LOCAL_REPL_TOOL_NAME_SET.has(value);
+}
+function normalizeTaskPlanStepType(value) {
+  return value === void 0 ? "script-file" : TASK_PLAN_STEP_TYPE_ALIASES[value] ?? value;
+}
+var LOCAL_REPL_TOOL_NAMES, LOCAL_REPL_TOOL_NAME_SET, TASK_PLAN_STEP_TYPE_ALIASES;
+var init_repl_tool_registry = __esm({
+  "src/repl-tool-registry.ts"() {
+    "use strict";
+    LOCAL_REPL_TOOL_NAMES = [
+      "figma_repl_open",
+      "figma_repl_eval",
+      "figma_repl_run_script_file",
+      "figma_repl_apply_asset_manifest",
+      "figma_repl_download_assets",
+      "figma_repl_capture_node",
+      "figma_repl_run_task_plan",
+      "figma_repl_prepare_task",
+      "figma_repl_guidance",
+      "figma_repl_inspect",
+      "figma_repl_get_metadata",
+      "figma_repl_call_upstream_tool",
+      "figma_repl_lookup"
+    ];
+    LOCAL_REPL_TOOL_NAME_SET = new Set(LOCAL_REPL_TOOL_NAMES);
+    TASK_PLAN_STEP_TYPE_ALIASES = {
+      figma_repl_run_script_file: "script-file",
+      run_script_file: "script-file",
+      script: "script-file",
+      "script-file": "script-file",
+      figma_repl_apply_asset_manifest: "asset-manifest",
+      apply_asset_manifest: "asset-manifest",
+      asset_manifest: "asset-manifest",
+      upload_assets: "asset-manifest",
+      "asset-manifest": "asset-manifest",
+      figma_repl_download_assets: "download-assets",
+      download_assets: "download-assets",
+      download_assets_from_figma: "download-assets",
+      "download-assets": "download-assets",
+      figma_repl_capture_node: "screenshot-capture",
+      capture_node: "screenshot-capture",
+      screenshot: "screenshot-capture",
+      "screenshot-capture": "screenshot-capture",
+      figma_repl_call_upstream_tool: "upstream-tool",
+      call_upstream_tool: "upstream-tool",
+      upstream: "upstream-tool",
+      "upstream-tool": "upstream-tool"
+    };
+  }
+});
+
+// src/repl-tool-metadata.ts
+function createReplToolDescriptions(options) {
+  const tools = [
+    {
+      name: "figma_repl_open",
+      description: "Context helper for creating or updating a local Figma REPL session. Recommended call: { title, sessionId, file, surface }. Use prepare_task + run_script_file for the primary file workflow; use open for lightweight session context, handle import, file binding, or upstream auth connection without tool discovery.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
+        label: stringProperty("Human-readable session label."),
+        file: stringProperty("Optional Figma file URL or raw file key stored in local session metadata. When present, open auto-binds a file-context workspace."),
+        cwd: stringProperty("Optional absolute project directory for the auto-bound workspace. Defaults to the MCP server process cwd."),
+        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-mcp."),
+        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface; blocks mismatched Design/FigJam/Slides usage later."),
+        currentPageId: stringProperty("Optional current Figma page id stored in local session metadata."),
+        reset: booleanProperty("Reset local handles and history for this session before opening."),
+        connect: booleanProperty("Connect to upstream Figma MCP during open without listing tools. Defaults to true.", { default: true }),
+        handles: objectProperty('Advanced bootstrap/import only: initial local handles, for example {"$header": "12:34"}.')
+      })
+    },
+    {
+      name: "figma_repl_eval",
+      description: "Small ephemeral JavaScript call for quick reads or tightly scoped updates only. Recommended call: { title, sessionId, code, mode, surface }. Use prepare_task + run_script_file for repairable scripts, multi-step work, and large structured results.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
+        code: stringProperty("JavaScript body executed inside an async function in the Figma Plugin API context. Use return to send structured output."),
+        mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
+        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
+        allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
+        handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code.")
+      }, ["code"])
+    },
+    {
+      name: "figma_repl_run_script_file",
+      description: "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile }. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
+        scriptPath: stringProperty("Advanced absolute-path escape hatch only. Prefer inputFile after figma_repl_prepare_task creates a file-context workspace."),
+        inputFile: stringProperty("Recommended workspace script file name after figma_repl_prepare_task; preferred over scriptPath for agents."),
+        dryRun: booleanProperty("Read, diagnose, inject helpers, and return script metadata without calling upstream Figma."),
+        strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
+        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
+        targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
+        allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
+        inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.result/upstream.text only. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
+      })
+    },
+    {
+      name: "figma_repl_apply_asset_manifest",
+      description: "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { title, sessionId, manifestPath } after .figma.js creates target rectangles. Debug JSON files are generated on demand for failures. Use figma_repl_call_upstream_tool only for explicit uncovered upstream capabilities.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
+        manifestPath: stringProperty("Recommended manifest file path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of assets or an object with assets."),
+        assets: {
+          type: "array",
+          description: 'Advanced inline asset entries. Prefer manifestPath. Each entry uses { path, target }; target accepts a node id, node URL, local handle like $hero, or { handle: "$hero" }.',
+          items: { type: "object", additionalProperties: true }
+        },
+        validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload.", { default: true })
+      })
+    },
+    {
+      name: "figma_repl_download_assets",
+      description: "Workflow add-on for official Figma asset downloads. Recommended call: { title, sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets, saves exported plus raw/source files locally, and writes debug JSON only on failure.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for fileKey, handles, workspace defaults, and history. Defaults to 'default'."),
+        targets: {
+          type: "array",
+          description: "Recommended target list. Single-target calls still use targets: [{ target }]. Mutually exclusive with manifestPath.",
+          items: downloadAssetTargetProperty()
+        },
+        manifestPath: stringProperty("Optional batch manifest path. Accepts an absolute path or a file name inside the initialized file-context workspace. Manifest shape is exactly { targets: [...] }; assets aliases are rejected."),
+        outputDir: stringProperty("Optional output directory. Relative paths require an initialized workspace. Defaults to <slug>.downloads in the workspace, or a temp download-results directory without a workspace.")
+      })
+    },
+    {
+      name: "figma_repl_capture_node",
+      description: "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { target, sessionId?, imageFile? }. Captures are saved as PNG; extensionless or non-.png imageFile values normalize to .png. Results return the local PNG path in structuredContent.imageFile.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for file context and history. Defaults to 'default'."),
+        target: {
+          description: 'Target node to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:"$hero" }, or { fileKey, nodeId }.'
+        },
+        imageFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted imageFile auto-generates capture-<timestamp>.png.")
+      }, ["target"])
+    },
+    {
+      name: "figma_repl_run_task_plan",
+      description: "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { title, sessionId, planPath }. Steps use only { id?, type?, args? }; put tool-specific inputs inside args. The plan-level debug file is generated automatically.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
+        planPath: stringProperty("Recommended JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of steps or an object with steps."),
+        steps: {
+          type: "array",
+          description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type values: script-file, asset-manifest/upload_assets, download-assets/download_assets, screenshot-capture, upstream-tool. Step arguments go under args.",
+          items: taskPlanStepProperty("One task-plan step. Put tool-specific inputs under args.")
+        },
+        stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true.", { default: true })
+      })
+    },
+    {
+      name: "figma_repl_prepare_task",
+      description: "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { title, file, task, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
+        task: stringProperty("Recommended human task used to derive <taskSlug>.figma.js."),
+        file: stringProperty("Recommended Figma file URL or raw file key used to derive the file context when preparing a workspace."),
+        fileSlug: stringProperty("Advanced file-context slug override to use when file cannot derive a key."),
+        cwd: stringProperty("Optional absolute project directory where the figma-mcp workspace directory will be created. Defaults to the MCP server process cwd when file context is present."),
+        dirName: stringProperty("Advanced workspace directory name under cwd. Defaults to figma-mcp."),
+        taskSlug: stringProperty("Advanced stable slug override for the task files. Defaults from task/title."),
+        fileName: stringProperty("Advanced script file-name override ending in .figma.js."),
+        taskRoot: stringProperty(`Advanced absolute task root for temp task workspaces. Defaults to ${options.taskWorkspaceRootEnv}, then OS temp figma-repl-mcp/tasks.`),
+        workspaceDir: stringProperty("Advanced absolute workspace directory override."),
+        surface: enumProperty(["design", "figjam", "slides"], "Recommended expected Figma surface persisted on the session and copied into generated guidance."),
+        targetPageId: stringProperty("Optional target page id copied into generated guidance."),
+        template: stringProperty("Template hint copied into the generated .figma.js comments. V1 templates are curated guidance only."),
+        overwrite: booleanProperty("Advanced destructive overwrite of an existing script/result pair. Defaults false.")
+      })
+    },
+    {
+      name: "figma_repl_guidance",
+      description: "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { title, task, surface }. Use task for natural-language requests before writing .figma.js; pair with lookup only when exact docs/API snippets are needed.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
+        card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
+        query: stringProperty(`Search query when card id is not known. Hard limit ${options.maxLookupQueryLength} characters.`),
+        task: stringProperty(`Natural-language task request. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
+        workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
+        maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4.")
+      })
+    },
+    {
+      name: "figma_repl_inspect",
+      description: 'Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Recommended calls: { title, sessionId, target } or { title, sessionId, mode:"style", target }. Uses fixed upstream use_figma execution.',
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
+        mode: enumProperty(["inspect", "validate", "style"], "Use inspect for target summaries, validate for cached handle status, or style for compact visual-token audits. Defaults to inspect."),
+        target: stringProperty("$selection, $currentPage, a stored handle like $header, or a raw node id. Defaults to $selection."),
+        depth: numberProperty("Child summary depth. Defaults to 2."),
+        handles: {
+          type: "array",
+          description: "Optional handle names or raw node ids to validate. Defaults to all cached handles.",
+          items: { type: "string" }
+        }
+      })
+    },
+    {
+      name: "figma_repl_get_metadata",
+      description: "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata and converts returned XML into a compact JSON node tree. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { title, sessionId, file?, target? }. Use inspect/style afterward for fills, text, and visual tokens.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
+        file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
+        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
+        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-mcp."),
+        target: {
+          description: 'Optional metadata root. Accepts a raw node id, node URL, local handle like $hero, or { handle:"$hero" }. Dynamic selectors such as $selection are not resolved here.'
+        },
+        nodeId: stringProperty("Optional raw Figma node id. Prefer target for handles or node URLs."),
+        clientLanguages: stringProperty("Optional official get_metadata clientLanguages hint. Defaults to unknown."),
+        clientFrameworks: stringProperty("Optional official get_metadata clientFrameworks hint. Defaults to unknown."),
+        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for converted metadata.json. Defaults to 4 KB and is capped at 10 KB; 0 forces metadata.json to outputFiles.metadataFile only.")
+      })
+    },
+    {
+      name: "figma_repl_call_upstream_tool",
+      description: "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, or download_assets because dedicated wrappers cover them.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
+        toolName: stringProperty("Official upstream Figma MCP tool name to call for an uncovered capability. Local figma_repl_* tools are rejected."),
+        arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
+        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
+      }, ["toolName", "arguments"])
+    },
+    {
+      name: "figma_repl_lookup",
+      description: "Targeted lookup helper for compact docs snippets or exact Figma Plugin API symbols. For kind=docs use query; for kind=api use symbol. Use after guidance when exact API/docs context is still needed.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
+        query: stringProperty(`Recommended for kind=docs keyword lookup, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
+        symbol: stringProperty(`Recommended for kind=api exact Plugin API lookup, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
+        maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
+        maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`)
+      }, ["kind"])
+    }
+  ];
+  return assertLocalReplToolDescriptions(tools);
+}
+function assertLocalReplToolDescriptions(tools) {
+  const descriptionNames = /* @__PURE__ */ new Set();
+  const describedTools = [];
+  for (const tool of tools) {
+    if (typeof tool.name !== "string") {
+      throw new Error("Local figma_repl_mcp tool description is missing a string name.");
+    }
+    descriptionNames.add(tool.name);
+    if (!isLocalReplToolName(tool.name)) {
+      throw new Error(`Local figma_repl_mcp tool description is not in the registry: ${tool.name}`);
+    }
+    describedTools.push({
+      ...tool,
+      outputSchema: LOCAL_REPL_TOOL_OUTPUT_SCHEMAS[tool.name]
+    });
+  }
+  for (const name of LOCAL_REPL_TOOL_NAMES) {
+    if (!descriptionNames.has(name)) {
+      throw new Error(`Local figma_repl_mcp registry tool is missing a description: ${name}`);
+    }
+  }
+  return describedTools;
+}
+function objectSchema(properties, required2 = []) {
+  return {
+    type: "object",
+    properties,
+    required: required2,
+    additionalProperties: false
+  };
+}
+function titleProperty() {
+  return stringProperty("One concise sentence-style line for UI/log display.");
+}
+function stringProperty(description) {
+  return { type: "string", description };
+}
+function booleanProperty(description, extra = {}) {
+  return { type: "boolean", description, ...extra };
+}
+function numberProperty(description, extra = {}) {
+  return { type: "number", description, ...extra };
+}
+function objectProperty(description) {
+  return { type: "object", description, additionalProperties: true };
+}
+function jsonProperty(description) {
+  return { description };
+}
+function arrayProperty(description) {
+  return { type: "array", description, items: { type: "object", additionalProperties: true } };
+}
+function stringArrayProperty(description) {
+  return { type: "array", description, items: { type: "string" } };
+}
+function enumProperty(values, description) {
+  return { type: "string", enum: values, description };
+}
+function inlineResultLimitInputProperty(description) {
+  return numberProperty(description, {
+    default: DEFAULT_INLINE_RESULT_LIMIT_BYTES,
+    minimum: 0,
+    maximum: MAX_INLINE_RESULT_LIMIT_BYTES
+  });
+}
+function taskPlanStepProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      id: stringProperty("Optional stable step id used by output references and templates."),
+      type: stringProperty("Task-plan step type, for example script-file, asset-manifest, download-assets, screenshot-capture, or upstream-tool."),
+      args: objectProperty("Tool-specific step arguments. Put all step tool inputs here.")
+    },
+    additionalProperties: false
+  };
+}
+function downloadAssetTargetProperty() {
+  return {
+    type: "object",
+    description: "One Figma target for official download_assets. Use target for node id, node URL, local handle, or { handle }.",
+    properties: {
+      target: jsonProperty('Required target. Accepts a node id, node URL, local handle like $hero, or object like { handle: "$hero" }.'),
+      name: stringProperty("Optional display name used for the local target folder slug and result readability."),
+      defaultFormat: enumProperty(["png", "jpg", "svg", "pdf"], "Optional official download_assets defaultFormat forwarded upstream."),
+      defaultScale: numberProperty("Optional official download_assets defaultScale forwarded upstream. Must be from 0.01 to 4.", { minimum: 0.01, maximum: 4 })
+    },
+    required: ["target"],
+    additionalProperties: false
+  };
+}
+function filePointerProperty(description = "Local file pointer.") {
+  return {
+    type: "object",
+    description,
+    properties: {
+      path: stringProperty("Absolute local file path."),
+      bytes: numberProperty("File size in bytes."),
+      lineCount: numberProperty("Line count for text-like files; image and binary files use 0.")
+    },
+    required: ["path", "bytes", "lineCount"],
+    additionalProperties: true
+  };
+}
+function outputFilesProperty(description, keys) {
+  return {
+    type: "object",
+    description,
+    properties: Object.fromEntries(
+      keys.map((key) => [key, filePointerProperty(outputFilePointerDescription(key))])
+    ),
+    additionalProperties: true
+  };
+}
+function outputFilePointerDescription(key) {
+  switch (key) {
+    case "debugFile":
+      return "Primary local debug/result JSON file pointer.";
+    case "upstreamFile":
+      return "Upstream envelope sidecar file pointer.";
+    case "metadataFile":
+      return "Metadata JSON file pointer.";
+    case "compiledScriptFile":
+      return "Failure-only compiled script wrapper file pointer.";
+    default:
+      return "Local output file pointer.";
+  }
+}
+function upstreamEnvelopeProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      kind: enumProperty(["json", "text", "unknown"], "Upstream output representation kind."),
+      ok: booleanProperty("Effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false."),
+      result: jsonProperty("Public parsed upstream JSON result when kind is json and the field is not omitted inline. Payloads containing bridge-internal __figmaRepl metadata are unwrapped to their business result; raw official JSON with top-level ok consumes and removes that ok, while raw JSON without top-level ok remains unchanged. When ok=false, result.source preserves failure provenance as call or business."),
+      text: stringProperty("Upstream text output when kind is text and the field is not omitted inline."),
+      upstreamError: objectProperty("Normalized upstream error when available.")
+    },
+    additionalProperties: true
+  };
+}
+function inlineResultLimitProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      limit: numberProperty("Effective inline byte limit."),
+      limitBytes: numberProperty("Effective inline byte limit."),
+      limitHuman: stringProperty("Human-readable inline byte limit, for example 4 KB."),
+      omitted: {
+        type: "array",
+        description: "Inline fields omitted because they exceeded the effective byte limit.",
+        items: {
+          type: "object",
+          properties: {
+            field: stringProperty("Omitted result field path, for example upstream.result."),
+            bytes: numberProperty("Omitted field size in bytes."),
+            limit: numberProperty("Effective inline byte limit."),
+            bytesHuman: stringProperty("Human-readable omitted field size."),
+            limitHuman: stringProperty("Human-readable inline byte limit.")
+          },
+          additionalProperties: true
+        }
+      }
+    },
+    additionalProperties: true
+  };
+}
+function scriptMetadataProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      scriptPath: stringProperty("Absolute script path used by the runner."),
+      expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface used for diagnostics and execution."),
+      compiledScriptBytes: numberProperty("Compiled wrapper size in bytes.")
+    },
+    additionalProperties: true
+  };
+}
+function compactAssetResultsProperty(description) {
+  return {
+    type: "array",
+    description,
+    items: {
+      type: "object",
+      properties: {
+        ok: booleanProperty("Whether this asset operation succeeded."),
+        path: stringProperty("Local asset path."),
+        targetNodeId: stringProperty("Resolved target Figma node id."),
+        handle: stringProperty("Local handle associated with the target when available."),
+        name: stringProperty("Asset display name when available."),
+        validation: objectProperty("Compact target validation result."),
+        upstreamError: objectProperty("Compact per-asset upstream error.")
+      },
+      additionalProperties: true
+    }
+  };
+}
+function compactDownloadAssetResultsProperty(description) {
+  return {
+    type: "array",
+    description,
+    items: {
+      type: "object",
+      properties: {
+        ok: booleanProperty("Whether this target download succeeded."),
+        targetNodeId: stringProperty("Resolved Figma target node id."),
+        handle: stringProperty("Local handle associated with the target when available."),
+        name: stringProperty("Target display name when available."),
+        outputDir: stringProperty("Per-target local output directory."),
+        downloadedFiles: {
+          type: "array",
+          description: "Compact downloaded file pointers and per-file failures.",
+          items: {
+            type: "object",
+            properties: {
+              ok: booleanProperty("Whether this file download succeeded."),
+              kind: enumProperty(["exported", "raw"], "Downloaded file kind."),
+              path: stringProperty("Absolute local file path when saved."),
+              bytes: numberProperty("File size in bytes when saved."),
+              lineCount: numberProperty("Line count; downloaded binaries use 0."),
+              sourceUrl: stringProperty("Original upstream asset URL downloaded into this file."),
+              mimeType: stringProperty("Detected response MIME type when available."),
+              format: stringProperty("File extension/format used for the saved file."),
+              error: objectProperty("Per-file download error when saving failed.")
+            },
+            additionalProperties: true
+          }
+        },
+        upstreamError: objectProperty("Compact per-target upstream error."),
+        downloadError: objectProperty("Compact per-target local download error.")
+      },
+      additionalProperties: true
+    }
+  };
+}
+function compactTaskPlanFailuresProperty(description) {
+  return {
+    type: "array",
+    description,
+    items: {
+      type: "object",
+      properties: {
+        id: stringProperty("Task-plan step id."),
+        index: numberProperty("Task-plan step index."),
+        type: stringProperty("Normalized task-plan step type."),
+        status: stringProperty("Failed step status."),
+        error: objectProperty("Compact step error when available.")
+      },
+      additionalProperties: true
+    }
+  };
+}
+function guidanceSuggestionsProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      recommendedCards: stringArrayProperty("Recommended curated API card ids."),
+      queryHints: stringArrayProperty("Suggested docs/API search hints."),
+      apiSymbols: stringArrayProperty("Suggested exact API symbols."),
+      avoid: stringArrayProperty("Common mistakes to avoid."),
+      referenceContext: {
+        type: "array",
+        description: "Compact ranked reference snippets used for suggestions.",
+        items: {
+          type: "object",
+          properties: {
+            sourceId: stringProperty("Opaque reference source id."),
+            title: stringProperty("Reference result title."),
+            snippet: stringProperty("Compact reference snippet."),
+            matchType: stringProperty("Reference match type.")
+          },
+          additionalProperties: true
+        }
+      }
+    },
+    additionalProperties: true
+  };
+}
+function inspectStyleAuditProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      topColors: arrayProperty("Top color samples."),
+      textStyles: arrayProperty("Compact text style samples."),
+      imageNodes: arrayProperty("Compact image node samples."),
+      strokes: arrayProperty("Compact stroke samples."),
+      effects: arrayProperty("Compact effect samples."),
+      caps: objectProperty("Returned list caps.")
+    },
+    additionalProperties: true
+  };
+}
+function inspectHandleValidationsProperty(description) {
+  return {
+    type: "array",
+    description,
+    items: {
+      type: "object",
+      properties: {
+        handle: stringProperty("Requested handle or node id."),
+        status: stringProperty("Validation status: valid, missing, or stale."),
+        id: stringProperty("Resolved node id when valid."),
+        type: stringProperty("Resolved node type when valid."),
+        name: stringProperty("Resolved node name when valid."),
+        error: stringProperty("Validation error text when stale.")
+      },
+      additionalProperties: true
+    }
+  };
+}
+function taskChangeProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      previous: objectProperty("Previous active task/session file pointers before prepare_task."),
+      current: objectProperty("Current active task/session file pointers after prepare_task."),
+      changed: booleanProperty("Whether the session active task changed.")
+    },
+    additionalProperties: true
+  };
+}
+function toolOutputSchema(properties) {
+  return {
+    type: "object",
+    properties: {
+      ok: booleanProperty("Whether the local Figma REPL wrapper/tool completed successfully; upstream.ok reports effective upstream success after consuming public upstream result ok fields."),
+      ...properties
+    },
+    required: ["ok"],
+    additionalProperties: true
+  };
+}
+var DEFAULT_INLINE_RESULT_LIMIT_BYTES, MAX_INLINE_RESULT_LIMIT_BYTES, LOCAL_REPL_TOOL_OUTPUT_SCHEMAS;
+var init_repl_tool_metadata = __esm({
+  "src/repl-tool-metadata.ts"() {
+    "use strict";
+    init_repl_tool_registry();
+    DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4e3;
+    MAX_INLINE_RESULT_LIMIT_BYTES = 1e4;
+    LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
+      figma_repl_open: toolOutputSchema({
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        diagnostics: arrayProperty("Session diagnostics.")
+      }),
+      figma_repl_eval: toolOutputSchema({
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        diagnostics: arrayProperty("Preflight diagnostics."),
+        upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
+        upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+        primaryFix: stringProperty("Suggested primary repair when execution failed."),
+        outputFiles: outputFilesProperty(
+          "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
+          ["debugFile", "upstreamFile"]
+        ),
+        inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
+      }),
+      figma_repl_run_script_file: toolOutputSchema({
+        dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        diagnostics: arrayProperty("Script and wrapper diagnostics."),
+        script: scriptMetadataProperty("Compiled script metadata."),
+        outputFiles: outputFilesProperty(
+          "Debug files written on demand for failures, diagnostics, inline omissions, or failure-only compiled script.",
+          ["debugFile", "upstreamFile", "compiledScriptFile"]
+        ),
+        upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+        primaryFix: stringProperty("Suggested primary repair when execution failed."),
+        upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public script results."),
+        inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
+      }),
+      figma_repl_apply_asset_manifest: toolOutputSchema({
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        assets: compactAssetResultsProperty("Compact per-asset upload/fill results."),
+        validation: objectProperty("Optional target validation result."),
+        outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
+        failures: arrayProperty("Per-asset or validation failures.")
+      }),
+      figma_repl_download_assets: toolOutputSchema({
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        outputDir: stringProperty("Local directory containing per-target download folders."),
+        targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
+        failures: arrayProperty("Per-target download or upstream failures."),
+        outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"])
+      }),
+      figma_repl_capture_node: toolOutputSchema({
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        imageFile: stringProperty("Absolute local PNG screenshot path when capture succeeded."),
+        nodeId: stringProperty("Captured Figma node id."),
+        bytes: numberProperty("Saved PNG file size in bytes."),
+        width: numberProperty("Saved PNG width in pixels."),
+        height: numberProperty("Saved PNG height in pixels."),
+        upstreamError: objectProperty("Normalized upstream failure details when capture failed.")
+      }),
+      figma_repl_run_task_plan: toolOutputSchema({
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        stopped: booleanProperty("Whether execution stopped before remaining steps."),
+        steps: arrayProperty("Compact per-step execution summaries."),
+        outputReferences: objectProperty("Plan-level map of step id to output file pointers for later workflow references."),
+        outputFiles: outputFilesProperty("Files written for plan result output.", ["debugFile"]),
+        failures: compactTaskPlanFailuresProperty("Compact failed task-plan step summaries.")
+      }),
+      figma_repl_prepare_task: toolOutputSchema({
+        task: objectProperty("Prepared task workspace and script file."),
+        session: objectProperty("Compact local REPL session metadata; task.workspace remains the full prepared workspace shape."),
+        taskChange: taskChangeProperty("Previous/current task file pointers and whether the session active task changed."),
+        next: stringArrayProperty("Suggested next actions.")
+      }),
+      figma_repl_guidance: toolOutputSchema({
+        workflow: objectProperty("Preferred file workflow payload for plan mode."),
+        steps: stringArrayProperty("Plan-mode workflow steps."),
+        recommendedTools: stringArrayProperty("Plan-mode recommended tools."),
+        suggestedCards: stringArrayProperty("Plan-mode suggested compact card ids."),
+        cards: arrayProperty("Compact curated API cards."),
+        catalogSize: numberProperty("Total curated API card count when returned."),
+        guidance: stringProperty("Compact follow-up guidance text when returned."),
+        recommendedCards: stringArrayProperty("Recommended curated card ids."),
+        queryHints: stringArrayProperty("Suggested docs/API search hints."),
+        apiSymbols: stringArrayProperty("Suggested exact API symbols."),
+        avoid: stringArrayProperty("Common mistakes to avoid."),
+        suggestions: guidanceSuggestionsProperty("Ranked task/card suggestions with compact context.")
+      }),
+      figma_repl_inspect: toolOutputSchema({
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        diagnostics: arrayProperty("Read-mode diagnostics."),
+        target: stringProperty("Inspected target selector or node id when returned by the inspect mode."),
+        summary: jsonProperty("Compact inspected node or selection summary when returned by the inspect mode."),
+        handles: objectProperty("Known handle map returned by read-side inspection when available."),
+        mode: stringProperty("Inspect mode marker when returned by the inspect mode."),
+        nodeCount: numberProperty("Inspected node count for style audits."),
+        style: inspectStyleAuditProperty("Compact visual-token/style audit for mode=style."),
+        validations: inspectHandleValidationsProperty("Handle validation results for mode=validate."),
+        validatedNodeIds: stringArrayProperty("Validated node ids for mode=validate."),
+        upstreamError: objectProperty("Normalized upstream failure details when inspection failed.")
+      }),
+      figma_repl_get_metadata: toolOutputSchema({
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        fileKey: stringProperty("Figma file key sent to official get_metadata."),
+        nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
+        metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
+        upstream: upstreamEnvelopeProperty("Compact upstream status envelope. Raw XML text is not returned inline by this wrapper."),
+        upstreamError: objectProperty("Normalized upstream or XML parse failure details when metadata conversion failed."),
+        primaryFix: stringProperty("Suggested primary repair when upstream execution failed."),
+        outputFiles: outputFilesProperty(
+          "Files written for metadata conversion when the converted JSON tree exceeds inlineResultLimit.",
+          ["metadataFile"]
+        ),
+        inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when metadata.json exceeds the byte limit.")
+      }),
+      figma_repl_call_upstream_tool: toolOutputSchema({
+        session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+        toolName: stringProperty("Upstream official Figma MCP tool name called."),
+        upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+        upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+        primaryFix: stringProperty("Suggested primary repair when execution failed."),
+        outputFiles: outputFilesProperty(
+          "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
+          ["debugFile", "upstreamFile"]
+        ),
+        inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
+      }),
+      figma_repl_lookup: toolOutputSchema({
+        results: arrayProperty("Ranked compact corpus snippets."),
+        guidance: stringProperty("Compact follow-up guidance.")
+      })
+    };
+  }
+});
+
+// src/repl-workspace-files.ts
+import { mkdir as mkdir2, readFile as readFile3, unlink, writeFile as writeFile2 } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname as dirname4, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve4 } from "node:path";
+function readProcessEnv(name) {
+  return typeof process === "undefined" ? void 0 : process.env?.[name];
+}
+function defaultTaskWorkspaceRoot() {
+  return readProcessEnv(TASK_WORKSPACE_ROOT_ENV) ?? resolve4(tmpdir(), "figma-repl-mcp", "tasks");
+}
+function createScriptOutputWriter(args, session) {
+  const files = resolveScriptOutputFiles(args, session);
+  return {
+    files,
+    async cleanupCompiledScriptFile() {
+      if (files.compiledScriptFile) {
+        await removeFileIfExists(files.compiledScriptFile);
+      }
+    },
+    async write(payload) {
+      const written = {};
+      if (payload.writeResult && files.resultFile) {
+        written.debugFile = await writeJsonFile(files.resultFile, payload.result);
+      }
+      if (payload.compiledScript && files.compiledScriptFile) {
+        written.compiledScriptFile = await writeTextFile(
+          files.compiledScriptFile,
+          formatCompiledScriptFailureFile(payload.compiledScript, args, session)
+        );
+      }
+      return written;
+    }
+  };
+}
+function resolveScriptInputPath(args, session) {
+  const scriptPath = asOptionalString(args.scriptPath);
+  if (scriptPath) {
+    if (!isAbsolute2(scriptPath)) {
+      throw new Error('Tool argument "scriptPath" must be an absolute path. Use inputFile after figma_repl_prepare_task for workspace-relative files.');
+    }
+    return scriptPath;
+  }
+  const inputFile = asOptionalString(args.inputFile);
+  if (!inputFile) {
+    throw new Error('Tool argument "scriptPath" or "inputFile" is required.');
+  }
+  if (!session.workspace) {
+    throw new Error("inputFile requires an initialized file-context workspace. Call figma_repl_prepare_task first.");
+  }
+  return resolveWorkspaceFile(session.workspace.sessionDir, inputFile, "inputFile");
+}
+function resolveWorkspaceAwareFile(value, session, argumentName) {
+  const raw = asOptionalString(value);
+  if (!raw) {
+    return void 0;
+  }
+  if (isAbsolute2(raw)) {
+    return raw;
+  }
+  if (!session.workspace) {
+    throw new Error(
+      `Tool argument "${argumentName}" must be an absolute path unless the session has an initialized file-context workspace.`
+    );
+  }
+  return resolveWorkspaceFile(session.workspace.sessionDir, raw, argumentName);
+}
+async function writeCaptureOutputFile(outputFile, upstream, parsed) {
+  const rawContent = asRecord(upstream).content;
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord3) : [];
+  const image = content.find((item) => item.type === "image" && typeof item.data === "string");
+  if (image && typeof image.data === "string") {
+    const buffer = Buffer.from(image.data, "base64");
+    return writeCaptureImageOutputFile(outputFile, buffer, normalizeCaptureImageMimeType(image.mimeType));
+  }
+  const sourceUrl = extractCaptureImageUrl(upstream, parsed);
+  if (sourceUrl) {
+    const response = await fetch(sourceUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Unable to download captured node image from ${sourceUrl}: ${response.status} ${response.statusText}`
+      );
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return writeCaptureImageOutputFile(
+      outputFile,
+      buffer,
+      normalizeCaptureImageMimeType(response.headers.get("content-type"))
+    );
+  }
+  throw new Error("Capture failed because upstream get_screenshot did not return an image/png payload or PNG image URL.");
+}
+async function writeCaptureImageOutputFile(outputFile, buffer, sourceMimeType) {
+  const output = resolveCaptureImageOutput(outputFile);
+  await mkdir2(dirname4(output.path), { recursive: true });
+  const inputMimeType = sourceMimeType ?? detectCaptureImageMimeType(buffer);
+  if (inputMimeType !== "image/png") {
+    throw new Error(
+      `Capture image output currently supports official image/png screenshot payloads only; upstream returned ${inputMimeType ?? "unknown image data"}.`
+    );
+  }
+  const dimensions = readPngDimensions(buffer);
+  await writeFile2(output.path, buffer);
+  return {
+    path: output.path,
+    bytes: buffer.byteLength,
+    lineCount: 0,
+    width: dimensions?.width,
+    height: dimensions?.height
+  };
+}
+function normalizeCaptureImageMimeType(value) {
+  if (typeof value !== "string") {
+    return void 0;
+  }
+  const mimeType = value.split(";")[0]?.trim().toLowerCase();
+  if (mimeType === "image/png") {
+    return mimeType;
+  }
+  return void 0;
+}
+function detectCaptureImageMimeType(buffer) {
+  if (isPngBuffer(buffer)) {
+    return "image/png";
+  }
+  return void 0;
+}
+function readPngDimensions(buffer) {
+  if (!isPngBuffer(buffer) || buffer.length < 24) {
+    return void 0;
+  }
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20)
+  };
+}
+function isPngBuffer(buffer) {
+  return buffer.length >= 8 && buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71 && buffer[4] === 13 && buffer[5] === 10 && buffer[6] === 26 && buffer[7] === 10;
+}
+function resolveCaptureImageOutput(path) {
+  const extension = extname(path).toLowerCase();
+  if (extension === ".png") {
+    return { path, mimeType: "image/png" };
+  }
+  return { path: withFileExtension(path, ".png"), mimeType: "image/png" };
+}
+function withFileExtension(path, extension) {
+  const currentExtension = extname(path);
+  if (!currentExtension) {
+    return `${path}${extension}`;
+  }
+  return `${path.slice(0, -currentExtension.length)}${extension}`;
+}
+async function loadTaskPlan(args, session) {
+  const planPath = resolveWorkspaceAwareFile(args.planPath, session, "planPath");
+  const planValue = planPath ? JSON.parse(await readFile3(planPath, "utf8")) : void 0;
+  const planRecord = asRecord(planValue);
+  const steps = Array.isArray(args.steps) ? asTaskPlanSteps(args.steps) : Array.isArray(planValue) ? asTaskPlanSteps(planValue, "plan") : Array.isArray(planRecord.steps) ? asTaskPlanSteps(planRecord.steps, "plan.steps") : void 0;
+  if (!steps || steps.length === 0) {
+    throw new Error('Tool argument "steps" or "planPath" with steps is required.');
+  }
+  return {
+    planPath,
+    steps
+  };
+}
+function resolveTaskPlanResultFile(args, planPath, session) {
+  if (planPath) {
+    return planPath.replace(/\.json$/iu, ".result.json");
+  }
+  if (session.workspace) {
+    return resolveWorkspaceFile(
+      session.workspace.sessionDir,
+      `${slugifyTaskName(args.title)}.plan.result.json`,
+      "debugFile"
+    );
+  }
+  const root = defaultTaskWorkspaceRoot();
+  if (!isAbsolute2(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve4(root, "task-plan-results", slugifyTaskName(args.title), `${slugifyTaskName(args.title)}.plan.result.json`);
+}
+function withTaskPlanDefaultFiles(stepArgs, type, id, session) {
+  if (!session.workspace) {
+    return stepArgs;
+  }
+  const stepSlug = slugifyTaskName(id || type || "step");
+  const next = { ...stepArgs };
+  if (type === "script-file") {
+    return next;
+  }
+  if (type === "asset-manifest") {
+    return next;
+  }
+  if (type === "download-assets") {
+    if (!asOptionalString(next.outputDir)) {
+      next.outputDir = `${stepSlug}.downloads`;
+    }
+    return next;
+  }
+  if (type === "screenshot-capture") {
+    if (!asOptionalString(next.imageFile)) {
+      next.imageFile = stepSlug;
+    }
+    return next;
+  }
+  return next;
+}
+async function writeJsonFile(path, value) {
+  await mkdir2(dirname4(path), { recursive: true });
+  const content = `${JSON.stringify(removeUndefined(value), null, 2)}
+`;
+  await writeFile2(path, content, "utf8");
+  return textFileMetadata(path, content);
+}
+function createSessionWorkspace(options) {
+  const dirName = asOptionalString(options.dirName) ?? DEFAULT_WORKSPACE_DIR_NAME;
+  if (isAbsolute2(dirName) || dirName.includes("/") || dirName.includes("\\") || dirName.includes("..")) {
+    throw new Error('Tool argument "dirName" must be a simple directory name.');
+  }
+  const root = resolve4(options.cwd, dirName);
+  const fileContext = normalizeFileContextDirectory(options.fileKey, options.fileSlug);
+  const fileDir = resolve4(root, fileContext);
+  if (!isPathInside2(root, fileDir)) {
+    throw new Error("Resolved file workspace must stay inside the workspace root.");
+  }
+  const script = `${options.intentSlug}.figma.js`;
+  const result = `${options.intentSlug}.result.json`;
+  return {
+    root,
+    fileDir,
+    fileContext,
+    fileKey: options.fileKey,
+    fileSlug: options.fileSlug,
+    intentSlug: options.intentSlug,
+    sessionDir: fileDir,
+    scriptPath: resolve4(fileDir, script),
+    resultFile: resolve4(fileDir, result),
+    files: {
+      script,
+      result
+    }
+  };
+}
+async function ensureWorkspaceDirectories(workspace) {
+  await mkdir2(workspace.sessionDir, { recursive: true });
+}
+function resolvePreparedTaskWorkspace(options) {
+  if (options.session?.workspace && !options.args.workspaceDir && !options.args.taskRoot) {
+    return createWorkspaceFromFileDir({
+      root: options.session.workspace.root,
+      fileDir: resolve4(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
+      fileKey: options.session.fileKey,
+      fileSlug: options.fileSlug,
+      intentSlug: options.taskSlug
+    });
+  }
+  const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
+  if (explicitWorkspaceDir) {
+    if (!isAbsolute2(explicitWorkspaceDir)) {
+      throw new Error('Tool argument "workspaceDir" must be an absolute path.');
+    }
+    return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskSlug);
+  }
+  const workspaceDir = resolveTaskWorkspace({
+    taskSlug: options.taskSlug,
+    taskRoot: options.args.taskRoot,
+    workspaceDir: void 0
+  });
+  return createWorkspaceFromSessionDir(workspaceDir, options.taskSlug);
+}
+function resolveWorkspaceFile(baseDir, fileName, argumentName) {
+  if (isAbsolute2(fileName) || fileName.includes("..") || /^[A-Za-z]:/u.test(fileName) || fileName.startsWith("\\\\")) {
+    throw new Error(`Tool argument "${argumentName}" must be a workspace-relative file name.`);
+  }
+  const resolved = resolve4(baseDir, fileName);
+  if (!isPathInside2(baseDir, resolved)) {
+    throw new Error(`Tool argument "${argumentName}" must stay inside the file-context workspace.`);
+  }
+  return resolved;
+}
+function normalizeTaskScriptName(value, taskSlug) {
+  const scriptName = asOptionalString(value) ?? `${taskSlug}.figma.js`;
+  if (isAbsolute2(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
+    throw new Error('Tool argument "fileName" must be a file name, not a path.');
+  }
+  if (!scriptName.endsWith(".figma.js")) {
+    throw new Error('Tool argument "fileName" must end with ".figma.js".');
+  }
+  return scriptName;
+}
+function resultFileNameForScript(scriptName) {
+  if (scriptName.endsWith(".figma.js")) {
+    return `${scriptName.slice(0, -".figma.js".length)}.result.json`;
+  }
+  if (scriptName.endsWith(".js")) {
+    return `${scriptName.slice(0, -".js".length)}.result.json`;
+  }
+  return `${slugifyTaskName(scriptName)}.result.json`;
+}
+async function writeTaskFile(path, content, overwrite) {
+  if (!overwrite) {
+    try {
+      await readFile3(path, "utf8");
+      throw new Error(`Refusing to overwrite existing file without overwrite=true: ${path}`);
+    } catch (error2) {
+      if (error2 instanceof Error && error2.message.startsWith("Refusing to overwrite")) {
+        throw error2;
+      }
+    }
+  }
+  await writeFile2(path, content, "utf8");
+  return textFileMetadata(path, content);
+}
+function resolveScriptOutputFiles(args, session) {
+  if (session?.workspace) {
+    const sessionDir = session.workspace.sessionDir;
+    const inputFile = asOptionalString(args.inputFile);
+    const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
+    const resultFile = resolveWorkspaceOutputFile(void 0, sessionDir, defaultResult, "debugFile");
+    return {
+      resultFile,
+      compiledScriptFile: compiledFilePathForResultFile(resultFile)
+    };
+  }
+  return {};
+}
+function compiledFilePathForResultFile(resultFile) {
+  if (resultFile.endsWith(".result.json")) {
+    return `${resultFile.slice(0, -".result.json".length)}.failure.compiled.js`;
+  }
+  if (resultFile.endsWith(".json")) {
+    return `${resultFile.slice(0, -".json".length)}.failure.compiled.js`;
+  }
+  return `${resultFile}.failure.compiled.js`;
+}
+function resolveWorkspaceOutputFile(value, baseDir, fallbackName, argumentName) {
+  const raw = asOptionalString(value) ?? fallbackName;
+  return isAbsolute2(raw) ? raw : resolveWorkspaceFile(baseDir, raw, argumentName);
+}
+async function writeTextFile(path, content) {
+  await mkdir2(dirname4(path), { recursive: true });
+  await writeFile2(path, content, "utf8");
+  return textFileMetadata(path, content);
+}
+async function removeFileIfExists(path) {
+  try {
+    await unlink(path);
+  } catch (error2) {
+    if (isMissingFileError(error2)) {
+      return;
+    }
+    throw error2;
+  }
+}
+function formatCompiledScriptFailureFile(compiledScript, args, session) {
+  const source = compiledScriptSourceDescription(args, session);
+  return [
+    "// Generated by figma_repl_run_script_file after upstream execution failure.",
+    `// Source: ${source}`,
+    "// This is the compiled wrapper sent to upstream Figma MCP for stack trace debugging.",
+    "// It is deleted at the start of the next figma_repl_run_script_file call with the same output context.",
+    "",
+    compiledScript
+  ].join("\n");
+}
+function compiledScriptSourceDescription(args, session) {
+  const inputFile = asOptionalString(args.inputFile);
+  if (inputFile) {
+    return session?.workspace ? `${session.workspace.fileContext}/${inputFile}` : inputFile;
+  }
+  return asOptionalString(args.scriptPath) ?? "unknown";
+}
+function isNodeError(error2) {
+  return error2 instanceof Error && "code" in error2;
+}
+function isMissingFileError(error2) {
+  if (isNodeError(error2) && error2.code === "ENOENT") {
+    return true;
+  }
+  const message = error2 instanceof Error ? error2.message : String(error2);
+  return /\bENOENT\b/.test(message);
+}
+function textFileMetadata(path, content) {
+  return {
+    path,
+    bytes: Buffer.byteLength(content, "utf8"),
+    lineCount: countTextLines(content)
+  };
+}
+function countTextLines(content) {
+  if (content.length === 0) {
+    return 0;
+  }
+  const newlineCount = content.match(/\n/gu)?.length ?? 0;
+  return content.endsWith("\n") ? newlineCount : newlineCount + 1;
+}
+function resolveTaskWorkspace(options) {
+  const explicitWorkspace = asOptionalString(options.workspaceDir);
+  if (explicitWorkspace) {
+    if (!isAbsolute2(explicitWorkspace)) {
+      throw new Error('Tool argument "workspaceDir" must be an absolute path.');
+    }
+    return explicitWorkspace;
+  }
+  const explicitRoot = asOptionalString(options.taskRoot);
+  const root = explicitRoot ?? defaultTaskWorkspaceRoot();
+  if (!isAbsolute2(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve4(root, options.taskSlug);
+}
+function createWorkspaceFromSessionDir(sessionDir, taskSlug) {
+  return createWorkspaceFromFileDir({
+    root: dirname4(sessionDir),
+    fileDir: sessionDir,
+    fileSlug: slugifyTaskName(basename(sessionDir)),
+    intentSlug: taskSlug
+  });
+}
+function createWorkspaceFromFileDir(options) {
+  const script = `${options.intentSlug}.figma.js`;
+  const result = `${options.intentSlug}.result.json`;
+  if (!isPathInside2(options.root, options.fileDir)) {
+    throw new Error("Resolved file workspace must stay inside the workspace root.");
+  }
+  return {
+    root: options.root,
+    fileDir: options.fileDir,
+    fileContext: normalizeFileContextDirectory(options.fileKey, options.fileSlug),
+    fileKey: options.fileKey,
+    fileSlug: options.fileSlug,
+    intentSlug: options.intentSlug,
+    sessionDir: options.fileDir,
+    scriptPath: resolve4(options.fileDir, script),
+    resultFile: resolve4(options.fileDir, result),
+    files: {
+      script,
+      result
+    }
+  };
+}
+function normalizeFileContextDirectory(fileKey, fileSlug) {
+  if (fileKey) {
+    if (isAbsolute2(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
+      throw new Error("Derived Figma file key must be a simple file key.");
+    }
+    return fileKey;
+  }
+  return fileSlug;
+}
+function extractCaptureImageUrl(upstream, parsed) {
+  const rawContent = asRecord(upstream).content;
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord3) : [];
+  for (const item of content) {
+    if (item.type === "image") {
+      const imageUrl = firstHttpUrl([
+        item.url,
+        item.imageUrl,
+        item.image_url,
+        item.screenshotUrl,
+        item.downloadUrl
+      ]);
+      if (imageUrl) return imageUrl;
+    }
+  }
+  const candidates = [parsed.json, upstream];
+  for (const item of content) {
+    const text = asOptionalString(item.text);
+    if (!text) continue;
+    const textUrl = firstHttpUrl([text]);
+    if (textUrl) return textUrl;
+    candidates.push(parseJsonLenient(text));
+  }
+  return findCaptureImageUrl(candidates);
+}
+function findCaptureImageUrl(values) {
+  for (const value of values) {
+    const found = findCaptureImageUrlInValue(value, 0);
+    if (found) return found;
+  }
+  return void 0;
+}
+function findCaptureImageUrlInValue(value, depth) {
+  if (depth > 6) {
+    return void 0;
+  }
+  if (typeof value === "string") {
+    return firstHttpUrl([value]);
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findCaptureImageUrlInValue(item, depth + 1);
+      if (found) return found;
+    }
+    return void 0;
+  }
+  if (!isRecord3(value)) {
+    return void 0;
+  }
+  const priorityKeys = [
+    "url",
+    "imageUrl",
+    "image_url",
+    "screenshotUrl",
+    "screenshot_url",
+    "downloadUrl",
+    "download_url",
+    "src"
+  ];
+  const priorityUrl = firstHttpUrl(priorityKeys.map((key) => value[key]));
+  if (priorityUrl) {
+    return priorityUrl;
+  }
+  for (const item of Object.values(value)) {
+    const found = findCaptureImageUrlInValue(item, depth + 1);
+    if (found) return found;
+  }
+  return void 0;
+}
+function firstHttpUrl(values) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const direct = normalizeHttpUrl(trimmed);
+    if (direct) return direct;
+    const match = /https?:\/\/[^\s"'<>]+/u.exec(trimmed);
+    const matched = match ? normalizeHttpUrl(match[0]) : void 0;
+    if (matched) return matched;
+  }
+  return void 0;
+}
+function normalizeHttpUrl(value) {
+  try {
+    const url2 = new URL(value);
+    return url2.protocol === "http:" || url2.protocol === "https:" ? url2.toString() : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function parseJsonLenient(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+      } catch {
+        return void 0;
+      }
+    }
+    return void 0;
+  }
+}
+function slugifyTaskName(value) {
+  const source = typeof value === "string" ? value : "figma-task";
+  const slug = source.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
+  return slug || "figma-task";
+}
+function isPathInside2(root, path) {
+  const rel = relative2(root, path);
+  return rel === "" || !rel.startsWith("..") && !isAbsolute2(rel);
+}
+function removeUndefined(value) {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefined);
+  }
+  if (!isRecord3(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== void 0).map(([key, item]) => [key, removeUndefined(item)])
+  );
+}
+function asRecord(value) {
+  if (isRecord3(value)) {
+    return value;
+  }
+  return {};
+}
+function isRecord3(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function asOptionalString(value) {
+  return typeof value === "string" && value.length > 0 ? value : void 0;
+}
+var TASK_WORKSPACE_ROOT_ENV, DEFAULT_WORKSPACE_DIR_NAME;
+var init_repl_workspace_files = __esm({
+  "src/repl-workspace-files.ts"() {
+    "use strict";
+    init_repl_tool_args();
+    TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
+    DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
+  }
+});
+
+// src/repl-server.ts
+var repl_server_exports = {};
+__export(repl_server_exports, {
+  FIGMA_REPL_DEFAULT_SESSION_ID: () => FIGMA_REPL_DEFAULT_SESSION_ID,
+  FIGMA_REPL_EVAL_COMMON_HELPER_NAMES: () => FIGMA_REPL_EVAL_COMMON_HELPER_NAMES,
+  assertSafeFigmaReplCode: () => assertSafeFigmaReplCode,
+  buildFigmaEvalScript: () => buildFigmaEvalScript,
+  createFigmaReplClient: () => createFigmaReplClient,
+  createFigmaReplMcpServer: () => createFigmaReplMcpServer,
+  createFigmaReplSessionStore: () => createFigmaReplSessionStore,
+  diagnoseFigmaReplCode: () => diagnoseFigmaReplCode,
+  isFigmaReplMissingFileErrorForTesting: () => isMissingFileError,
+  resolveFigmaReplScriptHelperSelection: () => resolveFigmaReplScriptHelperSelection2
+});
+import { randomUUID } from "node:crypto";
+import { tmpdir as tmpdir2 } from "node:os";
+import { mkdir as mkdir3, readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
+import { dirname as dirname5, extname as extname2, isAbsolute as isAbsolute3, relative as relative3, resolve as resolve5 } from "node:path";
+function readProcessEnv2(name) {
+  return typeof process === "undefined" ? void 0 : process.env?.[name];
+}
+function currentWorkingDirectory() {
+  return typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : tmpdir2();
+}
+function defaultTaskWorkspaceRoot2() {
+  return readProcessEnv2(TASK_WORKSPACE_ROOT_ENV) ?? resolve5(tmpdir2(), "figma-repl-mcp", "tasks");
+}
+function createFigmaReplSessionStore(options = {}) {
+  const defaultSessionId = sanitizeSessionId(
+    options.defaultSessionId ?? FIGMA_REPL_DEFAULT_SESSION_ID
+  );
+  const historyLimit = normalizePositiveInteger(options.historyLimit, DEFAULT_HISTORY_LIMIT);
+  const sessions = /* @__PURE__ */ new Map();
+  const create = (sessionId) => {
+    const id = sanitizeSessionId(sessionId ?? defaultSessionId);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const session = {
+      id,
+      slug: slugifyTaskName2(id),
+      createdAt: now,
+      updatedAt: now,
+      knownPages: {},
+      handles: {},
+      lastDiagnostics: [],
+      history: []
+    };
+    sessions.set(id, session);
+    return session;
+  };
+  return {
+    defaultSessionId,
+    getOrCreate(sessionId) {
+      const id = sanitizeSessionId(sessionId ?? defaultSessionId);
+      return sessions.get(id) ?? create(id);
+    },
+    get(sessionId) {
+      return sessions.get(sanitizeSessionId(sessionId ?? defaultSessionId));
+    },
+    list() {
+      return [...sessions.values()].map(cloneSession);
+    },
+    reset(sessionId) {
+      const id = sanitizeSessionId(sessionId ?? defaultSessionId);
+      sessions.delete(id);
+      return create(id);
+    },
+    rememberHistory(session, entry) {
+      session.history.push(entry);
+      if (session.history.length > historyLimit) {
+        session.history.splice(0, session.history.length - historyLimit);
+      }
+      touchSession(session);
+    }
+  };
+}
+function createFigmaReplRuntime(options = {}) {
+  const { client: providedClient, oauthCachePath, ...clientOptions } = options;
+  const client = providedClient ?? createRemoteMcpClient({
+    ...clientOptions,
+    statePath: oauthCachePath !== void 0 ? normalizeOAuthCachePath(oauthCachePath) : clientOptions.statePath,
+    useBridgeOAuthCache: oauthCachePath !== void 0 ? false : clientOptions.useBridgeOAuthCache ?? true,
+    openBrowser: clientOptions.openBrowser ?? false
+  });
+  const sessions = createFigmaReplSessionStore({
+    defaultSessionId: options.defaultSessionId,
+    historyLimit: options.historyLimit
+  });
+  const upstreamToolCache = createUpstreamToolCache(client);
+  return { client, sessions, upstreamToolCache };
+}
+function createFigmaReplClient(options = {}) {
+  const runtime = createFigmaReplRuntime(options);
+  return {
+    client: runtime.client,
+    sessions: runtime.sessions,
+    connect: () => runtime.client.connect(),
+    close: () => runtime.client.close(),
+    open: async (args = {}) => parseJsonToolResult(
+      await handleOpen(asOpenArgs(withDefaultTitle(args, "Open Figma REPL session")), runtime)
+    ),
+    eval: async (args) => parseJsonToolResult(
+      await handleEval(
+        asEvalArgs(withDefaultTitle(args, "Run Figma REPL JavaScript")),
+        runtime
+      )
+    ),
+    runScriptFile: async (args) => executeRunScriptFile(
+      asRunScriptFileArgs(withDefaultTitle(args, "Run Figma JavaScript file")),
+      runtime
+    ),
+    applyAssetManifest: async (args) => executeApplyAssetManifest(
+      asApplyAssetManifestArgs(withDefaultTitle(args, "Apply Figma asset manifest")),
+      runtime
+    ),
+    downloadAssets: async (args) => executeDownloadAssets(
+      asDownloadAssetsArgs(withDefaultTitle(args, "Download Figma assets")),
+      runtime
+    ),
+    captureNode: async (args) => executeCaptureNode(
+      asCaptureNodeArgs(withDefaultTitle(args, "Capture Figma node")),
+      runtime
+    ),
+    runTaskPlan: async (args) => executeRunTaskPlan(
+      asRunTaskPlanArgs(withDefaultTitle(args, "Run Figma REPL task plan")),
+      runtime
+    ),
+    prepareTask: async (args) => parseJsonToolResult(
+      await handlePrepareTask(
+        asPrepareTaskArgs(withDefaultTitle(args, "Prepare Figma REPL task")),
+        { sessions: runtime.sessions }
+      )
+    ),
+    guidance: async (args) => parseJsonToolResult(
+      await handleGuidance(asGuidanceArgs(withDefaultTitle(args, "Read Figma REPL guidance")))
+    ),
+    inspect: async (args = {}) => parseJsonToolResult(
+      await handleInspect(asInspectArgs(withDefaultTitle(args, "Inspect Figma REPL target")), runtime)
+    ),
+    getMetadata: async (args) => executeGetMetadata(
+      asGetMetadataArgs(withDefaultTitle(args, "Read Figma metadata as JSON")),
+      runtime
+    ),
+    callUpstreamTool: async (args) => executeCallUpstreamTool(
+      asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool")),
+      runtime
+    ),
+    lookup: async (args) => parseJsonToolResult(
+      await handleLookup(asLookupArgs(withDefaultTitle(args, "Look up Figma REPL reference")))
+    )
+  };
+}
+function withMcpDefaultTitle(args, title) {
+  if (args === void 0) {
+    return { title };
+  }
+  return withDefaultTitle(args, title);
+}
+function createFigmaReplMcpServer(options = {}) {
+  const runtime = createFigmaReplRuntime(options);
+  const { client, sessions, upstreamToolCache } = runtime;
+  const server = new Server(
+    {
+      name: options.name ?? "figma_repl_mcp",
+      version: options.version ?? "0.1.0"
+    },
+    {
+      capabilities: {
+        tools: {},
+        resources: {}
+      },
+      instructions: [
+        "Stateful REPL-style MCP proxy for the official Figma MCP server.",
+        "Use figma_repl_prepare_task and figma_repl_run_script_file for repairable .figma.js workflows, figma_repl_eval for small batched Plugin API JavaScript, and figma-repl://sessions resources to inspect local state.",
+        "The proxy stores only local session metadata and node-id handles; Figma execution still happens through the upstream use_figma tool."
+      ].join(" ")
+    }
+  );
+  server.setRequestHandler(ListToolsRequestSchema, async (_request) => ({
+    tools: createReplToolDescriptions({
+      taskWorkspaceRootEnv: TASK_WORKSPACE_ROOT_ENV,
+      defaultDocsSearchMaxResults: DEFAULT_DOCS_SEARCH_MAX_RESULTS,
+      maxDocsSearchResults: MAX_DOCS_SEARCH_RESULTS,
+      defaultDocsSearchSnippetLines: DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
+      maxDocsSearchSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES,
+      maxLookupQueryLength: MAX_LOOKUP_QUERY_LENGTH
+    })
+  }));
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const rawArgs = request.params.arguments;
+    switch (request.params.name) {
+      case "figma_repl_open":
+        return handleOpen(
+          asOpenArgs(withMcpDefaultTitle(rawArgs, "Open Figma REPL session")),
+          runtime
+        );
+      case "figma_repl_eval":
+        return handleEval(
+          asEvalArgs(withMcpDefaultTitle(rawArgs, "Run Figma REPL JavaScript")),
+          runtime
+        );
+      case "figma_repl_run_script_file":
+        return handleRunScriptFile(asRunScriptFileArgs(withMcpDefaultTitle(rawArgs, "Run Figma JavaScript file")), runtime);
+      case "figma_repl_apply_asset_manifest":
+        return handleApplyAssetManifest(asApplyAssetManifestArgs(withMcpDefaultTitle(rawArgs, "Apply Figma asset manifest")), runtime);
+      case "figma_repl_download_assets":
+        return handleDownloadAssets(asDownloadAssetsArgs(withMcpDefaultTitle(rawArgs, "Download Figma assets")), runtime);
+      case "figma_repl_capture_node":
+        return handleCaptureNode(asCaptureNodeArgs(withMcpDefaultTitle(rawArgs, "Capture Figma node")), runtime);
+      case "figma_repl_run_task_plan":
+        return handleRunTaskPlan(asRunTaskPlanArgs(withMcpDefaultTitle(rawArgs, "Run Figma REPL task plan")), runtime);
+      case "figma_repl_prepare_task":
+        return handlePrepareTask(
+          asPrepareTaskArgs(withMcpDefaultTitle(rawArgs, "Prepare Figma REPL task")),
+          runtime
+        );
+      case "figma_repl_guidance":
+        return handleGuidance(asGuidanceArgs(withMcpDefaultTitle(rawArgs, "Read Figma REPL guidance")));
+      case "figma_repl_inspect":
+        return handleInspect(
+          asInspectArgs(withMcpDefaultTitle(rawArgs, "Inspect Figma REPL target")),
+          runtime
+        );
+      case "figma_repl_get_metadata":
+        return handleGetMetadata(
+          asGetMetadataArgs(withMcpDefaultTitle(rawArgs, "Read Figma metadata as JSON")),
+          runtime
+        );
+      case "figma_repl_call_upstream_tool":
+        return handleCallUpstreamTool(asCallUpstreamToolArgs(withMcpDefaultTitle(rawArgs, "Call upstream Figma MCP tool")), runtime);
+      case "figma_repl_lookup":
+        return handleLookup(asLookupArgs(withMcpDefaultTitle(rawArgs, "Look up Figma REPL reference")));
+      default:
+        throw new Error(`Unknown figma_repl_mcp tool: ${request.params.name}`);
+    }
+  });
+  server.setRequestHandler(
+    ListResourcesRequestSchema,
+    async (_request) => ({
+      resources: [
+        {
+          uri: "figma-repl://capabilities",
+          name: "Figma REPL aggregate capabilities",
+          description: "Read first to choose the Figma REPL facade path, available tools, workflow resources, and lookup strategy.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://guide",
+          name: "Figma REPL agent guide",
+          description: "Read when you need the compact agent-facing guide for preferred flow, delegation boundaries, and examples.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://patterns",
+          name: "Figma REPL usage patterns",
+          description: "Read when you need practical usage patterns for common Figma REPL tasks before choosing tools.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://scripts",
+          name: "Figma REPL script file workflow",
+          description: "Read when you need the small-script figma_repl_eval versus file-based figma_repl_run_script_file workflow details.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://file-workflow",
+          name: "Figma REPL .figma.js file workflow",
+          description: "Read when you need to create or repair local .figma.js workspace files with figma_repl_prepare_task and figma_repl_run_script_file.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://workflow-tools",
+          name: "Figma REPL workflow tools for plans, assets, and captures",
+          description: "Read when you need supporting workflow tools for asset manifests, captures, and task plans.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://api-cards",
+          name: "Figma REPL compact API cards",
+          description: "Read when you need compact Plugin API cards before asking figma_repl_guidance or figma_repl_lookup for specifics.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://intents",
+          name: "Figma REPL intent to API guidance",
+          description: "Read when you need to map a user intent to recommended guidance cards, query hints, and API symbols.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://safety",
+          name: "Figma REPL safety and diagnostics",
+          description: "Read when you need safety, diagnostics, payload, or surface guardrails for Figma REPL execution.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://docs",
+          name: "Figma REPL compact documentation lookup guide",
+          description: "Read when you need the compact documentation lookup route for internal corpus snippets via figma_repl_lookup.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://api",
+          name: "Figma REPL Plugin API lookup guide",
+          description: "Read when you need the Plugin API lookup route for exact symbols via figma_repl_lookup.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://upstream-tools",
+          name: "Figma upstream MCP tools",
+          description: "Read only when you need the compact directory of explicit uncovered official upstream Figma MCP capabilities.",
+          mimeType: "application/json"
+        },
+        {
+          uri: "figma-repl://sessions",
+          name: "Figma REPL sessions",
+          description: "Read when you need the list of active REPL sessions and their ids before reading a specific session.",
+          mimeType: "application/json"
+        },
+        ...sessions.list().map((session) => ({
+          uri: `figma-repl://sessions/${encodeURIComponent(session.id)}`,
+          name: `Figma REPL session ${session.id}`,
+          description: "Read when you need public state for this specific active REPL session.",
+          mimeType: "application/json"
+        }))
+      ]
+    })
+  );
+  server.setRequestHandler(
+    ListResourceTemplatesRequestSchema,
+    async (_request) => ({
+      resourceTemplates: [
+        {
+          uriTemplate: "figma-repl://sessions/{id}",
+          name: "Figma REPL session by id",
+          description: "Read when you need full public state for a known REPL session id, including remembered handles, workspace files, file context, and recent call history.",
+          mimeType: "application/json"
+        },
+        {
+          uriTemplate: "figma-repl://upstream-tools/{name}",
+          name: "Figma upstream MCP tool by name",
+          description: "Read only after figma-repl://upstream-tools when you need the full upstream tool description and inputSchema for one official tool.",
+          mimeType: "application/json"
+        }
+      ]
+    })
+  );
+  server.setRequestHandler(
+    ReadResourceRequestSchema,
+    async (request) => readReplResource(request.params.uri, {
+      sessions,
+      upstreamToolCache
+    })
+  );
+  return { server, client, sessions };
+}
+async function handleOpen(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = truthy(args.reset) ? runtime.sessions.reset(asOptionalString2(args.sessionId)) : runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
+  assignOptionalString(session, "label", args.label);
+  applySessionFileReference(session, args.file);
+  assignOptionalString(session, "currentPageId", args.currentPageId);
+  const fileKey = extractFigmaFileKey(session.fileUrl);
+  if (fileKey) {
+    session.fileKey = fileKey;
+  }
+  const expectedSurface = normalizeSurface(args.surface);
+  const derivedSurface = inferFigmaSurface(session.fileUrl);
+  if (expectedSurface) {
+    session.surface = expectedSurface;
+  } else if (derivedSurface) {
+    session.surface = derivedSurface;
+  }
+  const openDiagnostics = diagnoseFigmaReplContext({
+    expectedSurface,
+    derivedSurface,
+    fileUrl: session.fileUrl
+  });
+  session.lastDiagnostics = openDiagnostics;
+  if (isStringRecord(args.handles)) {
+    mergeHandles(session, args.handles);
+  }
+  bindOpenWorkspaceIfAvailable(session, args);
+  touchSession(session);
+  if (args.connect !== false) {
+    await runtime.client?.connect();
+  }
+  const payload = {
+    ok: true,
+    session: responseSession(session),
+    diagnostics: diagnosticsForResponse(session.lastDiagnostics)
+  };
+  return makeJsonToolResult(payload);
+}
+async function handleEval(args, runtime) {
+  if (!args.code || typeof args.code !== "string") {
+    throw new Error('Tool argument "code" is required and must be a string.');
+  }
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  if (isStringRecord(args.handleUpdates)) {
+    mergeHandles(session, args.handleUpdates);
+  }
+  const mode = args.mode ?? "write";
+  const diagnostics = diagnoseFigmaReplCode(args.code, {
+    allowDangerousOperations: Boolean(args.allowDangerousOperations),
+    mode,
+    expectedSurface: normalizeSurface(args.surface) ?? session.surface
+  });
+  session.lastDiagnostics = diagnostics;
+  throwIfFatalDiagnostics(diagnostics);
+  const evalSettings = await resolveEvalSettings(session, args, runtime);
+  const script = buildFigmaEvalScript({
+    session,
+    code: args.code,
+    mode
+  });
+  const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
+  const parsed = parseUpstreamToolResult(upstream);
+  updateSessionFromParsedResult(session, parsed.json);
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_eval",
+    title: args.title,
+    mode,
+    summary: summarizeParsedResult(parsed),
+    nodeIds: collectNodeIds(parsed.json)
+  });
+  const resultPayload = {
+    ok: !parsed.upstreamError,
+    session: responseSession(session),
+    diagnostics: diagnosticsForResponse(diagnostics),
+    ...upstreamResultFields({
+      parsed,
+      upstream
+    }),
+    ...upstreamFailureFields(parsed)
+  };
+  const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
+  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
+  const needsOutputFile = parsed.upstreamError || isRecord4(limitedPayload.inlineResultLimit);
+  if (!needsOutputFile) {
+    return makeJsonToolResult(limitedPayload);
+  }
+  const outputFiles = await writeEvalResultFiles({
+    session,
+    resultPayload,
+    upstream: upstreamEnvelope(parsed)
+  });
+  const payloadWithFiles = {
+    ...limitedPayload,
+    outputFiles
+  };
+  return makeJsonToolResult(payloadWithFiles);
+}
+async function handleRunScriptFile(args, runtime) {
+  return makeJsonToolResult(await executeRunScriptFile(args, runtime));
+}
+async function writeEvalResultFiles(options) {
+  const outputFile = resolveEvalOutputFile(options.session);
+  const outputFiles = {
+    debugFile: responseFilePointer(await writeJsonFile(
+      outputFile,
+      createUpstreamBackedResultFilePayload({
+        tool: "figma_repl_eval",
+        session: options.session,
+        resultPayload: options.resultPayload,
+        upstream: options.upstream,
+        fields: {
+          diagnosticsCount: countArrayField(options.resultPayload.diagnostics)
+        }
+      })
+    ))
+  };
+  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstream));
+  return outputFiles;
+}
+function resolveEvalOutputFile(session) {
+  const fileName = `eval-${(/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "")}.result.json`;
+  if (session.workspace) {
+    return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
+  }
+  const root = defaultTaskWorkspaceRoot2();
+  if (!isAbsolute3(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve5(root, "eval-results", session.slug, fileName);
+}
+async function writeCallUpstreamResultFiles(options) {
+  const outputFile = resolveCallUpstreamOutputFile(options.args.toolName, options.session);
+  const outputFiles = {
+    debugFile: responseFilePointer(await writeJsonFile(
+      outputFile,
+      createUpstreamBackedResultFilePayload({
+        tool: "figma_repl_call_upstream_tool",
+        session: options.session,
+        resultPayload: options.resultPayload,
+        upstream: options.upstream,
+        fields: {
+          upstreamToolName: options.args.toolName
+        }
+      })
+    ))
+  };
+  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstream));
+  return outputFiles;
+}
+async function writeMetadataFile(options) {
+  const metadataFile = metadataResultFilePath(options.session, options.args.title);
+  return responseFilePointer(await writeJsonFile(metadataFile, options.metadata));
+}
+function metadataResultFilePath(session, title) {
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
+  const fileName = `${slugifyTaskName2(title ?? "metadata")}-${timestamp}.metadata.json`;
+  if (session.workspace) {
+    return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "metadataFile");
+  }
+  const root = defaultTaskWorkspaceRoot2();
+  if (!isAbsolute3(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve5(root, "metadata-results", session.slug, fileName);
+}
+function resolveCallUpstreamOutputFile(toolName, session) {
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
+  const fileName = `upstream-${slugifyTaskName2(toolName || "tool")}-${timestamp}.result.json`;
+  if (session.workspace) {
+    return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
+  }
+  const root = defaultTaskWorkspaceRoot2();
+  if (!isAbsolute3(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve5(root, "upstream-results", session.slug, fileName);
+}
+function upstreamFilePathForResultFile(resultFile) {
+  if (resultFile.endsWith(".result.json")) {
+    return `${resultFile.slice(0, -".result.json".length)}.upstream.json`;
+  }
+  if (resultFile.endsWith(".json")) {
+    return `${resultFile.slice(0, -".json".length)}.upstream.json`;
+  }
+  return `${resultFile}.upstream.json`;
+}
+async function addUpstreamSidecar(outputFiles, resultFile, upstream) {
+  if (!resultFile || !upstream) {
+    return { ...outputFiles };
+  }
+  return {
+    ...outputFiles,
+    upstreamFile: responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(resultFile), upstream))
+  };
+}
+function responseFilePointer(pointer) {
+  return {
+    path: pointer.path,
+    bytes: pointer.bytes,
+    lineCount: pointer.lineCount
+  };
+}
+function createResultFileEnvelope(options) {
+  return removeUndefined2({
+    kind: "figma_repl_result",
+    ok: options.ok,
+    tool: options.tool,
+    sessionId: options.session.id,
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    ...options.fields
+  });
+}
+function createUpstreamBackedResultFilePayload(options) {
+  return createResultFileEnvelope({
+    tool: options.tool,
+    session: options.session,
+    ok: options.resultPayload.ok !== false,
+    fields: {
+      ...options.fields,
+      upstreamKind: asOptionalString2(options.upstream?.kind),
+      upstreamOk: typeof options.upstream?.ok === "boolean" ? options.upstream.ok : void 0,
+      upstreamError: isRecord4(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : void 0,
+      primaryFix: asOptionalString2(options.resultPayload.primaryFix)
+    }
+  });
+}
+function createRunScriptResultFilePayload(options) {
+  const script = asRecord2(options.resultPayload.script);
+  return createUpstreamBackedResultFilePayload({
+    tool: "figma_repl_run_script_file",
+    session: options.session,
+    resultPayload: options.resultPayload,
+    upstream: options.upstream,
+    fields: {
+      dryRun: options.resultPayload.dryRun === true,
+      executed: options.resultPayload.dryRun !== true,
+      diagnosticsCount: options.diagnostics.length,
+      fatalDiagnostics: options.diagnostics.filter((item) => item.severity === "fatal").length,
+      warningDiagnostics: options.diagnostics.filter((item) => item.severity === "warning").length,
+      diagnostics: options.diagnostics.length > 0 ? options.diagnostics : void 0,
+      script,
+      resultSummary: options.parsed ? summarizeParsedResult(options.parsed) : void 0,
+      nodeIds: options.parsed ? collectNodeIds(options.parsed.json) : void 0
+    }
+  });
+}
+function countArrayField(value) {
+  return Array.isArray(value) ? value.length : void 0;
+}
+async function executeRunScriptFile(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  const scriptPath = resolveScriptInputPath(args, session);
+  const source = await readFile4(scriptPath, "utf8");
+  const expectedSurface = normalizeSurface(args.surface) ?? session.surface;
+  if (expectedSurface) {
+    session.surface = expectedSurface;
+  }
+  if (typeof args.targetPageId === "string" && args.targetPageId.length > 0) {
+    session.currentPageId = args.targetPageId;
+  }
+  const compiled = compileFigmaReplScriptFile({
+    scriptPath,
+    source,
+    targetPageId: args.targetPageId,
+    expectedSurface,
+    allowDangerousOperations: Boolean(args.allowDangerousOperations),
+    strict: Boolean(args.strict)
+  });
+  const wrappedScript = buildFigmaEvalScript({
+    session,
+    code: compiled.code,
+    mode: "write",
+    includeEvalHelpers: false,
+    scriptInjectedHelpers: compiled.metadata.injectedHelpers
+  });
+  const diagnostics = [
+    ...compiled.diagnostics,
+    ...diagnoseWrappedScriptSize(scriptPath, wrappedScript, Boolean(args.strict))
+  ];
+  session.lastDiagnostics = diagnostics;
+  const outputWriter = createScriptOutputWriter(args, session);
+  await outputWriter.cleanupCompiledScriptFile();
+  throwIfFatalDiagnostics(diagnostics);
+  const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
+  const scriptMetadata = {
+    ...compiled.metadata,
+    diagnosticsCount: diagnostics.length,
+    compiledScriptBytes: Buffer.byteLength(wrappedScript, "utf8"),
+    dryRun: Boolean(args.dryRun),
+    executed: !args.dryRun
+  };
+  const responseScript = responseScriptMetadata(scriptMetadata);
+  if (args.dryRun) {
+    touchSession(session);
+    const resultPayload2 = {
+      ok: true,
+      dryRun: true,
+      session: responseSession(session),
+      diagnostics: diagnosticsForResponse(diagnostics),
+      script: responseScript
+    };
+    const limitedPayload2 = limitInlineScriptResult(resultPayload2, inlineResultLimit, []);
+    const needsOutputFile2 = diagnostics.length > 0;
+    const outputFiles2 = await outputWriter.write({
+      result: createRunScriptResultFilePayload({
+        session,
+        resultPayload: resultPayload2,
+        diagnostics
+      }),
+      writeResult: needsOutputFile2
+    });
+    const payload2 = {
+      ...limitedPayload2,
+      outputFiles: Object.keys(outputFiles2).length > 0 ? outputFiles2 : void 0
+    };
+    return payload2;
+  }
+  const evalSettings = await resolveEvalSettings(session, args, runtime);
+  let upstream;
+  let parsed;
+  try {
+    upstream = await callUpstreamEval(runtime.client, evalSettings, wrappedScript);
+    parsed = parseUpstreamToolResult(upstream);
+  } catch (error2) {
+    const upstreamError = normalizeCaughtUpstreamError(error2);
+    const resultPayload2 = {
+      ok: false,
+      dryRun: false,
+      session: responseSession(session),
+      diagnostics: diagnosticsForResponse(diagnostics),
+      script: responseScript,
+      upstreamError: responseUpstreamError(upstreamError),
+      primaryFix: primaryFixForUpstreamError(upstreamError)
+    };
+    const outputFiles2 = await outputWriter.write({
+      result: createRunScriptResultFilePayload({
+        session,
+        resultPayload: resultPayload2,
+        diagnostics
+      }),
+      compiledScript: wrappedScript,
+      writeResult: true
+    });
+    const nonEmptyOutputFiles = Object.keys(outputFiles2).length > 0 ? outputFiles2 : void 0;
+    const payload2 = {
+      ...limitInlineScriptResult(
+        {
+          ...resultPayload2,
+          outputFiles: nonEmptyOutputFiles
+        },
+        inlineResultLimit,
+        []
+      )
+    };
+    return payload2;
+  }
+  if (parsed.upstreamError) {
+    const upstreamResult2 = upstreamEnvelope(parsed);
+    const resultPayload2 = {
+      ok: false,
+      dryRun: false,
+      session: responseSession(session),
+      diagnostics: diagnosticsForResponse(diagnostics),
+      script: responseScript,
+      ...runScriptUpstreamFields(parsed),
+      ...runScriptUpstreamFailureFields(parsed)
+    };
+    const outputFiles2 = await addUpstreamSidecar(
+      await outputWriter.write({
+        result: createRunScriptResultFilePayload({
+          session,
+          resultPayload: resultPayload2,
+          diagnostics,
+          parsed,
+          upstream: upstreamResult2
+        }),
+        compiledScript: wrappedScript,
+        writeResult: true
+      }),
+      outputWriter.files.resultFile,
+      upstreamResult2
+    );
+    const nonEmptyOutputFiles = Object.keys(outputFiles2).length > 0 ? outputFiles2 : void 0;
+    const payload2 = {
+      ...limitInlineScriptResult(
+        {
+          ...resultPayload2,
+          outputFiles: nonEmptyOutputFiles
+        },
+        inlineResultLimit,
+        ["upstream.result", "upstream.text"]
+      )
+    };
+    return payload2;
+  }
+  updateSessionFromParsedResult(session, parsed.json);
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_run_script_file",
+    title: args.title,
+    mode: "write",
+    summary: `Ran Figma script file ${scriptPath}.`,
+    nodeIds: collectNodeIds(parsed.json)
+  });
+  const resultPayload = {
+    ok: true,
+    dryRun: false,
+    session: responseSession(session),
+    diagnostics: diagnosticsForResponse(diagnostics),
+    script: responseScript,
+    ...runScriptUpstreamFields(parsed)
+  };
+  const upstreamResult = upstreamEnvelope(parsed);
+  const limitedPayload = limitInlineScriptResult(
+    resultPayload,
+    inlineResultLimit,
+    ["upstream.result", "upstream.text"]
+  );
+  const needsOutputFile = diagnostics.length > 0 || isRecord4(limitedPayload.inlineResultLimit);
+  const outputFiles = needsOutputFile ? await addUpstreamSidecar(await outputWriter.write({
+    result: createRunScriptResultFilePayload({
+      session,
+      resultPayload,
+      diagnostics,
+      parsed,
+      upstream: upstreamResult
+    }),
+    writeResult: true
+  }), outputWriter.files.resultFile, upstreamResult) : await outputWriter.write({
+    result: createRunScriptResultFilePayload({
+      session,
+      resultPayload,
+      diagnostics,
+      parsed,
+      upstream: upstreamResult
+    }),
+    writeResult: false
+  });
+  const payload = {
+    ...limitedPayload,
+    outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0
+  };
+  return payload;
+}
+async function handleApplyAssetManifest(args, runtime) {
+  return makeJsonToolResult(await executeApplyAssetManifest(args, runtime));
+}
+async function executeApplyAssetManifest(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  const manifest = await loadAssetManifest(args, session);
+  const tools = await runtime.upstreamToolCache.list(false);
+  const tool = selectRequiredUpstreamTool(tools, UPLOAD_ASSETS_TOOL_NAME, "asset upload/fill");
+  assertUpstreamToolHasProperties(tool, ["fileKey", "count", "nodeId", "scaleMode"], "asset upload/fill");
+  const failures = [];
+  const assetResults = [];
+  const assetDetails = [];
+  await runtime.client.connect();
+  for (const asset of manifest.assets) {
+    const upstreamArguments = buildAssetManifestUpstreamArguments({
+      asset,
+      tool
+    });
+    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    try {
+      const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+      const parsed = parseUpstreamToolResult(upstream);
+      const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0;
+      const upload = parsed.upstreamError ? void 0 : await submitLocalAssetUploadIfAvailable(asset, parsed);
+      const ok2 = !parsed.upstreamError && upload?.ok !== false;
+      const entry = {
+        ok: ok2,
+        path: asset.path,
+        targetNodeId: asset.targetNodeId,
+        handle: asset.handle,
+        name: asset.name,
+        upstreamError
+      };
+      const detail = {
+        ...entry,
+        toolName: tool.name,
+        upload,
+        uploadSummary: compactUploadSummary(upload),
+        metadata: asset.metadata,
+        arguments: upstreamArguments,
+        upstream: upstreamEnvelope(parsed),
+        upstreamError,
+        primaryFix: parsed.primaryFix,
+        startedAt,
+        finishedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      assetResults.push(entry);
+      assetDetails.push(detail);
+      if (!ok2) {
+        failures.push({
+          path: asset.path,
+          targetNodeId: asset.targetNodeId,
+          handle: asset.handle,
+          upstreamError
+        });
+      }
+    } catch (error2) {
+      const upstreamError = normalizeCaughtUpstreamError(error2);
+      const responseError = responseUpstreamError(upstreamError);
+      const entry = {
+        ok: false,
+        path: asset.path,
+        targetNodeId: asset.targetNodeId,
+        handle: asset.handle,
+        name: asset.name,
+        upstreamError: responseError
+      };
+      const detail = {
+        ...entry,
+        toolName: tool.name,
+        metadata: asset.metadata,
+        arguments: upstreamArguments,
+        upstreamError: responseError,
+        primaryFix: primaryFixForUpstreamError(upstreamError),
+        startedAt,
+        finishedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      assetResults.push(entry);
+      assetDetails.push(detail);
+      failures.push({
+        path: asset.path,
+        targetNodeId: asset.targetNodeId,
+        handle: asset.handle,
+        upstreamError: responseError
+      });
+    }
+  }
+  const files = {};
+  const validation = await validateAssetManifestTargetsIfAvailable({
+    args,
+    session,
+    runtime,
+    tools,
+    assetResults
+  });
+  const ok = failures.length === 0 && validation.ok !== false;
+  for (const detail of assetDetails) {
+    const targetNodeId = asOptionalString2(detail.targetNodeId);
+    const asset = assetResults.find((item) => item.targetNodeId === targetNodeId);
+    if (asset?.validation !== void 0) {
+      detail.validation = asset.validation;
+    }
+  }
+  const payload = {
+    ok,
+    session: responseSession(session),
+    assets: assetResults,
+    validation,
+    failures: failures.length > 0 ? failures : void 0
+  };
+  if (!ok) {
+    files.debugFile = responseFilePointer(await writeJsonFile(resolveAssetManifestDebugFile(args, session), createResultFileEnvelope({
+      tool: "figma_repl_apply_asset_manifest",
+      session,
+      ok,
+      fields: {
+        assetCount: assetResults.length,
+        failureCount: failures.length,
+        validationOk: validation.ok,
+        failures: failures.length > 0 ? failures : void 0,
+        assetDetails
+      }
+    })));
+  }
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_apply_asset_manifest",
+    title: args.title,
+    mode: "upstream-assets",
+    summary: `Applied ${assetResults.length} asset manifest entries with ${failures.length} failures.`,
+    nodeIds: assetResults.map((asset) => asOptionalString2(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
+  });
+  const response = {
+    ...payload,
+    outputFiles: Object.keys(files).length > 0 ? files : void 0
+  };
+  return response;
+}
+function resolveAssetManifestDebugFile(args, session) {
+  const slug = slugifyTaskName2(args.title || "asset-manifest");
+  const fileName = `${slug}.assets.result.json`;
+  if (session.workspace) {
+    return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
+  }
+  const root = defaultTaskWorkspaceRoot2();
+  if (!isAbsolute3(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve5(root, "asset-results", session.slug, fileName);
+}
+function compactUploadSummary(upload) {
+  if (!upload) {
+    return void 0;
+  }
+  return removeUndefined2({
+    ok: upload.ok,
+    status: upload.status,
+    statusText: upload.statusText,
+    mimeType: upload.mimeType,
+    bytes: upload.bytes
+  });
+}
+async function handleDownloadAssets(args, runtime) {
+  return makeJsonToolResult(await executeDownloadAssets(args, runtime));
+}
+async function executeDownloadAssets(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  const manifest = await loadDownloadAssetsManifest(args, session);
+  const paths = resolveDownloadAssetsOutputPaths(args, session);
+  const tools = await runtime.upstreamToolCache.list(false);
+  const tool = tools.find((item) => item.name === DOWNLOAD_ASSETS_TOOL_NAME);
+  if (!tool) {
+    throw new Error(
+      `Upstream Figma MCP tool "${DOWNLOAD_ASSETS_TOOL_NAME}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
+    );
+  }
+  assertUpstreamToolHasProperties(tool, ["fileKey", "nodeId"], "asset download");
+  if (manifest.targets.some((target) => target.defaultFormat !== void 0)) {
+    assertUpstreamToolHasProperty(tool, "defaultFormat", "asset download");
+  }
+  if (manifest.targets.some((target) => target.defaultScale !== void 0)) {
+    assertUpstreamToolHasProperty(tool, "defaultScale", "asset download");
+  }
+  const targetResults = [];
+  const targetDetails = [];
+  const failures = [];
+  const usedSlugs = /* @__PURE__ */ new Set();
+  await runtime.client.connect();
+  for (const [index, target] of manifest.targets.entries()) {
+    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const targetSlug = uniqueDownloadTargetSlug(target, index, usedSlugs);
+    const targetOutputDir = resolve5(paths.outputDir, targetSlug);
+    const upstreamArguments = buildDownloadAssetsUpstreamArguments(target);
+    try {
+      const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+      const parsed = parseUpstreamToolResult(upstream);
+      const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0;
+      const links = parsed.upstreamError ? [] : collectDownloadAssetLinks(parsed.json);
+      const downloadedFiles = parsed.upstreamError ? [] : await downloadAssetLinks(links, targetOutputDir);
+      const downloadFailures = downloadedFiles.filter((file) => file.ok === false);
+      const ok2 = !parsed.upstreamError && links.length > 0 && downloadFailures.length === 0;
+      const downloadError = downloadFailures[0]?.error ? responseUpstreamError(normalizeCaughtUpstreamError(downloadFailures[0].error)) : links.length === 0 && !parsed.upstreamError ? { message: "Upstream download_assets returned no downloadable URLs." } : void 0;
+      const entry = removeUndefined2({
+        ok: ok2,
+        targetNodeId: target.targetNodeId,
+        handle: target.handle,
+        name: target.name,
+        outputDir: targetOutputDir,
+        downloadedFiles: compactDownloadedFiles(downloadedFiles),
+        upstreamError,
+        downloadError
+      });
+      const detail = removeUndefined2({
+        ...entry,
+        toolName: tool.name,
+        arguments: upstreamArguments,
+        links,
+        downloadedFiles,
+        upstream: upstreamEnvelope(parsed),
+        upstreamError,
+        primaryFix: parsed.primaryFix,
+        startedAt,
+        finishedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      targetResults.push(entry);
+      targetDetails.push(detail);
+      if (!ok2) {
+        failures.push(removeUndefined2({
+          targetNodeId: target.targetNodeId,
+          handle: target.handle,
+          name: target.name,
+          outputDir: targetOutputDir,
+          upstreamError,
+          downloadError: downloadError ?? {
+            message: "One or more asset downloads failed."
+          }
+        }));
+      }
+    } catch (error2) {
+      const upstreamError = normalizeCaughtUpstreamError(error2);
+      const responseError = responseUpstreamError(upstreamError);
+      const entry = removeUndefined2({
+        ok: false,
+        targetNodeId: target.targetNodeId,
+        handle: target.handle,
+        name: target.name,
+        outputDir: targetOutputDir,
+        downloadedFiles: [],
+        upstreamError: responseError
+      });
+      const detail = removeUndefined2({
+        ...entry,
+        toolName: tool.name,
+        arguments: upstreamArguments,
+        upstreamError: responseError,
+        primaryFix: primaryFixForUpstreamError(upstreamError),
+        startedAt,
+        finishedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      targetResults.push(entry);
+      targetDetails.push(detail);
+      failures.push(removeUndefined2({
+        targetNodeId: target.targetNodeId,
+        handle: target.handle,
+        name: target.name,
+        outputDir: targetOutputDir,
+        upstreamError: responseError
+      }));
+    }
+  }
+  const ok = failures.length === 0;
+  const payload = removeUndefined2({
+    ok,
+    session: responseSession(session),
+    outputDir: paths.outputDir,
+    targets: targetResults,
+    failures: failures.length > 0 ? failures : void 0
+  });
+  const outputFiles = {};
+  if (!ok) {
+    outputFiles.debugFile = responseFilePointer(await writeJsonFile(paths.resultFile, createResultFileEnvelope({
+      tool: "figma_repl_download_assets",
+      session,
+      ok,
+      fields: {
+        upstreamToolName: tool.name,
+        targetCount: targetResults.length,
+        failureCount: failures.length,
+        failures: failures.length > 0 ? failures : void 0,
+        targetDetails
+      }
+    })));
+  }
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_download_assets",
+    title: args.title,
+    mode: "download-assets",
+    summary: `Downloaded assets for ${targetResults.length} target(s) with ${failures.length} failures.`,
+    nodeIds: manifest.targets.map((target) => target.targetNodeId)
+  });
+  const response = {
+    ...payload,
+    outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0
+  };
+  return response;
+}
+async function loadDownloadAssetsManifest(args, session) {
+  const inlineTargets = Array.isArray(args.targets) ? args.targets : void 0;
+  const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
+  if (inlineTargets && manifestPath) {
+    throw new Error('Pass either "targets" or "manifestPath", not both.');
+  }
+  const manifestValue = manifestPath ? JSON.parse(await readFile4(manifestPath, "utf8")) : void 0;
+  const manifestRecord = asRecord2(manifestValue);
+  if (manifestRecord.assets !== void 0) {
+    throw new Error('Download manifest field "assets" is not supported. Use "targets".');
+  }
+  const rawTargets = inlineTargets ?? (Array.isArray(manifestRecord.targets) ? manifestRecord.targets : void 0);
+  if (!rawTargets || rawTargets.length === 0) {
+    throw new Error('Tool argument "targets" or "manifestPath" with targets is required.');
+  }
+  return {
+    targets: rawTargets.map((target, index) => normalizeDownloadAssetTarget(target, index, session))
+  };
+}
+function normalizeDownloadAssetTarget(value, index, session) {
+  const record2 = asRecord2(value);
+  const targetResolution = resolveSessionTargetInput(record2.target, session);
+  const targetNodeId = targetResolution.nodeId;
+  if (!targetNodeId) {
+    throw new Error(`Download target ${index} requires target.`);
+  }
+  const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl) ?? extractFigmaFileKeyFromTargetInput(record2.target);
+  if (!fileKey) {
+    throw new Error(`Download target ${index} requires a session fileKey. Call figma_repl_open or figma_repl_prepare_task with a Figma file URL first.`);
+  }
+  const defaultFormat = asOptionalDownloadAssetFormat(record2.defaultFormat);
+  const defaultScale = typeof record2.defaultScale === "number" && Number.isFinite(record2.defaultScale) ? record2.defaultScale : void 0;
+  return {
+    targetNodeId,
+    handle: targetResolution.handle,
+    fileKey,
+    name: asOptionalString2(record2.name),
+    defaultFormat,
+    defaultScale
+  };
+}
+function asOptionalDownloadAssetFormat(value) {
+  if (value === "png" || value === "jpg" || value === "svg" || value === "pdf") {
+    return value;
+  }
+  return void 0;
+}
+function extractFigmaFileKeyFromTargetInput(input) {
+  if (isRecord4(input)) {
+    return extractFigmaFileKeyFromTargetInput(input.url) ?? extractFigmaFileKeyFromTargetInput(input.nodeUrl) ?? extractFigmaFileKeyFromTargetInput(input.target);
+  }
+  return extractFigmaFileKey(asOptionalString2(input));
+}
+function resolveDownloadAssetsOutputPaths(args, session) {
+  const slug = slugifyTaskName2(args.title || "download-assets");
+  const explicitOutputDir = resolveWorkspaceAwareFile(args.outputDir, session, "outputDir");
+  let outputDir = explicitOutputDir;
+  if (!outputDir) {
+    outputDir = session.workspace ? resolveWorkspaceFile(session.workspace.sessionDir, `${slug}.downloads`, "outputDir") : resolveDownloadAssetsTempPath(session, `${slug}.downloads`);
+  }
+  const resultFile = session.workspace ? resolveWorkspaceFile(session.workspace.sessionDir, `${slug}.downloads.result.json`, "debugFile") : resolveDownloadAssetsTempPath(session, `${slug}.downloads.result.json`);
+  return { outputDir, resultFile };
+}
+function resolveDownloadAssetsTempPath(session, fileName) {
+  const root = defaultTaskWorkspaceRoot2();
+  if (!isAbsolute3(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve5(root, "download-results", session.slug, fileName);
+}
+function buildDownloadAssetsUpstreamArguments(target) {
+  return removeUndefined2({
+    fileKey: target.fileKey,
+    nodeId: target.targetNodeId,
+    defaultFormat: target.defaultFormat,
+    defaultScale: target.defaultScale
+  });
+}
+function uniqueDownloadTargetSlug(target, index, used) {
+  const base = slugifyTaskName2(target.name || target.handle || target.targetNodeId || `target-${index + 1}`);
+  let candidate = base || `target-${index + 1}`;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+function collectDownloadAssetLinks(value) {
+  const links = /* @__PURE__ */ new Map();
+  const visit = (item, path) => {
+    if (Array.isArray(item)) {
+      item.forEach((child, index) => visit(child, [...path, String(index)]));
+      return;
+    }
+    if (!isRecord4(item)) {
+      return;
+    }
+    for (const [key, child] of Object.entries(item)) {
+      if (typeof child === "string" && looksLikeDownloadUrl(child)) {
+        const kind = inferDownloadAssetKind([...path, key]);
+        const format = inferDownloadAssetFormat(item, child);
+        const mapKey = `${kind}:${child}`;
+        if (!links.has(mapKey)) {
+          links.set(mapKey, {
+            kind,
+            url: child,
+            format,
+            name: asOptionalString2(item.name) ?? asOptionalString2(item.fileName) ?? asOptionalString2(item.filename)
+          });
+        }
+      }
+      visit(child, [...path, key]);
+    }
+  };
+  visit(value, []);
+  return [...links.values()];
+}
+function looksLikeDownloadUrl(value) {
+  if (!/^https?:\/\//iu.test(value)) {
+    return false;
+  }
+  return /\.(?:png|jpe?g|webp|gif|svg|pdf)(?:[?#].*)?$/iu.test(value) || /(?:download|export|render|image|asset|file|url)/iu.test(value);
+}
+function inferDownloadAssetKind(path) {
+  const joined = path.join(".").toLowerCase();
+  if (/(?:raw|source|original|fill|fills|image|images)/u.test(joined)) {
+    return "raw";
+  }
+  return "exported";
+}
+function inferDownloadAssetFormat(record2, url2) {
+  return sanitizeFileExtension(
+    asOptionalString2(record2.format) ?? asOptionalString2(record2.exportFormat) ?? asOptionalString2(record2.fileFormat) ?? extensionFromUrl(url2)
+  );
+}
+async function downloadAssetLinks(links, outputDir) {
+  await mkdir3(outputDir, { recursive: true });
+  const rawIndexes = /* @__PURE__ */ new Map();
+  const results = [];
+  for (const link of links) {
+    const index = (rawIndexes.get(link.kind) ?? 0) + 1;
+    rawIndexes.set(link.kind, index);
+    try {
+      const response = await fetch(link.url);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const mimeType = contentTypeWithoutParameters(response.headers.get("content-type")) ?? void 0;
+      const format = sanitizeFileExtension(link.format) ?? extensionFromContentType(mimeType) ?? extensionFromUrl(link.url) ?? "bin";
+      const baseName = link.kind === "exported" ? index === 1 ? "exported" : `exported-${index}` : `raw-${index}`;
+      const path = resolve5(outputDir, `${baseName}.${format}`);
+      if (!response.ok) {
+        results.push(removeUndefined2({
+          ok: false,
+          kind: link.kind,
+          sourceUrl: link.url,
+          path,
+          mimeType,
+          format,
+          error: {
+            message: `Download failed with HTTP ${response.status} ${response.statusText}`.trim(),
+            code: `HTTP_${response.status}`
+          }
+        }));
+        continue;
+      }
+      await writeFile3(path, bytes);
+      results.push(removeUndefined2({
+        ok: true,
+        kind: link.kind,
+        sourceUrl: link.url,
+        path,
+        bytes: bytes.byteLength,
+        lineCount: 0,
+        mimeType,
+        format
+      }));
+    } catch (error2) {
+      const upstreamError = normalizeCaughtUpstreamError(error2);
+      results.push(removeUndefined2({
+        ok: false,
+        kind: link.kind,
+        sourceUrl: link.url,
+        error: responseUpstreamError(upstreamError)
+      }));
+    }
+  }
+  return results;
+}
+function compactDownloadedFiles(files) {
+  return files.map((file) => removeUndefined2({
+    ok: file.ok,
+    kind: file.kind,
+    path: file.path,
+    bytes: file.bytes,
+    lineCount: file.lineCount,
+    mimeType: file.mimeType,
+    format: file.format,
+    error: file.error
+  }));
+}
+function contentTypeWithoutParameters(value) {
+  if (!value) {
+    return void 0;
+  }
+  return value.split(";")[0].trim().toLowerCase() || void 0;
+}
+function extensionFromContentType(mimeType) {
+  switch (mimeType) {
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    case "image/svg+xml":
+      return "svg";
+    case "application/pdf":
+      return "pdf";
+    default:
+      return void 0;
+  }
+}
+function extensionFromUrl(value) {
+  try {
+    const extension = extname2(new URL(value).pathname);
+    return sanitizeFileExtension(extension);
+  } catch {
+    return sanitizeFileExtension(extname2(value));
+  }
+}
+function sanitizeFileExtension(value) {
+  if (!value) {
+    return void 0;
+  }
+  const normalized = value.trim().replace(/^\./u, "").toLowerCase();
+  return /^[a-z0-9]{1,8}$/u.test(normalized) ? normalized : void 0;
+}
+async function handleCaptureNode(args, runtime) {
+  return makeJsonToolResult(await executeCaptureNodeForTool(args, runtime));
+}
+async function executeCaptureNode(args, runtime) {
+  return executeCaptureNodeForTool(args, runtime);
+}
+async function executeCaptureNodeForTool(args, runtime) {
+  rejectRemovedCaptureMediaArguments(args);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  const targetResolution = resolveSessionTargetInput(args.target, session);
+  const nodeId = targetResolution.nodeId;
+  if (!nodeId) {
+    throw new Error('Tool argument "target" is required.');
+  }
+  const fileKey = targetResolution.fileKey ?? session.fileKey ?? extractFigmaFileKey(session.fileUrl);
+  if (!fileKey) {
+    throw new Error('Tool argument "target" requires a fileKey for official get_screenshot. Pass a node URL, target:{ fileKey, nodeId }, or open the session with a Figma file URL first.');
+  }
+  const requestedOutputFile = resolveCaptureOutputFile(args, session);
+  const tools = await runtime.upstreamToolCache.list(false);
+  const tool = selectRequiredUpstreamTool(tools, SCREENSHOT_TOOL_NAME, "node screenshot");
+  assertUpstreamToolHasProperties(tool, ["fileKey", "nodeId"], "node screenshot");
+  const upstreamArguments = buildCaptureUpstreamArguments({
+    fileKey,
+    nodeId,
+    tool
+  });
+  await runtime.client.connect();
+  const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+  const parsed = parseUpstreamToolResult(upstream);
+  if (parsed.upstreamError) {
+    const payload2 = {
+      ok: false,
+      session: responseSession(session),
+      nodeId,
+      upstreamError: responseUpstreamError(parsed.upstreamError)
+    };
+    return payload2;
+  }
+  let saved;
+  try {
+    saved = await writeCaptureOutputFile(requestedOutputFile, upstream, parsed);
+  } catch (error2) {
+    const payload2 = {
+      ok: false,
+      session: responseSession(session),
+      nodeId,
+      upstreamError: normalizeCaughtUpstreamError(error2)
+    };
+    return payload2;
+  }
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_capture_node",
+    title: args.title,
+    mode: "capture",
+    summary: `Captured node ${nodeId} to ${saved.path}.`,
+    nodeIds: [nodeId]
+  });
+  const payload = {
+    ok: true,
+    session: responseSession(session),
+    imageFile: saved.path,
+    nodeId,
+    bytes: saved.bytes,
+    width: saved.width,
+    height: saved.height
+  };
+  return payload;
+}
+function rejectRemovedCaptureMediaArguments(args) {
+  if (Object.prototype.hasOwnProperty.call(args, "preview")) {
+    throw new Error('Tool argument "preview" was removed. Capture results now return local file paths in structuredContent only.');
+  }
+  if (Object.prototype.hasOwnProperty.call(args, "thumbnail")) {
+    throw new Error('Tool argument "thumbnail" was removed. Capture results now return local file paths in structuredContent only.');
+  }
+  if (Object.prototype.hasOwnProperty.call(args, "thumbnailMaxSize")) {
+    throw new Error('Tool argument "thumbnailMaxSize" was removed. Capture results now return local file paths in structuredContent only.');
+  }
+  if (Object.prototype.hasOwnProperty.call(args, "metadataFile")) {
+    throw new Error('Tool argument "metadataFile" was removed. Use "figma_repl_call_upstream_tool" for full upstream get_screenshot debugging.');
+  }
+}
+function resolveCaptureOutputFile(args, session) {
+  const explicit = resolveWorkspaceAwareFile(args.imageFile, session, "imageFile");
+  if (explicit) {
+    return explicit;
+  }
+  const fileName = `capture-${(/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "")}`;
+  if (session.workspace) {
+    return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "imageFile");
+  }
+  const root = defaultTaskWorkspaceRoot2();
+  if (!isAbsolute3(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolve5(root, "capture-results", session.slug, fileName);
+}
+async function handleRunTaskPlan(args, runtime) {
+  return makeJsonToolResult(await executeRunTaskPlan(args, runtime));
+}
+async function executeRunTaskPlan(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  const plan = await loadTaskPlan(args, session);
+  const resultFile = resolveTaskPlanResultFile(args, plan.planPath, session);
+  const stopOnFailure = args.stopOnFailure !== false;
+  const steps = [];
+  const outputReferences = {};
+  const references = { steps: {}, outputs: {} };
+  let stopped = false;
+  for (const [index, step] of plan.steps.entries()) {
+    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const id = asOptionalString2(step.id) ?? `step-${index + 1}`;
+    const type = normalizeTaskPlanStepType2(step);
+    try {
+      const result = await runTaskPlanStep({
+        id,
+        step,
+        type,
+        title: `${args.title}: ${id}`,
+        sessionId: args.sessionId,
+        references,
+        runtime
+      });
+      const ok = taskPlanStepSucceeded(result);
+      const status = ok ? "completed" : "failed";
+      const reference = createTaskPlanStepReference({
+        id,
+        index,
+        type,
+        status,
+        ok,
+        result
+      });
+      references.steps[id] = reference;
+      const referenceOutputs = taskPlanStepOutputReferences(reference);
+      references.outputs[id] = referenceOutputs ?? {};
+      references.last = reference;
+      if (referenceOutputs !== void 0) {
+        outputReferences[id] = referenceOutputs;
+      }
+      steps.push({
+        id,
+        index,
+        type,
+        status,
+        ok,
+        summary: summarizeTaskPlanStepResult(result),
+        outputReferences: referenceOutputs,
+        finishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        startedAt
+      });
+      if (!ok && stopOnFailure) {
+        stopped = true;
+        break;
+      }
+    } catch (error2) {
+      const upstreamError = normalizeCaughtUpstreamError(error2);
+      const reference = {
+        id,
+        index,
+        type,
+        status: "failed",
+        ok: false,
+        error: upstreamError
+      };
+      references.steps[id] = reference;
+      references.last = reference;
+      steps.push({
+        id,
+        index,
+        type,
+        status: "failed",
+        ok: false,
+        error: upstreamError,
+        finishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        startedAt
+      });
+      if (stopOnFailure) {
+        stopped = true;
+        break;
+      }
+    }
+  }
+  const failedSteps = steps.filter((step) => step.ok === false);
+  const failures = failedSteps.map(compactTaskPlanFailure);
+  const payload = {
+    ok: failedSteps.length === 0,
+    session: responseSession(session),
+    stopped,
+    steps,
+    outputReferences: Object.keys(outputReferences).length > 0 ? outputReferences : void 0,
+    failures: failures.length > 0 ? failures : void 0
+  };
+  const outputFiles = {
+    debugFile: await writeJsonFile(resultFile, createResultFileEnvelope({
+      tool: "figma_repl_run_task_plan",
+      session,
+      ok: failedSteps.length === 0,
+      fields: {
+        stopped,
+        stepCount: steps.length,
+        plannedStepCount: plan.steps.length,
+        failureCount: failures.length,
+        failures: failures.length > 0 ? failures : void 0,
+        stepDetails: steps.map(compactTaskPlanStepDetail)
+      }
+    }))
+  };
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_run_task_plan",
+    title: args.title,
+    mode: "task-plan",
+    summary: `Ran ${steps.length}/${plan.steps.length} task-plan steps with ${failedSteps.length} failures.`,
+    nodeIds: []
+  });
+  const response = {
+    ...payload,
+    outputFiles
+  };
+  return response;
+}
+function compactTaskPlanFailure(step) {
+  return removeUndefined2({
+    id: asOptionalString2(step.id) ?? "",
+    index: typeof step.index === "number" ? step.index : void 0,
+    type: asOptionalString2(step.type) ?? "",
+    status: asOptionalString2(step.status) ?? "failed",
+    error: isRecord4(step.error) ? step.error : void 0
+  });
+}
+function compactTaskPlanStepDetail(step) {
+  const summary = asRecord2(step.summary);
+  return removeUndefined2({
+    id: asOptionalString2(step.id) ?? "",
+    index: typeof step.index === "number" ? step.index : void 0,
+    type: asOptionalString2(step.type) ?? "",
+    status: asOptionalString2(step.status) ?? "",
+    ok: step.ok !== false,
+    startedAt: asOptionalString2(step.startedAt),
+    finishedAt: asOptionalString2(step.finishedAt),
+    diagnostics: typeof summary.diagnostics === "number" ? summary.diagnostics : void 0,
+    failures: typeof summary.failures === "number" ? summary.failures : void 0,
+    error: isRecord4(step.error) ? step.error : void 0
+  });
+}
+async function handlePrepareTask(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime?.sessions.getOrCreate(args.sessionId);
+  const previousTask = session?.workspace ? taskChangeSnapshot(session.workspace) : void 0;
+  applyWorkspaceFileContextArgs(session, args);
+  const taskSlug = deriveTaskSlug(args, "figma-task");
+  const fileSlug = deriveFileSlug(args, session);
+  const workspace = resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session);
+  if (session) {
+    session.workspace = workspace;
+    touchSession(session);
+  }
+  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskSlug);
+  const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
+  await ensureWorkspaceDirectories(workspace);
+  await writeTaskFile(scriptPath, createTaskScriptTemplate(taskSlug, args), Boolean(args.overwrite));
+  const payload = {
+    ok: true,
+    session: session ? responseSession(session) : void 0,
+    task: {
+      taskSlug,
+      fileContext: workspace.fileContext,
+      inputFile: scriptName,
+      workspace: responseWorkspace(workspace),
+      scriptPath,
+      overwritten: Boolean(args.overwrite)
+    },
+    taskChange: {
+      previous: previousTask,
+      current: taskChangeSnapshot(workspace, scriptName),
+      changed: !previousTask || previousTask.taskSlug !== workspace.intentSlug || previousTask.inputFile !== scriptName || previousTask.sessionDir !== workspace.sessionDir
+    },
+    next: [
+      "Edit the .figma.js file in this task folder.",
+      "Dry-run with figma_repl_run_script_file before upstream execution.",
+      "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions."
+    ]
+  };
+  return makeJsonToolResult(payload);
+}
+function resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session) {
+  const parsedFile = parseFigmaFileReference(args.file);
+  const fileKey = session?.fileKey ?? parsedFile.fileKey;
+  if (typeof args.cwd === "string" && args.cwd.length > 0) {
+    if (!isAbsolute3(args.cwd)) {
+      throw new Error('Tool argument "cwd" must be an absolute path.');
+    }
+    return createSessionWorkspace({
+      cwd: args.cwd,
+      dirName: args.dirName,
+      fileKey,
+      fileSlug,
+      intentSlug: taskSlug
+    });
+  }
+  const hasFileContext = Boolean(args.file || args.fileSlug || args.dirName);
+  const hasExplicitTaskWorkspace = Boolean(args.workspaceDir || args.taskRoot);
+  if (hasFileContext && !session?.workspace && !hasExplicitTaskWorkspace) {
+    return createSessionWorkspace({
+      cwd: currentWorkingDirectory(),
+      dirName: args.dirName,
+      fileKey,
+      fileSlug,
+      intentSlug: taskSlug
+    });
+  }
+  return resolvePreparedTaskWorkspace({
+    args,
+    taskSlug,
+    fileSlug,
+    session
+  });
+}
+function taskChangeSnapshot(workspace, inputFile = workspace.files.script) {
+  return {
+    taskSlug: workspace.intentSlug,
+    inputFile,
+    sessionDir: workspace.sessionDir
+  };
+}
+async function handleGuidance(args) {
+  assertRequiredTitleArgument(args);
+  const intentSource = guidanceIntentSource(args);
+  const cardSource = args.card ?? args.query;
+  const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
+  const mode = args.mode ?? (cardSource ? "card" : intentSource ? "guidance" : "catalog");
+  if (mode === "plan") {
+    const planIntent = intentSource ? normalizeLookupRankingQuery(intentSource.value, intentSource.name) : "figma file task";
+    const payload2 = {
+      ok: true,
+      workflow: createFileWorkflowPayload(),
+      steps: [
+        "Prepare or reuse a task workspace with figma_repl_prepare_task.",
+        "Write the transaction in a local .figma.js file using $ helpers and native Figma Plugin API calls.",
+        "Call figma_repl_run_script_file with dryRun=true, strict=true, surface, inputFile, and inlineResultLimit.",
+        "Repair local file/line diagnostics, then execute the same script file against upstream Figma.",
+        "Inspect the paired .result.json file first when inline results are capped."
+      ],
+      recommendedTools: [
+        "figma_repl_prepare_task",
+        "figma_repl_guidance",
+        "figma_repl_run_script_file",
+        "figma_repl_inspect"
+      ],
+      suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id)
+    };
+    return makeJsonToolResult(payload2);
+  }
+  const intent = intentSource ? normalizeLookupRankingQuery(intentSource.value, intentSource.name) : void 0;
+  const cardQuery = typeof cardSource === "string" ? normalizeLookupQuery(cardSource, "card or query") : void 0;
+  const cards = mode === "catalog" ? FIGMA_REPL_API_CARDS.slice(0, maxCards) : cardQuery ? searchApiCards(cardQuery, maxCards) : intent ? chooseApiCardsForIntent(intent, maxCards) : FIGMA_REPL_API_CARDS.slice(0, maxCards);
+  const context = intent ? await searchReferenceFiles({
+    query: intent,
+    files: DOCS_SEARCH_ALLOWLIST,
+    maxResults: DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
+    maxSnippetLines: 4,
+    exactSymbol: false
+  }) : { results: [] };
+  const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
+  const payload = {
+    ok: true,
+    cards,
+    catalogSize: FIGMA_REPL_API_CARDS.length,
+    guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, avoid, and pitfalls for .figma.js file workflows.",
+    recommendedCards: cards.map((card) => card.id),
+    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
+    apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
+    avoid: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    suggestions
+  };
+  return makeJsonToolResult(payload);
+}
+function guidanceIntentSource(args) {
+  if (typeof args.task === "string") {
+    return { name: "task", value: args.task };
+  }
+  return void 0;
+}
+async function handleInspect(args, runtime) {
+  assertRequiredTitleArgument(args);
+  if (args.mode === "validate") {
+    return makeJsonToolResult(await executeValidateHandles(args, runtime));
+  }
+  if (args.mode === "style") {
+    return makeJsonToolResult(await executeInspectStyle(args, runtime));
+  }
+  const session = runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
+  const target = asOptionalString2(args.target) ?? "$selection";
+  const depth = normalizePositiveInteger(args.depth, 2);
+  const code = [
+    `const __target = ${literal4(target)};`,
+    `const __depth = ${literal4(depth)};`,
+    "let __value;",
+    "if (__target === '$selection') {",
+    "  __value = figma.currentPage.selection;",
+    "} else if (__target === '$currentPage') {",
+    "  __value = figma.currentPage;",
+    "} else {",
+    "  __value = await $(__target);",
+    "}",
+    "return {",
+    "  target: __target,",
+    "  summary: Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth),",
+    "  handles: __figmaRepl.handles,",
+    "};"
+  ].join("\n");
+  const evalSettings = await resolveEvalSettings(session, args, runtime);
+  const upstream = await callUpstreamEval(
+    runtime.client,
+    evalSettings,
+    buildFigmaEvalScript({ session, code, mode: "read" })
+  );
+  const parsed = parseUpstreamToolResult(upstream);
+  updateSessionFromParsedResult(session, parsed.json);
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_inspect",
+    title: asOptionalString2(args.title),
+    mode: "read",
+    summary: `Inspected ${target}.`,
+    nodeIds: collectNodeIds(parsed.json)
+  });
+  const payload = {
+    ok: !parsed.upstreamError,
+    session: responseSession(session),
+    diagnostics: diagnosticsForResponse(session.lastDiagnostics),
+    ...inspectInlineResultFields(parsed)
+  };
+  return makeJsonToolResult(payload);
+}
+async function executeInspectStyle(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
+  const target = asOptionalString2(args.target) ?? "$selection";
+  const depth = normalizePositiveInteger(args.depth, 1);
+  const code = [
+    `const __target = ${literal4(target)};`,
+    `const __depth = ${literal4(depth)};`,
+    "let __value;",
+    "if (__target === '$selection') {",
+    "  __value = figma.currentPage.selection;",
+    "} else if (__target === '$currentPage') {",
+    "  __value = figma.currentPage;",
+    "} else {",
+    "  __value = await $(__target);",
+    "}",
+    "function __hex(__color) {",
+    "  const __r = Math.max(0, Math.min(255, Math.round((__color.r || 0) * 255)));",
+    "  const __g = Math.max(0, Math.min(255, Math.round((__color.g || 0) * 255)));",
+    "  const __b = Math.max(0, Math.min(255, Math.round((__color.b || 0) * 255)));",
+    "  return '#' + [__r, __g, __b].map((__v) => __v.toString(16).padStart(2, '0')).join('');",
+    "}",
+    "function __paint(__paint) {",
+    "  if (!__paint) return undefined;",
+    "  const __out = { type: __paint.type, visible: __paint.visible !== false, opacity: __paint.opacity == null ? 1 : Math.round(__paint.opacity * 1000) / 1000 };",
+    "  if (__paint.color) __out.color = __hex(__paint.color);",
+    "  if (__paint.gradientStops) __out.stops = __paint.gradientStops.slice(0, 6).map((__s) => ({ color: __hex(__s.color), opacity: Math.round((__s.color.a == null ? 1 : __s.color.a) * 1000) / 1000, position: Math.round(__s.position * 1000) / 1000 }));",
+    "  if (__paint.imageHash) __out.image = true;",
+    "  return __out;",
+    "}",
+    "function __fontName(__node) {",
+    "  const __font = __node.fontName;",
+    "  return typeof __font === 'symbol' ? String(__font) : __font;",
+    "}",
+    "const __nodes = [];",
+    "function __walk(__node) {",
+    "  if (!__node) return;",
+    "  __nodes.push(__node);",
+    "  if ('children' in __node) {",
+    "    for (const __child of __node.children) __walk(__child);",
+    "  }",
+    "}",
+    "if (Array.isArray(__value)) {",
+    "  for (const __node of __value) __walk(__node);",
+    "} else {",
+    "  __walk(__value);",
+    "}",
+    "const __colorCounts = {};",
+    "const __imageNodes = [];",
+    "const __textStyles = [];",
+    "const __strokes = [];",
+    "const __effects = [];",
+    "for (const __node of __nodes) {",
+    "  if ('fills' in __node && Array.isArray(__node.fills)) {",
+    "    for (const __fill of __node.fills) {",
+    "      const __summary = __paint(__fill);",
+    "      if (__summary && __summary.color) __colorCounts[__summary.color] = (__colorCounts[__summary.color] || 0) + 1;",
+    "      if (__summary && __summary.stops) {",
+    "        for (const __stop of __summary.stops) __colorCounts[__stop.color] = (__colorCounts[__stop.color] || 0) + 1;",
+    "      }",
+    "      if (__summary && __summary.image && __imageNodes.length < 20) __imageNodes.push({ id: __node.id, name: __node.name, type: __node.type, x: __node.x, y: __node.y, width: __node.width, height: __node.height });",
+    "    }",
+    "  }",
+    "  if (__node.type === 'TEXT' && __textStyles.length < 24) {",
+    "    const __fills = Array.isArray(__node.fills) ? __node.fills.map(__paint).filter(Boolean).slice(0, 3) : [];",
+    "    __textStyles.push({ id: __node.id, name: __node.name, characters: __node.characters, font: __fontName(__node), fontSize: __node.fontSize, fills: __fills });",
+    "  }",
+    "  if ('strokes' in __node && Array.isArray(__node.strokes) && __node.strokes.length && __strokes.length < 24) {",
+    "    __strokes.push({ id: __node.id, name: __node.name, type: __node.type, strokes: __node.strokes.map(__paint).filter(Boolean).slice(0, 3), strokeWeight: __node.strokeWeight });",
+    "  }",
+    "  if ('effects' in __node && Array.isArray(__node.effects) && __node.effects.length && __effects.length < 16) {",
+    "    __effects.push({ id: __node.id, name: __node.name, type: __node.type, effects: __node.effects.slice(0, 4).map((__effect) => ({ type: __effect.type, visible: __effect.visible !== false, radius: __effect.radius, color: __effect.color ? __hex(__effect.color) : undefined })) });",
+    "  }",
+    "}",
+    "const __topColors = Object.entries(__colorCounts).sort((__a, __b) => __b[1] - __a[1]).slice(0, 16).map(([color, count]) => ({ color, count }));",
+    "return {",
+    "  target: __target,",
+    "  mode: 'style',",
+    "  nodeCount: __nodes.length,",
+    "  summary: Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth),",
+    "  style: { topColors: __topColors, textStyles: __textStyles, imageNodes: __imageNodes, strokes: __strokes, effects: __effects, caps: { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 } },",
+    "  handles: __figmaRepl.handles,",
+    "};"
+  ].join("\n");
+  const diagnostics = diagnoseFigmaReplCode(code, {
+    mode: "read",
+    generatedCode: true,
+    expectedSurface: session.surface
+  });
+  session.lastDiagnostics = diagnostics;
+  throwIfFatalDiagnostics(diagnostics);
+  const evalSettings = await resolveEvalSettings(session, args, runtime);
+  const upstream = await callUpstreamEval(
+    runtime.client,
+    evalSettings,
+    buildFigmaEvalScript({ session, code, mode: "read" })
+  );
+  const parsed = parseUpstreamToolResult(upstream);
+  updateSessionFromParsedResult(session, parsed.json);
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_inspect",
+    title: asOptionalString2(args.title),
+    mode: "style",
+    summary: `Inspected style tokens for ${target}.`,
+    nodeIds: collectNodeIds(parsed.json)
+  });
+  const payload = {
+    ok: !parsed.upstreamError,
+    session: responseSession(session),
+    diagnostics: diagnosticsForResponse(diagnostics),
+    ...inspectInlineResultFields(parsed)
+  };
+  return payload;
+}
+async function executeValidateHandles(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
+  const requested = Array.isArray(args.handles) ? args.handles.filter((item) => typeof item === "string" && item.length > 0) : Object.keys(session.handles);
+  const code = [
+    `const __requestedHandles = ${literal4(requested)};`,
+    `const __knownHandles = ${literal4(session.handles)};`,
+    "const __validations = [];",
+    "for (const __name of __requestedHandles) {",
+    "  const __isHandle = typeof __name === 'string' && __name.startsWith('$');",
+    "  if (__isHandle && !__knownHandles[__name]) {",
+    "    __validations.push({ handle: __name, status: 'missing' });",
+    "    continue;",
+    "  }",
+    "  try {",
+    "    const __node = await $(__name);",
+    "    __validations.push({ handle: __name, status: 'valid', id: __node.id, type: __node.type, name: __node.name });",
+    "  } catch (__error) {",
+    "    __validations.push({ handle: __name, status: 'stale', error: String(__error && __error.message ? __error.message : __error) });",
+    "  }",
+    "}",
+    "return { validations: __validations, validatedNodeIds: __validations.filter((item) => item.status === 'valid').map((item) => item.id) };"
+  ].join("\n");
+  const diagnostics = diagnoseFigmaReplCode(code, {
+    mode: "read",
+    generatedCode: true,
+    expectedSurface: session.surface
+  });
+  session.lastDiagnostics = diagnostics;
+  throwIfFatalDiagnostics(diagnostics);
+  const evalSettings = await resolveEvalSettings(session, args, runtime);
+  const upstream = await callUpstreamEval(
+    runtime.client,
+    evalSettings,
+    buildFigmaEvalScript({ session, code, mode: "read" })
+  );
+  const parsed = parseUpstreamToolResult(upstream);
+  updateSessionFromParsedResult(session, parsed.json);
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_inspect",
+    title: asOptionalString2(args.title),
+    mode: "validate",
+    summary: `Validated ${requested.length} Figma REPL handle(s).`,
+    nodeIds: collectNodeIds(parsed.json)
+  });
+  const payload = {
+    ok: !parsed.upstreamError,
+    session: responseSession(session),
+    diagnostics: diagnosticsForResponse(diagnostics),
+    ...inspectInlineResultFields(parsed)
+  };
+  return payload;
+}
+async function handleCallUpstreamTool(args, runtime) {
+  return makeJsonToolResult(await executeCallUpstreamTool(args, runtime));
+}
+async function handleGetMetadata(args, runtime) {
+  return makeJsonToolResult(await executeGetMetadata(args, runtime));
+}
+async function executeGetMetadata(args, runtime) {
+  assertRequiredTitleArgument(args);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  applySessionFileReference(session, args.file);
+  if (args.cwd !== void 0 || args.dirName !== void 0 || args.file !== void 0 && !session.workspace) {
+    bindOpenWorkspaceIfAvailable(session, args);
+  }
+  touchSession(session);
+  const requested = resolveGetMetadataRequest(args, session);
+  const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
+  const tool = selectRequiredUpstreamTool(tools, GET_METADATA_TOOL_NAME, "metadata read");
+  assertUpstreamToolHasProperty(tool, "fileKey", "metadata read");
+  await runtime.client.connect();
+  const upstreamArgs = removeUndefined2({
+    fileKey: requested.fileKey,
+    nodeId: requested.nodeId,
+    clientLanguages: args.clientLanguages ?? "unknown",
+    clientFrameworks: args.clientFrameworks ?? "unknown"
+  });
+  const upstream = await runtime.client.callTool(GET_METADATA_TOOL_NAME, upstreamArgs);
+  const parsed = parseUpstreamToolResult(upstream);
+  const upstreamResult = upstreamEnvelope(parsed, { includePayload: false });
+  const xml = metadataXmlFromParsedResult(parsed);
+  const metadata = xml && !parsed.upstreamError ? metadataJsonFromXml(xml, requested.fileKey, requested.nodeId) : void 0;
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_get_metadata",
+    title: args.title,
+    mode: "read",
+    summary: `Read Figma metadata for ${requested.nodeId ?? requested.fileKey}.`,
+    nodeIds: requested.nodeId ? [requested.nodeId] : []
+  });
+  const jsonBytes = metadata ? Buffer.byteLength(JSON.stringify(removeUndefined2(metadata)), "utf8") : 0;
+  const metadataOk = Boolean(metadata?.root) && !parsed.upstreamError;
+  const xmlParseError = !metadataOk && !parsed.upstreamError ? responseUpstreamError({
+    message: "Upstream get_metadata did not return parseable XML metadata.",
+    code: "FIGMA_METADATA_XML_PARSE_FAILED",
+    text: parsed.text,
+    parsed: parsed.json
+  }) : void 0;
+  const resultPayload = removeUndefined2({
+    ok: metadataOk,
+    session: responseSession(session),
+    fileKey: requested.fileKey,
+    nodeId: requested.nodeId,
+    metadata: {
+      format: "figma-metadata-tree",
+      source: "get_metadata",
+      nodeCount: metadata?.nodeCount ?? 0,
+      jsonBytes,
+      json: metadata
+    },
+    upstream: upstreamResult,
+    ...upstreamFailureFields(parsed),
+    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError,
+    outputFiles: {}
+  });
+  const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
+  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["metadata.json"]);
+  if (metadataOk && metadata && isRecord4(limitedPayload.inlineResultLimit)) {
+    const outputFiles = asRecord2(limitedPayload.outputFiles);
+    outputFiles.metadataFile = await writeMetadataFile({ args, session, metadata });
+    limitedPayload.outputFiles = outputFiles;
+  }
+  return limitedPayload;
+}
+function resolveGetMetadataRequest(args, session) {
+  const fileReference = parseFigmaFileReference(args.file);
+  const target = resolveSessionTargetInput(args.target ?? args.nodeId ?? extractFigmaNodeId(args.file), session);
+  const fileKey = fileReference.fileKey ?? target.fileKey ?? session.fileKey ?? extractFigmaFileKey(session.fileUrl);
+  if (!fileKey) {
+    throw new Error('figma_repl_get_metadata requires a Figma file key. Pass "file" or open a session with file context first.');
+  }
+  const nodeId = target.nodeId;
+  if (nodeId?.startsWith("$")) {
+    throw new Error(`figma_repl_get_metadata cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, or cached handle.`);
+  }
+  return { fileKey, nodeId };
+}
+async function executeCallUpstreamTool(args, runtime) {
+  assertRequiredTitleArgument(args);
+  if (!args.toolName || typeof args.toolName !== "string") {
+    throw new Error('Tool argument "toolName" is required and must be a string.');
+  }
+  if (isLocalReplToolName(args.toolName)) {
+    throw new Error(
+      `Refusing to proxy local figma_repl_mcp tool "${args.toolName}". Call it directly instead.`
+    );
+  }
+  const upstreamArgs = isRecord4(args.arguments) ? args.arguments : {};
+  const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
+  const tool = tools.find((item) => item.name === args.toolName);
+  if (!tool) {
+    throw new Error(
+      `Upstream Figma MCP tool "${args.toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
+    );
+  }
+  await runtime.client.connect();
+  const upstream = await runtime.client.callTool(args.toolName, upstreamArgs);
+  const parsed = parseUpstreamToolResult(upstream);
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    tool: "figma_repl_call_upstream_tool",
+    title: args.title,
+    mode: "upstream",
+    summary: `Called upstream Figma MCP tool ${args.toolName}.`,
+    nodeIds: collectNodeIds(parsed.json)
+  });
+  const resultPayload = {
+    ok: !parsed.upstreamError,
+    session: responseSession(session),
+    toolName: args.toolName,
+    ...upstreamResultFields({
+      parsed,
+      upstream
+    }),
+    ...upstreamFailureFields(parsed)
+  };
+  const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
+  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
+  const needsOutputFile = parsed.upstreamError || isRecord4(limitedPayload.inlineResultLimit);
+  if (!needsOutputFile) {
+    return limitedPayload;
+  }
+  const outputFiles = await writeCallUpstreamResultFiles({
+    args,
+    session,
+    resultPayload,
+    upstream: upstreamEnvelope(parsed)
+  });
+  const payload = {
+    ...limitedPayload,
+    outputFiles
+  };
+  return payload;
+}
+async function handleLookup(args) {
+  assertRequiredTitleArgument(args);
+  if (args.kind === "docs") {
+    const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
+    const matches2 = await searchReferenceFiles({
+      query,
+      files: DOCS_SEARCH_ALLOWLIST,
+      maxResults: normalizeBoundedInteger(
+        args.maxResults,
+        DEFAULT_DOCS_SEARCH_MAX_RESULTS,
+        MAX_DOCS_SEARCH_RESULTS
+      ),
+      maxSnippetLines: normalizeBoundedInteger(
+        args.maxSnippetLines,
+        DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
+        MAX_DOCS_SEARCH_SNIPPET_LINES
+      )
+    });
+    const payload2 = {
+      ok: true,
+      results: matches2.results,
+      guidance: "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_repl_lookup query or kind=api lookup when more detail is needed."
+    };
+    return makeJsonToolResult(payload2);
+  }
+  if (args.kind !== "api") {
+    throw new Error('Tool argument "kind" must be one of: docs, api.');
+  }
+  const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
+  const matches = await searchReferenceFiles({
+    query: symbol,
+    files: API_LOOKUP_FILES,
+    maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
+    maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
+    exactSymbol: true
+  });
+  const payload = {
+    ok: true,
+    results: matches.results,
+    guidance: "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents."
+  };
+  return makeJsonToolResult(payload);
+}
+async function callUpstreamEval(client, evalSettings, script) {
+  await client.connect();
+  return client.callTool(evalSettings.toolName, {
+    ...evalSettings.upstreamArguments,
+    [evalSettings.argumentName]: script
+  });
+}
+function createUpstreamToolCache(client) {
+  let cached2;
+  return {
+    async list(refresh = false) {
+      if (cached2 && !refresh) {
+        return cached2;
+      }
+      await client.connect();
+      const result = asRecord2(await client.listTools());
+      const tools = Array.isArray(result.tools) ? result.tools : [];
+      cached2 = tools.filter(isRecord4).map((tool) => ({
+        name: String(tool.name ?? ""),
+        description: asOptionalString2(tool.description),
+        inputSchema: tool.inputSchema
+      })).filter((tool) => tool.name.length > 0);
+      return cached2;
+    }
+  };
+}
+async function resolveEvalSettings(session, args, runtime) {
+  const toolName = DEFAULT_EVAL_TOOL_NAME;
+  const tools = await runtime.upstreamToolCache.list(false);
+  const tool = tools.find((item) => item.name === toolName);
+  if (!tool) {
+    throw new Error(
+      `Required official upstream Figma MCP execution tool "${toolName}" was not found. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging. Available tools: ${tools.map((item) => item.name).join(", ")}`
+    );
+  }
+  const argumentName = DEFAULT_EVAL_ARGUMENT_NAME;
+  assertUpstreamToolHasProperty(tool, argumentName, "execution");
+  const upstreamArguments = {};
+  if (typeof upstreamArguments.fileKey !== "string" || upstreamArguments.fileKey.length === 0) {
+    const fileKey = extractFigmaFileKey(session.fileUrl);
+    if (fileKey) {
+      upstreamArguments.fileKey = fileKey;
+    }
+  }
+  if (typeof upstreamArguments.description !== "string" || upstreamArguments.description.length === 0) {
+    const title = asOptionalString2(args.title);
+    if (title) {
+      upstreamArguments.description = title;
+    }
+  }
+  touchSession(session);
+  return { toolName, argumentName, upstreamArguments };
+}
+function buildFigmaEvalScript(options) {
+  const includeEvalHelpers = options.includeEvalHelpers !== false;
+  const evalInjectedHelpers = includeEvalHelpers ? resolveFigmaReplScriptHelperSelection2(options.code).injectedHelpers : void 0;
+  return `${createFigmaReplPrelude(
+    options.session,
+    options.mode ?? "write",
+    includeEvalHelpers,
+    options.scriptInjectedHelpers,
+    evalInjectedHelpers
+  )}
+async function __figmaReplUserMain() {
+${options.code}
+}
+
+const __figmaReplResult = await __figmaReplUserMain();
+return {
+  ok: true,
+  __figmaRepl: {
+    sessionId: __figmaRepl.sessionId,
+    handles: __figmaRepl.handles,
+    fileKey: __figmaRepl.fileKey,
+    surface: __figmaRepl.surface,
+    currentPageId: figma.currentPage && figma.currentPage.id,
+    knownPages: Object.fromEntries(figma.root.children.map((page) => [page.id, page.name])),
+    mode: __figmaRepl.mode
+  },
+  result: __figmaReplResult
+};`;
+}
+function createFigmaReplPrelude(session, mode, includeEvalHelpers, scriptInjectedHelpers, evalInjectedHelpers) {
+  let prelude = `const __figmaRepl = {
+  sessionId: ${literal4(session.id)},
+  mode: ${literal4(mode)},
+  fileUrl: ${literal4(session.fileUrl)},
+  fileKey: ${literal4(session.fileKey)},
+  surface: ${literal4(session.surface)},
+  currentPageId: ${literal4(session.currentPageId)},
+  knownPages: ${literal4(session.knownPages ?? {})},
+  handles: ${literal4(session.handles ?? {})}
+};
+
+function normalizeHandleName(name) {
+  if (typeof name !== "string" || !name) {
+    throw new Error("A non-empty handle name or Figma node id is required.");
+  }
+  return name.startsWith("$") ? name : "$" + name;
+}
+
+async function getNodeById(id) {
+  const node = typeof figma.getNodeByIdAsync === "function"
+    ? await figma.getNodeByIdAsync(id)
+    : figma.getNodeById(id);
+  if (!node) {
+    throw new Error("Figma node not found: " + id);
+  }
+  return node;
+}
+
+async function $(nameOrId) {
+  if (nameOrId === "$currentPage") return figma.currentPage;
+  if (nameOrId === "$selection") return figma.currentPage.selection;
+  if (nameOrId && typeof nameOrId === "object" && "type" in nameOrId && "id" in nameOrId) {
+    return nameOrId;
+  }
+  const key = typeof nameOrId === "string" && nameOrId.startsWith("$")
+    ? nameOrId
+    : undefined;
+  const id = key && __figmaRepl.handles[key] ? __figmaRepl.handles[key] : nameOrId;
+  if (typeof id !== "string") {
+    throw new Error("Expected a handle or Figma node id string.");
+  }
+  return getNodeById(id);
+}
+
+function remember(name, nodeOrId) {
+  const key = normalizeHandleName(name);
+  const id = typeof nodeOrId === "string" ? nodeOrId : nodeOrId && nodeOrId.id;
+  if (typeof id !== "string") {
+    throw new Error("remember(name, nodeOrId) requires a node or node id.");
+  }
+  __figmaRepl.handles[key] = id;
+  return id;
+}
+
+function forget(name) {
+  const key = normalizeHandleName(name);
+  delete __figmaRepl.handles[key];
+}
+
+function pageForNode(node) {
+  let current = node;
+  while (current && current.type !== "PAGE" && current.parent) {
+    current = current.parent;
+  }
+  return current && current.type === "PAGE" ? current : null;
+}
+
+async function selectNodesForRepl(targets = "$selection", options = {}) {
+  const input = Array.isArray(targets) ? targets : [targets];
+  const nodes = [];
+  for (const target of input) {
+    const resolved = target && typeof target === "object" && "type" in target ? target : await $(target);
+    const list = Array.isArray(resolved) ? resolved : [resolved];
+    for (const node of list) {
+      if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+        throw new Error("$.select targets must resolve to selectable scene nodes.");
+      }
+      nodes.push(node);
+    }
+  }
+  if (nodes.length === 0 && options.allowEmpty !== true) {
+    throw new Error("$.select resolved no nodes; pass { allowEmpty: true } to intentionally clear selection.");
+  }
+  if (nodes.length === 0) {
+    figma.currentPage.selection = [];
+    return { selectedNodeIds: [], summaries: [] };
+  }
+  const targetPage = pageForNode(nodes[0]);
+  if (!targetPage) {
+    throw new Error("$.select target is not attached to a page.");
+  }
+  for (const node of nodes) {
+    const page = pageForNode(node);
+    if (!page || page.id !== targetPage.id) {
+      throw new Error("$.select cannot select nodes from multiple pages at once.");
+    }
+  }
+  if (figma.currentPage.id !== targetPage.id) {
+    await figma.setCurrentPageAsync(targetPage);
+  }
+  figma.currentPage.selection = nodes;
+  if (nodes.length > 0 && options.zoom !== false) figma.viewport.scrollAndZoomIntoView(nodes);
+  return {
+    selectedNodeIds: nodes.map((node) => node.id),
+    summaries: nodes.map((node) => summarizeNode(node, options.depth || 0)),
+  };
+}
+
+function resolveSceneNodeForPlacement(value, name) {
+  if (!value) throw new Error(name + " is required.");
+  if (typeof value === "object" && "type" in value) return value;
+  return $(value);
+}
+
+function canPositionNode(node) {
+  return node && "x" in node && "y" in node && "width" in node && "height" in node;
+}
+
+function readPlacementSize(input, fallback) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    width: readFiniteNumber(source.width ?? fallback.width, "size.width"),
+    height: readFiniteNumber(source.height ?? fallback.height, "size.height"),
+  };
+}
+
+function nodeBounds(node) {
+  return { x: node.x, y: node.y, width: node.width, height: node.height };
+}
+
+function boundsIntersect(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+async function resolvePlacementParent(inputParent, node) {
+  if (inputParent) return await resolveSceneNodeForPlacement(inputParent, "placement.parent");
+  return node && node.parent ? node.parent : figma.currentPage;
+}
+
+async function findFreeSlotForRepl(options = {}) {
+  const input = options || {};
+  const preferred = input.preferred || input.position || {};
+  const parent = await resolvePlacementParent(input.parent);
+  const size = readPlacementSize(input.size, { width: 1, height: 1 });
+  const gap = input.gap === undefined ? 40 : readFiniteNumber(input.gap, "gap");
+  const direction = String(input.direction || "down");
+  let x = readFiniteNumber(preferred.x ?? 0, "preferred.x");
+  let y = readFiniteNumber(preferred.y ?? 0, "preferred.y");
+  let shiftedSlots = 0;
+  let collidedNodeIds = [];
+  const children = "children" in parent
+    ? Array.from(parent.children).filter((child) => child.visible !== false && canPositionNode(child) && child !== input.exclude)
+    : [];
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const candidate = { x, y, width: size.width, height: size.height };
+    const collisions = children.filter((child) => boundsIntersect(candidate, nodeBounds(child)));
+    if (collisions.length === 0) {
+      return { x, y, width: size.width, height: size.height, shiftedSlots, collidedNodeIds };
+    }
+    collidedNodeIds = collisions.map((child) => child.id);
+    shiftedSlots += 1;
+    if (direction === "right") x += size.width + gap;
+    else if (direction === "left") x -= size.width + gap;
+    else if (direction === "up") y -= size.height + gap;
+    else y += size.height + gap;
+  }
+  throw new Error("$.findFreeSlot could not find a free slot after 500 attempts.");
+}
+
+async function placeNodeForRepl(target, options = {}) {
+  const node = await resolveSceneNodeForPlacement(target, "$.placeNode target");
+  if (!canPositionNode(node)) {
+    throw new Error("$.placeNode target must resolve to a positionable scene node.");
+  }
+  const input = options || {};
+  const preferred = input.preferred || input.position || { x: node.x, y: node.y };
+  let placement = { x: preferred.x, y: preferred.y, shiftedSlots: 0, collidedNodeIds: [] };
+  if (input.avoidOverlap) {
+    placement = await findFreeSlotForRepl({ ...input, preferred, size: input.size || nodeBounds(node), parent: input.parent, exclude: node });
+  }
+  node.x = readFiniteNumber(placement.x, "placement.x");
+  node.y = readFiniteNumber(placement.y, "placement.y");
+  if (input.as) remember(input.as, node);
+  return placement;
+}
+
+async function replaceGeneratedFrameForRepl(options = {}) {
+  const input = options || {};
+  const name = String(input.name || "");
+  if (!name) throw new Error("$.replaceGeneratedFrame requires an exact name.");
+  const guardPrefixes = input.guardPrefix ? [String(input.guardPrefix)] : ["Variant ", "Codex Generated ", "Generated "];
+  if (!guardPrefixes.some((prefix) => name.startsWith(prefix))) {
+    throw new Error("$.replaceGeneratedFrame name must start with guardPrefix or one of: Variant , Codex Generated , Generated .");
+  }
+  const parent = input.parent
+    ? await resolveSceneNodeForPlacement(input.parent, "$.replaceGeneratedFrame parent")
+    : figma.currentPage;
+  if (!parent || !("appendChild" in parent)) {
+    throw new Error("$.replaceGeneratedFrame requires a writable parent.");
+  }
+  const children = "children" in parent ? Array.from(parent.children) : [];
+  const existingFrames = children.filter((child) => child.type === "FRAME" && child.name === name);
+  if (input.dryRun) {
+    return {
+      dryRun: true,
+      name,
+      matches: existingFrames.map((node) => summarizeNode(node, input.depth || 0)),
+    };
+  }
+  const frame = figma.createFrame();
+  frame.name = name;
+  if (input.size !== undefined) setNodeSizeFromInput(frame, input.size);
+  if (input.position !== undefined) setNodePositionFromInput(frame, input.position);
+  const firstExisting = existingFrames[0];
+  const insertIndex = firstExisting ? children.indexOf(firstExisting) : -1;
+  if (firstExisting && input.size === undefined) frame.resize(firstExisting.width, firstExisting.height);
+  if (firstExisting && input.position === undefined) {
+    frame.x = firstExisting.x;
+    frame.y = firstExisting.y;
+  }
+  if (insertIndex >= 0 && "insertChild" in parent) parent.insertChild(insertIndex, frame);
+  else parent.appendChild(frame);
+  for (const existing of existingFrames) existing.remove();
+  if (input.placement && input.placement.avoidOverlap) {
+    await placeNodeForRepl(frame, { ...input.placement, size: nodeBounds(frame), exclude: frame });
+  }
+  if (input.as) remember(input.as, frame);
+  const selection = input.select === false ? undefined : await selectNodesForRepl([frame], { zoom: input.zoom !== false, depth: 0 });
+  return {
+    replaced: existingFrames.map((node) => node.id),
+    frame: summarizeNode(frame, input.depth || 0),
+    selectedNodeIds: selection ? selection.selectedNodeIds : [],
+    handle: input.as,
+  };
+}
+
+async function cloneNodeTreeForRepl(targetOrOptions, maybeOptions = {}) {
+  const looksLikeOptions = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions) && !("type" in targetOrOptions);
+  const input = looksLikeOptions ? targetOrOptions : { source: targetOrOptions, ...maybeOptions };
+  const sourceValue = input.source || input.target;
+  const source = sourceValue && typeof sourceValue === "object" && "type" in sourceValue ? sourceValue : await $(sourceValue);
+  if (!source || source.type === "DOCUMENT" || source.type === "PAGE") {
+    throw new Error("$.cloneNodeTree source must resolve to a scene node.");
+  }
+  const parent = input.parent ? await $(input.parent) : source.parent;
+  if (!parent || !("appendChild" in parent)) {
+    throw new Error("$.cloneNodeTree requires a writable parent.");
+  }
+  const cloneLog = [];
+  const fallbackWholeSubtrees = [];
+  const preserveInstanceSubtrees = input.preserveInstanceSubtrees !== false;
+  function getChildren(node) {
+    return "children" in node ? Array.from(node.children) : [];
+  }
+  function cloneOuterToInner(sourceNode, depth = 0) {
+    const clone = sourceNode.clone();
+    clone.name = sourceNode.name;
+    cloneLog.push({
+      depth,
+      sourceId: sourceNode.id,
+      sourceName: sourceNode.name,
+      sourceType: sourceNode.type,
+      cloneId: clone.id,
+    });
+    if (preserveInstanceSubtrees && sourceNode.type === "INSTANCE") {
+      fallbackWholeSubtrees.push({
+        sourceId: sourceNode.id,
+        sourceName: sourceNode.name,
+        sourceType: sourceNode.type,
+        cloneId: clone.id,
+        reason: "Preserved instance subtree whole; Figma does not allow safe rebuild of internal instance children.",
+      });
+      return clone;
+    }
+    if ("children" in clone) {
+      try {
+        for (const child of Array.from(clone.children)) child.remove();
+      } catch (error) {
+        fallbackWholeSubtrees.push({
+          sourceId: sourceNode.id,
+          sourceName: sourceNode.name,
+          sourceType: sourceNode.type,
+          cloneId: clone.id,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        return clone;
+      }
+    }
+    if ("appendChild" in clone) {
+      for (const sourceChild of getChildren(sourceNode)) {
+        clone.appendChild(cloneOuterToInner(sourceChild, depth + 1));
+      }
+    }
+    return clone;
+  }
+  const rootClone = cloneOuterToInner(source, 0);
+  parent.appendChild(rootClone);
+  if (input.name !== undefined) rootClone.name = String(input.name);
+  if (input.position !== undefined) {
+    setNodePositionFromInput(rootClone, input.position);
+  } else if (input.offset !== undefined && "x" in rootClone && "y" in rootClone) {
+    rootClone.x = source.x + readFiniteNumber(input.offset.x || 0, "offset.x");
+    rootClone.y = source.y + readFiniteNumber(input.offset.y || 0, "offset.y");
+  } else if (input.placement !== "none" && "x" in rootClone && "y" in rootClone) {
+    const gap = input.gap === undefined ? 80 : readFiniteNumber(input.gap, "gap");
+    const placement = input.placement || "right";
+    if (placement === "left") {
+      rootClone.x = source.x - rootClone.width - gap;
+      rootClone.y = source.y;
+    } else if (placement === "below") {
+      rootClone.x = source.x;
+      rootClone.y = source.y + source.height + gap;
+    } else if (placement === "above") {
+      rootClone.x = source.x;
+      rootClone.y = source.y - rootClone.height - gap;
+    } else {
+      rootClone.x = source.x + source.width + gap;
+      rootClone.y = source.y;
+    }
+  }
+  if (input.as) remember(input.as, rootClone);
+  const selection = input.select === false ? undefined : await selectNodesForRepl([rootClone], { zoom: input.zoom !== false, depth: 0 });
+  return {
+    source: summarizeNode(source, input.depth || 0),
+    clone: summarizeNode(rootClone, input.depth || 0),
+    copiedNodeCount: cloneLog.length,
+    order: cloneLog,
+    fallbackWholeSubtrees,
+    selectedNodeIds: selection ? selection.selectedNodeIds : [],
+    handle: input.as,
+  };
+}
+
+function solidPaint(input, opacity = 1) {
+  const color = normalizeRgb(input);
+  return {
+    type: "SOLID",
+    color,
+    opacity,
+  };
+}
+
+function normalizePaintList(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  return [solidPaint(value)];
+}
+
+function normalizeRgb(input) {
+  if (typeof input === "string") {
+    const hex = input.replace(/^#/, "");
+    if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
+      throw new Error("Expected a #RRGGBB color string.");
+    }
+    return {
+      r: parseInt(hex.slice(0, 2), 16) / 255,
+      g: parseInt(hex.slice(2, 4), 16) / 255,
+      b: parseInt(hex.slice(4, 6), 16) / 255,
+    };
+  }
+  if (input && typeof input === "object") {
+    const scale = Math.max(input.r ?? 0, input.g ?? 0, input.b ?? 0) > 1 ? 255 : 1;
+    return {
+      r: Number(input.r ?? 0) / scale,
+      g: Number(input.g ?? 0) / scale,
+      b: Number(input.b ?? 0) / scale,
+    };
+  }
+  throw new Error("Expected a color string or RGB object.");
+}
+
+function normalizeRgba(input) {
+  const rgb = normalizeRgb(input);
+  const alpha = input && typeof input === "object" && input.a !== undefined
+    ? Number(input.a)
+    : 1;
+  return { ...rgb, a: alpha };
+}
+
+function resolveHandleId(nameOrId) {
+  if (typeof nameOrId === "string" && nameOrId.startsWith("$")) {
+    const id = __figmaRepl.handles[nameOrId];
+    if (typeof id !== "string") {
+      throw new Error("Unknown local handle: " + nameOrId);
+    }
+    return id;
+  }
+  if (typeof nameOrId !== "string" || !nameOrId) {
+    throw new Error("Expected a non-empty handle or id string.");
+  }
+  return nameOrId;
+}
+
+function createHelperNode(type) {
+  switch (type) {
+    case "FRAME":
+      return figma.createFrame();
+    case "TEXT":
+      return figma.createText();
+    case "RECTANGLE":
+      return figma.createRectangle();
+    case "ELLIPSE":
+      return figma.createEllipse();
+    case "LINE":
+      return figma.createLine();
+    case "COMPONENT":
+      if (typeof figma.createComponent !== "function") {
+        throw new Error("figma.createComponent is not available on this surface.");
+      }
+      return figma.createComponent();
+    default:
+      throw new Error("Unsupported createNode type: " + type);
+  }
+}
+
+function readFiniteNumber(value, name) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    throw new Error(name + " must be a finite number.");
+  }
+  return number;
+}
+
+function setNodeSizeFromInput(node, size) {
+  const input = size && typeof size === "object" ? size : {};
+  setNodeSize(node, readFiniteNumber(input.width, "size.width"), readFiniteNumber(input.height, "size.height"));
+}
+
+function setNodePositionFromInput(node, position) {
+  const input = position && typeof position === "object" ? position : {};
+  if (input.x !== undefined) node.x = readFiniteNumber(input.x, "position.x");
+  if (input.y !== undefined) node.y = readFiniteNumber(input.y, "position.y");
+}
+
+function applyAppearance(node, appearance) {
+  if (!appearance || typeof appearance !== "object") return;
+  if (appearance.fills !== undefined) node.fills = normalizePaintList(appearance.fills);
+  if (appearance.fill !== undefined) node.fills = normalizePaintList(appearance.fill);
+  if (appearance.color !== undefined) node.fills = normalizePaintList(appearance.color);
+  if (appearance.strokes !== undefined) node.strokes = normalizePaintList(appearance.strokes);
+  if (appearance.stroke !== undefined) node.strokes = normalizePaintList(appearance.stroke);
+  if (appearance.opacity !== undefined) node.opacity = readFiniteNumber(appearance.opacity, "appearance.opacity");
+  if (appearance.strokeWeight !== undefined) node.strokeWeight = readFiniteNumber(appearance.strokeWeight, "appearance.strokeWeight");
+  if (appearance.cornerRadius !== undefined && "cornerRadius" in node) {
+    node.cornerRadius = readFiniteNumber(appearance.cornerRadius, "appearance.cornerRadius");
+  }
+  for (const key of ["topLeftRadius", "topRightRadius", "bottomLeftRadius", "bottomRightRadius"]) {
+    if (appearance[key] !== undefined && key in node) node[key] = readFiniteNumber(appearance[key], "appearance." + key);
+  }
+  if (appearance.effects !== undefined) node.effects = appearance.effects;
+  if (appearance.blendMode !== undefined) node.blendMode = appearance.blendMode;
+}
+
+function applyConstraints(node, constraints) {
+  if (!constraints || typeof constraints !== "object") return;
+  if (!("constraints" in node)) {
+    throw new Error("Node does not support constraints: " + node.id);
+  }
+  node.constraints = {
+    horizontal: constraints.horizontal ?? node.constraints.horizontal,
+    vertical: constraints.vertical ?? node.constraints.vertical,
+  };
+}
+
+function fontFromHelperInput(font) {
+  const input = font && typeof font === "object" ? font : {};
+  return {
+    family: typeof input.family === "string" ? input.family : "Inter",
+    style: typeof input.style === "string" ? input.style : "Regular",
+  };
+}
+
+async function applyTextHelper(node, options) {
+  if (node.type !== "TEXT") {
+    throw new Error("Text helper can only apply to TEXT nodes.");
+  }
+  const font = fontFromHelperInput(options && options.font);
+  await loadFont(font);
+  node.fontName = font;
+  if (options && options.font && typeof options.font === "object" && options.font.size !== undefined) {
+    node.fontSize = readFiniteNumber(options.font.size, "font.size");
+  }
+  node.characters = String(options && options.text !== undefined ? options.text : "");
+  if (options && options.style) {
+    await applyStyleReference(node, options.style);
+  }
+}
+
+function applyAutoLayout(node, layout) {
+  if (!layout || typeof layout !== "object") return;
+  const assign = (name) => {
+    if (layout[name] !== undefined) node[name] = layout[name];
+  };
+  assign("layoutMode");
+  assign("primaryAxisSizingMode");
+  assign("counterAxisSizingMode");
+  assign("primaryAxisAlignItems");
+  assign("counterAxisAlignItems");
+  assign("itemSpacing");
+  assign("paddingLeft");
+  assign("paddingRight");
+  assign("paddingTop");
+  assign("paddingBottom");
+  assign("layoutWrap");
+  assign("counterAxisSpacing");
+}
+
+function queryNodes(root, criteria) {
+  const limit = Number(criteria && criteria.limit ? criteria.limit : 50);
+  const matches = [];
+  const visit = (node) => {
+    if (!node || matches.length >= limit) return;
+    if (node !== root) {
+      const nameMatches = !criteria.name || node.name === criteria.name || (typeof node.name === "string" && node.name.includes(criteria.name));
+      const typeMatches = !criteria.type || node.type === String(criteria.type).toUpperCase();
+      const visibleMatches = criteria.includeInvisible || node.visible !== false;
+      if (nameMatches && typeMatches && visibleMatches) {
+        matches.push(node);
+      }
+    }
+    if ("children" in node && Array.isArray(node.children)) {
+      for (const child of node.children) visit(child);
+    }
+  };
+  visit(root);
+  return matches;
+}
+
+function setNodeProperties(node, properties) {
+  const allowed = new Set([
+    "name",
+    "visible",
+    "opacity",
+    "x",
+    "y",
+    "rotation",
+    "layoutMode",
+    "primaryAxisSizingMode",
+    "counterAxisSizingMode",
+    "primaryAxisAlignItems",
+    "counterAxisAlignItems",
+    "itemSpacing",
+    "paddingLeft",
+    "paddingRight",
+    "paddingTop",
+    "paddingBottom",
+    "layoutWrap",
+    "counterAxisSpacing",
+    "fontSize",
+  ]);
+  for (const [key, value] of Object.entries(properties || {})) {
+    if (!allowed.has(key)) {
+      throw new Error("set op does not allow property: " + key);
+    }
+    node[key] = value;
+  }
+}
+
+function setNodeSize(node, width, height) {
+  if (typeof node.resizeWithoutConstraints === "function") {
+    node.resizeWithoutConstraints(width, height);
+  } else if (typeof node.resize === "function") {
+    node.resize(width, height);
+  } else {
+    throw new Error("Node does not support resize(): " + node.id);
+  }
+}
+
+async function loadFont(font) {
+  await figma.loadFontAsync(font);
+  return font;
+}
+
+async function loadNodeFont(node) {
+  if (node.fontName && typeof node.fontName === "object" && !Array.isArray(node.fontName)) {
+    await figma.loadFontAsync(node.fontName);
+    return node.fontName;
+  }
+  const fallback = { family: "Inter", style: "Regular" };
+  await figma.loadFontAsync(fallback);
+  node.fontName = fallback;
+  return fallback;
+}
+
+function applyCollectionModes(collection, modes) {
+  const result = {};
+  const requested = Array.isArray(modes) ? modes : [];
+  if (requested.length === 0) {
+    for (const mode of collection.modes || []) result[mode.name] = mode.modeId;
+    return result;
+  }
+  requested.forEach((mode, index) => {
+    const name = typeof mode === "string" ? mode : String(mode && mode.name ? mode.name : "Mode " + (index + 1));
+    if (index === 0 && collection.modes && collection.modes[0]) {
+      collection.renameMode(collection.modes[0].modeId, name);
+      result[name] = collection.modes[0].modeId;
+    } else {
+      result[name] = collection.addMode(name);
+    }
+  });
+  return result;
+}
+
+async function resolveVariableCollection(handleOrId) {
+  const id = resolveHandleId(handleOrId);
+  if (figma.variables && typeof figma.variables.getVariableCollectionByIdAsync === "function") {
+    const collection = await figma.variables.getVariableCollectionByIdAsync(id);
+    if (collection) return collection;
+  }
+  if (figma.variables && typeof figma.variables.getVariableCollectionById === "function") {
+    const collection = figma.variables.getVariableCollectionById(id);
+    if (collection) return collection;
+  }
+  throw new Error("Variable collection not found: " + id);
+}
+
+async function resolveVariable(handleOrId) {
+  const id = resolveHandleId(handleOrId);
+  if (figma.variables && typeof figma.variables.getVariableByIdAsync === "function") {
+    const variable = await figma.variables.getVariableByIdAsync(id);
+    if (variable) return variable;
+  }
+  if (figma.variables && typeof figma.variables.getVariableById === "function") {
+    const variable = figma.variables.getVariableById(id);
+    if (variable) return variable;
+  }
+  throw new Error("Variable not found: " + id);
+}
+
+function resolveCollectionModeId(collection, modeNameOrId) {
+  const modes = collection.modes || [];
+  if (typeof modeNameOrId === "string" && modeNameOrId) {
+    const exact = modes.find((mode) => mode.modeId === modeNameOrId || mode.name === modeNameOrId);
+    if (!exact) throw new Error("Variable collection mode not found: " + modeNameOrId);
+    return exact.modeId;
+  }
+  if (!modes[0]) throw new Error("Variable collection has no modes: " + collection.id);
+  return modes[0].modeId;
+}
+
+function bindVariableToNode(node, variable, binding) {
+  const field = binding && binding.field ? String(binding.field) : undefined;
+  const paint = binding && binding.paint ? String(binding.paint) : undefined;
+  if (paint === "fills" || field === "fills" || field === "fill" || field === "color") {
+    const basePaint = Array.isArray(node.fills) && node.fills[0] ? node.fills[0] : solidPaint("#000000");
+    node.fills = [figma.variables.setBoundVariableForPaint(basePaint, "color", variable)];
+    return;
+  }
+  if (paint === "strokes" || field === "strokes" || field === "stroke") {
+    const basePaint = Array.isArray(node.strokes) && node.strokes[0] ? node.strokes[0] : solidPaint("#000000");
+    node.strokes = [figma.variables.setBoundVariableForPaint(basePaint, "color", variable)];
+    return;
+  }
+  if (!field) {
+    throw new Error("bindVariable requires field or paint.");
+  }
+  if (typeof node.setBoundVariable !== "function") {
+    throw new Error("Node does not support setBoundVariable: " + node.id);
+  }
+  node.setBoundVariable(field, variable);
+}
+
+async function applyTextStyleHelper(style, options) {
+  const font = fontFromHelperInput(options && options.font);
+  await loadFont(font);
+  style.fontName = font;
+  if (options && options.fontSize !== undefined) style.fontSize = readFiniteNumber(options.fontSize, "fontSize");
+  if (options && options.lineHeight !== undefined) style.lineHeight = options.lineHeight;
+  if (options && options.letterSpacing !== undefined) style.letterSpacing = options.letterSpacing;
+  if (options && options.fills !== undefined) style.fills = normalizePaintList(options.fills);
+}
+
+async function applyStyleReference(node, style) {
+  if (!style || typeof style !== "object") return;
+  if (style.textStyle || style.textStyleId) {
+    node.textStyleId = resolveHandleId(style.textStyle || style.textStyleId);
+  }
+  if (style.fillStyle || style.fillStyleId) {
+    node.fillStyleId = resolveHandleId(style.fillStyle || style.fillStyleId);
+  }
+  if (style.strokeStyle || style.strokeStyleId) {
+    node.strokeStyleId = resolveHandleId(style.strokeStyle || style.strokeStyleId);
+  }
+  if (style.effectStyle || style.effectStyleId) {
+    node.effectStyleId = resolveHandleId(style.effectStyle || style.effectStyleId);
+  }
+}
+
+function summarizeNode(node, depth = 1) {
+  if (!node) return null;
+  if (Array.isArray(node)) return node.map((child) => summarizeNode(child, depth));
+  const read = (key) => key in node ? node[key] : undefined;
+  const summary = {
+    id: node.id,
+    type: node.type,
+    name: node.name,
+    visible: read("visible"),
+    x: read("x"),
+    y: read("y"),
+    width: read("width"),
+    height: read("height"),
+    layoutMode: read("layoutMode"),
+    characters: typeof read("characters") === "string" ? read("characters") : undefined,
+    children: undefined,
+  };
+  if (depth > 0 && "children" in node && Array.isArray(node.children)) {
+    summary.children = node.children.slice(0, 30).map((child) => summarizeNode(child, depth - 1));
+  }
+  return summary;
+}
+
+const __figmaReplEvalCheckpoints = [];
+$.handles = __figmaRepl.handles;
+$.remember = remember;
+$.forget = forget;
+$.resolveId = resolveHandleId;
+$.node = $;
+$.select = selectNodesForRepl;
+$.cloneNodeTree = cloneNodeTreeForRepl;
+$.findFreeSlot = findFreeSlotForRepl;
+$.placeNode = placeNodeForRepl;
+$.replaceGeneratedFrame = replaceGeneratedFrameForRepl;
+$.findAll = async function findAll(criteria = {}) {
+  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
+  const root = input.within ? await $(input.within) : figma.currentPage;
+  const matches = queryNodes(root, {
+    name: input.name,
+    type: input.type,
+    includeInvisible: input.includeInvisible,
+    limit: input.limit || 50,
+  });
+  if (input.as && matches[0]) remember(input.as, matches[0]);
+  return matches;
+};
+$.find = async function find(criteria = {}) {
+  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
+  const matches = await $.findAll({ ...input, limit: input.limit || 1 });
+  const node = matches[0] || null;
+  if (!node && input.required !== false) {
+    throw new Error("No Figma node matched $.find criteria.");
+  }
+  if (node && input.as) remember(input.as, node);
+  return node;
+};
+$.text = async function text(targetOrOptions, textValue, options = {}) {
+  const input = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions)
+    ? targetOrOptions
+    : { target: targetOrOptions, text: textValue, ...options };
+  let node;
+  if (input.target) {
+    node = await $(input.target);
+    if (node.type !== "TEXT") throw new Error("$.text target must resolve to a TEXT node.");
+  } else {
+    node = figma.createText();
+    if (input.parent) {
+      const parent = await $(input.parent);
+      parent.appendChild(node);
+    } else {
+      figma.currentPage.appendChild(node);
+    }
+  }
+  const font = input.font || (input.fontFamily || input.fontStyle ? { family: input.fontFamily || "Inter", style: input.fontStyle || "Regular" } : undefined);
+  if (font) {
+    const fontName = fontFromHelperInput(font);
+    await loadFont(fontName);
+    node.fontName = fontName;
+    if (font.size !== undefined) node.fontSize = readFiniteNumber(font.size, "font.size");
+  } else {
+    await loadNodeFont(node);
+  }
+  if (input.text !== undefined) node.characters = String(input.text);
+  if (input.name !== undefined) node.name = String(input.name);
+  if (input.appearance !== undefined) applyAppearance(node, input.appearance);
+  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
+  if (input.size !== undefined) setNodeSizeFromInput(node, input.size);
+  if (input.as) remember(input.as, node);
+  return node;
+};
+$.layout = async function layout(target, layoutOptions = {}) {
+  const node = await $(target);
+  applyAutoLayout(node, layoutOptions);
+  return node;
+};
+$.create = async function create(options = {}) {
+  const type = String(options.type || "FRAME").toUpperCase();
+  const node = createHelperNode(type);
+  if (options.name !== undefined) node.name = String(options.name);
+  if (type === "TEXT") {
+    await applyTextHelper(node, { text: options.text || "", font: options.font, style: options.style });
+    if (options.appearance !== undefined) applyAppearance(node, options.appearance);
+  } else if (options.size !== undefined) {
+    setNodeSizeFromInput(node, options.size);
+  }
+  if (options.layout !== undefined) applyAutoLayout(node, options.layout);
+  if (options.appearance !== undefined && type !== "TEXT") applyAppearance(node, options.appearance);
+  if (options.parent) {
+    const parent = await $(options.parent);
+    parent.appendChild(node);
+  } else {
+    figma.currentPage.appendChild(node);
+  }
+  if (options.as) remember(options.as, node);
+  return node;
+};
+${includeEvalHelpers ? `
+function __figmaReplDecodeBase64(input) {
+  const source = String(input || "").replace(/^data:[^,]+,/u, "").replace(/\\s+/gu, "");
+  if (!source) throw new Error("$.imageAsset requires a non-empty base64 string or bytes array.");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = source.replace(/=+$/u, "");
+  const bytes = [];
+  let buffer = 0;
+  let bits = 0;
+  for (const char of clean) {
+    const value = alphabet.indexOf(char);
+    if (value < 0) throw new Error("$.imageAsset received invalid base64 data.");
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((buffer >> bits) & 0xff);
+    }
+  }
+  return new Uint8Array(bytes);
+}
+$.imageAsset = async function imageAsset(options = {}) {
+  const input = typeof options === "string" ? { base64: options } : (options || {});
+  const bytes = input.bytes instanceof Uint8Array
+    ? input.bytes
+    : Array.isArray(input.bytes)
+      ? new Uint8Array(input.bytes)
+      : __figmaReplDecodeBase64(input.base64);
+  const image = figma.createImage(bytes);
+  const node = input.target ? await $(input.target) : figma.createRectangle();
+  if (!("fills" in node)) throw new Error("$.imageAsset target must support fills.");
+  if (!input.target) {
+    if (input.parent) {
+      const parent = await $(input.parent);
+      parent.appendChild(node);
+    } else {
+      figma.currentPage.appendChild(node);
+    }
+  }
+  if (input.name !== undefined) node.name = String(input.name);
+  if (input.size !== undefined) {
+    setNodeSizeFromInput(node, input.size);
+  } else if (!input.target) {
+    node.resize(160, 160);
+  }
+  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
+  const scaleMode = String(input.scaleMode || input.fit || "FILL").toUpperCase();
+  if (!["FILL", "FIT", "CROP", "TILE"].includes(scaleMode)) {
+    throw new Error("$.imageAsset scaleMode must be FILL, FIT, CROP, or TILE.");
+  }
+  const paint = { type: "IMAGE", scaleMode, imageHash: image.hash };
+  if (input.opacity !== undefined) paint.opacity = readFiniteNumber(input.opacity, "opacity");
+  node.fills = [paint];
+  if (input.as) remember(input.as, node);
+  return node;
+};
+$.inspect = async function inspect(target, depth = 1) {
+  return summarizeNode(await $(target), depth);
+};
+$.screenshot = async function screenshot(target, options = {}) {
+  const node = await $(target);
+  if (!node || typeof node.screenshot !== "function") {
+    throw new Error("$.screenshot target does not support node.screenshot().");
+  }
+  return await node.screenshot(options);
+};
+` : ""}
+$.checkpoint = async function checkpoint(name, targets = [], options = {}) {
+  const input = Array.isArray(targets) ? targets : [targets];
+  const summaries = [];
+  for (const target of input) summaries.push(summarizeNode(await $(target), options.depth ?? 1));
+  const entry = { name: String(name || "checkpoint"), summaries, handles: { ...__figmaRepl.handles } };
+  __figmaReplEvalCheckpoints.push(entry);
+  return entry;
+};
+$.checkpoints = __figmaReplEvalCheckpoints;`;
+  if (!includeEvalHelpers) {
+    prelude = stripFigmaReplPreludeEvalHelperAssignments(prelude);
+    if (scriptInjectedHelpers) {
+      prelude = stripFigmaReplPreludeForScriptHelpers(prelude, new Set(scriptInjectedHelpers));
+    }
+  } else if (evalInjectedHelpers) {
+    prelude = stripFigmaReplPreludeForEvalHelpers(prelude, new Set(evalInjectedHelpers));
+  }
+  return prelude;
+}
+function stripFigmaReplPreludeEvalHelperAssignments(source) {
+  return replaceDelimitedSource(
+    source,
+    "const __figmaReplEvalCheckpoints = [];",
+    "$.checkpoints = __figmaReplEvalCheckpoints;",
+    "",
+    { includeEndMarker: true }
+  );
+}
+function stripFigmaReplPreludeForEvalHelpers(source, injectedHelpers) {
+  let prelude = source;
+  const has = (helper) => injectedHelpers.has(`$.${helper}`);
+  const removeLine = (line) => {
+    prelude = prelude.replace(`${line}
+`, "");
+  };
+  const needsSelect = has("select") || has("cloneNodeTree") || has("replaceGeneratedFrame");
+  const needsPlacement = has("findFreeSlot") || has("placeNode") || has("replaceGeneratedFrame");
+  const needsPlaceNode = has("placeNode") || has("replaceGeneratedFrame");
+  const needsReplaceGeneratedFrame = has("replaceGeneratedFrame");
+  const needsClone = has("cloneNodeTree");
+  const needsReadFiniteNumber = has("text") || has("create") || has("imageAsset") || needsPlacement || needsClone;
+  const needsSizeInput = has("text") || has("create") || has("imageAsset") || needsReplaceGeneratedFrame;
+  const needsPositionInput = has("text") || has("imageAsset") || needsReplaceGeneratedFrame || needsClone;
+  const needsAppearance = has("text") || has("create");
+  const needsText = has("text") || has("create");
+  const needsAutoLayout = has("layout") || has("create");
+  const needsQuery = has("find") || has("findAll");
+  const needsResolveHandleId = has("resolveId") || needsText;
+  if (!needsSelect) prelude = replaceDelimitedSource(prelude, "async function selectNodesForRepl", "function resolveSceneNodeForPlacement", "");
+  if (!needsPlacement) {
+    prelude = replaceDelimitedSource(prelude, "function resolveSceneNodeForPlacement", "async function cloneNodeTreeForRepl", "");
+  } else {
+    if (!needsPlaceNode) prelude = replaceDelimitedSource(prelude, "async function placeNodeForRepl", "async function replaceGeneratedFrameForRepl", "");
+    if (!needsReplaceGeneratedFrame) prelude = replaceDelimitedSource(prelude, "async function replaceGeneratedFrameForRepl", "async function cloneNodeTreeForRepl", "");
+  }
+  if (!needsClone) prelude = replaceDelimitedSource(prelude, "async function cloneNodeTreeForRepl", "function solidPaint", "");
+  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function solidPaint", "function resolveHandleId", "");
+  else prelude = replaceDelimitedSource(prelude, "function normalizeRgba", "function resolveHandleId", "");
+  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function createHelperNode", "");
+  if (!has("create")) prelude = replaceDelimitedSource(prelude, "function createHelperNode", "function readFiniteNumber", "");
+  if (!needsReadFiniteNumber) prelude = replaceDelimitedSource(prelude, "function readFiniteNumber", "function setNodeSizeFromInput", "");
+  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSizeFromInput", "function setNodePositionFromInput", "");
+  if (!needsPositionInput) prelude = replaceDelimitedSource(prelude, "function setNodePositionFromInput", "function applyAppearance", "");
+  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function applyAppearance", "function applyConstraints", "");
+  prelude = replaceDelimitedSource(prelude, "function applyConstraints", "function fontFromHelperInput", "");
+  if (!needsText) {
+    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function applyAutoLayout", "");
+  } else if (!has("create")) {
+    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function applyAutoLayout", "");
+  }
+  if (!needsAutoLayout) prelude = replaceDelimitedSource(prelude, "function applyAutoLayout", "function queryNodes", "");
+  if (!needsQuery) prelude = replaceDelimitedSource(prelude, "function queryNodes", "function setNodeProperties", "");
+  prelude = replaceDelimitedSource(prelude, "function setNodeProperties", "function setNodeSize", "");
+  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSize", "async function loadFont", "");
+  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function loadFont", "function applyCollectionModes", "");
+  prelude = replaceDelimitedSource(prelude, "function applyCollectionModes", "async function applyStyleReference", "");
+  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function applyStyleReference", "function summarizeNode", "");
+  if (!has("handles")) removeLine("$.handles = __figmaRepl.handles;");
+  if (!has("remember")) removeLine("$.remember = remember;");
+  if (!has("forget")) removeLine("$.forget = forget;");
+  if (!has("resolveId")) removeLine("$.resolveId = resolveHandleId;");
+  if (!has("node")) removeLine("$.node = $;");
+  if (!has("select")) removeLine("$.select = selectNodesForRepl;");
+  if (!has("cloneNodeTree")) removeLine("$.cloneNodeTree = cloneNodeTreeForRepl;");
+  if (!has("findFreeSlot")) removeLine("$.findFreeSlot = findFreeSlotForRepl;");
+  if (!has("placeNode")) removeLine("$.placeNode = placeNodeForRepl;");
+  if (!has("replaceGeneratedFrame")) removeLine("$.replaceGeneratedFrame = replaceGeneratedFrameForRepl;");
+  if (!has("findAll")) prelude = replaceDelimitedSource(prelude, "$.findAll = async function findAll", "$.find = async function find", "");
+  if (!has("find")) prelude = replaceDelimitedSource(prelude, "$.find = async function find", "$.text = async function text", "");
+  if (!has("text")) prelude = replaceDelimitedSource(prelude, "$.text = async function text", "$.layout = async function layout", "");
+  if (!has("layout")) prelude = replaceDelimitedSource(prelude, "$.layout = async function layout", "$.create = async function create", "");
+  if (!has("create")) prelude = replaceDelimitedSource(prelude, "$.create = async function create", "function __figmaReplDecodeBase64", "");
+  if (!has("imageAsset")) prelude = replaceDelimitedSource(prelude, "function __figmaReplDecodeBase64", "$.inspect = async function inspect", "");
+  if (!has("inspect")) prelude = replaceDelimitedSource(prelude, "$.inspect = async function inspect", "$.screenshot = async function screenshot", "");
+  if (!has("screenshot")) prelude = replaceDelimitedSource(prelude, "$.screenshot = async function screenshot", "$.checkpoint = async function checkpoint", "");
+  if (!has("checkpoint")) {
+    prelude = prelude.replace("const __figmaReplEvalCheckpoints = [];\n", "");
+    prelude = replaceDelimitedSource(prelude, "$.checkpoint = async function checkpoint", "$.checkpoints = __figmaReplEvalCheckpoints;", "", { includeEndMarker: true });
+  }
+  return prelude;
+}
+function stripFigmaReplPreludeForScriptHelpers(source, injectedHelpers) {
+  let prelude = source;
+  const has = (helper) => injectedHelpers.has(`$.${helper}`);
+  const needsSummary = has("select") || has("inspect") || has("cloneNodeTree") || has("checkpoint") || has("replaceGeneratedFrame");
+  const needsReadFiniteNumber = has("text") || has("create") || has("imageAsset") || has("cloneNodeTree") || has("placeNode") || has("findFreeSlot") || has("replaceGeneratedFrame");
+  const needsSizeInput = has("text") || has("create") || has("imageAsset") || has("replaceGeneratedFrame");
+  const needsPositionInput = has("text") || has("imageAsset") || has("cloneNodeTree") || has("replaceGeneratedFrame");
+  const needsAppearance = has("text") || has("create");
+  const needsText = has("text") || has("create");
+  const needsAutoLayout = has("layout") || has("create");
+  const needsQuery = has("find") || has("findAll");
+  const needsResolveHandleId = injectedHelpers.has("$.resolveId") || needsText;
+  prelude = replaceDelimitedSource(prelude, "async function selectNodesForRepl", "function solidPaint", "");
+  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function solidPaint", "function resolveHandleId", "");
+  else prelude = replaceDelimitedSource(prelude, "function normalizeRgba", "function resolveHandleId", "");
+  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function createHelperNode", "");
+  if (!has("create")) prelude = replaceDelimitedSource(prelude, "function createHelperNode", "function readFiniteNumber", "");
+  if (!needsReadFiniteNumber) prelude = replaceDelimitedSource(prelude, "function readFiniteNumber", "function setNodeSizeFromInput", "");
+  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSizeFromInput", "function setNodePositionFromInput", "");
+  if (!needsPositionInput) prelude = replaceDelimitedSource(prelude, "function setNodePositionFromInput", "function applyAppearance", "");
+  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function applyAppearance", "function applyConstraints", "");
+  prelude = replaceDelimitedSource(prelude, "function applyConstraints", "function fontFromHelperInput", "");
+  if (!needsText) {
+    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function applyAutoLayout", "");
+  } else if (!has("create")) {
+    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function applyAutoLayout", "");
+  }
+  if (!needsAutoLayout) prelude = replaceDelimitedSource(prelude, "function applyAutoLayout", "function queryNodes", "");
+  if (!needsQuery) prelude = replaceDelimitedSource(prelude, "function queryNodes", "function setNodeProperties", "");
+  prelude = replaceDelimitedSource(prelude, "function setNodeProperties", "function setNodeSize", "");
+  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSize", "async function loadFont", "");
+  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function loadFont", "function applyCollectionModes", "");
+  prelude = replaceDelimitedSource(prelude, "function applyCollectionModes", "async function applyStyleReference", "");
+  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function applyStyleReference", "function summarizeNode", "");
+  if (!needsSummary) prelude = replaceDelimitedSource(prelude, "function summarizeNode", "", "", { removeToEnd: true });
+  return prelude;
+}
+function replaceDelimitedSource(source, startMarker, endMarker, replacement, options = {}) {
+  const start = source.indexOf(startMarker);
+  if (start < 0) return source;
+  const end = options.removeToEnd ? source.length : source.indexOf(endMarker, start + startMarker.length);
+  if (end < 0 || end < start) return source;
+  const endOffset = options.includeEndMarker ? endMarker.length : 0;
+  return `${source.slice(0, start)}${replacement}${source.slice(end + endOffset)}`;
+}
+async function loadAssetManifest(args, session) {
+  const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
+  const manifestValue = manifestPath ? JSON.parse(await readFile4(manifestPath, "utf8")) : void 0;
+  const manifestRecord = asRecord2(manifestValue);
+  const manifestAssets = Array.isArray(manifestValue) ? manifestValue : Array.isArray(manifestRecord.assets) ? manifestRecord.assets : void 0;
+  const inlineAssets = Array.isArray(args.assets) ? args.assets : void 0;
+  const rawAssets = inlineAssets ?? manifestAssets;
+  if (!rawAssets || rawAssets.length === 0) {
+    throw new Error('Tool argument "assets" or "manifestPath" with assets is required.');
+  }
+  const baseDir = manifestPath ? dirname5(manifestPath) : session.workspace?.sessionDir;
+  if (manifestRecord.argumentsTemplate !== void 0) {
+    throw new Error('Asset manifest field "argumentsTemplate" was removed. Use "figma_repl_call_upstream_tool".');
+  }
+  if (manifestRecord.toolName !== void 0 || manifestRecord.arguments !== void 0 || manifestRecord.refresh !== void 0) {
+    throw new Error('Asset manifest fields "toolName/arguments/refresh" were removed. Use "figma_repl_call_upstream_tool".');
+  }
+  return {
+    assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir, session))
+  };
+}
+function normalizeManifestAsset(value, index, baseDir, session) {
+  const record2 = asRecord2(value);
+  assertRemovedManifestAssetFields(record2, index);
+  const rawPath = asOptionalString2(record2.path);
+  if (!rawPath) {
+    throw new Error(`Asset manifest entry ${index} requires path.`);
+  }
+  const path = isAbsolute3(rawPath) ? rawPath : baseDir ? resolve5(baseDir, rawPath) : void 0;
+  if (!path) {
+    throw new Error(`Asset manifest entry ${index} path must be absolute unless manifestPath is used.`);
+  }
+  const targetResolution = resolveSessionTargetInput(record2.target, session);
+  const resolvedTargetNodeId = targetResolution.nodeId;
+  if (!resolvedTargetNodeId) {
+    throw new Error(`Asset manifest entry ${index} requires target.`);
+  }
+  return {
+    path,
+    targetNodeId: resolvedTargetNodeId,
+    handle: targetResolution.handle,
+    fileKey: session.fileKey ?? extractFigmaFileKey(session.fileUrl),
+    nodeUrl: asOptionalString2(record2.nodeUrl) ?? asOptionalString2(record2.url) ?? buildFigmaNodeUrl(session, resolvedTargetNodeId),
+    scaleMode: asOptionalString2(record2.scaleMode),
+    name: asOptionalString2(record2.name),
+    metadata: recordFromUnknown(record2.metadata)
+  };
+}
+function assertRemovedManifestAssetFields(record2, index) {
+  const pathAliases = ["filePath", "localPath"].filter((field) => record2[field] !== void 0);
+  if (pathAliases.length > 0) {
+    throw new Error(`Asset manifest entry ${index} field "${pathAliases.join("/")}" was removed. Use "path".`);
+  }
+  const targetAliases = ["targetNodeId", "nodeId", "targetHandle", "targetId"].filter((field) => record2[field] !== void 0);
+  if (targetAliases.length > 0) {
+    throw new Error(`Asset manifest entry ${index} field "${targetAliases.join("/")}" was removed. Use "target".`);
+  }
+  const targetRecord = isRecord4(record2.target) ? record2.target : void 0;
+  if (targetRecord) {
+    const nestedAliases = ["nodeId", "targetNodeId", "targetHandle", "targetId"].filter((field) => targetRecord[field] !== void 0);
+    if (nestedAliases.length > 0) {
+      throw new Error(`Asset manifest entry ${index} target field "${nestedAliases.join("/")}" was removed. Use "handle".`);
+    }
+  }
+  if (record2.toolName !== void 0 || record2.arguments !== void 0 || record2.refresh !== void 0) {
+    throw new Error(`Asset manifest entry ${index} fields "toolName/arguments/refresh" were removed. Use "figma_repl_call_upstream_tool".`);
+  }
+}
+function selectRequiredUpstreamTool(tools, toolName, kind) {
+  const tool = tools.find((item) => item.name === toolName);
+  if (!tool) {
+    throw new Error(
+      `Required official upstream Figma MCP ${kind} tool "${toolName}" was not found. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging. Available tools: ${tools.map((item) => item.name).join(", ")}`
+    );
+  }
+  return tool;
+}
+function assertUpstreamToolHasProperty(tool, propertyName, kind) {
+  const schema = isRecord4(tool.inputSchema) ? tool.inputSchema : void 0;
+  const properties = isRecord4(schema?.properties) ? schema.properties : void 0;
+  if (!properties || !(propertyName in properties)) {
+    throw new Error(
+      `Required official upstream Figma MCP ${kind} tool "${tool.name}" no longer advertises inputSchema.properties.${propertyName}. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging.`
+    );
+  }
+}
+function assertUpstreamToolHasProperties(tool, propertyNames, kind) {
+  for (const propertyName of propertyNames) {
+    assertUpstreamToolHasProperty(tool, propertyName, kind);
+  }
+}
+function buildAssetManifestUpstreamArguments(options) {
+  if (options.tool.name === "upload_assets") {
+    return buildUploadAssetsArguments(options.asset);
+  }
+  throw new Error(
+    `Required official upstream Figma MCP asset upload/fill tool "${UPLOAD_ASSETS_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging.`
+  );
+}
+function buildUploadAssetsArguments(asset) {
+  if (!asset.fileKey) {
+    throw new Error(
+      `Asset manifest entry for "${asset.path}" needs a fileKey for upload_assets. Open the session with file or use "figma_repl_call_upstream_tool" for explicit upstream debugging.`
+    );
+  }
+  const scaleMode = normalizeImageScaleMode(asset.scaleMode ?? "FILL", "scaleMode");
+  return {
+    fileKey: asset.fileKey,
+    count: 1,
+    nodeId: asset.targetNodeId,
+    scaleMode
+  };
+}
+function buildCaptureUpstreamArguments(options) {
+  if (options.tool.name === "get_screenshot") {
+    return { fileKey: options.fileKey, nodeId: options.nodeId };
+  }
+  throw new Error(
+    `Required official upstream Figma MCP node screenshot tool "${SCREENSHOT_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_repl_call_upstream_tool" for explicit upstream debugging.`
+  );
+}
+function readTemplatePath(context, path) {
+  const parts = path.split(".").filter(Boolean);
+  let current2 = context;
+  for (const part of parts) {
+    if (!isRecord4(current2)) {
+      return void 0;
+    }
+    current2 = current2[part];
+  }
+  return current2;
+}
+async function validateAssetManifestTargetsIfAvailable(options) {
+  if (options.args.validateTargets === false) {
+    return { ok: void 0, skipped: true, reason: "validateTargets=false" };
+  }
+  const targetNodeIds = Array.from(new Set(
+    options.assetResults.map((asset) => asOptionalString2(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
+  ));
+  if (targetNodeIds.length === 0) {
+    return { ok: void 0, skipped: true, reason: "no targetNodeIds" };
+  }
+  const hasEvalTool = options.tools.some((tool) => tool.name === DEFAULT_EVAL_TOOL_NAME);
+  if (!hasEvalTool) {
+    return {
+      ok: void 0,
+      skipped: true,
+      reason: "no upstream eval tool advertised"
+    };
+  }
+  try {
+    const evalSettings = await resolveEvalSettings(options.session, {}, options.runtime);
+    const code = `const targetNodeIds = ${literal4(targetNodeIds)};
+const validations = [];
+for (const targetNodeId of targetNodeIds) {
+  try {
+    const node = await getNodeById(targetNodeId);
+    const fills = "fills" in node && Array.isArray(node.fills) ? node.fills : [];
+    const imageFills = fills.filter((paint) => paint && paint.type === "IMAGE" && typeof paint.imageHash === "string" && paint.imageHash.length > 0);
+    validations.push({
+      targetNodeId,
+      status: imageFills.length > 0 ? "valid" : "missing-image-fill",
+      nodeId: node.id,
+      nodeType: node.type,
+      name: node.name,
+      fillCount: fills.length,
+      imageFillCount: imageFills.length
+    });
+  } catch (error) {
+    validations.push({
+      targetNodeId,
+      status: "missing",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+return {
+  validations,
+  validCount: validations.filter((item) => item.status === "valid").length,
+  invalidCount: validations.filter((item) => item.status !== "valid").length
+};`;
+    const upstream = await callUpstreamEval(
+      options.runtime.client,
+      evalSettings,
+      buildFigmaEvalScript({
+        session: options.session,
+        code,
+        mode: "read"
+      })
+    );
+    const parsed = parseUpstreamToolResult(upstream);
+    if (parsed.upstreamError) {
+      return {
+        ok: false,
+        error: responseUpstreamError(parsed.upstreamError),
+        primaryFix: parsed.primaryFix
+      };
+    }
+    const validationResult = findAssetManifestValidationResult(parsed.json);
+    if (!validationResult) {
+      return {
+        ok: void 0,
+        skipped: true,
+        reason: "validation result did not include target records",
+        validationSource: "not-found",
+        expectedCount: targetNodeIds.length,
+        validCount: 0,
+        invalidCount: 0,
+        missingValidationCount: targetNodeIds.length,
+        validations: []
+      };
+    }
+    const validations = Array.isArray(validationResult.result.validations) ? validationResult.result.validations.filter(isRecord4) : [];
+    const invalidCount = Number(validationResult.result.invalidCount ?? validations.filter((item) => item.status !== "valid").length);
+    const validatedTargetNodeIds = new Set(validations.map((item) => asOptionalString2(item.targetNodeId)).filter((nodeId) => nodeId !== void 0));
+    const missingValidationCount = targetNodeIds.filter((targetNodeId) => !validatedTargetNodeIds.has(targetNodeId)).length;
+    for (const asset of options.assetResults) {
+      const targetNodeId = asOptionalString2(asset.targetNodeId);
+      const validation = validations.find((item) => item.targetNodeId === targetNodeId);
+      if (validation) {
+        asset.validation = validation;
+      }
+    }
+    return {
+      ok: missingValidationCount === 0 ? invalidCount === 0 : invalidCount > 0 ? false : void 0,
+      reason: missingValidationCount > 0 ? "validation result did not include every target record" : void 0,
+      validationSource: validationResult.sourcePath,
+      expectedCount: targetNodeIds.length,
+      validCount: Number(validationResult.result.validCount ?? validations.length - invalidCount),
+      invalidCount,
+      missingValidationCount,
+      validations
+    };
+  } catch (error2) {
+    return {
+      ok: false,
+      error: responseUpstreamError(normalizeCaughtUpstreamError(error2))
+    };
+  }
+}
+function findAssetManifestValidationResult(value, depth = 0, sourcePath = "parsed.json") {
+  if (depth > 3) {
+    return void 0;
+  }
+  const record2 = asRecord2(value);
+  if (Array.isArray(record2.validations) || record2.validCount !== void 0 || record2.invalidCount !== void 0) {
+    return { result: record2, sourcePath };
+  }
+  for (const key of ["result", "payload", "data"]) {
+    if (record2[key] !== void 0) {
+      const nested = findAssetManifestValidationResult(record2[key], depth + 1, `${sourcePath}.${key}`);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  return void 0;
+}
+async function submitLocalAssetUploadIfAvailable(asset, parsed) {
+  const submitUrl = extractAssetSubmitUrl(parsed.json);
+  if (!submitUrl) {
+    return void 0;
+  }
+  const bytes = await readFile4(asset.path);
+  const mimeType = mimeTypeForAssetPath(asset.path);
+  const response = await fetch(submitUrl, {
+    method: "POST",
+    headers: { "Content-Type": mimeType },
+    body: bytes
+  });
+  const text = await response.text();
+  const json = parseJsonLenient2(text);
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      statusText: response.statusText,
+      mimeType,
+      bytes: bytes.byteLength,
+      response: summarizeUploadResponse(text, json)
+    };
+  }
+  return {
+    ok: true,
+    status: response.status,
+    statusText: response.statusText,
+    mimeType,
+    bytes: bytes.byteLength,
+    response: summarizeUploadResponse(text, json)
+  };
+}
+function extractAssetSubmitUrl(value) {
+  const record2 = asRecord2(value);
+  if (isRecord4(record2.result)) {
+    const nestedUrl = extractAssetSubmitUrl(record2.result);
+    if (nestedUrl) {
+      return nestedUrl;
+    }
+  }
+  const uploads = Array.isArray(record2.uploads) ? record2.uploads : [];
+  for (const upload of uploads) {
+    const uploadRecord = asRecord2(upload);
+    const submitUrl = asOptionalString2(uploadRecord.submitUrl) ?? asOptionalString2(uploadRecord.uploadUrl) ?? asOptionalString2(uploadRecord.url);
+    if (submitUrl) {
+      return submitUrl;
+    }
+  }
+  return void 0;
+}
+function mimeTypeForAssetPath(path) {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  if (lower.endsWith(".gif")) {
+    return "image/gif";
+  }
+  if (lower.endsWith(".webp")) {
+    return "image/webp";
+  }
+  return "image/png";
+}
+function normalizeImageScaleMode(value, name) {
+  const normalized = String(value || "FILL").toUpperCase();
+  if (!["FILL", "FIT", "CROP", "TILE"].includes(normalized)) {
+    throw new Error(`${name} must be FILL, FIT, CROP, or TILE.`);
+  }
+  return normalized;
+}
+function summarizeUploadResponse(text, json) {
+  if (json !== void 0) {
+    return json;
+  }
+  return text.slice(0, 500);
+}
+async function runTaskPlanStep(options) {
+  const rawStepArgs = expandTaskPlanStepReferences(
+    taskPlanStepArguments(options.step),
+    options.references
+  );
+  const commonArgs = {
+    title: asOptionalString2(rawStepArgs.title) ?? options.title,
+    sessionId: asOptionalString2(rawStepArgs.sessionId) ?? options.sessionId
+  };
+  const session = options.runtime.sessions.getOrCreate(commonArgs.sessionId);
+  const stepArgs = withTaskPlanDefaultFiles(rawStepArgs, options.type, options.id, session);
+  if (options.type === "script-file") {
+    return executeRunScriptFile(
+      asRunScriptFileArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime
+    );
+  }
+  if (options.type === "asset-manifest") {
+    return executeApplyAssetManifest(
+      asApplyAssetManifestArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime
+    );
+  }
+  if (options.type === "download-assets") {
+    return executeDownloadAssets(
+      asDownloadAssetsArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime
+    );
+  }
+  if (options.type === "screenshot-capture") {
+    return executeCaptureNode(
+      asCaptureNodeArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime
+    );
+  }
+  if (options.type === "upstream-tool") {
+    return executeCallUpstreamTool(
+      asCallUpstreamToolArgs({ ...commonArgs, ...stepArgs }),
+      options.runtime
+    );
+  }
+  throw new Error(`Unsupported figma_repl_run_task_plan step type "${options.type}".`);
+}
+function taskPlanStepArguments(step) {
+  return asRecord2(step.args);
+}
+function expandTaskPlanStepReferences(args, references) {
+  if (!references) {
+    return args;
+  }
+  return expandTaskPlanReferenceValue(args, {
+    steps: references.steps,
+    outputs: references.outputs,
+    last: references.last
+  });
+}
+function expandTaskPlanReferenceValue(value, context) {
+  if (typeof value === "string") {
+    const exact = /^\{\{\s*([^}]+?)\s*\}\}$/u.exec(value);
+    if (exact) {
+      const path = exact[1].trim();
+      return isTaskPlanReferencePath(path) ? readTemplatePath(context, path) : value;
+    }
+    return value.replace(/\{\{\s*([^}]+?)\s*\}\}/gu, (match, rawPath) => {
+      const path = rawPath.trim();
+      if (!isTaskPlanReferencePath(path)) {
+        return match;
+      }
+      const resolved = readTemplatePath(context, path);
+      if (resolved === void 0 || resolved === null) {
+        return "";
+      }
+      return typeof resolved === "string" ? resolved : JSON.stringify(resolved);
+    });
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => expandTaskPlanReferenceValue(item, context));
+  }
+  if (isRecord4(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, expandTaskPlanReferenceValue(item, context)])
+    );
+  }
+  return value;
+}
+function isTaskPlanReferencePath(path) {
+  return /^(?:outputs|steps|last)(?:\.|$)/u.test(path);
+}
+function runScriptUpstreamPayload(result) {
+  const upstream = asRecord2(result.upstream);
+  return upstream.kind === "json" ? upstream.result : void 0;
+}
+function createTaskPlanStepReference(options) {
+  const outputFiles = asRecord2(options.result.outputFiles);
+  const debugFile = asOptionalString2(options.result.debugFile);
+  const imageFile = asOptionalString2(options.result.imageFile);
+  const upstream = asRecord2(options.result.upstream);
+  const upstreamPayload = runScriptUpstreamPayload(options.result);
+  const result = asRecord2(upstreamPayload);
+  const nestedResult = isRecord4(result.result) ? asRecord2(result.result) : result;
+  const session = asRecord2(options.result.session);
+  const handles = isRecord4(session.handles) ? session.handles : isRecord4(result.handles) ? result.handles : isRecord4(nestedResult.handles) ? nestedResult.handles : void 0;
+  return {
+    id: options.id,
+    index: options.index,
+    type: options.type,
+    status: options.status,
+    ok: options.ok,
+    upstream: Object.keys(upstream).length > 0 ? upstream : void 0,
+    nodeIds: collectNodeIds(options.result),
+    handles,
+    assets: options.result.assets,
+    downloadTargets: options.result.targets,
+    downloadOutputDir: options.result.outputDir,
+    validation: options.result.validation,
+    assetTargets: nestedResult.assetTargets,
+    captureTarget: nestedResult.captureTarget,
+    createdNodeId: nestedResult.createdNodeId,
+    debugFile,
+    imageFile,
+    outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0,
+    debugFilePath: asOptionalString2(asRecord2(outputFiles.debugFile).path) ?? debugFile
+  };
+}
+function taskPlanStepOutputReferences(reference) {
+  const outputFiles = asRecord2(reference.outputFiles);
+  if (Object.keys(outputFiles).length > 0) {
+    return outputFiles;
+  }
+  const debugFile = asOptionalString2(reference.debugFile);
+  if (debugFile) {
+    return { debugFile };
+  }
+  const imageFile = asOptionalString2(reference.imageFile);
+  return imageFile ? { imageFile } : void 0;
+}
+function normalizeTaskPlanStepType2(step) {
+  const value = asOptionalString2(step.type);
+  return normalizeTaskPlanStepType(value);
+}
+function taskPlanStepSucceeded(result) {
+  if (result.ok === false) {
+    return false;
+  }
+  return true;
+}
+function summarizeTaskPlanStepResult(result) {
+  return {
+    ok: result.ok !== false,
+    debugFile: result.debugFile,
+    imageFile: result.imageFile,
+    files: result.files ?? result.outputFiles,
+    failures: Array.isArray(result.failures) ? result.failures.length : void 0,
+    diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics.length : void 0
+  };
+}
+function metadataXmlFromParsedResult(parsed) {
+  const text = parsed.text.trim();
+  const start = text.indexOf("<");
+  if (start < 0) {
+    return void 0;
+  }
+  return text.slice(start);
+}
+function metadataJsonFromXml(xml, fileKey, nodeId) {
+  const root = parseMetadataXml(xml);
+  const tree = root ? metadataTreeFromXmlElement(root) : void 0;
+  const nodeCount = tree ? countMetadataTreeNodes(tree) : 0;
+  return removeUndefined2({
+    format: "figma-metadata-tree",
+    source: "get_metadata",
+    fileKey,
+    nodeId,
+    nodeCount,
+    root: tree
+  });
+}
+function parseMetadataXml(xml) {
+  const stack = [];
+  let root;
+  const tagPattern = /<([^!?/>\s]+)([^<>]*?)(\/?)>|<\/([^>\s]+)\s*>/gu;
+  for (const match of xml.matchAll(tagPattern)) {
+    const closeTag = match[4];
+    if (closeTag) {
+      const last = stack[stack.length - 1];
+      if (last?.tag === closeTag) {
+        stack.pop();
+      }
+      if (root && stack.length === 0) {
+        break;
+      }
+      continue;
+    }
+    const tag = match[1];
+    if (!tag) {
+      continue;
+    }
+    const element = {
+      tag,
+      attributes: parseMetadataXmlAttributes(match[2] ?? ""),
+      children: []
+    };
+    const parent = stack[stack.length - 1];
+    if (parent) {
+      parent.children.push(element);
+    } else if (!root) {
+      root = element;
+    }
+    if (match[3] !== "/") {
+      stack.push(element);
+    }
+  }
+  return root;
+}
+function parseMetadataXmlAttributes(source) {
+  const attributes = {};
+  const attrPattern = /([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*"([^"]*)"/gu;
+  for (const match of source.matchAll(attrPattern)) {
+    const name = match[1];
+    if (name) {
+      attributes[name] = decodeXmlEntities(match[2] ?? "");
+    }
+  }
+  return attributes;
+}
+function decodeXmlEntities(value) {
+  return value.replace(/&quot;/gu, '"').replace(/&apos;/gu, "'").replace(/&lt;/gu, "<").replace(/&gt;/gu, ">").replace(/&amp;/gu, "&");
+}
+function metadataTreeFromXmlElement(element) {
+  return removeUndefined2({
+    nodeId: element.attributes.id,
+    type: element.tag,
+    name: element.attributes.name,
+    x: numberAttribute(element.attributes.x),
+    y: numberAttribute(element.attributes.y),
+    width: numberAttribute(element.attributes.width),
+    height: numberAttribute(element.attributes.height),
+    children: element.children.length > 0 ? element.children.map(metadataTreeFromXmlElement) : void 0
+  });
+}
+function numberAttribute(value) {
+  if (value === void 0 || value.length === 0) {
+    return void 0;
+  }
+  const number4 = Number(value);
+  return Number.isFinite(number4) ? number4 : void 0;
+}
+function countMetadataTreeNodes(node) {
+  const children = Array.isArray(node.children) ? node.children : [];
+  return 1 + children.reduce((sum, child) => sum + countMetadataTreeNodes(child), 0);
+}
+function limitInlineScriptResult(payload, limitValue, fields) {
+  const limit = normalizeInlineResultLimit(limitValue);
+  if (limit === void 0) {
+    return payload;
+  }
+  const result = { ...payload };
+  const omitted = [];
+  for (const field of fields) {
+    const target = inlineResultLimitTarget(result, field);
+    if (!target || target.value === void 0) {
+      continue;
+    }
+    const bytes = Buffer.byteLength(JSON.stringify(removeUndefined2(target.value)), "utf8");
+    if (bytes > limit) {
+      delete target.parent[target.key];
+      omitted.push({
+        field,
+        bytes,
+        limit,
+        bytesHuman: formatBytesHuman(bytes),
+        limitHuman: formatBytesHuman(limit)
+      });
+    }
+  }
+  if (omitted.length > 0) {
+    result.inlineResultLimit = {
+      limit,
+      limitBytes: limit,
+      limitHuman: formatBytesHuman(limit),
+      omitted,
+      guidance: "Read the corresponding outputFiles pointer when inline fields are omitted."
+    };
+  }
+  return result;
+}
+function inlineResultLimitTarget(payload, field) {
+  const parts = field.split(".");
+  let parent = payload;
+  for (const part of parts.slice(0, -1)) {
+    const next = parent[part];
+    if (!isRecord4(next)) {
+      return void 0;
+    }
+    const cloned = { ...next };
+    parent[part] = cloned;
+    parent = cloned;
+  }
+  const key = parts[parts.length - 1];
+  if (!key) {
+    return void 0;
+  }
+  return { parent, key, value: parent[key] };
+}
+function normalizeInlineResultLimit(value) {
+  if (value === void 0 || value === null) {
+    return void 0;
+  }
+  const number4 = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number4) || number4 < 0) {
+    throw new Error(`Tool argument "inlineResultLimit" must be a non-negative number of bytes up to ${MAX_INLINE_RESULT_LIMIT} bytes (${formatBytesHuman(MAX_INLINE_RESULT_LIMIT)}).`);
+  }
+  return Math.min(Math.floor(number4), MAX_INLINE_RESULT_LIMIT);
+}
+function formatBytesHuman(bytes) {
+  if (bytes < 1e3) {
+    return `${bytes} bytes`;
+  }
+  const kb = bytes / 1e3;
+  const rounded = Number.isInteger(kb) ? String(kb) : kb.toFixed(1);
+  return `${rounded} KB`;
+}
+function applyWorkspaceFileContextArgs(session, args) {
+  if (!session) {
+    return;
+  }
+  applySessionFileReference(session, args.file);
+  const derivedFileKey = extractFigmaFileKey(session.fileUrl);
+  if (!session.fileKey && derivedFileKey) {
+    session.fileKey = derivedFileKey;
+  }
+  const expectedSurface = normalizeSurface(args.surface);
+  const derivedSurface = inferFigmaSurface(session.fileUrl);
+  if (expectedSurface) {
+    session.surface = expectedSurface;
+  } else if (derivedSurface) {
+    session.surface = derivedSurface;
+  }
+  session.lastDiagnostics = diagnoseFigmaReplContext({
+    expectedSurface,
+    derivedSurface,
+    fileUrl: session.fileUrl
+  });
+}
+function deriveFileSlug(args, session) {
+  const parsedFile = parseFigmaFileReference(args.file);
+  return slugifyTaskName2(
+    args.fileSlug ?? parsedFile.fileKey ?? session?.fileKey ?? parsedFile.fileSlug ?? extractFigmaFileSlug(session?.fileUrl) ?? session?.slug ?? "figma-file"
+  );
+}
+function applySessionFileReference(session, file) {
+  const parsed = parseFigmaFileReference(asOptionalString2(file));
+  if (!parsed.fileUrl && !parsed.fileKey) {
+    return;
+  }
+  if (parsed.fileUrl) {
+    session.fileUrl = parsed.fileUrl;
+  } else {
+    delete session.fileUrl;
+  }
+  if (parsed.fileKey) {
+    session.fileKey = parsed.fileKey;
+  }
+}
+function bindOpenWorkspaceIfAvailable(session, args) {
+  if (!session.fileKey && !session.fileUrl) {
+    return;
+  }
+  if (typeof args.cwd === "string" && args.cwd.length > 0 && !isAbsolute3(args.cwd)) {
+    throw new Error('Tool argument "cwd" must be an absolute path.');
+  }
+  const fileSlug = slugifyTaskName2(
+    session.fileKey ?? extractFigmaFileSlug(session.fileUrl) ?? session.slug ?? "figma-file"
+  );
+  session.workspace = createSessionWorkspace({
+    cwd: typeof args.cwd === "string" && args.cwd.length > 0 ? args.cwd : currentWorkingDirectory(),
+    dirName: args.dirName,
+    fileKey: session.fileKey,
+    fileSlug,
+    intentSlug: session.slug
+  });
+}
+function deriveTaskSlug(args, fallback) {
+  return slugifyTaskName2(
+    args.taskSlug ?? args.task ?? args.title ?? args.sessionId ?? fallback
+  );
+}
+function createTaskScriptTemplate(taskSlug, args) {
+  return [
+    `// ${taskSlug}.figma.js`,
+    "// Async Figma Plugin API body for figma_repl_run_script_file.",
+    "// Use $ helpers plus native Figma Plugin API calls and return compact JSON.",
+    args.task ? `// Task: ${String(args.task)}` : void 0,
+    args.surface ? `// Surface: ${String(args.surface)}` : void 0,
+    args.targetPageId ? `// Suggested targetPageId: ${String(args.targetPageId)}` : void 0,
+    "",
+    "const checkpoint = await $.checkpoint('start', ['$currentPage'], { depth: 0 });",
+    "return { checkpoint, handles: $.handles };",
+    ""
+  ].filter((line) => line !== void 0).join("\n");
+}
+function evalHelperPath(name) {
+  return `$.${name}`;
+}
+function createEvalHelperPathList() {
+  return ["$", ...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES.map(evalHelperPath)];
+}
+function createEvalHelperDescriptionsPayload() {
+  return Object.fromEntries(
+    createEvalHelperPathList().map((name) => [name, FIGMA_REPL_EVAL_HELPER_DESCRIPTIONS[name]])
+  );
+}
+function createFileWorkflowPayload() {
+  return {
+    primaryTool: "figma_repl_run_script_file",
+    fileExtension: ".figma.js",
+    prepareTool: "figma_repl_prepare_task",
+    planTool: "figma_repl_guidance",
+    workspaceLayout: "<cwd>/figma-mcp/<fileKey-or-fileSlug>/<taskSlug>.figma.js; debug JSON files are generated on demand",
+    outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
+    workflowTools: ["figma_repl_get_metadata", "figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_capture_node", "figma_repl_run_task_plan"],
+    helpers: createEvalHelperPathList(),
+    defaultTaskRoot: `${TASK_WORKSPACE_ROOT_ENV}, then OS temp figma-repl-mcp/tasks/<slug>`,
+    guidance: [
+      "Keep non-trivial Plugin API work in local .figma.js files.",
+      "Initialize a file workspace once, then keep task scripts in that file-context folder.",
+      "Run dryRun first for file-aware diagnostics without upstream calls.",
+      "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
+      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; full session state remains available through figma-repl://sessions/{id}.",
+      "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
+      "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
+      "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
+      "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
+      "Use figma_repl_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
+      "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
+      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
+      "Use figma_repl_get_metadata for broad layer-tree discovery: it calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
+      "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
+      "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
+      "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
+      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
+      "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing."
+    ]
+  };
+}
+function createIntentSuggestions(intent, maxCards, referenceContext = []) {
+  const cards = chooseApiCardsForIntent(intent, maxCards);
+  const recommendedCards = cards.map((card) => card.id);
+  return {
+    cards,
+    recommendedCards,
+    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
+    apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
+    avoid: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    matchType: cards.length > 0 ? "api-card" : "bm25",
+    confidence: cards.length > 0 ? "high" : "medium",
+    referenceContext,
+    workflow: createFileWorkflowPayload(),
+    toolOrder: [
+      "figma_repl_prepare_task",
+      "figma_repl_guidance",
+      "figma_repl_lookup(kind=api)",
+      "figma_repl_run_script_file(dryRun=true)",
+      "figma_repl_run_script_file",
+      "figma_repl_inspect"
+    ],
+    referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_repl_lookup kind=api query when exact API details are still missing."
+  };
+}
+function slugifyTaskName2(value) {
+  const source = typeof value === "string" ? value : "figma-task";
+  const slug = source.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
+  return slug || "figma-task";
+}
+function createToolTierPayload() {
+  return {
+    normalPath: {
+      summary: "Default path for non-trivial Figma work.",
+      tools: ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_get_metadata", "figma_repl_inspect", "figma_repl_capture_node"],
+      order: [
+        "figma_repl_prepare_task",
+        "figma_repl_guidance",
+        "figma_repl_lookup",
+        "figma_repl_get_metadata",
+        "figma_repl_run_script_file(dryRun=true)",
+        "figma_repl_run_script_file",
+        "figma_repl_inspect",
+        "figma_repl_capture_node"
+      ]
+    },
+    contextAndLookup: {
+      summary: "Use to plan, bind lightweight session context, or fetch compact docs/API context.",
+      tools: ["figma_repl_open", "figma_repl_guidance", "figma_repl_lookup", "figma_repl_get_metadata"]
+    },
+    workflowAddOns: {
+      summary: "Use when the primary script workflow needs generated assets, downloaded Figma assets, or repeatable multi-step orchestration.",
+      tools: ["figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_run_task_plan"]
+    },
+    advancedEscapeHatches: {
+      summary: "Use only for short ephemeral calls or explicit uncovered upstream-only capabilities.",
+      tools: ["figma_repl_eval", "figma_repl_call_upstream_tool"]
+    }
+  };
+}
+function createToolArgumentGuidancePayload() {
+  return {
+    title: {
+      optional: true,
+      preferSupplying: true,
+      schemaDescription: "One concise sentence-style line for UI/log display.",
+      guidance: "Prefer supplying title on normal calls. Describe what this call is doing in plain language; keep it specific and avoid bare labels or tool names. If omitted, the runtime uses a generic default title.",
+      examples: [
+        "Capture the hero variant for visual QA",
+        "Dry-run the token audit script",
+        "Apply generated assets to product cards"
+      ]
+    },
+    prepareTask: {
+      tool: "figma_repl_prepare_task",
+      tier: "normalPath",
+      recommendedCalls: {
+        workspaceFromFile: { title: "Prepare the token audit workspace", file: "<figma file URL or file key>", task: "<task>", surface: "design" }
+      },
+      advancedArguments: ["cwd", "fileSlug", "dirName", "taskSlug", "workspaceDir", "fileName", "taskRoot", "template", "overwrite"],
+      avoidUnless: {
+        cwd: "Omit cwd for the MCP server process cwd; pass it only when the server cwd is not the intended project directory.",
+        workspaceOverrides: "Use workspaceDir/taskRoot only when deliberately bypassing the default <cwd>/figma-mcp/<fileKey-or-fileSlug> layout.",
+        fileName: "Use fileName only when the generated <taskSlug>.figma.js name is unsuitable.",
+        overwrite: "Use only after deciding that replacing an existing script/result pair is intended."
+      }
+    },
+    open: {
+      tool: "figma_repl_open",
+      tier: "contextAndLookup",
+      recommendedCalls: {
+        session: { title: "Open the design file session", sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" }
+      },
+      advancedArguments: ["cwd", "dirName", "connect", "handles"],
+      avoidUnless: {
+        cwd: "Omit cwd for the MCP server process cwd; pass it only when the server cwd is not the intended project directory.",
+        dirName: "Omit dirName for the default figma-mcp workspace directory.",
+        connect: "Leave at the default true unless intentionally updating only local metadata; open connects without listing tools, and upstream tool discovery uses figma-repl://upstream-tools.",
+        handles: "Use only when importing known node ids into a new session; prefer $.remember from scripts."
+      }
+    },
+    eval: {
+      tool: "figma_repl_eval",
+      tier: "advancedEscapeHatches",
+      guidance: "Use only for small ephemeral calls. Use prepare_task + figma_repl_run_script_file for repairable scripts, multi-step work, and large structured results.",
+      recommendedCalls: {
+        read: { title: "Inspect selected layout metadata", sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
+        write: { title: "Apply the selected node updates", sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" }
+      },
+      advancedArguments: ["inlineResultLimit", "allowDangerousOperations", "handleUpdates"],
+      avoidUnless: {
+        debugFiles: "Do not request JSON result files; debug files are generated on demand for failures and inline omissions.",
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits.",
+        allowDangerousOperations: "Use only after reviewing the exact code; it does not bypass API contract, surface, or read-mode guards.",
+        handleUpdates: "Use only for handle import/repair; prefer $.remember inside code."
+      }
+    },
+    inspect: {
+      tool: "figma_repl_inspect",
+      tier: "normalPath",
+      recommendedCalls: {
+        inspectTarget: { title: "Inspect the current selection", sessionId: "<session>", target: "$selection" },
+        inspectStyle: { title: "Inspect visual style tokens", sessionId: "<session>", mode: "style", target: "$selection" },
+        validateHandles: { title: "Validate cached node handles", sessionId: "<session>", mode: "validate" }
+      },
+      advancedArguments: ["handles"],
+      avoidUnless: {
+        handles: "Pass handles only to validate a subset; omit to validate all cached handles."
+      }
+    },
+    getMetadata: {
+      tool: "figma_repl_get_metadata",
+      tier: "contextAndLookup",
+      guidance: "Use for broad recursive layer-tree discovery before detailed style/fill/text inspection. It calls official get_metadata, converts XML to compact JSON, returns small trees inline, and writes oversized trees to outputFiles.metadataFile.",
+      recommendedCalls: {
+        fromSession: { title: "Read layer metadata", sessionId: "<session>", target: "<node id or $handle>" },
+        fromFile: { title: "Read layer metadata", file: "<figma file URL or file key>", target: "<node id>" }
+      },
+      advancedArguments: ["inlineResultLimit", "refresh", "clientLanguages", "clientFrameworks"],
+      avoidUnless: {
+        dynamicSelectors: "Do not pass $selection here; use figma_repl_inspect for live selection, then pass the resolved node id or cached handle.",
+        inlineResultLimit: "Use only for converted metadata.json payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces metadata.json to outputFiles.metadataFile only.",
+        refresh: "Use only for upstream tool-cache debug."
+      }
+    },
+    assetManifest: {
+      tool: "figma_repl_apply_asset_manifest",
+      tier: "workflowAddOns",
+      recommendedCalls: {
+        applyManifest: { title: "Apply generated assets to target rectangles", sessionId: "<session>", manifestPath: "<assets>.json" }
+      },
+      advancedArguments: ["assets"],
+      avoidUnless: {
+        assets: "Prefer manifestPath for repeatable local-file workflows; inline assets are for generated one-off plans."
+      }
+    },
+    downloadAssets: {
+      tool: "figma_repl_download_assets",
+      tier: "workflowAddOns",
+      recommendedCalls: {
+        downloadTargets: { title: "Download source assets from targets", sessionId: "<session>", targets: [{ target: "$target", defaultFormat: "png" }], outputDir: "<downloads>" }
+      },
+      preferredArguments: ["targets", "manifestPath", "outputDir"],
+      avoidUnless: {
+        manifestPath: "Use only for repeatable batch files shaped as { targets: [...] }; inline targets are clearer for one-off calls.",
+        outputDir: "Omit for the default <slug>.downloads directory unless downstream steps need a specific path.",
+        debugFiles: "Do not request JSON result files; debug files are generated on demand for failures."
+      }
+    },
+    captureNode: {
+      tool: "figma_repl_capture_node",
+      tier: "normalPath",
+      recommendedCalls: {
+        capture: { sessionId: "<session>", target: "$target", imageFile: "<capture>.png" }
+      }
+    },
+    taskPlan: {
+      tool: "figma_repl_run_task_plan",
+      tier: "workflowAddOns",
+      recommendedCalls: {
+        filePlan: { title: "Run the repeatable asset QA plan", sessionId: "<session>", planPath: "<plan>.json" }
+      },
+      advancedArguments: ["steps"],
+      avoidUnless: {
+        steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans.",
+        stepArgs: "Each step must use { type, args }; put tool-specific fields inside args, not at the step top level."
+      }
+    },
+    guidance: {
+      tool: "figma_repl_guidance",
+      tier: "contextAndLookup",
+      preferredArguments: ["task", "mode", "surface"]
+    },
+    lookup: {
+      tool: "figma_repl_lookup",
+      tier: "contextAndLookup",
+      preferredArguments: { docs: ["kind=docs", "query"], api: ["kind=api", "symbol"] },
+      resultSizeControls: ["maxResults", "maxSnippetLines"]
+    },
+    callUpstreamTool: {
+      tool: "figma_repl_call_upstream_tool",
+      tier: "advancedEscapeHatches",
+      guidance: "Explicit upstream escape hatch only for uncovered official Figma MCP capabilities. Read figma-repl://upstream-tools, then figma-repl://upstream-tools/{name}, and do not use for use_figma/get_metadata/get_screenshot/upload_assets/download_assets wrappers.",
+      recommendedCalls: {
+        explicit: { title: "Call the upstream-only Figma tool", sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} }
+      },
+      advancedArguments: ["inlineResultLimit", "refresh"],
+      avoidUnless: {
+        debugFiles: "Do not request JSON result files; debug files are generated on demand for failures and inline omissions.",
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits.",
+        refresh: "Use only for upstream tool-cache debug."
+      }
+    }
+  };
+}
+function createCapabilitiesPayload() {
+  return {
+    guide: {
+      purpose: "Unified Figma-facing MCP facade for agents after OAuth registration. Stay inside figma_repl_mcp; it keeps local session metadata/handles and can bridge to upstream Figma MCP tools through explicit REPL tools.",
+      preferredFlow: [
+        "Read figma-repl://capabilities to choose the facade path",
+        "figma_repl_prepare_task with file and task for repairable .figma.js workspaces; cwd is an optional override",
+        "figma_repl_guidance with mode=plan for workflow planning or mode=guidance/card/catalog for compact local API cards",
+        "figma_repl_lookup only when exact docs/API snippets are still needed after guidance",
+        "figma_repl_get_metadata for broad recursive layer-tree discovery before detailed style/fill/text inspection",
+        "figma_repl_run_script_file with inputFile and dryRun=true for primary .figma.js workflows, debug files, and line-aware repair",
+        "figma_repl_run_script_file without dryRun to execute the reviewed file workflow",
+        "figma_repl_inspect with mode=inspect, mode=style, or mode=validate for targeted summaries, visual-token audits, and handle validation before mutation and after generated work",
+        "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through official upload_assets",
+        "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
+        "figma_repl_capture_node for final visual QA captures saved as local PNG files",
+        "figma_repl_open only for lightweight session/context binding when a prepared task is not needed; start new file tasks with figma_repl_prepare_task",
+        "figma_repl_run_task_plan only for repeatable multi-step plans",
+        "figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work",
+        "figma_repl_call_upstream_tool only when a task explicitly needs an uncovered upstream Figma MCP tool"
+      ],
+      handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
+      upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, and download_assets.",
+      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests and download_assets keep compact inline entries and write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
+      statusSemantics: {
+        topLevelOk: "Top-level ok reports local wrapper/tool completion.",
+        upstreamOk: "upstream.ok reports effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false; false results include upstream.result.source as business when JSON supplied ok:false, or call for failures without a consumed result status.",
+        upstreamResult: "upstream.result contains public business/error details with consumed top-level ok removed. Bridge-internal __figmaRepl metadata is used only for session updates and is not exposed in public upstream results or sidecars."
+      }
+    },
+    toolTiers: createToolTierPayload(),
+    patterns: {
+      text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
+      createUi: "Use $.create for common Design nodes and native Plugin API calls for advanced construction.",
+      transaction: "Use dryRun=true first, then execute the same .figma.js file; add $.checkpoint calls before/after meaningful batches to return handle and node summaries.",
+      clone: "Use $.cloneNodeTree to copy a node to the side; it clones outer-to-inner and preserves instance subtrees whole when children cannot be rebuilt.",
+      generatedFrame: "Use $.findFreeSlot or $.placeNode for predictable non-overlapping placement and $.replaceGeneratedFrame when replacing a guarded generated FRAME.",
+      designSystem: "Use native Plugin API calls in .figma.js for variables/styles/components; use explicit REPL upstream calls only when a task requires them.",
+      query: "Use figma_repl_guidance first for natural-language tasks; it returns recommendedCards, queryHints, apiSymbols, avoid, and compact referenceContext. Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
+      pages: "Use targetPageId or one setCurrentPageAsync call; direct figma.currentPage assignment is blocked.",
+      selection: "Use $.select instead of direct figma.currentPage.selection access in repairable scripts.",
+      styleAudit: "Use figma_repl_inspect mode=style for compact visual-token audits before asking agents to match a layer style.",
+      metadata: "Use figma_repl_get_metadata for broad recursive layer-tree discovery; it returns a compact JSON node tree inline when small and writes oversized trees to outputFiles.metadataFile.",
+      validation: "Use figma_repl_inspect mode=validate before mutating cached handles from an earlier call."
+    },
+    safety: {
+      fatalDiagnosticsBlock: true,
+      warningsReturnWithResult: true,
+      allowDangerousOperations: "Bypasses only dynamic/destructive guards. It does not bypass API contract, surface, or read-mode guards.",
+      diagnosticShape: "{ code, severity, message, suggestion, docsHint }",
+      upstreamFailureShape: "{ ok:false, upstreamError:{ message, code?, details? } }; script/eval/debug tools may also include primaryFix"
+    },
+    scriptWorkflow: {
+      primaryTool: "figma_repl_run_script_file",
+      scriptShape: "Write an async function body in a local .figma.js file. The runner injects Figma REPL prelude plus $ helpers before upstream use_figma execution.",
+      requiredArguments: ["inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
+      recommendedCalls: {
+        dryRun: { title: "Dry-run the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
+        execute: { title: "Execute the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js" }
+      },
+      advancedArguments: [
+        "scriptPath",
+        "inlineResultLimit"
+      ],
+      avoidUnless: {
+        scriptPath: "Use only for absolute-path escape hatches outside an initialized workspace; prefer inputFile.",
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits."
+      },
+      options: {
+        scriptPath: "Advanced absolute-path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
+        inputFile: "Recommended file name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
+        dryRun: "Read, diagnose, inject helpers, and return script metadata without calling upstream Figma.",
+        strict: "Promote warnings to fatal diagnostics.",
+        surface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
+        targetPageId: "Switch once to a known page before the script body runs.",
+        allowDangerousOperations: "Bypasses only dynamic/destructive guards after exact file review.",
+        inlineResultLimit: "Advanced payload-size control in bytes for large inline fields. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; omitted upstream fields stay available in outputFiles.upstreamFile."
+      },
+      responseExamples: {
+        jsonSuccess: { ok: true, dryRun: false, upstream: { kind: "json", ok: true, result: {} } },
+        businessOkFalse: {
+          ok: true,
+          dryRun: false,
+          upstream: {
+            kind: "json",
+            ok: false,
+            result: {
+              source: "business",
+              reason: "business validation evidence only"
+            }
+          }
+        },
+        textOutput: { ok: true, dryRun: false, upstream: { kind: "text", ok: true, text: "..." } },
+        inlinePayloadOmitted: {
+          ok: true,
+          dryRun: false,
+          upstream: { kind: "json", ok: true },
+          inlineResultLimit: {
+            limit: 4e3,
+            limitBytes: 4e3,
+            limitHuman: "4 KB",
+            omitted: [{ field: "upstream.result", bytes: 12e3, limit: 4e3, bytesHuman: "12 KB", limitHuman: "4 KB" }]
+          }
+        }
+      },
+      helpers: createEvalHelperDescriptionsPayload()
+    },
+    toolArgumentGuidance: createToolArgumentGuidancePayload(),
+    fileWorkflow: createFileWorkflowPayload(),
+    workflowTools: {
+      resource: "figma-repl://workflow-tools",
+      assetManifest: {
+        tool: "figma_repl_apply_asset_manifest",
+        purpose: "Apply local generated image files to pre-created target nodes through official upstream upload_assets.",
+        assetShape: "{ path, target, nodeUrl?, name?, metadata? }",
+        defaults: "Requires advertised official upload_assets, resolves target handles, and sends fileKey/count/nodeId/scaleMode upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
+        result: "Inline assets are compact business results: ok, path, targetNodeId, handle, name, validation, upstreamError. Failure-only debug files write a minimal envelope with counts, failures, and assetDetails with per-asset upstream envelopes, upload details, toolName, primaryFix, timestamps, and arguments.",
+        validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload."
+      },
+      downloadAssets: {
+        tool: "figma_repl_download_assets",
+        purpose: "Call official upstream download_assets for one or more Figma targets and save exported renders plus raw/source image URLs locally.",
+        targetShape: '{ target, name?, defaultFormat?, defaultScale? }; target accepts a node id, node URL, local handle like $hero, or { handle: "$hero" }.',
+        defaults: "Use targets for inline calls or manifestPath pointing to { targets: [...] }. outputDir defaults to <slug>.downloads in initialized workspaces.",
+        result: "Inline targets are compact business results: ok, targetNodeId, handle, name, outputDir, downloaded file pointers, upstreamError, and downloadError. Failure-only debug files write a minimal envelope with counts, failures, and targetDetails with per-target upstream envelopes, arguments, discovered URLs, toolName, primaryFix, timestamps, and download details."
+      },
+      capture: {
+        tool: "figma_repl_capture_node",
+        purpose: "Call official upstream get_screenshot and save one PNG screenshot to imageFile for final visual QA.",
+        defaulting: "Requires advertised official get_screenshot and sends { fileKey, nodeId } upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
+        metadata: "Returns imageFile on success plus bytes, width, and height. Failures return upstreamError; use figma_repl_call_upstream_tool for full upstream debugging."
+      },
+      taskPlan: {
+        tool: "figma_repl_run_task_plan",
+        stepShape: "{ id?, type?, args? }; put all tool-specific inputs inside args.",
+        stepTypes: ["script-file", "asset-manifest", "upload_assets", "download-assets", "download_assets", "screenshot-capture", "upstream-tool"],
+        defaultFailureMode: "stopOnFailure=true",
+        references: "Later step arguments can reference prior outputs with {{outputs.stepId.imageFile}} for capture steps, {{outputs.stepId.debugFile.path}} for debug file-pointer outputs, or {{steps.stepId.imageFile}} for direct capture paths. Upstream JSON is available at {{steps.stepId.upstream.result}}, and downloads expose {{steps.stepId.downloadOutputDir}} plus {{steps.stepId.downloadTargets}}.",
+        result: "Writes a minimal plan result/debug envelope with stopped/step/failure counts, optional failures, and stepDetails. The plan file is debug/audit-only and does not copy inline business arrays. Inline responses still return per-step status summaries plus outputReferences. In initialized workspaces, missing download outputs default to <step-id>.downloads plus <step-id>.png for image captures."
+      }
+    },
+    queryStrategy: {
+      tool: "figma_repl_guidance",
+      resource: "figma-repl://intents",
+      searchAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
+      flow: [
+        "Describe the user task in task.",
+        "Use recommendedCards to choose compact cards before broad docs lookup.",
+        "Use queryHints as narrower follow-up searches when card guidance is insufficient.",
+        "Use apiSymbols for exact figma_repl_lookup kind=api calls.",
+        "Treat avoid as task-specific guardrails before writing .figma.js."
+      ],
+      commonCards: FIGMA_REPL_API_CARDS.map((card) => card.id),
+      outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS
+    },
+    apiCards: {
+      tool: "figma_repl_guidance",
+      resource: "figma-repl://api-cards",
+      cards: FIGMA_REPL_API_CARDS.map((card) => ({
+        id: card.id,
+        title: card.title,
+        intents: card.intents,
+        surface: card.surface,
+        queryHints: card.queryHints,
+        apiSymbols: card.apiSymbols
+      }))
+    },
+    intents: {
+      tool: "figma_repl_guidance",
+      resource: "figma-repl://intents",
+      examples: ["create responsive card UI", "update text styles", "make component variants", "validate stale handles"],
+      returns: ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"]
+    },
+    facadeRoutingDelegationBoundaries: [
+      "Keep the agent on figma_repl_mcp; use figma_repl_call_upstream_tool only for explicit uncovered upstream-tool calls after reading figma-repl://upstream-tools/{name}.",
+      "For small generated local PNG/JPEG assets in .figma.js, use $.imageAsset({ base64, parent, size, position, as }); for large assets, create target rectangles then route through an upstream official upload_assets workflow when available.",
+      "Do not use PluginData APIs for agent state; use local session handles or a dedicated storage workflow.",
+      "Use compact docs/API lookup as the exposed documentation surface; bundled corpus files stay internal."
+    ],
+    docsLookup: {
+      lookupTool: "figma_repl_lookup",
+      docsResource: "figma-repl://docs",
+      apiResource: "figma-repl://api",
+      guidanceTool: "figma_repl_guidance",
+      ranking: "Internal corpus files are chunked by Markdown headings/windows or d.ts symbol-ish blocks, then ranked with BM25; API lookup boosts exact symbols.",
+      guardrail: "All lookup output is capped and confidence-labeled; bundled corpus files are not returned as agent-readable documents."
+    },
+    examples: [
+      {
+        title: "Run a repairable text edit",
+        tool: "figma_repl_run_script_file",
+        arguments: {
+          title: "Update title text",
+          sessionId: "main",
+          inputFile: "update-title.figma.js",
+          dryRun: true,
+          strict: true
+        }
+      },
+      {
+        title: "Inspect and cache one node in a script",
+        tool: "figma_repl_run_script_file",
+        scriptBody: "const primaryButton = await $.find({ name: 'Primary button', type: 'FRAME', as: '$primaryButton' });\nreturn await $.checkpoint('found-primary-button', [primaryButton]);"
+      },
+      {
+        title: "Create a simple UI section in a script",
+        tool: "figma_repl_run_script_file",
+        scriptBody: "const section = await $.create({ type: 'FRAME', as: '$section', name: 'Settings section', size: { width: 360, height: 160 }, layout: { layoutMode: 'VERTICAL', itemSpacing: 12 } });\nawait $.text({ parent: section, as: '$sectionTitle', text: 'Settings', font: { family: 'Inter', style: 'Bold', size: 20 } });\nreturn await $.checkpoint('section-created', ['$section'], { depth: 1 });"
+      }
+    ]
+  };
+}
+function readStaticReplResource(uri) {
+  const payload = createCapabilitiesPayload();
+  const resources = {
+    "figma-repl://capabilities": payload,
+    "figma-repl://guide": payload.guide,
+    "figma-repl://patterns": payload.patterns,
+    "figma-repl://scripts": payload.scriptWorkflow,
+    "figma-repl://file-workflow": payload.fileWorkflow,
+    "figma-repl://workflow-tools": payload.workflowTools,
+    "figma-repl://api-cards": {
+      tool: "figma_repl_guidance",
+      cards: FIGMA_REPL_API_CARDS,
+      queryStrategy: payload.queryStrategy,
+      guidance: "Curated compact cards for common .figma.js tasks; use figma_repl_guidance to map natural-language intent to recommendedCards, queryHints, apiSymbols, and avoid before broader lookup."
+    },
+    "figma-repl://intents": {
+      tool: "figma_repl_guidance",
+      queryStrategy: payload.queryStrategy,
+      workflow: createFileWorkflowPayload(),
+      commonTasks: FIGMA_REPL_COMMON_TASK_LABELS,
+      examples: FIGMA_REPL_INTENT_EXAMPLE_QUERIES.map((query) => createIntentSuggestions(query, 3))
+    },
+    "figma-repl://safety": {
+      safety: payload.safety,
+      facadeRoutingDelegationBoundaries: payload.facadeRoutingDelegationBoundaries,
+      diagnostics: [
+        "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT",
+        "FIGMA_REPL_NODE_REMOVAL",
+        "FIGMA_REPL_DIRECT_SELECTION_ACCESS",
+        "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT",
+        "FIGMA_REPL_MULTIPLE_PAGE_SWITCH",
+        "FIGMA_REPL_ROOT_FIND_ALL",
+        "FIGMA_REPL_PLUGIN_DATA",
+        "FIGMA_REPL_IMAGE_CREATION"
+      ]
+    },
+    "figma-repl://docs": {
+      purpose: "Compact searchable facade guidance from the internal Figma corpus.",
+      tool: "figma_repl_lookup",
+      kind: "docs",
+      workflow: [
+        "Search with kind=docs and a narrow query.",
+        "Use matchType, confidence, and capped BM25 snippets.",
+        "Run a narrower search instead of reading bundled corpus files."
+      ],
+      ranking: "Markdown references are chunked by headings and compact windows before BM25 scoring.",
+      allowlistSize: DOCS_SEARCH_ALLOWLIST.length,
+      maxResults: MAX_DOCS_SEARCH_RESULTS,
+      maxSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES
+    },
+    "figma-repl://api": {
+      purpose: "Targeted Figma Plugin API symbol lookup from the internal corpus.",
+      tool: "figma_repl_lookup",
+      kind: "api",
+      workflow: [
+        "Search kind=api exact symbols such as createFrame, loadFontAsync, VariableCollection, or SceneNode.",
+        "Use snippets with matchType and confidence.",
+        "For broader usage guidance, use figma_repl_lookup kind=docs."
+      ],
+      ranking: "API references are chunked by Markdown headings/windows and d.ts symbol-ish blocks; exact symbols are boosted over broad token matches.",
+      guardrail: "Bundled declaration files are internal corpus and are never returned as full documents.",
+      maxResults: MAX_DOCS_SEARCH_RESULTS,
+      maxSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES
+    }
+  };
+  const content = resources[uri];
+  if (content === void 0) {
+    return void 0;
+  }
+  return {
+    contents: [
+      {
+        uri,
+        mimeType: "application/json",
+        text: JSON.stringify(content, null, 2)
+      }
+    ]
+  };
+}
+async function readReplResource(uri, runtime) {
+  const staticResource = readStaticReplResource(uri);
+  if (staticResource) {
+    return staticResource;
+  }
+  if (uri === "figma-repl://upstream-tools") {
+    const tools = await runtime.upstreamToolCache.list(false);
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify({
+            tools: tools.map((tool) => upstreamToolDirectoryEntry(tool)),
+            detailTemplate: "figma-repl://upstream-tools/{name}",
+            categories: ["capture", "design-context", "execution", "assets", "code-connect", "libraries", "figjam", "generation", "account", "other"],
+            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-repl://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_repl_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, and download_assets."
+          }, null, 2)
+        }
+      ]
+    };
+  }
+  const upstreamToolPrefix = "figma-repl://upstream-tools/";
+  if (uri.startsWith(upstreamToolPrefix)) {
+    const toolName = decodeURIComponent(uri.slice(upstreamToolPrefix.length));
+    const tools = await runtime.upstreamToolCache.list(false);
+    const tool = tools.find((item) => item.name === toolName);
+    if (!tool) {
+      throw new Error(`Upstream Figma MCP tool not found: ${toolName}`);
+    }
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            callTool: "figma_repl_call_upstream_tool",
+            guidance: "Full upstream tool contract. Use figma_repl_call_upstream_tool only for explicit uncovered official upstream capabilities; prefer dedicated figma_repl_* workflow tools when available."
+          }, null, 2)
+        }
+      ]
+    };
+  }
+  if (uri === "figma-repl://sessions") {
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify({ sessions: runtime.sessions.list().map((session) => publicSession(session)) }, null, 2)
+        }
+      ]
+    };
+  }
+  const prefix = "figma-repl://sessions/";
+  if (uri.startsWith(prefix)) {
+    const sessionId = decodeURIComponent(uri.slice(prefix.length));
+    const session = runtime.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Figma REPL session not found: ${sessionId}`);
+    }
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify(publicSession(session), null, 2)
+        }
+      ]
+    };
+  }
+  throw new Error(`Unknown figma-repl resource URI: ${uri}`);
+}
+function upstreamToolDirectoryEntry(tool) {
+  return {
+    name: tool.name,
+    category: upstreamToolDirectoryCategory(tool),
+    description: upstreamToolDirectoryDescription(tool)
+  };
+}
+function upstreamToolDirectoryCategory(tool) {
+  return UPSTREAM_TOOL_DIRECTORY_CATEGORIES[tool.name] ?? "other";
+}
+function upstreamToolDirectoryDescription(tool) {
+  return UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS[tool.name] ?? compactUpstreamToolDescription(tool.description);
+}
+function compactUpstreamToolDescription(description) {
+  const normalized = description?.replace(/\s+/gu, " ").trim();
+  if (!normalized) {
+    return void 0;
+  }
+  return normalized.length <= 96 ? normalized : `${normalized.slice(0, 93)}...`;
+}
+function parseUpstreamToolResult(value) {
+  const record2 = asRecord2(value);
+  const structured = record2.structuredContent;
+  if (structured !== void 0) {
+    return annotateParsedUpstreamToolResult(JSON.stringify(structured), structured);
+  }
+  const text = Array.isArray(record2.content) ? record2.content.map((item) => asRecord2(item).text).filter((item) => typeof item === "string").join("\n") : JSON.stringify(value);
+  if (isTruncatedUpstreamText(text)) {
+    return annotateParsedUpstreamToolResult(text, void 0);
+  }
+  return annotateParsedUpstreamToolResult(text, parseJsonLenient2(text));
+}
+function annotateParsedUpstreamToolResult(text, json) {
+  const upstreamError = extractParsedUpstreamError(text, json);
+  return {
+    text,
+    json,
+    upstreamError,
+    primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : void 0
+  };
+}
+function extractParsedUpstreamError(text, json) {
+  const truncation = extractUpstreamTruncationMarker(text);
+  if (truncation) {
+    return {
+      message: `Upstream Figma output was truncated at ${truncation.size}.`,
+      code: "FIGMA_UPSTREAM_TRUNCATED",
+      details: { marker: truncation.marker, size: truncation.size },
+      text,
+      parsed: json
+    };
+  }
+  const record2 = asRecord2(json);
+  if (record2.ok !== false) {
+    const trimmed = text.trim();
+    if (!/^Error:/u.test(trimmed) && !/Figma Debug UUID:/u.test(trimmed)) {
+      return void 0;
+    }
+    return {
+      message: trimmed.split(/\r?\n/u)[0] || "Upstream Figma execution failed.",
+      code: "FIGMA_UPSTREAM_TEXT_ERROR",
+      details: extractFigmaDebugUuid(trimmed) ? { debugUuid: extractFigmaDebugUuid(trimmed) } : void 0,
+      text,
+      parsed: json
+    };
+  }
+  const errorRecord = asRecord2(record2.error);
+  const message = stringFromUnknown(record2.error) ?? asOptionalString2(errorRecord.message) ?? asOptionalString2(record2.message) ?? text.slice(0, 1e3) ?? "Upstream Figma execution failed.";
+  return {
+    message,
+    code: asOptionalString2(record2.code) ?? asOptionalString2(errorRecord.code),
+    details: record2.details ?? errorRecord.details,
+    text,
+    parsed: json
+  };
+}
+function isTruncatedUpstreamText(text) {
+  return Boolean(extractUpstreamTruncationMarker(text));
+}
+function extractUpstreamTruncationMarker(text) {
+  const match = /(?:^|[\s/])((?:\/\/\s*)?truncated\s+to\s+([0-9]+(?:\.[0-9]+)?\s*(?:[kmgt]?b|bytes?)))\s*$/iu.exec(text);
+  if (!match) {
+    return void 0;
+  }
+  const marker = match[1]?.trim();
+  const size = match[2]?.replace(/\s+/gu, "");
+  return marker && size ? { marker, size } : void 0;
+}
+function extractFigmaDebugUuid(text) {
+  const match = /Figma Debug UUID:\s*([0-9a-fA-F-]+)/u.exec(text);
+  return match?.[1];
+}
+function normalizeCaughtUpstreamError(error2) {
+  if (error2 instanceof Error) {
+    return {
+      message: error2.message,
+      code: typeof error2.code === "string" ? error2.code : void 0,
+      details: error2.stack
+    };
+  }
+  return {
+    message: stringFromUnknown(error2) ?? "Upstream Figma execution failed.",
+    details: error2
+  };
+}
+function primaryFixForUpstreamError(error2) {
+  const message = error2.message.toLowerCase();
+  if (message.includes("remove") && (message.includes("instance") || message.includes("children") || message.includes("subtree"))) {
+    return "Use $.replaceGeneratedFrame({ name, dryRun: true }) for guarded generated-frame replacement, or $.cloneNodeTree({ source, placement: 'right' }) for copy/rebuild workflows.";
+  }
+  if (message.includes("font") || message.includes("characters")) {
+    return "Load the target font with figma.loadFontAsync or use $.text before changing TextNode characters.";
+  }
+  if (message.includes("selection")) {
+    return "Use $.select([...]) or explicit node ids/handles instead of direct figma.currentPage.selection access.";
+  }
+  return "Open the paired .figma.js file, repair the upstream Plugin API error, dry-run with strict=true, then rerun the same script.";
+}
+function stringFromUnknown(value) {
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  if (isRecord4(value)) {
+    const message = asOptionalString2(value.message);
+    if (message) return message;
+  }
+  return void 0;
+}
+function parseJsonLenient2(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const slice = firstBalancedJsonSlice(text);
+    if (!slice) return void 0;
+    try {
+      return JSON.parse(slice);
+    } catch {
+      return void 0;
+    }
+  }
+}
+function firstBalancedJsonSlice(text) {
+  const start = text.search(/[\[{]/u);
+  if (start < 0) return void 0;
+  const stack = [];
+  let inString = false;
+  let escape2 = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escape2) {
+        escape2 = false;
+      } else if (char === "\\") {
+        escape2 = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "{" || char === "[") {
+      stack.push(char === "{" ? "}" : "]");
+      continue;
+    }
+    if (char === "}" || char === "]") {
+      if (stack.pop() !== char) return void 0;
+      if (stack.length === 0) {
+        return text.slice(start, index + 1);
+      }
+    }
+  }
+  return void 0;
+}
+function updateSessionFromParsedResult(session, value) {
+  const record2 = asRecord2(value);
+  const repl = asRecord2(record2.__figmaRepl);
+  const result = asRecord2(record2.result);
+  if (isStringRecord(repl.handles)) {
+    mergeHandles(session, repl.handles);
+  }
+  if (isStringRecord(result.handles)) {
+    mergeHandles(session, result.handles);
+  }
+  if (isStringRecord(repl.knownPages)) {
+    session.knownPages = { ...session.knownPages, ...repl.knownPages };
+  }
+  if (isStringRecord(result.knownPages)) {
+    session.knownPages = { ...session.knownPages, ...result.knownPages };
+  }
+  assignOptionalString(session, "currentPageId", repl.currentPageId);
+  assignOptionalString(session, "currentPageId", result.currentPageId);
+  assignOptionalString(session, "fileKey", repl.fileKey);
+  assignOptionalString(session, "fileKey", result.fileKey);
+  const surface = normalizeSurface(repl.surface) ?? normalizeSurface(result.surface);
+  if (surface) {
+    session.surface = surface;
+  }
+  touchSession(session);
+}
+function collectNodeIds(value) {
+  const ids = /* @__PURE__ */ new Set();
+  const visit = (item) => {
+    if (typeof item === "string" && /^\d+[:;]\d+/u.test(item)) {
+      ids.add(item);
+      return;
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit);
+      return;
+    }
+    if (isRecord4(item)) {
+      if (typeof item.id === "string") ids.add(item.id);
+      for (const child of Object.values(item)) visit(child);
+    }
+  };
+  visit(value);
+  return [...ids];
+}
+function summarizeParsedResult(parsed) {
+  const record2 = asRecord2(parsed.json);
+  const result = record2.result;
+  if (isRecord4(result)) {
+    if (typeof result.summary === "string") return result.summary;
+    if (typeof result.opCount === "number") return `Returned opCount=${result.opCount}.`;
+  }
+  if (typeof result === "string") return result.slice(0, 160);
+  if (parsed.text) return parsed.text.slice(0, 160);
+  return "Figma REPL command completed.";
+}
+function diagnosticsForResponse(diagnostics) {
+  return diagnostics ?? [];
+}
+function responseSession(session) {
+  return removeUndefined2({
+    id: session.id,
+    fileUrl: session.fileUrl,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    knownPages: session.knownPages,
+    currentPageId: session.currentPageId,
+    handles: session.handles,
+    workspace: session.workspace ? responseCompactWorkspace(session.workspace, session.id) : void 0
+  });
+}
+function responseCompactWorkspace(workspace, sessionId) {
+  return removeUndefined2({
+    sessionDir: workspace.sessionDir,
+    scriptPath: workspace.scriptPath,
+    workspaceRef: `figma-repl://sessions/${encodeURIComponent(sessionId)}`,
+    files: {
+      inputFile: workspace.files.script
+    }
+  });
+}
+function responseWorkspace(workspace) {
+  return {
+    root: workspace.root,
+    fileDir: workspace.fileDir,
+    fileContext: workspace.fileContext,
+    fileKey: workspace.fileKey,
+    fileSlug: workspace.fileSlug,
+    taskSlug: workspace.intentSlug,
+    sessionDir: workspace.sessionDir,
+    scriptPath: workspace.scriptPath,
+    files: {
+      inputFile: workspace.files.script
+    }
+  };
+}
+function responseScriptMetadata(metadata) {
+  return removeUndefined2({
+    scriptPath: metadata.scriptPath,
+    expectedSurface: metadata.expectedSurface,
+    compiledScriptBytes: metadata.compiledScriptBytes
+  });
+}
+function upstreamResultFields(options) {
+  return {
+    upstream: upstreamEnvelope(options.parsed)
+  };
+}
+function runScriptUpstreamFields(parsed) {
+  return {
+    upstream: upstreamEnvelope(parsed)
+  };
+}
+function runScriptUpstreamFailureFields(parsed) {
+  return {
+    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0,
+    primaryFix: parsed.primaryFix
+  };
+}
+function responseUpstreamError(error2) {
+  return {
+    message: error2.message,
+    code: error2.code,
+    details: error2.details
+  };
+}
+function upstreamFailureFields(parsed) {
+  return {
+    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0,
+    primaryFix: parsed.primaryFix
+  };
+}
+function inspectInlineResultFields(parsed) {
+  if (parsed.upstreamError) {
+    return {
+      upstreamError: responseUpstreamError(parsed.upstreamError)
+    };
+  }
+  return {
+    ...asRecord2(asRecord2(parsed.json).result)
+  };
+}
+function upstreamEnvelope(parsed, options = {}) {
+  const includePayload = options.includePayload ?? true;
+  const callOk = !parsed.upstreamError;
+  if (parsed.json !== void 0) {
+    const shaped = shapePublicUpstreamResult(parsed.json);
+    const ok2 = callOk && shaped.consumedOk !== false;
+    const failureSource = shaped.consumedOk === false ? "business" : callOk ? "business" : "call";
+    const result = ok2 ? shaped.result : addFailureSourceToUpstreamResult(
+      shaped.result ?? (parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0),
+      failureSource
+    );
+    return includePayload ? { kind: "json", ok: ok2, result } : { kind: "json", ok: ok2 };
+  }
+  const ok = callOk;
+  return includePayload ? {
+    kind: "text",
+    ok,
+    text: parsed.text || void 0,
+    result: ok ? void 0 : addFailureSourceToUpstreamResult(
+      parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0,
+      "call"
+    )
+  } : { kind: "text", ok };
+}
+function shapePublicUpstreamResult(value) {
+  const record2 = asRecord2(value);
+  if (!Object.prototype.hasOwnProperty.call(record2, "__figmaRepl")) {
+    return consumeTopLevelOk(value);
+  }
+  if (Object.prototype.hasOwnProperty.call(record2, "result")) {
+    return consumeTopLevelOk(record2.result);
+  }
+  const result = {};
+  for (const [key, item] of Object.entries(record2)) {
+    if (key !== "__figmaRepl" && key !== "ok") {
+      result[key] = item;
+    }
+  }
+  return { result: Object.keys(result).length > 0 ? result : void 0 };
+}
+function consumeTopLevelOk(value) {
+  if (!isRecord4(value)) {
+    return { result: value };
+  }
+  if (!Object.prototype.hasOwnProperty.call(value, "ok")) {
+    return { result: value };
+  }
+  const { ok, ...rest } = value;
+  return {
+    result: Object.keys(rest).length > 0 ? rest : void 0,
+    consumedOk: typeof ok === "boolean" ? ok : void 0
+  };
+}
+function addFailureSourceToUpstreamResult(result, source) {
+  if (isRecord4(result)) {
+    return {
+      ...result,
+      source
+    };
+  }
+  return result === void 0 ? { source } : { source, value: result };
+}
+function publicSession(session, options = {}) {
+  const includeHistory = options.includeHistory ?? true;
+  const historyLimit = normalizePositiveInteger(options.historyLimit, DEFAULT_HISTORY_LIMIT);
+  return {
+    id: session.id,
+    slug: session.slug,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    label: session.label,
+    fileUrl: session.fileUrl,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    knownPages: session.knownPages,
+    currentPageId: session.currentPageId,
+    handles: session.handles,
+    workspace: session.workspace ? responseWorkspace(session.workspace) : void 0,
+    lastDiagnostics: session.lastDiagnostics,
+    history: includeHistory ? session.history.slice(-historyLimit) : void 0
+  };
+}
+function cloneSession(session) {
+  return {
+    ...session,
+    knownPages: { ...session.knownPages },
+    handles: { ...session.handles },
+    workspace: session.workspace ? {
+      ...session.workspace,
+      files: { ...session.workspace.files }
+    } : void 0,
+    lastDiagnostics: session.lastDiagnostics.map((diagnostic) => ({ ...diagnostic })),
+    history: session.history.map((entry) => ({
+      ...entry,
+      nodeIds: [...entry.nodeIds]
+    }))
+  };
+}
+function mergeHandles(session, handles) {
+  for (const [name, id] of Object.entries(handles)) {
+    if (typeof id === "string" && id.length > 0) {
+      session.handles[normalizeLocalHandleName(name)] = id;
+    }
+  }
+  touchSession(session);
+}
+function normalizeLocalHandleName(name) {
+  return name.startsWith("$") ? name : `$${name}`;
+}
+function resolveSessionTargetInput(input, session) {
+  if (isRecord4(input)) {
+    const explicitHandle = asOptionalString2(input.handle) ?? asOptionalString2(input.targetHandle);
+    const explicitFileKey = asOptionalString2(input.fileKey) ?? extractFigmaFileKey(asOptionalString2(input.url)) ?? extractFigmaFileKey(asOptionalString2(input.nodeUrl)) ?? extractFigmaFileKey(asOptionalString2(input.target));
+    const nodeValue = explicitHandle ?? asOptionalString2(input.nodeId) ?? asOptionalString2(input.targetNodeId) ?? asOptionalString2(input.target) ?? asOptionalString2(input.id) ?? asOptionalString2(input.url) ?? asOptionalString2(input.nodeUrl);
+    const resolved = resolveSessionTargetInput(nodeValue, session);
+    return {
+      ...resolved,
+      fileKey: explicitFileKey ?? resolved.fileKey
+    };
+  }
+  const value = asOptionalString2(input);
+  if (!value) {
+    return {};
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return {};
+  }
+  if (trimmed.startsWith("$")) {
+    const handle2 = normalizeLocalHandleName(trimmed);
+    return {
+      nodeId: session.handles[handle2] ?? trimmed,
+      handle: handle2
+    };
+  }
+  const fromUrl = extractFigmaNodeId(trimmed);
+  if (fromUrl) {
+    return { nodeId: fromUrl, fileKey: extractFigmaFileKey(trimmed) };
+  }
+  const handle = normalizeLocalHandleName(trimmed);
+  if (session.handles[handle]) {
+    return {
+      nodeId: session.handles[handle],
+      handle
+    };
+  }
+  return { nodeId: trimmed };
+}
+function buildFigmaNodeUrl(session, nodeId) {
+  const fileUrl = session.fileUrl;
+  const fileKey = session.fileKey ?? extractFigmaFileKey(fileUrl);
+  const nodeParam = encodeURIComponent(nodeId.replace(/:/gu, "-"));
+  if (fileUrl) {
+    try {
+      const url2 = new URL(fileUrl);
+      url2.searchParams.set("node-id", nodeId.replace(/:/gu, "-"));
+      return url2.toString();
+    } catch {
+    }
+  }
+  return fileKey ? `https://www.figma.com/design/${fileKey}/?node-id=${nodeParam}` : void 0;
+}
+function touchSession(session) {
+  session.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+}
+function sanitizeSessionId(sessionId) {
+  const value = sessionId.trim();
+  if (!value) {
+    return FIGMA_REPL_DEFAULT_SESSION_ID;
+  }
+  return value.slice(0, 120);
+}
+function makeJsonToolResult(value) {
+  const structuredContent = removeUndefined2(value);
+  return {
+    structuredContent,
+    content: []
+  };
+}
+function parseJsonToolResult(result) {
+  if (result.structuredContent !== void 0) {
+    return result.structuredContent;
+  }
+  const content = Array.isArray(result.content) ? result.content : [];
+  const firstText = content.map((item) => asRecord2(item).text).find((item) => typeof item === "string");
+  if (firstText === void 0) {
+    return result;
+  }
+  return JSON.parse(firstText);
+}
+function normalizeOAuthCachePath(oauthCachePath) {
+  if (!isAbsolute3(oauthCachePath)) {
+    throw new Error("oauthCachePath must be an absolute path.");
+  }
+  return oauthCachePath;
+}
+function removeUndefined2(value) {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefined2);
+  }
+  if (!isRecord4(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== void 0).map(([key, item]) => [key, removeUndefined2(item)])
+  );
+}
+function asRecord2(value) {
+  if (isRecord4(value)) {
+    return value;
+  }
+  return {};
+}
+function recordFromUnknown(value) {
+  return isRecord4(value) ? value : void 0;
+}
+function isRecord4(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function isStringRecord(value) {
+  return isRecord4(value) && Object.values(value).every((item) => typeof item === "string");
+}
+function asOptionalString2(value) {
+  return typeof value === "string" && value.length > 0 ? value : void 0;
+}
+function truthy(value) {
+  return value === true || value === "true" || value === 1;
+}
+function assignOptionalString(target, key, value) {
+  if (typeof value === "string") {
+    target[String(key)] = value;
+  }
+}
+function parseFigmaFileReference(file) {
+  if (!file) {
+    return {};
+  }
+  const value = file.trim();
+  if (value.length === 0) {
+    return {};
+  }
+  try {
+    const url2 = new URL(value);
+    return {
+      fileUrl: value,
+      fileKey: extractFigmaFileKey(value),
+      fileSlug: extractFigmaFileSlug(value),
+      surface: inferFigmaSurface(value)
+    };
+  } catch {
+    if (isAbsolute3(value) || value.includes("/") || value.includes("\\") || value.includes("..")) {
+      throw new Error('Tool argument "file" must be a Figma URL or a simple Figma file key.');
+    }
+    return { fileKey: value };
+  }
+}
+function extractFigmaFileKey(fileUrl) {
+  if (!fileUrl) {
+    return void 0;
+  }
+  try {
+    const url2 = new URL(fileUrl);
+    const parts = url2.pathname.split("/").filter(Boolean);
+    const kindIndex = parts.findIndex((part) => FIGMA_FILE_URL_KINDS.includes(part));
+    return kindIndex >= 0 ? parts[kindIndex + 1] : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function extractFigmaNodeId(value) {
+  if (!value) {
+    return void 0;
+  }
+  try {
+    const url2 = new URL(value);
+    const nodeId = url2.searchParams.get("node-id") ?? url2.searchParams.get("node_id");
+    return nodeId ? nodeId.replace(/-/gu, ":") : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function extractFigmaFileSlug(fileUrl) {
+  if (!fileUrl) {
+    return void 0;
+  }
+  try {
+    const url2 = new URL(fileUrl);
+    const parts = url2.pathname.split("/").filter(Boolean);
+    const kindIndex = parts.findIndex((part) => FIGMA_FILE_URL_KINDS.includes(part));
+    const name = kindIndex >= 0 ? parts[kindIndex + 2] : void 0;
+    return name ? slugifyTaskName2(decodeURIComponent(name)) : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function inferFigmaSurface(fileUrl) {
+  if (!fileUrl) {
+    return void 0;
+  }
+  try {
+    const url2 = new URL(fileUrl);
+    const first = url2.pathname.split("/").filter(Boolean)[0];
+    if (first === "design" || first === "file") return "design";
+    if (first === "figjam" || first === "board") return "figjam";
+    if (first === "slides") return "slides";
+    return void 0;
+  } catch {
+    return void 0;
+  }
+}
+function normalizeSurface(value) {
+  if (value === "design" || value === "figjam" || value === "slides") {
+    return value;
+  }
+  return void 0;
+}
+function normalizePositiveInteger(value, fallback) {
+  const number4 = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number4) || number4 <= 0) {
+    return fallback;
+  }
+  return Math.floor(number4);
+}
+function normalizeBoundedInteger(value, fallback, max) {
+  return Math.min(normalizePositiveInteger(value, fallback), max);
+}
+function literal4(value) {
+  return JSON.stringify(value);
+}
+var FIGMA_REPL_DEFAULT_SESSION_ID, resolveFigmaReplScriptHelperSelection2, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, FIGMA_REPL_EVAL_COMMON_HELPER_NAMES, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, FIGMA_REPL_EVAL_HELPER_DESCRIPTIONS, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS, FIGMA_FILE_URL_KINDS;
+var init_repl_server = __esm({
+  "src/repl-server.ts"() {
+    "use strict";
+    init_server2();
+    init_types();
+    init_client3();
+    init_repl_doc_search();
+    init_repl_guidance_catalog();
+    init_repl_script_runner();
+    init_repl_tool_args();
+    init_repl_tool_metadata();
+    init_repl_tool_registry();
+    init_repl_workspace_files();
+    FIGMA_REPL_DEFAULT_SESSION_ID = "default";
+    resolveFigmaReplScriptHelperSelection2 = resolveFigmaReplScriptHelperSelection;
+    DEFAULT_EVAL_TOOL_NAME = "use_figma";
+    DEFAULT_EVAL_ARGUMENT_NAME = "code";
+    FIGMA_REPL_EVAL_COMMON_HELPER_NAMES = [
+      "remember",
+      "forget",
+      "resolveId",
+      "node",
+      "select",
+      "cloneNodeTree",
+      "findAll",
+      "find",
+      "text",
+      "layout",
+      "create",
+      "findFreeSlot",
+      "placeNode",
+      "replaceGeneratedFrame",
+      "inspect",
+      "screenshot",
+      "imageAsset",
+      "checkpoint"
+    ];
+    DEFAULT_HISTORY_LIMIT = 50;
+    DEFAULT_INLINE_RESULT_LIMIT = 4e3;
+    MAX_INLINE_RESULT_LIMIT = 1e4;
+    UPLOAD_ASSETS_TOOL_NAME = "upload_assets";
+    DOWNLOAD_ASSETS_TOOL_NAME = "download_assets";
+    SCREENSHOT_TOOL_NAME = "get_screenshot";
+    GET_METADATA_TOOL_NAME = "get_metadata";
+    FIGMA_REPL_EVAL_HELPER_DESCRIPTIONS = {
+      "$": "Resolve a cached handle like $card, $selection, $currentPage, or a raw Figma node id.",
+      "$.remember": "Store a handle name for a node or node id in the current REPL session.",
+      "$.forget": "Remove a stored handle from the current REPL session.",
+      "$.resolveId": "Resolve a cached handle or raw node id string to a Figma node id.",
+      "$.node": "Resolve a cached handle or raw node id to the Figma node.",
+      "$.select": "Resolve handles/node ids, validate selectable scene nodes, update selection, and optionally zoom.",
+      "$.cloneNodeTree": "Copy a source node beside itself with outer-to-inner cloning and instance-subtree preservation.",
+      "$.findAll": "Find matching nodes by scoped criteria.",
+      "$.find": "Find one node by { name, type, within, as, required } and optionally remember it.",
+      "$.text": "Create or update a text node with font loading and optional handle storage.",
+      "$.layout": "Apply auto-layout properties to a target node.",
+      "$.create": "Create a common Design node with optional parent, size, layout, appearance, and handle.",
+      "$.findFreeSlot": "Find a non-overlapping slot in one parent using a preferred x/y, fixed size, gap, and direction.",
+      "$.placeNode": "Move a node to an explicit or non-overlapping generated slot and return placement metadata.",
+      "$.replaceGeneratedFrame": "Safely replace generated top-level FRAME nodes whose names match a guarded prefix, with dry-run support.",
+      "$.inspect": "Resolve a handle or node id and return a compact node summary.",
+      "$.screenshot": "Attempt a target node screenshot when upstream supports node.screenshot(); fall back to official screenshot tools for final QA if no image payload is returned.",
+      "$.imageAsset": "Create or update an image-fill rectangle from small generated PNG/JPEG base64 or byte arrays; use upload_assets/upstream asset fill workflow for large files.",
+      "$.checkpoint": "Return handle and node summaries at repair-friendly points."
+    };
+    UPSTREAM_TOOL_DIRECTORY_CATEGORIES = {
+      get_screenshot: "capture",
+      get_design_context: "design-context",
+      get_metadata: "design-context",
+      get_variable_defs: "design-context",
+      get_figjam: "figjam",
+      generate_figma_design: "generation",
+      generate_diagram: "figjam",
+      get_code_connect_map: "code-connect",
+      whoami: "account",
+      add_code_connect_map: "code-connect",
+      get_code_connect_suggestions: "code-connect",
+      send_code_connect_mappings: "code-connect",
+      get_context_for_code_connect: "code-connect",
+      use_figma: "execution",
+      get_libraries: "libraries",
+      search_design_system: "libraries",
+      create_new_file: "generation",
+      upload_assets: "assets",
+      download_assets: "assets"
+    };
+    UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS = {
+      get_screenshot: "Capture a screenshot for a selected or specified Figma node.",
+      get_design_context: "Get design-to-code context, screenshot, and metadata for a node.",
+      get_metadata: "Read XML metadata for a node or page when full design context is unnecessary.",
+      get_variable_defs: "List variable definitions referenced by a node.",
+      get_figjam: "Generate UI code or context for a FigJam node.",
+      generate_figma_design: "Import a URL or HTML into an existing Figma design file.",
+      generate_diagram: "Create Mermaid-based diagrams in FigJam.",
+      get_code_connect_map: "Read existing Code Connect mappings for Figma nodes.",
+      whoami: "Check the authenticated Figma user and permission context.",
+      add_code_connect_map: "Map one Figma node to a code component.",
+      get_code_connect_suggestions: "Suggest Code Connect mappings for a Figma node.",
+      send_code_connect_mappings: "Save approved Code Connect mappings in bulk.",
+      get_context_for_code_connect: "Get component metadata needed for Code Connect mapping.",
+      use_figma: "Run Plugin API JavaScript to create, inspect, or edit Figma content.",
+      get_libraries: "List subscribed and available libraries for a Figma file.",
+      search_design_system: "Search library components, variables, and styles by text query.",
+      create_new_file: "Create a new blank Figma file.",
+      upload_assets: "Get upload URLs for image assets before applying them in Figma.",
+      download_assets: "Download exported renders and source images for one Figma node."
+    };
+    FIGMA_FILE_URL_KINDS = ["design", "file", "figjam", "board", "slides"];
+  }
+});
+
 // src/node-repl.ts
 import {
   ReadableStream as NodeReadableStream,
   TransformStream as NodeTransformStream,
   WritableStream as NodeWritableStream
 } from "node:stream/web";
+import { homedir } from "node:os";
+import { resolve as resolve6 } from "node:path";
+var BRIDGE_OAUTH_CACHE_FILENAME2 = ".figma-mcp-bridge-oauth.json";
+var NODE_REPL_DEFAULT_CLIENT_MESSAGE = [
+  "The ./node-repl createFigmaReplClient() default client does not connect to the official Figma remote MCP.",
+  "Use the hosted figma_repl_mcp stdio MCP server for live Figma work, or pass an explicit { client } to createFigmaReplClient() for a custom upstream."
+].join(" ");
 function installNodeReplWebStreamGlobals() {
   installGlobal("ReadableStream", NodeReadableStream);
   installGlobal("TransformStream", NodeTransformStream);
@@ -18536,11 +34087,70 @@ function installGlobal(name, value) {
   }
 }
 installNodeReplWebStreamGlobals();
-var clientModule = await Promise.resolve().then(() => (init_client3(), client_exports));
+var [
+  clientModule,
+  replServerModule
+] = await Promise.all([
+  Promise.resolve().then(() => (init_client3(), client_exports)),
+  Promise.resolve().then(() => (init_repl_server(), repl_server_exports))
+]);
 var RemoteMcpClient2 = clientModule.RemoteMcpClient;
-var createRemoteMcpClient2 = clientModule.createRemoteMcpClient;
+function createRemoteMcpClient2(options = {}) {
+  return clientModule.createRemoteMcpClient(withNodeReplRemoteDefaults(options));
+}
+function createFigmaReplClient2(options = {}) {
+  return replServerModule.createFigmaReplClient(withNodeReplReplDefaults(options));
+}
+function withNodeReplRemoteDefaults(options) {
+  if (options.statePath || options.useBridgeOAuthCache === false) {
+    return options;
+  }
+  return {
+    ...options,
+    statePath: defaultBridgeOAuthCachePath(),
+    useBridgeOAuthCache: false
+  };
+}
+function withNodeReplReplDefaults(options) {
+  if (options.client) {
+    return options;
+  }
+  return {
+    ...options,
+    client: createNodeReplDefaultUpstreamClient()
+  };
+}
+function defaultBridgeOAuthCachePath() {
+  return resolve6(homedir(), ".codex", BRIDGE_OAUTH_CACHE_FILENAME2);
+}
+function createNodeReplDefaultUpstreamClient() {
+  const rejectUpstreamUse = () => {
+    throw new Error(NODE_REPL_DEFAULT_CLIENT_MESSAGE);
+  };
+  return {
+    async connect() {
+      rejectUpstreamUse();
+    },
+    async close() {
+      return void 0;
+    },
+    async listTools() {
+      rejectUpstreamUse();
+    },
+    async callTool() {
+      rejectUpstreamUse();
+    },
+    async listResources() {
+      rejectUpstreamUse();
+    },
+    async readResource() {
+      rejectUpstreamUse();
+    }
+  };
+}
 export {
   RemoteMcpClient2 as RemoteMcpClient,
+  createFigmaReplClient2 as createFigmaReplClient,
   createRemoteMcpClient2 as createRemoteMcpClient,
   installNodeReplWebStreamGlobals
 };

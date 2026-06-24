@@ -472,13 +472,16 @@ function countTokens(tokens: string[]): Map<string, number> {
 
 async function resolveReferenceRoot(): Promise<string> {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const cwd = typeof process !== "undefined" && typeof process.cwd === "function"
+    ? process.cwd()
+    : moduleDir;
   const candidates = [
     resolve(moduleDir, "../skills/figma-router/references"),
     resolve(moduleDir, "../../skills/figma-router/references"),
     resolve(moduleDir, "../../../skills/figma-router/references"),
-    resolve(process.cwd(), "skills/figma-router/references"),
-    resolve(process.cwd(), "plugins/figma-mcp-bridge/skills/figma-router/references"),
-    resolve(process.cwd(), "../skills/figma-router/references"),
+    resolve(cwd, "skills/figma-router/references"),
+    resolve(cwd, "plugins/figma-mcp-bridge/skills/figma-router/references"),
+    resolve(cwd, "../skills/figma-router/references"),
   ];
   for (const candidate of candidates) {
     try {

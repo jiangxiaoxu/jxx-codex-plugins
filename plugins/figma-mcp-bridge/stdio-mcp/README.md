@@ -39,13 +39,13 @@ import {
 } from "@jxx-codex-plugins/figma-mcp-stdio/repl";
 ```
 
-Node REPL usage with an explicit OAuth cache:
+Node REPL usage with an explicit custom upstream client:
 
 ```js
-const { createFigmaReplClient } = await import("./dist/repl-server.js");
+const { createFigmaReplClient } = await import("./dist/node-repl.js");
 
 const figma = createFigmaReplClient({
-  oauthCachePath: "C:/Users/you/.codex/.figma-mcp-bridge-oauth.json",
+  client: customUpstreamClient,
 });
 await figma.open({
   file: "https://www.figma.com/design/<fileKey>/<fileName>?node-id=<nodeId>",
@@ -55,7 +55,7 @@ const evalResult = await figma.eval({
   code: "return { page: figma.currentPage.name };",
   mode: "read",
 });
-const payload = evalResult.upstream.payload;
+const payload = evalResult.upstream.result;
 const capture = await figma.captureNode({
   target: "$target",
   imageFile: "qa.png",
@@ -64,26 +64,32 @@ if (!capture.ok) console.log(capture.upstreamError);
 await figma.close();
 ```
 
-`oauthCachePath` must be absolute. CLI/MCP usage can select the same file with `FIGMA_MCP_OAUTH_CACHE_PATH`.
+Without an explicit `client`, `./node-repl` creates a local-only REPL client: session setup, workspace preparation, diagnostics, and `connect: false` opens work, but live upstream calls fail with a message directing callers to use `figma_repl_mcp` or inject a custom client. Use the hosted `figma_repl_mcp` stdio MCP server for normal live Figma work.
 
-For direct raw upstream access from Node or `node_repl`, prefer `createRemoteMcpClient` instead of installing `figma-stdio` as a persistent MCP server:
+In Codex `node_repl`, the recommended live-Figma verification path is an explicit stdio MCP client pointed at this package's `dist/repl-stdio-cli.js`, then calling `figma_repl_open`, `figma_repl_get_metadata`, `figma_repl_run_script_file`, and related tools through that child process. This exercises the same public MCP contract while avoiding the embedded no-client SDK remote transport. Use fake/custom clients for response-shape unit smoke tests.
+
+The `./node-repl` entrypoint still installs Web Streams globals before loading SDK-backed modules, so explicit `createRemoteMcpClient()` use does not require callers to predefine `ReadableStream`, `TransformStream`, or `WritableStream`.
+
+For explicit raw upstream access from Node, use the same entrypoint and call `createRemoteMcpClient` directly:
 
 ```js
 const { createRemoteMcpClient } = await import("./dist/node-repl.js");
 
 const upstream = createRemoteMcpClient({
-  oauthCachePath: "C:/Users/you/.codex/.figma-mcp-bridge-oauth.json",
+  statePath: "C:/Users/you/.codex/.figma-mcp-bridge-oauth.json",
 });
 await upstream.connect();
 const tools = await upstream.listTools();
 await upstream.close();
 ```
 
+`statePath` must be absolute. CLI/MCP usage can select the same file with `FIGMA_MCP_OAUTH_CACHE_PATH`.
+
 ## REPL Response Shape
 
-Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and JSON debug/result file pointers are under `outputFiles.debugFile` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return public upstream JSON as `upstream.payload` and non-JSON upstream output as `upstream.text`; eval/script payloads containing bridge-internal `__figmaRepl` metadata are unwrapped to their business result, while raw official payloads without `__figmaRepl` remain unchanged. Asset manifests keep compact inline asset entries and write full per-asset upstream details only to generated debug files.
+Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and JSON debug/result file pointers are under `outputFiles.debugFile` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return effective upstream success as `upstream.ok`, public upstream JSON as `upstream.result`, and non-JSON upstream output as `upstream.text`; eval/script payloads containing bridge-internal `__figmaRepl` metadata are unwrapped to their business result, while raw official JSON without top-level `ok` remains unchanged as `upstream.result`. `figma_repl_get_metadata` is the metadata-first wrapper for official `get_metadata`: upstream XML is converted to compact JSON, small `metadata.json` trees are returned inline, and oversized trees are written to `outputFiles.metadataFile`. Asset manifests keep compact inline asset entries and write full per-asset upstream details only to generated debug files.
 
-`ok` fields are layered. Top-level `ok` reports local wrapper/tool completion, `upstream.ok` reports official upstream MCP call success, and fields such as `upstream.payload.ok` are raw business evidence from the executed script or upstream tool payload. A nested business `ok: false` does not by itself make the wrapper result fail when the local wrapper and upstream call completed.
+Status fields are separate. Top-level `ok` reports local wrapper/tool completion. `upstream.ok` reports effective upstream success: false for upstream call failures and false when the shaped business result has top-level `ok:false`; `upstream.result` removes that consumed `ok` and adds `source: "business"` when JSON supplied `ok:false`, or `source: "call"` for call failures without a consumed result status.
 
 Executed `figma_repl_run_script_file` result files use the same `upstream` envelope and do not duplicate upstream JSON into `raw`.
 
@@ -147,14 +153,14 @@ Keep `.figma.js` transactions small enough for upstream `use_figma` payload limi
 The REPL facade exposes compact self-explaining resources and tools:
 
 - workflow resources: `figma-repl://capabilities`, `figma-repl://guide`, `figma-repl://file-workflow`, `figma-repl://workflow-tools`;
-- workflow tools: `figma_repl_prepare_task`, `figma_repl_guidance`;
+- workflow tools: `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_get_metadata`;
 - execution: `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_run_task_plan`;
 - assets and QA: `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`;
 - state resources: `figma-repl://sessions`, `figma-repl://sessions/{id}`;
 - upstream discovery/resource bridge: `figma-repl://upstream-tools`, `figma_repl_call_upstream_tool`;
 - references: `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`.
 
-Use `figma_repl_guidance` first for common intents, `mode: "plan"` workflow planning, and curated compact API cards. Use `figma_repl_lookup({ kind: "docs" })` for BM25-ranked workflow snippets and `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. Use `figma_repl_call_upstream_tool` only for an explicit uncovered upstream capability. Lookup output is capped and confidence-labeled; bundled corpus files are internal and are not an agent-facing documentation path.
+Use `figma_repl_guidance` first for common intents, `mode: "plan"` workflow planning, and curated compact API cards. Use `figma_repl_get_metadata` for broad layer-tree discovery before targeted `figma_repl_inspect` style/fill/text checks. Use `figma_repl_lookup({ kind: "docs" })` for BM25-ranked workflow snippets and `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. Use `figma_repl_call_upstream_tool` only for an explicit uncovered upstream capability. Lookup output is capped and confidence-labeled; bundled corpus files are internal and are not an agent-facing documentation path.
 
 ## Diagnostics
 
