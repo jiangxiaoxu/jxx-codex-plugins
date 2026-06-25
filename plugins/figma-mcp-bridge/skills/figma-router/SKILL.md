@@ -37,7 +37,7 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 - Edit the generated `<task>.figma.js`; use native Figma Plugin API plus the injected `$` helpers.
 - Dry-run: `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, surface })`.
 - Execute: `figma_repl_run_script_file({ title, sessionId, inputFile })`.
-- For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath })`.
+- For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath })`. Read `assets[].upload.response.imageHash` / `placedOnNodeId` for upload POST evidence, and read `validation` for canvas-side IMAGE fill confirmation. Default target validation checks IMAGE fills when upstream eval is available; incomplete validation records fail the workflow and point to `outputFiles.debugFile`.
 - For broad layer-tree discovery, call `figma_repl_get_metadata({ title, sessionId, target })` before targeted `figma_repl_inspect` style/fill/text checks.
 - For visual QA, call `figma_repl_capture_node({ title, sessionId, target, imageFile })` and inspect the local image file.
 - For repeatable multi-step workflows, use `figma_repl_run_task_plan({ title, sessionId, planPath })`.

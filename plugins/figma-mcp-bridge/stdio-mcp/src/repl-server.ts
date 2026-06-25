@@ -1623,19 +1623,20 @@ async function executeApplyAssetManifest(
         ? undefined
         : await submitLocalAssetUploadIfAvailable(asset, parsed);
       const ok = !parsed.upstreamError && upload?.ok !== false;
+      const uploadSummary = compactUploadSummary(upload);
       const entry = {
         ok,
         path: asset.path,
         targetNodeId: asset.targetNodeId,
         handle: asset.handle,
         name: asset.name,
+        upload: uploadSummary,
         upstreamError,
       };
       const detail = {
         ...entry,
         toolName: tool.name,
         upload,
-        uploadSummary: compactUploadSummary(upload),
         metadata: asset.metadata,
         arguments: upstreamArguments,
         upstream: upstreamEnvelope(parsed),
@@ -1694,7 +1695,8 @@ async function executeApplyAssetManifest(
     tools,
     assetResults,
   });
-  const ok = failures.length === 0 && validation.ok !== false;
+  const validationIndeterminate = isAssetManifestValidationIndeterminate(validation);
+  const ok = failures.length === 0 && validation.ok !== false && !validationIndeterminate;
   for (const detail of assetDetails) {
     const targetNodeId = asOptionalString(detail.targetNodeId);
     const asset = assetResults.find((item) => item.targetNodeId === targetNodeId);
@@ -1718,6 +1720,10 @@ async function executeApplyAssetManifest(
         assetCount: assetResults.length,
         failureCount: failures.length,
         validationOk: validation.ok,
+        validationReason: validation.reason,
+        validationSource: validation.validationSource,
+        validationExpectedCount: validation.expectedCount,
+        validationMissingCount: validation.missingValidationCount,
         failures: failures.length > 0 ? failures : undefined,
         assetDetails,
       },
@@ -1739,6 +1745,13 @@ async function executeApplyAssetManifest(
     outputFiles: Object.keys(files).length > 0 ? files : undefined,
   };
   return response;
+}
+
+function isAssetManifestValidationIndeterminate(validation: Record<string, unknown>): boolean {
+  if (validation.skipped === true) {
+    return false;
+  }
+  return validation.ok === undefined && Number(validation.expectedCount ?? 0) > 0;
 }
 
 function resolveAssetManifestDebugFile(args: FigmaReplApplyAssetManifestArguments, session: FigmaReplSession): string {
@@ -1764,6 +1777,22 @@ function compactUploadSummary(upload: Record<string, unknown> | undefined): Reco
     statusText: upload.statusText,
     mimeType: upload.mimeType,
     bytes: upload.bytes,
+    response: compactUploadResponse(upload.response),
+  }) as Record<string, unknown>;
+}
+
+function compactUploadResponse(response: unknown): unknown {
+  if (!isRecord(response)) {
+    return response;
+  }
+  return removeUndefined({
+    success: response.success,
+    imageHash: response.imageHash,
+    sizeBytes: response.sizeBytes,
+    contentType: response.contentType,
+    placedOnNodeId: response.placedOnNodeId,
+    nodeId: response.nodeId,
+    targetNodeId: response.targetNodeId,
   }) as Record<string, unknown>;
 }
 
@@ -4531,6 +4560,14 @@ const validations = [];
 for (const targetNodeId of targetNodeIds) {
   try {
     const node = await getNodeById(targetNodeId);
+    if (!node) {
+      validations.push({
+        targetNodeId,
+        status: "missing",
+        message: "Node was not found"
+      });
+      continue;
+    }
     const fills = "fills" in node && Array.isArray(node.fills) ? node.fills : [];
     const imageFills = fills.filter((paint) => paint && paint.type === "IMAGE" && typeof paint.imageHash === "string" && paint.imageHash.length > 0);
     validations.push({
@@ -4625,6 +4662,25 @@ function findAssetManifestValidationResult(
   if (depth > 3) {
     return undefined;
   }
+  if (typeof value === "string") {
+    const parsed = parseJsonLenient(value);
+    if (parsed !== undefined && parsed !== value) {
+      return findAssetManifestValidationResult(parsed, depth + 1, `${sourcePath}(json)`);
+    }
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    if (value.some(isAssetManifestValidationRecord)) {
+      return { result: { validations: value.filter(isRecord) }, sourcePath };
+    }
+    for (let index = 0; index < value.length; index += 1) {
+      const nested = findAssetManifestValidationResult(value[index], depth + 1, `${sourcePath}[${index}]`);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
   const record = asRecord(value);
   if (
     Array.isArray(record.validations) ||
@@ -4633,7 +4689,8 @@ function findAssetManifestValidationResult(
   ) {
     return { result: record, sourcePath };
   }
-  for (const key of ["result", "payload", "data"]) {
+  const priorityKeys = ["result", "payload", "data", "structuredContent", "response", "output", "content", "text", "json"];
+  for (const key of priorityKeys) {
     if (record[key] !== undefined) {
       const nested = findAssetManifestValidationResult(record[key], depth + 1, `${sourcePath}.${key}`);
       if (nested) {
@@ -4641,7 +4698,21 @@ function findAssetManifestValidationResult(
       }
     }
   }
+  for (const [key, item] of Object.entries(record)) {
+    if (priorityKeys.includes(key) || key === "__figmaRepl") {
+      continue;
+    }
+    const nested = findAssetManifestValidationResult(item, depth + 1, `${sourcePath}.${key}`);
+    if (nested) {
+      return nested;
+    }
+  }
   return undefined;
+}
+
+function isAssetManifestValidationRecord(value: unknown): boolean {
+  const record = asRecord(value);
+  return asOptionalString(record.targetNodeId) !== undefined && asOptionalString(record.status) !== undefined;
 }
 
 async function submitLocalAssetUploadIfAvailable(
@@ -5556,7 +5627,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests and download_assets keep compact inline entries and write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
+      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests expose compact submitUrl POST evidence in assets[].upload without raw submit URLs; asset manifests and download_assets write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
       statusSemantics: {
         topLevelOk: "Top-level ok reports local wrapper/tool completion.",
         upstreamOk: "upstream.ok reports effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false; false results include upstream.result.source as business when JSON supplied ok:false, or call for failures without a consumed result status.",
@@ -5649,8 +5720,8 @@ function createCapabilitiesPayload(): Record<string, unknown> {
         purpose: "Apply local generated image files to pre-created target nodes through official upstream upload_assets.",
         assetShape: "{ path, target, nodeUrl?, name?, metadata? }",
         defaults: "Requires advertised official upload_assets, resolves target handles, and sends fileKey/count/nodeId/scaleMode upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
-        result: "Inline assets are compact business results: ok, path, targetNodeId, handle, name, validation, upstreamError. Failure-only debug files write a minimal envelope with counts, failures, and assetDetails with per-asset upstream envelopes, upload details, toolName, primaryFix, timestamps, and arguments.",
-        validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload.",
+        result: "Inline assets are compact business results: ok, path, targetNodeId, handle, name, upload, validation, upstreamError. upload is compact POST evidence such as status, bytes, imageHash, and placedOnNodeId; raw submit URLs stay out of public success results. Failure-only debug files write a minimal envelope with counts, failures, and assetDetails with per-asset upstream envelopes, upload details, toolName, primaryFix, timestamps, and arguments.",
+        validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload. Missing or incomplete validation records make the workflow fail with outputFiles.debugFile instead of silently succeeding.",
       },
       downloadAssets: {
         tool: "figma_repl_download_assets",
