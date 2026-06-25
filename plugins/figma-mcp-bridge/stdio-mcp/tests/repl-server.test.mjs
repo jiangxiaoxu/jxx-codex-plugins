@@ -17,6 +17,7 @@ import {
 import {
   FIGMA_REPL_EVAL_COMMON_HELPER_NAMES,
   buildFigmaEvalScript,
+  createFigmaReplSessionStore,
   isFigmaReplMissingFileErrorForTesting,
   resolveFigmaReplScriptHelperSelection,
 } from "../dist/repl-server.js";
@@ -1089,13 +1090,14 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_call_upstream_tool only when a task explicitly needs an uncovered upstream Figma MCP tool"));
   assert.match(capabilities.guide.upstreamBridge, /figma_repl_call_upstream_tool/);
   assert.match(capabilities.guide.upstreamBridge, /figma-repl:\/\/upstream-tools\/\{name\}/);
-  assert.match(capabilities.guide.upstreamBridge, /dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, and download_assets/);
+  assert.match(capabilities.guide.upstreamBridge, /dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs/);
   assert.match(capabilities.guide.responseShape, /Structured-first payloads/);
   assert.match(capabilities.guide.responseShape, /content is empty/);
   assert.doesNotMatch(capabilities.guide.responseShape, /MCP protocol media items/);
   assert.match(capabilities.guide.responseShape, /file pointers/);
   assert.match(capabilities.guide.responseShape, /minimal session summaries/);
-  assert.match(capabilities.guide.responseShape, /workspace\.workspaceRef/);
+  assert.match(capabilities.guide.responseShape, /sessionDir when present/);
+  assert.doesNotMatch(capabilities.guide.responseShape, /workspace\.workspaceRef/);
   assert.match(capabilities.guide.responseShape, /figma-repl:\/\/sessions\/\{id\}\/handles/);
   assert.match(capabilities.guide.responseShape, /figma-repl:\/\/sessions\/\{id\}/);
   assert.match(capabilities.guide.responseShape, /explicit status semantics/);
@@ -1105,6 +1107,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.guide.responseShape, /figma_repl_get_metadata calls official get_metadata/);
   assert.match(capabilities.guide.responseShape, /returns small metadata\.json results inline/);
   assert.match(capabilities.guide.responseShape, /writes oversized JSON to outputFiles\.metadataFile/);
+  assert.match(capabilities.guide.responseShape, /figma_repl_search_design_system, figma_repl_get_libraries, and figma_repl_get_variable_defs are thin wrappers/);
   assert.match(capabilities.guide.responseShape, /outputFiles\.metadataFile/);
   assert.equal(capabilities.guide.layeredOk, undefined);
   assert.match(capabilities.guide.statusSemantics.topLevelOk, /local wrapper\/tool completion/);
@@ -1122,7 +1125,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(capabilities.fileWorkflow.primaryTool, "figma_repl_run_script_file");
   assert.deepEqual(
     capabilities.toolTiers.normalPath.tools,
-    ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_get_metadata", "figma_repl_inspect", "figma_repl_capture_node"],
+    ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_get_metadata", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_inspect", "figma_repl_capture_node"],
   );
   assert.deepEqual(
     capabilities.toolTiers.advancedEscapeHatches.tools,
@@ -1216,12 +1219,14 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.toolArgumentGuidance.getMetadata.guidance, /converts XML to compact JSON/);
   assert.match(capabilities.toolArgumentGuidance.getMetadata.guidance, /outputFiles\.metadataFile/);
   assert.match(capabilities.toolArgumentGuidance.getMetadata.avoidUnless.dynamicSelectors, /figma_repl_inspect/);
+  assert.deepEqual(capabilities.toolArgumentGuidance.designSystem.tools, ["figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs"]);
+  assert.match(capabilities.toolArgumentGuidance.designSystem.guidance, /generic upstream envelope/);
   assert.equal(capabilities.toolArgumentGuidance.guidance.tier, "contextAndLookup");
   assert.equal(capabilities.toolArgumentGuidance.lookup.tier, "contextAndLookup");
   assert.deepEqual(capabilities.toolArgumentGuidance.lookup.preferredArguments.api, ["kind=api", "symbol"]);
   assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /Explicit upstream escape hatch/);
   assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /figma-repl:\/\/upstream-tools/);
-  assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /do not use for use_figma\/get_metadata\/get_screenshot\/upload_assets\/download_assets/);
+  assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /do not use for use_figma\/get_metadata\/get_screenshot\/upload_assets\/download_assets\/search_design_system\/get_libraries\/get_variable_defs/);
   assert.equal(capabilities.toolArgumentGuidance.callUpstreamTool.tier, "advancedEscapeHatches");
   assert.equal(capabilities.toolArgumentGuidance.callUpstreamTool.advancedArguments.includes("outputFile"), false);
   assert.ok(capabilities.toolArgumentGuidance.callUpstreamTool.advancedArguments.includes("inlineResultLimit"));
@@ -1240,6 +1245,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     capabilities.fileWorkflow.workflowTools,
     ["figma_repl_get_metadata", "figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_capture_node", "figma_repl_run_task_plan"],
   );
+  assert.deepEqual(capabilities.workflowTools.designSystem.tools, ["figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs"]);
+  assert.match(capabilities.workflowTools.designSystem.defaults, /clientLanguages\/clientFrameworks to unknown/);
   assert.equal(capabilities.workflowTools.assetManifest.tool, "figma_repl_apply_asset_manifest");
   assert.match(capabilities.workflowTools.assetManifest.result, /assetDetails/);
   assert.match(capabilities.workflowTools.assetManifest.result, /compact business results/);
@@ -1306,7 +1313,9 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     "figma_repl_capture_node",
     "figma_repl_download_assets",
     "figma_repl_eval",
+    "figma_repl_get_libraries",
     "figma_repl_get_metadata",
+    "figma_repl_get_variable_defs",
     "figma_repl_guidance",
     "figma_repl_inspect",
     "figma_repl_lookup",
@@ -1314,8 +1323,9 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     "figma_repl_prepare_task",
     "figma_repl_run_script_file",
     "figma_repl_run_task_plan",
+    "figma_repl_search_design_system",
   ]);
-  assert.equal(tools.tools.length, 13);
+  assert.equal(tools.tools.length, 16);
   for (const tool of tools.tools) {
     assert.equal(
       tool.inputSchema.properties.title.description,
@@ -1574,6 +1584,36 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(getMetadataTool.outputSchema.properties.outputFiles.properties.metadataFile);
   assert.equal(getMetadataTool.outputSchema.properties.outputFiles.properties.upstreamFile, undefined);
   assert.ok(getMetadataTool.outputSchema.properties.inlineResultLimit);
+  const searchDesignSystemTool = tools.tools.find((tool) => tool.name === "figma_repl_search_design_system");
+  assert.ok(searchDesignSystemTool);
+  assert.deepEqual(searchDesignSystemTool.inputSchema.required, ["query"]);
+  assert.match(searchDesignSystemTool.description, /Thin first-class wrapper/);
+  assert.match(searchDesignSystemTool.inputSchema.properties.query.description, /Required official search_design_system query/);
+  assert.ok(searchDesignSystemTool.inputSchema.properties.disableCodeConnect);
+  assert.ok(searchDesignSystemTool.inputSchema.properties.includeComponents);
+  assert.ok(searchDesignSystemTool.inputSchema.properties.includeVariables);
+  assert.ok(searchDesignSystemTool.inputSchema.properties.includeStyles);
+  assert.ok(searchDesignSystemTool.inputSchema.properties.includeLibraryKeys);
+  assert.ok(searchDesignSystemTool.inputSchema.properties.inlineResultLimit);
+  assert.ok(searchDesignSystemTool.outputSchema.properties.upstream);
+  assert.ok(searchDesignSystemTool.outputSchema.properties.outputFiles.properties.upstreamFile);
+  assert.equal(searchDesignSystemTool.outputSchema.properties.toolName, undefined);
+  const getLibrariesTool = tools.tools.find((tool) => tool.name === "figma_repl_get_libraries");
+  assert.ok(getLibrariesTool);
+  assert.equal(getLibrariesTool.inputSchema.properties.offset.type, "number");
+  assert.match(getLibrariesTool.description, /official upstream get_libraries/);
+  assert.ok(getLibrariesTool.outputSchema.properties.upstream);
+  assert.ok(getLibrariesTool.outputSchema.properties.outputFiles.properties.debugFile);
+  assert.equal(getLibrariesTool.outputSchema.properties.toolName, undefined);
+  const getVariableDefsTool = tools.tools.find((tool) => tool.name === "figma_repl_get_variable_defs");
+  assert.ok(getVariableDefsTool);
+  assert.match(getVariableDefsTool.description, /target accepts a raw node id, node URL, local handle/);
+  assert.match(getVariableDefsTool.inputSchema.properties.clientLanguages.description, /Defaults to unknown/);
+  assert.equal(getVariableDefsTool.inputSchema.properties.nodeId, undefined);
+  assert.ok(getVariableDefsTool.outputSchema.properties.nodeId);
+  assert.ok(getVariableDefsTool.outputSchema.properties.upstream);
+  assert.ok(getVariableDefsTool.outputSchema.properties.outputFiles.properties.upstreamFile);
+  assert.equal(getVariableDefsTool.outputSchema.properties.toolName, undefined);
   const guidanceMetadataTool = tools.tools.find((tool) => tool.name === "figma_repl_guidance");
   assert.ok(guidanceMetadataTool);
   assert.match(guidanceMetadataTool.description, /BM25-style keyword queries/);
@@ -1600,7 +1640,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(callUpstreamTool);
   assert.match(callUpstreamTool.description, /Explicit upstream-only escape hatch/);
   assert.match(callUpstreamTool.description, /figma-repl:\/\/upstream-tools\/\{name\}/);
-  assert.match(callUpstreamTool.description, /Do not use for use_figma, get_metadata, get_screenshot, upload_assets, or download_assets/);
+  assert.match(callUpstreamTool.description, /Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, or get_variable_defs/);
   assert.equal(callUpstreamTool.inputSchema.properties.outputFile, undefined);
   assert.ok(callUpstreamTool.inputSchema.properties.inlineResultLimit);
   assert.equal(callUpstreamTool.inputSchema.properties.inlineResultLimit.default, 4000);
@@ -2207,6 +2247,163 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
   ]);
 });
 
+test("figma REPL design system wrappers call dedicated upstream tools", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-design-system-"));
+  const originalTaskRoot = process.env.FIGMA_REPL_TASK_ROOT;
+  process.env.FIGMA_REPL_TASK_ROOT = tempDir;
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "search_design_system") {
+        if (args.query === "Large") {
+          assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", query: "Large" });
+          return {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, result: { summary: "large search", blob: "x".repeat(200) } }) }],
+          };
+        }
+        assert.deepEqual(args, {
+          fileKey: "ExampleFigmaFileKey012",
+          query: "Button",
+          disableCodeConnect: true,
+          includeComponents: true,
+          includeVariables: false,
+          includeStyles: true,
+          includeLibraryKeys: ["lib-core"],
+        });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, results: [{ name: "Button/Primary" }] }) }],
+        };
+      }
+      if (name === "get_libraries") {
+        assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", offset: 20 });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ libraries: [{ name: "Core" }] }) }],
+        };
+      }
+      if (name === "get_variable_defs") {
+        assert.deepEqual(args, {
+          fileKey: "ExampleFigmaFileKey012",
+          nodeId: "9:9",
+          clientLanguages: "unknown",
+          clientFrameworks: "unknown",
+        });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, variables: [{ name: "color.bg" }] }) }],
+        };
+      }
+      assert.fail(`unexpected tool ${name}`);
+      return { content: [] };
+    },
+    {
+      tools: [
+        {
+          name: "search_design_system",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              query: { type: "string" },
+              disableCodeConnect: { type: "boolean" },
+              includeComponents: { type: "boolean" },
+              includeVariables: { type: "boolean" },
+              includeStyles: { type: "boolean" },
+              includeLibraryKeys: { type: "array", items: { type: "string" } },
+            },
+          },
+        },
+        { name: "get_libraries", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, offset: { type: "number" } } } },
+        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
+      ],
+    },
+  );
+  const repl = createFigmaReplClient({ client: fakeClient });
+
+  try {
+    await repl.open({
+      sessionId: "design-system",
+      file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI",
+      handles: { "$button": "9:9" },
+      connect: false,
+    });
+
+    const search = await repl.searchDesignSystem({
+      sessionId: "design-system",
+      query: "Button",
+      disableCodeConnect: true,
+      includeComponents: true,
+      includeVariables: false,
+      includeStyles: true,
+      includeLibraryKeys: ["lib-core"],
+    });
+    assert.equal(search.ok, true);
+    assert.equal(search.fileKey, "ExampleFigmaFileKey012");
+    assert.equal(search.query, "Button");
+    assert.equal(search.upstream.kind, "json");
+    assert.equal(search.upstream.ok, true);
+    assert.equal(search.upstream.result.results[0].name, "Button/Primary");
+    assert.equal(search.upstream.result.ok, undefined);
+    assert.equal(search.toolName, undefined);
+    assert.equal(search.session.handles, undefined);
+
+    const libraries = await repl.getLibraries({
+      sessionId: "design-system",
+      offset: 20,
+    });
+    assert.equal(libraries.ok, true);
+    assert.equal(libraries.fileKey, "ExampleFigmaFileKey012");
+    assert.equal(libraries.offset, 20);
+    assert.equal(libraries.upstream.result.libraries[0].name, "Core");
+    assert.equal(libraries.toolName, undefined);
+
+    const variableDefs = await repl.getVariableDefs({
+      sessionId: "design-system",
+      target: "$button",
+    });
+    assert.equal(variableDefs.ok, true);
+    assert.equal(variableDefs.fileKey, "ExampleFigmaFileKey012");
+    assert.equal(variableDefs.nodeId, "9:9");
+    assert.equal(variableDefs.upstream.result.variables[0].name, "color.bg");
+    assert.equal(variableDefs.toolName, undefined);
+
+    const large = await repl.searchDesignSystem({
+      sessionId: "design-system",
+      query: "Large",
+      inlineResultLimit: 40,
+    });
+    assert.equal(large.ok, true);
+    assert.equal(large.upstream.result, undefined);
+    assert.deepEqual(large.inlineResultLimit.omitted.map((item) => item.field), ["upstream.result"]);
+    assert.match(large.outputFiles.debugFile.path, /upstream-search_design_system-.*\.result\.json$/u);
+    const resultFile = await readPrettyJsonPointer(large.outputFiles.debugFile, large.outputFiles.debugFile.path);
+    assert.equal(resultFile.tool, "figma_repl_search_design_system");
+    assert.equal(resultFile.upstreamToolName, "search_design_system");
+    const upstreamFile = await readPrettyJsonPointer(large.outputFiles.upstreamFile, large.outputFiles.upstreamFile.path);
+    assert.equal(upstreamFile.result.result.summary, "large search");
+
+    await assert.rejects(
+      repl.getVariableDefs({ sessionId: "design-system", target: "$selection" }),
+      /cannot resolve dynamic selector "\$selection"/,
+    );
+  } finally {
+    await repl.close();
+    if (originalTaskRoot === undefined) {
+      delete process.env.FIGMA_REPL_TASK_ROOT;
+    } else {
+      process.env.FIGMA_REPL_TASK_ROOT = originalTaskRoot;
+    }
+    await rm(tempDir, { recursive: true, force: true });
+  }
+  assert.deepEqual(calls.filter((call) => call[0] !== "close").map((call) => call[0]), [
+    "connect",
+    "listTools",
+    "callTool",
+    "callTool",
+    "callTool",
+    "callTool",
+  ]);
+});
+
 test("figma REPL runtime parsers reject malformed tool argument shapes", async () => {
   const programmaticCalls = [];
   const repl = createFigmaReplClient({
@@ -2377,6 +2574,35 @@ test("figma REPL runtime parsers reject malformed tool argument shapes", async (
   const longGuidanceJson = structuredToolResult(longGuidanceResult);
   assert.equal(longGuidanceJson.ok, true);
   assert.ok(longGuidanceJson.suggestions.recommendedCards.includes("components.variants"));
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_search_design_system",
+      arguments: {
+        query: "button",
+        includeComponents: "yes",
+      },
+    }),
+    /Tool argument "includeComponents" must be a boolean\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_search_design_system",
+      arguments: {
+        query: "button",
+        includeLibraryKeys: ["lib-core", 123],
+      },
+    }),
+    /Tool argument "includeLibraryKeys\[1\]" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_repl_get_libraries",
+      arguments: {
+        offset: 1.5,
+      },
+    }),
+    /Tool argument "offset" must be a non-negative integer\./,
+  );
   await assert.rejects(
     mcpClient.callTool({
       name: "figma_repl_lookup",
@@ -3412,6 +3638,120 @@ test("figma REPL submits local bytes when upload_assets returns a submit URL", a
         body: "fake png bytes",
       },
     ]);
+    await mcpClient.close();
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL applies submitted upload imageHash to target node fills", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-upload-apply-"));
+  const assetPath = resolve(tempDir, "icon.png");
+  await writeFile(assetPath, "fake png bytes", "utf8");
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({ success: true, imageHash: "abc", sizeBytes: 14, contentType: "image/png" }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "upload_assets") {
+        assert.deepEqual(args, {
+          fileKey: "file123",
+          count: 1,
+          nodeId: "12:34",
+          scaleMode: "FILL",
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ uploads: [{ submitUrl: "https://example.test/upload" }] }),
+            },
+          ],
+        };
+      }
+      if (name === "use_figma") {
+        assert.equal(typeof args.code, "string");
+        assert.match(args.code, /assetFills/);
+        assert.match(args.code, /12:34/);
+        assert.match(args.code, /abc/);
+        assert.match(args.code, /node\.fills = \[/);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                result: {
+                  applications: [
+                    {
+                      targetNodeId: "12:34",
+                      status: "applied",
+                      nodeId: "12:34",
+                      nodeType: "RECTANGLE",
+                      imageHash: "abc",
+                      scaleMode: "FILL",
+                    },
+                  ],
+                  appliedCount: 1,
+                  failedCount: 0,
+                },
+              }),
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected tool ${name}`);
+    },
+    {
+      tools: [
+        { name: "upload_assets", description: "Fake official upload tool.", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
+        { name: "use_figma", description: "Fake eval tool.", inputSchema: { type: "object", properties: { code: { type: "string" } } } },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Open upload apply context",
+        sessionId: "upload-apply",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+        handles: { "$iconTarget": "12:34" },
+      },
+    });
+    const result = await mcpClient.callTool({
+      name: "figma_repl_apply_asset_manifest",
+      arguments: {
+        title: "Apply uploaded asset",
+        sessionId: "upload-apply",
+        assets: [{ path: assetPath, target: "$iconTarget", name: "Icon" }],
+        validateTargets: false,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.application.ok, true);
+    assert.equal(json.application.appliedCount, 1);
+    assert.equal(json.assets[0].application.status, "applied");
+    assert.equal(json.assets[0].application.imageHash, "abc");
+    assert.equal(json.validation.skipped, true);
+    assert.equal(json.outputFiles, undefined);
+    assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), ["upload_assets", "use_figma"]);
     await mcpClient.close();
   } finally {
     globalThis.fetch = originalFetch;
@@ -5623,6 +5963,67 @@ test("figma REPL run_script_file injects helper dependencies from AST usage", as
   }
 });
 
+test("figma REPL run_script_file keeps resolveHandleId for node helper usage", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-node-helper-"));
+  const scriptPath = resolve(tempDir, "node-script.figma.js");
+  await writeFile(scriptPath, "return await $.node('$card');", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.match(args.code, /function resolveHandleId/);
+    assert.match(args.code, /\$\.node = \$;/);
+    assert.doesNotMatch(args.code, /\$\.find = async function find/);
+    assert.doesNotMatch(args.code, /\$\.text = async function text/);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            __figmaRepl: { sessionId: "main", handles: {} },
+            result: { id: "60:1", name: "Card" },
+          }),
+        },
+      ],
+    };
+  });
+  const sessions = createFigmaReplSessionStore({ defaultSessionId: "main" });
+  const session = sessions.getOrCreate("main");
+  session.fileUrl = "https://www.figma.com/design/ExampleFigmaFileKey012/UI";
+  session.handles = {
+    "$card": "60:1",
+  };
+  const { server } = createFigmaReplMcpServer({
+    client: fakeClient,
+    sessions,
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        title: "Run node helper script",
+        sessionId: "main",
+        scriptPath,
+        surface: "design",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("figma REPL run_script_file rejects dynamic helper access instead of full injection fallback", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-dynamic-helper-"));
   const scriptPath = resolve(tempDir, "dynamic-helper.figma.js");
@@ -6200,8 +6601,8 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.equal(json.dryRun, false);
-    assert.deepEqual(json.session.workspace, { workspaceRef: "figma-repl://sessions/settings-workspace" });
-    assert.equal(json.session.workspace.workspaceRef, "figma-repl://sessions/settings-workspace");
+    assert.equal(json.session.sessionDir, initJson.task.workspace.sessionDir);
+    assert.equal(json.session.workspace, undefined);
     assert.equal(json.session.surface, "design");
     assertFilePointer(json.outputFiles.debugFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
     assertFilePointer(json.outputFiles.upstreamFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.upstream.json"));
@@ -6374,7 +6775,8 @@ test("figma REPL open accepts unified file input and auto-binds a workspace", as
   assert.equal(result.ok, true);
   assert.equal(result.session.fileKey, "ExampleFigmaFileKey012");
   assert.equal(result.session.surface, "design");
-  assert.deepEqual(result.session.workspace, { workspaceRef: "figma-repl://sessions/open-file-workspace" });
+  assert.match(result.session.sessionDir, /ExampleFigmaFileKey012/u);
+  assert.equal(result.session.workspace, undefined);
   await repl.close();
 });
 
@@ -6843,6 +7245,66 @@ test("figma REPL programmatic client can call eval without MCP transport", async
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
 });
 
+test("figma REPL eval sends fixed upstream description when official schema requires it", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ args }) => {
+      assert.equal(typeof args.code, "string");
+      assert.equal(args.fileKey, "ExampleFigmaFileKey012");
+      assert.equal(args.description, "Figma REPL JavaScript execution");
+      assert.notEqual(args.description, "User-visible title only");
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              __figmaRepl: { sessionId: "main", handles: {} },
+              result: {
+                summary: "description accepted",
+              },
+            }),
+          },
+        ],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "use_figma",
+          description: "Execute JavaScript in the active Figma file.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              code: { type: "string" },
+              description: { type: "string" },
+            },
+            required: ["code", "description"],
+          },
+        },
+      ],
+    },
+  );
+
+  const repl = createFigmaReplClient({ client: fakeClient });
+  await repl.open({
+    sessionId: "main",
+    file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
+    connect: false,
+  });
+  const result = await repl.eval({
+    sessionId: "main",
+    title: "User-visible title only",
+    code: "return { summary: figma.currentPage.name };",
+    mode: "read",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.upstream.result.summary, "description accepted");
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+});
+
 test("figma REPL programmatic client returns typed output contracts", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-client-typed-"));
   const scriptPath = resolve(tempDir, "typed-client.figma.js");
@@ -6868,6 +7330,44 @@ test("figma REPL programmatic client returns typed output contracts", async () =
                   summary: "typed upstream",
                 },
               }),
+            },
+          ],
+        };
+      }
+      if (name === "search_design_system") {
+        assert.deepEqual(args, { fileKey: "file123", query: "typed" });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ ok: true, results: [{ name: "Typed Button" }] }),
+            },
+          ],
+        };
+      }
+      if (name === "get_libraries") {
+        assert.deepEqual(args, { fileKey: "file123" });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ libraries: [{ name: "Typed Library" }] }),
+            },
+          ],
+        };
+      }
+      if (name === "get_variable_defs") {
+        assert.deepEqual(args, {
+          fileKey: "file123",
+          nodeId: "12:36",
+          clientLanguages: "unknown",
+          clientFrameworks: "unknown",
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ ok: true, variables: [{ name: "typed.color" }] }),
             },
           ],
         };
@@ -6913,6 +7413,9 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     {
       tools: [
         { name: "fake_upstream", inputSchema: { type: "object", properties: {} } },
+        { name: "search_design_system", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, query: { type: "string" } } } },
+        { name: "get_libraries", inputSchema: { type: "object", properties: { fileKey: { type: "string" } } } },
+        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
         { name: "upload_assets", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
         { name: "get_screenshot", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] } },
       ],
@@ -6952,8 +7455,39 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(openResult.session.knownPages, undefined);
     assert.equal(openResult.session.handles, undefined);
     assert.deepEqual(openResult.session.handleChanges, { updated: [], removed: [] });
-    assert.deepEqual(openResult.session.workspace, { workspaceRef: "figma-repl://sessions/typed" });
+    assert.match(openResult.session.sessionDir, /file123/u);
+    assert.equal(openResult.session.workspace, undefined);
     assert.equal(openResult.verbose, undefined);
+
+    const searchResult = await repl.searchDesignSystem({
+      sessionId: "typed",
+      query: "typed",
+    });
+    assert.equal(searchResult.ok, true);
+    assert.equal(searchResult.upstream.result.results[0].name, "Typed Button");
+    assert.equal(searchResult.result, undefined);
+    assert.equal(searchResult.text, undefined);
+    assert.equal("content" in searchResult, false);
+    assert.equal(searchResult.verbose, undefined);
+
+    const librariesResult = await repl.getLibraries({
+      sessionId: "typed",
+    });
+    assert.equal(librariesResult.ok, true);
+    assert.equal(librariesResult.upstream.result.libraries[0].name, "Typed Library");
+    assert.equal(librariesResult.result, undefined);
+    assert.equal(librariesResult.text, undefined);
+
+    const variableDefsResult = await repl.getVariableDefs({
+      sessionId: "typed",
+      target: "12:36",
+    });
+    assert.equal(variableDefsResult.ok, true);
+    assert.equal(variableDefsResult.nodeId, "12:36");
+    assert.equal(variableDefsResult.upstream.result.variables[0].name, "typed.color");
+    assert.equal(variableDefsResult.result, undefined);
+    assert.equal(variableDefsResult.text, undefined);
+
     const assetResult = await repl.applyAssetManifest({
       sessionId: "typed",
       assets: [{ path: assetPath, target: "12:34", name: "Asset" }],
@@ -7005,10 +7539,11 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(preparedResult.outputFiles, undefined);
     assert.equal(preparedResult.task.workspaceDir, undefined);
     assert.equal(preparedResult.task.taskDir, undefined);
-    assert.deepEqual(preparedResult.session.workspace, { workspaceRef: "figma-repl://sessions/default" });
+    assert.equal(preparedResult.session.sessionDir, workspaceDir);
+    assert.equal(preparedResult.session.workspace, undefined);
     assert.equal(preparedResult.verbose, undefined);
 
-    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool", "callTool"]);
+    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool", "callTool", "callTool", "callTool", "callTool"]);
   } finally {
     await repl.close();
     await rm(tempDir, { recursive: true, force: true });

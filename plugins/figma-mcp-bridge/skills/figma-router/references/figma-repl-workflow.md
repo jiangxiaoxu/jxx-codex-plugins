@@ -21,6 +21,7 @@ Use this reference only when `figma-repl://capabilities` is not enough to choose
 ## Workflow Add-ons
 
 - Use `figma_repl_get_metadata` for broad layer-tree discovery before detailed style, fill, or text inspection.
+- Use `figma_repl_search_design_system`, `figma_repl_get_libraries`, and `figma_repl_get_variable_defs` for official design-system context. `get_variable_defs.target` accepts a raw node id, node URL, or local handle.
 - Use `figma_repl_apply_asset_manifest` for large local generated image assets. Create target rectangles in the script first, then upload/fill through the manifest.
 - Use `figma_repl_download_assets` for official asset download workflows.
 - Use `figma_repl_capture_node` for final visual QA captures saved as local PNG files.

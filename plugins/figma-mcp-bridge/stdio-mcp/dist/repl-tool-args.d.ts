@@ -112,6 +112,46 @@ export interface FigmaReplGetMetadataArguments {
     clientLanguages?: string;
     clientFrameworks?: string;
 }
+export interface FigmaReplSearchDesignSystemArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    file?: string;
+    cwd?: string;
+    dirName?: string;
+    query: string;
+    disableCodeConnect?: boolean;
+    includeComponents?: boolean;
+    includeVariables?: boolean;
+    includeStyles?: boolean;
+    includeLibraryKeys?: string[];
+    refresh?: boolean;
+    inlineResultLimit?: number;
+}
+export interface FigmaReplGetLibrariesArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    file?: string;
+    cwd?: string;
+    dirName?: string;
+    offset?: number;
+    refresh?: boolean;
+    inlineResultLimit?: number;
+}
+export interface FigmaReplGetVariableDefsArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    file?: string;
+    cwd?: string;
+    dirName?: string;
+    target?: unknown;
+    refresh?: boolean;
+    inlineResultLimit?: number;
+    clientLanguages?: string;
+    clientFrameworks?: string;
+}
 export interface FigmaReplLookupArguments {
     [key: string]: unknown;
     title?: string;
@@ -169,6 +209,9 @@ export declare function asGuidanceArgs(args: unknown): FigmaReplGuidanceArgument
 export declare function asInspectArgs(args: unknown): FigmaReplInspectArguments;
 export declare function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments;
 export declare function asGetMetadataArgs(args: unknown): FigmaReplGetMetadataArguments;
+export declare function asSearchDesignSystemArgs(args: unknown): FigmaReplSearchDesignSystemArguments;
+export declare function asGetLibrariesArgs(args: unknown): FigmaReplGetLibrariesArguments;
+export declare function asGetVariableDefsArgs(args: unknown): FigmaReplGetVariableDefsArguments;
 export declare function asLookupArgs(args: unknown): FigmaReplLookupArguments;
 export declare function asTaskPlanSteps(value: unknown, displayName?: string): FigmaReplTaskPlanStep[];
 export declare function withDefaultTitle<T extends Record<string, unknown>>(args: T, _title: string): T;

@@ -10,6 +10,9 @@ export const LOCAL_REPL_TOOL_NAMES = [
   "figma_repl_guidance",
   "figma_repl_inspect",
   "figma_repl_get_metadata",
+  "figma_repl_search_design_system",
+  "figma_repl_get_libraries",
+  "figma_repl_get_variable_defs",
   "figma_repl_call_upstream_tool",
   "figma_repl_lookup",
 ] as const;
