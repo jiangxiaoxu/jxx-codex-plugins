@@ -135,7 +135,7 @@ await $.text({
 return await $.checkpoint("section-created", ["$section"], { depth: 1 });
 ```
 
-Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`. Script files and eval wrapper calls are parsed with AST analysis, and the runner injects only referenced `$` helpers plus required dependencies. Read `figma-repl://capabilities` for helper syntax rules.
+Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`. Script files and eval wrapper calls are parsed with AST analysis, and the runner injects only referenced `$` helpers plus required dependencies. Read `figma-repl://guide` for workflow sequencing and use `figma_repl_guidance` / `figma_repl_lookup` for helper and API details.
 
 ## Assets, Capture, and Plans
 
@@ -149,7 +149,9 @@ Keep `.figma.js` transactions small enough for upstream `use_figma` payload limi
 
 The REPL facade keeps MCP resources limited to runtime state and dynamic discovery:
 
-- aggregate guidance: `figma-repl://capabilities`;
+- routing manifest: `figma-repl://capabilities`;
+- workflow guide: `figma-repl://guide`;
+- lookup index: `figma-repl://lookup-index`;
 - workflow tools: `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_get_metadata`, `figma_repl_search_design_system`, `figma_repl_get_libraries`, `figma_repl_get_variable_defs`;
 - execution: `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_run_task_plan`;
 - assets and QA: `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`;

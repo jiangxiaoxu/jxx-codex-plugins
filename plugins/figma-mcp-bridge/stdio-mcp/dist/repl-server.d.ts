@@ -294,7 +294,7 @@ export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {
     recommendedCards?: string[];
     queryHints?: string[];
     apiSymbols?: string[];
-    avoid?: string[];
+    guardrails?: string[];
     suggestions?: Record<string, unknown>;
 }
 export interface FigmaReplInspectResult extends FigmaReplToolResultBase {

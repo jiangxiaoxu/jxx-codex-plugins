@@ -25,6 +25,8 @@ import {
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const expectedStaticResourceUris = [
   "figma-repl://capabilities",
+  "figma-repl://guide",
+  "figma-repl://lookup-index",
   "figma-repl://sessions",
   "figma-repl://upstream-tools",
 ];
@@ -33,7 +35,6 @@ const removedStaticResourceUris = [
   "figma-repl://api-cards",
   "figma-repl://docs",
   "figma-repl://file-workflow",
-  "figma-repl://guide",
   "figma-repl://intents",
   "figma-repl://patterns",
   "figma-repl://safety",
@@ -44,7 +45,7 @@ const queryOutputFields = [
   "recommendedCards",
   "queryHints",
   "apiSymbols",
-  "avoid",
+  "guardrails",
   "referenceContext",
 ];
 const forbiddenRouterContractTerms = [
@@ -1066,239 +1067,59 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   await mcpClient.connect(clientTransport);
 
   const capabilitiesResource = await mcpClient.readResource({ uri: "figma-repl://capabilities" });
+  const guideResource = await mcpClient.readResource({ uri: "figma-repl://guide" });
+  const lookupIndexResource = await mcpClient.readResource({ uri: "figma-repl://lookup-index" });
   const capabilities = JSON.parse(capabilitiesResource.contents[0].text);
-  assert.ok(capabilities.guide);
-  assert.ok(capabilities.patterns);
-  assert.ok(capabilities.scriptWorkflow);
-  assert.ok(capabilities.fileWorkflow);
-  assert.ok(capabilities.workflowTools);
-  assert.ok(capabilities.toolTiers);
-  assert.ok(capabilities.toolArgumentGuidance);
-  assert.ok(capabilities.apiCards);
-  assert.ok(capabilities.intents);
-  assert.ok(capabilities.safety);
-  assert.ok(capabilities.facadeRoutingDelegationBoundaries);
-  assert.ok(capabilities.docsLookup);
-  assert.ok(capabilities.queryStrategy);
-  assert.ok(capabilities.queryStrategy.searchAnchors.includes("text/font"));
-  assert.ok(capabilities.queryStrategy.searchAnchors.includes("FigJam/Slides"));
-  assert.match(capabilities.guide.purpose, /Unified Figma-facing MCP facade/);
-  assert.match(capabilities.guide.purpose, /figma_repl_mcp/);
-  assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work"));
-  assert.ok(capabilities.guide.preferredFlow.includes("figma_repl_call_upstream_tool only when a task explicitly needs an uncovered upstream Figma MCP tool"));
-  assert.match(capabilities.guide.upstreamBridge, /figma_repl_call_upstream_tool/);
-  assert.match(capabilities.guide.upstreamBridge, /figma-repl:\/\/upstream-tools\/\{name\}/);
-  assert.match(capabilities.guide.upstreamBridge, /dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs/);
-  assert.match(capabilities.guide.responseShape, /Structured-first payloads/);
-  assert.match(capabilities.guide.responseShape, /content is empty/);
-  assert.doesNotMatch(capabilities.guide.responseShape, /MCP protocol media items/);
-  assert.match(capabilities.guide.responseShape, /file pointers/);
-  assert.match(capabilities.guide.responseShape, /minimal session summaries/);
-  assert.match(capabilities.guide.responseShape, /sessionDir when present/);
-  assert.doesNotMatch(capabilities.guide.responseShape, /workspace\.workspaceRef/);
-  assert.match(capabilities.guide.responseShape, /figma-repl:\/\/sessions\/\{id\}\/handles/);
-  assert.match(capabilities.guide.responseShape, /figma-repl:\/\/sessions\/\{id\}/);
-  assert.match(capabilities.guide.responseShape, /explicit status semantics/);
-  assert.match(capabilities.guide.responseShape, /public upstream result shaping/);
-  assert.match(capabilities.guide.responseShape, /remove bridge-internal __figmaRepl metadata/);
-  assert.match(capabilities.guide.responseShape, /Raw official upstream JSON objects with top-level ok consume/);
-  assert.match(capabilities.guide.responseShape, /figma_repl_get_metadata calls official get_metadata/);
-  assert.match(capabilities.guide.responseShape, /returns small metadata\.json results inline/);
-  assert.match(capabilities.guide.responseShape, /writes oversized JSON to outputFiles\.metadataFile/);
-  assert.match(capabilities.guide.responseShape, /figma_repl_search_design_system, figma_repl_get_libraries, and figma_repl_get_variable_defs are thin wrappers/);
-  assert.match(capabilities.guide.responseShape, /outputFiles\.metadataFile/);
-  assert.equal(capabilities.guide.layeredOk, undefined);
-  assert.match(capabilities.guide.statusSemantics.topLevelOk, /local wrapper\/tool completion/);
-  assert.match(capabilities.guide.statusSemantics.upstreamOk, /effective upstream success/);
-  assert.match(capabilities.guide.statusSemantics.upstreamOk, /source as business when JSON supplied ok:false/);
-  assert.match(capabilities.guide.statusSemantics.upstreamResult, /consumed top-level ok removed/);
-  assert.match(capabilities.guide.statusSemantics.upstreamResult, /not exposed in public upstream results or sidecars/);
-  assert.doesNotMatch(capabilities.guide.responseShape, /verboseResults/);
-  assert.doesNotMatch(capabilities.guide.responseShape, /helperUsage/);
-  assert.doesNotMatch(capabilities.guide.responseShape, /parsed JSON in result/);
-  assert.deepEqual(capabilities.queryStrategy.outputFields, queryOutputFields);
-  assert.ok(capabilities.queryStrategy.commonCards.includes("text.font"));
-  assert.ok(capabilities.queryStrategy.commonCards.includes("surface.slides"));
-  assert.equal(capabilities.scriptWorkflow.primaryTool, "figma_repl_run_script_file");
-  assert.equal(capabilities.fileWorkflow.primaryTool, "figma_repl_run_script_file");
-  assert.deepEqual(
-    capabilities.toolTiers.normalPath.tools,
-    ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_get_metadata", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_inspect", "figma_repl_capture_node"],
-  );
-  assert.deepEqual(
-    capabilities.toolTiers.advancedEscapeHatches.tools,
-    ["figma_repl_eval", "figma_repl_call_upstream_tool"],
-  );
-  assert.equal(capabilities.toolArgumentGuidance.title.optional, true);
-  assert.equal(capabilities.toolArgumentGuidance.title.preferSupplying, false);
-  assert.equal(
-    capabilities.toolArgumentGuidance.title.schemaDescription,
-    "Optional MCP call display label for Codex/UI only; validated as a string but not saved, defaulted, or used for task/file naming.",
-  );
-  assert.match(capabilities.toolArgumentGuidance.title.guidance, /display-only call metadata/);
-  assert.match(capabilities.toolArgumentGuidance.title.guidance, /does not store it/);
-  assert.ok(capabilities.toolArgumentGuidance.title.examples.includes("Capture the hero variant for visual QA"));
-  assert.equal(capabilities.scriptWorkflow.recommendedCalls.dryRun, undefined);
-  assert.deepEqual(
-    capabilities.scriptWorkflow.recommendedCalls.execute,
-    { sessionId: "<session>", inputFile: "<task>.figma.js", strict: true, surface: "design" },
-  );
-  assert.ok(capabilities.scriptWorkflow.advancedArguments.includes("scriptPath"));
-  assert.equal(capabilities.scriptWorkflow.advancedArguments.includes("upstreamTool"), false);
-  assert.equal(capabilities.scriptWorkflow.advancedArguments.includes("upstreamArgument"), false);
-  assert.equal(capabilities.scriptWorkflow.advancedArguments.includes("upstreamArguments"), false);
-  assert.match(capabilities.scriptWorkflow.avoidUnless.scriptPath, /prefer inputFile/i);
-  assert.match(capabilities.scriptWorkflow.avoidUnless.inlineResultLimit, /10 KB/);
-  assert.equal(capabilities.scriptWorkflow.avoidUnless.upstreamOverrides, undefined);
-  assert.deepEqual(
-    capabilities.toolArgumentGuidance.prepareTask.recommendedCalls.workspaceFromFile,
-    { file: "<figma file URL or file key>", taskName: "<task-name>", surface: "design" },
-  );
-  assert.ok(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("taskRoot"));
-  assert.equal(capabilities.toolArgumentGuidance.prepareTask.tier, "normalPath");
-  assert.equal(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("taskDir"), false);
-  assert.equal(capabilities.toolArgumentGuidance.prepareTask.advancedArguments.includes("scriptName"), false);
-  assert.deepEqual(
-    capabilities.toolArgumentGuidance.assetManifest.recommendedCalls.applyManifest,
-    { sessionId: "<session>", manifestPath: "<assets>.json" },
-  );
-  assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("argumentsTemplate"), false);
-  assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("resultFile"), false);
-  assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("inlineResultLimit"), false);
-  assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("toolName"), false);
-  assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("arguments"), false);
-  assert.equal(capabilities.toolArgumentGuidance.assetManifest.advancedArguments.includes("refresh"), false);
-  assert.equal(capabilities.toolArgumentGuidance.assetManifest.avoidUnless.upstreamTemplates, undefined);
-  assert.deepEqual(
-    capabilities.toolArgumentGuidance.captureNode.recommendedCalls.capture,
-    { sessionId: "<session>", target: "$target", imageFile: "<capture>.png" },
-  );
-  assert.equal(capabilities.toolArgumentGuidance.captureNode.advancedArguments, undefined);
-  assert.equal(capabilities.toolArgumentGuidance.captureNode.avoidUnless, undefined);
-  assert.deepEqual(
-    capabilities.toolArgumentGuidance.taskPlan.recommendedCalls.filePlan,
-    { sessionId: "<session>", planPath: "<plan>.json" },
-  );
-  assert.ok(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("steps"));
-  assert.equal(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("resultFile"), false);
-  assert.equal(capabilities.toolArgumentGuidance.taskPlan.advancedArguments.includes("inlineResultLimit"), false);
-  assert.equal(capabilities.toolArgumentGuidance.open.advancedArguments.includes("upstreamTool"), false);
-  assert.equal(capabilities.toolArgumentGuidance.open.advancedArguments.includes("upstreamArgument"), false);
-  assert.equal(capabilities.toolArgumentGuidance.open.advancedArguments.includes("upstreamArguments"), false);
-  assert.equal(capabilities.toolArgumentGuidance.open.advancedArguments.includes("refresh"), false);
-  assert.equal(capabilities.toolArgumentGuidance.open.avoidUnless.upstreamOverrides, undefined);
-  assert.match(capabilities.toolArgumentGuidance.open.avoidUnless.connect, /without listing tools/);
-  assert.match(capabilities.toolArgumentGuidance.open.avoidUnless.connect, /figma-repl:\/\/upstream-tools/);
-  assert.equal(capabilities.toolArgumentGuidance.open.tier, "contextAndLookup");
-  assert.equal(capabilities.toolArgumentGuidance.eval.tier, "advancedEscapeHatches");
-  assert.match(capabilities.toolArgumentGuidance.eval.guidance, /small ephemeral calls/);
-  assert.match(capabilities.toolArgumentGuidance.eval.guidance, /prepare_task/);
-  assert.equal(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("outputFile"), false);
-  assert.ok(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("inlineResultLimit"));
-  assert.equal(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("upstreamTool"), false);
-  assert.equal(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("upstreamArgument"), false);
-  assert.equal(capabilities.toolArgumentGuidance.eval.advancedArguments.includes("upstreamArguments"), false);
-  assert.match(capabilities.toolArgumentGuidance.eval.avoidUnless.inlineResultLimit, /10 KB/);
-  assert.equal(capabilities.toolArgumentGuidance.eval.avoidUnless.upstreamOverrides, undefined);
-  assert.deepEqual(
-    capabilities.toolArgumentGuidance.inspect.recommendedCalls.inspectStyle,
-    { sessionId: "<session>", mode: "style", target: "$selection" },
-  );
-  assert.equal(capabilities.toolArgumentGuidance.inspect.tier, "normalPath");
-  assert.equal(capabilities.toolArgumentGuidance.inspect.advancedArguments.includes("upstreamTool"), false);
-  assert.equal(capabilities.toolArgumentGuidance.inspect.advancedArguments.includes("upstreamArgument"), false);
-  assert.equal(capabilities.toolArgumentGuidance.inspect.advancedArguments.includes("upstreamArguments"), false);
-  assert.equal(capabilities.toolArgumentGuidance.inspect.avoidUnless.upstreamOverrides, undefined);
-  assert.equal(capabilities.toolArgumentGuidance.getMetadata.tool, "figma_repl_get_metadata");
-  assert.equal(capabilities.toolArgumentGuidance.getMetadata.tier, "contextAndLookup");
-  assert.match(capabilities.toolArgumentGuidance.getMetadata.guidance, /converts XML to compact JSON/);
-  assert.match(capabilities.toolArgumentGuidance.getMetadata.guidance, /outputFiles\.metadataFile/);
-  assert.match(capabilities.toolArgumentGuidance.getMetadata.avoidUnless.dynamicSelectors, /figma_repl_inspect/);
-  assert.deepEqual(capabilities.toolArgumentGuidance.designSystem.tools, ["figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs"]);
-  assert.match(capabilities.toolArgumentGuidance.designSystem.guidance, /generic upstream envelope/);
-  assert.equal(capabilities.toolArgumentGuidance.guidance.tier, "contextAndLookup");
-  assert.equal(capabilities.toolArgumentGuidance.lookup.tier, "contextAndLookup");
-  assert.deepEqual(capabilities.toolArgumentGuidance.lookup.preferredArguments.api, ["kind=api", "symbol"]);
-  assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /Explicit upstream escape hatch/);
-  assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /figma-repl:\/\/upstream-tools/);
-  assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.guidance, /do not use for use_figma\/get_metadata\/get_screenshot\/upload_assets\/download_assets\/search_design_system\/get_libraries\/get_variable_defs/);
-  assert.equal(capabilities.toolArgumentGuidance.callUpstreamTool.tier, "advancedEscapeHatches");
-  assert.equal(capabilities.toolArgumentGuidance.callUpstreamTool.advancedArguments.includes("outputFile"), false);
-  assert.ok(capabilities.toolArgumentGuidance.callUpstreamTool.advancedArguments.includes("inlineResultLimit"));
-  assert.match(capabilities.toolArgumentGuidance.callUpstreamTool.avoidUnless.inlineResultLimit, /10 KB/);
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("eval wrapper")));
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("outputFiles.upstreamFile")));
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("Dynamic $ helper access")));
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("$[name] / $name-style")));
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("const { ...rest } = $")));
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("aliasing $")));
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("declaring a local $")));
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("$.helper(...)")));
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("$['helper'](...)")));
-  assert.ok(capabilities.fileWorkflow.guidance.some((line) => line.includes("const { helper } = $")));
-  assert.deepEqual(
-    capabilities.fileWorkflow.workflowTools,
-    ["figma_repl_get_metadata", "figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_capture_node", "figma_repl_run_task_plan"],
-  );
-  assert.deepEqual(capabilities.workflowTools.designSystem.tools, ["figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs"]);
-  assert.match(capabilities.workflowTools.designSystem.defaults, /clientLanguages\/clientFrameworks to unknown/);
-  assert.equal(capabilities.workflowTools.assetManifest.tool, "figma_repl_apply_asset_manifest");
-  assert.match(capabilities.workflowTools.assetManifest.result, /assetDetails/);
-  assert.match(capabilities.workflowTools.assetManifest.result, /compact business results/);
-  assert.match(capabilities.workflowTools.assetManifest.result, /upstreamError/);
-  assert.doesNotMatch(capabilities.workflowTools.assetManifest.result, /toolName, compact upload summary/);
-  assert.equal(capabilities.workflowTools.downloadAssets.tool, "figma_repl_download_assets");
-  assert.match(capabilities.workflowTools.downloadAssets.targetShape, /\{ target, name\?, defaultFormat\?, defaultScale\? \}/);
-  assert.match(capabilities.workflowTools.downloadAssets.result, /targetDetails/);
-  assert.match(capabilities.workflowTools.downloadAssets.result, /downloadError/);
-  assert.doesNotMatch(capabilities.workflowTools.downloadAssets.result, /upstreamSummary/);
-  assert.deepEqual(
-    capabilities.toolArgumentGuidance.downloadAssets.recommendedCalls.downloadTargets,
-    { sessionId: "<session>", targets: [{ target: "$target", defaultFormat: "png" }], outputDir: "<downloads>" },
-  );
-  assert.equal(capabilities.workflowTools.capture.tool, "figma_repl_capture_node");
-  assert.match(capabilities.workflowTools.capture.metadata, /bytes, width, and height/);
-  assert.doesNotMatch(capabilities.workflowTools.capture.metadata, /plannedOutputFile|metadataFile|outputFiles/);
-  assert.equal(capabilities.workflowTools.taskPlan.tool, "figma_repl_run_task_plan");
-  assert.match(capabilities.workflowTools.taskPlan.stepShape, /\{ id\?, type\?, args\? \}/);
-  assert.ok(capabilities.workflowTools.taskPlan.stepTypes.includes("download-assets"));
-  assert.ok(capabilities.workflowTools.taskPlan.stepTypes.includes("download_assets"));
-  assert.match(capabilities.workflowTools.taskPlan.references, /upstream\.result/);
-  assert.match(capabilities.workflowTools.taskPlan.references, /downloadOutputDir/);
-  assert.equal(capabilities.fileWorkflow.prepareTool, "figma_repl_prepare_task");
-  assert.match(capabilities.fileWorkflow.workspaceLayout, /<fileKey-or-fileSlug>/);
-  assert.equal(capabilities.scriptWorkflow.options.outputFile, undefined);
-  assert.deepEqual(
-    capabilities.scriptWorkflow.responseExamples.jsonSuccess.upstream,
-    { kind: "json", ok: true, result: {} },
-  );
-  assert.equal(capabilities.scriptWorkflow.responseExamples.businessOkFalse.ok, true);
-  assert.equal(capabilities.scriptWorkflow.responseExamples.businessOkFalse.upstream.ok, false);
-  assert.equal(capabilities.scriptWorkflow.responseExamples.businessOkFalse.upstream.result.ok, undefined);
-  assert.equal(capabilities.scriptWorkflow.responseExamples.businessOkFalse.upstream.result.source, "business");
-  assert.equal(capabilities.scriptWorkflow.responseExamples.businessOkFalse.upstream.result.result, undefined);
-  assert.equal(capabilities.scriptWorkflow.responseExamples.textOutput.upstream.kind, "text");
-  assert.equal(
-    capabilities.scriptWorkflow.responseExamples.inlinePayloadOmitted.inlineResultLimit.omitted[0].field,
-    "upstream.result",
-  );
-  assert.equal(capabilities.scriptWorkflow.responseExamples.inlinePayloadOmitted.inlineResultLimit.limitHuman, "4 KB");
-  assert.equal(capabilities.scriptWorkflow.responseExamples.inlinePayloadOmitted.upstream.result, undefined);
-  assert.doesNotMatch(JSON.stringify(capabilities), /rawBytes/);
-  assert.match(capabilities.scriptWorkflow.helpers["$.select"], /selection/);
-  assert.match(capabilities.scriptWorkflow.helpers["$.cloneNodeTree"], /instance-subtree/);
-  assert.match(capabilities.scriptWorkflow.helpers["$.findFreeSlot"], /non-overlapping/);
-  assert.match(capabilities.scriptWorkflow.helpers["$.placeNode"], /placement/);
-  assert.match(capabilities.scriptWorkflow.helpers["$.replaceGeneratedFrame"], /replace/);
-  assert.match(capabilities.scriptWorkflow.helpers["$.imageAsset"], /image-fill rectangle/);
-  assert.match(capabilities.scriptWorkflow.helpers["$.screenshot"], /final QA/);
-  assert.match(capabilities.scriptWorkflow.helpers["$.checkpoint"], /summaries/);
-  assert.deepEqual(
-    Object.keys(capabilities.scriptWorkflow.helpers).sort(),
-    ["$", ...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES.map((name) => `$.${name}`)].sort(),
-  );
-  assert.ok(capabilities.examples);
-  assert.ok(capabilities.examples.every((example) => JSON.stringify(example)));
+  const guide = JSON.parse(guideResource.contents[0].text);
+  const lookupIndex = JSON.parse(lookupIndexResource.contents[0].text);
+
+  assert.equal(capabilitiesResource.contents[0].mimeType, "application/json");
+  assert.equal(guideResource.contents[0].mimeType, "application/json");
+  assert.equal(lookupIndexResource.contents[0].mimeType, "application/json");
+  assert.ok(Buffer.byteLength(capabilitiesResource.contents[0].text, "utf8") <= 6144);
+  assert.ok(Buffer.byteLength(guideResource.contents[0].text, "utf8") <= 15360);
+  assert.ok(Buffer.byteLength(lookupIndexResource.contents[0].text, "utf8") <= 3072);
+
+  assert.match(capabilities.purpose, /Routing manifest/);
+  assert.ok(capabilities.defaultFlow.some((step) => /figma_repl_prepare_task/.test(step)));
+  assert.ok(capabilities.toolSelection.normalPath.includes("figma_repl_run_script_file"));
+  assert.ok(capabilities.toolSelection.contextAndLookup.includes("figma_repl_lookup"));
+  assert.ok(capabilities.toolSelection.advancedEscapeHatches.includes("figma_repl_call_upstream_tool"));
+  assert.match(capabilities.contractNotes.scriptPreflight, /phase=preflight/);
+  assert.match(capabilities.contractNotes.scriptPreflight, /upstream was not called/);
+  assert.equal(capabilities.resources.guide, "figma-repl://guide");
+  assert.equal(capabilities.resources.lookupIndex, "figma-repl://lookup-index");
+  assert.deepEqual(capabilities.lookupStrategy.outputFields, queryOutputFields);
+  assert.ok(capabilities.lookupStrategy.queryAnchors.includes("text/font"));
+  assert.ok(capabilities.lookupStrategy.queryAnchors.includes("FigJam/Slides"));
+
+  const compactCapabilitiesText = JSON.stringify(capabilities);
+  assert.equal(capabilities.responseExamples, undefined);
+  assert.equal(capabilities.avoidUnless, undefined);
+  assert.equal(capabilities.apiCards, undefined);
+  assert.equal(capabilities.patterns, undefined);
+  assert.equal(capabilities.scriptWorkflow, undefined);
+  assert.equal(capabilities.fileWorkflow, undefined);
+  assert.doesNotMatch(compactCapabilitiesText, /responseExamples/);
+  assert.doesNotMatch(compactCapabilitiesText, /apiCards/);
+  assert.doesNotMatch(compactCapabilitiesText, /\$\.cloneNodeTree/);
+  assert.doesNotMatch(compactCapabilitiesText, /rawBytes/);
+
+  assert.match(guide.purpose, /Continuous workflow guide/);
+  assert.ok(guide.scriptFileWorkflow.some((step) => /preflights/.test(step)));
+  assert.ok(guide.evalWorkflow.some((step) => /small ephemeral/.test(step)));
+  assert.ok(guide.assetWorkflow.some((step) => /figma_repl_apply_asset_manifest/.test(step)));
+  assert.ok(guide.inspectionAndQa.some((step) => /figma_repl_capture_node/.test(step)));
+  assert.ok(guide.designSystem.some((step) => /figma_repl_search_design_system/.test(step)));
+  assert.ok(guide.upstreamEscapeHatch.some((step) => /figma_repl_call_upstream_tool/.test(step)));
+  assert.ok(guide.responseContract.some((step) => /upstream\.ok/.test(step)));
+
+  assert.equal(lookupIndex.guidance.tool, "figma_repl_guidance");
+  assert.equal(lookupIndex.lookup.tool, "figma_repl_lookup");
+  assert.deepEqual(lookupIndex.guidance.outputFields, queryOutputFields);
+  assert.ok(lookupIndex.guidance.commonCards.includes("text.font"));
+  assert.ok(lookupIndex.guidance.commonCards.includes("surface.slides"));
+  assert.match(lookupIndex.ownership, /Bundled corpus files remain internal/);
 
   const tools = await mcpClient.listTools();
   assert.ok(!tools.tools.some((tool) => tool.name === "figma_repl_capabilities"));
@@ -1727,49 +1548,22 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
 
   const aggregateResource = await mcpClient.readResource({ uri: "figma-repl://capabilities" });
   const aggregateCapabilities = JSON.parse(aggregateResource.contents[0].text);
-  assert.deepEqual(aggregateCapabilities.queryStrategy.outputFields, queryOutputFields);
-  assert.equal(aggregateCapabilities.scriptWorkflow.primaryTool, "figma_repl_run_script_file");
-  assert.match(aggregateCapabilities.scriptWorkflow.options.scriptPath, /absolute-path escape hatch/i);
-  assert.equal(aggregateCapabilities.fileWorkflow.prepareTool, "figma_repl_prepare_task");
-  assert.deepEqual(aggregateCapabilities.fileWorkflow.helpers, ["$", ...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES.map((name) => `$.${name}`)]);
-  assert.deepEqual(aggregateCapabilities.fileWorkflow.workflowTools, [
-    "figma_repl_get_metadata",
-    "figma_repl_apply_asset_manifest",
-    "figma_repl_download_assets",
-    "figma_repl_capture_node",
-    "figma_repl_run_task_plan",
-  ]);
-  const workflowTools = aggregateCapabilities.workflowTools;
-  assert.equal(workflowTools.assetManifest.tool, "figma_repl_apply_asset_manifest");
-  assert.match(workflowTools.assetManifest.defaults, /official upload_assets/);
-  assert.doesNotMatch(workflowTools.assetManifest.assetShape, /toolName|arguments/);
-  assert.equal(workflowTools.downloadAssets.tool, "figma_repl_download_assets");
-  assert.match(workflowTools.downloadAssets.defaults, /\{ targets: \[\.\.\.\] \}/);
-  assert.ok(workflowTools.taskPlan.stepTypes.includes("download_assets"));
-  assert.equal(workflowTools.capture.tool, "figma_repl_capture_node");
-  assert.match(workflowTools.capture.defaulting, /official get_screenshot/);
-  assert.match(workflowTools.capture.defaulting, /\{ fileKey, nodeId \}/);
-  assert.equal(workflowTools.skillReference, "figma-repl-workflow.md");
-  const cards = aggregateCapabilities.apiCards;
-  const cardIds = cards.cards.map((card) => card.id);
-  assert.ok(cardIds.includes("text.font"));
-  assert.ok(cardIds.includes("layout.auto"));
-  assert.ok(cardIds.includes("variables.bind"));
-  assert.ok(cardIds.includes("styles.apply"));
-  assert.ok(cardIds.includes("components.variants"));
-  assert.ok(cardIds.includes("instances.properties"));
-  assert.ok(cardIds.includes("images.fill"));
-  assert.ok(cardIds.includes("capture.qa"));
-  assert.ok(cardIds.includes("surface.figjam"));
-  assert.ok(cardIds.includes("surface.slides"));
-  assert.ok(cards.cards.find((card) => card.id === "text.font").apiSymbols.includes("figma.loadFontAsync"));
-  assert.equal(cards.skillReference, "figma-repl-guidance-and-lookup.md");
-  assert.equal(aggregateCapabilities.intents.tool, "figma_repl_guidance");
-  assert.deepEqual(aggregateCapabilities.intents.returns, ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"]);
-  assert.equal(aggregateCapabilities.docsLookup.lookupTool, "figma_repl_lookup");
-  assert.equal(aggregateCapabilities.docsLookup.skillReference, "figma-repl-guidance-and-lookup.md");
-  assert.equal(aggregateCapabilities.docsLookup.docsResource, undefined);
-  assert.equal(aggregateCapabilities.docsLookup.apiResource, undefined);
+  const aggregateGuideResource = await mcpClient.readResource({ uri: "figma-repl://guide" });
+  const aggregateLookupIndexResource = await mcpClient.readResource({ uri: "figma-repl://lookup-index" });
+  const aggregateGuide = JSON.parse(aggregateGuideResource.contents[0].text);
+  const aggregateLookupIndex = JSON.parse(aggregateLookupIndexResource.contents[0].text);
+  assert.equal(aggregateCapabilities.resources.guide, "figma-repl://guide");
+  assert.equal(aggregateCapabilities.resources.lookupIndex, "figma-repl://lookup-index");
+  assert.deepEqual(aggregateCapabilities.lookupStrategy.outputFields, queryOutputFields);
+  assert.equal(aggregateCapabilities.apiCards, undefined);
+  assert.equal(aggregateCapabilities.docsLookup, undefined);
+  assert.ok(aggregateGuide.scriptFileWorkflow.some((step) => /figma_repl_prepare_task/.test(step)));
+  assert.ok(aggregateGuide.assetWorkflow.some((step) => /figma_repl_apply_asset_manifest/.test(step)));
+  assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /figma-repl:\/\/upstream-tools\/\{name\}/.test(step)));
+  assert.equal(aggregateLookupIndex.guidance.tool, "figma_repl_guidance");
+  assert.equal(aggregateLookupIndex.lookup.tool, "figma_repl_lookup");
+  assert.ok(aggregateLookupIndex.guidance.commonCards.includes("text.font"));
+  assert.deepEqual(aggregateLookupIndex.guidance.outputFields, queryOutputFields);
   for (const uri of removedStaticResourceUris) {
     await assert.rejects(
       mcpClient.readResource({ uri }),
@@ -1814,7 +1608,7 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   assert.match(skillText, /After OAuth registration, use `figma_repl_mcp` as the agent-facing entrypoint/);
   assert.match(skillText, /read `figma-repl:\/\/capabilities`/);
   assert.match(skillText, /Bundled reference files are internal lookup corpus/);
-  assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`/);
+  assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `referenceContext`/);
   assert.match(skillText, /figma_repl_lookup\(\{ kind: "docs" \}\)/);
   for (const uri of removedStaticResourceUris) {
     assert.ok(!skillText.includes(uri), `SKILL.md must not route agents to removed resource ${uri}`);
@@ -5535,6 +5329,12 @@ test("figma REPL diagnostics return stable codes and strict promotes warnings", 
     diagnoseFigmaReplCode("node['paddingLeft']++;", { mode: "read" }).map((item) => item.code),
     ["FIGMA_REPL_READ_MODE_ASSIGNMENT"],
   );
+  const diagnosticHints = diagnoseFigmaReplCode(
+    "figma.currentPage = page; figma.root.findAll(() => true); figma.currentPage.selection = [node]; node.characters = 'Hello'; eval('1'); figma.createImage(bytes);",
+    { strict: true },
+  ).map((item) => item.docsHint);
+  assert.ok(diagnosticHints.length > 0);
+  assert.ok(diagnosticHints.every((hint) => !hint.includes("figma-repl://capabilities#")));
 });
 
 test("figma REPL run_script_file returns preflight diagnostics without upstream execution", async () => {
@@ -6924,6 +6724,10 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   assert.ok(cardJson.recommendedCards.includes("text.font"));
   assert.match(JSON.stringify(cardJson.cards), /loadFontAsync/);
   assert.ok(cardJson.cards.find((card) => card.id === "text.font").queryHints.some((hint) => /font/.test(hint)));
+  assert.ok(cardJson.cards.find((card) => card.id === "text.font").guardrails.some((entry) => /loadFontAsync/.test(entry)));
+  assert.equal(cardJson.cards.find((card) => card.id === "text.font").avoid, undefined);
+  assert.ok(cardJson.guardrails.some((entry) => /loadFontAsync/.test(entry)));
+  assert.equal(cardJson.avoid, undefined);
   assert.equal(cardResult.content.length, 0);
 
   const planResult = await mcpClient.callTool({
@@ -6978,7 +6782,8 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   assert.ok(suggestJson.suggestions.recommendedCards.includes("components.variants"));
   assert.ok(suggestJson.suggestions.queryHints.some((hint) => /component/.test(hint)));
   assert.ok(suggestJson.suggestions.apiSymbols.includes("figma.combineAsVariants"));
-  assert.ok(suggestJson.suggestions.avoid.some((entry) => /non-component/.test(entry)));
+  assert.ok(suggestJson.suggestions.guardrails.some((entry) => /non-component/.test(entry)));
+  assert.equal(suggestJson.suggestions.avoid, undefined);
   assert.equal(suggestJson.suggestions.matchType, "api-card");
   assert.equal(suggestJson.suggestions.confidence, "high");
   assert.ok(suggestJson.suggestions.referenceContext.length > 0);
@@ -7020,7 +6825,8 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
     assert.ok(commonJson.suggestions.recommendedCards.includes(expectedCard));
     assert.ok(commonJson.suggestions.apiSymbols.includes(expectedSymbol));
     assert.ok(commonJson.suggestions.queryHints.length > 0);
-    assert.ok(commonJson.suggestions.avoid.length > 0);
+    assert.ok(commonJson.suggestions.guardrails.length > 0);
+    assert.equal(commonJson.suggestions.avoid, undefined);
   }
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();

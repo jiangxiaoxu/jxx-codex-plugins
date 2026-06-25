@@ -366,7 +366,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     recommendedCards: stringArrayProperty("Recommended curated card ids."),
     queryHints: stringArrayProperty("Suggested docs/API search hints."),
     apiSymbols: stringArrayProperty("Suggested exact API symbols."),
-    avoid: stringArrayProperty("Common mistakes to avoid."),
+    guardrails: stringArrayProperty("Task-specific guardrails."),
     suggestions: guidanceSuggestionsProperty("Ranked task/card suggestions with compact context."),
   }),
   figma_repl_inspect: toolOutputSchema({
@@ -759,7 +759,7 @@ function guidanceSuggestionsProperty(description: string): Record<string, unknow
       recommendedCards: stringArrayProperty("Recommended curated API card ids."),
       queryHints: stringArrayProperty("Suggested docs/API search hints."),
       apiSymbols: stringArrayProperty("Suggested exact API symbols."),
-      avoid: stringArrayProperty("Common mistakes to avoid."),
+        guardrails: stringArrayProperty("Task-specific guardrails."),
       referenceContext: {
         type: "array",
         description: "Compact ranked reference snippets used for suggestions.",
