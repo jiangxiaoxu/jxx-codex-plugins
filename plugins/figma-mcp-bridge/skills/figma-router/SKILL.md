@@ -1,6 +1,6 @@
 ---
 name: figma-router
-description: Unified routing entry for Figma MCP login, figma_repl_mcp file workflows, and compact Figma Plugin API lookup. Use for Figma design, FigJam, Slides, design systems, tokens, components, use_figma, figma_repl_run_script_file, Plugin API lookup, or Figma MCP auth repair. When selected, first expose deferred Figma tools with tool_search using a query that includes figma and figma_repl.
+description: Route Figma work through the exact MCP server figma_repl_mcp and its figma_repl_ tool family. Use for Figma design, FigJam, Slides, design systems, tokens, components, use_figma, Plugin API lookup, or Figma MCP auth repair. When selected, first expose deferred tools with tool_search query "figma_repl_mcp figma_repl_ figma".
 ---
 
 # Figma Router
@@ -10,7 +10,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 ## Default Route
 
 1. If the user asks for login, auth setup, credential refresh, or auth repair, run the Figma MCP Login flow below.
-2. Before any Figma MCP action, expose deferred Figma tools through `tool_search` with a query such as `figma_repl_mcp figma_repl figma`.
+2. Before any Figma MCP action, expose deferred Figma tools through `tool_search` with a query such as `figma_repl_mcp figma_repl_ figma`.
 3. After Figma tools are available, read `figma-repl://capabilities`, then use the file workflow.
 4. If direct `figma_repl_*` tools are not installed in the active Codex environment, do not use the `./node-repl` no-client default for live Figma work; use `figma_repl_mcp` after plugin reload, or use package-local `createFigmaReplClient` only with an explicit custom upstream `client`.
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
@@ -27,9 +27,19 @@ Use `node_repl` for Figma REPL investigation only when the user explicitly asks 
 - For local response-shape tests, use `createFigmaReplClient({ client: fakeOrCustomClient })` and assert the same compact result fields used by MCP tools, especially `upstream.ok`, `upstream.result`, `outputFiles.debugFile`, `outputFiles.metadataFile`, and `imageFile`.
 - Use `createRemoteMcpClient()` only for raw upstream SDK debugging, not as the default route for Figma canvas work inside Codex `node_repl`.
 
+Recommended `node_repl` debugging sequence:
+
+1. Use `figma_repl_mcp` directly first when only live Figma work is needed.
+2. Use `node_repl` only when comparing package-local behavior, installed-cache behavior, or response-shape parsing.
+3. From `node_repl`, start a child MCP process for `dist/repl-stdio-cli.js`, connect with an explicit stdio client, then call `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, or `figma_repl_apply_asset_manifest` through that custom client.
+4. Before tool calls, use the same stdio client to call `listResources()` and `readResource({ uri: "figma-repl://capabilities" })`; read narrower resources such as `figma-repl://workflow-tools`, `figma-repl://file-workflow`, or `figma-repl://upstream-tools` when the debug task depends on them.
+5. If `figma-repl://capabilities` cannot be read from the child MCP process, treat the `node_repl` debug environment as incomplete and fix the stdio client/session wiring before drawing conclusions from tool output.
+6. For parser-only tests, skip live Figma and inject a fake/custom client into `createFigmaReplClient({ client })`; provide fake `listResources()` / `readResource()` responses when the code under test needs resource-guided behavior.
+7. Capture the structured JSON returned by the tool call and compare only public contract fields; do not rely on private `__figmaRepl` metadata or raw upstream submit URLs.
+
 ## Lazy Tool Loading
 
-Figma MCP tools may be deferred and unavailable until discovered. Do not assume `figma_repl_prepare_task`, `figma_repl_run_script_file`, or related tools are already visible. Before any Figma MCP action, call `tool_search` with a query containing `figma` and `figma_repl`; Figma tool names intentionally include `figma`, so this should expose the relevant tool family. Use a broader query such as `figma MCP use_figma get node selection` only if the first search does not expose the needed tools.
+Figma MCP tools may be deferred and unavailable until discovered. Do not assume `figma_repl_prepare_task`, `figma_repl_run_script_file`, or related tools are already visible. Before any Figma MCP action, call `tool_search` with an exact-prefix query containing `figma_repl_mcp` and `figma_repl_`; Figma tool names intentionally include this prefix, so it should expose the relevant tool family. Use a broader query such as `figma MCP use_figma get node selection` only if the first search does not expose the needed tools.
 
 ## Primary File Workflow
 
