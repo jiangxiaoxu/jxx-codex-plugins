@@ -1472,7 +1472,6 @@ async function executeRunScriptFile(
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const scriptMetadata = {
     ...compiled.metadata,
-    diagnosticsCount: diagnostics.length,
     compiledScriptBytes: Buffer.byteLength(wrappedScript, "utf8"),
   };
   const responseScript = responseScriptMetadata(scriptMetadata);

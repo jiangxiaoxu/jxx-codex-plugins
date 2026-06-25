@@ -70,7 +70,6 @@ export interface CompiledFigmaReplScriptFile {
     helperUsage: FigmaReplScriptHelperUsageReport;
     targetPageId?: string;
     expectedSurface?: FigmaReplSurface;
-    diagnosticsCount: number;
   };
 }
 
@@ -113,7 +112,6 @@ export function compileFigmaReplScriptFile(options: {
       helperUsage: helperSelection.helperUsage,
       targetPageId: options.targetPageId,
       expectedSurface: options.expectedSurface,
-      diagnosticsCount: diagnostics.length,
     },
   };
 }
