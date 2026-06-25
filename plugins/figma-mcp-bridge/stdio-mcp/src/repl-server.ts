@@ -41,6 +41,7 @@ import {
   FIGMA_REPL_QUERY_SEARCH_ANCHORS,
   chooseApiCardsForIntent,
   searchApiCards,
+  type FigmaReplApiCard,
   uniqueStrings,
 } from "./repl-guidance-catalog.js";
 import {
@@ -525,7 +526,7 @@ export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {
   recommendedCards?: string[];
   queryHints?: string[];
   apiSymbols?: string[];
-  avoid?: string[];
+  guardrails?: string[];
   suggestions?: Record<string, unknown>;
 }
 
@@ -1033,8 +1034,20 @@ export function createFigmaReplMcpServer(
       resources: [
         {
           uri: "figma-repl://capabilities",
-          name: "Figma REPL aggregate capabilities",
-          description: "Read first to choose the Figma REPL facade path, available tools, workflow resources, and lookup strategy.",
+          name: "Figma REPL capability router",
+          description: "Read first to choose the Figma REPL facade path, core tools, workflow guide, and lookup strategy.",
+          mimeType: "application/json",
+        },
+        {
+          uri: "figma-repl://guide",
+          name: "Figma REPL workflow guide",
+          description: "Read when you need the continuous workflow sequence for scripts, assets, inspection, QA, design-system wrappers, and upstream escape hatches.",
+          mimeType: "application/json",
+        },
+        {
+          uri: "figma-repl://lookup-index",
+          name: "Figma REPL lookup index",
+          description: "Read when you need to choose between figma_repl_guidance and figma_repl_lookup without loading reference bodies.",
           mimeType: "application/json",
         },
         {
@@ -2739,13 +2752,13 @@ async function handleGuidance(
   const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
   const payload = {
     ok: true,
-    cards,
+    cards: cards.map(createPublicApiCardPayload),
     catalogSize: FIGMA_REPL_API_CARDS.length,
-    guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, avoid, and pitfalls for .figma.js file workflows.",
+    guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, guardrails, and pitfalls for .figma.js file workflows.",
     recommendedCards: cards.map((card) => card.id),
     queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
     apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
-    avoid: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
     suggestions,
   };
   return makeJsonToolResult(payload);
@@ -5889,11 +5902,11 @@ function createIntentSuggestions(
   const cards = chooseApiCardsForIntent(intent, maxCards);
   const recommendedCards = cards.map((card) => card.id);
   return {
-    cards,
+    cards: cards.map(createPublicApiCardPayload),
     recommendedCards,
     queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
     apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
-    avoid: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
     matchType: cards.length > 0 ? "api-card" : "bm25",
     confidence: cards.length > 0 ? "high" : "medium",
     referenceContext,
@@ -5906,6 +5919,14 @@ function createIntentSuggestions(
       "figma_repl_inspect",
     ],
     referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_repl_lookup kind=api query when exact API details are still missing.",
+  };
+}
+
+function createPublicApiCardPayload(card: FigmaReplApiCard): Record<string, unknown> {
+  const { avoid, ...publicCard } = card;
+  return {
+    ...publicCard,
+    guardrails: avoid,
   };
 }
 
@@ -6127,227 +6148,103 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
 
 function createCapabilitiesPayload(): Record<string, unknown> {
   return {
-    guide: {
-      purpose: "Unified Figma-facing MCP facade for agents after OAuth registration. Stay inside figma_repl_mcp; it keeps local session metadata/handles and can bridge to upstream Figma MCP tools through explicit REPL tools.",
-      preferredFlow: [
-        "Read figma-repl://capabilities to choose the facade path",
-        "figma_repl_prepare_task with file and taskName for repairable .figma.js workspaces; cwd is an optional override",
-        "figma_repl_guidance with mode=plan for workflow planning or mode=guidance/card/catalog for compact local API cards",
-        "figma_repl_lookup only when exact docs/API snippets are still needed after guidance",
-        "figma_repl_get_metadata for broad recursive layer-tree discovery before detailed style/fill/text inspection",
-        "figma_repl_search_design_system, figma_repl_get_libraries, and figma_repl_get_variable_defs for official design-system context through dedicated thin wrappers",
-        "figma_repl_run_script_file with inputFile for primary .figma.js workflows, automatic preflight, debug files, and line-aware repair",
-        "figma_repl_inspect with mode=inspect, mode=style, or mode=validate for targeted summaries, visual-token audits, and handle validation before mutation and after generated work",
-        "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through official upload_assets",
-        "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
-        "figma_repl_capture_node for final visual QA captures saved as local PNG files",
-        "figma_repl_open only for lightweight session/context binding when a prepared task is not needed; start new file tasks with figma_repl_prepare_task",
-        "figma_repl_run_task_plan only for repeatable multi-step plans",
-        "figma_repl_eval only for small ephemeral calls; prefer run_script_file for repairable work",
-        "figma_repl_call_upstream_tool only when a task explicitly needs an uncovered upstream Figma MCP tool",
-      ],
-      handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
-      upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs.",
-      responseShape: "Structured-first payloads with minimal session summaries and no session.history. Ordinary tool session summaries contain only id, fileKey, surface, sessionDir when present, and handleChanges. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. figma-repl://sessions lists only id, fileKey, surface, and sessionDir when present; figma-repl://sessions/{id} returns compact id/fileKey/surface, full handles, optional page state, and optional compact workspace sessionDir. The narrow handle-only map remains available through figma-repl://sessions/{id}/handles. Upstream-backed eval/script/call_upstream/design-system wrapper tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. figma_repl_search_design_system, figma_repl_get_libraries, and figma_repl_get_variable_defs are thin wrappers over official upstream tools and preserve the generic upstream envelope. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests expose compact submitUrl POST evidence in assets[].upload without raw submit URLs; asset manifests and download_assets write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
-      statusSemantics: {
-        topLevelOk: "Top-level ok reports local wrapper/tool completion.",
-        upstreamOk: "upstream.ok reports effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false; false results include upstream.result.source as business when JSON supplied ok:false, or call for failures without a consumed result status.",
-        upstreamResult: "upstream.result contains public business/error details with consumed top-level ok removed. Bridge-internal __figmaRepl metadata is used only for session updates and is not exposed in public upstream results or sidecars.",
-      },
-    },
-    toolTiers: createToolTierPayload(),
-    patterns: {
-      text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
-      createUi: "Use $.create for common Design nodes and native Plugin API calls for advanced construction.",
-      transaction: "Run the same .figma.js file through figma_repl_run_script_file; it preflights diagnostics before upstream execution. Add $.checkpoint calls before/after meaningful batches to return handle and node summaries.",
-      clone: "Use $.cloneNodeTree to copy a node to the side; it clones outer-to-inner and preserves instance subtrees whole when children cannot be rebuilt.",
-      generatedFrame: "Use $.findFreeSlot or $.placeNode for predictable non-overlapping placement and $.replaceGeneratedFrame when replacing a guarded generated FRAME.",
-      designSystem: "Use native Plugin API calls in .figma.js for variables/styles/components; use figma_repl_search_design_system, figma_repl_get_libraries, and figma_repl_get_variable_defs when official design-system context is needed.",
-      query: "Use figma_repl_guidance first with BM25-style keyword queries; it returns recommendedCards, queryHints, apiSymbols, avoid, and compact referenceContext. Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
-      pages: "Use targetPageId or one setCurrentPageAsync call; direct figma.currentPage assignment is blocked.",
-      selection: "Use $.select instead of direct figma.currentPage.selection access in repairable scripts.",
-      styleAudit: "Use figma_repl_inspect mode=style for compact visual-token audits before asking agents to match a layer style.",
-      metadata: "Use figma_repl_get_metadata for broad recursive layer-tree discovery; it returns a compact JSON node tree inline when small and writes oversized trees to outputFiles.metadataFile.",
-      validation: "Use figma_repl_inspect mode=validate before mutating cached handles from an earlier call.",
-    },
-    safety: {
-      fatalDiagnosticsBlock: true,
-      warningsReturnWithResult: true,
-      allowDangerousOperations: "Bypasses only dynamic/destructive guards. It does not bypass API contract, surface, or read-mode guards.",
-      diagnosticShape: "{ code, severity, message, suggestion, docsHint }",
-      upstreamFailureShape: "{ ok:false, upstreamError:{ message, code?, details? } }; script/eval/debug tools may also include primaryFix",
-    },
-    scriptWorkflow: {
-      primaryTool: "figma_repl_run_script_file",
-      scriptShape: "Write an async function body in a local .figma.js file. The runner injects Figma REPL prelude plus $ helpers before upstream use_figma execution.",
-      requiredArguments: ["inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
-      recommendedCalls: {
-        execute: { sessionId: "<session>", inputFile: "<task>.figma.js", strict: true, surface: "design" },
-      },
-      advancedArguments: [
-        "scriptPath",
-        "inlineResultLimit",
-      ],
-      avoidUnless: {
-        scriptPath: "Use only for absolute-path escape hatches outside an initialized workspace; prefer inputFile.",
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits.",
-      },
-      options: {
-        scriptPath: "Advanced absolute-path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
-        inputFile: "Recommended file name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
-        strict: "Promote warnings to fatal diagnostics.",
-        surface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
-        targetPageId: "Switch once to a known page before the script body runs.",
-        allowDangerousOperations: "Bypasses only dynamic/destructive guards after exact file review.",
-        inlineResultLimit: "Advanced payload-size control in bytes for large inline fields. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; omitted upstream fields stay available in outputFiles.upstreamFile.",
-      },
-      responseExamples: {
-        jsonSuccess: { ok: true, phase: "execute", executed: true, upstream: { kind: "json", ok: true, result: {} } },
-        preflightBlocked: { ok: false, phase: "preflight", executed: false, diagnostics: [{ code: "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT", severity: "fatal" }] },
-        businessOkFalse: {
-          ok: true,
-          phase: "execute",
-          executed: true,
-          upstream: {
-            kind: "json",
-            ok: false,
-            result: {
-              source: "business",
-              reason: "business validation evidence only",
-            },
-          },
-        },
-        textOutput: { ok: true, phase: "execute", executed: true, upstream: { kind: "text", ok: true, text: "..." } },
-        inlinePayloadOmitted: {
-          ok: true,
-          phase: "execute",
-          executed: true,
-          upstream: { kind: "json", ok: true },
-          inlineResultLimit: {
-            limit: 4000,
-            limitBytes: 4000,
-            limitHuman: "4 KB",
-            omitted: [{ field: "upstream.result", bytes: 12000, limit: 4000, bytesHuman: "12 KB", limitHuman: "4 KB" }],
-          },
-        },
-      },
-      helpers: createEvalHelperDescriptionsPayload(),
-    },
-    toolArgumentGuidance: createToolArgumentGuidancePayload(),
-    fileWorkflow: createFileWorkflowPayload(),
-    workflowTools: {
-      skillReference: "figma-repl-workflow.md",
-      designSystem: {
-        tools: ["figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs"],
-        purpose: "Call official design-system upstream tools through first-class thin wrappers while keeping the generic upstream envelope.",
-        targetShape: "get_variable_defs target accepts a raw node id, node URL, local handle like $button, or { handle: \"$button\" }.",
-        defaults: "search_design_system and get_libraries resolve fileKey from file or session context. get_variable_defs resolves fileKey plus nodeId and defaults clientLanguages/clientFrameworks to unknown.",
-        result: "Inline results preserve upstream.result or upstream.text with upstream.ok, minimal session summary, and outputFiles sidecars only for failures or inline omissions.",
-      },
-      assetManifest: {
-        tool: "figma_repl_apply_asset_manifest",
-        purpose: "Apply local generated image files to pre-created target nodes through official upstream upload_assets.",
-        assetShape: "{ path, target, nodeUrl?, name?, metadata? }",
-        defaults: "Requires advertised official upload_assets, resolves target handles, and sends fileKey/count/nodeId/scaleMode upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
-        result: "Inline assets are compact business results: ok, path, targetNodeId, handle, name, upload, validation, upstreamError. upload is compact POST evidence such as status, bytes, imageHash, and placedOnNodeId; raw submit URLs stay out of public success results. Failure-only debug files write a minimal envelope with counts, failures, and assetDetails with per-asset upstream envelopes, upload details, toolName, primaryFix, timestamps, and arguments.",
-        validation: "validateTargets defaults on; when upstream eval is available, target nodes are checked for IMAGE fills after upload. Missing or incomplete validation records make the workflow fail with outputFiles.debugFile instead of silently succeeding.",
-      },
-      downloadAssets: {
-        tool: "figma_repl_download_assets",
-        purpose: "Call official upstream download_assets for one or more Figma targets and save exported renders plus raw/source image URLs locally.",
-        targetShape: "{ target, name?, defaultFormat?, defaultScale? }; target accepts a node id, node URL, local handle like $hero, or { handle: \"$hero\" }.",
-        defaults: "Use targets for inline calls or manifestPath pointing to { targets: [...] }. outputDir defaults to <slug>.downloads in initialized workspaces.",
-        result: "Inline targets are compact business results: ok, targetNodeId, handle, name, outputDir, downloaded file pointers, upstreamError, and downloadError. Failure-only debug files write a minimal envelope with counts, failures, and targetDetails with per-target upstream envelopes, arguments, discovered URLs, toolName, primaryFix, timestamps, and download details.",
-      },
-      capture: {
-        tool: "figma_repl_capture_node",
-        purpose: "Call official upstream get_screenshot and save one PNG screenshot to imageFile for final visual QA.",
-        defaulting: "Requires advertised official get_screenshot and sends { fileKey, nodeId } upstream. If the official contract drifts, use figma_repl_call_upstream_tool for explicit upstream debugging.",
-        metadata: "Returns imageFile on success plus bytes, width, and height. Failures return upstreamError; use figma_repl_call_upstream_tool for full upstream debugging.",
-      },
-      taskPlan: {
-        tool: "figma_repl_run_task_plan",
-        stepShape: "{ id?, type?, args? }; put all tool-specific inputs inside args.",
-        stepTypes: ["script-file", "asset-manifest", "upload_assets", "download-assets", "download_assets", "screenshot-capture", "upstream-tool"],
-        defaultFailureMode: "stopOnFailure=true",
-        references: "Later step arguments can reference prior outputs with {{outputs.stepId.imageFile}} for capture steps, {{outputs.stepId.debugFile.path}} for debug file-pointer outputs, or {{steps.stepId.imageFile}} for direct capture paths. Upstream JSON is available at {{steps.stepId.upstream.result}}, and downloads expose {{steps.stepId.downloadOutputDir}} plus {{steps.stepId.downloadTargets}}.",
-        result: "Writes a minimal plan result/debug envelope with stopped/step/failure counts, optional failures, and stepDetails. The plan file is debug/audit-only and does not copy inline business arrays. Inline responses still return per-step status summaries plus outputReferences. In initialized workspaces, missing download outputs default to <step-id>.downloads plus <step-id>.png for image captures.",
-      },
-    },
-    queryStrategy: {
-      tool: "figma_repl_guidance",
-      skillReference: "figma-repl-guidance-and-lookup.md",
-      searchAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
-      flow: [
-        "Use query for compact BM25-style keywords, not natural-language task prose.",
-        "Use recommendedCards to choose compact cards before broad docs lookup.",
-        "Use queryHints as narrower follow-up searches when card guidance is insufficient.",
-        "Use apiSymbols for exact figma_repl_lookup kind=api calls.",
-        "Treat avoid as task-specific guardrails before writing .figma.js.",
-      ],
-      commonCards: FIGMA_REPL_API_CARDS.map((card) => card.id),
-      outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
-    },
-    apiCards: {
-      tool: "figma_repl_guidance",
-      skillReference: "figma-repl-guidance-and-lookup.md",
-      cards: FIGMA_REPL_API_CARDS.map((card) => ({
-        id: card.id,
-        title: card.title,
-        intents: card.intents,
-        surface: card.surface,
-        queryHints: card.queryHints,
-        apiSymbols: card.apiSymbols,
-      })),
-    },
-    intents: {
-      tool: "figma_repl_guidance",
-      skillReference: "figma-repl-guidance-and-lookup.md",
-      examples: ["create responsive card UI", "update text styles", "make component variants", "validate stale handles"],
-      returns: ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"],
-    },
-    facadeRoutingDelegationBoundaries: [
-      "Keep the agent on figma_repl_mcp; use figma_repl_call_upstream_tool only for explicit uncovered upstream-tool calls after reading figma-repl://upstream-tools/{name}.",
-      "For small generated local PNG/JPEG assets in .figma.js, use $.imageAsset({ base64, parent, size, position, as }); for large assets, create target rectangles then route through an upstream official upload_assets workflow when available.",
-      "Do not use PluginData APIs for agent state; use local session handles or a dedicated storage workflow.",
-      "Use compact docs/API lookup as the exposed documentation surface; bundled corpus files stay internal.",
+    purpose: "Routing manifest for the Figma REPL MCP facade. Stay on figma_repl_mcp for normal work; it keeps local sessions, handles, workspace files, diagnostics, and structured tool results while upstream execution still goes through official Figma MCP tools.",
+    defaultFlow: [
+      "Use figma_repl_prepare_task with file, taskName, and surface for repairable .figma.js work.",
+      "Use figma_repl_guidance with compact keywords before writing scripts; use figma_repl_lookup only for exact docs/API snippets.",
+      "Run figma_repl_run_script_file with inputFile and strict=true; repair local diagnostics and rerun the same file.",
+      "Use inspect/metadata/capture/design-system/asset tools as workflow add-ons, not as replacements for the file-script path.",
     ],
-    docsLookup: {
-      lookupTool: "figma_repl_lookup",
-      guidanceTool: "figma_repl_guidance",
-      skillReference: "figma-repl-guidance-and-lookup.md",
-      ranking: "Internal corpus files are chunked by Markdown headings/windows or d.ts symbol-ish blocks, then ranked with BM25; API lookup boosts exact symbols.",
-      guardrail: "All lookup output is capped and confidence-labeled; bundled corpus files are not returned as agent-readable documents.",
+    toolSelection: {
+      normalPath: ["figma_repl_prepare_task", "figma_repl_guidance", "figma_repl_run_script_file", "figma_repl_inspect", "figma_repl_capture_node"],
+      contextAndLookup: ["figma_repl_get_metadata", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_lookup"],
+      advancedEscapeHatches: ["figma_repl_eval", "figma_repl_call_upstream_tool", "figma_repl_run_task_plan"],
     },
-    examples: [
-      {
-        title: "Run a repairable text edit",
-        tool: "figma_repl_run_script_file",
-        arguments: {
-          title: "Update title text",
-          sessionId: "main",
-          inputFile: "update-title.figma.js",
-          strict: true,
-        },
-      },
-      {
-        title: "Inspect and cache one node in a script",
-        tool: "figma_repl_run_script_file",
-        scriptBody: "const primaryButton = await $.find({ name: 'Primary button', type: 'FRAME', as: '$primaryButton' });\nreturn await $.checkpoint('found-primary-button', [primaryButton]);",
-      },
-      {
-        title: "Create a simple UI section in a script",
-        tool: "figma_repl_run_script_file",
-        scriptBody: "const section = await $.create({ type: 'FRAME', as: '$section', name: 'Settings section', size: { width: 360, height: 160 }, layout: { layoutMode: 'VERTICAL', itemSpacing: 12 } });\nawait $.text({ parent: section, as: '$sectionTitle', text: 'Settings', font: { family: 'Inter', style: 'Bold', size: 20 } });\nreturn await $.checkpoint('section-created', ['$section'], { depth: 1 });",
-      },
+    contractNotes: {
+      scriptPreflight: "figma_repl_run_script_file always runs local diagnostics/compile/strict checks first; phase=preflight means executed=false and upstream was not called, phase=execute means upstream execution was attempted.",
+      responseShape: "Tools return structuredContent-first JSON with empty content, minimal session summaries, diagnostics arrays, and outputFiles pointers for generated debug/sidecar files.",
+      upstreamEnvelope: "upstream.ok is the effective upstream/business status; consumed top-level ok fields are removed from upstream.result and bridge-internal metadata is not public.",
+      referenceOwnership: "Static resources are routing/workflow docs only. Helper, API, pattern, safety, and example details belong to figma_repl_guidance, figma_repl_lookup, and BM25 snippets.",
+    },
+    resources: {
+      guide: "figma-repl://guide",
+      lookupIndex: "figma-repl://lookup-index",
+      sessions: "figma-repl://sessions",
+      upstreamTools: "figma-repl://upstream-tools",
+    },
+    lookupStrategy: {
+      guidanceTool: "figma_repl_guidance",
+      lookupTool: "figma_repl_lookup",
+      outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
+      queryAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
+    },
+  };
+}
+
+function createGuidePayload(): Record<string, unknown> {
+  return {
+    purpose: "Continuous workflow guide for common figma_repl_mcp tasks. For exact helper/API/reference details, use figma_repl_guidance or figma_repl_lookup instead of static resources.",
+    scriptFileWorkflow: [
+      "Start non-trivial work with figma_repl_prepare_task so the session has file context and a local .figma.js workspace.",
+      "Write an async script body using static $ helper references and native Figma Plugin API calls. Dynamic $ helper lookup, aliasing $, object rest destructuring of $, and local $ declarations are blocked because helper injection must be statically knowable.",
+      "Run figma_repl_run_script_file with inputFile. The runner compiles and preflights before upstream use_figma execution; fatal preflight diagnostics return local line-aware errors without calling upstream.",
+      "Use $.checkpoint and stable handles such as $hero to make repair loops compact. Read figma-repl://sessions/{id}/handles when only the handle map is needed.",
+    ],
+    evalWorkflow: [
+      "Use figma_repl_eval only for small ephemeral calls where a local file would add overhead.",
+      "Move repairable, multi-step, asset-heavy, or user-visible mutations into .figma.js files so diagnostics and reruns remain stable.",
+    ],
+    assetWorkflow: [
+      "For small generated PNG/JPEG payloads, $.imageAsset can create or update image-fill rectangles from base64 or byte arrays.",
+      "For large local assets, create target rectangles in script, then use figma_repl_apply_asset_manifest so official upload_assets can fill targets from files.",
+      "Use figma_repl_download_assets when official download_assets should export renders or raw/source images to local folders.",
+    ],
+    inspectionAndQa: [
+      "Use figma_repl_get_metadata for broad recursive layer-tree discovery, then figma_repl_inspect for targeted node/style/handle validation.",
+      "Use figma_repl_capture_node for final visual QA because it writes a local PNG path in structuredContent.",
+    ],
+    designSystem: [
+      "Use native Plugin API calls in .figma.js for local variables, styles, components, and bindings.",
+      "Use figma_repl_search_design_system, figma_repl_get_libraries, and figma_repl_get_variable_defs when official design-system context is needed through first-class wrappers.",
+    ],
+    upstreamEscapeHatch: [
+      "Use figma_repl_call_upstream_tool only for explicit uncovered official upstream tools.",
+      "Before using it, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs.",
+    ],
+    responseContract: [
+      "Top-level ok reports local wrapper completion. upstream.ok reports effective upstream/business success when an upstream envelope is present.",
+      "Large inline fields may be omitted with inlineResultLimit metadata and remain available through outputFiles sidecars.",
+      "Debug JSON files are generated on demand for failures, diagnostics, inline omissions, and task-plan audit output; clean success avoids routine JSON file writes.",
     ],
   };
 }
 
+function createLookupIndexPayload(): Record<string, unknown> {
+  return {
+    purpose: "Index for reference discovery. Static resources do not duplicate helper/API/pattern/safety bodies; search them through guidance and lookup.",
+    guidance: {
+      tool: "figma_repl_guidance",
+      useFor: ["workflow planning", "curated API cards", "query hints", "API symbol suggestions", "task guardrails"],
+      recommendedQueryStyle: "compact BM25 keywords, for example text font loadFontAsync or components variants properties",
+      outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
+      commonAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
+      commonCards: FIGMA_REPL_API_CARDS.map((card) => card.id),
+    },
+    lookup: {
+      tool: "figma_repl_lookup",
+      docs: "Use kind=docs with query for capped workflow snippets.",
+      api: "Use kind=api with symbol for exact Plugin API snippets.",
+      sizeControls: ["maxResults", "maxSnippetLines"],
+    },
+    ownership: "Bundled corpus files remain internal lookup data. Agent-facing reference details should come from guidance cards, BM25 snippets, tool schemas, and output schemas.",
+  };
+}
+
 function readStaticReplResource(uri: string): Record<string, unknown> | undefined {
-  const payload = createCapabilitiesPayload();
   const resources: Record<string, unknown> = {
-    "figma-repl://capabilities": payload,
+    "figma-repl://capabilities": createCapabilitiesPayload(),
+    "figma-repl://guide": createGuidePayload(),
+    "figma-repl://lookup-index": createLookupIndexPayload(),
   };
   const content = resources[uri];
   if (content === undefined) {

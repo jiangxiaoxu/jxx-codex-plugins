@@ -67,20 +67,20 @@ Local `figma_repl_*` tools return a fixed structured shape. Top-level `ok` repor
 
 Agents should use `figma_repl_mcp` first:
 
-1. read `figma-repl://capabilities`
+1. read `figma-repl://capabilities` and `figma-repl://guide` when workflow sequencing is needed
 2. `figma_repl_prepare_task({ file, taskName, surface })`
 3. edit local `.figma.js`
 4. `figma_repl_run_script_file({ sessionId, inputFile, strict: true, surface })`; preflight diagnostics run before upstream execution
 5. `figma_repl_search_design_system`, `figma_repl_get_libraries`, or `figma_repl_get_variable_defs` when official design-system context is needed
 6. `figma_repl_apply_asset_manifest({ sessionId, manifestPath })`, `figma_repl_capture_node({ sessionId, target, imageFile })`, or `figma_repl_run_task_plan({ sessionId, planPath })` when needed
 
-In workspace workflows, prefer `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath`. `taskName` is a slug-style workspace/task name such as `settings-panel-polish`. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, `scriptPath`, upstream overrides, and `refresh` are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
+In workspace workflows, prefer `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath`. `taskName` is a slug-style workspace/task name such as `settings-panel-polish`. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, `scriptPath`, upstream overrides, and `refresh` are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Use tool input schemas for argument details.
 
 Asset manifests validate target IMAGE fills after upload when upstream eval is available. Successful submitUrl POSTs expose compact `assets[].upload` evidence such as `imageHash` and `placedOnNodeId` without returning raw submit URLs. If default validation cannot confirm every target record, `figma_repl_apply_asset_manifest` fails the workflow and writes details to `outputFiles.debugFile`; use `validateTargets: false` only when validation is intentionally skipped.
 
 For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 
-The MCP resource surface is intentionally small: `figma-repl://capabilities`, `figma-repl://sessions`, session detail resources, session handle-map resources, `figma-repl://upstream-tools`, and upstream tool detail resources. Static workflow, guidance, and safety notes live in the `figma-router` skill references; common task routing should use `figma_repl_guidance` and exact snippets should use `figma_repl_lookup`.
+The MCP resource surface is intentionally small: `figma-repl://capabilities`, `figma-repl://guide`, `figma-repl://lookup-index`, `figma-repl://sessions`, session detail resources, session handle-map resources, `figma-repl://upstream-tools`, and upstream tool detail resources. `capabilities` is the short routing manifest, `guide` is the workflow sequence, and `lookup-index` points to `figma_repl_guidance` / `figma_repl_lookup`; common task routing and reference details should use those tools instead of static duplicated docs.
 
 Programmatic Node usage with an explicit OAuth cache is for local package scripts and debugging. Use `figma_repl_mcp` for normal live Figma agent work:
 

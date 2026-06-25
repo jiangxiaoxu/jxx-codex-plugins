@@ -30,7 +30,7 @@ export const FIGMA_REPL_QUERY_OUTPUT_FIELDS = [
   "recommendedCards",
   "queryHints",
   "apiSymbols",
-  "avoid",
+  "guardrails",
   "referenceContext",
 ];
 

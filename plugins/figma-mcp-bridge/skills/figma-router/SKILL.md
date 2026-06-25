@@ -11,7 +11,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 
 1. If the user asks for login, auth setup, credential refresh, or auth repair, run the Figma MCP Login flow below.
 2. Before any Figma MCP action, expose deferred Figma tools through `tool_search` with a query such as `figma_repl_mcp figma_repl_ figma`.
-3. After Figma tools are available, read `figma-repl://capabilities`, then use the file workflow.
+3. After Figma tools are available, read `figma-repl://capabilities`, then `figma-repl://guide` when workflow sequencing is needed.
 4. If direct `figma_repl_*` tools are not installed in the active Codex environment, do not use the `./node-repl` no-client default for live Figma work; use `figma_repl_mcp` after plugin reload, or use package-local `createFigmaReplClient` only with an explicit custom upstream `client`.
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, then run it with automatic preflight and write results to local files.
 6. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
@@ -32,7 +32,7 @@ Recommended `node_repl` debugging sequence:
 1. Use `figma_repl_mcp` directly first when only live Figma work is needed.
 2. Use `node_repl` only when comparing package-local behavior, installed-cache behavior, or response-shape parsing.
 3. From `node_repl`, start a child MCP process for `dist/repl-stdio-cli.js`, connect with an explicit stdio client, then call `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, or `figma_repl_apply_asset_manifest` through that custom client.
-4. Before tool calls, use the same stdio client to call `listResources()` and `readResource({ uri: "figma-repl://capabilities" })`; read `figma-repl://upstream-tools` only when an explicit upstream-only debug task depends on it.
+4. Before tool calls, use the same stdio client to call `listResources()` and `readResource({ uri: "figma-repl://capabilities" })`; read `figma-repl://guide` for workflow sequencing and `figma-repl://upstream-tools` only when an explicit upstream-only debug task depends on it.
 5. If `figma-repl://capabilities` cannot be read from the child MCP process, treat the `node_repl` debug environment as incomplete and fix the stdio client/session wiring before drawing conclusions from tool output.
 6. For parser-only tests, skip live Figma and inject a fake/custom client into `createFigmaReplClient({ client })`; provide fake `listResources()` / `readResource()` responses when the code under test needs resource-guided behavior.
 7. Capture the structured JSON returned by the tool call and compare only public contract fields; do not rely on private `__figmaRepl` metadata or raw upstream submit URLs.
@@ -51,7 +51,7 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 - For visual QA, call `figma_repl_capture_node({ sessionId, target, imageFile })` and inspect the local image file.
 - For repeatable multi-step workflows, use `figma_repl_run_task_plan({ sessionId, planPath })`.
 
-Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `file`, `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath` defaults after workspace initialization. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, absolute `scriptPath`, and upstream overrides are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
+Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `file`, `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath` defaults after workspace initialization. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, absolute `scriptPath`, and upstream overrides are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Use tool input schemas for argument details.
 
 ## Script Contract
 
@@ -68,7 +68,9 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls shoul
 
 ## Lookup Order
 
-- Use `figma-repl://capabilities` for aggregate self-explaining runtime guidance.
+- Use `figma-repl://capabilities` as the short routing manifest.
+- Use `figma-repl://guide` for continuous workflow sequencing.
+- Use `figma-repl://lookup-index` to choose between `figma_repl_guidance` and `figma_repl_lookup`.
 - Use `figma_repl_guidance` for BM25-style query-to-helper routing and curated short cards.
 - Use `figma_repl_lookup({ kind: "docs" })` for BM25-ranked workflow snippets.
 - Use `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
@@ -78,9 +80,9 @@ Use `figma_repl_call_upstream_tool` only when a required official capability is 
 
 ## Query Strategy
 
-- For planning/search, call `figma_repl_guidance({ query })` first with compact keyword queries such as `text font loadFontAsync` or `components variants properties`, then use its `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext` fields before writing `.figma.js`.
+- For planning/search, call `figma_repl_guidance({ query })` first with compact keyword queries such as `text font loadFontAsync` or `components variants properties`, then use its `recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `referenceContext` fields before writing `.figma.js`.
 - Use `figma_repl_guidance` for compact patterns, then use `apiSymbols` with `figma_repl_lookup({ kind: "api" })` only when exact Plugin API details are still missing.
-- Treat `avoid` as task-specific guardrails, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
+- Treat `guardrails` as task-specific risk notes, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
 - Prefer these anchors when narrowing a query: text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, FigJam/Slides.
 
 ## Figma MCP Login
