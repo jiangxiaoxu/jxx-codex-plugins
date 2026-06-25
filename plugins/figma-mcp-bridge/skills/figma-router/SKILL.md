@@ -15,7 +15,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 4. If direct `figma_repl_*` tools are not installed in the active Codex environment, do not use the `./node-repl` no-client default for live Figma work; use `figma_repl_mcp` after plugin reload, or use package-local `createFigmaReplClient` only with an explicit custom upstream `client`.
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
 6. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-7. Local `figma_repl_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.result` or text from `upstream.text`, and use `outputFiles.debugFile` for generated JSON debug/result files. Use `figma_repl_get_metadata` for broad layer-tree discovery; it converts upstream XML to compact JSON, returns small trees inline, and writes oversized trees to `outputFiles.metadataFile`.
+7. Local `figma_repl_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.result` or text from `upstream.text`, and use `outputFiles.debugFile` for generated JSON debug/result files. Use `figma_repl_get_metadata` for broad layer-tree discovery; it converts upstream XML to compact JSON, returns small trees inline, and writes oversized trees to `outputFiles.metadataFile`. Use `figma_repl_search_design_system`, `figma_repl_get_libraries`, and `figma_repl_get_variable_defs` for official design-system context.
 8. `createFigmaReplClient` mirrors the same result shape in Node: read `result.upstream.result`, compact asset entries, generated debug files, and capture `imageFile` on success.
 
 ## Node REPL Route
@@ -60,7 +60,7 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls shoul
 - Keep each transaction small and repairable. Use `dryRun: true`, then fix diagnostics by file line before executing.
 - Return compact JSON with changed node ids, handles, and validation notes. Use generated `outputFiles.debugFile` pointers for failure or omitted-payload debug JSON instead of relying on inline MCP output.
 - Read parsed upstream JSON from `upstream.result`; if upstream output is not JSON, read `upstream.text`. Debug file pointers are reported in `outputFiles.debugFile`.
-- Ordinary tool responses return only a minimal session summary with `handleChanges`; read `figma-repl://sessions` for the compact list, `figma-repl://sessions/{id}` for compact detail with handles, and `figma-repl://sessions/{id}/handles` when only the remembered handle map is needed.
+- Ordinary tool responses return only a minimal session summary with `handleChanges` and optional top-level `sessionDir`; read `figma-repl://sessions` for the compact list, `figma-repl://sessions/{id}` for compact detail with handles, and `figma-repl://sessions/{id}/handles` when only the remembered handle map is needed.
 - Common helpers: `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`.
 - Prefer `$.select` over direct selection mutation. Use `figma_repl_inspect({ mode: "validate" })` before reusing old handles.
 - For generated assets, use `$.imageAsset` only for small inline PNG/JPEG data; for larger local assets, create target rectangles and use `figma_repl_apply_asset_manifest`.
@@ -75,7 +75,7 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls shoul
 - Use `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 - For deeper static workflow, lookup, or safety notes, read `references/figma-repl-workflow.md`, `references/figma-repl-guidance-and-lookup.md`, or `references/figma-repl-safety.md`.
 
-Use `figma_repl_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow. Prefer `figma_repl_get_metadata` over direct upstream `get_metadata` calls. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
+Use `figma_repl_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers. Prefer `figma_repl_get_metadata`, `figma_repl_search_design_system`, `figma_repl_get_libraries`, and `figma_repl_get_variable_defs` over direct upstream calls for those official tools. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
 
 ## Query Strategy
 

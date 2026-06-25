@@ -125,6 +125,49 @@ export interface FigmaReplGetMetadataArguments {
   clientFrameworks?: string;
 }
 
+export interface FigmaReplSearchDesignSystemArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  file?: string;
+  cwd?: string;
+  dirName?: string;
+  query: string;
+  disableCodeConnect?: boolean;
+  includeComponents?: boolean;
+  includeVariables?: boolean;
+  includeStyles?: boolean;
+  includeLibraryKeys?: string[];
+  refresh?: boolean;
+  inlineResultLimit?: number;
+}
+
+export interface FigmaReplGetLibrariesArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  file?: string;
+  cwd?: string;
+  dirName?: string;
+  offset?: number;
+  refresh?: boolean;
+  inlineResultLimit?: number;
+}
+
+export interface FigmaReplGetVariableDefsArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  file?: string;
+  cwd?: string;
+  dirName?: string;
+  target?: unknown;
+  refresh?: boolean;
+  inlineResultLimit?: number;
+  clientLanguages?: string;
+  clientFrameworks?: string;
+}
+
 export interface FigmaReplLookupArguments {
   [key: string]: unknown;
   title?: string;
@@ -403,6 +446,57 @@ export function asGetMetadataArgs(args: unknown): FigmaReplGetMetadataArguments 
   return record;
 }
 
+export function asSearchDesignSystemArgs(args: unknown): FigmaReplSearchDesignSystemArguments {
+  const record = parseToolArgs<FigmaReplSearchDesignSystemArguments>(args);
+  assertRemovedFileReferenceFields(record);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "file",
+    "cwd",
+    "dirName",
+    "query",
+  ]);
+  assertOptionalBooleanFields(record, [
+    "disableCodeConnect",
+    "includeComponents",
+    "includeVariables",
+    "includeStyles",
+  ]);
+  assertOptionalStringArray(record, "includeLibraryKeys");
+  return record;
+}
+
+export function asGetLibrariesArgs(args: unknown): FigmaReplGetLibrariesArguments {
+  const record = parseToolArgs<FigmaReplGetLibrariesArguments>(args);
+  assertRemovedFileReferenceFields(record);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "file",
+    "cwd",
+    "dirName",
+  ]);
+  assertOptionalNonNegativeInteger(record, "offset");
+  return record;
+}
+
+export function asGetVariableDefsArgs(args: unknown): FigmaReplGetVariableDefsArguments {
+  const record = parseToolArgs<FigmaReplGetVariableDefsArguments>(args);
+  assertRemovedFileReferenceFields(record);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "file",
+    "cwd",
+    "dirName",
+    "clientLanguages",
+    "clientFrameworks",
+  ]);
+  assertOptionalTargetValue(record.target, "target");
+  return record;
+}
+
 export function asLookupArgs(args: unknown): FigmaReplLookupArguments {
   const record = parseToolArgs<FigmaReplLookupArguments>(args);
   assertOptionalEnum(record, "kind", FIGMA_REPL_LOOKUP_KINDS);
@@ -468,6 +562,40 @@ function assertOptionalStringFields(record: Record<string, unknown>, keys: reado
     if (typeof value !== "string") {
       throw new Error(`Tool argument "${key}" must be a string.`);
     }
+  }
+}
+
+function assertOptionalBooleanFields(record: Record<string, unknown>, keys: readonly string[]): void {
+  for (const key of keys) {
+    const value = record[key];
+    if (value === undefined) {
+      continue;
+    }
+    if (typeof value !== "boolean") {
+      throw new Error(`Tool argument "${key}" must be a boolean.`);
+    }
+  }
+}
+
+function assertOptionalStringArray(record: Record<string, unknown>, key: string): void {
+  const values = assertOptionalArray(record, key);
+  if (!values) {
+    return;
+  }
+  values.forEach((value, index) => {
+    if (typeof value !== "string") {
+      throw new Error(`Tool argument "${key}[${index}]" must be a string.`);
+    }
+  });
+}
+
+function assertOptionalNonNegativeInteger(record: Record<string, unknown>, key: string): void {
+  const value = record[key];
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(`Tool argument "${key}" must be a non-negative integer.`);
   }
 }
 

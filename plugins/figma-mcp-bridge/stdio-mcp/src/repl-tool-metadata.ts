@@ -204,9 +204,63 @@ export function createReplToolDescriptions(
       }),
     },
     {
+      name: "figma_repl_search_design_system",
+      description:
+        "Thin first-class wrapper for official upstream search_design_system. Recommended call: { sessionId, query } after opening or preparing a session with file context. Returns the generic upstream envelope in upstream.result/upstream.text plus a minimal session summary.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for file context and history. Defaults to 'default'."),
+        file: stringProperty("Optional Figma file URL or raw file key. Used when the session does not already have file context."),
+        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
+        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-mcp."),
+        query: stringProperty("Required official search_design_system query."),
+        disableCodeConnect: booleanProperty("Optional official search_design_system flag to disable Code Connect for search results."),
+        includeComponents: booleanProperty("Optional official search_design_system flag. Defaults upstream to true."),
+        includeVariables: booleanProperty("Optional official search_design_system flag. Defaults upstream to true."),
+        includeStyles: booleanProperty("Optional official search_design_system flag. Defaults upstream to true."),
+        includeLibraryKeys: stringArrayProperty("Optional library keys returned by get_libraries or previous search results; restricts search to those libraries."),
+        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
+      }, ["query"]),
+    },
+    {
+      name: "figma_repl_get_libraries",
+      description:
+        "Thin first-class wrapper for official upstream get_libraries. Recommended call: { sessionId } after opening or preparing a session with file context. Returns the generic upstream envelope in upstream.result/upstream.text plus a minimal session summary.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for file context and history. Defaults to 'default'."),
+        file: stringProperty("Optional Figma file URL or raw file key. Used when the session does not already have file context."),
+        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
+        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-mcp."),
+        offset: numberProperty("Optional official get_libraries pagination offset."),
+        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
+      }),
+    },
+    {
+      name: "figma_repl_get_variable_defs",
+      description:
+        "Thin first-class wrapper for official upstream get_variable_defs. Recommended call: { sessionId, target } after opening or preparing a session with file context. target accepts a raw node id, node URL, local handle like $button, or { handle:\"$button\" }. Returns the generic upstream envelope in upstream.result/upstream.text plus a minimal session summary.",
+      inputSchema: objectSchema({
+        title: titleProperty(),
+        sessionId: stringProperty("Local REPL session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
+        file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
+        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
+        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-mcp."),
+        target: {
+          description: "Required target node. Accepts a raw node id, node URL, local handle like $button, or { handle:\"$button\" }.",
+        },
+        clientLanguages: stringProperty("Optional official get_variable_defs clientLanguages hint. Defaults to unknown."),
+        clientFrameworks: stringProperty("Optional official get_variable_defs clientFrameworks hint. Defaults to unknown."),
+        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
+        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
+      }),
+    },
+    {
       name: "figma_repl_call_upstream_tool",
       description:
-        "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, or download_assets because dedicated wrappers cover them.",
+        "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, or get_variable_defs because dedicated wrappers cover them.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
@@ -235,11 +289,11 @@ export function createReplToolDescriptions(
 
 const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_open: toolOutputSchema({
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     diagnostics: arrayProperty("Session diagnostics."),
   }),
   figma_repl_eval: toolOutputSchema({
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     diagnostics: arrayProperty("Preflight diagnostics."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -252,7 +306,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
     script: scriptMetadataProperty("Compiled script metadata."),
     outputFiles: outputFilesProperty(
@@ -265,21 +319,21 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     assets: compactAssetResultsProperty("Compact per-asset upload/fill results. Successful submitUrl POSTs expose compact upload evidence without raw submit URLs."),
     validation: objectProperty("Optional target validation result."),
     outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
     failures: arrayProperty("Per-asset or validation failures."),
   }),
   figma_repl_download_assets: toolOutputSchema({
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     outputDir: stringProperty("Local directory containing per-target download folders."),
     targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
     failures: arrayProperty("Per-target download or upstream failures."),
     outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
   }),
   figma_repl_capture_node: toolOutputSchema({
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     imageFile: stringProperty("Absolute local PNG screenshot path when capture succeeded."),
     nodeId: stringProperty("Captured Figma node id."),
     bytes: numberProperty("Saved PNG file size in bytes."),
@@ -288,7 +342,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
   }),
   figma_repl_run_task_plan: toolOutputSchema({
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     steps: arrayProperty("Compact per-step execution summaries."),
     outputReferences: objectProperty("Plan-level map of step id to output file pointers for later workflow references."),
@@ -297,7 +351,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_repl_prepare_task: toolOutputSchema({
     task: objectProperty("Prepared task workspace and script file."),
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only; task.workspace remains the full prepared workspace shape."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only; task.workspace remains the full prepared workspace shape."),
     taskChange: taskChangeProperty("Previous/current task file pointers and whether the session active task changed."),
     next: stringArrayProperty("Suggested next actions."),
   }),
@@ -316,7 +370,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     suggestions: guidanceSuggestionsProperty("Ranked task/card suggestions with compact context."),
   }),
   figma_repl_inspect: toolOutputSchema({
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     diagnostics: arrayProperty("Read-mode diagnostics."),
     target: stringProperty("Inspected target selector or node id when returned by the inspect mode."),
     summary: jsonProperty("Compact inspected node or selection summary when returned by the inspect mode."),
@@ -329,7 +383,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when inspection failed."),
   }),
   figma_repl_get_metadata: toolOutputSchema({
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     fileKey: stringProperty("Figma file key sent to official get_metadata."),
     nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
     metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
@@ -342,8 +396,47 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     ),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when metadata.json exceeds the byte limit."),
   }),
+  figma_repl_search_design_system: toolOutputSchema({
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    fileKey: stringProperty("Figma file key sent to official search_design_system."),
+    query: stringProperty("Search query sent upstream."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    primaryFix: stringProperty("Suggested primary repair when execution failed."),
+    outputFiles: outputFilesProperty(
+      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
+      ["debugFile", "upstreamFile"],
+    ),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
+  }),
+  figma_repl_get_libraries: toolOutputSchema({
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    fileKey: stringProperty("Figma file key sent to official get_libraries."),
+    offset: numberProperty("Pagination offset sent upstream when supplied."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    primaryFix: stringProperty("Suggested primary repair when execution failed."),
+    outputFiles: outputFilesProperty(
+      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
+      ["debugFile", "upstreamFile"],
+    ),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
+  }),
+  figma_repl_get_variable_defs: toolOutputSchema({
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    fileKey: stringProperty("Figma file key sent to official get_variable_defs."),
+    nodeId: stringProperty("Figma node id sent to official get_variable_defs."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    primaryFix: stringProperty("Suggested primary repair when execution failed."),
+    outputFiles: outputFilesProperty(
+      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
+      ["debugFile", "upstreamFile"],
+    ),
+    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
+  }),
   figma_repl_call_upstream_tool: toolOutputSchema({
-    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),

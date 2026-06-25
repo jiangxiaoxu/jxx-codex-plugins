@@ -43,6 +43,12 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.match(apiDeclarations, /FigmaReplCaptureNodeResult/);
   assert.match(apiDeclarations, /FigmaReplGetMetadataArguments/);
   assert.match(apiDeclarations, /FigmaReplGetMetadataResult/);
+  assert.match(apiDeclarations, /FigmaReplSearchDesignSystemArguments/);
+  assert.match(apiDeclarations, /FigmaReplSearchDesignSystemResult/);
+  assert.match(apiDeclarations, /FigmaReplGetLibrariesArguments/);
+  assert.match(apiDeclarations, /FigmaReplGetLibrariesResult/);
+  assert.match(apiDeclarations, /FigmaReplGetVariableDefsArguments/);
+  assert.match(apiDeclarations, /FigmaReplGetVariableDefsResult/);
   assert.match(apiDeclarations, /FigmaReplRunTaskPlanArguments/);
   assert.match(apiDeclarations, /FigmaReplUpstreamEnvelope/);
   assert.match(apiDeclarations, /FigmaReplToolResultBase/);
@@ -59,6 +65,9 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.doesNotMatch(replDeclarations, /applyAssetManifest\(args: FigmaReplApplyAssetManifestArguments\): Promise<unknown>/);
   assert.doesNotMatch(replDeclarations, /captureNode\(args: FigmaReplCaptureNodeArguments\): Promise<unknown>/);
   assert.doesNotMatch(replDeclarations, /getMetadata\(args: FigmaReplGetMetadataArguments\): Promise<unknown>/);
+  assert.doesNotMatch(replDeclarations, /searchDesignSystem\(args: FigmaReplSearchDesignSystemArguments\): Promise<unknown>/);
+  assert.doesNotMatch(replDeclarations, /getLibraries\(args\?: FigmaReplGetLibrariesArguments\): Promise<unknown>/);
+  assert.doesNotMatch(replDeclarations, /getVariableDefs\(args: FigmaReplGetVariableDefsArguments\): Promise<unknown>/);
   assert.doesNotMatch(replDeclarations, /callUpstreamTool\(args: FigmaReplCallUpstreamToolArguments\): Promise<unknown>/);
   assert.match(nodeReplDeclarations, /createRemoteMcpClient/);
   assert.match(nodeReplDeclarations, /createFigmaReplClient/);
@@ -68,6 +77,9 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.match(replDeclarations, /applyAssetManifest\(args: FigmaReplApplyAssetManifestArguments\): Promise<FigmaReplApplyAssetManifestResult>/);
   assert.match(replDeclarations, /captureNode\(args: FigmaReplCaptureNodeArguments\): Promise<FigmaReplCaptureNodeResult>/);
   assert.match(replDeclarations, /getMetadata\(args: FigmaReplGetMetadataArguments\): Promise<FigmaReplGetMetadataResult>/);
+  assert.match(replDeclarations, /searchDesignSystem\(args: FigmaReplSearchDesignSystemArguments\): Promise<FigmaReplSearchDesignSystemResult>/);
+  assert.match(replDeclarations, /getLibraries\(args\?: FigmaReplGetLibrariesArguments\): Promise<FigmaReplGetLibrariesResult>/);
+  assert.match(replDeclarations, /getVariableDefs\(args: FigmaReplGetVariableDefsArguments\): Promise<FigmaReplGetVariableDefsResult>/);
   assert.match(replDeclarations, /runTaskPlan\(args: FigmaReplRunTaskPlanArguments\): Promise<FigmaReplRunTaskPlanResult>/);
   assert.match(replDeclarations, /callUpstreamTool\(args: FigmaReplCallUpstreamToolArguments\): Promise<FigmaReplCallUpstreamToolResult>/);
   assert.match(replDeclarations, /export interface FigmaReplMetadataJson/);
