@@ -179,7 +179,8 @@ export interface FigmaReplInlineResultLimit {
     guidance?: string;
 }
 export interface FigmaReplRunScriptFileResult extends FigmaReplToolResultBase {
-    dryRun: boolean;
+    phase: "preflight" | "execute";
+    executed: boolean;
     session: FigmaReplCompactSession;
     diagnostics: FigmaReplDiagnostic[];
     script: FigmaReplCompactScriptMetadata;

@@ -33,7 +33,6 @@ export interface FigmaReplRunScriptFileArguments {
   sessionId?: string;
   scriptPath?: string;
   inputFile?: string;
-  dryRun?: boolean;
   strict?: boolean;
   surface?: FigmaReplSurface;
   targetPageId?: string;
@@ -298,6 +297,7 @@ export function asEvalArgs(args: unknown): FigmaReplEvalArguments {
 export function asRunScriptFileArgs(args: unknown): FigmaReplRunScriptFileArguments {
   const record = parseToolArgs<FigmaReplRunScriptFileArguments>(args);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
+  assertRemovedArguments(record, ["dryRun"], "figma_repl_run_script_file without dryRun; preflight runs automatically");
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertRemovedRunScriptOutputLayoutArguments(record);
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");

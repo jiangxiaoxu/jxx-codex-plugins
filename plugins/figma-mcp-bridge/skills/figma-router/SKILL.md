@@ -13,7 +13,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 2. Before any Figma MCP action, expose deferred Figma tools through `tool_search` with a query such as `figma_repl_mcp figma_repl_ figma`.
 3. After Figma tools are available, read `figma-repl://capabilities`, then use the file workflow.
 4. If direct `figma_repl_*` tools are not installed in the active Codex environment, do not use the `./node-repl` no-client default for live Figma work; use `figma_repl_mcp` after plugin reload, or use package-local `createFigmaReplClient` only with an explicit custom upstream `client`.
-5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, dry-run it, execute it, and write results to local files.
+5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, then run it with automatic preflight and write results to local files.
 6. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
 7. Local `figma_repl_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.result` or text from `upstream.text`, and use `outputFiles.debugFile` for generated JSON debug/result files. Use `figma_repl_get_metadata` for broad layer-tree discovery; it converts upstream XML to compact JSON, returns small trees inline, and writes oversized trees to `outputFiles.metadataFile`. Use `figma_repl_search_design_system`, `figma_repl_get_libraries`, and `figma_repl_get_variable_defs` for official design-system context.
 8. `createFigmaReplClient` mirrors the same result shape in Node: read `result.upstream.result`, compact asset entries, generated debug files, and capture `imageFile` on success.
@@ -45,8 +45,7 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 
 - Prepare a repairable workspace and task file: `figma_repl_prepare_task({ file, taskName, surface })`. Use slug-style `taskName` values such as `settings-panel-polish`. The `file` value accepts a Figma URL or raw file key; `cwd` is optional and defaults to the MCP server process cwd.
 - Edit the generated `<task>.figma.js`; use native Figma Plugin API plus the injected `$` helpers.
-- Dry-run: `figma_repl_run_script_file({ sessionId, inputFile, dryRun: true, strict: true, surface })`.
-- Execute: `figma_repl_run_script_file({ sessionId, inputFile })`.
+- Execute: `figma_repl_run_script_file({ sessionId, inputFile, strict: true, surface })`; diagnostics and compiled payload preflight run before upstream execution.
 - For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ sessionId, manifestPath })`. Read `assets[].upload.response.imageHash` / `placedOnNodeId` for upload POST evidence, and read `validation` for canvas-side IMAGE fill confirmation. Default target validation checks IMAGE fills when upstream eval is available; incomplete validation records fail the workflow and point to `outputFiles.debugFile`.
 - For broad layer-tree discovery, call `figma_repl_get_metadata({ sessionId, target })` before targeted `figma_repl_inspect` style/fill/text checks.
 - For visual QA, call `figma_repl_capture_node({ sessionId, target, imageFile })` and inspect the local image file.
@@ -57,7 +56,7 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls shoul
 ## Script Contract
 
 - Write ordinary async JavaScript in `.figma.js`: native Figma Plugin API for advanced work, injected `$` helpers for common agent tasks.
-- Keep each transaction small and repairable. Use `dryRun: true`, then fix diagnostics by file line before executing.
+- Keep each transaction small and repairable. If preflight diagnostics fail, fix diagnostics by file line and rerun the same script.
 - Return compact JSON with changed node ids, handles, and validation notes. Use generated `outputFiles.debugFile` pointers for failure or omitted-payload debug JSON instead of relying on inline MCP output.
 - Read parsed upstream JSON from `upstream.result`; if upstream output is not JSON, read `upstream.text`. Debug file pointers are reported in `outputFiles.debugFile`.
 - Ordinary tool responses return only a minimal session summary with `handleChanges` and optional top-level `sessionDir`; read `figma-repl://sessions` for the compact list, `figma-repl://sessions/{id}` for compact detail with handles, and `figma-repl://sessions/{id}/handles` when only the remembered handle map is needed.

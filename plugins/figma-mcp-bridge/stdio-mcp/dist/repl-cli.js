@@ -25216,13 +25216,6 @@ $.replaceGeneratedFrame = async function replaceGeneratedFrame(options = {}) {
   }
   const children = "children" in parent ? Array.from(parent.children) : [];
   const existingFrames = children.filter((child) => child.type === "FRAME" && child.name === name);
-  if (input.dryRun) {
-    return {
-      dryRun: true,
-      name,
-      matches: existingFrames.map((node) => summarizeNode(node, input.depth || 0)),
-    };
-  }
   let frame = figma.createFrame();
   frame.name = name;
   if (input.size !== undefined) setNodeSizeFromInput(frame, input.size);
@@ -26267,6 +26260,7 @@ function asEvalArgs(args) {
 function asRunScriptFileArgs(args) {
   const record2 = parseToolArgs(args);
   assertRemovedArguments(record2, ["expectedSurface"], "surface");
+  assertRemovedArguments(record2, ["dryRun"], "figma_repl_run_script_file without dryRun; preflight runs automatically");
   assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
   assertRemovedRunScriptOutputLayoutArguments(record2);
   assertRemovedArguments(record2, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
@@ -26792,13 +26786,12 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_run_script_file",
-      description: "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { sessionId, inputFile }. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
+      description: "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace call: { sessionId, inputFile, strict, surface }. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
         scriptPath: stringProperty("Advanced absolute-path escape hatch only. Prefer inputFile after figma_repl_prepare_task creates a file-context workspace."),
         inputFile: stringProperty("Recommended workspace script file name after figma_repl_prepare_task; preferred over scriptPath for agents."),
-        dryRun: booleanProperty("Read, diagnose, inject helpers, and return script metadata without calling upstream Figma."),
         strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
@@ -26865,7 +26858,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_prepare_task",
-      description: "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
+      description: "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, surface }. Follow with guidance/lookup, run_script_file, inspect, and capture.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
@@ -27027,7 +27020,8 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
   }),
   figma_repl_run_script_file: toolOutputSchema({
-    dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
+    phase: enumProperty(["preflight", "execute"], "Execution phase represented by this result. preflight means diagnostics blocked upstream execution; execute means upstream Figma was called."),
+    executed: booleanProperty("Whether upstream Figma execution was attempted."),
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
     script: scriptMetadataProperty("Compiled script metadata."),
@@ -28618,8 +28612,8 @@ function createRunScriptResultFilePayload(options) {
     resultPayload: options.resultPayload,
     upstream: options.upstream,
     fields: {
-      dryRun: options.resultPayload.dryRun === true,
-      executed: options.resultPayload.dryRun !== true,
+      phase: asOptionalString2(options.resultPayload.phase),
+      executed: options.resultPayload.executed === true,
       diagnosticsCount: options.diagnostics.length,
       fatalDiagnostics: options.diagnostics.filter((item) => item.severity === "fatal").length,
       warningDiagnostics: options.diagnostics.filter((item) => item.severity === "warning").length,
@@ -28666,34 +28660,33 @@ async function executeRunScriptFile(args, runtime) {
   session.lastDiagnostics = diagnostics;
   const outputWriter = createScriptOutputWriter(args, session);
   await outputWriter.cleanupCompiledScriptFile();
-  throwIfFatalDiagnostics(diagnostics);
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const scriptMetadata = {
     ...compiled.metadata,
     diagnosticsCount: diagnostics.length,
-    compiledScriptBytes: Buffer.byteLength(wrappedScript, "utf8"),
-    dryRun: Boolean(args.dryRun),
-    executed: !args.dryRun
+    compiledScriptBytes: Buffer.byteLength(wrappedScript, "utf8")
   };
   const responseScript = responseScriptMetadata(scriptMetadata);
-  if (args.dryRun) {
+  const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
+  if (fatalDiagnostics.length > 0) {
     touchSession(session);
     const resultPayload2 = {
-      ok: true,
-      dryRun: true,
+      ok: false,
+      phase: "preflight",
+      executed: false,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
-      script: responseScript
+      script: responseScript,
+      primaryFix: fatalDiagnostics[0]?.suggestion
     };
     const limitedPayload2 = limitInlineScriptResult(resultPayload2, inlineResultLimit, []);
-    const needsOutputFile2 = diagnostics.length > 0;
     const outputFiles2 = await outputWriter.write({
       result: createRunScriptResultFilePayload({
         session,
         resultPayload: resultPayload2,
         diagnostics
       }),
-      writeResult: needsOutputFile2
+      writeResult: true
     });
     const payload2 = {
       ...limitedPayload2,
@@ -28711,7 +28704,8 @@ async function executeRunScriptFile(args, runtime) {
     const upstreamError = normalizeCaughtUpstreamError(error2);
     const resultPayload2 = {
       ok: false,
-      dryRun: false,
+      phase: "execute",
+      executed: true,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
       script: responseScript,
@@ -28744,7 +28738,8 @@ async function executeRunScriptFile(args, runtime) {
     const upstreamResult2 = upstreamEnvelope(parsed);
     const resultPayload2 = {
       ok: false,
-      dryRun: false,
+      phase: "execute",
+      executed: true,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
       script: responseScript,
@@ -28790,7 +28785,8 @@ async function executeRunScriptFile(args, runtime) {
   });
   const resultPayload = {
     ok: true,
-    dryRun: false,
+    phase: "execute",
+    executed: true,
     session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
     script: responseScript,
@@ -29696,7 +29692,7 @@ async function handlePrepareTask(args, runtime) {
     },
     next: [
       "Edit the .figma.js file in this task folder.",
-      "Dry-run with figma_repl_run_script_file before upstream execution.",
+      "Run figma_repl_run_script_file; it preflights diagnostics before upstream execution.",
       "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions."
     ]
   };
@@ -29755,8 +29751,8 @@ async function handleGuidance(args) {
       steps: [
         "Prepare or reuse a task workspace with figma_repl_prepare_task.",
         "Write the transaction in a local .figma.js file using $ helpers and native Figma Plugin API calls.",
-        "Call figma_repl_run_script_file with dryRun=true, strict=true, surface, inputFile, and inlineResultLimit.",
-        "Repair local file/line diagnostics, then execute the same script file against upstream Figma.",
+        "Call figma_repl_run_script_file with strict=true, surface, inputFile, and inlineResultLimit.",
+        "If preflight diagnostics fail, repair local file/line diagnostics and rerun the same script file.",
         "Inspect the paired .result.json file first when inline results are capped."
       ],
       recommendedTools: [
@@ -30648,13 +30644,6 @@ async function replaceGeneratedFrameForRepl(options = {}) {
   }
   const children = "children" in parent ? Array.from(parent.children) : [];
   const existingFrames = children.filter((child) => child.type === "FRAME" && child.name === name);
-  if (input.dryRun) {
-    return {
-      dryRun: true,
-      name,
-      matches: existingFrames.map((node) => summarizeNode(node, input.depth || 0)),
-    };
-  }
   const frame = figma.createFrame();
   frame.name = name;
   if (input.size !== undefined) setNodeSizeFromInput(frame, input.size);
@@ -32457,7 +32446,7 @@ var FIGMA_REPL_EVAL_HELPER_DESCRIPTIONS = {
   "$.create": "Create a common Design node with optional parent, size, layout, appearance, and handle.",
   "$.findFreeSlot": "Find a non-overlapping slot in one parent using a preferred x/y, fixed size, gap, and direction.",
   "$.placeNode": "Move a node to an explicit or non-overlapping generated slot and return placement metadata.",
-  "$.replaceGeneratedFrame": "Safely replace generated top-level FRAME nodes whose names match a guarded prefix, with dry-run support.",
+  "$.replaceGeneratedFrame": "Safely replace generated top-level FRAME nodes whose names match a guarded prefix.",
   "$.inspect": "Resolve a handle or node id and return a compact node summary.",
   "$.screenshot": "Attempt a target node screenshot when upstream supports node.screenshot(); fall back to official screenshot tools for final QA if no image payload is returned.",
   "$.imageAsset": "Create or update an image-fill rectangle from small generated PNG/JPEG base64 or byte arrays; use upload_assets/upstream asset fill workflow for large files.",
@@ -32488,7 +32477,7 @@ function createFileWorkflowPayload() {
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.js files.",
       "Initialize a file workspace once, then keep task scripts in that file-context folder.",
-      "Run dryRun first for file-aware diagnostics without upstream calls.",
+      "Run figma_repl_run_script_file directly; it preflights file-aware diagnostics before upstream calls.",
       "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
       "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; compact session state and workspace file context are available through figma-repl://sessions/{id}, and the full handle map is available through figma-repl://sessions/{id}/handles.",
       "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
@@ -32497,13 +32486,13 @@ function createFileWorkflowPayload() {
       "Use figma_repl_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
       "Use figma_repl_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
       "Use figma_repl_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
-      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine dry-runs, script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
+      "Use figma_repl_run_task_plan for sequential file-plan workflows that combine preflighted script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
       "Use figma_repl_get_metadata for broad layer-tree discovery: it calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
       "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
-      "When non-dry-run upstream execution fails, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; normal dry-runs and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing."
+      "When upstream execution fails after preflight, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; preflight failures and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing."
     ]
   };
 }
@@ -32524,7 +32513,6 @@ function createIntentSuggestions(intent, maxCards, referenceContext = []) {
       "figma_repl_prepare_task",
       "figma_repl_guidance",
       "figma_repl_lookup(kind=api)",
-      "figma_repl_run_script_file(dryRun=true)",
       "figma_repl_run_script_file",
       "figma_repl_inspect"
     ],
@@ -32549,7 +32537,6 @@ function createToolTierPayload() {
         "figma_repl_search_design_system",
         "figma_repl_get_libraries",
         "figma_repl_get_variable_defs",
-        "figma_repl_run_script_file(dryRun=true)",
         "figma_repl_run_script_file",
         "figma_repl_inspect",
         "figma_repl_capture_node"
@@ -32578,7 +32565,7 @@ function createToolArgumentGuidancePayload() {
       guidance: "title is optional display-only call metadata for Codex/UI. The runtime validates it when supplied but does not store it, synthesize defaults from it, pass it upstream, or use it for task/file naming.",
       examples: [
         "Capture the hero variant for visual QA",
-        "Dry-run the token audit script",
+        "Run the token audit script",
         "Apply generated assets to product cards"
       ]
     },
@@ -32751,8 +32738,7 @@ function createCapabilitiesPayload() {
         "figma_repl_lookup only when exact docs/API snippets are still needed after guidance",
         "figma_repl_get_metadata for broad recursive layer-tree discovery before detailed style/fill/text inspection",
         "figma_repl_search_design_system, figma_repl_get_libraries, and figma_repl_get_variable_defs for official design-system context through dedicated thin wrappers",
-        "figma_repl_run_script_file with inputFile and dryRun=true for primary .figma.js workflows, debug files, and line-aware repair",
-        "figma_repl_run_script_file without dryRun to execute the reviewed file workflow",
+        "figma_repl_run_script_file with inputFile for primary .figma.js workflows, automatic preflight, debug files, and line-aware repair",
         "figma_repl_inspect with mode=inspect, mode=style, or mode=validate for targeted summaries, visual-token audits, and handle validation before mutation and after generated work",
         "figma_repl_apply_asset_manifest for large generated assets: create target rectangles in script, then upload/fill from local files through official upload_assets",
         "figma_repl_download_assets for official download_assets: pass targets:[{ target }] to save exported renders and raw/source files locally",
@@ -32775,7 +32761,7 @@ function createCapabilitiesPayload() {
     patterns: {
       text: "Use $.text, or call figma.loadFontAsync before mutating characters/fontName in native Plugin API code.",
       createUi: "Use $.create for common Design nodes and native Plugin API calls for advanced construction.",
-      transaction: "Use dryRun=true first, then execute the same .figma.js file; add $.checkpoint calls before/after meaningful batches to return handle and node summaries.",
+      transaction: "Run the same .figma.js file through figma_repl_run_script_file; it preflights diagnostics before upstream execution. Add $.checkpoint calls before/after meaningful batches to return handle and node summaries.",
       clone: "Use $.cloneNodeTree to copy a node to the side; it clones outer-to-inner and preserves instance subtrees whole when children cannot be rebuilt.",
       generatedFrame: "Use $.findFreeSlot or $.placeNode for predictable non-overlapping placement and $.replaceGeneratedFrame when replacing a guarded generated FRAME.",
       designSystem: "Use native Plugin API calls in .figma.js for variables/styles/components; use figma_repl_search_design_system, figma_repl_get_libraries, and figma_repl_get_variable_defs when official design-system context is needed.",
@@ -32798,8 +32784,7 @@ function createCapabilitiesPayload() {
       scriptShape: "Write an async function body in a local .figma.js file. The runner injects Figma REPL prelude plus $ helpers before upstream use_figma execution.",
       requiredArguments: ["inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
       recommendedCalls: {
-        dryRun: { sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
-        execute: { sessionId: "<session>", inputFile: "<task>.figma.js" }
+        execute: { sessionId: "<session>", inputFile: "<task>.figma.js", strict: true, surface: "design" }
       },
       advancedArguments: [
         "scriptPath",
@@ -32812,7 +32797,6 @@ function createCapabilitiesPayload() {
       options: {
         scriptPath: "Advanced absolute-path escape hatch. Prefer inputFile after figma_repl_prepare_task.",
         inputFile: "Recommended file name inside <cwd>/figma-mcp/<fileKey-or-fileSlug>/ after workspace initialization.",
-        dryRun: "Read, diagnose, inject helpers, and return script metadata without calling upstream Figma.",
         strict: "Promote warnings to fatal diagnostics.",
         surface: "design, figjam, or slides; blocks obvious wrong-surface API usage.",
         targetPageId: "Switch once to a known page before the script body runs.",
@@ -32820,10 +32804,12 @@ function createCapabilitiesPayload() {
         inlineResultLimit: "Advanced payload-size control in bytes for large inline fields. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; omitted upstream fields stay available in outputFiles.upstreamFile."
       },
       responseExamples: {
-        jsonSuccess: { ok: true, dryRun: false, upstream: { kind: "json", ok: true, result: {} } },
+        jsonSuccess: { ok: true, phase: "execute", executed: true, upstream: { kind: "json", ok: true, result: {} } },
+        preflightBlocked: { ok: false, phase: "preflight", executed: false, diagnostics: [{ code: "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT", severity: "fatal" }] },
         businessOkFalse: {
           ok: true,
-          dryRun: false,
+          phase: "execute",
+          executed: true,
           upstream: {
             kind: "json",
             ok: false,
@@ -32833,10 +32819,11 @@ function createCapabilitiesPayload() {
             }
           }
         },
-        textOutput: { ok: true, dryRun: false, upstream: { kind: "text", ok: true, text: "..." } },
+        textOutput: { ok: true, phase: "execute", executed: true, upstream: { kind: "text", ok: true, text: "..." } },
         inlinePayloadOmitted: {
           ok: true,
-          dryRun: false,
+          phase: "execute",
+          executed: true,
           upstream: { kind: "json", ok: true },
           inlineResultLimit: {
             limit: 4e3,
@@ -32942,7 +32929,6 @@ function createCapabilitiesPayload() {
           title: "Update title text",
           sessionId: "main",
           inputFile: "update-title.figma.js",
-          dryRun: true,
           strict: true
         }
       },
@@ -33208,7 +33194,7 @@ function normalizeCaughtUpstreamError(error2) {
 function primaryFixForUpstreamError(error2) {
   const message = error2.message.toLowerCase();
   if (message.includes("remove") && (message.includes("instance") || message.includes("children") || message.includes("subtree"))) {
-    return "Use $.replaceGeneratedFrame({ name, dryRun: true }) for guarded generated-frame replacement, or $.cloneNodeTree({ source, placement: 'right' }) for copy/rebuild workflows.";
+    return "Use $.replaceGeneratedFrame({ name }) for guarded generated-frame replacement, or $.cloneNodeTree({ source, placement: 'right' }) for copy/rebuild workflows.";
   }
   if (message.includes("font") || message.includes("characters")) {
     return "Load the target font with figma.loadFontAsync or use $.text before changing TextNode characters.";
@@ -33216,7 +33202,7 @@ function primaryFixForUpstreamError(error2) {
   if (message.includes("selection")) {
     return "Use $.select([...]) or explicit node ids/handles instead of direct figma.currentPage.selection access.";
   }
-  return "Open the paired .figma.js file, repair the upstream Plugin API error, dry-run with strict=true, then rerun the same script.";
+  return "Open the paired .figma.js file, repair the upstream Plugin API error, then rerun the same script with strict=true.";
 }
 function stringFromUnknown(value) {
   if (typeof value === "string" && value.length > 0) {

@@ -109,16 +109,11 @@ await figma.prepareTask({
 await figma.runScriptFile({
   sessionId: "settings workspace",
   inputFile: "settings-panel-polish.figma.js",
-  dryRun: true,
   strict: true,
-});
-await figma.runScriptFile({
-  sessionId: "settings workspace",
-  inputFile: "settings-panel-polish.figma.js",
 });
 ```
 
-`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `file` is supplied. `cwd` is optional and defaults to the MCP server process cwd. A task normally uses slug-style `taskName` such as `settings-panel-polish` and `<taskName>.figma.js` in that folder, then calls `runScriptFile` with `inputFile`. JSON debug/result files are generated on demand and returned through `outputFiles.debugFile`; script upstream sidecars use `outputFiles.upstreamFile`, and failure-only compiled wrappers use `outputFiles.compiledScriptFile`. Absolute `scriptPath`, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
+`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `file` is supplied. `cwd` is optional and defaults to the MCP server process cwd. A task normally uses slug-style `taskName` such as `settings-panel-polish` and `<taskName>.figma.js` in that folder, then calls `runScriptFile` with `inputFile`. `runScriptFile` always runs diagnostics and compiled payload preflight before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. JSON debug/result files are generated on demand and returned through `outputFiles.debugFile`; script upstream sidecars use `outputFiles.upstreamFile`, and failure-only compiled wrappers use `outputFiles.compiledScriptFile`. Absolute `scriptPath`, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
 
 Write ordinary async JavaScript in `.figma.js` files. Use native Figma Plugin API calls for advanced work and injected `$` helpers for common agent tasks:
 

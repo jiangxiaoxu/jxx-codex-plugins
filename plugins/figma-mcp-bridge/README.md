@@ -70,10 +70,9 @@ Agents should use `figma_repl_mcp` first:
 1. read `figma-repl://capabilities`
 2. `figma_repl_prepare_task({ file, taskName, surface })`
 3. edit local `.figma.js`
-4. `figma_repl_run_script_file({ sessionId, inputFile, dryRun: true, strict: true, surface })`
-5. `figma_repl_run_script_file({ sessionId, inputFile })`
-6. `figma_repl_search_design_system`, `figma_repl_get_libraries`, or `figma_repl_get_variable_defs` when official design-system context is needed
-7. `figma_repl_apply_asset_manifest({ sessionId, manifestPath })`, `figma_repl_capture_node({ sessionId, target, imageFile })`, or `figma_repl_run_task_plan({ sessionId, planPath })` when needed
+4. `figma_repl_run_script_file({ sessionId, inputFile, strict: true, surface })`; preflight diagnostics run before upstream execution
+5. `figma_repl_search_design_system`, `figma_repl_get_libraries`, or `figma_repl_get_variable_defs` when official design-system context is needed
+6. `figma_repl_apply_asset_manifest({ sessionId, manifestPath })`, `figma_repl_capture_node({ sessionId, target, imageFile })`, or `figma_repl_run_task_plan({ sessionId, planPath })` when needed
 
 In workspace workflows, prefer `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath`. `taskName` is a slug-style workspace/task name such as `settings-panel-polish`. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, `scriptPath`, upstream overrides, and `refresh` are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
 
@@ -94,16 +93,11 @@ const figma = createFigmaReplClient({
 await figma.open({
   file: "https://www.figma.com/design/<fileKey>/<fileName>?node-id=<nodeId>",
 });
-await figma.runScriptFile({
-  sessionId: "ui-work",
-  inputFile: "edit-panel.figma.js",
-  dryRun: true,
-  strict: true,
-  surface: "design",
-});
 const run = await figma.runScriptFile({
   sessionId: "ui-work",
   inputFile: "edit-panel.figma.js",
+  strict: true,
+  surface: "design",
 });
 const payload = run.upstream?.result;
 const capture = await figma.captureNode({

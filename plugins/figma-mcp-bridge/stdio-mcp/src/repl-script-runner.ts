@@ -573,13 +573,6 @@ $.replaceGeneratedFrame = async function replaceGeneratedFrame(options = {}) {
   }
   const children = "children" in parent ? Array.from(parent.children) : [];
   const existingFrames = children.filter((child) => child.type === "FRAME" && child.name === name);
-  if (input.dryRun) {
-    return {
-      dryRun: true,
-      name,
-      matches: existingFrames.map((node) => summarizeNode(node, input.depth || 0)),
-    };
-  }
   let frame = figma.createFrame();
   frame.name = name;
   if (input.size !== undefined) setNodeSizeFromInput(frame, input.size);

@@ -30,7 +30,6 @@ export interface FigmaReplRunScriptFileArguments {
     sessionId?: string;
     scriptPath?: string;
     inputFile?: string;
-    dryRun?: boolean;
     strict?: boolean;
     surface?: FigmaReplSurface;
     targetPageId?: string;
