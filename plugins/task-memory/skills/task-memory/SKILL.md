@@ -6,9 +6,6 @@ description: Maintain durable task state and handoff reports for wide-scope sear
 # Task Memory
 Task memory keeps long work resumable without chat history. It lives under `--workspace/task-memory/<task-id>/` with `task_state.md`, `reports/`, `reports/archive/`, and `artifacts/`. `task-id` must start with `task-`, such as `task-thumbnail-cache`; the helper uses that id as the folder name and does not add another prefix. `init` creates the task folder, using `-001`, `-002`, etc. when needed, and prints `task_id=<actual-task-id>`; use that id afterward.
 
-## Activation And Instruction Loading
-After this `SKILL.md` is loaded, use the loaded skill instructions from the current context. Do not reread this file only because the task-memory skill activates again. Reread only when the current context does not contain the needed skill text.
-
 ## AI Execution Checklist
 Script commands in this skill are run through the bundled helper at `<skill_dir>/scripts/task_memory.py`, where `<skill_dir>` is the directory that contains this `SKILL.md`. Do not resolve `scripts/task_memory.py` from the current working directory, plugin root, plugin cache root, repository root, or any hard-coded installed cache version. Before the first helper command in a session, verify that `<skill_dir>/scripts/task_memory.py` exists; if it does not, search only the current skill bundle for `scripts/task_memory.py`, use the discovered absolute path, and report the path mismatch briefly. Always pass absolute `--workspace`.
 
