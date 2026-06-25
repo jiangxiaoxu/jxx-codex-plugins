@@ -30263,7 +30263,6 @@ async function executeGetVariableDefs(args, runtime) {
     upstreamToolName: GET_VARIABLE_DEFS_TOOL_NAME,
     upstreamKind: "variable definition read",
     requiredProperties: ["fileKey", "nodeId"],
-    optionalProperties: ["clientLanguages", "clientFrameworks"],
     upstreamArguments: {
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
@@ -30495,9 +30494,7 @@ async function resolveEvalSettings(session, args, runtime) {
   const argumentName = DEFAULT_EVAL_ARGUMENT_NAME;
   assertUpstreamToolHasProperty(tool, argumentName, "execution");
   const upstreamArguments = {};
-  if (upstreamToolHasProperty(tool, "description")) {
-    upstreamArguments.description = DEFAULT_EVAL_DESCRIPTION;
-  }
+  upstreamArguments.description = DEFAULT_EVAL_DESCRIPTION;
   if (typeof upstreamArguments.fileKey !== "string" || upstreamArguments.fileKey.length === 0) {
     const fileKey = extractFigmaFileKey(session.fileUrl);
     if (fileKey) {
