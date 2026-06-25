@@ -56,13 +56,12 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_run_script_file",
       description:
-        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { sessionId, inputFile }. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
+        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace call: { sessionId, inputFile, strict, surface }. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
         scriptPath: stringProperty("Advanced absolute-path escape hatch only. Prefer inputFile after figma_repl_prepare_task creates a file-context workspace."),
         inputFile: stringProperty("Recommended workspace script file name after figma_repl_prepare_task; preferred over scriptPath for agents."),
-        dryRun: booleanProperty("Read, diagnose, inject helpers, and return script metadata without calling upstream Figma."),
         strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
@@ -134,7 +133,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_prepare_task",
       description:
-        "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
+        "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, surface }. Follow with guidance/lookup, run_script_file, inspect, and capture.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
@@ -305,7 +304,8 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_repl_run_script_file: toolOutputSchema({
-    dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
+    phase: enumProperty(["preflight", "execute"], "Execution phase represented by this result. preflight means diagnostics blocked upstream execution; execute means upstream Figma was called."),
+    executed: booleanProperty("Whether upstream Figma execution was attempted."),
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
     script: scriptMetadataProperty("Compiled script metadata."),

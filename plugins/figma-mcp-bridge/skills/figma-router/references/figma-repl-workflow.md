@@ -6,8 +6,8 @@ Use this reference only when `figma-repl://capabilities` is not enough to choose
 
 - Start non-trivial work with `figma_repl_prepare_task({ title, file, task, surface })`.
 - Edit the generated `.figma.js` file in the task workspace.
-- Run `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, surface })` before execution.
-- Execute the same file with `figma_repl_run_script_file({ title, sessionId, inputFile })`.
+- Run `figma_repl_run_script_file({ title, sessionId, inputFile, strict: true, surface })`; diagnostics and compiled payload preflight run before upstream execution.
+- If preflight diagnostics fail, repair the same file and rerun it.
 - Return compact JSON with changed node ids, handles, and validation notes.
 
 ## Script Shape

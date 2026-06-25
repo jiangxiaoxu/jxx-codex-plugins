@@ -1016,13 +1016,12 @@ test("figma REPL eval exposes and executes the common $ helper surface", async (
       "const clone = await $.cloneNodeTree({ source: '$asset', parent: '$root', as: '$clone', select: false, placement: 'none' });",
       "const freeSlot = await $.findFreeSlot({ parent: figma.currentPage, preferred: { x: 0, y: 0 }, size: { width: 20, height: 20 }, direction: 'right', gap: 4 });",
       "const generated = await $.replaceGeneratedFrame({ name: 'Variant Eval helper generated', size: { width: 20, height: 20 }, position: { x: 0, y: 0 }, as: '$generated', select: false });",
-      "const generatedDryRun = await $.replaceGeneratedFrame({ name: 'Variant Eval helper generated', dryRun: true });",
       "const generatedPlacement = await $.placeNode('$generated', { preferred: { x: 0, y: 0 }, size: { width: 20, height: 20 }, avoidOverlap: true, direction: 'right', gap: 4 });",
       "const viaNode = await $.node('$clone');",
       "const resolvedCloneId = $.resolveId('$clone');",
       "$.forget('$clone');",
       "const checkpoint = await $.checkpoint('eval-helper-surface', [root, '$title'], { depth: 0 });",
-      "return { helperTypes, handles: { ...$.handles }, checkpoints: $.checkpoints.length, root: root.id, title: title.id, allText: allText.length, found: found.id, selected: selected.selectedNodeIds, inspected, screenshotBytes, assetFill: asset.fills[0], cloneId: clone.clone.id, viaNode: viaNode.id, resolvedCloneId, cloneForgotten: !('$clone' in $.handles), freeSlot, generatedFrame: generated.frame, generatedDryRunMatches: generatedDryRun.matches.length, generatedPlacement, checkpointName: checkpoint.name, checkpointFirstId: checkpoint.summaries[0].id };",
+      "return { helperTypes, handles: { ...$.handles }, checkpoints: $.checkpoints.length, root: root.id, title: title.id, allText: allText.length, found: found.id, selected: selected.selectedNodeIds, inspected, screenshotBytes, assetFill: asset.fills[0], cloneId: clone.clone.id, viaNode: viaNode.id, resolvedCloneId, cloneForgotten: !('$clone' in $.handles), freeSlot, generatedFrame: generated.frame, generatedPlacement, checkpointName: checkpoint.name, checkpointFirstId: checkpoint.summaries[0].id };",
     ].join("\n"),
   });
   const runScript = new Function("figma", `return (async () => {\n${script}\n})();`);
@@ -1034,7 +1033,6 @@ test("figma REPL eval exposes and executes the common $ helper surface", async (
   assert.equal(result.result.handles.$title, result.result.title);
   assert.ok(result.result.handles.$generated);
   assert.equal(result.result.generatedFrame.name, "Variant Eval helper generated");
-  assert.equal(result.result.generatedDryRunMatches, 1);
   assert.ok(result.result.freeSlot.shiftedSlots > 0);
   assert.ok(result.result.generatedPlacement.shiftedSlots > 0);
   assert.equal(result.result.allText, 1);
@@ -1140,13 +1138,10 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.toolArgumentGuidance.title.guidance, /display-only call metadata/);
   assert.match(capabilities.toolArgumentGuidance.title.guidance, /does not store it/);
   assert.ok(capabilities.toolArgumentGuidance.title.examples.includes("Capture the hero variant for visual QA"));
-  assert.deepEqual(
-    capabilities.scriptWorkflow.recommendedCalls.dryRun,
-    { sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
-  );
+  assert.equal(capabilities.scriptWorkflow.recommendedCalls.dryRun, undefined);
   assert.deepEqual(
     capabilities.scriptWorkflow.recommendedCalls.execute,
-    { sessionId: "<session>", inputFile: "<task>.figma.js" },
+    { sessionId: "<session>", inputFile: "<task>.figma.js", strict: true, surface: "design" },
   );
   assert.ok(capabilities.scriptWorkflow.advancedArguments.includes("scriptPath"));
   assert.equal(capabilities.scriptWorkflow.advancedArguments.includes("upstreamTool"), false);
@@ -1342,11 +1337,11 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   }
   const runScriptFileTool = tools.tools.find((tool) => tool.name === "figma_repl_run_script_file");
   assert.ok(runScriptFileTool);
-  assert.match(runScriptFileTool.description, /dry-run with \{ sessionId, inputFile/);
-  assert.match(runScriptFileTool.description, /execute with \{ sessionId, inputFile \}/);
+  assert.match(runScriptFileTool.description, /always preflights diagnostics/);
   assert.match(runScriptFileTool.description, /Debug JSON files are generated on demand/);
   assert.match(runScriptFileTool.description, /fixed upstream use_figma\/code/);
   assert.doesNotMatch(runScriptFileTool.description, /\$\[name\]/);
+  assert.equal(runScriptFileTool.inputSchema.properties.dryRun, undefined);
   assert.match(runScriptFileTool.inputSchema.properties.inputFile.description, /Recommended workspace script file name/);
   assert.match(runScriptFileTool.inputSchema.properties.inputFile.description, /preferred over scriptPath/);
   assert.match(runScriptFileTool.inputSchema.properties.scriptPath.description, /escape hatch/);
@@ -4905,11 +4900,17 @@ test("figma REPL task plans run steps in order and stop on failure by default", 
   const previousTaskRoot = process.env.FIGMA_REPL_TASK_ROOT;
   process.env.FIGMA_REPL_TASK_ROOT = tempDir;
   const scriptPath = resolve(tempDir, "script.figma.js");
-  await writeFile(scriptPath, "return { summary: 'dry run only' };", "utf8");
+  await writeFile(scriptPath, "return { summary: 'script executed' };", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(
     calls,
     ({ name, args }) => {
+      if (name === "use_figma") {
+        assert.match(args.code, /script executed/);
+        return {
+          content: [{ type: "text", text: JSON.stringify({ result: { summary: "script executed" } }) }],
+        };
+      }
       if (name === "fake_upstream_ok") {
         assert.deepEqual(args, { marker: "ok" });
         return {
@@ -4926,6 +4927,7 @@ test("figma REPL task plans run steps in order and stop on failure by default", 
     },
     {
       tools: [
+        { name: "use_figma", inputSchema: { type: "object", properties: { code: { type: "string" } }, required: ["code"] } },
         { name: "fake_upstream_ok", inputSchema: { type: "object", properties: {} } },
         { name: "fake_upstream_fail", inputSchema: { type: "object", properties: {} } },
         { name: "fake_after_stop", inputSchema: { type: "object", properties: {} } },
@@ -4949,11 +4951,10 @@ test("figma REPL task plans run steps in order and stop on failure by default", 
         title: "Run plan",
         steps: [
           {
-            id: "dry-run",
+            id: "script",
             type: "figma_repl_run_script_file",
             args: {
               scriptPath,
-              dryRun: true,
             },
           },
           {
@@ -4987,7 +4988,7 @@ test("figma REPL task plans run steps in order and stop on failure by default", 
     assert.equal(json.ok, false);
     assert.equal(json.stopped, true);
     assert.equal(json.stopOnFailure, undefined);
-    assert.deepEqual(json.steps.map((step) => step.id), ["dry-run", "upstream-ok", "upstream-fail"]);
+    assert.deepEqual(json.steps.map((step) => step.id), ["script", "upstream-ok", "upstream-fail"]);
     assert.deepEqual(json.steps.map((step) => step.status), ["completed", "completed", "failed"]);
     assert.equal(json.steps[1].summary.toolName, undefined);
     assert.equal(json.steps[1].summary.upstreamTool, undefined);
@@ -5014,10 +5015,10 @@ test("figma REPL task plans run steps in order and stop on failure by default", 
     assert.equal(fileJson.steps, undefined);
     assert.equal(fileJson.outputReferences, undefined);
     assert.equal(fileJson.outputFiles, undefined);
-    assert.deepEqual(fileJson.stepDetails.map((step) => step.id), ["dry-run", "upstream-ok", "upstream-fail"]);
+    assert.deepEqual(fileJson.stepDetails.map((step) => step.id), ["script", "upstream-ok", "upstream-fail"]);
     assert.deepEqual(
       calls.filter((call) => call[0] === "callTool").map((call) => call[1]),
-      ["fake_upstream_ok", "fake_upstream_fail"],
+      ["use_figma", "fake_upstream_ok", "fake_upstream_fail"],
     );
     await mcpClient.close();
   } finally {
@@ -5536,7 +5537,7 @@ test("figma REPL diagnostics return stable codes and strict promotes warnings", 
   );
 });
 
-test("figma REPL run_script_file dryRun returns file-aware diagnostics without compiled script output", async () => {
+test("figma REPL run_script_file returns preflight diagnostics without upstream execution", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-script-"));
   const scriptName = "script.figma.js";
   const calls = [];
@@ -5572,20 +5573,20 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics without c
         title: "Preview script",
         sessionId: "main",
         inputFile: scriptName,
-        dryRun: true,
+        strict: true,
         surface: "design",
         inlineResultLimit: 10_000,
       },
     });
     const json = structuredToolResult(result);
-    assert.equal(json.ok, true);
-    assert.equal(json.dryRun, true);
+    assert.equal(json.ok, false);
+    assert.equal(json.phase, "preflight");
+    assert.equal(json.executed, false);
     assert.equal(json.script.scriptPath, scriptPath);
     assert.equal(json.script.sourceLineCount, undefined);
     assert.equal(json.script.sourceBytes, undefined);
     assert.equal(json.script.helperApiVersion, undefined);
     assert.equal(json.script.diagnosticsCount, undefined);
-    assert.equal(json.script.dryRun, undefined);
     assert.equal(json.script.executed, undefined);
     assert.equal(json.compiledScript, undefined);
     assert.equal(json.diagnostics[0].code, "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT");
@@ -5593,9 +5594,9 @@ test("figma REPL run_script_file dryRun returns file-aware diagnostics without c
     assert.equal(json.diagnostics[0].source.line, 2);
     assert.equal(json.diagnostics[0].source.column, 1);
     const resultFile = await readPrettyJsonPointer(json.outputFiles.debugFile, resolve(fileDir, "script.result.json"));
-    assert.equal(resultFile.dryRun, true);
+    assert.equal(resultFile.phase, "preflight");
+    assert.equal(resultFile.executed, false);
     assert.equal(resultFile.script.diagnosticsCount, undefined);
-    assert.equal(resultFile.script.dryRun, undefined);
     assert.equal(resultFile.script.executed, undefined);
     assert.equal(resultFile.diagnosticsCount, 1);
     assert.equal(resultFile.diagnostics[0].source.column, 1);
@@ -5639,19 +5640,21 @@ test("figma REPL run_script_file blocks oversized compiled script payloads befor
     await server.connect(serverTransport);
     await mcpClient.connect(clientTransport);
 
-    await assert.rejects(
-      mcpClient.callTool({
-        name: "figma_repl_run_script_file",
-        arguments: {
-          title: "Run oversized script",
-          sessionId: "main",
-          scriptPath,
-          dryRun: true,
-          strict: true,
-        },
-      }),
-      /FIGMA_REPL_SCRIPT_PAYLOAD_TOO_LARGE/,
-    );
+    const result = await mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        title: "Run oversized script",
+        sessionId: "main",
+        scriptPath,
+        strict: true,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, false);
+    assert.equal(json.phase, "preflight");
+    assert.equal(json.executed, false);
+    assert.equal(json.diagnostics[0].code, "FIGMA_REPL_SCRIPT_PAYLOAD_TOO_LARGE");
+    assert.equal(json.upstream, undefined);
     assert.deepEqual(calls.map((call) => call[0]), []);
     await mcpClient.close();
   } finally {
@@ -5741,7 +5744,8 @@ test("figma REPL run_script_file executes helper-backed scripts through upstream
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.dryRun, false);
+    assert.equal(json.phase, "execute");
+    assert.equal(json.executed, true);
     assert.equal(json.script.executed, undefined);
     assert.equal(json.script.dryRun, undefined);
     assert.equal(json.script.diagnosticsCount, undefined);
@@ -5824,7 +5828,8 @@ test("figma REPL run_script_file keeps wrapper success when nested business ok i
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.dryRun, false);
+    assert.equal(json.phase, "execute");
+    assert.equal(json.executed, true);
     assert.equal(json.upstream.ok, false);
     assert.equal(json.upstream.result.ok, undefined);
     assert.equal(json.upstream.result.source, "business");
@@ -6051,18 +6056,20 @@ test("figma REPL run_script_file rejects dynamic helper access instead of full i
     await server.connect(serverTransport);
     await mcpClient.connect(clientTransport);
 
-    await assert.rejects(
-      mcpClient.callTool({
-        name: "figma_repl_run_script_file",
-        arguments: {
-          title: "Run dynamic helper script",
-          sessionId: "main",
-          scriptPath,
-          surface: "design",
-        },
-      }),
-      /FIGMA_REPL_DYNAMIC_HELPER_ACCESS/,
-    );
+    const result = await mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        title: "Run dynamic helper script",
+        sessionId: "main",
+        scriptPath,
+        surface: "design",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, false);
+    assert.equal(json.phase, "preflight");
+    assert.equal(json.executed, false);
+    assert.equal(json.diagnostics[0].code, "FIGMA_REPL_DYNAMIC_HELPER_ACCESS");
     assert.deepEqual(calls.map((call) => call[0]), []);
     await mcpClient.close();
   } finally {
@@ -6247,7 +6254,8 @@ test("figma REPL run_script_file structures upstream call failure errors", async
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, false);
-    assert.equal(json.dryRun, false);
+    assert.equal(json.phase, "execute");
+    assert.equal(json.executed, true);
     assert.equal(json.upstreamError.code, "FIGMA_INSTANCE_CHILD_REMOVE");
     assert.match(json.upstreamError.message, /instance subtree/);
     assert.equal(json.upstreamError.parsed, undefined);
@@ -6266,7 +6274,7 @@ test("figma REPL run_script_file structures upstream call failure errors", async
     assert.equal(resultFile.kind, "figma_repl_result");
     assert.equal(resultFile.tool, "figma_repl_run_script_file");
     assert.equal(resultFile.sessionId, "default");
-    assert.equal(resultFile.dryRun, false);
+    assert.equal(resultFile.phase, "execute");
     assert.equal(resultFile.executed, true);
     assert.equal(resultFile.upstreamKind, "json");
     assert.equal(resultFile.upstreamOk, false);
@@ -6357,7 +6365,8 @@ test("figma REPL run_script_file structures upstream text errors without implici
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, false);
-    assert.equal(json.dryRun, false);
+    assert.equal(json.phase, "execute");
+    assert.equal(json.executed, true);
     assert.equal(json.upstreamError.code, "FIGMA_UPSTREAM_TEXT_ERROR");
     assert.match(json.upstreamError.message, /set_selection/);
     assert.equal(json.upstreamError.details.debugUuid, "59c9dee0-3819-4e15-9a9e-a4a37a71072d");
@@ -6431,7 +6440,8 @@ test("figma REPL run_script_file writes output files and limits inline result fi
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.dryRun, false);
+    assert.equal(json.phase, "execute");
+    assert.equal(json.executed, true);
     assert.equal(json.result, undefined);
     assert.equal(json.text, undefined);
     assert.equal(json.raw, undefined);
@@ -6600,7 +6610,8 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.dryRun, false);
+    assert.equal(json.phase, "execute");
+    assert.equal(json.executed, true);
     assert.equal(json.session.sessionDir, initJson.task.workspace.sessionDir);
     assert.equal(json.session.workspace, undefined);
     assert.equal(json.session.surface, "design");
@@ -7312,7 +7323,7 @@ test("figma REPL programmatic client returns typed output contracts", async () =
   const capturePath = resolve(tempDir, "capture.png");
   const plannedCapturePath = resolve(tempDir, "capture.png");
   const workspaceDir = resolve(tempDir, "task");
-  await writeFile(scriptPath, "return { summary: 'typed dry run' };", "utf8");
+  await writeFile(scriptPath, "return { summary: 'typed script' };", "utf8");
   await writeFile(assetPath, "fake asset bytes", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(
@@ -7332,6 +7343,12 @@ test("figma REPL programmatic client returns typed output contracts", async () =
               }),
             },
           ],
+        };
+      }
+      if (name === "use_figma") {
+        assert.match(args.code, /typed script/);
+        return {
+          content: [{ type: "text", text: JSON.stringify({ result: { summary: "typed script" } }) }],
         };
       }
       if (name === "search_design_system") {
@@ -7412,6 +7429,7 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     },
     {
       tools: [
+        { name: "use_figma", inputSchema: { type: "object", properties: { code: { type: "string" } }, required: ["code"] } },
         { name: "fake_upstream", inputSchema: { type: "object", properties: {} } },
         { name: "search_design_system", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, query: { type: "string" } } } },
         { name: "get_libraries", inputSchema: { type: "object", properties: { fileKey: { type: "string" } } } },
@@ -7426,10 +7444,10 @@ test("figma REPL programmatic client returns typed output contracts", async () =
   try {
     const scriptResult = await repl.runScriptFile({
       scriptPath,
-      dryRun: true,
     });
     assert.equal(scriptResult.ok, true);
-    assert.equal(scriptResult.dryRun, true);
+    assert.equal(scriptResult.phase, "execute");
+    assert.equal(scriptResult.executed, true);
     assert.equal("content" in scriptResult, false);
     assert.equal(scriptResult.script.injectedHelpers, undefined);
     assert.equal(scriptResult.verbose, undefined);
@@ -7543,7 +7561,7 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(preparedResult.session.workspace, undefined);
     assert.equal(preparedResult.verbose, undefined);
 
-    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool", "callTool", "callTool", "callTool", "callTool"]);
+    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool", "callTool", "callTool", "callTool", "callTool", "callTool"]);
   } finally {
     await repl.close();
     await rm(tempDir, { recursive: true, force: true });
