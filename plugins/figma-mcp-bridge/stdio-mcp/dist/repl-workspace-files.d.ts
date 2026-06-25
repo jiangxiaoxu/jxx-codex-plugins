@@ -81,12 +81,12 @@ export declare function resolvePreparedTaskWorkspace(options: {
         workspaceDir?: unknown;
         taskRoot?: unknown;
     };
-    taskSlug: string;
+    taskName: string;
     fileSlug: string;
     session?: FigmaReplWorkspaceFileSession;
 }): FigmaReplSessionWorkspace;
 export declare function resolveWorkspaceFile(baseDir: string, fileName: string, argumentName: string): string;
-export declare function normalizeTaskScriptName(value: unknown, taskSlug: string): string;
+export declare function normalizeTaskScriptName(value: unknown, taskName: string): string;
 export declare function resultFileNameForScript(scriptName: string): string;
 export declare function writeTaskFile(path: string, content: string, overwrite: boolean): Promise<FilePointerMetadata>;
 export declare function isMissingFileError(error: unknown): boolean;

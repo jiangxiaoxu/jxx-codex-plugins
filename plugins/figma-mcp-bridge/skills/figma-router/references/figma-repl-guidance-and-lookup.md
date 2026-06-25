@@ -4,7 +4,7 @@ Use this reference to choose between `figma_repl_guidance` and `figma_repl_looku
 
 ## Guidance First
 
-- For natural-language tasks, call `figma_repl_guidance` before writing `.figma.js`.
+- Before writing `.figma.js`, call `figma_repl_guidance({ query })` with compact BM25-style keywords, not natural-language task prose.
 - Use its `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext` fields to choose the next tool or API symbols.
 - Common anchors are text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, and FigJam/Slides.
 - Treat `avoid` as task-specific guardrails before modifying a file.

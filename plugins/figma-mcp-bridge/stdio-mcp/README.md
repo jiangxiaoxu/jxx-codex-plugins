@@ -87,7 +87,7 @@ await upstream.close();
 
 ## REPL Response Shape
 
-Every local `figma_repl_*` tool returns a fixed structured shape. Ordinary tool `session` summaries contain only `id`, `fileKey`, `surface`, `handleChanges`, and `workspace.workspaceRef`; read `figma-repl://sessions/{id}/handles` for the full handle map. `diagnostics` is always an array, and JSON debug/result file pointers are under `outputFiles.debugFile` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return effective upstream success as `upstream.ok`, public upstream JSON as `upstream.result`, and non-JSON upstream output as `upstream.text`; eval/script payloads containing bridge-internal `__figmaRepl` metadata are unwrapped to their business result, while raw official JSON without top-level `ok` remains unchanged as `upstream.result`. `figma_repl_get_metadata` is the metadata-first wrapper for official `get_metadata`: upstream XML is converted to compact JSON, small `metadata.json` trees are returned inline, and oversized trees are written to `outputFiles.metadataFile`. Asset manifests keep compact inline asset entries and write full per-asset upstream details only to generated debug files.
+Every local `figma_repl_*` tool returns a fixed structured shape. Ordinary tool `session` summaries contain only `id`, `fileKey`, `surface`, `handleChanges`, and `workspace.workspaceRef`; read `figma-repl://sessions` for the compact list, `figma-repl://sessions/{id}` for compact detail with handles, and `figma-repl://sessions/{id}/handles` when only the full handle map is needed. `diagnostics` is always an array, and JSON debug/result file pointers are under `outputFiles.debugFile` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return effective upstream success as `upstream.ok`, public upstream JSON as `upstream.result`, and non-JSON upstream output as `upstream.text`; eval/script payloads containing bridge-internal `__figmaRepl` metadata are unwrapped to their business result, while raw official JSON without top-level `ok` remains unchanged as `upstream.result`. `figma_repl_get_metadata` is the metadata-first wrapper for official `get_metadata`: upstream XML is converted to compact JSON, small `metadata.json` trees are returned inline, and oversized trees are written to `outputFiles.metadataFile`. Asset manifests keep compact inline asset entries and write full per-asset upstream details only to generated debug files.
 
 `figma_repl_apply_asset_manifest` validates target IMAGE fills after upload when upstream eval is available. Successful submitUrl POSTs expose compact `assets[].upload` evidence such as `imageHash` and `placedOnNodeId` without returning raw submit URLs. If validation runs but cannot confirm every target record, the tool returns `ok:false` with `validation.reason` and writes `outputFiles.debugFile`; `validateTargets:false` remains the explicit skip.
 
@@ -103,7 +103,7 @@ Executed `figma_repl_run_script_file` result files use the same `upstream` envel
 await figma.prepareTask({
   sessionId: "settings workspace",
   file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI",
-  task: "settings panel polish",
+  taskName: "settings-panel-polish",
   overwrite: true,
 });
 await figma.runScriptFile({
@@ -118,7 +118,7 @@ await figma.runScriptFile({
 });
 ```
 
-`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `file` is supplied. `cwd` is optional and defaults to the MCP server process cwd. A task normally uses `task` and `<taskSlug>.figma.js` in that folder, then calls `runScriptFile` with `inputFile`. JSON debug/result files are generated on demand and returned through `outputFiles.debugFile`; script upstream sidecars use `outputFiles.upstreamFile`, and failure-only compiled wrappers use `outputFiles.compiledScriptFile`. Absolute `scriptPath`, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
+`figma_repl_prepare_task` creates `<cwd>/figma-mcp/<fileKey-or-fileSlug>/` when `file` is supplied. `cwd` is optional and defaults to the MCP server process cwd. A task normally uses slug-style `taskName` such as `settings-panel-polish` and `<taskName>.figma.js` in that folder, then calls `runScriptFile` with `inputFile`. JSON debug/result files are generated on demand and returned through `outputFiles.debugFile`; script upstream sidecars use `outputFiles.upstreamFile`, and failure-only compiled wrappers use `outputFiles.compiledScriptFile`. Absolute `scriptPath`, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
 
 Write ordinary async JavaScript in `.figma.js` files. Use native Figma Plugin API calls for advanced work and injected `$` helpers for common agent tasks:
 
@@ -144,9 +144,9 @@ Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, 
 
 ## Assets, Capture, and Plans
 
-- `figma_repl_apply_asset_manifest`: recommended call is `{ title, sessionId, manifestPath }`; inline assets are advanced/debug fields.
-- `figma_repl_capture_node`: recommended call is `{ title, sessionId, target, imageFile }`; `imageFile` is the PNG path and no `outputFiles` are returned.
-- `figma_repl_run_task_plan`: recommended call is `{ title, sessionId, planPath }`; inline `steps` are advanced fields and each step must be `{ type, args }`.
+- `figma_repl_apply_asset_manifest`: recommended call is `{ sessionId, manifestPath }`; inline assets are advanced/debug fields.
+- `figma_repl_capture_node`: recommended call is `{ sessionId, target, imageFile }`; `imageFile` is the PNG path and no `outputFiles` are returned.
+- `figma_repl_run_task_plan`: recommended call is `{ sessionId, planPath }`; inline `steps` are advanced fields and each step must be `{ type, args }`.
 
 Keep `.figma.js` transactions small enough for upstream `use_figma` payload limits. Split dense work into skeleton, asset targets, upload fills, and visual fixes when payload diagnostics appear.
 
@@ -158,7 +158,7 @@ The REPL facade keeps MCP resources limited to runtime state and dynamic discove
 - workflow tools: `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_get_metadata`;
 - execution: `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_run_task_plan`;
 - assets and QA: `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`;
-- state resources: `figma-repl://sessions`, `figma-repl://sessions/{id}`, `figma-repl://sessions/{id}/handles`;
+- state resources: `figma-repl://sessions` for compact session list, `figma-repl://sessions/{id}` for compact detail with handles and minimal workspace context, and `figma-repl://sessions/{id}/handles` for handle-only reads;
 - upstream discovery/resource bridge: `figma-repl://upstream-tools`, `figma_repl_call_upstream_tool`;
 - references: `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`, plus lightweight `figma-router` skill reference files for static workflow, lookup, and safety notes.
 

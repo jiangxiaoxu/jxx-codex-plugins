@@ -310,7 +310,7 @@ export function resolveTaskPlanResultFile(
   if (session.workspace) {
     return resolveWorkspaceFile(
       session.workspace.sessionDir,
-      `${slugifyTaskName(args.title)}.plan.result.json`,
+      "task-plan.plan.result.json",
       "debugFile",
     );
   }
@@ -318,7 +318,7 @@ export function resolveTaskPlanResultFile(
   if (!isAbsolute(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve(root, "task-plan-results", slugifyTaskName(args.title), `${slugifyTaskName(args.title)}.plan.result.json`);
+  return resolve(root, "task-plan-results", "task-plan", "task-plan.plan.result.json");
 }
 
 export function withTaskPlanDefaultFiles(
@@ -413,7 +413,7 @@ export async function ensureWorkspaceDirectories(workspace: FigmaReplSessionWork
 
 export function resolvePreparedTaskWorkspace(options: {
   args: { workspaceDir?: unknown; taskRoot?: unknown };
-  taskSlug: string;
+  taskName: string;
   fileSlug: string;
   session?: FigmaReplWorkspaceFileSession;
 }): FigmaReplSessionWorkspace {
@@ -423,7 +423,7 @@ export function resolvePreparedTaskWorkspace(options: {
       fileDir: resolve(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
       fileKey: options.session.fileKey,
       fileSlug: options.fileSlug,
-      intentSlug: options.taskSlug,
+      intentSlug: options.taskName,
     });
   }
   const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
@@ -431,14 +431,14 @@ export function resolvePreparedTaskWorkspace(options: {
     if (!isAbsolute(explicitWorkspaceDir)) {
       throw new Error('Tool argument "workspaceDir" must be an absolute path.');
     }
-    return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskSlug);
+    return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskName);
   }
   const workspaceDir = resolveTaskWorkspace({
-    taskSlug: options.taskSlug,
+    taskName: options.taskName,
     taskRoot: options.args.taskRoot,
     workspaceDir: undefined,
   });
-  return createWorkspaceFromSessionDir(workspaceDir, options.taskSlug);
+  return createWorkspaceFromSessionDir(workspaceDir, options.taskName);
 }
 
 export function resolveWorkspaceFile(baseDir: string, fileName: string, argumentName: string): string {
@@ -452,8 +452,8 @@ export function resolveWorkspaceFile(baseDir: string, fileName: string, argument
   return resolved;
 }
 
-export function normalizeTaskScriptName(value: unknown, taskSlug: string): string {
-  const scriptName = asOptionalString(value) ?? `${taskSlug}.figma.js`;
+export function normalizeTaskScriptName(value: unknown, taskName: string): string {
+  const scriptName = asOptionalString(value) ?? `${taskName}.figma.js`;
   if (isAbsolute(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
     throw new Error('Tool argument "fileName" must be a file name, not a path.');
   }
@@ -598,7 +598,7 @@ function countTextLines(content: string): number {
 }
 
 function resolveTaskWorkspace(options: {
-  taskSlug: string;
+  taskName: string;
   taskRoot?: unknown;
   workspaceDir?: unknown;
 }): string {
@@ -614,15 +614,15 @@ function resolveTaskWorkspace(options: {
   if (!isAbsolute(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve(root, options.taskSlug);
+  return resolve(root, options.taskName);
 }
 
-function createWorkspaceFromSessionDir(sessionDir: string, taskSlug: string): FigmaReplSessionWorkspace {
+function createWorkspaceFromSessionDir(sessionDir: string, taskName: string): FigmaReplSessionWorkspace {
   return createWorkspaceFromFileDir({
     root: dirname(sessionDir),
     fileDir: sessionDir,
     fileSlug: slugifyTaskName(basename(sessionDir)),
-    intentSlug: taskSlug,
+    intentSlug: taskName,
   });
 }
 
