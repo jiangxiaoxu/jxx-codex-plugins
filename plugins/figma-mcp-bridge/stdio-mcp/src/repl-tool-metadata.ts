@@ -83,7 +83,7 @@ export function createReplToolDescriptions(
           description: "Advanced inline asset entries. Prefer manifestPath. Each entry uses { path, target }; target accepts a node id, node URL, local handle like $hero, or { handle: \"$hero\" }.",
           items: { type: "object", additionalProperties: true },
         },
-        validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload.", { default: true }),
+        validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload. Missing or incomplete validation records make the workflow fail with outputFiles.debugFile instead of silently succeeding.", { default: true }),
       }),
     },
     {
@@ -268,7 +268,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
     session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
-    assets: compactAssetResultsProperty("Compact per-asset upload/fill results."),
+    assets: compactAssetResultsProperty("Compact per-asset upload/fill results. Successful submitUrl POSTs expose compact upload evidence without raw submit URLs."),
     validation: objectProperty("Optional target validation result."),
     outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
     failures: arrayProperty("Per-asset or validation failures."),

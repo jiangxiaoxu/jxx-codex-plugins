@@ -3039,7 +3039,7 @@ test("figma REPL asset manifest validation is indeterminate when upstream eval r
       },
     });
     const json = structuredToolResult(result);
-    assert.equal(json.ok, true);
+    assert.equal(json.ok, false);
     assert.equal(json.validation.ok, undefined);
     assert.equal(json.validation.reason, "validation result did not include every target record");
     assert.equal(json.validation.validationSource, "parsed.json.result");
@@ -3048,6 +3048,97 @@ test("figma REPL asset manifest validation is indeterminate when upstream eval r
     assert.equal(json.validation.invalidCount, 0);
     assert.equal(json.validation.missingValidationCount, 1);
     assert.equal(json.assets[0].validation, undefined);
+    assertFilePointer(json.outputFiles.debugFile, json.outputFiles.debugFile.path);
+    const debugFile = await readPrettyJsonPointer(json.outputFiles.debugFile, json.outputFiles.debugFile.path);
+    assert.equal(debugFile.validationOk, undefined);
+    assert.equal(debugFile.validationReason, "validation result did not include every target record");
+    assert.equal(debugFile.validationExpectedCount, 1);
+    assert.equal(debugFile.validationMissingCount, 1);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL asset manifest validation parses stringified array wrappers", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-assets-string-validate-"));
+  const assetPath = resolve(tempDir, "hero.png");
+  await writeFile(assetPath, "fake image bytes", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name }) => {
+      if (name === "upload_assets") {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, result: { id: "12:34" } }) }],
+        };
+      }
+      if (name === "use_figma") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                result: JSON.stringify([
+                  {
+                    targetNodeId: "12:34",
+                    status: "valid",
+                    nodeId: "12:34",
+                    nodeType: "RECTANGLE",
+                    fillCount: 1,
+                    imageFillCount: 1,
+                  },
+                ]),
+              }),
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected tool ${name}`);
+    },
+    {
+      tools: [
+        { name: "upload_assets", description: "Official upload tool.", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
+        { name: "use_figma", description: "Fake eval tool.", inputSchema: { type: "object", properties: { code: { type: "string" } } } },
+      ],
+    },
+  );
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_repl_open",
+      arguments: {
+        title: "Open string validate file context",
+        sessionId: "asset-string-validate",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+      },
+    });
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_apply_asset_manifest",
+      arguments: {
+        title: "Apply and validate string assets",
+        sessionId: "asset-string-validate",
+        assets: [{ path: assetPath, target: "12:34" }],
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.validation.ok, true);
+    assert.equal(json.validation.validationSource, "parsed.json.result(json)");
+    assert.equal(json.validation.validCount, 1);
+    assert.equal(json.validation.missingValidationCount, 0);
+    assert.equal(json.assets[0].validation.status, "valid");
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -3137,7 +3228,7 @@ test("figma REPL submits local bytes when upload_assets returns a submit URL", a
       body: Buffer.from(await new Response(init.body).arrayBuffer()).toString("utf8"),
     });
     return new Response(
-      JSON.stringify({ success: true, imageHash: "abc", placedOnNodeId: "12:34" }),
+      JSON.stringify({ success: true, imageHash: "abc", sizeBytes: 14, contentType: "image/png", placedOnNodeId: "12:34" }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   };
@@ -3208,7 +3299,17 @@ test("figma REPL submits local bytes when upload_assets returns a submit URL", a
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.assets[0].upload, undefined);
+    assert.equal(json.assets[0].upload.ok, true);
+    assert.equal(json.assets[0].upload.status, 200);
+    assert.equal(json.assets[0].upload.mimeType, "image/png");
+    assert.equal(json.assets[0].upload.bytes, 14);
+    assert.deepEqual(json.assets[0].upload.response, {
+      success: true,
+      imageHash: "abc",
+      sizeBytes: 14,
+      contentType: "image/png",
+      placedOnNodeId: "12:34",
+    });
     assert.equal(json.assets[0].upstreamError, undefined);
     assert.equal(json.outputFiles, undefined);
     assert.deepEqual(posts, [
@@ -3241,7 +3342,7 @@ test("figma REPL uses the stable official upload_assets schema without overrides
       body: Buffer.from(await new Response(init.body).arrayBuffer()).toString("utf8"),
     });
     return new Response(
-      JSON.stringify({ success: true, imageHash: "official-hash", placedOnNodeId: "12:34" }),
+      JSON.stringify({ success: true, imageHash: "official-hash", sizeBytes: 18, contentType: "image/png", placedOnNodeId: "12:34" }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   };
@@ -3314,7 +3415,9 @@ test("figma REPL uses the stable official upload_assets schema without overrides
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.equal(json.assets[0].toolName, undefined);
-    assert.equal(json.assets[0].upload, undefined);
+    assert.equal(json.assets[0].upload.response.imageHash, "official-hash");
+    assert.equal(json.assets[0].upload.response.placedOnNodeId, "12:34");
+    assert.equal(json.assets[0].upload.response.sizeBytes, 18);
     assert.equal(json.assets[0].upstreamError, undefined);
     assert.equal(json.outputFiles, undefined);
     assert.deepEqual(posts, [

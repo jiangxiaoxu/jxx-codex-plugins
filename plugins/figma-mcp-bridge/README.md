@@ -76,6 +76,8 @@ Agents should use `figma_repl_mcp` first:
 
 In workspace workflows, prefer `title`, `task`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath`. `title` is optional but recommended for UI/log clarity; omitted titles use runtime defaults. Inline assets/steps, custom upstream templates, `scriptPath`, upstream overrides, and `refresh` are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. `figma-repl://capabilities.toolArgumentGuidance` is the canonical argument guide.
 
+Asset manifests validate target IMAGE fills after upload when upstream eval is available. Successful submitUrl POSTs expose compact `assets[].upload` evidence such as `imageHash` and `placedOnNodeId` without returning raw submit URLs. If default validation cannot confirm every target record, `figma_repl_apply_asset_manifest` fails the workflow and writes details to `outputFiles.debugFile`; use `validateTargets: false` only when validation is intentionally skipped.
+
 For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 
 Programmatic Node usage with an explicit OAuth cache is for local package scripts and debugging. Use `figma_repl_mcp` for normal live Figma agent work:
