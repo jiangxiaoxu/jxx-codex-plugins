@@ -32,7 +32,7 @@ Recommended `node_repl` debugging sequence:
 1. Use `figma_repl_mcp` directly first when only live Figma work is needed.
 2. Use `node_repl` only when comparing package-local behavior, installed-cache behavior, or response-shape parsing.
 3. From `node_repl`, start a child MCP process for `dist/repl-stdio-cli.js`, connect with an explicit stdio client, then call `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, or `figma_repl_apply_asset_manifest` through that custom client.
-4. Before tool calls, use the same stdio client to call `listResources()` and `readResource({ uri: "figma-repl://capabilities" })`; read narrower resources such as `figma-repl://workflow-tools`, `figma-repl://file-workflow`, or `figma-repl://upstream-tools` when the debug task depends on them.
+4. Before tool calls, use the same stdio client to call `listResources()` and `readResource({ uri: "figma-repl://capabilities" })`; read `figma-repl://upstream-tools` only when an explicit upstream-only debug task depends on it.
 5. If `figma-repl://capabilities` cannot be read from the child MCP process, treat the `node_repl` debug environment as incomplete and fix the stdio client/session wiring before drawing conclusions from tool output.
 6. For parser-only tests, skip live Figma and inject a fake/custom client into `createFigmaReplClient({ client })`; provide fake `listResources()` / `readResource()` responses when the code under test needs resource-guided behavior.
 7. Capture the structured JSON returned by the tool call and compare only public contract fields; do not rely on private `__figmaRepl` metadata or raw upstream submit URLs.
@@ -68,10 +68,11 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls shoul
 
 ## Lookup Order
 
-- Use `figma-repl://capabilities` for aggregate self-explaining guidance, or narrower resources such as `figma-repl://guide`, `figma-repl://patterns`, `figma-repl://scripts`, `figma-repl://file-workflow`, `figma-repl://workflow-tools`, `figma-repl://api-cards`, `figma-repl://intents`, `figma-repl://safety`, `figma-repl://docs`, `figma-repl://api`, and `figma-repl://upstream-tools`.
+- Use `figma-repl://capabilities` for aggregate self-explaining runtime guidance.
 - Use `figma_repl_guidance` for task-to-helper routing and curated short cards.
 - Use `figma_repl_lookup({ kind: "docs" })` for BM25-ranked workflow snippets.
 - Use `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
+- For deeper static workflow, lookup, or safety notes, read `references/figma-repl-workflow.md`, `references/figma-repl-guidance-and-lookup.md`, or `references/figma-repl-safety.md`.
 
 Use `figma_repl_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow. Prefer `figma_repl_get_metadata` over direct upstream `get_metadata` calls. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
 

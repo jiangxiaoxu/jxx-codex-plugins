@@ -28,7 +28,7 @@ Pin these facts when changing the router surface:
 - agents start by reading `figma-repl://capabilities`;
 - `figma_repl_mcp` is the primary agent-facing entrypoint;
 - `node_repl` investigations must not use the embedded no-client SDK remote path for live Figma work; use hosted `figma_repl_mcp`, or an explicit custom client such as a child `dist/repl-stdio-cli.js` stdio MCP process;
-- exposed resources include the `figma-repl://capabilities`, `guide`, `file-workflow`, `workflow-tools`, `scripts`, `patterns`, `api-cards`, `intents`, `docs`, `api`, `safety`, `upstream-tools`, and `sessions` family;
+- exposed resources include only `figma-repl://capabilities`, `figma-repl://upstream-tools`, `figma-repl://upstream-tools/{name}`, `figma-repl://sessions`, and `figma-repl://sessions/{id}`;
 - `figma_repl_guidance` returns business guidance fields such as `workflow`, `steps`, `recommendedTools`, `suggestedCards`, `cards`, `catalogSize`, `guidance`, `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `suggestions`; it does not return a duplicate output `mode`;
 - `figma_repl_lookup` returns only `ok`, `results`, and `guidance` in structured output; request selectors and cap fields such as `kind`, `query`, `symbol`, `maxResults`, and `maxSnippetLines` stay input-only;
 - public `figma_repl_*` tools are exactly `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_apply_asset_manifest`, `figma_repl_download_assets`, `figma_repl_capture_node`, `figma_repl_run_task_plan`, `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_inspect`, `figma_repl_get_metadata`, `figma_repl_call_upstream_tool`, and `figma_repl_lookup`;
@@ -57,7 +57,7 @@ Pin these facts when changing the router surface:
 - Breaking changes to public tool names, resource URIs, result shapes, session semantics, and typed client signatures are allowed by default when they simplify the active contract; update runtime schemas, capabilities, docs, tests, and generated output in the same change.
 - Runtime parsers may reject removed or ambiguous public arguments. Keep parser behavior explicit, and do not duplicate path/workspace validation outside `repl-workspace-files.ts`.
 - Keep generated `dist` outputs in sync when `npm run build` changes them.
-- Do not reintroduce wrapper reference docs under `skills/figma-router/references/`; keep only `official-figma-skills/**` there.
+- Lightweight router references under `skills/figma-router/references/` are allowed for static workflow, lookup, and safety notes. Do not copy large runtime payloads there, and do not make those references a second canonical contract. Keep official corpus files under `official-figma-skills/**`.
 - Do not make docs canonical by copying large runtime payloads into markdown. Add or adjust narrow tests instead.
 - When changing plugin version numbers, update `plugins/figma-mcp-bridge/.codex-plugin/plugin.json` as part of the same release change.
 - When adding, renaming, or removing plugins under `plugins/*`, update `.agents/plugins/marketplace.json` and the root plugin list in `README.md`.

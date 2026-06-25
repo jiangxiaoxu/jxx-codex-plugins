@@ -80,6 +80,8 @@ Asset manifests validate target IMAGE fills after upload when upstream eval is a
 
 For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
 
+The MCP resource surface is intentionally small: `figma-repl://capabilities`, `figma-repl://sessions`, session detail resources, `figma-repl://upstream-tools`, and upstream tool detail resources. Static workflow, guidance, and safety notes live in the `figma-router` skill references; common task routing should use `figma_repl_guidance` and exact snippets should use `figma_repl_lookup`.
+
 Programmatic Node usage with an explicit OAuth cache is for local package scripts and debugging. Use `figma_repl_mcp` for normal live Figma agent work:
 
 ```js

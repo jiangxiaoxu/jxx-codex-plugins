@@ -152,15 +152,15 @@ Keep `.figma.js` transactions small enough for upstream `use_figma` payload limi
 
 ## Guidance and Lookup
 
-The REPL facade exposes compact self-explaining resources and tools:
+The REPL facade keeps MCP resources limited to runtime state and dynamic discovery:
 
-- workflow resources: `figma-repl://capabilities`, `figma-repl://guide`, `figma-repl://file-workflow`, `figma-repl://workflow-tools`;
+- aggregate guidance: `figma-repl://capabilities`;
 - workflow tools: `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_get_metadata`;
 - execution: `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_run_task_plan`;
 - assets and QA: `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`;
 - state resources: `figma-repl://sessions`, `figma-repl://sessions/{id}`;
 - upstream discovery/resource bridge: `figma-repl://upstream-tools`, `figma_repl_call_upstream_tool`;
-- references: `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`.
+- references: `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`, plus lightweight `figma-router` skill reference files for static workflow, lookup, and safety notes.
 
 Use `figma_repl_guidance` first for common intents, `mode: "plan"` workflow planning, and curated compact API cards. Use `figma_repl_get_metadata` for broad layer-tree discovery before targeted `figma_repl_inspect` style/fill/text checks. Use `figma_repl_lookup({ kind: "docs" })` for BM25-ranked workflow snippets and `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. Use `figma_repl_call_upstream_tool` only for an explicit uncovered upstream capability. Lookup output is capped and confidence-labeled; bundled corpus files are internal and are not an agent-facing documentation path.
 

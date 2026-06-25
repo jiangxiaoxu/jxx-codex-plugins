@@ -901,7 +901,7 @@ export function diagnoseFigmaReplCode(
       "fatal",
       "Multiple figma.setCurrentPageAsync() calls in one transaction are error-prone.",
       "Use one targetPageId on figma_repl_run_script_file or split page changes into separate script files.",
-      "figma-repl://safety#page-context",
+      "figma-repl://capabilities#safety-page-context",
     ));
   }
   if (!options.generatedCode && analysis.codes.has("FIGMA_REPL_DIRECT_SELECTION_ACCESS")) {
@@ -910,7 +910,7 @@ export function diagnoseFigmaReplCode(
       "warning",
       "Direct figma.currentPage.selection access is brittle in agent scripts.",
       "Use $.select([...]) for writes, $.inspect('$selection') for summaries, or resolve explicit node ids/handles.",
-      "figma-repl://scripts#helpers",
+      "figma-repl://capabilities#scriptWorkflow-helpers",
     ));
   }
   if (options.mode === "read") {
@@ -925,7 +925,7 @@ export function diagnoseFigmaReplCode(
         "fatal",
         "read mode rejected a likely property assignment.",
         "Use mode=write or a .figma.js script when mutation is intended.",
-        "figma-repl://safety#read-mode",
+        "figma-repl://capabilities#safety-read-mode",
       ));
     }
   }
@@ -935,7 +935,7 @@ export function diagnoseFigmaReplCode(
       "warning",
       "Text mutation usually requires figma.loadFontAsync() before changing characters or fontName.",
       "Use $.text, or await figma.loadFontAsync({ family, style }) before changing text.",
-      "figma-repl://patterns#text",
+      "figma-repl://capabilities#patterns-text",
     ));
   }
   if (analysis.oversizedImageAssetBase64Length !== undefined) {
@@ -944,7 +944,7 @@ export function diagnoseFigmaReplCode(
       "warning",
       `Inline $.imageAsset base64 is ${analysis.oversizedImageAssetBase64Length} characters and may exceed upstream MCP payload limits.`,
       "For large generated PNG/JPEG assets, create target rectangles in .figma.js and use the official upload_assets/upstream asset workflow to fill them.",
-      "figma-repl://scripts#helpers",
+      "figma-repl://capabilities#scriptWorkflow-helpers",
     ));
   }
   if (analysis.codes.has("FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME")) {
@@ -953,7 +953,7 @@ export function diagnoseFigmaReplCode(
       "warning",
       "$.checkpoint() appears to receive a handle as its first argument, but the first argument is the checkpoint name.",
       "Use $.checkpoint('meaningful-name', ['$handleOrNodeId'], { depth: 1 }).",
-      "figma-repl://scripts#helpers",
+      "figma-repl://capabilities#scriptWorkflow-helpers",
     ));
   }
   for (const diagnostic of diagnoseSurfaceCode(analysis, options.expectedSurface)) {
@@ -977,7 +977,7 @@ export function diagnoseWrappedScriptSize(
     severity: overLimit || strict ? "fatal" : "warning",
     message: `Compiled Figma script payload is ${byteLength} bytes; upstream use_figma accepts at most about ${UPSTREAM_EVAL_CODE_LIMIT_BYTES} characters.`,
     suggestion: "Split the work into smaller .figma.js files, for example skeleton, asset targets, upload fills, and visual fixes.",
-    docsHint: "figma-repl://scripts#file-workflow",
+    docsHint: "figma-repl://capabilities#scriptWorkflow-file-workflow",
     source: { scriptPath },
   }];
 }
@@ -997,37 +997,37 @@ const DANGEROUS_DIAGNOSTICS = [
     code: "FIGMA_REPL_DYNAMIC_EVAL",
     message: "Dynamic JavaScript evaluation is disabled by default.",
     suggestion: "Pass allowDangerousOperations=true only after reviewing the exact script.",
-    docsHint: "figma-repl://safety#dynamic-code",
+    docsHint: "figma-repl://capabilities#safety-dynamic-code",
   },
   {
     code: "FIGMA_REPL_NETWORK_ACCESS",
     message: "Network access from REPL code is disabled by default.",
     suggestion: "Fetch data outside Figma or pass allowDangerousOperations=true after review.",
-    docsHint: "figma-repl://safety#network",
+    docsHint: "figma-repl://capabilities#safety-network",
   },
   {
     code: "FIGMA_REPL_DYNAMIC_IMPORT",
     message: "Dynamic import is disabled by default.",
     suggestion: "Inline the required logic or pass allowDangerousOperations=true after review.",
-    docsHint: "figma-repl://safety#dynamic-code",
+    docsHint: "figma-repl://capabilities#safety-dynamic-code",
   },
   {
     code: "FIGMA_REPL_NODE_REMOVAL",
     message: "Direct remove() is destructive and can break clone rebuilds, especially inside instance subtrees.",
     suggestion: "Use $.replaceGeneratedFrame for guarded generated-frame replacement, or $.cloneNodeTree for copy/rebuild workflows.",
-    docsHint: "figma-repl://safety#destructive",
+    docsHint: "figma-repl://capabilities#safety-destructive",
   },
   {
     code: "FIGMA_REPL_FIGMA_DELETE",
     message: "Deleting properties on the figma object is not supported.",
     suggestion: "Use documented Plugin API calls only.",
-    docsHint: "figma-repl://safety#api-contract",
+    docsHint: "figma-repl://capabilities#safety-api-contract",
   },
   {
     code: "FIGMA_REPL_DESTRUCTIVE_OPERATION",
     message: "Destructive Figma operation is disabled by default.",
     suggestion: "Pass allowDangerousOperations=true only after reviewing the exact effect.",
-    docsHint: "figma-repl://safety#destructive",
+    docsHint: "figma-repl://capabilities#safety-destructive",
   },
 ];
 
@@ -1036,25 +1036,25 @@ const READ_MODE_WRITE_DIAGNOSTICS = [
     code: "FIGMA_REPL_READ_MODE_CREATE",
     message: "read mode rejected node creation.",
     suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
-    docsHint: "figma-repl://safety#read-mode",
+    docsHint: "figma-repl://capabilities#safety-read-mode",
   },
   {
     code: "FIGMA_REPL_READ_MODE_APPEND",
     message: "read mode rejected child insertion.",
     suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
-    docsHint: "figma-repl://safety#read-mode",
+    docsHint: "figma-repl://capabilities#safety-read-mode",
   },
   {
     code: "FIGMA_REPL_READ_MODE_REMOVE",
     message: "read mode rejected node removal.",
     suggestion: "Use mode=write with allowDangerousOperations only after review.",
-    docsHint: "figma-repl://safety#read-mode",
+    docsHint: "figma-repl://capabilities#safety-read-mode",
   },
   {
     code: "FIGMA_REPL_READ_MODE_RESIZE",
     message: "read mode rejected resize.",
     suggestion: "Use mode=write or a .figma.js script when mutation is intended.",
-    docsHint: "figma-repl://safety#read-mode",
+    docsHint: "figma-repl://capabilities#safety-read-mode",
   },
 ];
 
@@ -1104,7 +1104,7 @@ function parseFigmaReplCodeForDiagnostics(code: string): ParsedDiagnosticAst {
             "fatal",
             "Script could not be parsed as JavaScript.",
             "Fix JavaScript syntax before running the Figma REPL script.",
-            "figma-repl://safety#diagnostics",
+            "figma-repl://capabilities#safety-diagnostics",
           ),
         };
   } catch (error) {
@@ -1115,7 +1115,7 @@ function parseFigmaReplCodeForDiagnostics(code: string): ParsedDiagnosticAst {
         "fatal",
         `Script could not be parsed as JavaScript.${detail}`,
         "Fix JavaScript syntax before running the Figma REPL script.",
-        "figma-repl://safety#diagnostics",
+        "figma-repl://capabilities#safety-diagnostics",
       ),
     };
   }
@@ -1457,31 +1457,31 @@ const API_CONTRACT_DIAGNOSTICS = [
     code: "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT",
     message: "figma.currentPage is not assigned directly in the Plugin API.",
     suggestion: "Use await figma.setCurrentPageAsync(page) or figma_repl_run_script_file targetPageId.",
-    docsHint: "figma-repl://safety#page-context",
+    docsHint: "figma-repl://capabilities#safety-page-context",
   },
   {
     code: "FIGMA_REPL_ROOT_FIND_ALL",
     message: "figma.root.findAll() can scan the whole file and is not allowed through this layer.",
     suggestion: "Use $.find or $.findAll scoped to currentPage or a handle.",
-    docsHint: "figma-repl://patterns#query",
+    docsHint: "figma-repl://capabilities#patterns-query",
   },
   {
     code: "FIGMA_REPL_PLUGIN_DATA",
     message: "Plugin data APIs are not a reliable agent-facing persistence layer for this REPL.",
     suggestion: "Use local handles/session metadata or a dedicated upstream workflow.",
-    docsHint: "figma-repl://safety#facade-routing-delegation-boundaries",
+    docsHint: "figma-repl://capabilities#facade-routing-delegation-boundaries",
   },
   {
     code: "FIGMA_REPL_IMAGE_CREATION",
     message: "Raw image creation is outside the supported script-file asset workflow.",
     suggestion: "Use $.imageAsset({ base64, parent, size, position, as }) in .figma.js, or route unusual asset uploads through an upstream official tool.",
-    docsHint: "figma-repl://scripts#helpers",
+    docsHint: "figma-repl://capabilities#scriptWorkflow-helpers",
   },
   {
     code: "FIGMA_REPL_DYNAMIC_HELPER_ACCESS",
     message: "Dynamic $ helper access cannot be statically analyzed for on-demand helper injection.",
     suggestion: "Use a literal helper access such as $.find(...) or $[\"find\"](...); avoid $[name](...), object rest destructuring, aliasing $, or declaring a local $.",
-    docsHint: "figma-repl://scripts#helpers",
+    docsHint: "figma-repl://capabilities#scriptWorkflow-helpers",
   },
 ];
 
@@ -1610,7 +1610,7 @@ function diagnoseSurfaceCode(
       "fatal",
       "FigJam creation APIs were used while the session expects a Design file.",
       "Use a FigJam-specific workflow or open the session with surface='figjam'.",
-      "figma-repl://safety#surface",
+      "figma-repl://capabilities#safety-surface",
     ));
   }
   if (analysis.codes.has("FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM")) {
@@ -1619,7 +1619,7 @@ function diagnoseSurfaceCode(
       "fatal",
       "Design canvas APIs were used while the session expects a FigJam board.",
       "Use FigJam-specific helpers for boards or open the session with surface='design'.",
-      "figma-repl://safety#surface",
+      "figma-repl://capabilities#safety-surface",
     ));
   }
   if (analysis.codes.has("FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES")) {
@@ -1628,7 +1628,7 @@ function diagnoseSurfaceCode(
       "fatal",
       "Canvas mutation APIs were used while the session expects Slides.",
       "Use the official Slides workflow rather than the REPL mutation layer.",
-      "figma-repl://safety#surface",
+      "figma-repl://capabilities#safety-surface",
     ));
   }
   return diagnostics;
@@ -1650,7 +1650,7 @@ export function diagnoseFigmaReplContext(options: {
         "fatal",
         `Open expected ${options.expectedSurface} but the Figma URL looks like ${options.derivedSurface}.`,
         "Check the file URL or surface before running mutations.",
-        "figma-repl://safety#surface",
+        "figma-repl://capabilities#safety-surface",
       ),
     ];
   }

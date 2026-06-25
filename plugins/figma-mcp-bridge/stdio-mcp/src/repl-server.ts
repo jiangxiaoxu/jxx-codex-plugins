@@ -941,66 +941,6 @@ export function createFigmaReplMcpServer(
           mimeType: "application/json",
         },
         {
-          uri: "figma-repl://guide",
-          name: "Figma REPL agent guide",
-          description: "Read when you need the compact agent-facing guide for preferred flow, delegation boundaries, and examples.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-repl://patterns",
-          name: "Figma REPL usage patterns",
-          description: "Read when you need practical usage patterns for common Figma REPL tasks before choosing tools.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-repl://scripts",
-          name: "Figma REPL script file workflow",
-          description: "Read when you need the small-script figma_repl_eval versus file-based figma_repl_run_script_file workflow details.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-repl://file-workflow",
-          name: "Figma REPL .figma.js file workflow",
-          description: "Read when you need to create or repair local .figma.js workspace files with figma_repl_prepare_task and figma_repl_run_script_file.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-repl://workflow-tools",
-          name: "Figma REPL workflow tools for plans, assets, and captures",
-          description: "Read when you need supporting workflow tools for asset manifests, captures, and task plans.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-repl://api-cards",
-          name: "Figma REPL compact API cards",
-          description: "Read when you need compact Plugin API cards before asking figma_repl_guidance or figma_repl_lookup for specifics.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-repl://intents",
-          name: "Figma REPL intent to API guidance",
-          description: "Read when you need to map a user intent to recommended guidance cards, query hints, and API symbols.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-repl://safety",
-          name: "Figma REPL safety and diagnostics",
-          description: "Read when you need safety, diagnostics, payload, or surface guardrails for Figma REPL execution.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-repl://docs",
-          name: "Figma REPL compact documentation lookup guide",
-          description: "Read when you need the compact documentation lookup route for internal corpus snippets via figma_repl_lookup.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-repl://api",
-          name: "Figma REPL Plugin API lookup guide",
-          description: "Read when you need the Plugin API lookup route for exact symbols via figma_repl_lookup.",
-          mimeType: "application/json",
-        },
-        {
           uri: "figma-repl://upstream-tools",
           name: "Figma upstream MCP tools",
           description: "Read only when you need the compact directory of explicit uncovered official upstream Figma MCP capabilities.",
@@ -5714,7 +5654,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     toolArgumentGuidance: createToolArgumentGuidancePayload(),
     fileWorkflow: createFileWorkflowPayload(),
     workflowTools: {
-      resource: "figma-repl://workflow-tools",
+      skillReference: "figma-repl-workflow.md",
       assetManifest: {
         tool: "figma_repl_apply_asset_manifest",
         purpose: "Apply local generated image files to pre-created target nodes through official upstream upload_assets.",
@@ -5747,7 +5687,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     },
     queryStrategy: {
       tool: "figma_repl_guidance",
-      resource: "figma-repl://intents",
+      skillReference: "figma-repl-guidance-and-lookup.md",
       searchAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
       flow: [
         "Describe the user task in task.",
@@ -5761,7 +5701,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     },
     apiCards: {
       tool: "figma_repl_guidance",
-      resource: "figma-repl://api-cards",
+      skillReference: "figma-repl-guidance-and-lookup.md",
       cards: FIGMA_REPL_API_CARDS.map((card) => ({
         id: card.id,
         title: card.title,
@@ -5773,7 +5713,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     },
     intents: {
       tool: "figma_repl_guidance",
-      resource: "figma-repl://intents",
+      skillReference: "figma-repl-guidance-and-lookup.md",
       examples: ["create responsive card UI", "update text styles", "make component variants", "validate stale handles"],
       returns: ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"],
     },
@@ -5785,9 +5725,8 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     ],
     docsLookup: {
       lookupTool: "figma_repl_lookup",
-      docsResource: "figma-repl://docs",
-      apiResource: "figma-repl://api",
       guidanceTool: "figma_repl_guidance",
+      skillReference: "figma-repl-guidance-and-lookup.md",
       ranking: "Internal corpus files are chunked by Markdown headings/windows or d.ts symbol-ish blocks, then ranked with BM25; API lookup boosts exact symbols.",
       guardrail: "All lookup output is capped and confidence-labeled; bundled corpus files are not returned as agent-readable documents.",
     },
@@ -5821,66 +5760,6 @@ function readStaticReplResource(uri: string): Record<string, unknown> | undefine
   const payload = createCapabilitiesPayload();
   const resources: Record<string, unknown> = {
     "figma-repl://capabilities": payload,
-    "figma-repl://guide": payload.guide,
-    "figma-repl://patterns": payload.patterns,
-    "figma-repl://scripts": payload.scriptWorkflow,
-    "figma-repl://file-workflow": payload.fileWorkflow,
-    "figma-repl://workflow-tools": payload.workflowTools,
-    "figma-repl://api-cards": {
-      tool: "figma_repl_guidance",
-      cards: FIGMA_REPL_API_CARDS,
-      queryStrategy: payload.queryStrategy,
-      guidance: "Curated compact cards for common .figma.js tasks; use figma_repl_guidance to map natural-language intent to recommendedCards, queryHints, apiSymbols, and avoid before broader lookup.",
-    },
-    "figma-repl://intents": {
-      tool: "figma_repl_guidance",
-      queryStrategy: payload.queryStrategy,
-      workflow: createFileWorkflowPayload(),
-      commonTasks: FIGMA_REPL_COMMON_TASK_LABELS,
-      examples: FIGMA_REPL_INTENT_EXAMPLE_QUERIES.map((query) => createIntentSuggestions(query, 3)),
-    },
-    "figma-repl://safety": {
-      safety: payload.safety,
-      facadeRoutingDelegationBoundaries: payload.facadeRoutingDelegationBoundaries,
-      diagnostics: [
-        "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT",
-        "FIGMA_REPL_NODE_REMOVAL",
-        "FIGMA_REPL_DIRECT_SELECTION_ACCESS",
-        "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT",
-        "FIGMA_REPL_MULTIPLE_PAGE_SWITCH",
-        "FIGMA_REPL_ROOT_FIND_ALL",
-        "FIGMA_REPL_PLUGIN_DATA",
-        "FIGMA_REPL_IMAGE_CREATION",
-      ],
-    },
-    "figma-repl://docs": {
-      purpose: "Compact searchable facade guidance from the internal Figma corpus.",
-      tool: "figma_repl_lookup",
-      kind: "docs",
-      workflow: [
-        "Search with kind=docs and a narrow query.",
-        "Use matchType, confidence, and capped BM25 snippets.",
-        "Run a narrower search instead of reading bundled corpus files.",
-      ],
-      ranking: "Markdown references are chunked by headings and compact windows before BM25 scoring.",
-      allowlistSize: DOCS_SEARCH_ALLOWLIST.length,
-      maxResults: MAX_DOCS_SEARCH_RESULTS,
-      maxSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES,
-    },
-    "figma-repl://api": {
-      purpose: "Targeted Figma Plugin API symbol lookup from the internal corpus.",
-      tool: "figma_repl_lookup",
-      kind: "api",
-      workflow: [
-        "Search kind=api exact symbols such as createFrame, loadFontAsync, VariableCollection, or SceneNode.",
-        "Use snippets with matchType and confidence.",
-        "For broader usage guidance, use figma_repl_lookup kind=docs.",
-      ],
-      ranking: "API references are chunked by Markdown headings/windows and d.ts symbol-ish blocks; exact symbols are boosted over broad token matches.",
-      guardrail: "Bundled declaration files are internal corpus and are never returned as full documents.",
-      maxResults: MAX_DOCS_SEARCH_RESULTS,
-      maxSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES,
-    },
   };
   const content = resources[uri];
   if (content === undefined) {
