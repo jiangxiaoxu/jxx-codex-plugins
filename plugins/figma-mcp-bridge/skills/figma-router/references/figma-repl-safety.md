@@ -22,4 +22,4 @@ Use this reference when diagnostics or guardrails need more context. Runtime dia
 
 - Use the correct surface: design, figjam, or slides.
 - FigJam-only and Slides-only APIs should not be used in Design file scripts.
-- When a file URL reveals a surface, pass matching `surface` to dry-run checks.
+- When a file URL reveals a surface, pass matching `surface` so preflight diagnostics use the right API surface.

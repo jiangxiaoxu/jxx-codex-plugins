@@ -46,7 +46,6 @@ export interface CompiledFigmaReplScriptFile {
         helperUsage: FigmaReplScriptHelperUsageReport;
         targetPageId?: string;
         expectedSurface?: FigmaReplSurface;
-        diagnosticsCount: number;
     };
 }
 export declare function compileFigmaReplScriptFile(options: {

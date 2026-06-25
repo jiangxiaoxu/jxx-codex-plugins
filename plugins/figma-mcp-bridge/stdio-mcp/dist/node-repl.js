@@ -25477,8 +25477,7 @@ function compileFigmaReplScriptFile(options) {
       injectedHelpers: helperSelection.injectedHelpers,
       helperUsage: helperSelection.helperUsage,
       targetPageId: options.targetPageId,
-      expectedSurface: options.expectedSurface,
-      diagnosticsCount: diagnostics.length
+      expectedSurface: options.expectedSurface
     }
   };
 }
@@ -29444,7 +29443,6 @@ async function executeRunScriptFile(args, runtime) {
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const scriptMetadata = {
     ...compiled.metadata,
-    diagnosticsCount: diagnostics.length,
     compiledScriptBytes: Buffer.byteLength(wrappedScript, "utf8")
   };
   const responseScript = responseScriptMetadata(scriptMetadata);
