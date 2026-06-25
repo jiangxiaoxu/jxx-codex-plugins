@@ -19560,7 +19560,7 @@ function scoreApiCard(card, tokens, lowerQuery) {
 function tokenizeCatalogQuery(query) {
   return query.toLowerCase().split(/[^a-z0-9_$:.-]+/u).map((token) => token.trim()).filter((token) => token.length >= 2);
 }
-var FIGMA_REPL_QUERY_SEARCH_ANCHORS, FIGMA_REPL_QUERY_OUTPUT_FIELDS, FIGMA_REPL_COMMON_TASK_LABELS, FIGMA_REPL_INTENT_EXAMPLE_QUERIES, FIGMA_REPL_API_CARDS;
+var FIGMA_REPL_QUERY_SEARCH_ANCHORS, FIGMA_REPL_QUERY_OUTPUT_FIELDS, FIGMA_REPL_API_CARDS;
 var init_repl_guidance_catalog = __esm({
   "src/repl-guidance-catalog.ts"() {
     "use strict";
@@ -19582,23 +19582,6 @@ var init_repl_guidance_catalog = __esm({
       "apiSymbols",
       "avoid",
       "referenceContext"
-    ];
-    FIGMA_REPL_COMMON_TASK_LABELS = [
-      "font-safe text edits",
-      "auto-layout UI construction",
-      "variable binding",
-      "style application",
-      "component variants",
-      "instance properties",
-      "generated image fills",
-      "screenshot QA",
-      "FigJam board work",
-      "Slides deck work"
-    ];
-    FIGMA_REPL_INTENT_EXAMPLE_QUERIES = [
-      "create UI card with auto layout and text",
-      "make component variants",
-      "update color token"
     ];
     FIGMA_REPL_API_CARDS = [
       {
@@ -26217,7 +26200,7 @@ function diagnoseFigmaReplCode(code, options = {}) {
       "fatal",
       "Multiple figma.setCurrentPageAsync() calls in one transaction are error-prone.",
       "Use one targetPageId on figma_repl_run_script_file or split page changes into separate script files.",
-      "figma-repl://safety#page-context"
+      "figma-repl://capabilities#safety-page-context"
     ));
   }
   if (!options.generatedCode && analysis.codes.has("FIGMA_REPL_DIRECT_SELECTION_ACCESS")) {
@@ -26226,7 +26209,7 @@ function diagnoseFigmaReplCode(code, options = {}) {
       "warning",
       "Direct figma.currentPage.selection access is brittle in agent scripts.",
       "Use $.select([...]) for writes, $.inspect('$selection') for summaries, or resolve explicit node ids/handles.",
-      "figma-repl://scripts#helpers"
+      "figma-repl://capabilities#scriptWorkflow-helpers"
     ));
   }
   if (options.mode === "read") {
@@ -26241,7 +26224,7 @@ function diagnoseFigmaReplCode(code, options = {}) {
         "fatal",
         "read mode rejected a likely property assignment.",
         "Use mode=write or a .figma.js script when mutation is intended.",
-        "figma-repl://safety#read-mode"
+        "figma-repl://capabilities#safety-read-mode"
       ));
     }
   }
@@ -26251,7 +26234,7 @@ function diagnoseFigmaReplCode(code, options = {}) {
       "warning",
       "Text mutation usually requires figma.loadFontAsync() before changing characters or fontName.",
       "Use $.text, or await figma.loadFontAsync({ family, style }) before changing text.",
-      "figma-repl://patterns#text"
+      "figma-repl://capabilities#patterns-text"
     ));
   }
   if (analysis.oversizedImageAssetBase64Length !== void 0) {
@@ -26260,7 +26243,7 @@ function diagnoseFigmaReplCode(code, options = {}) {
       "warning",
       `Inline $.imageAsset base64 is ${analysis.oversizedImageAssetBase64Length} characters and may exceed upstream MCP payload limits.`,
       "For large generated PNG/JPEG assets, create target rectangles in .figma.js and use the official upload_assets/upstream asset workflow to fill them.",
-      "figma-repl://scripts#helpers"
+      "figma-repl://capabilities#scriptWorkflow-helpers"
     ));
   }
   if (analysis.codes.has("FIGMA_REPL_CHECKPOINT_HANDLE_AS_NAME")) {
@@ -26269,7 +26252,7 @@ function diagnoseFigmaReplCode(code, options = {}) {
       "warning",
       "$.checkpoint() appears to receive a handle as its first argument, but the first argument is the checkpoint name.",
       "Use $.checkpoint('meaningful-name', ['$handleOrNodeId'], { depth: 1 }).",
-      "figma-repl://scripts#helpers"
+      "figma-repl://capabilities#scriptWorkflow-helpers"
     ));
   }
   for (const diagnostic of diagnoseSurfaceCode(analysis, options.expectedSurface)) {
@@ -26288,7 +26271,7 @@ function diagnoseWrappedScriptSize(scriptPath, wrappedScript, strict) {
     severity: overLimit || strict ? "fatal" : "warning",
     message: `Compiled Figma script payload is ${byteLength} bytes; upstream use_figma accepts at most about ${UPSTREAM_EVAL_CODE_LIMIT_BYTES} characters.`,
     suggestion: "Split the work into smaller .figma.js files, for example skeleton, asset targets, upload fills, and visual fixes.",
-    docsHint: "figma-repl://scripts#file-workflow",
+    docsHint: "figma-repl://capabilities#scriptWorkflow-file-workflow",
     source: { scriptPath }
   }];
 }
@@ -26314,7 +26297,7 @@ function parseFigmaReplCodeForDiagnostics(code) {
         "fatal",
         "Script could not be parsed as JavaScript.",
         "Fix JavaScript syntax before running the Figma REPL script.",
-        "figma-repl://safety#diagnostics"
+        "figma-repl://capabilities#safety-diagnostics"
       )
     };
   } catch (error2) {
@@ -26325,7 +26308,7 @@ function parseFigmaReplCodeForDiagnostics(code) {
         "fatal",
         `Script could not be parsed as JavaScript.${detail}`,
         "Fix JavaScript syntax before running the Figma REPL script.",
-        "figma-repl://safety#diagnostics"
+        "figma-repl://capabilities#safety-diagnostics"
       )
     };
   }
@@ -26693,7 +26676,7 @@ function diagnoseSurfaceCode(analysis, expectedSurface) {
       "fatal",
       "FigJam creation APIs were used while the session expects a Design file.",
       "Use a FigJam-specific workflow or open the session with surface='figjam'.",
-      "figma-repl://safety#surface"
+      "figma-repl://capabilities#safety-surface"
     ));
   }
   if (analysis.codes.has("FIGMA_REPL_SURFACE_DESIGN_API_IN_FIGJAM")) {
@@ -26702,7 +26685,7 @@ function diagnoseSurfaceCode(analysis, expectedSurface) {
       "fatal",
       "Design canvas APIs were used while the session expects a FigJam board.",
       "Use FigJam-specific helpers for boards or open the session with surface='design'.",
-      "figma-repl://safety#surface"
+      "figma-repl://capabilities#safety-surface"
     ));
   }
   if (analysis.codes.has("FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES")) {
@@ -26711,7 +26694,7 @@ function diagnoseSurfaceCode(analysis, expectedSurface) {
       "fatal",
       "Canvas mutation APIs were used while the session expects Slides.",
       "Use the official Slides workflow rather than the REPL mutation layer.",
-      "figma-repl://safety#surface"
+      "figma-repl://capabilities#safety-surface"
     ));
   }
   return diagnostics;
@@ -26724,7 +26707,7 @@ function diagnoseFigmaReplContext(options) {
         "fatal",
         `Open expected ${options.expectedSurface} but the Figma URL looks like ${options.derivedSurface}.`,
         "Check the file URL or surface before running mutations.",
-        "figma-repl://safety#surface"
+        "figma-repl://capabilities#safety-surface"
       )
     ];
   }
@@ -26776,37 +26759,37 @@ var init_repl_script_runner = __esm({
         code: "FIGMA_REPL_DYNAMIC_EVAL",
         message: "Dynamic JavaScript evaluation is disabled by default.",
         suggestion: "Pass allowDangerousOperations=true only after reviewing the exact script.",
-        docsHint: "figma-repl://safety#dynamic-code"
+        docsHint: "figma-repl://capabilities#safety-dynamic-code"
       },
       {
         code: "FIGMA_REPL_NETWORK_ACCESS",
         message: "Network access from REPL code is disabled by default.",
         suggestion: "Fetch data outside Figma or pass allowDangerousOperations=true after review.",
-        docsHint: "figma-repl://safety#network"
+        docsHint: "figma-repl://capabilities#safety-network"
       },
       {
         code: "FIGMA_REPL_DYNAMIC_IMPORT",
         message: "Dynamic import is disabled by default.",
         suggestion: "Inline the required logic or pass allowDangerousOperations=true after review.",
-        docsHint: "figma-repl://safety#dynamic-code"
+        docsHint: "figma-repl://capabilities#safety-dynamic-code"
       },
       {
         code: "FIGMA_REPL_NODE_REMOVAL",
         message: "Direct remove() is destructive and can break clone rebuilds, especially inside instance subtrees.",
         suggestion: "Use $.replaceGeneratedFrame for guarded generated-frame replacement, or $.cloneNodeTree for copy/rebuild workflows.",
-        docsHint: "figma-repl://safety#destructive"
+        docsHint: "figma-repl://capabilities#safety-destructive"
       },
       {
         code: "FIGMA_REPL_FIGMA_DELETE",
         message: "Deleting properties on the figma object is not supported.",
         suggestion: "Use documented Plugin API calls only.",
-        docsHint: "figma-repl://safety#api-contract"
+        docsHint: "figma-repl://capabilities#safety-api-contract"
       },
       {
         code: "FIGMA_REPL_DESTRUCTIVE_OPERATION",
         message: "Destructive Figma operation is disabled by default.",
         suggestion: "Pass allowDangerousOperations=true only after reviewing the exact effect.",
-        docsHint: "figma-repl://safety#destructive"
+        docsHint: "figma-repl://capabilities#safety-destructive"
       }
     ];
     READ_MODE_WRITE_DIAGNOSTICS = [
@@ -26814,25 +26797,25 @@ var init_repl_script_runner = __esm({
         code: "FIGMA_REPL_READ_MODE_CREATE",
         message: "read mode rejected node creation.",
         suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
-        docsHint: "figma-repl://safety#read-mode"
+        docsHint: "figma-repl://capabilities#safety-read-mode"
       },
       {
         code: "FIGMA_REPL_READ_MODE_APPEND",
         message: "read mode rejected child insertion.",
         suggestion: "Use mode=write or figma_repl_run_script_file when mutation is intended.",
-        docsHint: "figma-repl://safety#read-mode"
+        docsHint: "figma-repl://capabilities#safety-read-mode"
       },
       {
         code: "FIGMA_REPL_READ_MODE_REMOVE",
         message: "read mode rejected node removal.",
         suggestion: "Use mode=write with allowDangerousOperations only after review.",
-        docsHint: "figma-repl://safety#read-mode"
+        docsHint: "figma-repl://capabilities#safety-read-mode"
       },
       {
         code: "FIGMA_REPL_READ_MODE_RESIZE",
         message: "read mode rejected resize.",
         suggestion: "Use mode=write or a .figma.js script when mutation is intended.",
-        docsHint: "figma-repl://safety#read-mode"
+        docsHint: "figma-repl://capabilities#safety-read-mode"
       }
     ];
     READ_MODE_ASSIGNMENT_PROPERTIES = /* @__PURE__ */ new Set([
@@ -26853,31 +26836,31 @@ var init_repl_script_runner = __esm({
         code: "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT",
         message: "figma.currentPage is not assigned directly in the Plugin API.",
         suggestion: "Use await figma.setCurrentPageAsync(page) or figma_repl_run_script_file targetPageId.",
-        docsHint: "figma-repl://safety#page-context"
+        docsHint: "figma-repl://capabilities#safety-page-context"
       },
       {
         code: "FIGMA_REPL_ROOT_FIND_ALL",
         message: "figma.root.findAll() can scan the whole file and is not allowed through this layer.",
         suggestion: "Use $.find or $.findAll scoped to currentPage or a handle.",
-        docsHint: "figma-repl://patterns#query"
+        docsHint: "figma-repl://capabilities#patterns-query"
       },
       {
         code: "FIGMA_REPL_PLUGIN_DATA",
         message: "Plugin data APIs are not a reliable agent-facing persistence layer for this REPL.",
         suggestion: "Use local handles/session metadata or a dedicated upstream workflow.",
-        docsHint: "figma-repl://safety#facade-routing-delegation-boundaries"
+        docsHint: "figma-repl://capabilities#facade-routing-delegation-boundaries"
       },
       {
         code: "FIGMA_REPL_IMAGE_CREATION",
         message: "Raw image creation is outside the supported script-file asset workflow.",
         suggestion: "Use $.imageAsset({ base64, parent, size, position, as }) in .figma.js, or route unusual asset uploads through an upstream official tool.",
-        docsHint: "figma-repl://scripts#helpers"
+        docsHint: "figma-repl://capabilities#scriptWorkflow-helpers"
       },
       {
         code: "FIGMA_REPL_DYNAMIC_HELPER_ACCESS",
         message: "Dynamic $ helper access cannot be statically analyzed for on-demand helper injection.",
         suggestion: 'Use a literal helper access such as $.find(...) or $["find"](...); avoid $[name](...), object rest destructuring, aliasing $, or declaring a local $.',
-        docsHint: "figma-repl://scripts#helpers"
+        docsHint: "figma-repl://capabilities#scriptWorkflow-helpers"
       }
     ];
     FIGJAM_CREATION_METHODS = /* @__PURE__ */ new Set(["createSticky", "createConnector", "createShapeWithText", "createCodeBlock", "createTable"]);
@@ -28930,66 +28913,6 @@ function createFigmaReplMcpServer(options = {}) {
           uri: "figma-repl://capabilities",
           name: "Figma REPL aggregate capabilities",
           description: "Read first to choose the Figma REPL facade path, available tools, workflow resources, and lookup strategy.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://guide",
-          name: "Figma REPL agent guide",
-          description: "Read when you need the compact agent-facing guide for preferred flow, delegation boundaries, and examples.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://patterns",
-          name: "Figma REPL usage patterns",
-          description: "Read when you need practical usage patterns for common Figma REPL tasks before choosing tools.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://scripts",
-          name: "Figma REPL script file workflow",
-          description: "Read when you need the small-script figma_repl_eval versus file-based figma_repl_run_script_file workflow details.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://file-workflow",
-          name: "Figma REPL .figma.js file workflow",
-          description: "Read when you need to create or repair local .figma.js workspace files with figma_repl_prepare_task and figma_repl_run_script_file.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://workflow-tools",
-          name: "Figma REPL workflow tools for plans, assets, and captures",
-          description: "Read when you need supporting workflow tools for asset manifests, captures, and task plans.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://api-cards",
-          name: "Figma REPL compact API cards",
-          description: "Read when you need compact Plugin API cards before asking figma_repl_guidance or figma_repl_lookup for specifics.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://intents",
-          name: "Figma REPL intent to API guidance",
-          description: "Read when you need to map a user intent to recommended guidance cards, query hints, and API symbols.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://safety",
-          name: "Figma REPL safety and diagnostics",
-          description: "Read when you need safety, diagnostics, payload, or surface guardrails for Figma REPL execution.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://docs",
-          name: "Figma REPL compact documentation lookup guide",
-          description: "Read when you need the compact documentation lookup route for internal corpus snippets via figma_repl_lookup.",
-          mimeType: "application/json"
-        },
-        {
-          uri: "figma-repl://api",
-          name: "Figma REPL Plugin API lookup guide",
-          description: "Read when you need the Plugin API lookup route for exact symbols via figma_repl_lookup.",
           mimeType: "application/json"
         },
         {
@@ -33115,7 +33038,7 @@ function createCapabilitiesPayload() {
     toolArgumentGuidance: createToolArgumentGuidancePayload(),
     fileWorkflow: createFileWorkflowPayload(),
     workflowTools: {
-      resource: "figma-repl://workflow-tools",
+      skillReference: "figma-repl-workflow.md",
       assetManifest: {
         tool: "figma_repl_apply_asset_manifest",
         purpose: "Apply local generated image files to pre-created target nodes through official upstream upload_assets.",
@@ -33148,7 +33071,7 @@ function createCapabilitiesPayload() {
     },
     queryStrategy: {
       tool: "figma_repl_guidance",
-      resource: "figma-repl://intents",
+      skillReference: "figma-repl-guidance-and-lookup.md",
       searchAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
       flow: [
         "Describe the user task in task.",
@@ -33162,7 +33085,7 @@ function createCapabilitiesPayload() {
     },
     apiCards: {
       tool: "figma_repl_guidance",
-      resource: "figma-repl://api-cards",
+      skillReference: "figma-repl-guidance-and-lookup.md",
       cards: FIGMA_REPL_API_CARDS.map((card) => ({
         id: card.id,
         title: card.title,
@@ -33174,7 +33097,7 @@ function createCapabilitiesPayload() {
     },
     intents: {
       tool: "figma_repl_guidance",
-      resource: "figma-repl://intents",
+      skillReference: "figma-repl-guidance-and-lookup.md",
       examples: ["create responsive card UI", "update text styles", "make component variants", "validate stale handles"],
       returns: ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"]
     },
@@ -33186,9 +33109,8 @@ function createCapabilitiesPayload() {
     ],
     docsLookup: {
       lookupTool: "figma_repl_lookup",
-      docsResource: "figma-repl://docs",
-      apiResource: "figma-repl://api",
       guidanceTool: "figma_repl_guidance",
+      skillReference: "figma-repl-guidance-and-lookup.md",
       ranking: "Internal corpus files are chunked by Markdown headings/windows or d.ts symbol-ish blocks, then ranked with BM25; API lookup boosts exact symbols.",
       guardrail: "All lookup output is capped and confidence-labeled; bundled corpus files are not returned as agent-readable documents."
     },
@@ -33220,67 +33142,7 @@ function createCapabilitiesPayload() {
 function readStaticReplResource(uri) {
   const payload = createCapabilitiesPayload();
   const resources = {
-    "figma-repl://capabilities": payload,
-    "figma-repl://guide": payload.guide,
-    "figma-repl://patterns": payload.patterns,
-    "figma-repl://scripts": payload.scriptWorkflow,
-    "figma-repl://file-workflow": payload.fileWorkflow,
-    "figma-repl://workflow-tools": payload.workflowTools,
-    "figma-repl://api-cards": {
-      tool: "figma_repl_guidance",
-      cards: FIGMA_REPL_API_CARDS,
-      queryStrategy: payload.queryStrategy,
-      guidance: "Curated compact cards for common .figma.js tasks; use figma_repl_guidance to map natural-language intent to recommendedCards, queryHints, apiSymbols, and avoid before broader lookup."
-    },
-    "figma-repl://intents": {
-      tool: "figma_repl_guidance",
-      queryStrategy: payload.queryStrategy,
-      workflow: createFileWorkflowPayload(),
-      commonTasks: FIGMA_REPL_COMMON_TASK_LABELS,
-      examples: FIGMA_REPL_INTENT_EXAMPLE_QUERIES.map((query) => createIntentSuggestions(query, 3))
-    },
-    "figma-repl://safety": {
-      safety: payload.safety,
-      facadeRoutingDelegationBoundaries: payload.facadeRoutingDelegationBoundaries,
-      diagnostics: [
-        "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT",
-        "FIGMA_REPL_NODE_REMOVAL",
-        "FIGMA_REPL_DIRECT_SELECTION_ACCESS",
-        "FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT",
-        "FIGMA_REPL_MULTIPLE_PAGE_SWITCH",
-        "FIGMA_REPL_ROOT_FIND_ALL",
-        "FIGMA_REPL_PLUGIN_DATA",
-        "FIGMA_REPL_IMAGE_CREATION"
-      ]
-    },
-    "figma-repl://docs": {
-      purpose: "Compact searchable facade guidance from the internal Figma corpus.",
-      tool: "figma_repl_lookup",
-      kind: "docs",
-      workflow: [
-        "Search with kind=docs and a narrow query.",
-        "Use matchType, confidence, and capped BM25 snippets.",
-        "Run a narrower search instead of reading bundled corpus files."
-      ],
-      ranking: "Markdown references are chunked by headings and compact windows before BM25 scoring.",
-      allowlistSize: DOCS_SEARCH_ALLOWLIST.length,
-      maxResults: MAX_DOCS_SEARCH_RESULTS,
-      maxSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES
-    },
-    "figma-repl://api": {
-      purpose: "Targeted Figma Plugin API symbol lookup from the internal corpus.",
-      tool: "figma_repl_lookup",
-      kind: "api",
-      workflow: [
-        "Search kind=api exact symbols such as createFrame, loadFontAsync, VariableCollection, or SceneNode.",
-        "Use snippets with matchType and confidence.",
-        "For broader usage guidance, use figma_repl_lookup kind=docs."
-      ],
-      ranking: "API references are chunked by Markdown headings/windows and d.ts symbol-ish blocks; exact symbols are boosted over broad token matches.",
-      guardrail: "Bundled declaration files are internal corpus and are never returned as full documents.",
-      maxResults: MAX_DOCS_SEARCH_RESULTS,
-      maxSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES
-    }
+    "figma-repl://capabilities": payload
   };
   const content = resources[uri];
   if (content === void 0) {

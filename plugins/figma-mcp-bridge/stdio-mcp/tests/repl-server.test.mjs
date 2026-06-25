@@ -23,9 +23,13 @@ import {
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const expectedStaticResourceUris = [
+  "figma-repl://capabilities",
+  "figma-repl://sessions",
+  "figma-repl://upstream-tools",
+];
+const removedStaticResourceUris = [
   "figma-repl://api",
   "figma-repl://api-cards",
-  "figma-repl://capabilities",
   "figma-repl://docs",
   "figma-repl://file-workflow",
   "figma-repl://guide",
@@ -33,8 +37,6 @@ const expectedStaticResourceUris = [
   "figma-repl://patterns",
   "figma-repl://safety",
   "figma-repl://scripts",
-  "figma-repl://sessions",
-  "figma-repl://upstream-tools",
   "figma-repl://workflow-tools",
 ];
 const queryOutputFields = [
@@ -1585,27 +1587,20 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   ]);
 
   const aggregateResource = await mcpClient.readResource({ uri: "figma-repl://capabilities" });
-  assert.deepEqual(JSON.parse(aggregateResource.contents[0].text).queryStrategy.outputFields, queryOutputFields);
-
-  const scriptsResource = await mcpClient.readResource({ uri: "figma-repl://scripts" });
-  const scripts = JSON.parse(scriptsResource.contents[0].text);
-  assert.equal(scripts.primaryTool, "figma_repl_run_script_file");
-  assert.match(scripts.options.scriptPath, /absolute-path escape hatch/i);
-
-  const workflowResource = await mcpClient.readResource({ uri: "figma-repl://file-workflow" });
-  const workflow = JSON.parse(workflowResource.contents[0].text);
-  assert.equal(workflow.prepareTool, "figma_repl_prepare_task");
-  assert.deepEqual(workflow.helpers, ["$", ...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES.map((name) => `$.${name}`)]);
-  assert.deepEqual(workflow.workflowTools, [
+  const aggregateCapabilities = JSON.parse(aggregateResource.contents[0].text);
+  assert.deepEqual(aggregateCapabilities.queryStrategy.outputFields, queryOutputFields);
+  assert.equal(aggregateCapabilities.scriptWorkflow.primaryTool, "figma_repl_run_script_file");
+  assert.match(aggregateCapabilities.scriptWorkflow.options.scriptPath, /absolute-path escape hatch/i);
+  assert.equal(aggregateCapabilities.fileWorkflow.prepareTool, "figma_repl_prepare_task");
+  assert.deepEqual(aggregateCapabilities.fileWorkflow.helpers, ["$", ...FIGMA_REPL_EVAL_COMMON_HELPER_NAMES.map((name) => `$.${name}`)]);
+  assert.deepEqual(aggregateCapabilities.fileWorkflow.workflowTools, [
     "figma_repl_get_metadata",
     "figma_repl_apply_asset_manifest",
     "figma_repl_download_assets",
     "figma_repl_capture_node",
     "figma_repl_run_task_plan",
   ]);
-
-  const workflowToolsResource = await mcpClient.readResource({ uri: "figma-repl://workflow-tools" });
-  const workflowTools = JSON.parse(workflowToolsResource.contents[0].text);
+  const workflowTools = aggregateCapabilities.workflowTools;
   assert.equal(workflowTools.assetManifest.tool, "figma_repl_apply_asset_manifest");
   assert.match(workflowTools.assetManifest.defaults, /official upload_assets/);
   assert.doesNotMatch(workflowTools.assetManifest.assetShape, /toolName|arguments/);
@@ -1615,9 +1610,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(workflowTools.capture.tool, "figma_repl_capture_node");
   assert.match(workflowTools.capture.defaulting, /official get_screenshot/);
   assert.match(workflowTools.capture.defaulting, /\{ fileKey, nodeId \}/);
-
-  const cardsResource = await mcpClient.readResource({ uri: "figma-repl://api-cards" });
-  const cards = JSON.parse(cardsResource.contents[0].text);
+  assert.equal(workflowTools.skillReference, "figma-repl-workflow.md");
+  const cards = aggregateCapabilities.apiCards;
   const cardIds = cards.cards.map((card) => card.id);
   assert.ok(cardIds.includes("text.font"));
   assert.ok(cardIds.includes("layout.auto"));
@@ -1630,26 +1624,19 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(cardIds.includes("surface.figjam"));
   assert.ok(cardIds.includes("surface.slides"));
   assert.ok(cards.cards.find((card) => card.id === "text.font").apiSymbols.includes("figma.loadFontAsync"));
-  assert.ok(cards.cards.find((card) => card.id === "images.fill").avoid.some((entry) => /large base64/.test(entry)));
-
-  const intentsResource = await mcpClient.readResource({ uri: "figma-repl://intents" });
-  const intents = JSON.parse(intentsResource.contents[0].text);
-  assert.equal(intents.tool, "figma_repl_guidance");
-  assert.deepEqual(intents.queryStrategy.outputFields, capabilities.queryStrategy.outputFields);
-  assert.deepEqual(intents.examples[0].referenceContext, []);
-
-  const docsResource = await mcpClient.readResource({ uri: "figma-repl://docs" });
-  const docs = JSON.parse(docsResource.contents[0].text);
-  assert.equal(docs.tool, "figma_repl_lookup");
-  assert.equal(docs.kind, "docs");
-  assert.match(docs.purpose, /internal Figma corpus/);
-  assert.match(docs.workflow.join(" "), /instead of reading bundled corpus files/);
-
-  const apiResource = await mcpClient.readResource({ uri: "figma-repl://api" });
-  const api = JSON.parse(apiResource.contents[0].text);
-  assert.equal(api.tool, "figma_repl_lookup");
-  assert.equal(api.kind, "api");
-  assert.match(api.guardrail, /never returned/);
+  assert.equal(cards.skillReference, "figma-repl-guidance-and-lookup.md");
+  assert.equal(aggregateCapabilities.intents.tool, "figma_repl_guidance");
+  assert.deepEqual(aggregateCapabilities.intents.returns, ["recommendedCards", "queryHints", "apiSymbols", "avoid", "workflow", "referenceContext"]);
+  assert.equal(aggregateCapabilities.docsLookup.lookupTool, "figma_repl_lookup");
+  assert.equal(aggregateCapabilities.docsLookup.skillReference, "figma-repl-guidance-and-lookup.md");
+  assert.equal(aggregateCapabilities.docsLookup.docsResource, undefined);
+  assert.equal(aggregateCapabilities.docsLookup.apiResource, undefined);
+  for (const uri of removedStaticResourceUris) {
+    await assert.rejects(
+      mcpClient.readResource({ uri }),
+      new RegExp(`Unknown figma-repl resource URI: ${uri.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+    );
+  }
 
   const upstreamResource = await mcpClient.readResource({ uri: "figma-repl://upstream-tools" });
   const upstream = JSON.parse(upstreamResource.contents[0].text);
@@ -1689,8 +1676,9 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   assert.match(skillText, /read `figma-repl:\/\/capabilities`/);
   assert.match(skillText, /Bundled reference files are internal lookup corpus/);
   assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext`/);
-  for (const uri of expectedStaticResourceUris.filter((uri) => uri !== "figma-repl://sessions")) {
-    assert.match(skillText, new RegExp(uri.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(skillText, /figma_repl_lookup\(\{ kind: "docs" \}\)/);
+  for (const uri of removedStaticResourceUris) {
+    assert.ok(!skillText.includes(uri), `SKILL.md must not route agents to removed resource ${uri}`);
   }
   assert.match(pluginReadme, /`figma_repl_mcp` is the primary agent workflow after OAuth registration/);
   assert.match(pluginReadme, /server id changed from `figma-repl-mcp` to `figma_repl_mcp`/);
