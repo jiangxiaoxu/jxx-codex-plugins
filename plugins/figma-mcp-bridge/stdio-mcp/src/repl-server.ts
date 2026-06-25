@@ -277,12 +277,12 @@ export interface FigmaReplPublicWorkspace {
 
 export interface FigmaReplCompactWorkspace {
   [key: string]: unknown;
-  sessionDir: string;
-  scriptPath: string;
   workspaceRef: string;
-  files: {
-    inputFile: string;
-  };
+}
+
+export interface FigmaReplHandleChanges {
+  updated: string[];
+  removed: string[];
 }
 
 export interface FigmaReplPublicSession {
@@ -305,12 +305,9 @@ export interface FigmaReplPublicSession {
 export interface FigmaReplCompactSession {
   [key: string]: unknown;
   id: string;
-  fileUrl?: string;
   fileKey?: string;
   surface?: FigmaReplSurface;
-  knownPages: Record<string, string>;
-  currentPageId?: string;
-  handles: Record<string, string>;
+  handleChanges: FigmaReplHandleChanges;
   workspace?: FigmaReplCompactWorkspace;
 }
 
@@ -952,12 +949,23 @@ export function createFigmaReplMcpServer(
           description: "Read when you need the list of active REPL sessions and their ids before reading a specific session.",
           mimeType: "application/json",
         },
-        ...sessions.list().map((session) => ({
-          uri: `figma-repl://sessions/${encodeURIComponent(session.id)}`,
-          name: `Figma REPL session ${session.id}`,
-          description: "Read when you need public state for this specific active REPL session.",
-          mimeType: "application/json",
-        })),
+        ...sessions.list().flatMap((session) => {
+          const encodedSessionId = encodeURIComponent(session.id);
+          return [
+            {
+              uri: `figma-repl://sessions/${encodedSessionId}`,
+              name: `Figma REPL session ${session.id}`,
+              description: "Read when you need public state for this specific active REPL session.",
+              mimeType: "application/json",
+            },
+            {
+              uri: `figma-repl://sessions/${encodedSessionId}/handles`,
+              name: `Figma REPL session ${session.id} handles`,
+              description: "Read when you need the full remembered handle map for this specific active REPL session.",
+              mimeType: "application/json",
+            },
+          ];
+        }),
       ],
     }),
   );
@@ -970,6 +978,12 @@ export function createFigmaReplMcpServer(
           uriTemplate: "figma-repl://sessions/{id}",
           name: "Figma REPL session by id",
           description: "Read when you need full public state for a known REPL session id, including remembered handles, workspace files, file context, and recent call history.",
+          mimeType: "application/json",
+        },
+        {
+          uriTemplate: "figma-repl://sessions/{id}/handles",
+          name: "Figma REPL session handles by id",
+          description: "Read when you need the full remembered handle map for a known REPL session id without reading full session history.",
           mimeType: "application/json",
         },
         {
@@ -1025,9 +1039,9 @@ async function handleOpen(
     fileUrl: session.fileUrl,
   });
   session.lastDiagnostics = openDiagnostics;
-  if (isStringRecord(args.handles)) {
-    mergeHandles(session, args.handles);
-  }
+  const handleChanges = isStringRecord(args.handles)
+    ? updateSessionHandles(session, args.handles)
+    : emptyHandleChanges();
   bindOpenWorkspaceIfAvailable(session, args);
   touchSession(session);
 
@@ -1036,7 +1050,7 @@ async function handleOpen(
   }
   const payload = {
     ok: true,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics),
   };
   return makeJsonToolResult(payload);
@@ -1055,9 +1069,9 @@ async function handleEval(
   }
   assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
-  if (isStringRecord(args.handleUpdates)) {
-    mergeHandles(session, args.handleUpdates);
-  }
+  let handleChanges = isStringRecord(args.handleUpdates)
+    ? updateSessionHandles(session, args.handleUpdates)
+    : emptyHandleChanges();
   const mode = args.mode ?? "write";
   const diagnostics = diagnoseFigmaReplCode(args.code, {
     allowDangerousOperations: Boolean(args.allowDangerousOperations),
@@ -1075,7 +1089,7 @@ async function handleEval(
   });
   const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
   const parsed = parseUpstreamToolResult(upstream);
-  updateSessionFromParsedResult(session, parsed.json);
+  handleChanges = mergeHandleChanges(handleChanges, updateSessionFromParsedResult(session, parsed.json));
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -1087,7 +1101,7 @@ async function handleEval(
   });
   const resultPayload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
     ...upstreamResultFields({
       parsed,
@@ -1473,7 +1487,7 @@ async function executeRunScriptFile(
     };
     return payload;
   }
-  updateSessionFromParsedResult(session, parsed.json);
+  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -1487,7 +1501,7 @@ async function executeRunScriptFile(
   const resultPayload = {
     ok: true,
     dryRun: false,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
     script: responseScript,
     ...runScriptUpstreamFields(parsed),
@@ -2687,7 +2701,7 @@ async function handleInspect(
     buildFigmaEvalScript({ session, code, mode: "read" }),
   );
   const parsed = parseUpstreamToolResult(upstream);
-  updateSessionFromParsedResult(session, parsed.json);
+  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -2699,7 +2713,7 @@ async function handleInspect(
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics),
     ...inspectInlineResultFields(parsed),
   };
@@ -2811,7 +2825,7 @@ async function executeInspectStyle(
     buildFigmaEvalScript({ session, code, mode: "read" }),
   );
   const parsed = parseUpstreamToolResult(upstream);
-  updateSessionFromParsedResult(session, parsed.json);
+  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -2823,7 +2837,7 @@ async function executeInspectStyle(
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
     ...inspectInlineResultFields(parsed),
   };
@@ -2876,7 +2890,7 @@ async function executeValidateHandles(
     buildFigmaEvalScript({ session, code, mode: "read" }),
   );
   const parsed = parseUpstreamToolResult(upstream);
-  updateSessionFromParsedResult(session, parsed.json);
+  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -2888,7 +2902,7 @@ async function executeValidateHandles(
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
     ...inspectInlineResultFields(parsed),
   };
@@ -5299,7 +5313,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Initialize a file workspace once, then keep task scripts in that file-context folder.",
       "Run dryRun first for file-aware diagnostics without upstream calls.",
       "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; full session state remains available through figma-repl://sessions/{id}.",
+      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; full session state remains available through figma-repl://sessions/{id}, and the full handle map is available through figma-repl://sessions/{id}/handles.",
       "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
@@ -5567,7 +5581,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests expose compact submitUrl POST evidence in assets[].upload without raw submit URLs; asset manifests and download_assets write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
+      responseShape: "Structured-first payloads with minimal session summaries and no session.history. Ordinary tool session summaries contain only id, fileKey, surface, handleChanges, and workspace.workspaceRef. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}; full remembered handle maps are available through figma-repl://sessions/{id}/handles. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests expose compact submitUrl POST evidence in assets[].upload without raw submit URLs; asset manifests and download_assets write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
       statusSemantics: {
         topLevelOk: "Top-level ok reports local wrapper/tool completion.",
         upstreamOk: "upstream.ok reports effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false; false results include upstream.result.source as business when JSON supplied ok:false, or call for failures without a consumed result status.",
@@ -5841,17 +5855,23 @@ async function readReplResource(
   }
   const prefix = "figma-repl://sessions/";
   if (uri.startsWith(prefix)) {
-    const sessionId = decodeURIComponent(uri.slice(prefix.length));
+    const suffix = uri.slice(prefix.length);
+    const handlesSuffix = "/handles";
+    const handlesOnly = suffix.endsWith(handlesSuffix);
+    const sessionId = decodeURIComponent(handlesOnly ? suffix.slice(0, -handlesSuffix.length) : suffix);
     const session = runtime.sessions.get(sessionId);
     if (!session) {
       throw new Error(`Figma REPL session not found: ${sessionId}`);
     }
+    const payload = handlesOnly
+      ? { sessionId: session.id, handles: session.handles }
+      : publicSession(session);
     return {
       contents: [
         {
           uri,
           mimeType: "application/json",
-          text: JSON.stringify(publicSession(session), null, 2),
+          text: JSON.stringify(payload, null, 2),
         },
       ],
     };
@@ -6132,15 +6152,16 @@ function firstBalancedJsonSlice(text: string): string | undefined {
   return undefined;
 }
 
-function updateSessionFromParsedResult(session: FigmaReplSession, value: unknown): void {
+function updateSessionFromParsedResult(session: FigmaReplSession, value: unknown): FigmaReplHandleChanges {
   const record = asRecord(value);
   const repl = asRecord(record.__figmaRepl);
   const result = asRecord(record.result);
+  let handleChanges = emptyHandleChanges();
   if (isStringRecord(repl.handles)) {
-    mergeHandles(session, repl.handles);
+    handleChanges = mergeHandleChanges(handleChanges, replaceSessionHandles(session, repl.handles));
   }
   if (isStringRecord(result.handles)) {
-    mergeHandles(session, result.handles);
+    handleChanges = mergeHandleChanges(handleChanges, updateSessionHandles(session, result.handles));
   }
   if (isStringRecord(repl.knownPages)) {
     session.knownPages = { ...session.knownPages, ...repl.knownPages };
@@ -6157,6 +6178,7 @@ function updateSessionFromParsedResult(session: FigmaReplSession, value: unknown
     session.surface = surface;
   }
   touchSession(session);
+  return handleChanges;
 }
 
 function collectNodeIds(value: unknown): string[] {
@@ -6197,27 +6219,23 @@ function diagnosticsForResponse(
   return diagnostics ?? [];
 }
 
-function responseSession(session: FigmaReplSession): Record<string, unknown> {
+function responseSession(
+  session: FigmaReplSession,
+  handleChanges: FigmaReplHandleChanges = emptyHandleChanges(),
+): Record<string, unknown> {
   return removeUndefined({
     id: session.id,
-    fileUrl: session.fileUrl,
     fileKey: session.fileKey,
     surface: session.surface,
-    knownPages: session.knownPages,
-    currentPageId: session.currentPageId,
-    handles: session.handles,
+    handleChanges,
     workspace: session.workspace ? responseCompactWorkspace(session.workspace, session.id) : undefined,
   }) as Record<string, unknown>;
 }
 
 function responseCompactWorkspace(workspace: FigmaReplSessionWorkspace, sessionId: string): FigmaReplCompactWorkspace {
+  void workspace;
   return removeUndefined({
-    sessionDir: workspace.sessionDir,
-    scriptPath: workspace.scriptPath,
     workspaceRef: `figma-repl://sessions/${encodeURIComponent(sessionId)}`,
-    files: {
-      inputFile: workspace.files.script,
-    },
   }) as FigmaReplCompactWorkspace;
 }
 
@@ -6418,13 +6436,61 @@ function cloneSession(session: FigmaReplSession): FigmaReplSession {
   };
 }
 
-function mergeHandles(session: FigmaReplSession, handles: Record<string, string>): void {
+function emptyHandleChanges(): FigmaReplHandleChanges {
+  return { updated: [], removed: [] };
+}
+
+function mergeHandleChanges(
+  left: FigmaReplHandleChanges,
+  right: FigmaReplHandleChanges,
+): FigmaReplHandleChanges {
+  return {
+    updated: sortedUnique([...left.updated, ...right.updated].filter((name) => !right.removed.includes(name))),
+    removed: sortedUnique([...left.removed, ...right.removed].filter((name) => !right.updated.includes(name))),
+  };
+}
+
+function updateSessionHandles(session: FigmaReplSession, handles: Record<string, string>): FigmaReplHandleChanges {
+  const updated: string[] = [];
   for (const [name, id] of Object.entries(handles)) {
     if (typeof id === "string" && id.length > 0) {
-      session.handles[normalizeLocalHandleName(name)] = id;
+      const handle = normalizeLocalHandleName(name);
+      if (session.handles[handle] !== id) {
+        session.handles[handle] = id;
+        updated.push(handle);
+      }
     }
   }
-  touchSession(session);
+  if (updated.length > 0) {
+    touchSession(session);
+  }
+  return { updated: sortedUnique(updated), removed: [] };
+}
+
+function replaceSessionHandles(session: FigmaReplSession, handles: Record<string, string>): FigmaReplHandleChanges {
+  const nextHandles: Record<string, string> = {};
+  for (const [name, id] of Object.entries(handles)) {
+    if (typeof id === "string" && id.length > 0) {
+      nextHandles[normalizeLocalHandleName(name)] = id;
+    }
+  }
+  const updated = Object.entries(nextHandles)
+    .filter(([name, id]) => session.handles[name] !== id)
+    .map(([name]) => name);
+  const removed = Object.keys(session.handles)
+    .filter((name) => nextHandles[name] === undefined);
+  if (updated.length > 0 || removed.length > 0) {
+    session.handles = nextHandles;
+    touchSession(session);
+  }
+  return {
+    updated: sortedUnique(updated),
+    removed: sortedUnique(removed),
+  };
+}
+
+function sortedUnique(values: string[]): string[] {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
 function normalizeLocalHandleName(name: string): string {
