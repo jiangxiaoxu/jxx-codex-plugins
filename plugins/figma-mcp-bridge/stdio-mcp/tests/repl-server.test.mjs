@@ -2313,7 +2313,7 @@ test("figma REPL design system wrappers call dedicated upstream tools", async ()
           },
         },
         { name: "get_libraries", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, offset: { type: "number" } } } },
-        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
+        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
       ],
     },
   );
@@ -7200,12 +7200,12 @@ test("figma REPL programmatic client accepts an absolute OAuth cache path", asyn
   await repl.close();
 });
 
-test("figma REPL programmatic client can call eval without MCP transport", async () => {
+test("figma REPL programmatic client sends fixed eval description without MCP transport", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.equal(typeof args.code, "string");
     assert.equal(args.fileKey, "ExampleFigmaFileKey012");
-    assert.equal(args.description, undefined);
+    assert.equal(args.description, "Figma REPL JavaScript execution");
     return {
       content: [
         {

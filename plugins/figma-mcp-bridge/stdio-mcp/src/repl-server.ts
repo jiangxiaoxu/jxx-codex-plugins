@@ -3243,7 +3243,6 @@ async function executeGetVariableDefs(
     upstreamToolName: GET_VARIABLE_DEFS_TOOL_NAME,
     upstreamKind: "variable definition read",
     requiredProperties: ["fileKey", "nodeId"],
-    optionalProperties: ["clientLanguages", "clientFrameworks"],
     upstreamArguments: {
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
@@ -3536,9 +3535,7 @@ async function resolveEvalSettings(
   const argumentName = DEFAULT_EVAL_ARGUMENT_NAME;
   assertUpstreamToolHasProperty(tool, argumentName, "execution");
   const upstreamArguments: Record<string, unknown> = {};
-  if (upstreamToolHasProperty(tool, "description")) {
-    upstreamArguments.description = DEFAULT_EVAL_DESCRIPTION;
-  }
+  upstreamArguments.description = DEFAULT_EVAL_DESCRIPTION;
   if (
     typeof upstreamArguments.fileKey !== "string" ||
     upstreamArguments.fileKey.length === 0
