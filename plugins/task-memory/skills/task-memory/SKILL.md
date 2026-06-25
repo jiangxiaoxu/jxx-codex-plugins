@@ -17,7 +17,9 @@ First choose the current role:
 Critical guardrails:
 - Never let handoff agents edit `task_state.md`.
 - Never let command-only handoffs run `create-report` or write reports.
+- Do not record chronological work logs, step-by-step progress, attempt histories, or routine action ledgers in `task_state.md` or reports; rewrite them into current conclusions, active decisions, open blockers, compact findings, or delete them.
 - When durable resumability is needed and no task-id exists, the task owner runs `init` before dispatching handoffs.
+- Before implementing a previously stated plan, the task owner must record the current implementation plan in `task_state.md` before dispatching implementation-class handoffs or starting implementation work.
 - When this skill is active and a task-id exists, delegated exploration, investigation, mapping, impact analysis, implementation, code modification, and validation briefs must start with `Use $task-memory` and use the appropriate handoff template.
 - When subagent tooling is available and delegation is permitted, the task owner dispatches exploration-class and implementation-class work to the matching subagent role by default rather than executing it directly.
 - Under those conditions, prefer an explorer subagent for exploration-class work. Implementation-class work that can be stated as a complete work item, including feature or behavior changes and sustained/high-volume MCP tool calls that modify external systems as the main work, must use a worker subagent even when the change is not isolated or independent. Exceptions are limited to very small glue, local conflict resolution, report absorption/archive, final response, unresolved task-owner decisions, or lifecycle/conflict constraints. The task owner keeps lifecycle/state ownership; the subagent owns its assigned evidence chain or implementation scope until it returns.
@@ -77,6 +79,8 @@ For exploration-class work handoffs, use boundaries as investigation guidance ra
 
 For implementation-class work handoffs, use boundaries as goal guidance rather than exhaustive file limits. When subagent tooling is available, delegation is permitted, and the assignment can be stated as a complete implementation task with a clear goal and no unresolved task-owner decision that must be answered before coding, it must use a report-required implementation handoff to a worker subagent. Prefer fan-out into parallel worker slices when the work can be decomposed into independently completable implementation slices; each slice should have one worker owner and a coherent end-to-end goal, not just a mechanical file edit.
 
+When implementation follows a plan that was already produced in chat, a report, or an earlier task-owner decision, the task owner must update `task_state.md` so it contains the current implementation plan before any worker is spawned or any implementation work starts. Record only resumable plan substance: objective and success criteria, selected approach, durable decisions, write set or ownership slices, public contract owner, validation boundary, blockers or assumptions, and next actions. When recording a new implementation plan, replace or prune any completed, superseded, or no-longer-actionable implementation plan details; do not keep a chronological plan ledger in `task_state.md`. Do not copy verbose reasoning, rejected alternatives, routine validation notes, or command history. If the plan depends on unresolved questions, put them in `Open` and do not dispatch implementation workers that depend on those answers.
+
 A single worker's slice does not need to be isolated or independent; the worker may make related cross-file, cross-module, contract, test, config, or doc changes needed for a coherent implementation. Parallel implementation workers are stricter: run them in parallel only when their write sets are disjoint and they do not share a public contract owner. If slices depend on a shared API, schema, config, route, migration, generated interface, or other public contract, the parent must resolve the contract before dispatch or assign that contract to exactly one worker and forbid other workers from editing it. For parallel workers, each brief must state exclusive write scope, forbidden scope, public contract owner or `None`, validation boundary, and integration note. The task owner does not implement the same change inline while any worker owns it and remains responsible for fan-in: absorbing reports, resolving conflicts, integrating cross-slice behavior, and running final cross-slice validation. Validation status stays in chat unless it reveals an independently actionable issue.
 
 ### Subagent Dispatch Gate
@@ -88,6 +92,7 @@ The parent must use the selected task-memory handoff template before calling `sp
 1. Is there an active task-id for this work?
 2. Does the delegated task need durable findings or command-only validation?
 3. Does the initial prompt include the required task-memory handoff preamble?
+4. For implementation-class work, has the current implementation plan been recorded in `task_state.md` and are unresolved plan blockers recorded in `Open`?
 
 If the work has an active task-id and the delegated task is not purely conversational, the subagent brief must start with one of the skill templates. The parent must correct any missing preamble item before dispatch. If classification is uncertain, use Report-required unless the handoff is limited to exact command execution and has no durable findings to preserve.
 
@@ -127,7 +132,7 @@ If the parent notices that a subagent was spawned without the required task-memo
 ### Report-required Flow
 1. Task owner updates `task_state.md` if needed, then briefs the handoff with task-id, report name, status/create-report steps, boundaries, and return format.
 2. Handoff runs `status`, reads `task_state.md`, creates one report before substantive work, sets `Status: in-progress`, and keeps the report current while working.
-3. Handoff writes durable findings, blockers, scope changes, and meaningful completed-work checkpoints as discovered; update `Last updated` for each meaningful update. Keep content absorption-oriented and compact; no logs or routine command output.
+3. Handoff writes durable findings, blockers, scope changes, and meaningful completed-work outcomes as discovered; update `Last updated` for each meaningful update. Keep content absorption-oriented and compact; no logs or routine command output.
 4. Before returning, reduce chat-intended substance into `Conclusion`, `Absorbable Findings`, or `Open or Unresolved`; set `Status: completed`, `blocked`, or `stopped`; keep `## Role Result` short. Chat return is only report path plus brief status.
 5. For completed/blocked absorption, task owner reads the report in full, absorbs durable content into `task_state.md`, and archives only when fully absorbed. `Status: in-progress` lifecycle cleanup is a separate archive path and never implies absorption.
 
@@ -181,21 +186,21 @@ Choose report-required for exploration, investigation, mapping, impact analysis,
 Report-required handoff:
 ```text
 Use $task-memory for a report-required handoff to a subagent. Task memory: task-id=task-<name>; report name=<short report name>.
-Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Keep required report headings intact on every save. <Assignment and boundaries.>
+Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work outcomes while working. Keep required report headings intact on every save. <Assignment and boundaries.>
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status; do not repeat report content in chat. If blocked, write the blocker into the partial report first.
 ```
 
 Explorer handoff:
 ```text
 Use $task-memory for a report-required handoff to an explorer subagent. Task memory: task-id=task-<name>; report name=<short report name>.
-Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Own the evidence chain for <investigation question> within <boundaries>; inspect related code/config/docs/tests and external sources when allowed and needed.
+Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work outcomes while working. Own the evidence chain for <investigation question> within <boundaries>; inspect related code/config/docs/tests and external sources when allowed and needed.
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status; do not repeat report content in chat. If blocked, write the blocker into the partial report first.
 ```
 
 Implementation handoff:
 ```text
 Use $task-memory for a report-required implementation handoff to a worker subagent. Task memory: task-id=task-<name>; report name=<short report name>.
-Run `status`, read `task_state`, then run `create-report` before substantive work. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work checkpoints while working. Own the implementation for <goal> within <boundaries>; include related code/tests/config/public contracts/docs, and validate with <checks>. For parallel implementation slicing, use one worker per slice and include: exclusive write scope=<files/modules>; forbidden scope=<files/modules/contracts>; public contract owner=<owner or None>; validation boundary=<checks owned by this worker>; integration note=<what the parent will combine later>.
+Run `status`, read `task_state`, then run `create-report` before substantive work. Treat the implementation plan in `task_state.md` as the parent-owned source of truth; if the plan is missing, stale, or blocked by unresolved `Open` items that affect this slice, stop and report that blocker before editing. Set `Status: in-progress`, keep `Last updated` current, and maintain compact findings, blockers, scope changes, and meaningful completed-work outcomes while working. Own the implementation for <goal> within <boundaries>; include related code/tests/config/public contracts/docs, and validate with <checks>. For parallel implementation slicing, use one worker per slice and include: exclusive write scope=<files/modules>; forbidden scope=<files/modules/contracts>; public contract owner=<owner or None>; validation boundary=<checks owned by this worker>; integration note=<what the parent will combine later>.
 Before returning, set `Status: completed`, `blocked`, or `stopped` as appropriate. Return only report path plus status. If blocked by non-validation issue or material scope change, write it and completed work into the report; validation status stays in chat unless it reveals an independently actionable issue.
 ```
 
