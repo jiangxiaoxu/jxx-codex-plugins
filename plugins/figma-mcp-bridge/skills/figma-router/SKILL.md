@@ -43,16 +43,16 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 
 ## Primary File Workflow
 
-- Prepare a repairable workspace and task file: `figma_repl_prepare_task({ title, file, task, surface })`. The `file` value accepts a Figma URL or raw file key; `cwd` is optional and defaults to the MCP server process cwd.
+- Prepare a repairable workspace and task file: `figma_repl_prepare_task({ file, taskName, surface })`. Use slug-style `taskName` values such as `settings-panel-polish`. The `file` value accepts a Figma URL or raw file key; `cwd` is optional and defaults to the MCP server process cwd.
 - Edit the generated `<task>.figma.js`; use native Figma Plugin API plus the injected `$` helpers.
-- Dry-run: `figma_repl_run_script_file({ title, sessionId, inputFile, dryRun: true, strict: true, surface })`.
-- Execute: `figma_repl_run_script_file({ title, sessionId, inputFile })`.
-- For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ title, sessionId, manifestPath })`. Read `assets[].upload.response.imageHash` / `placedOnNodeId` for upload POST evidence, and read `validation` for canvas-side IMAGE fill confirmation. Default target validation checks IMAGE fills when upstream eval is available; incomplete validation records fail the workflow and point to `outputFiles.debugFile`.
-- For broad layer-tree discovery, call `figma_repl_get_metadata({ title, sessionId, target })` before targeted `figma_repl_inspect` style/fill/text checks.
-- For visual QA, call `figma_repl_capture_node({ title, sessionId, target, imageFile })` and inspect the local image file.
-- For repeatable multi-step workflows, use `figma_repl_run_task_plan({ title, sessionId, planPath })`.
+- Dry-run: `figma_repl_run_script_file({ sessionId, inputFile, dryRun: true, strict: true, surface })`.
+- Execute: `figma_repl_run_script_file({ sessionId, inputFile })`.
+- For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ sessionId, manifestPath })`. Read `assets[].upload.response.imageHash` / `placedOnNodeId` for upload POST evidence, and read `validation` for canvas-side IMAGE fill confirmation. Default target validation checks IMAGE fills when upstream eval is available; incomplete validation records fail the workflow and point to `outputFiles.debugFile`.
+- For broad layer-tree discovery, call `figma_repl_get_metadata({ sessionId, target })` before targeted `figma_repl_inspect` style/fill/text checks.
+- For visual QA, call `figma_repl_capture_node({ sessionId, target, imageFile })` and inspect the local image file.
+- For repeatable multi-step workflows, use `figma_repl_run_task_plan({ sessionId, planPath })`.
 
-Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `title`, `file`, `task`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath` defaults after workspace initialization. `title` is optional but recommended for UI/log clarity; omitted titles use runtime defaults. Inline assets/steps, custom upstream templates, absolute `scriptPath`, and upstream overrides are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
+Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls should use simple `file`, `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath` defaults after workspace initialization. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, absolute `scriptPath`, and upstream overrides are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Read `figma-repl://capabilities.toolArgumentGuidance` for the canonical argument guide.
 
 ## Script Contract
 
@@ -60,7 +60,7 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls shoul
 - Keep each transaction small and repairable. Use `dryRun: true`, then fix diagnostics by file line before executing.
 - Return compact JSON with changed node ids, handles, and validation notes. Use generated `outputFiles.debugFile` pointers for failure or omitted-payload debug JSON instead of relying on inline MCP output.
 - Read parsed upstream JSON from `upstream.result`; if upstream output is not JSON, read `upstream.text`. Debug file pointers are reported in `outputFiles.debugFile`.
-- Ordinary tool responses return only a minimal session summary with `handleChanges`; read `figma-repl://sessions/{id}/handles` when the full remembered handle map is needed.
+- Ordinary tool responses return only a minimal session summary with `handleChanges`; read `figma-repl://sessions` for the compact list, `figma-repl://sessions/{id}` for compact detail with handles, and `figma-repl://sessions/{id}/handles` when only the remembered handle map is needed.
 - Common helpers: `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`.
 - Prefer `$.select` over direct selection mutation. Use `figma_repl_inspect({ mode: "validate" })` before reusing old handles.
 - For generated assets, use `$.imageAsset` only for small inline PNG/JPEG data; for larger local assets, create target rectangles and use `figma_repl_apply_asset_manifest`.
@@ -70,7 +70,7 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls shoul
 ## Lookup Order
 
 - Use `figma-repl://capabilities` for aggregate self-explaining runtime guidance.
-- Use `figma_repl_guidance` for task-to-helper routing and curated short cards.
+- Use `figma_repl_guidance` for BM25-style query-to-helper routing and curated short cards.
 - Use `figma_repl_lookup({ kind: "docs" })` for BM25-ranked workflow snippets.
 - Use `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 - For deeper static workflow, lookup, or safety notes, read `references/figma-repl-workflow.md`, `references/figma-repl-guidance-and-lookup.md`, or `references/figma-repl-safety.md`.
@@ -79,7 +79,7 @@ Use `figma_repl_call_upstream_tool` only when a required official capability is 
 
 ## Query Strategy
 
-- For natural-language tasks, call `figma_repl_guidance` first and use its `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext` fields before writing `.figma.js`.
+- For planning/search, call `figma_repl_guidance({ query })` first with compact keyword queries such as `text font loadFontAsync` or `components variants properties`, then use its `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `referenceContext` fields before writing `.figma.js`.
 - Use `figma_repl_guidance` for compact patterns, then use `apiSymbols` with `figma_repl_lookup({ kind: "api" })` only when exact Plugin API details are still missing.
 - Treat `avoid` as task-specific guardrails, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
 - Prefer these anchors when narrowing a query: text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, FigJam/Slides.

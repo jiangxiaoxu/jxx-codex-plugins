@@ -27031,18 +27031,18 @@ function asRunTaskPlanArgs(args) {
 function asPrepareTaskArgs(args) {
   const record2 = parseToolArgs(args);
   assertRemovedFileReferenceFields(record2);
-  assertRemovedArguments(record2, ["intent", "goal", "taskName"], "task");
+  assertRemovedArguments(record2, ["intent", "goal", "task"], "taskName");
+  assertRemovedArguments(record2, ["taskSlug"], "taskName");
   assertRemovedArguments(record2, ["taskDir"], "workspaceDir");
   assertRemovedArguments(record2, ["scriptName"], "fileName");
   assertRemovedArguments(record2, ["expectedSurface"], "surface");
   assertOptionalStringFields(record2, [
     "sessionId",
-    "task",
+    "taskName",
     "file",
     "fileSlug",
     "cwd",
     "dirName",
-    "taskSlug",
     "workspaceDir",
     "fileName",
     "taskRoot",
@@ -27054,9 +27054,9 @@ function asPrepareTaskArgs(args) {
 }
 function asGuidanceArgs(args) {
   const record2 = parseToolArgs(args);
-  assertRemovedArguments(record2, ["intent", "goal"], "task");
+  assertRemovedArguments(record2, ["intent", "goal", "task"], "query");
   assertRemovedArguments(record2, ["expectedSurface"], "surface");
-  assertOptionalStringFields(record2, ["card", "query", "task", "workflow"]);
+  assertOptionalStringFields(record2, ["card", "query", "workflow"]);
   assertOptionalEnum(record2, "mode", FIGMA_REPL_GUIDANCE_MODES);
   assertOptionalEnum(record2, "surface", FIGMA_REPL_SURFACES);
   return record2;
@@ -27309,28 +27309,19 @@ function assertOptionalStringFieldsWithPrefix(record2, prefix, keys) {
 function isRecord2(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-function assertRequiredTitleArgument(args) {
-  if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
-    throw new Error('Tool argument "title" is required and must be a string.');
-  }
-}
-function withDefaultTitle(args, title) {
+function withDefaultTitle(args, _title) {
   if (!isRecord2(args)) {
     throw new Error("Tool arguments must be an object.");
   }
   if (args.title !== void 0 && typeof args.title !== "string") {
     throw new Error('Tool argument "title" must be a string.');
   }
-  return {
-    ...args,
-    title: args.title ?? title
-  };
+  return args;
 }
-var TOOL_TITLE_ARGUMENT, FIGMA_REPL_SURFACES, FIGMA_REPL_EVAL_MODES, FIGMA_REPL_GUIDANCE_MODES, FIGMA_REPL_INSPECT_MODES, FIGMA_REPL_LOOKUP_KINDS, FIGMA_REPL_DOWNLOAD_ASSET_FORMATS;
+var FIGMA_REPL_SURFACES, FIGMA_REPL_EVAL_MODES, FIGMA_REPL_GUIDANCE_MODES, FIGMA_REPL_INSPECT_MODES, FIGMA_REPL_LOOKUP_KINDS, FIGMA_REPL_DOWNLOAD_ASSET_FORMATS;
 var init_repl_tool_args = __esm({
   "src/repl-tool-args.ts"() {
     "use strict";
-    TOOL_TITLE_ARGUMENT = "title";
     FIGMA_REPL_SURFACES = ["design", "figjam", "slides"];
     FIGMA_REPL_EVAL_MODES = ["read", "write"];
     FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"];
@@ -27398,7 +27389,7 @@ function createReplToolDescriptions(options) {
   const tools = [
     {
       name: "figma_repl_open",
-      description: "Context helper for creating or updating a local Figma REPL session. Recommended call: { title, sessionId, file, surface }. Use prepare_task + run_script_file for the primary file workflow; use open for lightweight session context, handle import, file binding, or upstream auth connection without tool discovery.",
+      description: "Context helper for creating or updating a local Figma REPL session. Recommended call: { sessionId, file, surface }. Use prepare_task + run_script_file for the primary file workflow; use open for lightweight session context, handle import, file binding, or upstream auth connection without tool discovery.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
@@ -27415,7 +27406,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_eval",
-      description: "Small ephemeral JavaScript call for quick reads or tightly scoped updates only. Recommended call: { title, sessionId, code, mode, surface }. Use prepare_task + run_script_file for repairable scripts, multi-step work, and large structured results.",
+      description: "Small ephemeral JavaScript call for quick reads or tightly scoped updates only. Recommended call: { sessionId, code, mode, surface }. Use prepare_task + run_script_file for repairable scripts, multi-step work, and large structured results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -27429,7 +27420,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_run_script_file",
-      description: "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile }. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
+      description: "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { sessionId, inputFile }. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
@@ -27445,7 +27436,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_apply_asset_manifest",
-      description: "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { title, sessionId, manifestPath } after .figma.js creates target rectangles. Debug JSON files are generated on demand for failures. Use figma_repl_call_upstream_tool only for explicit uncovered upstream capabilities.",
+      description: "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { sessionId, manifestPath } after .figma.js creates target rectangles. Debug JSON files are generated on demand for failures. Use figma_repl_call_upstream_tool only for explicit uncovered upstream capabilities.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -27460,7 +27451,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_download_assets",
-      description: "Workflow add-on for official Figma asset downloads. Recommended call: { title, sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets, saves exported plus raw/source files locally, and writes debug JSON only on failure.",
+      description: "Workflow add-on for official Figma asset downloads. Recommended call: { sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets, saves exported plus raw/source files locally, and writes debug JSON only on failure.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for fileKey, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -27487,7 +27478,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_run_task_plan",
-      description: "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { title, sessionId, planPath }. Steps use only { id?, type?, args? }; put tool-specific inputs inside args. The plan-level debug file is generated automatically.",
+      description: "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { sessionId, planPath }. Steps use only { id?, type?, args? }; put tool-specific inputs inside args. The plan-level debug file is generated automatically.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
@@ -27502,16 +27493,15 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_prepare_task",
-      description: "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { title, file, task, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
+      description: "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
-        task: stringProperty("Recommended human task used to derive <taskSlug>.figma.js."),
+        taskName: stringProperty("Required slug-style task/workspace name such as settings-panel-polish; used to derive <taskName>.figma.js."),
         file: stringProperty("Recommended Figma file URL or raw file key used to derive the file context when preparing a workspace."),
         fileSlug: stringProperty("Advanced file-context slug override to use when file cannot derive a key."),
         cwd: stringProperty("Optional absolute project directory where the figma-mcp workspace directory will be created. Defaults to the MCP server process cwd when file context is present."),
         dirName: stringProperty("Advanced workspace directory name under cwd. Defaults to figma-mcp."),
-        taskSlug: stringProperty("Advanced stable slug override for the task files. Defaults from task/title."),
         fileName: stringProperty("Advanced script file-name override ending in .figma.js."),
         taskRoot: stringProperty(`Advanced absolute task root for temp task workspaces. Defaults to ${options.taskWorkspaceRootEnv}, then OS temp figma-repl-mcp/tasks.`),
         workspaceDir: stringProperty("Advanced absolute workspace directory override."),
@@ -27523,13 +27513,12 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_guidance",
-      description: "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { title, task, surface }. Use task for natural-language requests before writing .figma.js; pair with lookup only when exact docs/API snippets are needed.",
+      description: "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { query, surface }. Use BM25-style keyword queries before writing .figma.js; pair with lookup only when exact docs/API snippets are needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
+        mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query fields."),
         card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
-        query: stringProperty(`Search query when card id is not known. Hard limit ${options.maxLookupQueryLength} characters.`),
-        task: stringProperty(`Natural-language task request. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        query: stringProperty(`BM25-style keyword search query, for example text font loadFontAsync or components variants properties. Hard limit ${options.maxLookupQueryLength} characters.`),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
         workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
         maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4.")
@@ -27537,7 +27526,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_inspect",
-      description: 'Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Recommended calls: { title, sessionId, target } or { title, sessionId, mode:"style", target }. Uses fixed upstream use_figma execution.',
+      description: 'Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Recommended calls: { sessionId, target } or { sessionId, mode:"style", target }. Uses fixed upstream use_figma execution.',
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -27553,7 +27542,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_repl_get_metadata",
-      description: "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata and converts returned XML into a compact JSON node tree. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { title, sessionId, file?, target? }. Use inspect/style afterward for fills, text, and visual tokens.",
+      description: "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata and converts returned XML into a compact JSON node tree. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { sessionId, file?, target? }. Use inspect/style afterward for fills, text, and visual tokens.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -27629,7 +27618,7 @@ function objectSchema(properties, required2 = []) {
   };
 }
 function titleProperty() {
-  return stringProperty("One concise sentence-style line for UI/log display.");
+  return stringProperty("Optional MCP call display label for Codex/UI only; validated as a string but not saved, defaulted, or used for task/file naming.");
 }
 function stringProperty(description) {
   return { type: "string", description };
@@ -28243,7 +28232,7 @@ function resolveTaskPlanResultFile(args, planPath, session) {
   if (session.workspace) {
     return resolveWorkspaceFile(
       session.workspace.sessionDir,
-      `${slugifyTaskName(args.title)}.plan.result.json`,
+      "task-plan.plan.result.json",
       "debugFile"
     );
   }
@@ -28251,7 +28240,7 @@ function resolveTaskPlanResultFile(args, planPath, session) {
   if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve4(root, "task-plan-results", slugifyTaskName(args.title), `${slugifyTaskName(args.title)}.plan.result.json`);
+  return resolve4(root, "task-plan-results", "task-plan", "task-plan.plan.result.json");
 }
 function withTaskPlanDefaultFiles(stepArgs, type, id, session) {
   if (!session.workspace) {
@@ -28325,7 +28314,7 @@ function resolvePreparedTaskWorkspace(options) {
       fileDir: resolve4(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
       fileKey: options.session.fileKey,
       fileSlug: options.fileSlug,
-      intentSlug: options.taskSlug
+      intentSlug: options.taskName
     });
   }
   const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
@@ -28333,14 +28322,14 @@ function resolvePreparedTaskWorkspace(options) {
     if (!isAbsolute2(explicitWorkspaceDir)) {
       throw new Error('Tool argument "workspaceDir" must be an absolute path.');
     }
-    return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskSlug);
+    return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskName);
   }
   const workspaceDir = resolveTaskWorkspace({
-    taskSlug: options.taskSlug,
+    taskName: options.taskName,
     taskRoot: options.args.taskRoot,
     workspaceDir: void 0
   });
-  return createWorkspaceFromSessionDir(workspaceDir, options.taskSlug);
+  return createWorkspaceFromSessionDir(workspaceDir, options.taskName);
 }
 function resolveWorkspaceFile(baseDir, fileName, argumentName) {
   if (isAbsolute2(fileName) || fileName.includes("..") || /^[A-Za-z]:/u.test(fileName) || fileName.startsWith("\\\\")) {
@@ -28352,8 +28341,8 @@ function resolveWorkspaceFile(baseDir, fileName, argumentName) {
   }
   return resolved;
 }
-function normalizeTaskScriptName(value, taskSlug) {
-  const scriptName = asOptionalString(value) ?? `${taskSlug}.figma.js`;
+function normalizeTaskScriptName(value, taskName) {
+  const scriptName = asOptionalString(value) ?? `${taskName}.figma.js`;
   if (isAbsolute2(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
     throw new Error('Tool argument "fileName" must be a file name, not a path.');
   }
@@ -28481,14 +28470,14 @@ function resolveTaskWorkspace(options) {
   if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve4(root, options.taskSlug);
+  return resolve4(root, options.taskName);
 }
-function createWorkspaceFromSessionDir(sessionDir, taskSlug) {
+function createWorkspaceFromSessionDir(sessionDir, taskName) {
   return createWorkspaceFromFileDir({
     root: dirname4(sessionDir),
     fileDir: sessionDir,
     fileSlug: slugifyTaskName(basename(sessionDir)),
-    intentSlug: taskSlug
+    intentSlug: taskName
   });
 }
 function createWorkspaceFromFileDir(options) {
@@ -28823,7 +28812,7 @@ function createFigmaReplClient(options = {}) {
 }
 function withMcpDefaultTitle(args, title) {
   if (args === void 0) {
-    return { title };
+    return {};
   }
   return withDefaultTitle(args, title);
 }
@@ -28924,7 +28913,7 @@ function createFigmaReplMcpServer(options = {}) {
         {
           uri: "figma-repl://sessions",
           name: "Figma REPL sessions",
-          description: "Read when you need the list of active REPL sessions and their ids before reading a specific session.",
+          description: "Read when you need compact active REPL session ids, file context, and workspace directories before reading a specific session.",
           mimeType: "application/json"
         },
         ...sessions.list().flatMap((session) => {
@@ -28933,7 +28922,7 @@ function createFigmaReplMcpServer(options = {}) {
             {
               uri: `figma-repl://sessions/${encodedSessionId}`,
               name: `Figma REPL session ${session.id}`,
-              description: "Read when you need public state for this specific active REPL session.",
+              description: "Read when you need compact state, remembered handles, and workspace file context for this specific active REPL session.",
               mimeType: "application/json"
             },
             {
@@ -28954,7 +28943,7 @@ function createFigmaReplMcpServer(options = {}) {
         {
           uriTemplate: "figma-repl://sessions/{id}",
           name: "Figma REPL session by id",
-          description: "Read when you need full public state for a known REPL session id, including remembered handles, workspace files, file context, and recent call history.",
+          description: "Read when you need compact state, remembered handles, and workspace file context for a known REPL session id.",
           mimeType: "application/json"
         },
         {
@@ -28982,7 +28971,6 @@ function createFigmaReplMcpServer(options = {}) {
   return { server, client, sessions };
 }
 async function handleOpen(args, runtime) {
-  assertRequiredTitleArgument(args);
   const session = truthy(args.reset) ? runtime.sessions.reset(asOptionalString2(args.sessionId)) : runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
   assignOptionalString(session, "label", args.label);
   applySessionFileReference(session, args.file);
@@ -29021,7 +29009,6 @@ async function handleEval(args, runtime) {
   if (!args.code || typeof args.code !== "string") {
     throw new Error('Tool argument "code" is required and must be a string.');
   }
-  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   let handleChanges = isStringRecord(args.handleUpdates) ? updateSessionHandles(session, args.handleUpdates) : emptyHandleChanges();
   const mode = args.mode ?? "write";
@@ -29045,7 +29032,6 @@ async function handleEval(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_eval",
-    title: args.title,
     mode,
     summary: summarizeParsedResult(parsed),
     nodeIds: collectNodeIds(parsed.json)
@@ -29130,12 +29116,12 @@ async function writeCallUpstreamResultFiles(options) {
   return outputFiles;
 }
 async function writeMetadataFile(options) {
-  const metadataFile = metadataResultFilePath(options.session, options.args.title);
+  const metadataFile = metadataResultFilePath(options.session);
   return responseFilePointer(await writeJsonFile(metadataFile, options.metadata));
 }
-function metadataResultFilePath(session, title) {
+function metadataResultFilePath(session) {
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
-  const fileName = `${slugifyTaskName2(title ?? "metadata")}-${timestamp}.metadata.json`;
+  const fileName = `metadata-${timestamp}.metadata.json`;
   if (session.workspace) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "metadataFile");
   }
@@ -29230,7 +29216,6 @@ function countArrayField(value) {
   return Array.isArray(value) ? value.length : void 0;
 }
 async function executeRunScriptFile(args, runtime) {
-  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const scriptPath = resolveScriptInputPath(args, session);
   const source = await readFile4(scriptPath, "utf8");
@@ -29381,7 +29366,6 @@ async function executeRunScriptFile(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_run_script_file",
-    title: args.title,
     mode: "write",
     summary: `Ran Figma script file ${scriptPath}.`,
     nodeIds: collectNodeIds(parsed.json)
@@ -29430,7 +29414,6 @@ async function handleApplyAssetManifest(args, runtime) {
   return makeJsonToolResult(await executeApplyAssetManifest(args, runtime));
 }
 async function executeApplyAssetManifest(args, runtime) {
-  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const manifest = await loadAssetManifest(args, session);
   const tools = await runtime.upstreamToolCache.list(false);
@@ -29561,7 +29544,6 @@ async function executeApplyAssetManifest(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_apply_asset_manifest",
-    title: args.title,
     mode: "upstream-assets",
     summary: `Applied ${assetResults.length} asset manifest entries with ${failures.length} failures.`,
     nodeIds: assetResults.map((asset) => asOptionalString2(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
@@ -29579,7 +29561,7 @@ function isAssetManifestValidationIndeterminate(validation) {
   return validation.ok === void 0 && Number(validation.expectedCount ?? 0) > 0;
 }
 function resolveAssetManifestDebugFile(args, session) {
-  const slug = slugifyTaskName2(args.title || "asset-manifest");
+  const slug = "asset-manifest";
   const fileName = `${slug}.assets.result.json`;
   if (session.workspace) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
@@ -29621,7 +29603,6 @@ async function handleDownloadAssets(args, runtime) {
   return makeJsonToolResult(await executeDownloadAssets(args, runtime));
 }
 async function executeDownloadAssets(args, runtime) {
-  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const manifest = await loadDownloadAssetsManifest(args, session);
   const paths = resolveDownloadAssetsOutputPaths(args, session);
@@ -29753,7 +29734,6 @@ async function executeDownloadAssets(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_download_assets",
-    title: args.title,
     mode: "download-assets",
     summary: `Downloaded assets for ${targetResults.length} target(s) with ${failures.length} failures.`,
     nodeIds: manifest.targets.map((target) => target.targetNodeId)
@@ -29818,7 +29798,7 @@ function extractFigmaFileKeyFromTargetInput(input) {
   return extractFigmaFileKey(asOptionalString2(input));
 }
 function resolveDownloadAssetsOutputPaths(args, session) {
-  const slug = slugifyTaskName2(args.title || "download-assets");
+  const slug = "download-assets";
   const explicitOutputDir = resolveWorkspaceAwareFile(args.outputDir, session, "outputDir");
   let outputDir = explicitOutputDir;
   if (!outputDir) {
@@ -30059,7 +30039,6 @@ async function executeCaptureNodeForTool(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_capture_node",
-    title: args.title,
     mode: "capture",
     summary: `Captured node ${nodeId} to ${saved.path}.`,
     nodeIds: [nodeId]
@@ -30108,7 +30087,6 @@ async function handleRunTaskPlan(args, runtime) {
   return makeJsonToolResult(await executeRunTaskPlan(args, runtime));
 }
 async function executeRunTaskPlan(args, runtime) {
-  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const plan = await loadTaskPlan(args, session);
   const resultFile = resolveTaskPlanResultFile(args, plan.planPath, session);
@@ -30126,7 +30104,6 @@ async function executeRunTaskPlan(args, runtime) {
         id,
         step,
         type,
-        title: `${args.title}: ${id}`,
         sessionId: args.sessionId,
         references,
         runtime
@@ -30220,7 +30197,6 @@ async function executeRunTaskPlan(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_run_task_plan",
-    title: args.title,
     mode: "task-plan",
     summary: `Ran ${steps.length}/${plan.steps.length} task-plan steps with ${failedSteps.length} failures.`,
     nodeIds: []
@@ -30256,26 +30232,25 @@ function compactTaskPlanStepDetail(step) {
   });
 }
 async function handlePrepareTask(args, runtime) {
-  assertRequiredTitleArgument(args);
   const session = runtime?.sessions.getOrCreate(args.sessionId);
   const previousTask = session?.workspace ? taskChangeSnapshot(session.workspace) : void 0;
   applyWorkspaceFileContextArgs(session, args);
-  const taskSlug = deriveTaskSlug(args, "figma-task");
+  const taskName = deriveTaskName(args, "figma-task");
   const fileSlug = deriveFileSlug(args, session);
-  const workspace = resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session);
+  const workspace = resolvePrepareTaskWorkspace(args, taskName, fileSlug, session);
   if (session) {
     session.workspace = workspace;
     touchSession(session);
   }
-  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskSlug);
+  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskName);
   const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
   await ensureWorkspaceDirectories(workspace);
-  await writeTaskFile(scriptPath, createTaskScriptTemplate(taskSlug, args), Boolean(args.overwrite));
+  await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, args), Boolean(args.overwrite));
   const payload = {
     ok: true,
     session: session ? responseSession(session) : void 0,
     task: {
-      taskSlug,
+      taskName,
       fileContext: workspace.fileContext,
       inputFile: scriptName,
       workspace: responseWorkspace(workspace),
@@ -30285,7 +30260,7 @@ async function handlePrepareTask(args, runtime) {
     taskChange: {
       previous: previousTask,
       current: taskChangeSnapshot(workspace, scriptName),
-      changed: !previousTask || previousTask.taskSlug !== workspace.intentSlug || previousTask.inputFile !== scriptName || previousTask.sessionDir !== workspace.sessionDir
+      changed: !previousTask || previousTask.taskName !== workspace.intentSlug || previousTask.inputFile !== scriptName || previousTask.sessionDir !== workspace.sessionDir
     },
     next: [
       "Edit the .figma.js file in this task folder.",
@@ -30295,7 +30270,7 @@ async function handlePrepareTask(args, runtime) {
   };
   return makeJsonToolResult(payload);
 }
-function resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session) {
+function resolvePrepareTaskWorkspace(args, taskName, fileSlug, session) {
   const parsedFile = parseFigmaFileReference(args.file);
   const fileKey = session?.fileKey ?? parsedFile.fileKey;
   if (typeof args.cwd === "string" && args.cwd.length > 0) {
@@ -30307,7 +30282,7 @@ function resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session) {
       dirName: args.dirName,
       fileKey,
       fileSlug,
-      intentSlug: taskSlug
+      intentSlug: taskName
     });
   }
   const hasFileContext = Boolean(args.file || args.fileSlug || args.dirName);
@@ -30318,31 +30293,30 @@ function resolvePrepareTaskWorkspace(args, taskSlug, fileSlug, session) {
       dirName: args.dirName,
       fileKey,
       fileSlug,
-      intentSlug: taskSlug
+      intentSlug: taskName
     });
   }
   return resolvePreparedTaskWorkspace({
     args,
-    taskSlug,
+    taskName,
     fileSlug,
     session
   });
 }
 function taskChangeSnapshot(workspace, inputFile = workspace.files.script) {
   return {
-    taskSlug: workspace.intentSlug,
+    taskName: workspace.intentSlug,
     inputFile,
     sessionDir: workspace.sessionDir
   };
 }
 async function handleGuidance(args) {
-  assertRequiredTitleArgument(args);
-  const intentSource = guidanceIntentSource(args);
-  const cardSource = args.card ?? args.query;
+  const querySource = guidanceQuerySource(args);
+  const cardSource = args.card;
   const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
-  const mode = args.mode ?? (cardSource ? "card" : intentSource ? "guidance" : "catalog");
+  const mode = args.mode ?? (cardSource ? "card" : querySource ? "guidance" : "catalog");
   if (mode === "plan") {
-    const planIntent = intentSource ? normalizeLookupRankingQuery(intentSource.value, intentSource.name) : "figma file task";
+    const planIntent = querySource ? normalizeLookupRankingQuery(querySource.value, querySource.name) : "figma file task";
     const payload2 = {
       ok: true,
       workflow: createFileWorkflowPayload(),
@@ -30363,7 +30337,7 @@ async function handleGuidance(args) {
     };
     return makeJsonToolResult(payload2);
   }
-  const intent = intentSource ? normalizeLookupRankingQuery(intentSource.value, intentSource.name) : void 0;
+  const intent = querySource ? normalizeLookupRankingQuery(querySource.value, querySource.name) : void 0;
   const cardQuery = typeof cardSource === "string" ? normalizeLookupQuery(cardSource, "card or query") : void 0;
   const cards = mode === "catalog" ? FIGMA_REPL_API_CARDS.slice(0, maxCards) : cardQuery ? searchApiCards(cardQuery, maxCards) : intent ? chooseApiCardsForIntent(intent, maxCards) : FIGMA_REPL_API_CARDS.slice(0, maxCards);
   const context = intent ? await searchReferenceFiles({
@@ -30387,14 +30361,13 @@ async function handleGuidance(args) {
   };
   return makeJsonToolResult(payload);
 }
-function guidanceIntentSource(args) {
-  if (typeof args.task === "string") {
-    return { name: "task", value: args.task };
+function guidanceQuerySource(args) {
+  if (typeof args.query === "string") {
+    return { name: "query", value: args.query };
   }
   return void 0;
 }
 async function handleInspect(args, runtime) {
-  assertRequiredTitleArgument(args);
   if (args.mode === "validate") {
     return makeJsonToolResult(await executeValidateHandles(args, runtime));
   }
@@ -30433,7 +30406,6 @@ async function handleInspect(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_inspect",
-    title: asOptionalString2(args.title),
     mode: "read",
     summary: `Inspected ${target}.`,
     nodeIds: collectNodeIds(parsed.json)
@@ -30447,7 +30419,6 @@ async function handleInspect(args, runtime) {
   return makeJsonToolResult(payload);
 }
 async function executeInspectStyle(args, runtime) {
-  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
   const target = asOptionalString2(args.target) ?? "$selection";
   const depth = normalizePositiveInteger(args.depth, 1);
@@ -30549,7 +30520,6 @@ async function executeInspectStyle(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_inspect",
-    title: asOptionalString2(args.title),
     mode: "style",
     summary: `Inspected style tokens for ${target}.`,
     nodeIds: collectNodeIds(parsed.json)
@@ -30563,7 +30533,6 @@ async function executeInspectStyle(args, runtime) {
   return payload;
 }
 async function executeValidateHandles(args, runtime) {
-  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(asOptionalString2(args.sessionId));
   const requested = Array.isArray(args.handles) ? args.handles.filter((item) => typeof item === "string" && item.length > 0) : Object.keys(session.handles);
   const code = [
@@ -30604,7 +30573,6 @@ async function executeValidateHandles(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_inspect",
-    title: asOptionalString2(args.title),
     mode: "validate",
     summary: `Validated ${requested.length} Figma REPL handle(s).`,
     nodeIds: collectNodeIds(parsed.json)
@@ -30624,7 +30592,6 @@ async function handleGetMetadata(args, runtime) {
   return makeJsonToolResult(await executeGetMetadata(args, runtime));
 }
 async function executeGetMetadata(args, runtime) {
-  assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   applySessionFileReference(session, args.file);
   if (args.cwd !== void 0 || args.dirName !== void 0 || args.file !== void 0 && !session.workspace) {
@@ -30651,7 +30618,6 @@ async function executeGetMetadata(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_get_metadata",
-    title: args.title,
     mode: "read",
     summary: `Read Figma metadata for ${requested.nodeId ?? requested.fileKey}.`,
     nodeIds: requested.nodeId ? [requested.nodeId] : []
@@ -30704,7 +30670,6 @@ function resolveGetMetadataRequest(args, session) {
   return { fileKey, nodeId };
 }
 async function executeCallUpstreamTool(args, runtime) {
-  assertRequiredTitleArgument(args);
   if (!args.toolName || typeof args.toolName !== "string") {
     throw new Error('Tool argument "toolName" is required and must be a string.');
   }
@@ -30729,7 +30694,6 @@ async function executeCallUpstreamTool(args, runtime) {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_repl_call_upstream_tool",
-    title: args.title,
     mode: "upstream",
     summary: `Called upstream Figma MCP tool ${args.toolName}.`,
     nodeIds: collectNodeIds(parsed.json)
@@ -30763,7 +30727,6 @@ async function executeCallUpstreamTool(args, runtime) {
   return payload;
 }
 async function handleLookup(args) {
-  assertRequiredTitleArgument(args);
   if (args.kind === "docs") {
     const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
     const matches2 = await searchReferenceFiles({
@@ -30847,12 +30810,6 @@ async function resolveEvalSettings(session, args, runtime) {
     const fileKey = extractFigmaFileKey(session.fileUrl);
     if (fileKey) {
       upstreamArguments.fileKey = fileKey;
-    }
-  }
-  if (typeof upstreamArguments.description !== "string" || upstreamArguments.description.length === 0) {
-    const title = asOptionalString2(args.title);
-    if (title) {
-      upstreamArguments.description = title;
     }
   }
   touchSession(session);
@@ -32288,7 +32245,6 @@ async function runTaskPlanStep(options) {
     options.references
   );
   const commonArgs = {
-    title: asOptionalString2(rawStepArgs.title) ?? options.title,
     sessionId: asOptionalString2(rawStepArgs.sessionId) ?? options.sessionId
   };
   const session = options.runtime.sessions.getOrCreate(commonArgs.sessionId);
@@ -32664,17 +32620,22 @@ function bindOpenWorkspaceIfAvailable(session, args) {
     intentSlug: session.slug
   });
 }
-function deriveTaskSlug(args, fallback) {
-  return slugifyTaskName2(
-    args.taskSlug ?? args.task ?? args.title ?? args.sessionId ?? fallback
-  );
+function deriveTaskName(args, _fallback) {
+  if (typeof args.taskName !== "string") {
+    throw new Error('Tool argument "taskName" is required and must be a slug-style string like "settings-panel-polish".');
+  }
+  const value = args.taskName.trim();
+  if (value.length === 0 || slugifyTaskName2(value) !== value) {
+    throw new Error('Tool argument "taskName" must be a slug-style string like "settings-panel-polish".');
+  }
+  return value;
 }
-function createTaskScriptTemplate(taskSlug, args) {
+function createTaskScriptTemplate(taskName, args) {
   return [
-    `// ${taskSlug}.figma.js`,
+    `// ${taskName}.figma.js`,
     "// Async Figma Plugin API body for figma_repl_run_script_file.",
     "// Use $ helpers plus native Figma Plugin API calls and return compact JSON.",
-    args.task ? `// Task: ${String(args.task)}` : void 0,
+    args.taskName ? `// Task: ${String(args.taskName)}` : void 0,
     args.surface ? `// Surface: ${String(args.surface)}` : void 0,
     args.targetPageId ? `// Suggested targetPageId: ${String(args.targetPageId)}` : void 0,
     "",
@@ -32700,7 +32661,7 @@ function createFileWorkflowPayload() {
     fileExtension: ".figma.js",
     prepareTool: "figma_repl_prepare_task",
     planTool: "figma_repl_guidance",
-    workspaceLayout: "<cwd>/figma-mcp/<fileKey-or-fileSlug>/<taskSlug>.figma.js; debug JSON files are generated on demand",
+    workspaceLayout: "<cwd>/figma-mcp/<fileKey-or-fileSlug>/<taskName>.figma.js; debug JSON files are generated on demand",
     outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
     workflowTools: ["figma_repl_get_metadata", "figma_repl_apply_asset_manifest", "figma_repl_download_assets", "figma_repl_capture_node", "figma_repl_run_task_plan"],
     helpers: createEvalHelperPathList(),
@@ -32710,7 +32671,7 @@ function createFileWorkflowPayload() {
       "Initialize a file workspace once, then keep task scripts in that file-context folder.",
       "Run dryRun first for file-aware diagnostics without upstream calls.",
       "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; full session state remains available through figma-repl://sessions/{id}, and the full handle map is available through figma-repl://sessions/{id}/handles.",
+      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; compact session state and workspace file context are available through figma-repl://sessions/{id}, and the full handle map is available through figma-repl://sessions/{id}/handles.",
       "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
@@ -32790,9 +32751,9 @@ function createToolArgumentGuidancePayload() {
   return {
     title: {
       optional: true,
-      preferSupplying: true,
-      schemaDescription: "One concise sentence-style line for UI/log display.",
-      guidance: "Prefer supplying title on normal calls. Describe what this call is doing in plain language; keep it specific and avoid bare labels or tool names. If omitted, the runtime uses a generic default title.",
+      preferSupplying: false,
+      schemaDescription: "Optional MCP call display label for Codex/UI only; validated as a string but not saved, defaulted, or used for task/file naming.",
+      guidance: "title is optional display-only call metadata for Codex/UI. The runtime validates it when supplied but does not store it, synthesize defaults from it, pass it upstream, or use it for task/file naming.",
       examples: [
         "Capture the hero variant for visual QA",
         "Dry-run the token audit script",
@@ -32803,13 +32764,13 @@ function createToolArgumentGuidancePayload() {
       tool: "figma_repl_prepare_task",
       tier: "normalPath",
       recommendedCalls: {
-        workspaceFromFile: { title: "Prepare the token audit workspace", file: "<figma file URL or file key>", task: "<task>", surface: "design" }
+        workspaceFromFile: { file: "<figma file URL or file key>", taskName: "<task-name>", surface: "design" }
       },
-      advancedArguments: ["cwd", "fileSlug", "dirName", "taskSlug", "workspaceDir", "fileName", "taskRoot", "template", "overwrite"],
+      advancedArguments: ["cwd", "fileSlug", "dirName", "workspaceDir", "fileName", "taskRoot", "template", "overwrite"],
       avoidUnless: {
         cwd: "Omit cwd for the MCP server process cwd; pass it only when the server cwd is not the intended project directory.",
         workspaceOverrides: "Use workspaceDir/taskRoot only when deliberately bypassing the default <cwd>/figma-mcp/<fileKey-or-fileSlug> layout.",
-        fileName: "Use fileName only when the generated <taskSlug>.figma.js name is unsuitable.",
+        fileName: "Use fileName only when the generated <task>.figma.js name is unsuitable.",
         overwrite: "Use only after deciding that replacing an existing script/result pair is intended."
       }
     },
@@ -32817,7 +32778,7 @@ function createToolArgumentGuidancePayload() {
       tool: "figma_repl_open",
       tier: "contextAndLookup",
       recommendedCalls: {
-        session: { title: "Open the design file session", sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" }
+        session: { sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" }
       },
       advancedArguments: ["cwd", "dirName", "connect", "handles"],
       avoidUnless: {
@@ -32832,8 +32793,8 @@ function createToolArgumentGuidancePayload() {
       tier: "advancedEscapeHatches",
       guidance: "Use only for small ephemeral calls. Use prepare_task + figma_repl_run_script_file for repairable scripts, multi-step work, and large structured results.",
       recommendedCalls: {
-        read: { title: "Inspect selected layout metadata", sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
-        write: { title: "Apply the selected node updates", sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" }
+        read: { sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
+        write: { sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" }
       },
       advancedArguments: ["inlineResultLimit", "allowDangerousOperations", "handleUpdates"],
       avoidUnless: {
@@ -32847,9 +32808,9 @@ function createToolArgumentGuidancePayload() {
       tool: "figma_repl_inspect",
       tier: "normalPath",
       recommendedCalls: {
-        inspectTarget: { title: "Inspect the current selection", sessionId: "<session>", target: "$selection" },
-        inspectStyle: { title: "Inspect visual style tokens", sessionId: "<session>", mode: "style", target: "$selection" },
-        validateHandles: { title: "Validate cached node handles", sessionId: "<session>", mode: "validate" }
+        inspectTarget: { sessionId: "<session>", target: "$selection" },
+        inspectStyle: { sessionId: "<session>", mode: "style", target: "$selection" },
+        validateHandles: { sessionId: "<session>", mode: "validate" }
       },
       advancedArguments: ["handles"],
       avoidUnless: {
@@ -32861,8 +32822,8 @@ function createToolArgumentGuidancePayload() {
       tier: "contextAndLookup",
       guidance: "Use for broad recursive layer-tree discovery before detailed style/fill/text inspection. It calls official get_metadata, converts XML to compact JSON, returns small trees inline, and writes oversized trees to outputFiles.metadataFile.",
       recommendedCalls: {
-        fromSession: { title: "Read layer metadata", sessionId: "<session>", target: "<node id or $handle>" },
-        fromFile: { title: "Read layer metadata", file: "<figma file URL or file key>", target: "<node id>" }
+        fromSession: { sessionId: "<session>", target: "<node id or $handle>" },
+        fromFile: { file: "<figma file URL or file key>", target: "<node id>" }
       },
       advancedArguments: ["inlineResultLimit", "refresh", "clientLanguages", "clientFrameworks"],
       avoidUnless: {
@@ -32875,7 +32836,7 @@ function createToolArgumentGuidancePayload() {
       tool: "figma_repl_apply_asset_manifest",
       tier: "workflowAddOns",
       recommendedCalls: {
-        applyManifest: { title: "Apply generated assets to target rectangles", sessionId: "<session>", manifestPath: "<assets>.json" }
+        applyManifest: { sessionId: "<session>", manifestPath: "<assets>.json" }
       },
       advancedArguments: ["assets"],
       avoidUnless: {
@@ -32886,7 +32847,7 @@ function createToolArgumentGuidancePayload() {
       tool: "figma_repl_download_assets",
       tier: "workflowAddOns",
       recommendedCalls: {
-        downloadTargets: { title: "Download source assets from targets", sessionId: "<session>", targets: [{ target: "$target", defaultFormat: "png" }], outputDir: "<downloads>" }
+        downloadTargets: { sessionId: "<session>", targets: [{ target: "$target", defaultFormat: "png" }], outputDir: "<downloads>" }
       },
       preferredArguments: ["targets", "manifestPath", "outputDir"],
       avoidUnless: {
@@ -32906,7 +32867,7 @@ function createToolArgumentGuidancePayload() {
       tool: "figma_repl_run_task_plan",
       tier: "workflowAddOns",
       recommendedCalls: {
-        filePlan: { title: "Run the repeatable asset QA plan", sessionId: "<session>", planPath: "<plan>.json" }
+        filePlan: { sessionId: "<session>", planPath: "<plan>.json" }
       },
       advancedArguments: ["steps"],
       avoidUnless: {
@@ -32917,7 +32878,7 @@ function createToolArgumentGuidancePayload() {
     guidance: {
       tool: "figma_repl_guidance",
       tier: "contextAndLookup",
-      preferredArguments: ["task", "mode", "surface"]
+      preferredArguments: ["query", "mode", "surface"]
     },
     lookup: {
       tool: "figma_repl_lookup",
@@ -32930,7 +32891,7 @@ function createToolArgumentGuidancePayload() {
       tier: "advancedEscapeHatches",
       guidance: "Explicit upstream escape hatch only for uncovered official Figma MCP capabilities. Read figma-repl://upstream-tools, then figma-repl://upstream-tools/{name}, and do not use for use_figma/get_metadata/get_screenshot/upload_assets/download_assets wrappers.",
       recommendedCalls: {
-        explicit: { title: "Call the upstream-only Figma tool", sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} }
+        explicit: { sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} }
       },
       advancedArguments: ["inlineResultLimit", "refresh"],
       avoidUnless: {
@@ -32947,7 +32908,7 @@ function createCapabilitiesPayload() {
       purpose: "Unified Figma-facing MCP facade for agents after OAuth registration. Stay inside figma_repl_mcp; it keeps local session metadata/handles and can bridge to upstream Figma MCP tools through explicit REPL tools.",
       preferredFlow: [
         "Read figma-repl://capabilities to choose the facade path",
-        "figma_repl_prepare_task with file and task for repairable .figma.js workspaces; cwd is an optional override",
+        "figma_repl_prepare_task with file and taskName for repairable .figma.js workspaces; cwd is an optional override",
         "figma_repl_guidance with mode=plan for workflow planning or mode=guidance/card/catalog for compact local API cards",
         "figma_repl_lookup only when exact docs/API snippets are still needed after guidance",
         "figma_repl_get_metadata for broad recursive layer-tree discovery before detailed style/fill/text inspection",
@@ -32964,7 +32925,7 @@ function createCapabilitiesPayload() {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads with minimal session summaries and no session.history. Ordinary tool session summaries contain only id, fileKey, surface, handleChanges, and workspace.workspaceRef. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}; full remembered handle maps are available through figma-repl://sessions/{id}/handles. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests expose compact submitUrl POST evidence in assets[].upload without raw submit URLs; asset manifests and download_assets write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
+      responseShape: "Structured-first payloads with minimal session summaries and no session.history. Ordinary tool session summaries contain only id, fileKey, surface, handleChanges, and workspace.workspaceRef. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. figma-repl://sessions lists only id, fileKey, surface, and sessionDir when present; figma-repl://sessions/{id} returns compact id/fileKey/surface, full handles, optional page state, and optional compact workspace sessionDir. The narrow handle-only map remains available through figma-repl://sessions/{id}/handles. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests expose compact submitUrl POST evidence in assets[].upload without raw submit URLs; asset manifests and download_assets write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
       statusSemantics: {
         topLevelOk: "Top-level ok reports local wrapper/tool completion.",
         upstreamOk: "upstream.ok reports effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false; false results include upstream.result.source as business when JSON supplied ok:false, or call for failures without a consumed result status.",
@@ -32979,7 +32940,7 @@ function createCapabilitiesPayload() {
       clone: "Use $.cloneNodeTree to copy a node to the side; it clones outer-to-inner and preserves instance subtrees whole when children cannot be rebuilt.",
       generatedFrame: "Use $.findFreeSlot or $.placeNode for predictable non-overlapping placement and $.replaceGeneratedFrame when replacing a guarded generated FRAME.",
       designSystem: "Use native Plugin API calls in .figma.js for variables/styles/components; use explicit REPL upstream calls only when a task requires them.",
-      query: "Use figma_repl_guidance first for natural-language tasks; it returns recommendedCards, queryHints, apiSymbols, avoid, and compact referenceContext. Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
+      query: "Use figma_repl_guidance first with BM25-style keyword queries; it returns recommendedCards, queryHints, apiSymbols, avoid, and compact referenceContext. Prefer findOne/query scoped to currentPage or a handle; figma.root.findAll is blocked.",
       pages: "Use targetPageId or one setCurrentPageAsync call; direct figma.currentPage assignment is blocked.",
       selection: "Use $.select instead of direct figma.currentPage.selection access in repairable scripts.",
       styleAudit: "Use figma_repl_inspect mode=style for compact visual-token audits before asking agents to match a layer style.",
@@ -32998,8 +32959,8 @@ function createCapabilitiesPayload() {
       scriptShape: "Write an async function body in a local .figma.js file. The runner injects Figma REPL prelude plus $ helpers before upstream use_figma execution.",
       requiredArguments: ["inputFile after figma_repl_prepare_task; scriptPath is an advanced absolute-path escape hatch"],
       recommendedCalls: {
-        dryRun: { title: "Dry-run the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
-        execute: { title: "Execute the token audit script", sessionId: "<session>", inputFile: "<task>.figma.js" }
+        dryRun: { sessionId: "<session>", inputFile: "<task>.figma.js", dryRun: true, strict: true, surface: "design" },
+        execute: { sessionId: "<session>", inputFile: "<task>.figma.js" }
       },
       advancedArguments: [
         "scriptPath",
@@ -33087,7 +33048,7 @@ function createCapabilitiesPayload() {
       skillReference: "figma-repl-guidance-and-lookup.md",
       searchAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
       flow: [
-        "Describe the user task in task.",
+        "Use query for compact BM25-style keywords, not natural-language task prose.",
         "Use recommendedCards to choose compact cards before broad docs lookup.",
         "Use queryHints as narrower follow-up searches when card guidance is insufficient.",
         "Use apiSymbols for exact figma_repl_lookup kind=api calls.",
@@ -33223,7 +33184,7 @@ async function readReplResource(uri, runtime) {
         {
           uri,
           mimeType: "application/json",
-          text: JSON.stringify({ sessions: runtime.sessions.list().map((session) => publicSession(session)) }, null, 2)
+          text: JSON.stringify({ sessions: runtime.sessions.list().map((session) => sessionResourceSummary(session)) }, null, 2)
         }
       ]
     };
@@ -33238,7 +33199,7 @@ async function readReplResource(uri, runtime) {
     if (!session) {
       throw new Error(`Figma REPL session not found: ${sessionId}`);
     }
-    const payload = handlesOnly ? { sessionId: session.id, handles: session.handles } : publicSession(session);
+    const payload = handlesOnly ? { sessionId: session.id, handles: session.handles } : sessionResourceDetail(session);
     return {
       contents: [
         {
@@ -33510,13 +33471,47 @@ function responseWorkspace(workspace) {
     fileContext: workspace.fileContext,
     fileKey: workspace.fileKey,
     fileSlug: workspace.fileSlug,
-    taskSlug: workspace.intentSlug,
+    taskName: workspace.intentSlug,
     sessionDir: workspace.sessionDir,
     scriptPath: workspace.scriptPath,
     files: {
       inputFile: workspace.files.script
     }
   };
+}
+function responseResourceWorkspace(workspace) {
+  return removeUndefined2({
+    sessionDir: workspace.sessionDir
+  });
+}
+function responseResourcePage(session) {
+  const knownPages = Object.entries(session.knownPages).filter((entry) => typeof entry[0] === "string" && entry[0].length > 0 && typeof entry[1] === "string" && entry[1].length > 0).map(([id, name]) => ({ id, name })).sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+  if (!session.currentPageId && knownPages.length === 0) {
+    return void 0;
+  }
+  return removeUndefined2({
+    currentPageId: session.currentPageId,
+    currentPageName: session.currentPageId ? session.knownPages[session.currentPageId] : void 0,
+    knownPages: knownPages.length > 0 ? knownPages : void 0
+  });
+}
+function sessionResourceSummary(session) {
+  return removeUndefined2({
+    id: session.id,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    sessionDir: session.workspace?.sessionDir
+  });
+}
+function sessionResourceDetail(session) {
+  return removeUndefined2({
+    id: session.id,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    handles: session.handles,
+    page: responseResourcePage(session),
+    workspace: session.workspace ? responseResourceWorkspace(session.workspace) : void 0
+  });
 }
 function responseScriptMetadata(metadata) {
   return removeUndefined2({
@@ -33625,26 +33620,6 @@ function addFailureSourceToUpstreamResult(result, source) {
     };
   }
   return result === void 0 ? { source } : { source, value: result };
-}
-function publicSession(session, options = {}) {
-  const includeHistory = options.includeHistory ?? true;
-  const historyLimit = normalizePositiveInteger(options.historyLimit, DEFAULT_HISTORY_LIMIT);
-  return {
-    id: session.id,
-    slug: session.slug,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    label: session.label,
-    fileUrl: session.fileUrl,
-    fileKey: session.fileKey,
-    surface: session.surface,
-    knownPages: session.knownPages,
-    currentPageId: session.currentPageId,
-    handles: session.handles,
-    workspace: session.workspace ? responseWorkspace(session.workspace) : void 0,
-    lastDiagnostics: session.lastDiagnostics,
-    history: includeHistory ? session.history.slice(-historyLimit) : void 0
-  };
 }
 function cloneSession(session) {
   return {

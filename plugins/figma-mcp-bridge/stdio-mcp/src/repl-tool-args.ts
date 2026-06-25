@@ -1,7 +1,5 @@
 import type { FigmaReplSurface } from "./repl-script-runner.js";
 
-const TOOL_TITLE_ARGUMENT = "title";
-
 export interface FigmaReplOpenArguments {
   [key: string]: unknown;
   title?: string;
@@ -141,12 +139,11 @@ export interface FigmaReplPrepareTaskArguments {
   [key: string]: unknown;
   title?: string;
   sessionId?: string;
-  task?: string;
+  taskName?: string;
   file?: string;
   fileSlug?: string;
   cwd?: string;
   dirName?: string;
-  taskSlug?: string;
   fileName?: string;
   taskRoot?: string;
   workspaceDir?: string;
@@ -162,7 +159,6 @@ export interface FigmaReplGuidanceArguments {
   mode?: "guidance" | "plan" | "card" | "catalog";
   card?: string;
   query?: string;
-  task?: string;
   surface?: FigmaReplSurface;
   workflow?: string;
   maxCards?: number;
@@ -334,18 +330,18 @@ export function asRunTaskPlanArgs(args: unknown): FigmaReplRunTaskPlanArguments 
 export function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments {
   const record = parseToolArgs<FigmaReplPrepareTaskArguments>(args);
   assertRemovedFileReferenceFields(record);
-  assertRemovedArguments(record, ["intent", "goal", "taskName"], "task");
+  assertRemovedArguments(record, ["intent", "goal", "task"], "taskName");
+  assertRemovedArguments(record, ["taskSlug"], "taskName");
   assertRemovedArguments(record, ["taskDir"], "workspaceDir");
   assertRemovedArguments(record, ["scriptName"], "fileName");
   assertRemovedArguments(record, ["expectedSurface"], "surface");
   assertOptionalStringFields(record, [
     "sessionId",
-    "task",
+    "taskName",
     "file",
     "fileSlug",
     "cwd",
     "dirName",
-    "taskSlug",
     "workspaceDir",
     "fileName",
     "taskRoot",
@@ -358,9 +354,9 @@ export function asPrepareTaskArgs(args: unknown): FigmaReplPrepareTaskArguments 
 
 export function asGuidanceArgs(args: unknown): FigmaReplGuidanceArguments {
   const record = parseToolArgs<FigmaReplGuidanceArguments>(args);
-  assertRemovedArguments(record, ["intent", "goal"], "task");
+  assertRemovedArguments(record, ["intent", "goal", "task"], "query");
   assertRemovedArguments(record, ["expectedSurface"], "surface");
-  assertOptionalStringFields(record, ["card", "query", "task", "workflow"]);
+  assertOptionalStringFields(record, ["card", "query", "workflow"]);
   assertOptionalEnum(record, "mode", FIGMA_REPL_GUIDANCE_MODES);
   assertOptionalEnum(record, "surface", FIGMA_REPL_SURFACES);
   return record;
@@ -645,24 +641,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-export function assertRequiredTitleArgument(args: Record<string, unknown>): void {
-  if (typeof args[TOOL_TITLE_ARGUMENT] !== "string") {
-    throw new Error('Tool argument "title" is required and must be a string.');
-  }
-}
-
 export function withDefaultTitle<T extends Record<string, unknown>>(
   args: T,
-  title: string,
-): T & { title: string } {
+  _title: string,
+): T {
   if (!isRecord(args)) {
     throw new Error("Tool arguments must be an object.");
   }
   if (args.title !== undefined && typeof args.title !== "string") {
     throw new Error('Tool argument "title" must be a string.');
   }
-  return {
-    ...args,
-    title: args.title ?? title,
-  };
+  return args;
 }

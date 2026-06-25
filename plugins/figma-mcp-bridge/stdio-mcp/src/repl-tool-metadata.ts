@@ -23,7 +23,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_open",
       description:
-        "Context helper for creating or updating a local Figma REPL session. Recommended call: { title, sessionId, file, surface }. Use prepare_task + run_script_file for the primary file workflow; use open for lightweight session context, handle import, file binding, or upstream auth connection without tool discovery.",
+        "Context helper for creating or updating a local Figma REPL session. Recommended call: { sessionId, file, surface }. Use prepare_task + run_script_file for the primary file workflow; use open for lightweight session context, handle import, file binding, or upstream auth connection without tool discovery.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
@@ -41,7 +41,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_eval",
       description:
-        "Small ephemeral JavaScript call for quick reads or tightly scoped updates only. Recommended call: { title, sessionId, code, mode, surface }. Use prepare_task + run_script_file for repairable scripts, multi-step work, and large structured results.",
+        "Small ephemeral JavaScript call for quick reads or tightly scoped updates only. Recommended call: { sessionId, code, mode, surface }. Use prepare_task + run_script_file for repairable scripts, multi-step work, and large structured results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -56,7 +56,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_run_script_file",
       description:
-        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { title, sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { title, sessionId, inputFile }. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
+        "Primary file-based JavaScript workflow for Figma REPL. Recommended workspace calls: dry-run with { sessionId, inputFile, dryRun:true, strict:true, surface }, then execute with { sessionId, inputFile }. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id or task name. Defaults to 'default'."),
@@ -73,7 +73,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_apply_asset_manifest",
       description:
-        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { title, sessionId, manifestPath } after .figma.js creates target rectangles. Debug JSON files are generated on demand for failures. Use figma_repl_call_upstream_tool only for explicit uncovered upstream capabilities.",
+        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { sessionId, manifestPath } after .figma.js creates target rectangles. Debug JSON files are generated on demand for failures. Use figma_repl_call_upstream_tool only for explicit uncovered upstream capabilities.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for history. Defaults to 'default'."),
@@ -89,7 +89,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_download_assets",
       description:
-        "Workflow add-on for official Figma asset downloads. Recommended call: { title, sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets, saves exported plus raw/source files locally, and writes debug JSON only on failure.",
+        "Workflow add-on for official Figma asset downloads. Recommended call: { sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets, saves exported plus raw/source files locally, and writes debug JSON only on failure.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for fileKey, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -118,7 +118,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_run_task_plan",
       description:
-        "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { title, sessionId, planPath }. Steps use only { id?, type?, args? }; put tool-specific inputs inside args. The plan-level debug file is generated automatically.",
+        "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { sessionId, planPath }. Steps use only { id?, type?, args? }; put tool-specific inputs inside args. The plan-level debug file is generated automatically.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Default local REPL session id inherited by steps when omitted."),
@@ -134,16 +134,15 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_prepare_task",
       description:
-        "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { title, file, task, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
+        "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, surface }. Follow with guidance/lookup, run_script_file dryRun, run_script_file execute, inspect, and capture.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. If initialized, files are created under that session file-context workspace."),
-        task: stringProperty("Recommended human task used to derive <taskSlug>.figma.js."),
+        taskName: stringProperty("Required slug-style task/workspace name such as settings-panel-polish; used to derive <taskName>.figma.js."),
         file: stringProperty("Recommended Figma file URL or raw file key used to derive the file context when preparing a workspace."),
         fileSlug: stringProperty("Advanced file-context slug override to use when file cannot derive a key."),
         cwd: stringProperty("Optional absolute project directory where the figma-mcp workspace directory will be created. Defaults to the MCP server process cwd when file context is present."),
         dirName: stringProperty("Advanced workspace directory name under cwd. Defaults to figma-mcp."),
-        taskSlug: stringProperty("Advanced stable slug override for the task files. Defaults from task/title."),
         fileName: stringProperty("Advanced script file-name override ending in .figma.js."),
         taskRoot: stringProperty(`Advanced absolute task root for temp task workspaces. Defaults to ${options.taskWorkspaceRootEnv}, then OS temp figma-repl-mcp/tasks.`),
         workspaceDir: stringProperty("Advanced absolute workspace directory override."),
@@ -156,13 +155,12 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_guidance",
       description:
-        "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { title, task, surface }. Use task for natural-language requests before writing .figma.js; pair with lookup only when exact docs/API snippets are needed.",
+        "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { query, surface }. Use BM25-style keyword queries before writing .figma.js; pair with lookup only when exact docs/API snippets are needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query/task fields."),
+        mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query fields."),
         card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
-        query: stringProperty(`Search query when card id is not known. Hard limit ${options.maxLookupQueryLength} characters.`),
-        task: stringProperty(`Natural-language task request. Trimmed and capped to ${options.maxLookupQueryLength} characters for guidance lookup/ranking.`),
+        query: stringProperty(`BM25-style keyword search query, for example text font loadFontAsync or components variants properties. Hard limit ${options.maxLookupQueryLength} characters.`),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
         workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
         maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4."),
@@ -171,7 +169,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_inspect",
       description:
-        "Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Recommended calls: { title, sessionId, target } or { title, sessionId, mode:\"style\", target }. Uses fixed upstream use_figma execution.",
+        "Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Recommended calls: { sessionId, target } or { sessionId, mode:\"style\", target }. Uses fixed upstream use_figma execution.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id. Defaults to 'default'."),
@@ -188,7 +186,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_repl_get_metadata",
       description:
-        "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata and converts returned XML into a compact JSON node tree. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { title, sessionId, file?, target? }. Use inspect/style afterward for fills, text, and visual tokens.",
+        "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata and converts returned XML into a compact JSON node tree. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { sessionId, file?, target? }. Use inspect/style afterward for fills, text, and visual tokens.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local REPL session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -399,7 +397,7 @@ function objectSchema(
 }
 
 function titleProperty(): Record<string, unknown> {
-  return stringProperty("One concise sentence-style line for UI/log display.");
+  return stringProperty("Optional MCP call display label for Codex/UI only; validated as a string but not saved, defaulted, or used for task/file naming.");
 }
 
 function stringProperty(description: string): Record<string, unknown> {

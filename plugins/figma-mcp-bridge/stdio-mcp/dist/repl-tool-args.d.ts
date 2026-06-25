@@ -125,12 +125,11 @@ export interface FigmaReplPrepareTaskArguments {
     [key: string]: unknown;
     title?: string;
     sessionId?: string;
-    task?: string;
+    taskName?: string;
     file?: string;
     fileSlug?: string;
     cwd?: string;
     dirName?: string;
-    taskSlug?: string;
     fileName?: string;
     taskRoot?: string;
     workspaceDir?: string;
@@ -145,7 +144,6 @@ export interface FigmaReplGuidanceArguments {
     mode?: "guidance" | "plan" | "card" | "catalog";
     card?: string;
     query?: string;
-    task?: string;
     surface?: FigmaReplSurface;
     workflow?: string;
     maxCards?: number;
@@ -173,7 +171,4 @@ export declare function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpst
 export declare function asGetMetadataArgs(args: unknown): FigmaReplGetMetadataArguments;
 export declare function asLookupArgs(args: unknown): FigmaReplLookupArguments;
 export declare function asTaskPlanSteps(value: unknown, displayName?: string): FigmaReplTaskPlanStep[];
-export declare function assertRequiredTitleArgument(args: Record<string, unknown>): void;
-export declare function withDefaultTitle<T extends Record<string, unknown>>(args: T, title: string): T & {
-    title: string;
-};
+export declare function withDefaultTitle<T extends Record<string, unknown>>(args: T, _title: string): T;

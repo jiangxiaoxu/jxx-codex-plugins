@@ -29,6 +29,7 @@ Pin these facts when changing the router surface:
 - `figma_repl_mcp` is the primary agent-facing entrypoint;
 - `node_repl` investigations must not use the embedded no-client SDK remote path for live Figma work; use hosted `figma_repl_mcp`, or an explicit custom client such as a child `dist/repl-stdio-cli.js` stdio MCP process;
 - exposed resources include only `figma-repl://capabilities`, `figma-repl://upstream-tools`, `figma-repl://upstream-tools/{name}`, `figma-repl://sessions`, `figma-repl://sessions/{id}`, and `figma-repl://sessions/{id}/handles`;
+- `figma-repl://sessions` is a compact list with `id`, `fileKey`, `surface`, and optional `sessionDir`; `figma-repl://sessions/{id}` is compact detail with `handles`, optional page state, and optional inline workspace `{ sessionDir }`; `figma-repl://sessions/{id}/handles` is the narrow handle-only resource;
 - `figma_repl_guidance` returns business guidance fields such as `workflow`, `steps`, `recommendedTools`, `suggestedCards`, `cards`, `catalogSize`, `guidance`, `recommendedCards`, `queryHints`, `apiSymbols`, `avoid`, and `suggestions`; it does not return a duplicate output `mode`;
 - `figma_repl_lookup` returns only `ok`, `results`, and `guidance` in structured output; request selectors and cap fields such as `kind`, `query`, `symbol`, `maxResults`, and `maxSnippetLines` stay input-only;
 - public `figma_repl_*` tools are exactly `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_apply_asset_manifest`, `figma_repl_download_assets`, `figma_repl_capture_node`, `figma_repl_run_task_plan`, `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_inspect`, `figma_repl_get_metadata`, `figma_repl_call_upstream_tool`, and `figma_repl_lookup`;
@@ -44,7 +45,7 @@ Pin these facts when changing the router surface:
 - `stdio-mcp/src/repl-server.ts`: MCP server composition, handler wiring, sessions, capability/resource payload assembly, and typed client surface.
 - `stdio-mcp/src/repl-script-runner.ts`: `.figma.js` compilation, helper bootstrap, helper profiles, preflight diagnostics, context diagnostics, and payload-size diagnostics.
 - `stdio-mcp/src/repl-workspace-files.ts`: workspace/path/script-output/capture-output/task-plan file helpers and `FigmaReplSessionWorkspace`.
-- `stdio-mcp/src/repl-tool-args.ts`: tool argument interfaces, default title helper, and explicit low-risk runtime parsers.
+- `stdio-mcp/src/repl-tool-args.ts`: tool argument interfaces, optional display-only title validation, and explicit low-risk runtime parsers.
 - `stdio-mcp/src/repl-tool-metadata.ts`: canonical local tool descriptions and input schemas.
 - `stdio-mcp/src/repl-tool-registry.ts`: local tool names and task-plan step aliases.
 - `stdio-mcp/src/repl-guidance-catalog.ts`: API cards, task buckets, query anchors, and pure guidance helpers.

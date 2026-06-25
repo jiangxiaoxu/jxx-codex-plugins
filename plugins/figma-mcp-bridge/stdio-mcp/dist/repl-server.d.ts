@@ -70,12 +70,43 @@ export interface FigmaReplPublicWorkspace {
     fileContext: string;
     fileKey?: string;
     fileSlug: string;
-    taskSlug: string;
+    taskName: string;
     sessionDir: string;
     scriptPath: string;
     files: {
         inputFile: string;
     };
+}
+export interface FigmaReplResourceWorkspace {
+    [key: string]: unknown;
+    sessionDir: string;
+}
+export interface FigmaReplResourcePageSummary {
+    [key: string]: unknown;
+    id: string;
+    name: string;
+}
+export interface FigmaReplResourcePageState {
+    [key: string]: unknown;
+    currentPageId?: string;
+    currentPageName?: string;
+    knownPages?: FigmaReplResourcePageSummary[];
+}
+export interface FigmaReplResourceSessionSummary {
+    [key: string]: unknown;
+    id: string;
+    fileKey?: string;
+    surface?: FigmaReplSurface;
+    sessionDir?: string;
+}
+export interface FigmaReplResourceSessionDetail {
+    [key: string]: unknown;
+    id: string;
+    fileKey?: string;
+    surface?: FigmaReplSurface;
+    handles: Record<string, string>;
+    page?: FigmaReplResourcePageState;
+    workspace?: FigmaReplResourceWorkspace;
 }
 export interface FigmaReplCompactWorkspace {
     [key: string]: unknown;
@@ -244,7 +275,7 @@ export interface FigmaReplRunTaskPlanResult extends FigmaReplToolResultBase {
 }
 export interface FigmaReplPreparedTask {
     [key: string]: unknown;
-    taskSlug: string;
+    taskName: string;
     fileContext: string;
     inputFile: string;
     workspace: FigmaReplPublicWorkspace;
@@ -361,7 +392,6 @@ export interface FigmaReplHistoryEntry {
     id: string;
     at: string;
     tool: string;
-    title?: string;
     mode?: string;
     summary: string;
     nodeIds: string[];
