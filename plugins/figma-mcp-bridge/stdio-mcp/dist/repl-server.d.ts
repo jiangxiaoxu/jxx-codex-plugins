@@ -79,12 +79,11 @@ export interface FigmaReplPublicWorkspace {
 }
 export interface FigmaReplCompactWorkspace {
     [key: string]: unknown;
-    sessionDir: string;
-    scriptPath: string;
     workspaceRef: string;
-    files: {
-        inputFile: string;
-    };
+}
+export interface FigmaReplHandleChanges {
+    updated: string[];
+    removed: string[];
 }
 export interface FigmaReplPublicSession {
     [key: string]: unknown;
@@ -105,12 +104,9 @@ export interface FigmaReplPublicSession {
 export interface FigmaReplCompactSession {
     [key: string]: unknown;
     id: string;
-    fileUrl?: string;
     fileKey?: string;
     surface?: FigmaReplSurface;
-    knownPages: Record<string, string>;
-    currentPageId?: string;
-    handles: Record<string, string>;
+    handleChanges: FigmaReplHandleChanges;
     workspace?: FigmaReplCompactWorkspace;
 }
 export interface FigmaReplToolResultBase {

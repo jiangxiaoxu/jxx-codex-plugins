@@ -26904,11 +26904,11 @@ function createReplToolDescriptions(options) {
 }
 var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_open: toolOutputSchema({
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     diagnostics: arrayProperty("Session diagnostics.")
   }),
   figma_repl_eval: toolOutputSchema({
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     diagnostics: arrayProperty("Preflight diagnostics."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -26921,7 +26921,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_repl_run_script_file: toolOutputSchema({
     dryRun: booleanProperty("Whether the script was only compiled/diagnosed."),
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
     script: scriptMetadataProperty("Compiled script metadata."),
     outputFiles: outputFilesProperty(
@@ -26934,21 +26934,21 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
   }),
   figma_repl_apply_asset_manifest: toolOutputSchema({
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     assets: compactAssetResultsProperty("Compact per-asset upload/fill results. Successful submitUrl POSTs expose compact upload evidence without raw submit URLs."),
     validation: objectProperty("Optional target validation result."),
     outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
     failures: arrayProperty("Per-asset or validation failures.")
   }),
   figma_repl_download_assets: toolOutputSchema({
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     outputDir: stringProperty("Local directory containing per-target download folders."),
     targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
     failures: arrayProperty("Per-target download or upstream failures."),
     outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"])
   }),
   figma_repl_capture_node: toolOutputSchema({
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     imageFile: stringProperty("Absolute local PNG screenshot path when capture succeeded."),
     nodeId: stringProperty("Captured Figma node id."),
     bytes: numberProperty("Saved PNG file size in bytes."),
@@ -26957,7 +26957,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when capture failed.")
   }),
   figma_repl_run_task_plan: toolOutputSchema({
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     steps: arrayProperty("Compact per-step execution summaries."),
     outputReferences: objectProperty("Plan-level map of step id to output file pointers for later workflow references."),
@@ -26966,7 +26966,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_repl_prepare_task: toolOutputSchema({
     task: objectProperty("Prepared task workspace and script file."),
-    session: objectProperty("Compact local REPL session metadata; task.workspace remains the full prepared workspace shape."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only; task.workspace remains the full prepared workspace shape."),
     taskChange: taskChangeProperty("Previous/current task file pointers and whether the session active task changed."),
     next: stringArrayProperty("Suggested next actions.")
   }),
@@ -26985,7 +26985,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     suggestions: guidanceSuggestionsProperty("Ranked task/card suggestions with compact context.")
   }),
   figma_repl_inspect: toolOutputSchema({
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     diagnostics: arrayProperty("Read-mode diagnostics."),
     target: stringProperty("Inspected target selector or node id when returned by the inspect mode."),
     summary: jsonProperty("Compact inspected node or selection summary when returned by the inspect mode."),
@@ -26998,7 +26998,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when inspection failed.")
   }),
   figma_repl_get_metadata: toolOutputSchema({
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     fileKey: stringProperty("Figma file key sent to official get_metadata."),
     nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
     metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
@@ -27012,7 +27012,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when metadata.json exceeds the byte limit.")
   }),
   figma_repl_call_upstream_tool: toolOutputSchema({
-    session: objectProperty("Compact local REPL session metadata without history or full workspace state."),
+    session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, handleChanges, and workspace.workspaceRef only."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -28230,12 +28230,23 @@ function createFigmaReplMcpServer(options = {}) {
           description: "Read when you need the list of active REPL sessions and their ids before reading a specific session.",
           mimeType: "application/json"
         },
-        ...sessions.list().map((session) => ({
-          uri: `figma-repl://sessions/${encodeURIComponent(session.id)}`,
-          name: `Figma REPL session ${session.id}`,
-          description: "Read when you need public state for this specific active REPL session.",
-          mimeType: "application/json"
-        }))
+        ...sessions.list().flatMap((session) => {
+          const encodedSessionId = encodeURIComponent(session.id);
+          return [
+            {
+              uri: `figma-repl://sessions/${encodedSessionId}`,
+              name: `Figma REPL session ${session.id}`,
+              description: "Read when you need public state for this specific active REPL session.",
+              mimeType: "application/json"
+            },
+            {
+              uri: `figma-repl://sessions/${encodedSessionId}/handles`,
+              name: `Figma REPL session ${session.id} handles`,
+              description: "Read when you need the full remembered handle map for this specific active REPL session.",
+              mimeType: "application/json"
+            }
+          ];
+        })
       ]
     })
   );
@@ -28247,6 +28258,12 @@ function createFigmaReplMcpServer(options = {}) {
           uriTemplate: "figma-repl://sessions/{id}",
           name: "Figma REPL session by id",
           description: "Read when you need full public state for a known REPL session id, including remembered handles, workspace files, file context, and recent call history.",
+          mimeType: "application/json"
+        },
+        {
+          uriTemplate: "figma-repl://sessions/{id}/handles",
+          name: "Figma REPL session handles by id",
+          description: "Read when you need the full remembered handle map for a known REPL session id without reading full session history.",
           mimeType: "application/json"
         },
         {
@@ -28290,9 +28307,7 @@ async function handleOpen(args, runtime) {
     fileUrl: session.fileUrl
   });
   session.lastDiagnostics = openDiagnostics;
-  if (isStringRecord(args.handles)) {
-    mergeHandles(session, args.handles);
-  }
+  const handleChanges = isStringRecord(args.handles) ? updateSessionHandles(session, args.handles) : emptyHandleChanges();
   bindOpenWorkspaceIfAvailable(session, args);
   touchSession(session);
   if (args.connect !== false) {
@@ -28300,7 +28315,7 @@ async function handleOpen(args, runtime) {
   }
   const payload = {
     ok: true,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics)
   };
   return makeJsonToolResult(payload);
@@ -28311,9 +28326,7 @@ async function handleEval(args, runtime) {
   }
   assertRequiredTitleArgument(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
-  if (isStringRecord(args.handleUpdates)) {
-    mergeHandles(session, args.handleUpdates);
-  }
+  let handleChanges = isStringRecord(args.handleUpdates) ? updateSessionHandles(session, args.handleUpdates) : emptyHandleChanges();
   const mode = args.mode ?? "write";
   const diagnostics = diagnoseFigmaReplCode(args.code, {
     allowDangerousOperations: Boolean(args.allowDangerousOperations),
@@ -28330,7 +28343,7 @@ async function handleEval(args, runtime) {
   });
   const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
   const parsed = parseUpstreamToolResult(upstream);
-  updateSessionFromParsedResult(session, parsed.json);
+  handleChanges = mergeHandleChanges(handleChanges, updateSessionFromParsedResult(session, parsed.json));
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -28342,7 +28355,7 @@ async function handleEval(args, runtime) {
   });
   const resultPayload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
     ...upstreamResultFields({
       parsed,
@@ -28666,7 +28679,7 @@ async function executeRunScriptFile(args, runtime) {
     };
     return payload2;
   }
-  updateSessionFromParsedResult(session, parsed.json);
+  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -28679,7 +28692,7 @@ async function executeRunScriptFile(args, runtime) {
   const resultPayload = {
     ok: true,
     dryRun: false,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
     script: responseScript,
     ...runScriptUpstreamFields(parsed)
@@ -29718,7 +29731,7 @@ async function handleInspect(args, runtime) {
     buildFigmaEvalScript({ session, code, mode: "read" })
   );
   const parsed = parseUpstreamToolResult(upstream);
-  updateSessionFromParsedResult(session, parsed.json);
+  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -29730,7 +29743,7 @@ async function handleInspect(args, runtime) {
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics),
     ...inspectInlineResultFields(parsed)
   };
@@ -29834,7 +29847,7 @@ async function executeInspectStyle(args, runtime) {
     buildFigmaEvalScript({ session, code, mode: "read" })
   );
   const parsed = parseUpstreamToolResult(upstream);
-  updateSessionFromParsedResult(session, parsed.json);
+  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -29846,7 +29859,7 @@ async function executeInspectStyle(args, runtime) {
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
     ...inspectInlineResultFields(parsed)
   };
@@ -29889,7 +29902,7 @@ async function executeValidateHandles(args, runtime) {
     buildFigmaEvalScript({ session, code, mode: "read" })
   );
   const parsed = parseUpstreamToolResult(upstream);
-  updateSessionFromParsedResult(session, parsed.json);
+  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -29901,7 +29914,7 @@ async function executeValidateHandles(args, runtime) {
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session),
+    session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
     ...inspectInlineResultFields(parsed)
   };
@@ -32021,7 +32034,7 @@ function createFileWorkflowPayload() {
       "Initialize a file workspace once, then keep task scripts in that file-context folder.",
       "Run dryRun first for file-aware diagnostics without upstream calls.",
       "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; full session state remains available through figma-repl://sessions/{id}.",
+      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; full session state remains available through figma-repl://sessions/{id}, and the full handle map is available through figma-repl://sessions/{id}/handles.",
       "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
@@ -32275,7 +32288,7 @@ function createCapabilitiesPayload() {
       ],
       handles: "Use stable local handles like $card instead of carrying JS object references between calls.",
       upstreamBridge: "The REPL can call uncovered official upstream tools through figma_repl_call_upstream_tool after reading figma-repl://upstream-tools and figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, and download_assets.",
-      responseShape: "Structured-first payloads with compact session/workspace shapes and no session.history. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests expose compact submitUrl POST evidence in assets[].upload without raw submit URLs; asset manifests and download_assets write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
+      responseShape: "Structured-first payloads with minimal session summaries and no session.history. Ordinary tool session summaries contain only id, fileKey, surface, handleChanges, and workspace.workspaceRef. JSON data is returned in structuredContent and content is empty. Tool metadata exposes machine-readable defaults, caps, file pointers, compact script metadata, explicit status semantics, and public upstream result shaping while keeping payloads extensible. Full session state remains available through figma-repl://sessions/{id}; full remembered handle maps are available through figma-repl://sessions/{id}/handles. Upstream-backed eval/script/call_upstream tools return JSON in upstream.result or non-JSON output in upstream.text, expose effective upstream status as upstream.ok, remove bridge-internal __figmaRepl metadata from public eval/script results, omit oversized inline fields with inlineResultLimit metadata, and write outputFiles.debugFile plus outputFiles.upstreamFile sidecars only when debug files are generated on demand. figma_repl_get_metadata calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile. Raw official upstream JSON objects with top-level ok consume that status into upstream.ok and remove ok from upstream.result; raw official JSON without top-level ok leaves upstream.ok following call success and returns the raw payload as upstream.result. Asset manifests expose compact submitUrl POST evidence in assets[].upload without raw submit URLs; asset manifests and download_assets write outputFiles.debugFile envelopes only on failure. Task plans remain the explicit plan-level result/debug file exception.",
       statusSemantics: {
         topLevelOk: "Top-level ok reports local wrapper/tool completion.",
         upstreamOk: "upstream.ok reports effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false; false results include upstream.result.source as business when JSON supplied ok:false, or call for failures without a consumed result status.",
@@ -32541,17 +32554,21 @@ async function readReplResource(uri, runtime) {
   }
   const prefix = "figma-repl://sessions/";
   if (uri.startsWith(prefix)) {
-    const sessionId = decodeURIComponent(uri.slice(prefix.length));
+    const suffix = uri.slice(prefix.length);
+    const handlesSuffix = "/handles";
+    const handlesOnly = suffix.endsWith(handlesSuffix);
+    const sessionId = decodeURIComponent(handlesOnly ? suffix.slice(0, -handlesSuffix.length) : suffix);
     const session = runtime.sessions.get(sessionId);
     if (!session) {
       throw new Error(`Figma REPL session not found: ${sessionId}`);
     }
+    const payload = handlesOnly ? { sessionId: session.id, handles: session.handles } : publicSession(session);
     return {
       contents: [
         {
           uri,
           mimeType: "application/json",
-          text: JSON.stringify(publicSession(session), null, 2)
+          text: JSON.stringify(payload, null, 2)
         }
       ]
     };
@@ -32780,11 +32797,12 @@ function updateSessionFromParsedResult(session, value) {
   const record2 = asRecord3(value);
   const repl = asRecord3(record2.__figmaRepl);
   const result = asRecord3(record2.result);
+  let handleChanges = emptyHandleChanges();
   if (isStringRecord(repl.handles)) {
-    mergeHandles(session, repl.handles);
+    handleChanges = mergeHandleChanges(handleChanges, replaceSessionHandles(session, repl.handles));
   }
   if (isStringRecord(result.handles)) {
-    mergeHandles(session, result.handles);
+    handleChanges = mergeHandleChanges(handleChanges, updateSessionHandles(session, result.handles));
   }
   if (isStringRecord(repl.knownPages)) {
     session.knownPages = { ...session.knownPages, ...repl.knownPages };
@@ -32801,6 +32819,7 @@ function updateSessionFromParsedResult(session, value) {
     session.surface = surface;
   }
   touchSession(session);
+  return handleChanges;
 }
 function collectNodeIds(value) {
   const ids = /* @__PURE__ */ new Set();
@@ -32835,26 +32854,19 @@ function summarizeParsedResult(parsed) {
 function diagnosticsForResponse(diagnostics) {
   return diagnostics ?? [];
 }
-function responseSession(session) {
+function responseSession(session, handleChanges = emptyHandleChanges()) {
   return removeUndefined2({
     id: session.id,
-    fileUrl: session.fileUrl,
     fileKey: session.fileKey,
     surface: session.surface,
-    knownPages: session.knownPages,
-    currentPageId: session.currentPageId,
-    handles: session.handles,
+    handleChanges,
     workspace: session.workspace ? responseCompactWorkspace(session.workspace, session.id) : void 0
   });
 }
 function responseCompactWorkspace(workspace, sessionId) {
+  void workspace;
   return removeUndefined2({
-    sessionDir: workspace.sessionDir,
-    scriptPath: workspace.scriptPath,
-    workspaceRef: `figma-repl://sessions/${encodeURIComponent(sessionId)}`,
-    files: {
-      inputFile: workspace.files.script
-    }
+    workspaceRef: `figma-repl://sessions/${encodeURIComponent(sessionId)}`
   });
 }
 function responseWorkspace(workspace) {
@@ -33016,13 +33028,51 @@ function cloneSession(session) {
     }))
   };
 }
-function mergeHandles(session, handles) {
+function emptyHandleChanges() {
+  return { updated: [], removed: [] };
+}
+function mergeHandleChanges(left, right) {
+  return {
+    updated: sortedUnique([...left.updated, ...right.updated].filter((name) => !right.removed.includes(name))),
+    removed: sortedUnique([...left.removed, ...right.removed].filter((name) => !right.updated.includes(name)))
+  };
+}
+function updateSessionHandles(session, handles) {
+  const updated = [];
   for (const [name, id] of Object.entries(handles)) {
     if (typeof id === "string" && id.length > 0) {
-      session.handles[normalizeLocalHandleName(name)] = id;
+      const handle = normalizeLocalHandleName(name);
+      if (session.handles[handle] !== id) {
+        session.handles[handle] = id;
+        updated.push(handle);
+      }
     }
   }
-  touchSession(session);
+  if (updated.length > 0) {
+    touchSession(session);
+  }
+  return { updated: sortedUnique(updated), removed: [] };
+}
+function replaceSessionHandles(session, handles) {
+  const nextHandles = {};
+  for (const [name, id] of Object.entries(handles)) {
+    if (typeof id === "string" && id.length > 0) {
+      nextHandles[normalizeLocalHandleName(name)] = id;
+    }
+  }
+  const updated = Object.entries(nextHandles).filter(([name, id]) => session.handles[name] !== id).map(([name]) => name);
+  const removed = Object.keys(session.handles).filter((name) => nextHandles[name] === void 0);
+  if (updated.length > 0 || removed.length > 0) {
+    session.handles = nextHandles;
+    touchSession(session);
+  }
+  return {
+    updated: sortedUnique(updated),
+    removed: sortedUnique(removed)
+  };
+}
+function sortedUnique(values) {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 function normalizeLocalHandleName(name) {
   return name.startsWith("$") ? name : `$${name}`;

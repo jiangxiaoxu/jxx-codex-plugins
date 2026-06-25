@@ -246,12 +246,20 @@ test("figma REPL eval wraps code and persists returned handles", async () => {
   assert.equal(evalJson.inlineResultLimit, undefined);
   assert.equal(evalJson.upstreamTool, undefined);
   assert.equal(evalJson.upstreamArgument, undefined);
-  assert.equal(evalJson.session.handles.$card, "12:34");
+  assert.deepEqual(evalJson.session.handleChanges, { updated: ["$card"], removed: [] });
+  assert.equal(evalJson.session.handles, undefined);
+  assert.equal(evalJson.session.fileUrl, undefined);
+  assert.equal(evalJson.session.knownPages, undefined);
+  assert.equal(evalJson.session.currentPageId, undefined);
+  assert.equal(evalJson.session.workspace, undefined);
 
   const sessionResources = await mcpClient.listResources();
   const sessionListEntry = sessionResources.resources.find((resource) => resource.uri === "figma-repl://sessions/main");
   assert.equal(sessionListEntry?.description, "Read when you need public state for this specific active REPL session.");
   assert.equal(sessionListEntry?.mimeType, "application/json");
+  const sessionHandlesEntry = sessionResources.resources.find((resource) => resource.uri === "figma-repl://sessions/main/handles");
+  assert.equal(sessionHandlesEntry?.description, "Read when you need the full remembered handle map for this specific active REPL session.");
+  assert.equal(sessionHandlesEntry?.mimeType, "application/json");
 
   const sessionResource = await mcpClient.readResource({ uri: "figma-repl://sessions/main" });
   const sessionJson = JSON.parse(sessionResource.contents[0].text);
@@ -260,6 +268,74 @@ test("figma REPL eval wraps code and persists returned handles", async () => {
   assert.equal(sessionJson.evalToolArgument, undefined);
   assert.equal(sessionJson.upstreamArguments, undefined);
   assert.equal(sessionJson.history.length, 1);
+  const handlesResource = await mcpClient.readResource({ uri: "figma-repl://sessions/main/handles" });
+  const handlesJson = JSON.parse(handlesResource.contents[0].text);
+  assert.deepEqual(handlesJson, { sessionId: "main", handles: { "$card": "12:34" } });
+
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+  await mcpClient.close();
+});
+
+test("figma REPL eval reports authoritative handle removals separately from additive updates", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name }) => {
+    assert.equal(name, "use_figma");
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            __figmaRepl: {
+              sessionId: "main",
+              handles: { "$keep": "2:2" },
+            },
+            result: {
+              handles: { "$extra": "3:3" },
+            },
+          }),
+        },
+      ],
+    };
+  });
+
+  const { server } = createFigmaReplMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+
+  const openResult = await mcpClient.callTool({
+    name: "figma_repl_open",
+    arguments: {
+      title: "Seed handles",
+      sessionId: "main",
+      connect: false,
+      handles: { "$old": "1:1", "$keep": "2:2" },
+    },
+  });
+  const openJson = structuredToolResult(openResult);
+  assert.deepEqual(openJson.session.handleChanges, { updated: ["$keep", "$old"], removed: [] });
+
+  const evalResult = await mcpClient.callTool({
+    name: "figma_repl_eval",
+    arguments: {
+      title: "Replace handles",
+      sessionId: "main",
+      code: "return { handles: { $extra: '3:3' } };",
+    },
+  });
+  const evalJson = structuredToolResult(evalResult);
+  assert.deepEqual(evalJson.session.handleChanges, { updated: ["$extra"], removed: ["$old"] });
+  assert.equal(evalJson.session.handles, undefined);
+
+  const handlesResource = await mcpClient.readResource({ uri: "figma-repl://sessions/main/handles" });
+  const handlesJson = JSON.parse(handlesResource.contents[0].text);
+  assert.deepEqual(handlesJson, { sessionId: "main", handles: { "$keep": "2:2", "$extra": "3:3" } });
 
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
   await mcpClient.close();
@@ -998,7 +1074,9 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.match(capabilities.guide.responseShape, /content is empty/);
   assert.doesNotMatch(capabilities.guide.responseShape, /MCP protocol media items/);
   assert.match(capabilities.guide.responseShape, /file pointers/);
-  assert.match(capabilities.guide.responseShape, /compact session\/workspace/);
+  assert.match(capabilities.guide.responseShape, /minimal session summaries/);
+  assert.match(capabilities.guide.responseShape, /workspace\.workspaceRef/);
+  assert.match(capabilities.guide.responseShape, /figma-repl:\/\/sessions\/\{id\}\/handles/);
   assert.match(capabilities.guide.responseShape, /figma-repl:\/\/sessions\/\{id\}/);
   assert.match(capabilities.guide.responseShape, /explicit status semantics/);
   assert.match(capabilities.guide.responseShape, /public upstream result shaping/);
@@ -1576,6 +1654,12 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
       uriTemplate: "figma-repl://sessions/{id}",
       name: "Figma REPL session by id",
       description: "Read when you need full public state for a known REPL session id, including remembered handles, workspace files, file context, and recent call history.",
+      mimeType: "application/json",
+    },
+    {
+      uriTemplate: "figma-repl://sessions/{id}/handles",
+      name: "Figma REPL session handles by id",
+      description: "Read when you need the full remembered handle map for a known REPL session id without reading full session history.",
       mimeType: "application/json",
     },
     {
@@ -5318,7 +5402,9 @@ test("figma REPL run_script_file executes helper-backed scripts through upstream
     assert.equal(json.debug, undefined);
     assert.equal(json.parsed, undefined);
     assert.equal(json.text, undefined);
-    assert.equal(json.session.handles.$scriptTitle, "20:2");
+    assert.deepEqual(json.session.handleChanges.updated, ["$scriptFrame", "$scriptTitle"]);
+    assert.deepEqual(json.session.handleChanges.removed, []);
+    assert.equal(json.session.handles, undefined);
     assert.equal(json.session.history, undefined);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
     await mcpClient.close();
@@ -5679,7 +5765,8 @@ test("figma REPL run_script_file supports generated image asset helper without r
     assert.deepEqual(json.diagnostics, []);
     assert.equal(json.script.injectedHelpers, undefined);
     assert.equal(json.script.helperUsage, undefined);
-    assert.equal(json.session.handles.$icon, "40:2");
+    assert.deepEqual(json.session.handleChanges, { updated: ["$icon", "$root"], removed: [] });
+    assert.equal(json.session.handles, undefined);
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -6059,16 +6146,8 @@ test("figma REPL prepare_task uses file context and intent file pairs", async ()
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
     assert.equal(json.dryRun, false);
-    assert.equal(json.session.workspace.fileDir, undefined);
-    assert.equal(json.session.workspace.fileContext, undefined);
-    assert.equal(json.session.workspace.fileKey, undefined);
-    assert.equal(json.session.workspace.taskSlug, undefined);
-    assert.deepEqual(json.session.workspace.files, initJson.task.workspace.files);
-    assert.equal(json.session.workspace.sessionDir, initJson.task.workspace.sessionDir);
-    assert.equal(json.session.workspace.scriptPath, initJson.task.workspace.scriptPath);
+    assert.deepEqual(json.session.workspace, { workspaceRef: "figma-repl://sessions/settings-workspace" });
     assert.equal(json.session.workspace.workspaceRef, "figma-repl://sessions/settings-workspace");
-    assert.equal(json.session.workspace.intentSlug, undefined);
-    assert.equal(json.session.workspace.resultFile, undefined);
     assert.equal(json.session.surface, "design");
     assertFilePointer(json.outputFiles.debugFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.result.json"));
     assertFilePointer(json.outputFiles.upstreamFile, resolve(initJson.task.workspace.fileDir, "settings-panel-polish.upstream.json"));
@@ -6240,13 +6319,7 @@ test("figma REPL open accepts unified file input and auto-binds a workspace", as
   assert.equal(result.ok, true);
   assert.equal(result.session.fileKey, "ExampleFigmaFileKey012");
   assert.equal(result.session.surface, "design");
-  assert.equal(result.session.workspace.fileDir, undefined);
-  assert.equal(result.session.workspace.sessionDir, resolve(process.cwd(), "figma-mcp", "ExampleFigmaFileKey012"));
-  assert.equal(result.session.workspace.workspaceRef, "figma-repl://sessions/open-file-workspace");
-  assert.equal(result.session.workspace.files.inputFile, "open-file-workspace.figma.js");
-  assert.equal(result.session.workspace.files.outputFile, undefined);
-  assert.equal(result.session.workspace.intentSlug, undefined);
-  assert.equal(result.session.workspace.resultFile, undefined);
+  assert.deepEqual(result.session.workspace, { workspaceRef: "figma-repl://sessions/open-file-workspace" });
   await repl.close();
 });
 
@@ -6807,8 +6880,10 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     });
     assert.equal(openResult.session.slug, undefined);
     assert.equal(openResult.session.label, undefined);
-    assert.deepEqual(openResult.session.knownPages, {});
-    assert.equal(openResult.session.workspace.workspaceRef, "figma-repl://sessions/typed");
+    assert.equal(openResult.session.knownPages, undefined);
+    assert.equal(openResult.session.handles, undefined);
+    assert.deepEqual(openResult.session.handleChanges, { updated: [], removed: [] });
+    assert.deepEqual(openResult.session.workspace, { workspaceRef: "figma-repl://sessions/typed" });
     assert.equal(openResult.verbose, undefined);
     const assetResult = await repl.applyAssetManifest({
       sessionId: "typed",
@@ -6861,9 +6936,7 @@ test("figma REPL programmatic client returns typed output contracts", async () =
     assert.equal(preparedResult.outputFiles, undefined);
     assert.equal(preparedResult.task.workspaceDir, undefined);
     assert.equal(preparedResult.task.taskDir, undefined);
-    assert.equal(preparedResult.session.workspace.root, undefined);
-    assert.equal(preparedResult.session.workspace.fileDir, undefined);
-    assert.equal(preparedResult.session.workspace.workspaceRef, "figma-repl://sessions/default");
+    assert.deepEqual(preparedResult.session.workspace, { workspaceRef: "figma-repl://sessions/default" });
     assert.equal(preparedResult.verbose, undefined);
 
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool", "callTool"]);

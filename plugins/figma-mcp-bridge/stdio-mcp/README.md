@@ -87,7 +87,7 @@ await upstream.close();
 
 ## REPL Response Shape
 
-Every local `figma_repl_*` tool returns a fixed structured shape. `session` uses public metadata without `history`, `diagnostics` is always an array, and JSON debug/result file pointers are under `outputFiles.debugFile` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return effective upstream success as `upstream.ok`, public upstream JSON as `upstream.result`, and non-JSON upstream output as `upstream.text`; eval/script payloads containing bridge-internal `__figmaRepl` metadata are unwrapped to their business result, while raw official JSON without top-level `ok` remains unchanged as `upstream.result`. `figma_repl_get_metadata` is the metadata-first wrapper for official `get_metadata`: upstream XML is converted to compact JSON, small `metadata.json` trees are returned inline, and oversized trees are written to `outputFiles.metadataFile`. Asset manifests keep compact inline asset entries and write full per-asset upstream details only to generated debug files.
+Every local `figma_repl_*` tool returns a fixed structured shape. Ordinary tool `session` summaries contain only `id`, `fileKey`, `surface`, `handleChanges`, and `workspace.workspaceRef`; read `figma-repl://sessions/{id}/handles` for the full handle map. `diagnostics` is always an array, and JSON debug/result file pointers are under `outputFiles.debugFile` as `{ path, bytes, lineCount }`. Upstream-backed single-call tools return effective upstream success as `upstream.ok`, public upstream JSON as `upstream.result`, and non-JSON upstream output as `upstream.text`; eval/script payloads containing bridge-internal `__figmaRepl` metadata are unwrapped to their business result, while raw official JSON without top-level `ok` remains unchanged as `upstream.result`. `figma_repl_get_metadata` is the metadata-first wrapper for official `get_metadata`: upstream XML is converted to compact JSON, small `metadata.json` trees are returned inline, and oversized trees are written to `outputFiles.metadataFile`. Asset manifests keep compact inline asset entries and write full per-asset upstream details only to generated debug files.
 
 `figma_repl_apply_asset_manifest` validates target IMAGE fills after upload when upstream eval is available. Successful submitUrl POSTs expose compact `assets[].upload` evidence such as `imageHash` and `placedOnNodeId` without returning raw submit URLs. If validation runs but cannot confirm every target record, the tool returns `ok:false` with `validation.reason` and writes `outputFiles.debugFile`; `validateTargets:false` remains the explicit skip.
 
@@ -158,7 +158,7 @@ The REPL facade keeps MCP resources limited to runtime state and dynamic discove
 - workflow tools: `figma_repl_prepare_task`, `figma_repl_guidance`, `figma_repl_get_metadata`;
 - execution: `figma_repl_open`, `figma_repl_eval`, `figma_repl_run_script_file`, `figma_repl_run_task_plan`;
 - assets and QA: `figma_repl_apply_asset_manifest`, `figma_repl_capture_node`;
-- state resources: `figma-repl://sessions`, `figma-repl://sessions/{id}`;
+- state resources: `figma-repl://sessions`, `figma-repl://sessions/{id}`, `figma-repl://sessions/{id}/handles`;
 - upstream discovery/resource bridge: `figma-repl://upstream-tools`, `figma_repl_call_upstream_tool`;
 - references: `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`, plus lightweight `figma-router` skill reference files for static workflow, lookup, and safety notes.
 
