@@ -47,15 +47,18 @@ import {
 import {
   assertSafeFigmaReplCode,
   compileFigmaReplScriptFile,
+  createFigmaReplRepairPlan,
   diagnoseFigmaReplCode,
   diagnoseFigmaReplContext,
   diagnoseWrappedScriptSize,
   resolveFigmaReplScriptHelperSelection as resolveFigmaReplScriptHelperSelectionInternal,
   throwIfFatalDiagnostics,
+  toFigmaReplFileDiagnostics,
   type FigmaReplDiagnostic,
   type FigmaReplDiagnosticsOptions,
   type FigmaReplDiagnosticSeverity,
   type FigmaReplFileDiagnostic,
+  type FigmaReplRepairPlan,
   type FigmaReplSurface,
 } from "./repl-script-runner.js";
 import {
@@ -369,12 +372,12 @@ export interface FigmaReplOpenResult extends FigmaReplToolResultBase {
 export interface FigmaReplUpstreamBackedResult extends FigmaReplToolResultBase {
   upstream: FigmaReplUpstreamEnvelope;
   upstreamError?: FigmaReplPublicUpstreamError;
-  primaryFix?: string;
 }
 
 export interface FigmaReplEvalResult extends FigmaReplUpstreamBackedResult {
   session: FigmaReplCompactSession;
   diagnostics: FigmaReplDiagnostic[];
+  repairPlan?: FigmaReplRepairPlan;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -407,7 +410,7 @@ export interface FigmaReplRunScriptFileResult extends FigmaReplToolResultBase {
   outputFiles?: FigmaReplOutputFiles;
   upstream?: FigmaReplUpstreamEnvelope;
   upstreamError?: FigmaReplPublicUpstreamError;
-  primaryFix?: string;
+  repairPlan: FigmaReplRepairPlan;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 
@@ -1184,13 +1187,28 @@ async function handleEval(
     ? updateSessionHandles(session, args.handleUpdates)
     : emptyHandleChanges();
   const mode = args.mode ?? "write";
-  const diagnostics = diagnoseFigmaReplCode(args.code, {
+  const diagnosticOptions: FigmaReplDiagnosticsOptions = {
     allowDangerousOperations: Boolean(args.allowDangerousOperations),
     mode,
     expectedSurface: normalizeSurface(args.surface) ?? session.surface,
-  });
+  };
+  const diagnostics = toFigmaReplFileDiagnostics(
+    "<inline eval>",
+    args.code,
+    diagnoseFigmaReplCode(args.code, diagnosticOptions),
+    diagnosticOptions,
+  );
   session.lastDiagnostics = diagnostics;
-  throwIfFatalDiagnostics(diagnostics);
+  const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
+  if (fatalDiagnostics.length > 0) {
+    touchSession(session);
+    return makeJsonToolResult({
+      ok: false,
+      session: responseSession(session, handleChanges),
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: createFigmaReplRepairPlan(diagnostics),
+    });
+  }
 
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
   const script = buildFigmaEvalScript({
@@ -1213,6 +1231,7 @@ async function handleEval(
     ok: !parsed.upstreamError,
     session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
+    repairPlan: createFigmaReplRepairPlan(diagnostics),
     ...upstreamResultFields({
       parsed,
       upstream,
@@ -1260,6 +1279,7 @@ async function writeEvalResultFiles(options: {
         upstream: options.upstream,
         fields: {
           diagnosticsCount: countArrayField(options.resultPayload.diagnostics),
+          repairPlan: options.resultPayload.repairPlan,
         },
       }),
     )),
@@ -1405,7 +1425,6 @@ function createUpstreamBackedResultFilePayload(options: {
       upstreamKind: asOptionalString(options.upstream?.kind),
       upstreamOk: typeof options.upstream?.ok === "boolean" ? options.upstream.ok : undefined,
       upstreamError: isRecord(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : undefined,
-      primaryFix: asOptionalString(options.resultPayload.primaryFix),
     },
   });
 }
@@ -1430,6 +1449,7 @@ function createRunScriptResultFilePayload(options: {
       fatalDiagnostics: options.diagnostics.filter((item) => item.severity === "fatal").length,
       warningDiagnostics: options.diagnostics.filter((item) => item.severity === "warning").length,
       diagnostics: options.diagnostics.length > 0 ? options.diagnostics : undefined,
+      repairPlan: options.resultPayload.repairPlan,
       script,
       resultSummary: options.parsed ? summarizeParsedResult(options.parsed) : undefined,
       nodeIds: options.parsed ? collectNodeIds(options.parsed.json) : undefined,
@@ -1498,8 +1518,8 @@ async function executeRunScriptFile(
       executed: false,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: createFigmaReplRepairPlan(diagnostics),
       script: responseScript,
-      primaryFix: fatalDiagnostics[0]?.suggestion,
     };
     const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, []);
     const outputFiles = await outputWriter.write({
@@ -1531,9 +1551,9 @@ async function executeRunScriptFile(
       executed: true,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: createFigmaReplRepairPlan(diagnostics),
       script: responseScript,
       upstreamError: responseUpstreamError(upstreamError),
-      primaryFix: primaryFixForUpstreamError(upstreamError),
     };
     const outputFiles = await outputWriter.write({
       result: createRunScriptResultFilePayload({
@@ -1565,6 +1585,7 @@ async function executeRunScriptFile(
       executed: true,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: createFigmaReplRepairPlan(diagnostics),
       script: responseScript,
       ...runScriptUpstreamFields(parsed),
       ...runScriptUpstreamFailureFields(parsed),
@@ -1613,6 +1634,7 @@ async function executeRunScriptFile(
     executed: true,
     session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
+    repairPlan: createFigmaReplRepairPlan(diagnostics),
     script: responseScript,
     ...runScriptUpstreamFields(parsed),
   };
@@ -6152,7 +6174,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     defaultFlow: [
       "Use figma_repl_prepare_task with file, taskName, and surface for repairable .figma.js work.",
       "Use figma_repl_guidance with compact keywords before writing scripts; use figma_repl_lookup only for exact docs/API snippets.",
-      "Run figma_repl_run_script_file with inputFile and strict=true; repair local diagnostics and rerun the same file.",
+      "Run figma_repl_run_script_file with inputFile and strict=true; repair every repairPlan.steps item and rerun the same file.",
       "Use inspect/metadata/capture/design-system/asset tools as workflow add-ons, not as replacements for the file-script path.",
     ],
     toolSelection: {
@@ -6161,8 +6183,8 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       advancedEscapeHatches: ["figma_repl_eval", "figma_repl_call_upstream_tool", "figma_repl_run_task_plan"],
     },
     contractNotes: {
-      scriptPreflight: "figma_repl_run_script_file always runs local diagnostics/compile/strict checks first; phase=preflight means executed=false and upstream was not called, phase=execute means upstream execution was attempted.",
-      responseShape: "Tools return structuredContent-first JSON with empty content, minimal session summaries, diagnostics arrays, and outputFiles pointers for generated debug/sidecar files.",
+      scriptPreflight: "figma_repl_run_script_file always runs local diagnostics/compile/strict checks first; phase=preflight means executed=false and upstream was not called, phase=execute means upstream execution was attempted. Parse errors return repairPlan.status=parse_error and no guardrail scan.",
+      responseShape: "Tools return structuredContent-first JSON with empty content, minimal session summaries, diagnostics arrays, repairPlan steps, and outputFiles pointers for generated debug/sidecar files.",
       upstreamEnvelope: "upstream.ok is the effective upstream/business status; consumed top-level ok fields are removed from upstream.result and bridge-internal metadata is not public.",
       referenceOwnership: "Static resources are routing/workflow docs only. Helper, API, pattern, safety, and example details belong to figma_repl_guidance, figma_repl_lookup, and BM25 snippets.",
     },
@@ -6187,7 +6209,8 @@ function createGuidePayload(): Record<string, unknown> {
     scriptFileWorkflow: [
       "Start non-trivial work with figma_repl_prepare_task so the session has file context and a local .figma.js workspace.",
       "Write an async script body using static $ helper references and native Figma Plugin API calls. Dynamic $ helper lookup, aliasing $, object rest destructuring of $, and local $ declarations are blocked because helper injection must be statically knowable.",
-      "Run figma_repl_run_script_file with inputFile. The runner compiles and preflights before upstream use_figma execution; fatal preflight diagnostics return local line-aware errors without calling upstream.",
+      "Run figma_repl_run_script_file with inputFile. The runner compiles and preflights before upstream use_figma execution; fatal preflight diagnostics return repairPlan.steps with line:column occurrences without calling upstream.",
+      "When repairPlan.status is parse_error, fix all syntax-error steps first and rerun; guardrail diagnostics are intentionally skipped until parsing succeeds.",
       "Use $.checkpoint and stable handles such as $hero to make repair loops compact. Read figma-repl://sessions/{id}/handles when only the handle map is needed.",
     ],
     evalWorkflow: [
@@ -6788,7 +6811,6 @@ function runScriptUpstreamFields(parsed: ParsedUpstreamToolResult): Record<strin
 function runScriptUpstreamFailureFields(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
   return {
     upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined,
-    primaryFix: parsed.primaryFix,
   };
 }
 
@@ -6803,7 +6825,6 @@ function responseUpstreamError(error: FigmaReplUpstreamError): Record<string, un
 function upstreamFailureFields(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
   return {
     upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined,
-    primaryFix: parsed.primaryFix,
   };
 }
 

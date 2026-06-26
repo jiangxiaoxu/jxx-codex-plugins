@@ -1,7 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type RemoteMcpClientOptions } from "./client.js";
 import { type ReferenceSearchResult } from "./repl-doc-search.js";
-import { assertSafeFigmaReplCode, diagnoseFigmaReplCode, resolveFigmaReplScriptHelperSelection as resolveFigmaReplScriptHelperSelectionInternal, type FigmaReplDiagnostic, type FigmaReplDiagnosticsOptions, type FigmaReplDiagnosticSeverity, type FigmaReplFileDiagnostic, type FigmaReplSurface } from "./repl-script-runner.js";
+import { assertSafeFigmaReplCode, diagnoseFigmaReplCode, resolveFigmaReplScriptHelperSelection as resolveFigmaReplScriptHelperSelectionInternal, type FigmaReplDiagnostic, type FigmaReplDiagnosticsOptions, type FigmaReplDiagnosticSeverity, type FigmaReplFileDiagnostic, type FigmaReplRepairPlan, type FigmaReplSurface } from "./repl-script-runner.js";
 import type { FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplEvalArguments, FigmaReplGetLibrariesArguments, FigmaReplGetMetadataArguments, FigmaReplGetVariableDefsArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSearchDesignSystemArguments } from "./repl-tool-args.js";
 import { isMissingFileError as isFigmaReplMissingFileErrorForTesting, type FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 import type { FigmaMcpProxyClient } from "./stdio-server.js";
@@ -148,11 +148,11 @@ export interface FigmaReplOpenResult extends FigmaReplToolResultBase {
 export interface FigmaReplUpstreamBackedResult extends FigmaReplToolResultBase {
     upstream: FigmaReplUpstreamEnvelope;
     upstreamError?: FigmaReplPublicUpstreamError;
-    primaryFix?: string;
 }
 export interface FigmaReplEvalResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplCompactSession;
     diagnostics: FigmaReplDiagnostic[];
+    repairPlan?: FigmaReplRepairPlan;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -187,7 +187,7 @@ export interface FigmaReplRunScriptFileResult extends FigmaReplToolResultBase {
     outputFiles?: FigmaReplOutputFiles;
     upstream?: FigmaReplUpstreamEnvelope;
     upstreamError?: FigmaReplPublicUpstreamError;
-    primaryFix?: string;
+    repairPlan: FigmaReplRepairPlan;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 export interface FigmaReplAssetManifestItem {

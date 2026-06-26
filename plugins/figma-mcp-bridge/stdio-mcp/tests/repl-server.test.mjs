@@ -735,17 +735,18 @@ test("figma REPL eval rejects dynamic helper access before upstream execution", 
     /Tool argument "fileKey" was removed\. Use "file"/,
   );
 
-  await assert.rejects(
-    mcpClient.callTool({
-      name: "figma_repl_eval",
-      arguments: {
-        title: "Reject dynamic helper access",
-        sessionId: "main",
-        code: "const helperName = 'find';\nreturn await $[helperName]({ name: 'Card' });",
-      },
-    }),
-    /FIGMA_REPL_DYNAMIC_HELPER_ACCESS/,
-  );
+  const blockedEval = await mcpClient.callTool({
+    name: "figma_repl_eval",
+    arguments: {
+      title: "Reject dynamic helper access",
+      sessionId: "main",
+      code: "const helperName = 'find';\nreturn await $[helperName]({ name: 'Card' });",
+    },
+  });
+  const blockedJson = structuredToolResult(blockedEval);
+  assert.equal(blockedJson.ok, false);
+  assert.equal(blockedJson.repairPlan.status, "blocked");
+  assert.deepEqual(blockedJson.repairPlan.steps.map((step) => step.code), ["FIGMA_REPL_DYNAMIC_HELPER_ACCESS"]);
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
 });
@@ -5226,6 +5227,15 @@ test("figma REPL diagnostics return stable codes and strict promotes warnings", 
     diagnoseFigmaReplCode("const = ;").map((item) => item.code),
     ["FIGMA_REPL_PARSE_ERROR"],
   );
+  const parseDiagnostics = diagnoseFigmaReplCode([
+    '"use strict";',
+    'with (obj) {}',
+    'let x; let x;',
+  ].join("\n"));
+  assert.deepEqual(
+    parseDiagnostics.map((item) => item.code),
+    ["FIGMA_REPL_PARSE_ERROR", "FIGMA_REPL_PARSE_ERROR"],
+  );
   assert.deepEqual(
     diagnoseFigmaReplCode("figma.currentPage = page;").map((item) => item.code),
     ["FIGMA_REPL_CURRENT_PAGE_ASSIGNMENT"],
@@ -5393,6 +5403,16 @@ test("figma REPL run_script_file returns preflight diagnostics without upstream 
     assert.equal(json.diagnostics[0].source.scriptPath, scriptPath);
     assert.equal(json.diagnostics[0].source.line, 2);
     assert.equal(json.diagnostics[0].source.column, 1);
+    assert.equal(json.primaryFix, undefined);
+    assert.equal(json.repairPlan.status, "blocked");
+    assert.equal(json.repairPlan.steps.length, 1);
+    assert.equal(json.repairPlan.steps[0].code, "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT");
+    assert.deepEqual(json.repairPlan.steps[0].occurrences, [{
+      scriptPath,
+      line: 2,
+      column: 1,
+      label: "2:1",
+    }]);
     const resultFile = await readPrettyJsonPointer(json.outputFiles.debugFile, resolve(fileDir, "script.result.json"));
     assert.equal(resultFile.phase, "preflight");
     assert.equal(resultFile.executed, false);
@@ -5400,6 +5420,9 @@ test("figma REPL run_script_file returns preflight diagnostics without upstream 
     assert.equal(resultFile.script.executed, undefined);
     assert.equal(resultFile.diagnosticsCount, 1);
     assert.equal(resultFile.diagnostics[0].source.column, 1);
+    assert.equal(resultFile.primaryFix, undefined);
+    assert.equal(resultFile.repairPlan.status, "blocked");
+    assert.equal(resultFile.repairPlan.steps[0].occurrences[0].label, "2:1");
     assert.equal(resultFile.compiledScript, undefined);
     assert.equal(resultFile.raw, undefined);
     assert.equal(json.outputFiles.compiledScriptFile, undefined);
@@ -5410,6 +5433,184 @@ test("figma REPL run_script_file returns preflight diagnostics without upstream 
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("figma REPL run_script_file returns all recoverable parse errors without guardrail scan", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-parse-plan-"));
+  const scriptName = "parse-errors.figma.js";
+  const calls = [];
+  const { server } = createFigmaReplMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    const fileDir = await openTestWorkspace(mcpClient, { tempDir, sessionId: "parse" });
+    const scriptPath = resolve(fileDir, scriptName);
+    await writeFile(
+      scriptPath,
+      [
+        '"use strict";',
+        "with (obj) {}",
+        "let x; let x;",
+        "figma.currentPage.selection = [node];",
+        "node.remove();",
+        "figma.createImage(bytes);",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        sessionId: "parse",
+        inputFile: scriptName,
+        strict: true,
+        surface: "design",
+        inlineResultLimit: 10_000,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, false);
+    assert.equal(json.phase, "preflight");
+    assert.equal(json.executed, false);
+    assert.equal(json.primaryFix, undefined);
+    assert.deepEqual(json.diagnostics.map((item) => item.code), [
+      "FIGMA_REPL_PARSE_ERROR",
+      "FIGMA_REPL_PARSE_ERROR",
+    ]);
+    assert.equal(json.repairPlan.status, "parse_error");
+    assert.match(json.repairPlan.summary, /Fix all JavaScript syntax errors/);
+    assert.deepEqual(json.repairPlan.steps.map((step) => step.code), [
+      "FIGMA_REPL_PARSE_ERROR",
+      "FIGMA_REPL_PARSE_ERROR",
+    ]);
+    assert.deepEqual(json.repairPlan.steps.map((step) => step.occurrences[0].label), ["2:1", "3:12"]);
+    assert.equal(json.repairPlan.steps.some((step) => /selection|remove|createImage/u.test(step.message)), false);
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.debugFile, resolve(fileDir, "parse-errors.result.json"));
+    assert.deepEqual(resultFile.repairPlan.steps.map((step) => step.occurrences[0].label), ["2:1", "3:12"]);
+    assert.deepEqual(calls.map((call) => call[0]), []);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL run_script_file repairPlan dedupes guardrails and preserves all occurrences", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-repl-guardrail-plan-"));
+  const scriptName = "guardrails.figma.js";
+  const calls = [];
+  const { server } = createFigmaReplMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    const fileDir = await openTestWorkspace(mcpClient, { tempDir, sessionId: "guardrails" });
+    const scriptPath = resolve(fileDir, scriptName);
+    await writeFile(
+      scriptPath,
+      [
+        "figma.currentPage.selection = [node];",
+        "figma.root.findAll(() => true);",
+        "node.characters = 'Hello';",
+        "figma.createImage(bytes);",
+        "node.remove();",
+        "const selected = figma.currentPage.selection;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await mcpClient.callTool({
+      name: "figma_repl_run_script_file",
+      arguments: {
+        sessionId: "guardrails",
+        inputFile: scriptName,
+        strict: true,
+        surface: "design",
+        inlineResultLimit: 10_000,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, false);
+    assert.equal(json.repairPlan.status, "blocked");
+    const stepCodes = json.repairPlan.steps.map((step) => step.code);
+    assert.deepEqual(new Set(stepCodes), new Set([
+      "FIGMA_REPL_NODE_REMOVAL",
+      "FIGMA_REPL_IMAGE_CREATION",
+      "FIGMA_REPL_ROOT_FIND_ALL",
+      "FIGMA_REPL_DIRECT_SELECTION_ACCESS",
+      "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT",
+    ]));
+    assert.equal(stepCodes.length, new Set(stepCodes).size);
+    const selectionStep = json.repairPlan.steps.find((step) => step.code === "FIGMA_REPL_DIRECT_SELECTION_ACCESS");
+    assert.ok(selectionStep);
+    assert.deepEqual(selectionStep.occurrences, [
+      { scriptPath, line: 1, column: 1, label: "1:1" },
+      { scriptPath, line: 6, column: 18, label: "6:18" },
+    ]);
+    assert.match(selectionStep.suggestion, /\$\.select/);
+    const imageStep = json.repairPlan.steps.find((step) => step.code === "FIGMA_REPL_IMAGE_CREATION");
+    assert.match(imageStep.suggestion, /figma_repl_apply_asset_manifest/);
+    assert.deepEqual(calls.map((call) => call[0]), []);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma REPL eval returns structured repairPlan for blocked diagnostics", async () => {
+  const calls = [];
+  const { server } = createFigmaReplMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  const result = await mcpClient.callTool({
+    name: "figma_repl_eval",
+    arguments: {
+      sessionId: "eval-blocked",
+      mode: "write",
+      code: "figma.createImage(bytes);",
+    },
+  });
+  const json = structuredToolResult(result);
+  assert.equal(json.ok, false);
+  assert.equal(json.primaryFix, undefined);
+  assert.equal(json.repairPlan.status, "blocked");
+  assert.equal(json.repairPlan.steps[0].code, "FIGMA_REPL_IMAGE_CREATION");
+  assert.deepEqual(json.repairPlan.steps[0].occurrences, [{
+    scriptPath: "<inline eval>",
+    line: 1,
+    column: 1,
+    label: "1:1",
+  }]);
+  assert.deepEqual(calls.map((call) => call[0]), []);
+  await mcpClient.close();
 });
 
 test("figma REPL run_script_file blocks oversized compiled script payloads before upstream", async () => {
@@ -6064,7 +6265,7 @@ test("figma REPL run_script_file structures upstream call failure errors", async
     assert.equal(json.upstream.ok, false);
     assert.equal(json.upstream.result.error.code, "FIGMA_INSTANCE_CHILD_REMOVE");
     assert.equal(json.upstream.result.source, "business");
-    assert.match(json.primaryFix, /\$\.cloneNodeTree/);
+    assert.equal(json.primaryFix, undefined);
     assert.equal(json.compiledScript, undefined);
     assert.equal(json.raw, undefined);
     const resultFile = await readPrettyJsonPointer(json.outputFiles.debugFile, resolve(fileDir, "script.result.json"));
@@ -6085,7 +6286,7 @@ test("figma REPL run_script_file structures upstream call failure errors", async
     assert.equal(resultFile.raw, undefined);
     assert.equal(resultFile.upstream, undefined);
     assert.equal(resultFile.upstreamError.code, "FIGMA_INSTANCE_CHILD_REMOVE");
-    assert.match(resultFile.primaryFix, /\$\.cloneNodeTree/);
+    assert.equal(resultFile.primaryFix, undefined);
     assert.equal(typeof resultFile.resultSummary, "string");
     assert.equal(json.outputFiles.summaryFile, undefined);
     assert.equal(json.outputFiles.diagnosticsFile, undefined);
@@ -6176,7 +6377,7 @@ test("figma REPL run_script_file structures upstream text errors without implici
     assert.equal(json.upstream.ok, false);
     assert.match(json.upstream.text, /Figma Debug UUID/);
     assert.equal(json.text, undefined);
-    assert.match(json.primaryFix, /\$\.select/);
+    assert.equal(json.primaryFix, undefined);
     assert.equal(json.compiledScript, undefined);
     assert.equal(json.outputFiles, undefined);
     await assert.rejects(

@@ -294,9 +294,9 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
   figma_repl_eval: toolOutputSchema({
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     diagnostics: arrayProperty("Preflight diagnostics."),
+    repairPlan: jsonProperty("Agent-facing repair plan with status, summary, and deduplicated steps containing occurrences with line:column labels."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
       ["debugFile", "upstreamFile"],
@@ -308,13 +308,13 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     executed: booleanProperty("Whether upstream Figma execution was attempted."),
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     diagnostics: arrayProperty("Script and wrapper diagnostics."),
+    repairPlan: jsonProperty("Agent-facing repair plan with status, summary, and deduplicated steps containing occurrences with line:column labels."),
     script: scriptMetadataProperty("Compiled script metadata."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failures, diagnostics, inline omissions, or failure-only compiled script.",
       ["debugFile", "upstreamFile", "compiledScriptFile"],
     ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
     upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public script results."),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
