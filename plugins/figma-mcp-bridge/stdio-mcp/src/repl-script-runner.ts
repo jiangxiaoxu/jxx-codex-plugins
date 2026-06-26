@@ -1,4 +1,5 @@
 import { parse } from "acorn";
+import { parse as parseBabel } from "@babel/parser";
 
 export type FigmaReplSurface = "design" | "figjam" | "slides";
 
@@ -10,6 +11,10 @@ export interface FigmaReplDiagnostic {
   message: string;
   suggestion: string;
   docsHint: string;
+  location?: {
+    line?: number;
+    column?: number;
+  };
 }
 
 export interface FigmaReplFileDiagnostic extends FigmaReplDiagnostic {
@@ -17,7 +22,30 @@ export interface FigmaReplFileDiagnostic extends FigmaReplDiagnostic {
     scriptPath: string;
     line?: number;
     column?: number;
+    occurrences?: Array<{ line: number; column: number }>;
   };
+}
+
+export interface FigmaReplRepairOccurrence {
+  scriptPath?: string;
+  line?: number;
+  column?: number;
+  label?: string;
+}
+
+export interface FigmaReplRepairStep {
+  code: string;
+  severity: FigmaReplDiagnosticSeverity;
+  message: string;
+  suggestion: string;
+  docsHint: string;
+  occurrences: FigmaReplRepairOccurrence[];
+}
+
+export interface FigmaReplRepairPlan {
+  status: "ok" | "parse_error" | "blocked" | "warning";
+  summary: string;
+  steps: FigmaReplRepairStep[];
 }
 
 export interface FigmaReplDiagnosticsOptions {
@@ -88,7 +116,7 @@ export function compileFigmaReplScriptFile(options: {
     mode: "write",
     strict: options.strict,
   };
-  const diagnostics = toFileDiagnostics(
+  const diagnostics = toFigmaReplFileDiagnostics(
     options.scriptPath,
     options.source,
     diagnoseFigmaReplCode(options.source, diagnosticOptions),
@@ -865,8 +893,8 @@ export function diagnoseFigmaReplCode(
   };
   const parsed = parseFigmaReplCodeForDiagnostics(code);
   if (!parsed.ast) {
-    if (parsed.diagnostic) {
-      add(parsed.diagnostic);
+    for (const diagnostic of parsed.diagnostics ?? []) {
+      add(diagnostic);
     }
     return dedupeDiagnostics(diagnostics);
   }
@@ -900,7 +928,7 @@ export function diagnoseFigmaReplCode(
       "FIGMA_REPL_DIRECT_SELECTION_ACCESS",
       "warning",
       "Direct figma.currentPage.selection access is brittle in agent scripts.",
-      "Use $.select([...]) for writes, $.inspect('$selection') for summaries, or resolve explicit node ids/handles.",
+      "Use await $.select([...]) for selection writes, $.inspect('$selection') for summaries, or resolve explicit node ids/handles before mutation.",
       "figma-repl://guide#scriptFileWorkflow",
     ));
   }
@@ -925,7 +953,7 @@ export function diagnoseFigmaReplCode(
       "FIGMA_REPL_TEXT_MUTATION_NEEDS_FONT",
       "warning",
       "Text mutation usually requires figma.loadFontAsync() before changing characters or fontName.",
-      "Use $.text, or await figma.loadFontAsync({ family, style }) before changing text.",
+      "Use $.text for helper-managed text creation, or await figma.loadFontAsync({ family, style }) for every font used before assigning characters or fontName.",
       "figma_repl_lookup kind=api symbol=figma.loadFontAsync",
     ));
   }
@@ -983,6 +1011,120 @@ export function throwIfFatalDiagnostics(diagnostics: FigmaReplDiagnostic[]): voi
   );
 }
 
+export function createFigmaReplRepairPlan(
+  diagnostics: FigmaReplFileDiagnostic[] | undefined,
+): FigmaReplRepairPlan {
+  const items = diagnostics ?? [];
+  const fatalCount = items.filter((diagnostic) => diagnostic.severity === "fatal").length;
+  const warningCount = items.filter((diagnostic) => diagnostic.severity === "warning").length;
+  const hasParseError = items.some((diagnostic) => diagnostic.code === "FIGMA_REPL_PARSE_ERROR");
+  const status: FigmaReplRepairPlan["status"] = hasParseError
+    ? "parse_error"
+    : fatalCount > 0
+      ? "blocked"
+      : warningCount > 0
+        ? "warning"
+        : "ok";
+  return {
+    status,
+    summary: repairPlanSummary(status, fatalCount, warningCount),
+    steps: repairPlanSteps(items, hasParseError),
+  };
+}
+
+function repairPlanSummary(
+  status: FigmaReplRepairPlan["status"],
+  fatalCount: number,
+  warningCount: number,
+): string {
+  if (status === "parse_error") {
+    return "Fix all JavaScript syntax errors first, then rerun to get full Figma REPL guardrail diagnostics.";
+  }
+  if (status === "blocked") {
+    return `Preflight blocked execution with ${fatalCount} fatal diagnostic${fatalCount === 1 ? "" : "s"}; apply all repair steps before rerunning.`;
+  }
+  if (status === "warning") {
+    return `Preflight completed with ${warningCount} warning${warningCount === 1 ? "" : "s"}; review repair steps before relying on the result.`;
+  }
+  return "No preflight repairs are required.";
+}
+
+function repairPlanSteps(
+  diagnostics: FigmaReplFileDiagnostic[],
+  parseErrorOnly: boolean,
+): FigmaReplRepairStep[] {
+  if (parseErrorOnly) {
+    return diagnostics
+      .filter((diagnostic) => diagnostic.code === "FIGMA_REPL_PARSE_ERROR")
+      .map((diagnostic) => repairPlanStepFromDiagnostic(diagnostic));
+  }
+  const steps = new Map<string, FigmaReplRepairStep>();
+  for (const diagnostic of diagnostics) {
+    const key = `${diagnostic.code}:${diagnostic.severity}:${diagnostic.suggestion}`;
+    const existing = steps.get(key);
+    if (existing) {
+      existing.occurrences.push(...repairOccurrences(diagnostic));
+      continue;
+    }
+    steps.set(key, repairPlanStepFromDiagnostic(diagnostic));
+  }
+  return Array.from(steps.values()).map((step) => ({
+    ...step,
+    occurrences: dedupeRepairOccurrences(step.occurrences),
+  }));
+}
+
+function repairPlanStepFromDiagnostic(diagnostic: FigmaReplFileDiagnostic): FigmaReplRepairStep {
+  return {
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    message: diagnostic.message,
+    suggestion: diagnostic.suggestion,
+    docsHint: diagnostic.docsHint,
+    occurrences: repairOccurrences(diagnostic),
+  };
+}
+
+function repairOccurrences(diagnostic: FigmaReplFileDiagnostic): FigmaReplRepairOccurrence[] {
+  if (diagnostic.source.occurrences && diagnostic.source.occurrences.length > 0) {
+    return diagnostic.source.occurrences.map((occurrence) => removeUndefined({
+      scriptPath: diagnostic.source.scriptPath,
+      line: occurrence.line,
+      column: occurrence.column,
+      label: locationLabel(occurrence.line, occurrence.column),
+    }) as FigmaReplRepairOccurrence);
+  }
+  const occurrence = removeUndefined({
+    scriptPath: diagnostic.source.scriptPath,
+    line: diagnostic.source.line,
+    column: diagnostic.source.column,
+    label: locationLabel(diagnostic.source.line, diagnostic.source.column),
+  }) as FigmaReplRepairOccurrence;
+  return Object.keys(occurrence).length > 0 ? [occurrence] : [];
+}
+
+function dedupeRepairOccurrences(
+  occurrences: FigmaReplRepairOccurrence[],
+): FigmaReplRepairOccurrence[] {
+  const seen = new Set<string>();
+  const result: FigmaReplRepairOccurrence[] = [];
+  for (const occurrence of occurrences) {
+    const key = `${occurrence.scriptPath ?? ""}:${occurrence.line ?? ""}:${occurrence.column ?? ""}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(occurrence);
+    }
+  }
+  return result;
+}
+
+function locationLabel(line: number | undefined, column: number | undefined): string | undefined {
+  if (line === undefined) {
+    return undefined;
+  }
+  return column === undefined ? String(line) : `${line}:${column}`;
+}
+
 const DANGEROUS_DIAGNOSTICS = [
   {
     code: "FIGMA_REPL_DYNAMIC_EVAL",
@@ -1005,7 +1147,7 @@ const DANGEROUS_DIAGNOSTICS = [
   {
     code: "FIGMA_REPL_NODE_REMOVAL",
     message: "Direct remove() is destructive and can break clone rebuilds, especially inside instance subtrees.",
-    suggestion: "Use $.replaceGeneratedFrame for guarded generated-frame replacement, or $.cloneNodeTree for copy/rebuild workflows.",
+    suggestion: "Prefer $.replaceGeneratedFrame for guarded generated-frame replacement or $.cloneNodeTree for copy/rebuild workflows; use allowDangerousOperations=true only after reviewing every removal occurrence.",
     docsHint: "figma-repl://guide#scriptFileWorkflow",
   },
   {
@@ -1069,12 +1211,12 @@ interface AstRecord {
 
 interface ParsedDiagnosticAst {
   ast?: AstRecord;
-  diagnostic?: FigmaReplDiagnostic;
+  diagnostics?: FigmaReplDiagnostic[];
 }
 
 interface FigmaReplAstAnalysis {
   codes: Set<string>;
-  codeOffsets: Map<string, number>;
+  codeOffsets: Map<string, number[]>;
   setCurrentPageAsyncCalls: number;
   oversizedImageAssetBase64Length?: number;
 }
@@ -1082,34 +1224,93 @@ interface FigmaReplAstAnalysis {
 const DIAGNOSTIC_PROBE_PREFIX = "async function __figmaReplDiagnosticsProbe() {\n";
 
 function parseFigmaReplCodeForDiagnostics(code: string): ParsedDiagnosticAst {
+  const wrappedCode = `${DIAGNOSTIC_PROBE_PREFIX}${code}\n}`;
   try {
-    const ast = parse(`${DIAGNOSTIC_PROBE_PREFIX}${code}\n}`, {
+    const ast = parse(wrappedCode, {
       ecmaVersion: "latest",
       sourceType: "script",
     });
     return isAstRecord(ast)
       ? { ast }
       : {
-          diagnostic: createDiagnostic(
+          diagnostics: [createDiagnostic(
             "FIGMA_REPL_PARSE_ERROR",
             "fatal",
             "Script could not be parsed as JavaScript.",
             "Fix JavaScript syntax before running the Figma REPL script.",
             "figma-repl://guide#responseContract",
-          ),
+          )],
         };
   } catch (error) {
-    const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
+    const recovered = parseFigmaReplCodeWithRecovery(wrappedCode, code);
+    if (recovered.diagnostics.length > 0) {
+      return { diagnostics: recovered.diagnostics };
+    }
     return {
-      diagnostic: createDiagnostic(
+      diagnostics: [createDiagnostic(
         "FIGMA_REPL_PARSE_ERROR",
         "fatal",
-        `Script could not be parsed as JavaScript.${detail}`,
+        `Script could not be parsed as JavaScript.${formatErrorDetail(error)}`,
         "Fix JavaScript syntax before running the Figma REPL script.",
         "figma-repl://guide#responseContract",
-      ),
+      )],
     };
   }
+}
+
+function parseFigmaReplCodeWithRecovery(wrappedCode: string, source: string): { diagnostics: FigmaReplDiagnostic[] } {
+  try {
+    const parsed = parseBabel(wrappedCode, {
+      sourceType: "script",
+      errorRecovery: true,
+      allowReturnOutsideFunction: false,
+    });
+    const errors = Array.isArray(parsed.errors) ? parsed.errors : [];
+    return { diagnostics: errors.map((error) => createParseDiagnostic(error, source)) };
+  } catch (error) {
+    return { diagnostics: [createParseDiagnostic(error, source)] };
+  }
+}
+
+function createParseDiagnostic(error: unknown, source: string): FigmaReplDiagnostic {
+  const detail = formatErrorDetail(error);
+  return {
+    ...createDiagnostic(
+    "FIGMA_REPL_PARSE_ERROR",
+    "fatal",
+    `Script could not be parsed as JavaScript.${detail}`,
+    "Fix all JavaScript syntax errors before running the Figma REPL script; rerun afterward to get guardrail diagnostics.",
+    "figma-repl://guide#responseContract",
+    ),
+    location: parseErrorLocation(error, source),
+  };
+}
+
+function formatErrorDetail(error: unknown): string {
+  return error instanceof Error && error.message ? ` ${error.message}` : "";
+}
+
+function parseErrorLocation(error: unknown, source: string): { line?: number; column?: number } | undefined {
+  if (!isAstRecord(error)) {
+    return undefined;
+  }
+  const loc = error.loc;
+  if (!isAstRecord(loc)) {
+    return undefined;
+  }
+  const rawLine = typeof loc.line === "number" ? loc.line : undefined;
+  const rawColumn = typeof loc.column === "number" ? loc.column : undefined;
+  if (rawLine === undefined) {
+    return undefined;
+  }
+  const sourceLine = rawLine - 1;
+  if (sourceLine < 1 || sourceLine > countLines(source)) {
+    return undefined;
+  }
+  return {
+    line: sourceLine,
+    column: rawColumn === undefined ? undefined : rawColumn + 1,
+  };
 }
 
 function analyzeFigmaReplAst(
@@ -1118,7 +1319,7 @@ function analyzeFigmaReplAst(
   sourceLength: number,
 ): FigmaReplAstAnalysis {
   const codes = new Set<string>();
-  const codeOffsets = new Map<string, number>();
+  const codeOffsets = new Map<string, number[]>();
   let setCurrentPageAsyncCalls = 0;
   let hasTextMutation = false;
   let firstTextMutationNode: unknown;
@@ -1127,8 +1328,10 @@ function analyzeFigmaReplAst(
   const recordCode = (code: string, node?: unknown) => {
     codes.add(code);
     const offset = astNodeSourceOffset(node, sourceLength);
-    if (offset !== undefined && !codeOffsets.has(code)) {
-      codeOffsets.set(code, offset);
+    if (offset !== undefined) {
+      const offsets = codeOffsets.get(code) ?? [];
+      offsets.push(offset);
+      codeOffsets.set(code, offsets);
     }
   };
   const recordTextMutation = (node: unknown) => {
@@ -1453,7 +1656,7 @@ const API_CONTRACT_DIAGNOSTICS = [
   {
     code: "FIGMA_REPL_ROOT_FIND_ALL",
     message: "figma.root.findAll() can scan the whole file and is not allowed through this layer.",
-    suggestion: "Use $.find or $.findAll scoped to currentPage or a handle.",
+    suggestion: "Use $.find or $.findAll with a scoped parent such as $currentPage or a cached handle; avoid proving file-wide absence from one root scan.",
     docsHint: "figma_repl_lookup kind=docs query=\"selection query findAll\"",
   },
   {
@@ -1465,7 +1668,7 @@ const API_CONTRACT_DIAGNOSTICS = [
   {
     code: "FIGMA_REPL_IMAGE_CREATION",
     message: "Raw image creation is outside the supported script-file asset workflow.",
-    suggestion: "Use $.imageAsset({ base64, parent, size, position, as }) in .figma.js, or route unusual asset uploads through an upstream official tool.",
+    suggestion: "For large/local generated assets, create target rectangles and use figma_repl_apply_asset_manifest; use $.imageAsset only for small inline PNG/JPEG payloads.",
     docsHint: "figma-repl://guide#assetWorkflow",
   },
   {
@@ -1508,27 +1711,50 @@ const DIAGNOSTIC_SOURCE_PATTERNS = [
   { code: "FIGMA_REPL_SURFACE_CANVAS_API_IN_SLIDES", re: /\bfigma\.create(?:Frame|Component|Sticky|Connector|ShapeWithText)\s*\(/u },
 ];
 
-function toFileDiagnostics(
+export function toFigmaReplFileDiagnostics(
   scriptPath: string,
   source: string,
   diagnostics: FigmaReplDiagnostic[],
   options: FigmaReplDiagnosticsOptions,
 ): FigmaReplFileDiagnostic[] {
   const astSources = locateAstDiagnosticSources(source, diagnostics, options);
-  return diagnostics.map((diagnostic) => ({
-    ...diagnostic,
-    source: {
+  const astSourceIndexes = new Map<string, number>();
+  return diagnostics.map((diagnostic) => {
+    const allAstSources = astSources.get(diagnostic.code);
+    return {
+      ...diagnostic,
+      source: {
       scriptPath,
-      ...(astSources.get(diagnostic.code) ?? locateDiagnosticSource(source, diagnostic.code)),
-    },
-  }));
+      ...(
+        diagnostic.location ??
+        nextAstDiagnosticSource(astSources, astSourceIndexes, diagnostic.code) ??
+        locateDiagnosticSource(source, diagnostic.code)
+      ),
+        occurrences: allAstSources && allAstSources.length > 1 ? allAstSources : undefined,
+      },
+    };
+  });
+}
+
+function nextAstDiagnosticSource(
+  astSources: Map<string, Array<{ line: number; column: number }>>,
+  astSourceIndexes: Map<string, number>,
+  code: string,
+): { line: number; column: number } | undefined {
+  const sources = astSources.get(code);
+  if (!sources || sources.length === 0) {
+    return undefined;
+  }
+  const index = astSourceIndexes.get(code) ?? 0;
+  astSourceIndexes.set(code, index + 1);
+  return sources[Math.min(index, sources.length - 1)];
 }
 
 function locateAstDiagnosticSources(
   source: string,
   diagnostics: FigmaReplDiagnostic[],
   options: FigmaReplDiagnosticsOptions,
-): Map<string, { line: number; column: number }> {
+): Map<string, Array<{ line: number; column: number }>> {
   if (diagnostics.length === 0) {
     return new Map();
   }
@@ -1537,11 +1763,11 @@ function locateAstDiagnosticSources(
     return new Map();
   }
   const analysis = analyzeFigmaReplAst(parsed.ast, options, source.length);
-  const located = new Map<string, { line: number; column: number }>();
+  const located = new Map<string, Array<{ line: number; column: number }>>();
   for (const diagnostic of diagnostics) {
-    const offset = analysis.codeOffsets.get(diagnostic.code);
-    if (offset !== undefined) {
-      located.set(diagnostic.code, offsetToLineColumn(source, offset));
+    const offsets = analysis.codeOffsets.get(diagnostic.code);
+    if (offsets !== undefined) {
+      located.set(diagnostic.code, offsets.map((offset) => offsetToLineColumn(source, offset)));
     }
   }
   return located;
@@ -1662,13 +1888,19 @@ function dedupeDiagnostics(diagnostics: FigmaReplDiagnostic[]): FigmaReplDiagnos
   const seen = new Set<string>();
   const result: FigmaReplDiagnostic[] = [];
   for (const diagnostic of diagnostics) {
-    const key = `${diagnostic.code}:${diagnostic.severity}`;
+    const key = diagnostic.code === "FIGMA_REPL_PARSE_ERROR"
+      ? `${diagnostic.code}:${diagnostic.severity}:${diagnostic.message}:${diagnostic.location?.line ?? ""}:${diagnostic.location?.column ?? ""}`
+      : `${diagnostic.code}:${diagnostic.severity}`;
     if (!seen.has(key)) {
       seen.add(key);
       result.push(diagnostic);
     }
   }
   return result;
+}
+
+function removeUndefined<T extends Record<string, unknown>>(record: T): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
 function literal(value: unknown): string {
