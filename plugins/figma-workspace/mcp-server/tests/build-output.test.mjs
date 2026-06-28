@@ -1,0 +1,111 @@
+import assert from "node:assert/strict";
+import { readdir, readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("build publishes CLI and TypeScript declaration contract", async () => {
+  const [
+    packageJson,
+    upstreamCliSource,
+    workspaceCliSource,
+    apiDeclarations,
+    upstreamCliDeclarations,
+    workspaceDeclarations,
+    nodeWorkspaceDeclarations,
+  ] =
+    await Promise.all([
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../dist/upstream/upstream-stdio-bin.js", import.meta.url), "utf8"),
+    readFile(new URL("../dist/mcp/workspace-mcp-stdio-bin.js", import.meta.url), "utf8"),
+    readFile(new URL("../dist/mcp/index.d.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dist/upstream/upstream-stdio-cli.d.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dist/mcp/workspace-mcp-server.d.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dist/upstream/node-upstream-client.d.ts", import.meta.url), "utf8"),
+  ]);
+  const distFiles = (await readdir(new URL("../dist/", import.meta.url), {
+    recursive: true,
+  })).map((file) => file.replaceAll("\\", "/"));
+  const packageData = JSON.parse(packageJson);
+
+  assert.equal(packageData.types, "./dist/mcp/index.d.ts");
+  assert.equal(packageData.exports["."].types, "./dist/mcp/index.d.ts");
+  assert.equal(packageData.exports["./upstream-stdio"].types, "./dist/upstream/upstream-stdio-cli.d.ts");
+  assert.equal(packageData.exports["./workspace"].types, "./dist/mcp/workspace-mcp-server.d.ts");
+  assert.equal(packageData.exports["./node-upstream-client"].types, "./dist/upstream/node-upstream-client.d.ts");
+  assert.equal(packageData.bin["figma_workspace_upstream_stdio"], "./dist/upstream/upstream-stdio-bin.js");
+  assert.equal(packageData.bin["figma_workspace_mcp"], "./dist/mcp/workspace-mcp-stdio-bin.js");
+  assert.match(upstreamCliSource, /^#!\/usr\/bin\/env node\n/);
+  assert.match(workspaceCliSource, /^#!\/usr\/bin\/env node\n/);
+  assert.match(apiDeclarations, /createFigmaWorkspaceUpstreamStdioServer/);
+  assert.match(apiDeclarations, /createRemoteMcpClient/);
+  assert.match(apiDeclarations, /createFigmaWorkspaceClient/);
+  assert.match(apiDeclarations, /createFigmaWorkspaceMcpServer/);
+  assert.match(apiDeclarations, /FigmaWorkspaceApplyAssetManifestArguments/);
+  assert.match(apiDeclarations, /FigmaWorkspaceApplyAssetManifestResult/);
+  assert.match(apiDeclarations, /FigmaWorkspaceCaptureNodeArguments/);
+  assert.match(apiDeclarations, /FigmaWorkspaceCaptureNodeResult/);
+  assert.match(apiDeclarations, /FigmaWorkspaceGetMetadataArguments/);
+  assert.match(apiDeclarations, /FigmaWorkspaceGetMetadataResult/);
+  assert.match(apiDeclarations, /FigmaWorkspaceSearchDesignSystemArguments/);
+  assert.match(apiDeclarations, /FigmaWorkspaceSearchDesignSystemResult/);
+  assert.match(apiDeclarations, /FigmaWorkspaceGetLibrariesArguments/);
+  assert.match(apiDeclarations, /FigmaWorkspaceGetLibrariesResult/);
+  assert.match(apiDeclarations, /FigmaWorkspaceGetVariableDefsArguments/);
+  assert.match(apiDeclarations, /FigmaWorkspaceGetVariableDefsResult/);
+  assert.match(apiDeclarations, /FigmaWorkspaceRunTaskPlanArguments/);
+  assert.match(apiDeclarations, /FigmaWorkspaceUpstreamEnvelope/);
+  assert.match(apiDeclarations, /FigmaWorkspaceToolResultBase/);
+  assert.doesNotMatch(apiDeclarations, /runFigmaWorkspaceUpstreamStdioCli/);
+  assert.doesNotMatch(apiDeclarations, /startFigmaWorkspaceUpstreamStdioServer/);
+  assert.match(upstreamCliDeclarations, /runFigmaWorkspaceUpstreamStdioCli/);
+  assert.match(workspaceDeclarations, /createFigmaWorkspaceClient/);
+  assert.match(workspaceDeclarations, /export interface FigmaWorkspaceUpstreamEnvelope/);
+  assert.match(workspaceDeclarations, /export interface FigmaWorkspacePublicUpstreamError/);
+  assert.match(workspaceDeclarations, /export interface FigmaWorkspaceFilePointer/);
+  assert.match(workspaceDeclarations, /export interface FigmaWorkspaceToolResultBase/);
+  assert.doesNotMatch(workspaceDeclarations, /eval\(args: FigmaWorkspaceEvalArguments\): Promise<unknown>/);
+  assert.doesNotMatch(workspaceDeclarations, /runScriptFile\(args: FigmaWorkspaceRunScriptFileArguments\): Promise<unknown>/);
+  assert.doesNotMatch(workspaceDeclarations, /applyAssetManifest\(args: FigmaWorkspaceApplyAssetManifestArguments\): Promise<unknown>/);
+  assert.doesNotMatch(workspaceDeclarations, /captureNode\(args: FigmaWorkspaceCaptureNodeArguments\): Promise<unknown>/);
+  assert.doesNotMatch(workspaceDeclarations, /getMetadata\(args: FigmaWorkspaceGetMetadataArguments\): Promise<unknown>/);
+  assert.doesNotMatch(workspaceDeclarations, /searchDesignSystem\(args: FigmaWorkspaceSearchDesignSystemArguments\): Promise<unknown>/);
+  assert.doesNotMatch(workspaceDeclarations, /getLibraries\(args\?: FigmaWorkspaceGetLibrariesArguments\): Promise<unknown>/);
+  assert.doesNotMatch(workspaceDeclarations, /getVariableDefs\(args: FigmaWorkspaceGetVariableDefsArguments\): Promise<unknown>/);
+  assert.doesNotMatch(workspaceDeclarations, /callUpstreamTool\(args: FigmaWorkspaceCallUpstreamToolArguments\): Promise<unknown>/);
+  assert.match(nodeWorkspaceDeclarations, /createRemoteMcpClient/);
+  assert.match(nodeWorkspaceDeclarations, /createFigmaWorkspaceClient/);
+  assert.match(nodeWorkspaceDeclarations, /installNodeReplWebStreamGlobals/);
+  assert.match(workspaceDeclarations, /eval\(args: FigmaWorkspaceEvalArguments\): Promise<FigmaWorkspaceEvalResult>/);
+  assert.match(workspaceDeclarations, /runScriptFile\(args: FigmaWorkspaceRunScriptFileArguments\): Promise<FigmaWorkspaceRunScriptFileResult>/);
+  assert.match(workspaceDeclarations, /applyAssetManifest\(args: FigmaWorkspaceApplyAssetManifestArguments\): Promise<FigmaWorkspaceApplyAssetManifestResult>/);
+  assert.match(workspaceDeclarations, /captureNode\(args: FigmaWorkspaceCaptureNodeArguments\): Promise<FigmaWorkspaceCaptureNodeResult>/);
+  assert.match(workspaceDeclarations, /getMetadata\(args: FigmaWorkspaceGetMetadataArguments\): Promise<FigmaWorkspaceGetMetadataResult>/);
+  assert.match(workspaceDeclarations, /searchDesignSystem\(args: FigmaWorkspaceSearchDesignSystemArguments\): Promise<FigmaWorkspaceSearchDesignSystemResult>/);
+  assert.match(workspaceDeclarations, /getLibraries\(args\?: FigmaWorkspaceGetLibrariesArguments\): Promise<FigmaWorkspaceGetLibrariesResult>/);
+  assert.match(workspaceDeclarations, /getVariableDefs\(args: FigmaWorkspaceGetVariableDefsArguments\): Promise<FigmaWorkspaceGetVariableDefsResult>/);
+  assert.match(workspaceDeclarations, /runTaskPlan\(args: FigmaWorkspaceRunTaskPlanArguments\): Promise<FigmaWorkspaceRunTaskPlanResult>/);
+  assert.match(workspaceDeclarations, /callUpstreamTool\(args: FigmaWorkspaceCallUpstreamToolArguments\): Promise<FigmaWorkspaceCallUpstreamToolResult>/);
+  assert.match(workspaceDeclarations, /export interface FigmaWorkspaceMetadataJson/);
+  assert.match(workspaceDeclarations, /format: "figma-metadata-tree"/);
+  assert.match(apiDeclarations, /FigmaWorkspaceCompactScriptMetadata/);
+  assert.doesNotMatch(apiDeclarations, /FigmaWorkspaceVerboseScriptMetadata/);
+  assert.doesNotMatch(workspaceDeclarations, /verboseResults/);
+  assert.doesNotMatch(workspaceDeclarations, /verbose\?:/);
+  assert.match(workspaceDeclarations, /script: FigmaWorkspaceCompactScriptMetadata;/);
+  const compactScriptMetadata = workspaceDeclarations.match(
+    /export interface FigmaWorkspaceCompactScriptMetadata \{([\s\S]*?)\n\}/,
+  )?.[1];
+  assert.notEqual(compactScriptMetadata, undefined);
+  assert.match(compactScriptMetadata, /scriptPath: string;/);
+  assert.match(compactScriptMetadata, /compiledScriptBytes: number;/);
+  assert.doesNotMatch(compactScriptMetadata, /targetPageId/);
+  assert.doesNotMatch(compactScriptMetadata, /injectedHelpers/);
+  assert.doesNotMatch(compactScriptMetadata, /helperUsage/);
+  assert.match(workspaceDeclarations, /@internal[\s\S]*Internal wrapper builder[\s\S]*buildFigmaEvalScript/);
+  assert.match(workspaceDeclarations, /@internal[\s\S]*Internal-facing helper-selection utility[\s\S]*resolveFigmaWorkspaceScriptHelperSelection/);
+  assert.equal(distFiles.includes("upstream/node-upstream-client.js"), true);
+  assert.equal(distFiles.includes("mcp/workspace-mcp-cli.js"), true);
+  assert.equal(distFiles.includes("mcp/workspace-mcp-server.js"), true);
+  assert.equal(distFiles.includes("mcp/workspace-mcp-stdio-bin.js"), true);
+  assert.equal(distFiles.includes("upstream/upstream-stdio-bin.js"), true);
+  assert.equal(distFiles.some((file) => file.endsWith(".d.ts.map")), false);
+});

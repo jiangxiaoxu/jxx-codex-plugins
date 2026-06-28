@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "figma_workspace_mcp": {
+      "command": "node",
+      "cwd": ".",
+      "args": [
+        "./mcp-server/dist/mcp/workspace-mcp-stdio-bin.js"
+      ]
+    }
+  }
+}

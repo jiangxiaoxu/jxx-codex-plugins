@@ -1,4 +1,0 @@
-interface:
-  display_name: "Figma Router"
-  short_description: "Figma MCP router for figma_repl_mcp and figma_repl_ tools"
-  default_prompt: "Use $figma-router for Figma MCP work; discover figma_repl_mcp / figma_repl_ tools first."

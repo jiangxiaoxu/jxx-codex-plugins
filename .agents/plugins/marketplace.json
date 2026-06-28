@@ -30,10 +30,10 @@
       "category": "Productivity"
     },
     {
-      "name": "figma-mcp-bridge",
+      "name": "figma-workspace",
       "source": {
         "source": "local",
-        "path": "./plugins/figma-mcp-bridge"
+        "path": "./plugins/figma-workspace"
       },
       "policy": {
         "installation": "AVAILABLE",

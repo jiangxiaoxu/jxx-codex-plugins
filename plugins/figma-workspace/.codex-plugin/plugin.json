@@ -1,0 +1,25 @@
+{
+  "name": "figma-workspace",
+  "version": "0.1.64",
+  "description": "Figma Workspace MCP frontend with local Figma MCP login support.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Figma Workspace",
+    "shortDescription": "Use Figma MCP through a stateful workspace proxy with local Figma MCP login.",
+    "longDescription": "Provides the persistent figma_workspace_mcp MCP server for the official Figma remote MCP endpoint, plus a local HTTP bridge used for Figma MCP login and credential caching. The transparent @jxx-codex-plugins/figma-workspace-stdio package remains available through the optional figma_workspace_upstream_stdio CLI and Node library surface for debugging.",
+    "developerName": "jiangxiaoxu",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Network",
+      "Read",
+      "Write"
+    ],
+    "composerIcon": "./assets/figma-workspace-icon.png",
+    "logo": "./assets/figma-workspace-icon.png",
+    "defaultPrompt": "Start Figma Workspace."
+  }
+}

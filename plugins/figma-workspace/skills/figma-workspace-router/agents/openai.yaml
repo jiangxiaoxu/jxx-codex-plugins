@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma Router"
+  short_description: "Figma MCP router for figma_workspace_mcp and figma_workspace_ tools"
+  default_prompt: "Use $figma-workspace-router for Figma MCP work; discover figma_workspace_mcp / figma_workspace_ tools first."
