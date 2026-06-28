@@ -15,6 +15,8 @@ Use this reference only when `figma-repl://capabilities` is not enough to choose
 - `.figma.js` files are async function bodies executed in Figma Plugin API context.
 - Use native Plugin API for advanced work and `$` helpers for common agent tasks.
 - Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`.
+- Helper access must be static so runtime injection can be analyzed: use `$.helper(...)`, `$["helper"](...)`, or explicit destructuring; avoid dynamic `$[name]`, aliasing `$`, object rest destructuring, and local `$` declarations.
+- Use `figma_repl_guidance({ query })` for on-demand `helperProfiles` when choosing between selection, text, layout, assets, capture/QA, repair, and clone/rebuild helpers.
 - Prefer `$.select` over direct selection mutation.
 - Validate stale handles with `figma_repl_inspect({ mode: "validate" })` before reusing them.
 
@@ -22,6 +24,7 @@ Use this reference only when `figma-repl://capabilities` is not enough to choose
 
 - Use `figma_repl_get_metadata` for broad layer-tree discovery before detailed style, fill, or text inspection.
 - Use `figma_repl_guidance` or `figma-repl://lookup-index` for wrapper profiles and workflow graph nodes when sequencing design-context, motion, video, or shader wrapper calls.
+- Follow wrapper `guidanceRef.query` with `figma_repl_guidance` when a thin wrapper output needs detailed next-step guidance.
 - Use `figma_repl_search_design_system`, `figma_repl_get_libraries`, and `figma_repl_get_variable_defs` for official design-system context. `get_variable_defs.target` accepts a raw node id, node URL, or local handle.
 - Use `figma_repl_apply_asset_manifest` for large local generated image assets. Create target rectangles in the script first, then upload/fill through the manifest.
 - Use `figma_repl_download_assets` for official asset download workflows.
