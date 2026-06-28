@@ -13,6 +13,7 @@ import {
   createFigmaWorkspaceClient,
   createFigmaWorkspaceMcpServer,
   diagnoseFigmaWorkspaceCode,
+  RemoteMcpOAuthError,
 } from "../dist/mcp/index.js";
 import {
   FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES,
@@ -1780,7 +1781,10 @@ test("figma upstream-tools resource reports upstream connection failures as JSON
   const fakeClient = {
     async connect() {
       calls.push(["connect"]);
-      throw new Error("MCP connection attempt was cancelled.");
+      throw new RemoteMcpOAuthError(
+        "FIGMA_UPSTREAM_AUTH_REQUIRED",
+        "Figma MCP upstream authentication is required or incomplete.",
+      );
     },
     async close() {
       calls.push(["close"]);
@@ -1808,15 +1812,99 @@ test("figma upstream-tools resource reports upstream connection failures as JSON
   assert.equal(upstream.ok, false);
   assert.deepEqual(upstream.tools, []);
   assert.equal(upstream.detailTemplate, "figma-workspace://upstream-tools/{name}");
-  assert.match(upstream.upstreamError.message, /MCP connection attempt was cancelled/);
-  assert.match(upstream.primaryFix, /OAuth\/login/);
+  assert.equal(upstream.upstreamError.message, "Figma MCP upstream authentication is required or incomplete.");
+  assert.equal(upstream.upstreamError.code, "FIGMA_UPSTREAM_AUTH_REQUIRED");
+  assert.equal(upstream.upstreamError.details.loginCommand, "npm run login:figma-http");
+  assert.equal(upstream.upstreamError.details.oauthCacheFile, ".figma-workspace-oauth.json");
+  assert.doesNotMatch(JSON.stringify(upstream.upstreamError), /StaleConnectionError|connectOnce|workspace-mcp-cli/u);
+  assert.match(upstream.primaryFix, /npm run login:figma-http/);
   assert.deepEqual(calls, [["connect"]]);
 
   await assert.rejects(
     mcpClient.readResource({ uri: "figma-workspace://upstream-tools/use_figma" }),
-    /Upstream Figma MCP tool directory unavailable: MCP connection attempt was cancelled/,
+    /Upstream Figma MCP tool directory unavailable: Figma MCP upstream authentication is required or incomplete\./,
   );
   await mcpClient.close();
+});
+
+test("figma upstream-tools resource uses typed OAuth error codes without facade string heuristics", async () => {
+  async function readUpstreamToolsFailure(error) {
+    const fakeClient = {
+      async connect() {
+        throw error;
+      },
+      async close() {},
+      async listTools() {
+        return { tools: [] };
+      },
+      async callTool() {
+        throw new Error("unexpected upstream call");
+      },
+    };
+    const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+    const mcpClient = new Client(
+      { name: "test-client", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    try {
+      const upstreamResource = await mcpClient.readResource({ uri: "figma-workspace://upstream-tools" });
+      return JSON.parse(upstreamResource.contents[0].text);
+    } finally {
+      await mcpClient.close();
+    }
+  }
+
+  const registration = await readUpstreamToolsFailure(
+    new RemoteMcpOAuthError(
+      "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
+      "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
+    ),
+  );
+  assert.equal(registration.ok, false);
+  assert.equal(registration.upstreamError.code, "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED");
+  assert.equal(registration.upstreamError.message, "Figma MCP OAuth client registration was rejected before authorization.");
+  assert.match(registration.primaryFix, /supported OAuth client/);
+  assert.doesNotMatch(JSON.stringify(registration.upstreamError), /Forbidden|HTTP 403|stack/u);
+
+  const timeout = await readUpstreamToolsFailure(
+    new RemoteMcpOAuthError(
+      "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT",
+      "Figma MCP OAuth browser authorization timed out.",
+    ),
+  );
+  assert.equal(timeout.upstreamError.code, "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT");
+  assert.match(timeout.primaryFix, /before the timeout/);
+
+  const cancelled = await readUpstreamToolsFailure(
+    new RemoteMcpOAuthError(
+      "FIGMA_UPSTREAM_OAUTH_CANCELLED",
+      "Figma MCP OAuth browser authorization was cancelled before completion.",
+    ),
+  );
+  assert.equal(cancelled.upstreamError.code, "FIGMA_UPSTREAM_OAUTH_CANCELLED");
+  assert.match(cancelled.primaryFix, /Restart/);
+
+  const tokenExchange = await readUpstreamToolsFailure(
+    new RemoteMcpOAuthError(
+      "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED",
+      "Figma MCP OAuth token exchange failed after browser authorization.",
+    ),
+  );
+  assert.equal(tokenExchange.upstreamError.code, "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED");
+  assert.equal(tokenExchange.upstreamError.message, "Figma MCP OAuth token exchange failed after browser authorization.");
+  assert.match(tokenExchange.primaryFix, /refresh the OAuth token exchange/);
+
+  const plainOauthLookingError = await readUpstreamToolsFailure(
+    new Error("OAuth authorization failed with HTTP 403 Forbidden."),
+  );
+  assert.equal(plainOauthLookingError.upstreamError.code, "FIGMA_UPSTREAM_FAILED");
+  assert.equal(plainOauthLookingError.upstreamError.message, "OAuth authorization failed with HTTP 403 Forbidden.");
+  assert.equal(plainOauthLookingError.upstreamError.details, undefined);
+  assert.match(plainOauthLookingError.primaryFix, /upstream Figma MCP connection/);
 });
 
 test("figma router docs preserve runtime-owned contract wording", async () => {

@@ -15,8 +15,30 @@ export interface OAuthCallbackServer {
   close(): Promise<void>;
 }
 
-const CLOSED_BEFORE_AUTHORIZATION_MESSAGE =
-  "OAuth callback server was closed before authorization completed.";
+export const OAUTH_CALLBACK_ERROR_CODES = [
+  "OAUTH_CALLBACK_AUTHORIZATION_FAILED",
+  "OAUTH_CALLBACK_CANCELLED",
+  "OAUTH_CALLBACK_INTERNAL_ERROR",
+  "OAUTH_CALLBACK_MISSING_CODE",
+  "OAUTH_CALLBACK_STATE_MISMATCH",
+  "OAUTH_CALLBACK_TIMEOUT",
+] as const;
+
+export type OAuthCallbackErrorCode = (typeof OAUTH_CALLBACK_ERROR_CODES)[number];
+
+export class OAuthCallbackError extends Error {
+  readonly code: OAuthCallbackErrorCode;
+
+  constructor(
+    code: OAuthCallbackErrorCode,
+    message: string,
+    options: { cause?: unknown } = {},
+  ) {
+    super(message, { cause: options.cause });
+    this.name = "OAuthCallbackError";
+    this.code = code;
+  }
+}
 
 function sendHtml(
   response: ServerResponse,
@@ -69,14 +91,24 @@ export async function startOAuthCallbackServer(
         const description = url.searchParams.get("error_description");
         const message = description ? `${error}: ${description}` : error;
         sendHtml(response, 400, "Authorization failed", message);
-        settleWithError(new Error(`OAuth authorization failed: ${message}`));
+        settleWithError(
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_AUTHORIZATION_FAILED",
+            `OAuth authorization failed: ${message}`,
+          ),
+        );
         return;
       }
 
       const code = url.searchParams.get("code");
       if (!code) {
         sendHtml(response, 400, "Authorization failed", "Missing authorization code.");
-        settleWithError(new Error("OAuth callback did not include a code."));
+        settleWithError(
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_MISSING_CODE",
+            "OAuth callback did not include a code.",
+          ),
+        );
         return;
       }
 
@@ -85,7 +117,10 @@ export async function startOAuthCallbackServer(
       if (expectedState && receivedState !== expectedState) {
         sendHtml(response, 400, "Authorization failed", "OAuth state mismatch.");
         settleWithError(
-          new Error("OAuth callback state did not match the saved state."),
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_STATE_MISMATCH",
+            "OAuth callback state did not match the saved state.",
+          ),
         );
         return;
       }
@@ -102,7 +137,7 @@ export async function startOAuthCallbackServer(
         if (!response.headersSent) {
           sendHtml(response, 500, "Authorization failed", "Internal callback error.");
         }
-        settleWithError(asError(error));
+        settleWithError(asOAuthCallbackError(error));
       }
     }
   });
@@ -145,7 +180,12 @@ export async function startOAuthCallbackServer(
   });
 
   timeout = setTimeout(() => {
-    settleWithError(new Error("Timed out waiting for OAuth callback."));
+    settleWithError(
+      new OAuthCallbackError(
+        "OAUTH_CALLBACK_TIMEOUT",
+        "Timed out waiting for OAuth callback.",
+      ),
+    );
   }, options.timeoutMs);
 
   return {
@@ -153,7 +193,12 @@ export async function startOAuthCallbackServer(
     waitForCode: () => codePromise,
     close: async () => {
       if (!settled) {
-        settleWithError(new Error(CLOSED_BEFORE_AUTHORIZATION_MESSAGE));
+        settleWithError(
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_CANCELLED",
+            "OAuth callback server was closed before authorization completed.",
+          ),
+        );
       } else {
         clearAuthTimeout();
       }
@@ -162,6 +207,13 @@ export async function startOAuthCallbackServer(
   };
 }
 
-function asError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
+function asOAuthCallbackError(error: unknown): OAuthCallbackError {
+  if (error instanceof OAuthCallbackError) {
+    return error;
+  }
+  return new OAuthCallbackError(
+    "OAUTH_CALLBACK_INTERNAL_ERROR",
+    error instanceof Error ? error.message : String(error),
+    { cause: error },
+  );
 }

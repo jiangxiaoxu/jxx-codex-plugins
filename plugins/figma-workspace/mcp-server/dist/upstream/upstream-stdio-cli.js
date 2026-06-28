@@ -18056,7 +18056,14 @@ ${authorizationUrl.toString()}`
 // src/auth/oauth-callback.ts
 import { createServer } from "node:http";
 import { URL as URL2 } from "node:url";
-var CLOSED_BEFORE_AUTHORIZATION_MESSAGE = "OAuth callback server was closed before authorization completed.";
+var OAuthCallbackError = class extends Error {
+  code;
+  constructor(code, message, options = {}) {
+    super(message, { cause: options.cause });
+    this.name = "OAuthCallbackError";
+    this.code = code;
+  }
+};
 function sendHtml(response, status, title, body) {
   response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
   response.end(
@@ -18096,13 +18103,23 @@ async function startOAuthCallbackServer(options) {
         const description = url2.searchParams.get("error_description");
         const message = description ? `${error2}: ${description}` : error2;
         sendHtml(response, 400, "Authorization failed", message);
-        settleWithError(new Error(`OAuth authorization failed: ${message}`));
+        settleWithError(
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_AUTHORIZATION_FAILED",
+            `OAuth authorization failed: ${message}`
+          )
+        );
         return;
       }
       const code = url2.searchParams.get("code");
       if (!code) {
         sendHtml(response, 400, "Authorization failed", "Missing authorization code.");
-        settleWithError(new Error("OAuth callback did not include a code."));
+        settleWithError(
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_MISSING_CODE",
+            "OAuth callback did not include a code."
+          )
+        );
         return;
       }
       const expectedState = await options.getExpectedState?.();
@@ -18110,7 +18127,10 @@ async function startOAuthCallbackServer(options) {
       if (expectedState && receivedState !== expectedState) {
         sendHtml(response, 400, "Authorization failed", "OAuth state mismatch.");
         settleWithError(
-          new Error("OAuth callback state did not match the saved state.")
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_STATE_MISMATCH",
+            "OAuth callback state did not match the saved state."
+          )
         );
         return;
       }
@@ -18126,7 +18146,7 @@ async function startOAuthCallbackServer(options) {
         if (!response.headersSent) {
           sendHtml(response, 500, "Authorization failed", "Internal callback error.");
         }
-        settleWithError(asError(error2));
+        settleWithError(asOAuthCallbackError(error2));
       }
     }
   });
@@ -18166,14 +18186,24 @@ async function startOAuthCallbackServer(options) {
     });
   });
   timeout = setTimeout(() => {
-    settleWithError(new Error("Timed out waiting for OAuth callback."));
+    settleWithError(
+      new OAuthCallbackError(
+        "OAUTH_CALLBACK_TIMEOUT",
+        "Timed out waiting for OAuth callback."
+      )
+    );
   }, options.timeoutMs);
   return {
     url: callbackUrl,
     waitForCode: () => codePromise,
     close: async () => {
       if (!settled) {
-        settleWithError(new Error(CLOSED_BEFORE_AUTHORIZATION_MESSAGE));
+        settleWithError(
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_CANCELLED",
+            "OAuth callback server was closed before authorization completed."
+          )
+        );
       } else {
         clearAuthTimeout();
       }
@@ -18181,11 +18211,30 @@ async function startOAuthCallbackServer(options) {
     }
   };
 }
-function asError(error2) {
-  return error2 instanceof Error ? error2 : new Error(String(error2));
+function asOAuthCallbackError(error2) {
+  if (error2 instanceof OAuthCallbackError) {
+    return error2;
+  }
+  return new OAuthCallbackError(
+    "OAUTH_CALLBACK_INTERNAL_ERROR",
+    error2 instanceof Error ? error2.message : String(error2),
+    { cause: error2 }
+  );
 }
 
 // src/upstream/remote-mcp-client.ts
+var OAUTH_CACHE_FILE_NAME = ".figma-workspace-oauth.json";
+var LOGIN_COMMAND = "npm run login:figma-http";
+var RemoteMcpOAuthError = class extends Error {
+  code;
+  details;
+  constructor(code, message, options = {}) {
+    super(message, { cause: options.cause });
+    this.name = "RemoteMcpOAuthError";
+    this.code = code;
+    this.details = options.details;
+  }
+};
 var RemoteMcpClient = class {
   config;
   authProvider;
@@ -18244,23 +18293,31 @@ ${authorizationUrl.toString()}`
         throw error2;
       }
       const unauthorizedTransport = this.transport;
-      if (isForbiddenClientRegistrationError(error2)) {
+      const registrationRejection = extractRegistrationRejection(error2);
+      if (registrationRejection) {
         await this.closeTransport(unauthorizedTransport, {
           clearInFlight: false
         });
-        throw new Error(
-          [
-            "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
-            "The official Figma remote MCP may only allow supported catalog clients or waitlisted custom clients.",
-            "If Figma provides a registered OAuth client for this runtime, seed that client information in the OAuth state file before connecting."
-          ].join(" "),
-          { cause: error2 }
+        throw new RemoteMcpOAuthError(
+          "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
+          "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
+          {
+            cause: error2,
+            details: {
+              oauthCacheFile: OAUTH_CACHE_FILE_NAME,
+              upstreamStatus: registrationRejection.status,
+              upstreamCode: registrationRejection.code
+            }
+          }
         );
       }
       if (!isUnauthorizedError(error2) || !unauthorizedTransport) {
         await this.closeTransport(unauthorizedTransport, {
           clearInFlight: false
         });
+        if (isUnauthorizedError(error2)) {
+          throw authRequiredError(error2);
+        }
         throw error2;
       }
       let callbackServer;
@@ -18275,29 +18332,45 @@ ${authorizationUrl.toString()}`
           });
         } catch (callbackServerError) {
           if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
-            throw new StaleConnectionError();
+            throw oauthCancelledError(new StaleConnectionError());
           }
-          throw callbackServerError;
+          throw oauthCallbackFailedError(callbackServerError);
         }
         if (!this.trackCallbackServer(callbackServer, connectionGeneration)) {
           await this.closeCallbackServer(callbackServer);
-          throw new StaleConnectionError();
+          throw oauthCancelledError(new StaleConnectionError());
         }
-        const authorizationCode = await callbackServer.waitForCode();
+        let authorizationCode;
+        try {
+          authorizationCode = await callbackServer.waitForCode();
+        } catch (callbackError) {
+          throw oauthCallbackError(callbackError);
+        }
         if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
-          throw new StaleConnectionError();
+          throw oauthCancelledError(new StaleConnectionError());
         }
-        await unauthorizedTransport.finishAuth(authorizationCode);
+        try {
+          await unauthorizedTransport.finishAuth(authorizationCode);
+        } catch (finishAuthError) {
+          throw oauthTokenExchangeFailedError(finishAuthError);
+        }
       } finally {
         await this.closeTransport(unauthorizedTransport, {
           clearInFlight: false
         });
         await this.closeCallbackServer(callbackServer);
       }
-      await this.setConnectedIfCurrent(
-        await this.connectOnce(connectionGeneration),
-        connectionGeneration
-      );
+      try {
+        await this.setConnectedIfCurrent(
+          await this.connectOnce(connectionGeneration),
+          connectionGeneration
+        );
+      } catch (postAuthError) {
+        if (postAuthError instanceof StaleConnectionError) {
+          throw oauthCancelledError(postAuthError);
+        }
+        throw postAuthError;
+      }
     }
   }
   async connectOnce(connectionGeneration = this.connectionGeneration) {
@@ -18430,15 +18503,157 @@ ${authorizationUrl.toString()}`
 function createRemoteMcpClient(options = {}) {
   return new RemoteMcpClient(options);
 }
-function isForbiddenClientRegistrationError(error2) {
-  const message = typeof error2 === "object" && error2 !== null && "message" in error2 && typeof error2.message === "string" ? error2.message : String(error2);
-  return message.includes("HTTP 403") && message.includes("Forbidden");
+function extractRegistrationRejection(error2) {
+  const signals = collectErrorStatusSignals(error2);
+  if (signals.status !== void 0) {
+    return signals.status === 403 ? { status: signals.status, code: signals.code } : void 0;
+  }
+  if (signals.code !== void 0) {
+    return isForbiddenStatusCode(signals.code) ? { code: signals.code } : void 0;
+  }
+  const message = messageFromUnknown(error2);
+  if (!message) {
+    return void 0;
+  }
+  return /\bHTTP 403\b/u.test(message) && /\bForbidden\b/u.test(message) ? {} : void 0;
+}
+function authRequiredError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_AUTH_REQUIRED",
+    "Figma MCP upstream authentication is required or incomplete.",
+    {
+      cause: error2,
+      details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function oauthCallbackError(error2) {
+  if (error2 instanceof OAuthCallbackError) {
+    switch (error2.code) {
+      case "OAUTH_CALLBACK_TIMEOUT":
+        return new RemoteMcpOAuthError(
+          "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT",
+          "Figma MCP OAuth browser authorization timed out.",
+          {
+            cause: error2,
+            details: defaultOAuthRecoveryDetails()
+          }
+        );
+      case "OAUTH_CALLBACK_CANCELLED":
+        return oauthCancelledError(error2);
+      case "OAUTH_CALLBACK_AUTHORIZATION_FAILED":
+      case "OAUTH_CALLBACK_INTERNAL_ERROR":
+      case "OAUTH_CALLBACK_MISSING_CODE":
+      case "OAUTH_CALLBACK_STATE_MISMATCH":
+        return oauthCallbackFailedError(error2);
+    }
+  }
+  return oauthCallbackFailedError(error2);
+}
+function oauthCancelledError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CANCELLED",
+    "Figma MCP OAuth browser authorization was cancelled before completion.",
+    {
+      cause: error2,
+      details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function oauthCallbackFailedError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED",
+    "Figma MCP OAuth browser authorization did not complete.",
+    {
+      cause: error2,
+      details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function oauthTokenExchangeFailedError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED",
+    "Figma MCP OAuth token exchange failed after browser authorization.",
+    {
+      cause: error2,
+      details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function defaultOAuthRecoveryDetails() {
+  return {
+    loginCommand: LOGIN_COMMAND,
+    oauthCacheFile: OAUTH_CACHE_FILE_NAME
+  };
 }
 function isUnauthorizedError(error2) {
   if (error2 instanceof UnauthorizedError) {
     return true;
   }
   return typeof error2 === "object" && error2 !== null && "constructor" in error2 && typeof error2.constructor === "function" && error2.constructor.name === "UnauthorizedError";
+}
+function messageFromUnknown(error2) {
+  if (error2 instanceof Error) {
+    return error2.message;
+  }
+  if (isRecord2(error2) && typeof error2.message === "string") {
+    return error2.message;
+  }
+  if (typeof error2 === "string") {
+    return error2;
+  }
+  return void 0;
+}
+function collectErrorStatusSignals(error2) {
+  const visited = /* @__PURE__ */ new Set();
+  const pending = [error2];
+  let code;
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (!isRecord2(current) || visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    const status = numberFromStatusField(current.status) ?? numberFromStatusField(current.statusCode);
+    if (status !== void 0) {
+      return {
+        status,
+        code: code ?? stringFromStatusCodeField(current.code)
+      };
+    }
+    code ??= stringFromStatusCodeField(current.code);
+    for (const key of ["cause", "response", "error"]) {
+      if (isRecord2(current[key])) {
+        pending.push(current[key]);
+      }
+    }
+  }
+  return { code };
+}
+function numberFromStatusField(value) {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value !== "string" || !/^\d{3}$/u.test(value)) {
+    return void 0;
+  }
+  return Number(value);
+}
+function stringFromStatusCodeField(value) {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return String(value);
+  }
+  if (typeof value !== "string" || value.length === 0) {
+    return void 0;
+  }
+  return value;
+}
+function isForbiddenStatusCode(value) {
+  const normalized = value.trim().toUpperCase();
+  return normalized === "403" || normalized === "FORBIDDEN";
+}
+function isRecord2(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 var StaleConnectionError = class extends Error {
   constructor() {
@@ -18518,7 +18733,7 @@ function injectOptionalTitleArgument(result) {
   return {
     ...result,
     tools: result.tools.map((tool) => {
-      if (!isRecord2(tool)) {
+      if (!isRecord3(tool)) {
         return tool;
       }
       return {
@@ -18529,8 +18744,8 @@ function injectOptionalTitleArgument(result) {
   };
 }
 function injectTitleIntoInputSchema(inputSchema) {
-  const schema = isRecord2(inputSchema) ? inputSchema : {};
-  const properties = isRecord2(schema.properties) ? schema.properties : {};
+  const schema = isRecord3(inputSchema) ? inputSchema : {};
+  const properties = isRecord3(schema.properties) ? schema.properties : {};
   const required2 = Array.isArray(schema.required) ? schema.required : [];
   return {
     ...schema,
@@ -18555,7 +18770,7 @@ function stripTitleArgument(args) {
     Object.entries(args).filter(([name]) => name !== TOOL_TITLE_ARGUMENT)
   );
 }
-function isRecord2(value) {
+function isRecord3(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 

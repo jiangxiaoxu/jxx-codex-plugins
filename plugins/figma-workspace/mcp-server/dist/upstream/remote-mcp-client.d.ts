@@ -8,6 +8,22 @@ interface RemoteMcpConnection {
     client: Client;
     transport: StreamableHTTPClientTransport;
 }
+export declare const REMOTE_MCP_OAUTH_ERROR_CODES: readonly ["FIGMA_UPSTREAM_AUTH_REQUIRED", "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED", "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT", "FIGMA_UPSTREAM_OAUTH_CANCELLED", "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED", "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED"];
+export type RemoteMcpOAuthErrorCode = (typeof REMOTE_MCP_OAUTH_ERROR_CODES)[number];
+export interface RemoteMcpOAuthErrorDetails {
+    [key: string]: unknown;
+    loginCommand?: string;
+    oauthCacheFile?: string;
+}
+export declare class RemoteMcpOAuthError extends Error {
+    readonly code: RemoteMcpOAuthErrorCode;
+    readonly details?: RemoteMcpOAuthErrorDetails;
+    constructor(code: RemoteMcpOAuthErrorCode, message: string, options?: {
+        cause?: unknown;
+        details?: RemoteMcpOAuthErrorDetails;
+    });
+}
+export declare function isRemoteMcpOAuthError(error: unknown): error is RemoteMcpOAuthError;
 export interface RemoteMcpClientOptions extends NodeReplConfigInput {
     onAuthorizationUrl?: (authorizationUrl: URL) => void | Promise<void>;
     callbackServerFactory?: (options: OAuthCallbackServerOptions) => Promise<OAuthCallbackServer>;
