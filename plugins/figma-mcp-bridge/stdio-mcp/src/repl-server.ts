@@ -67,11 +67,18 @@ import {
   asCaptureNodeArgs,
   asDownloadAssetsArgs,
   asEvalArgs,
+  asExportVideoArgs,
+  asGetDesignContextArgs,
   asGetLibrariesArgs,
   asGetMetadataArgs,
+  asGetMotionContextArgs,
+  asGetShaderEffectArgs,
+  asGetShaderFillArgs,
   asGetVariableDefsArgs,
   asGuidanceArgs,
   asInspectArgs,
+  asListShaderEffectsArgs,
+  asListShaderFillsArgs,
   asLookupArgs,
   asOpenArgs,
   asPrepareTaskArgs,
@@ -87,11 +94,18 @@ import type {
   FigmaReplDownloadAssetsArguments,
   FigmaReplDownloadAssetsTarget,
   FigmaReplEvalArguments,
+  FigmaReplExportVideoArguments,
+  FigmaReplGetDesignContextArguments,
   FigmaReplGetLibrariesArguments,
   FigmaReplGetMetadataArguments,
+  FigmaReplGetMotionContextArguments,
+  FigmaReplGetShaderEffectArguments,
+  FigmaReplGetShaderFillArguments,
   FigmaReplGetVariableDefsArguments,
   FigmaReplGuidanceArguments,
   FigmaReplInspectArguments,
+  FigmaReplListShaderEffectsArguments,
+  FigmaReplListShaderFillsArguments,
   FigmaReplLookupArguments,
   FigmaReplOpenArguments,
   FigmaReplPrepareTaskArguments,
@@ -177,11 +191,18 @@ export type {
   FigmaReplDownloadAssetsArguments,
   FigmaReplDownloadAssetsTarget,
   FigmaReplEvalArguments,
+  FigmaReplExportVideoArguments,
+  FigmaReplGetDesignContextArguments,
   FigmaReplGetLibrariesArguments,
   FigmaReplGetMetadataArguments,
+  FigmaReplGetMotionContextArguments,
+  FigmaReplGetShaderEffectArguments,
+  FigmaReplGetShaderFillArguments,
   FigmaReplGetVariableDefsArguments,
   FigmaReplGuidanceArguments,
   FigmaReplInspectArguments,
+  FigmaReplListShaderEffectsArguments,
+  FigmaReplListShaderFillsArguments,
   FigmaReplLookupArguments,
   FigmaReplOpenArguments,
   FigmaReplPrepareTaskArguments,
@@ -225,9 +246,16 @@ const UPLOAD_ASSETS_TOOL_NAME = "upload_assets";
 const DOWNLOAD_ASSETS_TOOL_NAME = "download_assets";
 const SCREENSHOT_TOOL_NAME = "get_screenshot";
 const GET_METADATA_TOOL_NAME = "get_metadata";
+const GET_DESIGN_CONTEXT_TOOL_NAME = "get_design_context";
+const GET_MOTION_CONTEXT_TOOL_NAME = "get_motion_context";
+const EXPORT_VIDEO_TOOL_NAME = "export_video";
 const SEARCH_DESIGN_SYSTEM_TOOL_NAME = "search_design_system";
 const GET_LIBRARIES_TOOL_NAME = "get_libraries";
 const GET_VARIABLE_DEFS_TOOL_NAME = "get_variable_defs";
+const LIST_SHADER_EFFECTS_TOOL_NAME = "list_shader_effects";
+const GET_SHADER_EFFECT_TOOL_NAME = "get_shader_effect";
+const LIST_SHADER_FILLS_TOOL_NAME = "list_shader_fills";
+const GET_SHADER_FILL_TOOL_NAME = "get_shader_fill";
 export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
   client?: FigmaMcpProxyClient;
   name?: string;
@@ -554,6 +582,31 @@ export interface FigmaReplSearchDesignSystemResult extends FigmaReplUpstreamBack
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 
+export interface FigmaReplGetDesignContextResult extends FigmaReplUpstreamBackedResult {
+  session: FigmaReplCompactSession;
+  fileKey: string;
+  nodeId: string;
+  outputFiles?: FigmaReplOutputFiles;
+  inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+
+export interface FigmaReplGetMotionContextResult extends FigmaReplUpstreamBackedResult {
+  session: FigmaReplCompactSession;
+  fileKey: string;
+  nodeId: string;
+  outputFiles?: FigmaReplOutputFiles;
+  inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+
+export interface FigmaReplExportVideoResult extends FigmaReplUpstreamBackedResult {
+  session: FigmaReplCompactSession;
+  fileKey: string;
+  nodeId?: string;
+  jobId?: string;
+  outputFiles?: FigmaReplOutputFiles;
+  inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+
 export interface FigmaReplGetLibrariesResult extends FigmaReplUpstreamBackedResult {
   session: FigmaReplCompactSession;
   fileKey: string;
@@ -566,6 +619,34 @@ export interface FigmaReplGetVariableDefsResult extends FigmaReplUpstreamBackedR
   session: FigmaReplCompactSession;
   fileKey: string;
   nodeId: string;
+  outputFiles?: FigmaReplOutputFiles;
+  inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+
+export interface FigmaReplListShaderEffectsResult extends FigmaReplUpstreamBackedResult {
+  session: FigmaReplCompactSession;
+  cursor?: string;
+  outputFiles?: FigmaReplOutputFiles;
+  inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+
+export interface FigmaReplGetShaderEffectResult extends FigmaReplUpstreamBackedResult {
+  session: FigmaReplCompactSession;
+  id: string;
+  outputFiles?: FigmaReplOutputFiles;
+  inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+
+export interface FigmaReplListShaderFillsResult extends FigmaReplUpstreamBackedResult {
+  session: FigmaReplCompactSession;
+  cursor?: string;
+  outputFiles?: FigmaReplOutputFiles;
+  inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+
+export interface FigmaReplGetShaderFillResult extends FigmaReplUpstreamBackedResult {
+  session: FigmaReplCompactSession;
+  id: string;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -632,9 +713,16 @@ export interface FigmaReplClient {
   guidance(args: FigmaReplGuidanceArguments): Promise<FigmaReplGuidanceResult>;
   inspect(args?: FigmaReplInspectArguments): Promise<FigmaReplInspectResult>;
   getMetadata(args: FigmaReplGetMetadataArguments): Promise<FigmaReplGetMetadataResult>;
+  getDesignContext(args: FigmaReplGetDesignContextArguments): Promise<FigmaReplGetDesignContextResult>;
+  getMotionContext(args: FigmaReplGetMotionContextArguments): Promise<FigmaReplGetMotionContextResult>;
+  exportVideo(args: FigmaReplExportVideoArguments): Promise<FigmaReplExportVideoResult>;
   searchDesignSystem(args: FigmaReplSearchDesignSystemArguments): Promise<FigmaReplSearchDesignSystemResult>;
   getLibraries(args?: FigmaReplGetLibrariesArguments): Promise<FigmaReplGetLibrariesResult>;
   getVariableDefs(args: FigmaReplGetVariableDefsArguments): Promise<FigmaReplGetVariableDefsResult>;
+  listShaderEffects(args?: FigmaReplListShaderEffectsArguments): Promise<FigmaReplListShaderEffectsResult>;
+  getShaderEffect(args: FigmaReplGetShaderEffectArguments): Promise<FigmaReplGetShaderEffectResult>;
+  listShaderFills(args?: FigmaReplListShaderFillsArguments): Promise<FigmaReplListShaderFillsResult>;
+  getShaderFill(args: FigmaReplGetShaderFillArguments): Promise<FigmaReplGetShaderFillResult>;
   callUpstreamTool(args: FigmaReplCallUpstreamToolArguments): Promise<FigmaReplCallUpstreamToolResult>;
   lookup(args: FigmaReplLookupArguments): Promise<FigmaReplLookupResult>;
 }
@@ -894,6 +982,21 @@ export function createFigmaReplClient(
         asGetMetadataArgs(withDefaultTitle(args, "Read Figma metadata as JSON")),
         runtime,
       ) as Promise<FigmaReplGetMetadataResult>,
+    getDesignContext: async (args) =>
+      executeGetDesignContext(
+        asGetDesignContextArgs(withDefaultTitle(args, "Get Figma design context")),
+        runtime,
+      ) as Promise<FigmaReplGetDesignContextResult>,
+    getMotionContext: async (args) =>
+      executeGetMotionContext(
+        asGetMotionContextArgs(withDefaultTitle(args, "Get Figma motion context")),
+        runtime,
+      ) as Promise<FigmaReplGetMotionContextResult>,
+    exportVideo: async (args) =>
+      executeExportVideo(
+        asExportVideoArgs(withDefaultTitle(args, "Export Figma motion video")),
+        runtime,
+      ) as Promise<FigmaReplExportVideoResult>,
     searchDesignSystem: async (args) =>
       executeSearchDesignSystem(
         asSearchDesignSystemArgs(withDefaultTitle(args, "Search Figma design system")),
@@ -909,6 +1012,26 @@ export function createFigmaReplClient(
         asGetVariableDefsArgs(withDefaultTitle(args, "Get Figma variable definitions")),
         runtime,
       ) as Promise<FigmaReplGetVariableDefsResult>,
+    listShaderEffects: async (args = {}) =>
+      executeListShaderEffects(
+        asListShaderEffectsArgs(withDefaultTitle(args, "List Figma shader effects")),
+        runtime,
+      ) as Promise<FigmaReplListShaderEffectsResult>,
+    getShaderEffect: async (args) =>
+      executeGetShaderEffect(
+        asGetShaderEffectArgs(withDefaultTitle(args, "Get Figma shader effect")),
+        runtime,
+      ) as Promise<FigmaReplGetShaderEffectResult>,
+    listShaderFills: async (args = {}) =>
+      executeListShaderFills(
+        asListShaderFillsArgs(withDefaultTitle(args, "List Figma shader fills")),
+        runtime,
+      ) as Promise<FigmaReplListShaderFillsResult>,
+    getShaderFill: async (args) =>
+      executeGetShaderFill(
+        asGetShaderFillArgs(withDefaultTitle(args, "Get Figma shader fill")),
+        runtime,
+      ) as Promise<FigmaReplGetShaderFillResult>,
     callUpstreamTool: async (args) =>
       executeCallUpstreamTool(
         asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool")),
@@ -1007,6 +1130,21 @@ export function createFigmaReplMcpServer(
           asGetMetadataArgs(withMcpDefaultTitle(rawArgs, "Read Figma metadata as JSON")),
           runtime,
         );
+      case "figma_repl_get_design_context":
+        return handleGetDesignContext(
+          asGetDesignContextArgs(withMcpDefaultTitle(rawArgs, "Get Figma design context")),
+          runtime,
+        );
+      case "figma_repl_get_motion_context":
+        return handleGetMotionContext(
+          asGetMotionContextArgs(withMcpDefaultTitle(rawArgs, "Get Figma motion context")),
+          runtime,
+        );
+      case "figma_repl_export_video":
+        return handleExportVideo(
+          asExportVideoArgs(withMcpDefaultTitle(rawArgs, "Export Figma motion video")),
+          runtime,
+        );
       case "figma_repl_search_design_system":
         return handleSearchDesignSystem(
           asSearchDesignSystemArgs(withMcpDefaultTitle(rawArgs, "Search Figma design system")),
@@ -1020,6 +1158,26 @@ export function createFigmaReplMcpServer(
       case "figma_repl_get_variable_defs":
         return handleGetVariableDefs(
           asGetVariableDefsArgs(withMcpDefaultTitle(rawArgs, "Get Figma variable definitions")),
+          runtime,
+        );
+      case "figma_repl_list_shader_effects":
+        return handleListShaderEffects(
+          asListShaderEffectsArgs(withMcpDefaultTitle(rawArgs, "List Figma shader effects")),
+          runtime,
+        );
+      case "figma_repl_get_shader_effect":
+        return handleGetShaderEffect(
+          asGetShaderEffectArgs(withMcpDefaultTitle(rawArgs, "Get Figma shader effect")),
+          runtime,
+        );
+      case "figma_repl_list_shader_fills":
+        return handleListShaderFills(
+          asListShaderFillsArgs(withMcpDefaultTitle(rawArgs, "List Figma shader fills")),
+          runtime,
+        );
+      case "figma_repl_get_shader_fill":
+        return handleGetShaderFill(
+          asGetShaderFillArgs(withMcpDefaultTitle(rawArgs, "Get Figma shader fill")),
           runtime,
         );
       case "figma_repl_call_upstream_tool":
@@ -3159,6 +3317,146 @@ function resolveGetMetadataRequest(
   return { fileKey, nodeId };
 }
 
+async function handleGetDesignContext(
+  args: FigmaReplGetDesignContextArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeGetDesignContext(args, runtime));
+}
+
+async function executeGetDesignContext(
+  args: FigmaReplGetDesignContextArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  const session = prepareFileScopedSession(args, runtime.sessions);
+  const requested = resolveRequiredNodeScopedRequest(args, session, "figma_repl_get_design_context");
+  return executeDedicatedUpstreamTool({
+    args,
+    runtime,
+    session,
+    wrapperToolName: "figma_repl_get_design_context",
+    upstreamToolName: GET_DESIGN_CONTEXT_TOOL_NAME,
+    upstreamKind: "design context read",
+    requiredProperties: ["fileKey", "nodeId"],
+    upstreamArguments: {
+      fileKey: requested.fileKey,
+      nodeId: requested.nodeId,
+      clientLanguages: args.clientLanguages ?? "unknown",
+      clientFrameworks: args.clientFrameworks ?? "unknown",
+    },
+    responseFields: {
+      fileKey: requested.fileKey,
+      nodeId: requested.nodeId,
+    },
+    historySummary: `Read Figma design context for ${requested.nodeId}.`,
+    nodeIds: [requested.nodeId],
+  });
+}
+
+async function handleGetMotionContext(
+  args: FigmaReplGetMotionContextArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeGetMotionContext(args, runtime));
+}
+
+async function executeGetMotionContext(
+  args: FigmaReplGetMotionContextArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  const session = prepareFileScopedSession(args, runtime.sessions);
+  const requested = resolveRequiredNodeScopedRequest(args, session, "figma_repl_get_motion_context");
+  return executeDedicatedUpstreamTool({
+    args,
+    runtime,
+    session,
+    wrapperToolName: "figma_repl_get_motion_context",
+    upstreamToolName: GET_MOTION_CONTEXT_TOOL_NAME,
+    upstreamKind: "motion context read",
+    requiredProperties: ["fileKey", "nodeId"],
+    optionalProperties: args.recursive === undefined ? [] : ["recursive"],
+    upstreamArguments: removeUndefined({
+      fileKey: requested.fileKey,
+      nodeId: requested.nodeId,
+      recursive: args.recursive,
+    }) as Record<string, unknown>,
+    responseFields: {
+      fileKey: requested.fileKey,
+      nodeId: requested.nodeId,
+    },
+    historySummary: `Read Figma motion context for ${requested.nodeId}.`,
+    nodeIds: [requested.nodeId],
+  });
+}
+
+async function handleExportVideo(
+  args: FigmaReplExportVideoArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeExportVideo(args, runtime));
+}
+
+async function executeExportVideo(
+  args: FigmaReplExportVideoArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  const session = prepareFileScopedSession(args, runtime.sessions);
+  const requested = resolveExportVideoRequest(args, session);
+  return executeDedicatedUpstreamTool({
+    args,
+    runtime,
+    session,
+    wrapperToolName: "figma_repl_export_video",
+    upstreamToolName: EXPORT_VIDEO_TOOL_NAME,
+    upstreamKind: "video export",
+    requiredProperties: ["fileKey"],
+    optionalProperties: [
+      requested.nodeId === undefined ? undefined : "nodeId",
+      args.jobId === undefined ? undefined : "jobId",
+      args.quality === undefined ? undefined : "quality",
+    ].filter((value): value is string => typeof value === "string"),
+    upstreamArguments: removeUndefined({
+      fileKey: requested.fileKey,
+      nodeId: requested.nodeId,
+      jobId: args.jobId,
+      quality: args.quality,
+    }) as Record<string, unknown>,
+    responseFields: removeUndefined({
+      fileKey: requested.fileKey,
+      nodeId: requested.nodeId,
+      jobId: args.jobId,
+    }) as Record<string, unknown>,
+    historySummary: args.jobId
+      ? `Polled Figma video export job ${args.jobId}.`
+      : `Started Figma video export for ${requested.nodeId}.`,
+    nodeIds: requested.nodeId ? [requested.nodeId] : [],
+  });
+}
+
 async function handleSearchDesignSystem(
   args: FigmaReplSearchDesignSystemArguments,
   runtime: {
@@ -3295,6 +3593,150 @@ async function executeGetVariableDefs(
   });
 }
 
+async function handleListShaderEffects(
+  args: FigmaReplListShaderEffectsArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeListShaderEffects(args, runtime));
+}
+
+async function executeListShaderEffects(
+  args: FigmaReplListShaderEffectsArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  return executeDedicatedUpstreamTool({
+    args,
+    runtime,
+    session,
+    wrapperToolName: "figma_repl_list_shader_effects",
+    upstreamToolName: LIST_SHADER_EFFECTS_TOOL_NAME,
+    upstreamKind: "shader effect list",
+    requiredProperties: [],
+    optionalProperties: args.cursor === undefined ? [] : ["cursor"],
+    upstreamArguments: removeUndefined({ cursor: args.cursor }) as Record<string, unknown>,
+    responseFields: removeUndefined({ cursor: args.cursor }) as Record<string, unknown>,
+    historySummary: "Listed Figma shader effects.",
+    nodeIds: [],
+  });
+}
+
+async function handleGetShaderEffect(
+  args: FigmaReplGetShaderEffectArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeGetShaderEffect(args, runtime));
+}
+
+async function executeGetShaderEffect(
+  args: FigmaReplGetShaderEffectArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  const id = normalizeRequiredString(args.id, "id", "figma_repl_get_shader_effect");
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  return executeDedicatedUpstreamTool({
+    args,
+    runtime,
+    session,
+    wrapperToolName: "figma_repl_get_shader_effect",
+    upstreamToolName: GET_SHADER_EFFECT_TOOL_NAME,
+    upstreamKind: "shader effect read",
+    requiredProperties: ["id"],
+    upstreamArguments: { id },
+    responseFields: { id },
+    historySummary: `Read Figma shader effect ${id}.`,
+    nodeIds: [],
+  });
+}
+
+async function handleListShaderFills(
+  args: FigmaReplListShaderFillsArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeListShaderFills(args, runtime));
+}
+
+async function executeListShaderFills(
+  args: FigmaReplListShaderFillsArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  return executeDedicatedUpstreamTool({
+    args,
+    runtime,
+    session,
+    wrapperToolName: "figma_repl_list_shader_fills",
+    upstreamToolName: LIST_SHADER_FILLS_TOOL_NAME,
+    upstreamKind: "shader fill list",
+    requiredProperties: [],
+    optionalProperties: args.cursor === undefined ? [] : ["cursor"],
+    upstreamArguments: removeUndefined({ cursor: args.cursor }) as Record<string, unknown>,
+    responseFields: removeUndefined({ cursor: args.cursor }) as Record<string, unknown>,
+    historySummary: "Listed Figma shader fills.",
+    nodeIds: [],
+  });
+}
+
+async function handleGetShaderFill(
+  args: FigmaReplGetShaderFillArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  return makeJsonToolResult(await executeGetShaderFill(args, runtime));
+}
+
+async function executeGetShaderFill(
+  args: FigmaReplGetShaderFillArguments,
+  runtime: {
+    client: FigmaMcpProxyClient;
+    sessions: FigmaReplSessionStore;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<Record<string, unknown>> {
+  const id = normalizeRequiredString(args.id, "id", "figma_repl_get_shader_fill");
+  const session = runtime.sessions.getOrCreate(args.sessionId);
+  return executeDedicatedUpstreamTool({
+    args,
+    runtime,
+    session,
+    wrapperToolName: "figma_repl_get_shader_fill",
+    upstreamToolName: GET_SHADER_FILL_TOOL_NAME,
+    upstreamKind: "shader fill read",
+    requiredProperties: ["id"],
+    upstreamArguments: { id },
+    responseFields: { id },
+    historySummary: `Read Figma shader fill ${id}.`,
+    nodeIds: [],
+  });
+}
+
 function prepareFileScopedSession(
   args: { sessionId?: string; file?: string; cwd?: string; dirName?: string },
   sessions: FigmaReplSessionStore,
@@ -3321,9 +3763,10 @@ function resolveRequiredFileKey(
   return fileKey;
 }
 
-function resolveGetVariableDefsRequest(
-  args: FigmaReplGetVariableDefsArguments,
+function resolveRequiredNodeScopedRequest(
+  args: { file?: string; target?: unknown },
   session: FigmaReplSession,
+  toolName: string,
 ): { fileKey: string; nodeId: string } {
   const fileReference = parseFigmaFileReference(args.file);
   const target = resolveSessionTargetInput(args.target ?? extractFigmaNodeId(args.file), session);
@@ -3333,16 +3776,54 @@ function resolveGetVariableDefsRequest(
     session.fileKey ??
     extractFigmaFileKey(session.fileUrl);
   if (!fileKey) {
-    throw new Error('figma_repl_get_variable_defs requires a Figma file key. Pass "file" or open a session with file context first.');
+    throw new Error(`${toolName} requires a Figma file key. Pass "file" or open a session with file context first.`);
   }
   const nodeId = target.nodeId;
   if (!nodeId) {
-    throw new Error('figma_repl_get_variable_defs requires "target". Pass a raw node id, node URL, or cached handle.');
+    throw new Error(`${toolName} requires "target". Pass a raw node id, node URL, or cached handle.`);
   }
   if (nodeId.startsWith("$")) {
-    throw new Error(`figma_repl_get_variable_defs cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, or cached handle.`);
+    throw new Error(`${toolName} cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, or cached handle.`);
   }
   return { fileKey, nodeId };
+}
+
+function resolveExportVideoRequest(
+  args: FigmaReplExportVideoArguments,
+  session: FigmaReplSession,
+): { fileKey: string; nodeId?: string } {
+  const target = resolveSessionTargetInput(args.target ?? extractFigmaNodeId(args.file), session);
+  const fileReference = parseFigmaFileReference(args.file);
+  const fileKey =
+    fileReference.fileKey ??
+    target.fileKey ??
+    session.fileKey ??
+    extractFigmaFileKey(session.fileUrl);
+  if (!fileKey) {
+    throw new Error('figma_repl_export_video requires a Figma file key. Pass "file" or open a session with file context first.');
+  }
+  const nodeId = target.nodeId;
+  if (nodeId?.startsWith("$")) {
+    throw new Error(`figma_repl_export_video cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, cached handle, or jobId.`);
+  }
+  if (!nodeId && !args.jobId) {
+    throw new Error('figma_repl_export_video requires "target" to start an export, or "jobId" to poll an existing export.');
+  }
+  return { fileKey, nodeId };
+}
+
+function normalizeRequiredString(value: unknown, field: string, toolName: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${toolName} requires "${field}" as a non-empty string.`);
+  }
+  return value.trim();
+}
+
+function resolveGetVariableDefsRequest(
+  args: FigmaReplGetVariableDefsArguments,
+  session: FigmaReplSession,
+): { fileKey: string; nodeId: string } {
+  return resolveRequiredNodeScopedRequest(args, session, "figma_repl_get_variable_defs");
 }
 
 async function executeDedicatedUpstreamTool(options: {
@@ -5967,12 +6448,15 @@ function createToolTierPayload(): Record<string, unknown> {
   return {
     normalPath: {
       summary: "Default path for non-trivial Figma work.",
-      tools: ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_get_metadata", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_inspect", "figma_repl_capture_node"],
+      tools: ["figma_repl_prepare_task", "figma_repl_run_script_file", "figma_repl_get_metadata", "figma_repl_get_design_context", "figma_repl_get_motion_context", "figma_repl_export_video", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_inspect", "figma_repl_capture_node"],
       order: [
         "figma_repl_prepare_task",
         "figma_repl_guidance",
         "figma_repl_lookup",
         "figma_repl_get_metadata",
+        "figma_repl_get_design_context",
+        "figma_repl_get_motion_context",
+        "figma_repl_export_video",
         "figma_repl_search_design_system",
         "figma_repl_get_libraries",
         "figma_repl_get_variable_defs",
@@ -5983,7 +6467,7 @@ function createToolTierPayload(): Record<string, unknown> {
     },
     contextAndLookup: {
       summary: "Use to plan, bind lightweight session context, or fetch compact docs/API context.",
-      tools: ["figma_repl_open", "figma_repl_guidance", "figma_repl_lookup", "figma_repl_get_metadata", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs"],
+      tools: ["figma_repl_open", "figma_repl_guidance", "figma_repl_lookup", "figma_repl_get_metadata", "figma_repl_get_design_context", "figma_repl_get_motion_context", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_list_shader_effects", "figma_repl_get_shader_effect", "figma_repl_list_shader_fills", "figma_repl_get_shader_fill"],
     },
     workflowAddOns: {
       summary: "Use when the primary script workflow needs generated assets, downloaded Figma assets, or repeatable multi-step orchestration.",
@@ -6081,6 +6565,50 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
         refresh: "Use only for upstream tool-cache debug.",
       },
     },
+    designContext: {
+      tool: "figma_repl_get_design_context",
+      tier: "contextAndLookup",
+      guidance: "Use for official design-to-code context when implementation, parity review, Code Connect, or SwiftUI handoff needs upstream generated structure. The bridge preserves the official payload inside the generic upstream envelope.",
+      recommendedCalls: {
+        fromSession: { sessionId: "<session>", target: "<node id or $handle>" },
+        fromFile: { file: "<figma file URL or file key>", target: "<node id>", clientLanguages: "unknown", clientFrameworks: "unknown" },
+      },
+      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "clientLanguages", "clientFrameworks"],
+      avoidUnless: {
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
+        refresh: "Use only for upstream tool-cache debug.",
+      },
+    },
+    motionContext: {
+      tool: "figma_repl_get_motion_context",
+      tier: "contextAndLookup",
+      guidance: "Use for official animation/keyframe context. Pair with figma_repl_get_design_context by node id; preserve upstream motion payloads as authoritative animation data.",
+      recommendedCalls: {
+        fromSession: { sessionId: "<session>", target: "<node id or $handle>", recursive: true },
+        fromFile: { file: "<figma file URL or file key>", target: "<node id>", recursive: true },
+      },
+      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "recursive"],
+      avoidUnless: {
+        recursive: "Use when descendant motion is needed; omit for a single-node motion read.",
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
+        refresh: "Use only for upstream tool-cache debug.",
+      },
+    },
+    exportVideo: {
+      tool: "figma_repl_export_video",
+      tier: "workflowAddOns",
+      guidance: "Use for official motion video export when frame sampling is worth the upstream render cost. Start with a target, then poll with jobId; no local videoFile is claimed by the wrapper.",
+      recommendedCalls: {
+        start: { sessionId: "<session>", target: "<top-level timeline frame>", quality: "low" },
+        poll: { sessionId: "<session>", file: "<figma file URL or file key>", jobId: "<job id>" },
+      },
+      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "quality"],
+      avoidUnless: {
+        quality: "Start low unless fine visual details require a higher-quality render.",
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
+        refresh: "Use only for upstream tool-cache debug.",
+      },
+    },
     designSystem: {
       tier: "contextAndLookup",
       guidance: "Use the dedicated design-system wrappers when a task needs official Figma design-system search, library listing, or variable definitions. They preserve the generic upstream envelope and minimal session summary.",
@@ -6093,6 +6621,22 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName"],
       avoidUnless: {
         callUpstreamTool: "Use figma_repl_call_upstream_tool only for official upstream tools not covered by a dedicated figma_repl_* wrapper.",
+        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
+        refresh: "Use only for upstream tool-cache debug.",
+      },
+    },
+    shaders: {
+      tier: "contextAndLookup",
+      guidance: "Use shader wrappers only when upstream shader effect/fill account-library reads are part of the task. Payloads remain official upstream JSON/text inside the generic envelope.",
+      tools: ["figma_repl_list_shader_effects", "figma_repl_get_shader_effect", "figma_repl_list_shader_fills", "figma_repl_get_shader_fill"],
+      recommendedCalls: {
+        listEffects: { sessionId: "<session>", cursor: "<optional cursor>" },
+        getEffect: { sessionId: "<session>", id: "<shader effect id>" },
+        listFills: { sessionId: "<session>", cursor: "<optional cursor>" },
+        getFill: { sessionId: "<session>", id: "<shader fill id>" },
+      },
+      advancedArguments: ["inlineResultLimit", "refresh", "cursor"],
+      avoidUnless: {
         inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
         refresh: "Use only for upstream tool-cache debug.",
       },
@@ -6154,7 +6698,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     callUpstreamTool: {
       tool: "figma_repl_call_upstream_tool",
       tier: "advancedEscapeHatches",
-      guidance: "Explicit upstream escape hatch only for uncovered official Figma MCP capabilities. Read figma-repl://upstream-tools, then figma-repl://upstream-tools/{name}, and do not use for use_figma/get_metadata/get_screenshot/upload_assets/download_assets/search_design_system/get_libraries/get_variable_defs wrappers.",
+      guidance: "Explicit upstream escape hatch only for uncovered official Figma MCP capabilities. Read figma-repl://upstream-tools, then figma-repl://upstream-tools/{name}, and do not use for use_figma/get_metadata/get_screenshot/upload_assets/download_assets/get_design_context/get_motion_context/export_video/search_design_system/get_libraries/get_variable_defs/shader effect or fill wrappers.",
       recommendedCalls: {
         explicit: { sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} },
       },
@@ -6179,9 +6723,10 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     ],
     toolSelection: {
       normalPath: ["figma_repl_prepare_task", "figma_repl_guidance", "figma_repl_run_script_file", "figma_repl_inspect", "figma_repl_capture_node"],
-      contextAndLookup: ["figma_repl_get_metadata", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_lookup"],
-      advancedEscapeHatches: ["figma_repl_eval", "figma_repl_call_upstream_tool", "figma_repl_run_task_plan"],
-      upstreamEscapeHatchExamples: ["get_design_context", "get_motion_context", "export_video", "list_shader_effects", "get_shader_effect", "list_shader_fills", "get_shader_fill"],
+      contextAndLookup: ["figma_repl_get_metadata", "figma_repl_get_design_context", "figma_repl_get_motion_context", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_list_shader_effects", "figma_repl_get_shader_effect", "figma_repl_list_shader_fills", "figma_repl_get_shader_fill", "figma_repl_lookup"],
+      workflowAddOns: ["figma_repl_export_video", "figma_repl_run_task_plan"],
+      advancedEscapeHatches: ["figma_repl_eval", "figma_repl_call_upstream_tool"],
+      upstreamEscapeHatchExamples: ["generate_figma_design", "generate_diagram", "create_new_file", "whoami", "add_code_connect_map", "get_code_connect_suggestions", "send_code_connect_mappings", "get_context_for_code_connect"],
     },
     contractNotes: {
       scriptPreflight: "figma_repl_run_script_file always runs local diagnostics/compile/strict checks first; phase=preflight means executed=false and upstream was not called, phase=execute means upstream execution was attempted. Parse errors return repairPlan.status=parse_error and no guardrail scan.",
@@ -6225,16 +6770,21 @@ function createGuidePayload(): Record<string, unknown> {
     ],
     inspectionAndQa: [
       "Use figma_repl_get_metadata for broad recursive layer-tree discovery, then figma_repl_inspect for targeted node/style/handle validation.",
+      "Use figma_repl_get_design_context when implementation or parity review needs official design-to-code context, and figma_repl_get_motion_context when animation data is needed.",
       "Use figma_repl_capture_node for final visual QA because it writes a local PNG path in structuredContent.",
     ],
     designSystem: [
       "Use native Plugin API calls in .figma.js for local variables, styles, components, and bindings.",
       "Use figma_repl_search_design_system, figma_repl_get_libraries, and figma_repl_get_variable_defs when official design-system context is needed through first-class wrappers.",
     ],
+    motionAndShaders: [
+      "Use figma_repl_export_video to start/poll official motion video exports only when frame sampling is worth the upstream render cost.",
+      "Use figma_repl_list_shader_effects/get_shader_effect/list_shader_fills/get_shader_fill for explicit shader library reads; payloads remain upstream-shaped.",
+    ],
     upstreamEscapeHatch: [
       "Use figma_repl_call_upstream_tool only for explicit uncovered official upstream tools.",
-      "Examples currently exposed through upstream discovery include get_design_context, get_motion_context, export_video, and shader effect/fill library tools.",
-      "Before using it, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs.",
+      "Examples currently exposed through upstream discovery but not covered by dedicated wrappers include file generation, FigJam diagram generation, account checks, and Code Connect mutation/suggestion helpers.",
+      "Before using it, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, and shader effect/fill tools.",
     ],
     responseContract: [
       "Top-level ok reports local wrapper completion. upstream.ok reports effective upstream/business success when an upstream envelope is present.",
@@ -6308,7 +6858,7 @@ async function readReplResource(
             tools: tools.map((tool) => upstreamToolDirectoryEntry(tool)),
             detailTemplate: "figma-repl://upstream-tools/{name}",
             categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
-            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-repl://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_repl_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs.",
+            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-repl://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_repl_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, and shader effect/fill tools.",
           }, null, 2),
         },
       ],

@@ -1191,11 +1191,18 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     "figma_repl_capture_node",
     "figma_repl_download_assets",
     "figma_repl_eval",
+    "figma_repl_export_video",
+    "figma_repl_get_design_context",
     "figma_repl_get_libraries",
     "figma_repl_get_metadata",
+    "figma_repl_get_motion_context",
+    "figma_repl_get_shader_effect",
+    "figma_repl_get_shader_fill",
     "figma_repl_get_variable_defs",
     "figma_repl_guidance",
     "figma_repl_inspect",
+    "figma_repl_list_shader_effects",
+    "figma_repl_list_shader_fills",
     "figma_repl_lookup",
     "figma_repl_open",
     "figma_repl_prepare_task",
@@ -1203,7 +1210,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
     "figma_repl_run_task_plan",
     "figma_repl_search_design_system",
   ]);
-  assert.equal(tools.tools.length, 16);
+  assert.equal(tools.tools.length, 23);
   for (const tool of tools.tools) {
     assert.equal(
       tool.inputSchema.properties.title.description,
@@ -1462,6 +1469,30 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(getMetadataTool.outputSchema.properties.outputFiles.properties.metadataFile);
   assert.equal(getMetadataTool.outputSchema.properties.outputFiles.properties.upstreamFile, undefined);
   assert.ok(getMetadataTool.outputSchema.properties.inlineResultLimit);
+  const getDesignContextTool = tools.tools.find((tool) => tool.name === "figma_repl_get_design_context");
+  assert.ok(getDesignContextTool);
+  assert.match(getDesignContextTool.description, /official upstream get_design_context/);
+  assert.ok(getDesignContextTool.inputSchema.properties.target);
+  assert.ok(getDesignContextTool.inputSchema.properties.clientLanguages);
+  assert.ok(getDesignContextTool.inputSchema.properties.clientFrameworks);
+  assert.ok(getDesignContextTool.inputSchema.properties.inlineResultLimit);
+  assert.ok(getDesignContextTool.outputSchema.properties.nodeId);
+  assert.ok(getDesignContextTool.outputSchema.properties.upstream);
+  assert.ok(getDesignContextTool.outputSchema.properties.outputFiles.properties.upstreamFile);
+  assert.equal(getDesignContextTool.outputSchema.properties.videoFile, undefined);
+  const getMotionContextTool = tools.tools.find((tool) => tool.name === "figma_repl_get_motion_context");
+  assert.ok(getMotionContextTool);
+  assert.match(getMotionContextTool.description, /official upstream get_motion_context/);
+  assert.ok(getMotionContextTool.inputSchema.properties.recursive);
+  assert.ok(getMotionContextTool.outputSchema.properties.nodeId);
+  assert.ok(getMotionContextTool.outputSchema.properties.upstream);
+  const exportVideoTool = tools.tools.find((tool) => tool.name === "figma_repl_export_video");
+  assert.ok(exportVideoTool);
+  assert.match(exportVideoTool.description, /official upstream export_video/);
+  assert.deepEqual(exportVideoTool.inputSchema.properties.quality.enum, ["low", "medium", "high"]);
+  assert.ok(exportVideoTool.inputSchema.properties.jobId);
+  assert.ok(exportVideoTool.outputSchema.properties.jobId);
+  assert.equal(exportVideoTool.outputSchema.properties.videoFile, undefined);
   const searchDesignSystemTool = tools.tools.find((tool) => tool.name === "figma_repl_search_design_system");
   assert.ok(searchDesignSystemTool);
   assert.deepEqual(searchDesignSystemTool.inputSchema.required, ["query"]);
@@ -1492,6 +1523,22 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(getVariableDefsTool.outputSchema.properties.upstream);
   assert.ok(getVariableDefsTool.outputSchema.properties.outputFiles.properties.upstreamFile);
   assert.equal(getVariableDefsTool.outputSchema.properties.toolName, undefined);
+  const listShaderEffectsTool = tools.tools.find((tool) => tool.name === "figma_repl_list_shader_effects");
+  assert.ok(listShaderEffectsTool);
+  assert.ok(listShaderEffectsTool.inputSchema.properties.cursor);
+  assert.ok(listShaderEffectsTool.outputSchema.properties.upstream);
+  const getShaderEffectTool = tools.tools.find((tool) => tool.name === "figma_repl_get_shader_effect");
+  assert.ok(getShaderEffectTool);
+  assert.deepEqual(getShaderEffectTool.inputSchema.required, ["id"]);
+  assert.ok(getShaderEffectTool.outputSchema.properties.id);
+  const listShaderFillsTool = tools.tools.find((tool) => tool.name === "figma_repl_list_shader_fills");
+  assert.ok(listShaderFillsTool);
+  assert.ok(listShaderFillsTool.inputSchema.properties.cursor);
+  assert.ok(listShaderFillsTool.outputSchema.properties.upstream);
+  const getShaderFillTool = tools.tools.find((tool) => tool.name === "figma_repl_get_shader_fill");
+  assert.ok(getShaderFillTool);
+  assert.deepEqual(getShaderFillTool.inputSchema.required, ["id"]);
+  assert.ok(getShaderFillTool.outputSchema.properties.id);
   const guidanceMetadataTool = tools.tools.find((tool) => tool.name === "figma_repl_guidance");
   assert.ok(guidanceMetadataTool);
   assert.match(guidanceMetadataTool.description, /BM25-style keyword queries/);
@@ -1518,7 +1565,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(callUpstreamTool);
   assert.match(callUpstreamTool.description, /Explicit upstream-only escape hatch/);
   assert.match(callUpstreamTool.description, /figma-repl:\/\/upstream-tools\/\{name\}/);
-  assert.match(callUpstreamTool.description, /Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, or get_variable_defs/);
+  assert.match(callUpstreamTool.description, /Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video/);
   assert.equal(callUpstreamTool.inputSchema.properties.outputFile, undefined);
   assert.ok(callUpstreamTool.inputSchema.properties.inlineResultLimit);
   assert.equal(callUpstreamTool.inputSchema.properties.inlineResultLimit.default, 4000);
@@ -1616,17 +1663,19 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const aggregateLookupIndex = JSON.parse(aggregateLookupIndexResource.contents[0].text);
   assert.equal(aggregateCapabilities.resources.guide, "figma-repl://guide");
   assert.equal(aggregateCapabilities.resources.lookupIndex, "figma-repl://lookup-index");
-  assert.ok(aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("get_motion_context"));
-  assert.ok(aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("export_video"));
-  assert.ok(aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("list_shader_effects"));
+  assert.ok(aggregateCapabilities.toolSelection.contextAndLookup.includes("figma_repl_get_motion_context"));
+  assert.ok(aggregateCapabilities.toolSelection.contextAndLookup.includes("figma_repl_list_shader_effects"));
+  assert.ok(aggregateCapabilities.toolSelection.workflowAddOns.includes("figma_repl_export_video"));
+  assert.ok(!aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("get_motion_context"));
   assert.deepEqual(aggregateCapabilities.lookupStrategy.outputFields, queryOutputFields);
   assert.equal(aggregateCapabilities.apiCards, undefined);
   assert.equal(aggregateCapabilities.docsLookup, undefined);
   assert.ok(aggregateGuide.scriptFileWorkflow.some((step) => /figma_repl_prepare_task/.test(step)));
   assert.ok(aggregateGuide.assetWorkflow.some((step) => /figma_repl_apply_asset_manifest/.test(step)));
   assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /figma-repl:\/\/upstream-tools\/\{name\}/.test(step)));
-  assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /get_motion_context/.test(step)));
-  assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /shader effect\/fill/.test(step)));
+  assert.ok(aggregateGuide.inspectionAndQa.some((step) => /figma_repl_get_motion_context/.test(step)));
+  assert.ok(aggregateGuide.motionAndShaders.some((step) => /figma_repl_export_video/.test(step)));
+  assert.ok(aggregateGuide.motionAndShaders.some((step) => /shader library reads/.test(step)));
   assert.equal(aggregateLookupIndex.guidance.tool, "figma_repl_guidance");
   assert.equal(aggregateLookupIndex.lookup.tool, "figma_repl_lookup");
   assert.ok(aggregateLookupIndex.guidance.commonCards.includes("text.font"));
@@ -2304,6 +2353,152 @@ test("figma REPL design system wrappers call dedicated upstream tools", async ()
     "callTool",
     "callTool",
     "callTool",
+  ]);
+});
+
+test("figma REPL context motion video and shader wrappers call dedicated upstream tools", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "get_design_context") {
+        assert.deepEqual(args, {
+          fileKey: "ExampleFigmaFileKey012",
+          nodeId: "9:9",
+          clientLanguages: "swift",
+          clientFrameworks: "swiftui",
+        });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, code: "<div data-node-id=\"9:9\" />" }) }],
+        };
+      }
+      if (name === "get_motion_context") {
+        assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", nodeId: "9:9", recursive: true });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, nodes: [{ nodeId: "9:9" }] }) }],
+        };
+      }
+      if (name === "export_video") {
+        if (args.jobId) {
+          assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", jobId: "job-123" });
+          return {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, jobId: "job-123", status: "done" }) }],
+          };
+        }
+        assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", nodeId: "9:9", quality: "low" });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, jobId: "job-123", status: "processing" }) }],
+        };
+      }
+      if (name === "list_shader_effects") {
+        assert.deepEqual(args, { cursor: "after-effects" });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, effects: [{ id: "effect-1" }] }) }],
+        };
+      }
+      if (name === "get_shader_effect") {
+        assert.deepEqual(args, { id: "effect-1" });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, id: "effect-1", source: "effect" }) }],
+        };
+      }
+      if (name === "list_shader_fills") {
+        assert.deepEqual(args, { cursor: "after-fills" });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, fills: [{ id: "fill-1" }] }) }],
+        };
+      }
+      if (name === "get_shader_fill") {
+        assert.deepEqual(args, { id: "fill-1" });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: true, id: "fill-1", source: "fill" }) }],
+        };
+      }
+      assert.fail(`unexpected tool ${name}`);
+      return { content: [] };
+    },
+    {
+      tools: [
+        { name: "get_design_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
+        { name: "get_motion_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, recursive: { type: "boolean" } } } },
+        { name: "export_video", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, jobId: { type: "string" }, quality: { type: "string" } } } },
+        { name: "list_shader_effects", inputSchema: { type: "object", properties: { cursor: { type: "string" } } } },
+        { name: "get_shader_effect", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
+        { name: "list_shader_fills", inputSchema: { type: "object", properties: { cursor: { type: "string" } } } },
+        { name: "get_shader_fill", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
+      ],
+    },
+  );
+  const repl = createFigmaReplClient({ client: fakeClient });
+
+  try {
+    await repl.open({
+      sessionId: "context-main",
+      file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI",
+      handles: { "$button": "9:9" },
+      connect: false,
+    });
+
+    const design = await repl.getDesignContext({
+      sessionId: "context-main",
+      target: "$button",
+      clientLanguages: "swift",
+      clientFrameworks: "swiftui",
+    });
+    assert.equal(design.ok, true);
+    assert.equal(design.fileKey, "ExampleFigmaFileKey012");
+    assert.equal(design.nodeId, "9:9");
+    assert.equal(design.upstream.result.code, "<div data-node-id=\"9:9\" />");
+
+    const motion = await repl.getMotionContext({ sessionId: "context-main", target: "$button", recursive: true });
+    assert.equal(motion.ok, true);
+    assert.equal(motion.upstream.result.nodes[0].nodeId, "9:9");
+
+    const exportStart = await repl.exportVideo({ sessionId: "context-main", target: "$button", quality: "low" });
+    assert.equal(exportStart.ok, true);
+    assert.equal(exportStart.nodeId, "9:9");
+    assert.equal(exportStart.upstream.result.jobId, "job-123");
+    assert.equal(exportStart.videoFile, undefined);
+
+    const exportPoll = await repl.exportVideo({ sessionId: "context-main", file: "ExampleFigmaFileKey012", jobId: "job-123" });
+    assert.equal(exportPoll.ok, true);
+    assert.equal(exportPoll.jobId, "job-123");
+    assert.equal(exportPoll.nodeId, undefined);
+
+    const effects = await repl.listShaderEffects({ sessionId: "context-main", cursor: "after-effects" });
+    assert.equal(effects.ok, true);
+    assert.equal(effects.upstream.result.effects[0].id, "effect-1");
+
+    const effect = await repl.getShaderEffect({ sessionId: "context-main", id: "effect-1" });
+    assert.equal(effect.ok, true);
+    assert.equal(effect.id, "effect-1");
+    assert.equal(effect.upstream.result.source, "effect");
+
+    const fills = await repl.listShaderFills({ sessionId: "context-main", cursor: "after-fills" });
+    assert.equal(fills.ok, true);
+    assert.equal(fills.upstream.result.fills[0].id, "fill-1");
+
+    const fill = await repl.getShaderFill({ sessionId: "context-main", id: "fill-1" });
+    assert.equal(fill.ok, true);
+    assert.equal(fill.id, "fill-1");
+    assert.equal(fill.upstream.result.source, "fill");
+
+    await assert.rejects(
+      repl.exportVideo({ sessionId: "context-main" }),
+      /requires "target" to start an export, or "jobId" to poll/,
+    );
+  } finally {
+    await repl.close();
+  }
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), [
+    "get_design_context",
+    "get_motion_context",
+    "export_video",
+    "export_video",
+    "list_shader_effects",
+    "get_shader_effect",
+    "list_shader_fills",
+    "get_shader_fill",
   ]);
 });
 
@@ -7163,7 +7358,13 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
       "implement selected Figma node production code visual parity",
       "implementation.figma-to-code",
       "get_design_context",
-      /figma_repl_call_upstream_tool/,
+      /figma_repl_get_design_context/,
+    ],
+    [
+      "implement animation motion keyframes export video",
+      "implementation.motion",
+      "get_motion_context",
+      /figma_repl_get_motion_context/,
     ],
     [
       "design parity review screenshot spacing typography regression",

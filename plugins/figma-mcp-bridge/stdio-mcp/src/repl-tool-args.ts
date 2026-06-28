@@ -124,6 +124,47 @@ export interface FigmaReplGetMetadataArguments {
   clientFrameworks?: string;
 }
 
+export interface FigmaReplGetDesignContextArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  file?: string;
+  cwd?: string;
+  dirName?: string;
+  target?: unknown;
+  refresh?: boolean;
+  inlineResultLimit?: number;
+  clientLanguages?: string;
+  clientFrameworks?: string;
+}
+
+export interface FigmaReplGetMotionContextArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  file?: string;
+  cwd?: string;
+  dirName?: string;
+  target?: unknown;
+  recursive?: boolean;
+  refresh?: boolean;
+  inlineResultLimit?: number;
+}
+
+export interface FigmaReplExportVideoArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  file?: string;
+  cwd?: string;
+  dirName?: string;
+  target?: unknown;
+  jobId?: string;
+  quality?: "low" | "medium" | "high";
+  refresh?: boolean;
+  inlineResultLimit?: number;
+}
+
 export interface FigmaReplSearchDesignSystemArguments {
   [key: string]: unknown;
   title?: string;
@@ -165,6 +206,42 @@ export interface FigmaReplGetVariableDefsArguments {
   inlineResultLimit?: number;
   clientLanguages?: string;
   clientFrameworks?: string;
+}
+
+export interface FigmaReplListShaderEffectsArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  cursor?: string;
+  refresh?: boolean;
+  inlineResultLimit?: number;
+}
+
+export interface FigmaReplGetShaderEffectArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  id: string;
+  refresh?: boolean;
+  inlineResultLimit?: number;
+}
+
+export interface FigmaReplListShaderFillsArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  cursor?: string;
+  refresh?: boolean;
+  inlineResultLimit?: number;
+}
+
+export interface FigmaReplGetShaderFillArguments {
+  [key: string]: unknown;
+  title?: string;
+  sessionId?: string;
+  id: string;
+  refresh?: boolean;
+  inlineResultLimit?: number;
 }
 
 export interface FigmaReplLookupArguments {
@@ -222,6 +299,7 @@ const FIGMA_REPL_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as con
 const FIGMA_REPL_INSPECT_MODES = ["inspect", "validate", "style"] as const;
 const FIGMA_REPL_LOOKUP_KINDS = ["docs", "api"] as const;
 const FIGMA_REPL_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"] as const;
+const FIGMA_REPL_EXPORT_VIDEO_QUALITIES = ["low", "medium", "high"] as const;
 
 function assertRemovedFileReferenceFields(record: Record<string, unknown>): void {
   const removed = ["fileUrl", "fileKey"].filter((field) => record[field] !== undefined);
@@ -446,6 +524,53 @@ export function asGetMetadataArgs(args: unknown): FigmaReplGetMetadataArguments 
   return record;
 }
 
+export function asGetDesignContextArgs(args: unknown): FigmaReplGetDesignContextArguments {
+  const record = parseToolArgs<FigmaReplGetDesignContextArguments>(args);
+  assertRemovedFileReferenceFields(record);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "file",
+    "cwd",
+    "dirName",
+    "clientLanguages",
+    "clientFrameworks",
+  ]);
+  assertOptionalTargetValue(record.target, "target");
+  return record;
+}
+
+export function asGetMotionContextArgs(args: unknown): FigmaReplGetMotionContextArguments {
+  const record = parseToolArgs<FigmaReplGetMotionContextArguments>(args);
+  assertRemovedFileReferenceFields(record);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "file",
+    "cwd",
+    "dirName",
+  ]);
+  assertOptionalBooleanFields(record, ["recursive"]);
+  assertOptionalTargetValue(record.target, "target");
+  return record;
+}
+
+export function asExportVideoArgs(args: unknown): FigmaReplExportVideoArguments {
+  const record = parseToolArgs<FigmaReplExportVideoArguments>(args);
+  assertRemovedFileReferenceFields(record);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile", "videoFile"]);
+  assertOptionalStringFields(record, [
+    "sessionId",
+    "file",
+    "cwd",
+    "dirName",
+    "jobId",
+  ]);
+  assertOptionalEnum(record, "quality", FIGMA_REPL_EXPORT_VIDEO_QUALITIES);
+  assertOptionalTargetValue(record.target, "target");
+  return record;
+}
+
 export function asSearchDesignSystemArgs(args: unknown): FigmaReplSearchDesignSystemArguments {
   const record = parseToolArgs<FigmaReplSearchDesignSystemArguments>(args);
   assertRemovedFileReferenceFields(record);
@@ -494,6 +619,34 @@ export function asGetVariableDefsArgs(args: unknown): FigmaReplGetVariableDefsAr
     "clientFrameworks",
   ]);
   assertOptionalTargetValue(record.target, "target");
+  return record;
+}
+
+export function asListShaderEffectsArgs(args: unknown): FigmaReplListShaderEffectsArguments {
+  const record = parseToolArgs<FigmaReplListShaderEffectsArguments>(args);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, ["sessionId", "cursor"]);
+  return record;
+}
+
+export function asGetShaderEffectArgs(args: unknown): FigmaReplGetShaderEffectArguments {
+  const record = parseToolArgs<FigmaReplGetShaderEffectArguments>(args);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, ["sessionId", "id"]);
+  return record;
+}
+
+export function asListShaderFillsArgs(args: unknown): FigmaReplListShaderFillsArguments {
+  const record = parseToolArgs<FigmaReplListShaderFillsArguments>(args);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, ["sessionId", "cursor"]);
+  return record;
+}
+
+export function asGetShaderFillArgs(args: unknown): FigmaReplGetShaderFillArguments {
+  const record = parseToolArgs<FigmaReplGetShaderFillArguments>(args);
+  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertOptionalStringFields(record, ["sessionId", "id"]);
   return record;
 }
 
