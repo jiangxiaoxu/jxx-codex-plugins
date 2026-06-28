@@ -16,10 +16,6 @@ export const LOCAL_WORKSPACE_TOOL_NAMES = [
   "figma_workspace_search_design_system",
   "figma_workspace_get_libraries",
   "figma_workspace_get_variable_defs",
-  "figma_workspace_list_shader_effects",
-  "figma_workspace_get_shader_effect",
-  "figma_workspace_list_shader_fills",
-  "figma_workspace_get_shader_fill",
   "figma_workspace_call_upstream_tool",
   "figma_workspace_lookup",
 ] as const;

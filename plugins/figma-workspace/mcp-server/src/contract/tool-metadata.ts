@@ -313,57 +313,9 @@ export function createReplToolDescriptions(
       }),
     },
     {
-      name: "figma_workspace_list_shader_effects",
-      description:
-        "Thin first-class wrapper for official upstream list_shader_effects. Lists shader effects in the authenticated account library and preserves the generic upstream envelope without normalizing shader manifests.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
-        cursor: stringProperty("Optional official pagination cursor."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }),
-    },
-    {
-      name: "figma_workspace_get_shader_effect",
-      description:
-        "Thin first-class wrapper for official upstream get_shader_effect. Reads one shader effect source manifest by id and preserves the generic upstream envelope without bridge-owned shader schema normalization.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
-        id: stringProperty("Required official shader effect id."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }, ["id"]),
-    },
-    {
-      name: "figma_workspace_list_shader_fills",
-      description:
-        "Thin first-class wrapper for official upstream list_shader_fills. Lists shader fills in the authenticated account library and preserves the generic upstream envelope without normalizing shader manifests.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
-        cursor: stringProperty("Optional official pagination cursor."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }),
-    },
-    {
-      name: "figma_workspace_get_shader_fill",
-      description:
-        "Thin first-class wrapper for official upstream get_shader_fill. Reads one shader fill source manifest by id and preserves the generic upstream envelope without bridge-owned shader schema normalization.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
-        id: stringProperty("Required official shader fill id."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }, ["id"]),
-    },
-    {
       name: "figma_workspace_call_upstream_tool",
       description:
-        "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, or shader effect/fill tools because dedicated wrappers cover them.",
+        "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}. Use this for official capabilities without a local wrapper, including shader effect/fill tools. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, or get_variable_defs because dedicated local workflow tools cover them.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
@@ -577,58 +529,6 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     fileKey: stringProperty("Figma file key sent to official get_variable_defs."),
     nodeId: stringProperty("Figma node id sent to official get_variable_defs."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: outputFilesProperty(
-      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["debugFile", "upstreamFile"],
-    ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
-  }),
-  figma_workspace_list_shader_effects: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-    cursor: stringProperty("Pagination cursor sent to official list_shader_effects when supplied."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
-    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: outputFilesProperty(
-      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["debugFile", "upstreamFile"],
-    ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
-  }),
-  figma_workspace_get_shader_effect: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-    id: stringProperty("Shader effect id sent to official get_shader_effect."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
-    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: outputFilesProperty(
-      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["debugFile", "upstreamFile"],
-    ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
-  }),
-  figma_workspace_list_shader_fills: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-    cursor: stringProperty("Pagination cursor sent to official list_shader_fills when supplied."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
-    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: outputFilesProperty(
-      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["debugFile", "upstreamFile"],
-    ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
-  }),
-  figma_workspace_get_shader_fill: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-    id: stringProperty("Shader fill id sent to official get_shader_fill."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(

@@ -2,7 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type RemoteMcpClientOptions } from "../upstream/remote-mcp-client.js";
 import { type ReferenceSearchResult } from "../runtime/doc-search.js";
 import { assertSafeFigmaWorkspaceCode, diagnoseFigmaWorkspaceCode, resolveFigmaWorkspaceScriptHelperSelection as resolveFigmaWorkspaceScriptHelperSelectionInternal, type FigmaWorkspaceDiagnostic, type FigmaWorkspaceDiagnosticsOptions, type FigmaWorkspaceDiagnosticSeverity, type FigmaWorkspaceFileDiagnostic, type FigmaWorkspaceRepairPlan, type FigmaWorkspaceSurface } from "../runtime/script-runner.js";
-import type { FigmaWorkspaceApplyAssetManifestArguments, FigmaWorkspaceCallUpstreamToolArguments, FigmaWorkspaceCaptureNodeArguments, FigmaWorkspaceDownloadAssetsArguments, FigmaWorkspaceEvalArguments, FigmaWorkspaceExportVideoArguments, FigmaWorkspaceGetDesignContextArguments, FigmaWorkspaceGetLibrariesArguments, FigmaWorkspaceGetMetadataArguments, FigmaWorkspaceGetMotionContextArguments, FigmaWorkspaceGetShaderEffectArguments, FigmaWorkspaceGetShaderFillArguments, FigmaWorkspaceGetVariableDefsArguments, FigmaWorkspaceGuidanceArguments, FigmaWorkspaceInspectArguments, FigmaWorkspaceListShaderEffectsArguments, FigmaWorkspaceListShaderFillsArguments, FigmaWorkspaceLookupArguments, FigmaWorkspaceOpenArguments, FigmaWorkspacePrepareTaskArguments, FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceSearchDesignSystemArguments } from "../contract/tool-args.js";
+import type { FigmaWorkspaceApplyAssetManifestArguments, FigmaWorkspaceCallUpstreamToolArguments, FigmaWorkspaceCaptureNodeArguments, FigmaWorkspaceDownloadAssetsArguments, FigmaWorkspaceEvalArguments, FigmaWorkspaceExportVideoArguments, FigmaWorkspaceGetDesignContextArguments, FigmaWorkspaceGetLibrariesArguments, FigmaWorkspaceGetMetadataArguments, FigmaWorkspaceGetMotionContextArguments, FigmaWorkspaceGetVariableDefsArguments, FigmaWorkspaceGuidanceArguments, FigmaWorkspaceInspectArguments, FigmaWorkspaceLookupArguments, FigmaWorkspaceOpenArguments, FigmaWorkspacePrepareTaskArguments, FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceSearchDesignSystemArguments } from "../contract/tool-args.js";
 import { isMissingFileError as isFigmaWorkspaceMissingFileErrorForTesting, type FigmaWorkspaceSessionWorkspace } from "../runtime/workspace-files.js";
 import type { FigmaUpstreamMcpProxyClient } from "../upstream/upstream-stdio-server.js";
 export declare const FIGMA_WORKSPACE_DEFAULT_SESSION_ID = "default";
@@ -19,7 +19,7 @@ export { isFigmaWorkspaceMissingFileErrorForTesting };
 export declare const resolveFigmaWorkspaceScriptHelperSelection: typeof resolveFigmaWorkspaceScriptHelperSelectionInternal;
 export type { FigmaWorkspaceDiagnostic, FigmaWorkspaceDiagnosticsOptions, FigmaWorkspaceDiagnosticSeverity, FigmaWorkspaceFileDiagnostic, FigmaWorkspaceSurface, };
 export type { FigmaWorkspaceSessionWorkspace } from "../runtime/workspace-files.js";
-export type { FigmaWorkspaceApplyAssetManifestArguments, FigmaWorkspaceAssetManifestAsset, FigmaWorkspaceCallUpstreamToolArguments, FigmaWorkspaceCaptureNodeArguments, FigmaWorkspaceDownloadAssetsArguments, FigmaWorkspaceDownloadAssetsTarget, FigmaWorkspaceEvalArguments, FigmaWorkspaceExportVideoArguments, FigmaWorkspaceGetDesignContextArguments, FigmaWorkspaceGetLibrariesArguments, FigmaWorkspaceGetMetadataArguments, FigmaWorkspaceGetMotionContextArguments, FigmaWorkspaceGetShaderEffectArguments, FigmaWorkspaceGetShaderFillArguments, FigmaWorkspaceGetVariableDefsArguments, FigmaWorkspaceGuidanceArguments, FigmaWorkspaceInspectArguments, FigmaWorkspaceListShaderEffectsArguments, FigmaWorkspaceListShaderFillsArguments, FigmaWorkspaceLookupArguments, FigmaWorkspaceOpenArguments, FigmaWorkspacePrepareTaskArguments, FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceSearchDesignSystemArguments, FigmaWorkspaceTaskPlanStep, } from "../contract/tool-args.js";
+export type { FigmaWorkspaceApplyAssetManifestArguments, FigmaWorkspaceAssetManifestAsset, FigmaWorkspaceCallUpstreamToolArguments, FigmaWorkspaceCaptureNodeArguments, FigmaWorkspaceDownloadAssetsArguments, FigmaWorkspaceDownloadAssetsTarget, FigmaWorkspaceEvalArguments, FigmaWorkspaceExportVideoArguments, FigmaWorkspaceGetDesignContextArguments, FigmaWorkspaceGetLibrariesArguments, FigmaWorkspaceGetMetadataArguments, FigmaWorkspaceGetMotionContextArguments, FigmaWorkspaceGetVariableDefsArguments, FigmaWorkspaceGuidanceArguments, FigmaWorkspaceInspectArguments, FigmaWorkspaceLookupArguments, FigmaWorkspaceOpenArguments, FigmaWorkspacePrepareTaskArguments, FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceSearchDesignSystemArguments, FigmaWorkspaceTaskPlanStep, } from "../contract/tool-args.js";
 export declare const FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES: readonly ["remember", "forget", "resolveId", "node", "select", "cloneNodeTree", "findAll", "find", "text", "layout", "create", "findFreeSlot", "placeNode", "replaceGeneratedFrame", "inspect", "screenshot", "imageAsset", "checkpoint"];
 export interface FigmaWorkspaceMcpServerOptions extends RemoteMcpClientOptions {
     client?: FigmaUpstreamMcpProxyClient;
@@ -361,34 +361,6 @@ export interface FigmaWorkspaceGetVariableDefsResult extends FigmaWorkspaceUpstr
     outputFiles?: FigmaWorkspaceOutputFiles;
     inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
-export interface FigmaWorkspaceListShaderEffectsResult extends FigmaWorkspaceUpstreamBackedResult {
-    session: FigmaWorkspaceCompactSession;
-    cursor?: string;
-    guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-    outputFiles?: FigmaWorkspaceOutputFiles;
-    inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
-export interface FigmaWorkspaceGetShaderEffectResult extends FigmaWorkspaceUpstreamBackedResult {
-    session: FigmaWorkspaceCompactSession;
-    id: string;
-    guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-    outputFiles?: FigmaWorkspaceOutputFiles;
-    inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
-export interface FigmaWorkspaceListShaderFillsResult extends FigmaWorkspaceUpstreamBackedResult {
-    session: FigmaWorkspaceCompactSession;
-    cursor?: string;
-    guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-    outputFiles?: FigmaWorkspaceOutputFiles;
-    inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
-export interface FigmaWorkspaceGetShaderFillResult extends FigmaWorkspaceUpstreamBackedResult {
-    session: FigmaWorkspaceCompactSession;
-    id: string;
-    guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-    outputFiles?: FigmaWorkspaceOutputFiles;
-    inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
 export interface FigmaWorkspaceMetadataTreeNode {
     [key: string]: unknown;
     nodeId?: string;
@@ -453,10 +425,6 @@ export interface FigmaWorkspaceClient {
     searchDesignSystem(args: FigmaWorkspaceSearchDesignSystemArguments): Promise<FigmaWorkspaceSearchDesignSystemResult>;
     getLibraries(args?: FigmaWorkspaceGetLibrariesArguments): Promise<FigmaWorkspaceGetLibrariesResult>;
     getVariableDefs(args: FigmaWorkspaceGetVariableDefsArguments): Promise<FigmaWorkspaceGetVariableDefsResult>;
-    listShaderEffects(args?: FigmaWorkspaceListShaderEffectsArguments): Promise<FigmaWorkspaceListShaderEffectsResult>;
-    getShaderEffect(args: FigmaWorkspaceGetShaderEffectArguments): Promise<FigmaWorkspaceGetShaderEffectResult>;
-    listShaderFills(args?: FigmaWorkspaceListShaderFillsArguments): Promise<FigmaWorkspaceListShaderFillsResult>;
-    getShaderFill(args: FigmaWorkspaceGetShaderFillArguments): Promise<FigmaWorkspaceGetShaderFillResult>;
     callUpstreamTool(args: FigmaWorkspaceCallUpstreamToolArguments): Promise<FigmaWorkspaceCallUpstreamToolResult>;
     lookup(args: FigmaWorkspaceLookupArguments): Promise<FigmaWorkspaceLookupResult>;
 }

@@ -187,9 +187,9 @@ export function normalizeLookupRankingQuery(value: unknown, name: string): strin
 const BRIDGE_DOCS_RECORDS = createBridgeDocsRecords();
 
 function createBridgeDocsRecords(): Map<string, { id: string; text: string }> {
-  const wrapperTools = "figma_workspace_get_design_context, figma_workspace_get_motion_context, figma_workspace_export_video, figma_workspace_list_shader_effects, figma_workspace_get_shader_effect, figma_workspace_list_shader_fills, figma_workspace_get_shader_fill";
+  const wrapperTools = "figma_workspace_get_design_context, figma_workspace_get_motion_context, figma_workspace_export_video";
   const upstreamTools = "get_design_context, get_motion_context, export_video, list_shader_effects, get_shader_effect, list_shader_fills, get_shader_fill";
-  const workflowIds = "design-implementation-context, motion-implementation, video-export, shader-lookup";
+  const workflowIds = "design-implementation-context, motion-implementation, video-export";
   const helperCategories = "selection: $.find, $.findAll, $.select, $.inspect; text: $.text; layout: $.create, $.layout, $.placeNode, $.findFreeSlot; assets: $.imageAsset; capture: $.screenshot; repair: $.checkpoint, $.remember, $.forget; clone: $.cloneNodeTree, $.replaceGeneratedFrame";
   const helperHardRules = "Use static helper references only: $.text(...), $[\"text\"](...), or explicit destructuring such as const { text } = $. Do not use dynamic $[name], alias $, object rest destructuring, or local $ declarations. Native Figma Plugin API remains valid for advanced work. $.imageAsset is only for small inline PNG/JPEG; larger files use asset manifest/upload flow.";
   return new Map([
@@ -216,7 +216,7 @@ function createBridgeDocsRecords(): Map<string, { id: string; text: string }> {
           "Profiles include local tool, upstream tool, workflow ids, intents, suggested docs/API lookups, suggested tools, and next steps.",
           `Local wrapper tools: ${wrapperTools}.`,
           `Upstream tools: ${upstreamTools}.`,
-          "Use wrapper profiles to choose design context, motion context, video export, design-system, or shader wrapper sequencing before falling back to uncovered upstream tools.",
+          "Use wrapper profiles to choose design context, motion context, or video export sequencing before falling back to upstream tools without local wrappers.",
         ].join("\n"),
       },
     ],
