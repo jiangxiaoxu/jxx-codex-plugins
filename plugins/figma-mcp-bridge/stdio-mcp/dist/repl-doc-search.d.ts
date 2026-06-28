@@ -4,6 +4,7 @@ export declare const MAX_DOCS_SEARCH_RESULTS = 10;
 export declare const MAX_DOCS_SEARCH_SNIPPET_LINES = 8;
 export declare const DEFAULT_REFERENCE_CONTEXT_SNIPPETS = 2;
 export declare const MAX_LOOKUP_QUERY_LENGTH = 120;
+export declare const BRIDGE_DOCS_SEARCH_FILES: string[];
 export declare const DOCS_SEARCH_ALLOWLIST: string[];
 export declare const API_LOOKUP_FILES: string[];
 export interface ReferenceSearchResult {

@@ -18477,7 +18477,14 @@ var DEFAULT_REFERENCE_CONTEXT_SNIPPETS = 2;
 var MAX_LOOKUP_QUERY_LENGTH = 120;
 var MAX_REFERENCE_CHUNK_LINES = 24;
 var REFERENCE_CHUNK_OVERLAP_LINES = 4;
+var BRIDGE_DOCS_SEARCH_FILES = [
+  "bridge/guidance-ref.md",
+  "bridge/wrapper-profiles.md",
+  "bridge/helper-profiles.md",
+  "bridge/workflow-graph.md"
+];
 var DOCS_SEARCH_ALLOWLIST = [
+  ...BRIDGE_DOCS_SEARCH_FILES,
   "figma-use/SKILL.md",
   "figma-use/references/api-reference.md",
   "figma-use/references/common-patterns.md",
@@ -18520,6 +18527,11 @@ async function searchReferenceFiles(options) {
   const queryTokens = tokenizeQuery(options.query);
   const chunks = [];
   for (const file of options.files) {
+    const bridgeRecord = BRIDGE_DOCS_RECORDS.get(file);
+    if (bridgeRecord) {
+      chunks.push(...buildReferenceChunks(bridgeRecord.id, bridgeRecord.text));
+      continue;
+    }
     const record2 = corpus.records.get(file);
     if (!record2) {
       continue;
@@ -18562,6 +18574,69 @@ function normalizeLookupRankingQuery(value, name) {
     throw new Error(`Tool argument "${name}" must not be empty.`);
   }
   return query.slice(0, MAX_LOOKUP_QUERY_LENGTH).trimEnd();
+}
+var BRIDGE_DOCS_RECORDS = createBridgeDocsRecords();
+function createBridgeDocsRecords() {
+  const wrapperTools = "figma_repl_get_design_context, figma_repl_get_motion_context, figma_repl_export_video, figma_repl_list_shader_effects, figma_repl_get_shader_effect, figma_repl_list_shader_fills, figma_repl_get_shader_fill";
+  const upstreamTools = "get_design_context, get_motion_context, export_video, list_shader_effects, get_shader_effect, list_shader_fills, get_shader_fill";
+  const workflowIds = "design-implementation-context, motion-implementation, video-export, shader-lookup";
+  const helperCategories = "selection: $.find, $.findAll, $.select, $.inspect; text: $.text; layout: $.create, $.layout, $.placeNode, $.findFreeSlot; assets: $.imageAsset; capture: $.screenshot; repair: $.checkpoint, $.remember, $.forget; clone: $.cloneNodeTree, $.replaceGeneratedFrame";
+  const helperHardRules = 'Use static helper references only: $.text(...), $["text"](...), or explicit destructuring such as const { text } = $. Do not use dynamic $[name], alias $, object rest destructuring, or local $ declarations. Native Figma Plugin API remains valid for advanced work. $.imageAsset is only for small inline PNG/JPEG; larger files use asset manifest/upload flow.';
+  return /* @__PURE__ */ new Map([
+    [
+      "bridge/guidance-ref.md",
+      {
+        id: "bridge/guidance-ref.md",
+        text: [
+          "# guidanceRef",
+          "Thin upstream-backed wrapper results expose a compact `guidanceRef` pointer instead of inline wrapper guidance.",
+          "`guidanceRef.source` is `figma_repl_guidance`; pass `guidanceRef.query` to that tool to retrieve matching `wrapperProfiles` and `workflowGraph` entries.",
+          "`guidanceRef.workflowIds` narrows the workflow graph nodes that apply to the wrapper result.",
+          "The wrapper result shape stays upstream-shaped: keep the generic `upstream` envelope and do not derive bridge-owned normalized fields from `upstream.result`."
+        ].join("\n")
+      }
+    ],
+    [
+      "bridge/wrapper-profiles.md",
+      {
+        id: "bridge/wrapper-profiles.md",
+        text: [
+          "# Wrapper profiles",
+          "`figma_repl_guidance.wrapperProfiles` is the detailed runtime-owned source for first-class wrapper follow-up guidance.",
+          "Profiles include local tool, upstream tool, workflow ids, intents, suggested docs/API lookups, suggested tools, and next steps.",
+          `Local wrapper tools: ${wrapperTools}.`,
+          `Upstream tools: ${upstreamTools}.`,
+          "Use wrapper profiles to choose design context, motion context, video export, design-system, or shader wrapper sequencing before falling back to uncovered upstream tools."
+        ].join("\n")
+      }
+    ],
+    [
+      "bridge/helper-profiles.md",
+      {
+        id: "bridge/helper-profiles.md",
+        text: [
+          "# Helper profiles",
+          "`figma_repl_guidance.helperProfiles` returns on-demand `$` helper guidance with useWhen, avoidWhen, allowedPatterns, forbiddenPatterns, API symbols, lookup hints, and compact examples.",
+          `Helper categories: ${helperCategories}.`,
+          `Hard rules: ${helperHardRules}`,
+          "Use helper profiles for helper selection and static-reference rules; native Figma Plugin API remains valid for advanced work when helpers are too narrow."
+        ].join("\n")
+      }
+    ],
+    [
+      "bridge/workflow-graph.md",
+      {
+        id: "bridge/workflow-graph.md",
+        text: [
+          "# Workflow graph",
+          "`figma_repl_guidance.workflowGraph` and `figma-repl://lookup-index` expose compact executable sequencing hints for wrapper workflows.",
+          `Workflow ids: ${workflowIds}.`,
+          "The graph covers design implementation context, motion implementation, video export sequencing, and shader lookup flows.",
+          "Use workflow graph nodes with wrapper profiles to order calls; use `figma_repl_lookup(kind=docs)` only for compact snippets and exact bridge-native explanations."
+        ].join("\n")
+      }
+    ]
+  ]);
 }
 function tokenizeQuery(query) {
   return query.toLowerCase().split(/[^a-z0-9_$:.-]+/u).map((token) => token.trim()).filter((token) => token.length >= 2);
