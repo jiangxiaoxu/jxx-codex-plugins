@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./scripts/server.mjs",
   "scripts": {
-    "login:figma-http": "powershell -ExecutionPolicy Bypass -File scripts/login-figma-http.ps1",
+    "login:figma-http": "node mcp-server/scripts/login-figma-http.mjs",
     "oauth-cache:path": "python scripts/resolve-oauth-cache-path.py",
     "update:upstream-corpus": "node scripts/update-upstream-corpus.mjs",
     "start": "node scripts/server.mjs",

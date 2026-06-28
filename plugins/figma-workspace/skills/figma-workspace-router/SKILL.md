@@ -88,6 +88,8 @@ Use `figma_workspace_call_upstream_tool` only when a required official capabilit
 
 ## Figma MCP Login
 
+When a Figma Workspace MCP call or resource read reports missing/expired/cancelled OAuth authorization, ask the user whether to start browser authorization before running the login helper. If the user agrees, run the helper below, wait for completion, then verify connectivity by reading `figma-workspace://upstream-tools` or calling a small upstream account tool such as `whoami`. If the user declines, do not run the login helper; report that Figma upstream access remains unavailable until OAuth is completed.
+
 Run the login helper from the plugin root, which is two directories above this `SKILL.md`:
 
 ```text
@@ -95,7 +97,7 @@ workdir: <plugin-root>
 command: npm run login:figma-http
 ```
 
-The helper starts the local HTTP bridge, temporarily logs in through `figma-http`, then removes that temporary MCP entry. After browser OAuth, use the resolver below when a script or programmatic client needs the shared cache path.
+The helper starts the local HTTP bridge, temporarily logs in through `figma-http`, then removes that temporary MCP entry. Repeated runs ensure the OAuth cache is usable and report whether this run changed the cache; use `npm run login:figma-http -- --force` only when a fresh browser authorization is required. After browser OAuth, use the resolver below when a script or programmatic client needs the shared cache path.
 
 Do not add persistent `figma-http`; the plugin's persistent MCP server is `figma_workspace_mcp`.
 

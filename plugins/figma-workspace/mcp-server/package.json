@@ -37,6 +37,7 @@
   ],
   "scripts": {
     "build": "npm run typecheck && node scripts/build.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
+    "login:figma-http": "node scripts/login-figma-http.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs"
   },

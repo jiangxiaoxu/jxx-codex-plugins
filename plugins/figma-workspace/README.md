@@ -39,6 +39,8 @@ npm run login:figma-http
 
 The helper adds a temporary `figma-http` Codex MCP entry, runs browser OAuth through `http://127.0.0.1:18766/mcp`, then removes that temporary entry. Do not install `figma-http` as a persistent MCP server; the persistent plugin server is `figma_workspace_mcp`.
 
+Repeated runs ensure the OAuth cache is usable and report whether this run changed the cache. To force a fresh browser authorization, run `npm run login:figma-http -- --force`; if force login fails, the helper restores the previous cache when one existed.
+
 ## Bundled MCP Servers
 
 The plugin's `.mcp.json` installs:
