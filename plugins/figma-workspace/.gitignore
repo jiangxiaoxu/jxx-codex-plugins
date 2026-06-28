@@ -1,0 +1,4 @@
+node_modules/
+*.log
+.figma-workspace-oauth.json
+.figma-workspace-oauth.json.tmp

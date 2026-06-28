@@ -1,0 +1,57 @@
+{
+  "name": "@jxx-codex-plugins/figma-workspace-stdio",
+  "version": "0.1.0",
+  "description": "Stdio MCP frontend for the official Figma remote MCP.",
+  "type": "module",
+  "main": "./dist/mcp/index.js",
+  "types": "./dist/mcp/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js",
+      "default": "./dist/mcp/index.js"
+    },
+    "./upstream-stdio": {
+      "types": "./dist/upstream/upstream-stdio-cli.d.ts",
+      "import": "./dist/upstream/upstream-stdio-cli.js",
+      "default": "./dist/upstream/upstream-stdio-cli.js"
+    },
+    "./workspace": {
+      "types": "./dist/mcp/workspace-mcp-server.d.ts",
+      "import": "./dist/mcp/workspace-mcp-server.js",
+      "default": "./dist/mcp/workspace-mcp-server.js"
+    },
+    "./node-upstream-client": {
+      "types": "./dist/upstream/node-upstream-client.d.ts",
+      "import": "./dist/upstream/node-upstream-client.js",
+      "default": "./dist/upstream/node-upstream-client.js"
+    }
+  },
+  "bin": {
+    "figma_workspace_upstream_stdio": "./dist/upstream/upstream-stdio-bin.js",
+    "figma_workspace_mcp": "./dist/mcp/workspace-mcp-stdio-bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "npm run typecheck && node scripts/build.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@babel/parser": "^8.0.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "acorn": "^8.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.27.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}
