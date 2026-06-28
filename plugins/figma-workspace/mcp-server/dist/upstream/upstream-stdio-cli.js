@@ -18290,7 +18290,7 @@ ${authorizationUrl.toString()}`
       return;
     } catch (error2) {
       if (error2 instanceof StaleConnectionError) {
-        throw error2;
+        throw oauthCancelledError(error2);
       }
       const unauthorizedTransport = this.transport;
       const registrationRejection = extractRegistrationRejection(error2);

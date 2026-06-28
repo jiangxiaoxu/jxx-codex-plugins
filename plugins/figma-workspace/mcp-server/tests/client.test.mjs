@@ -116,7 +116,12 @@ test("RemoteMcpClient discards an in-flight connection after close", async () =>
     assert.equal(client.connectCalls, 1);
     await client.close();
     pendingConnects[0]();
-    await assert.rejects(firstConnect, /cancelled/);
+    await assert.rejects(firstConnect, (error) => {
+      assert.equal(error instanceof RemoteMcpOAuthError, true);
+      assert.equal(error.code, "FIGMA_UPSTREAM_OAUTH_CANCELLED");
+      assert.equal(error.cause?.message, "MCP connection attempt was cancelled.");
+      return true;
+    });
     await assert.rejects(client.listTools(), /not connected/);
     assert.deepEqual(closedTransports, [1]);
 
