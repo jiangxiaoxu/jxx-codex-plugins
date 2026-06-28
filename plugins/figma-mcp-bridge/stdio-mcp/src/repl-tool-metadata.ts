@@ -464,6 +464,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     steps: stringArrayProperty("Plan-mode workflow steps."),
     recommendedTools: stringArrayProperty("Plan-mode recommended tools."),
     suggestedCards: stringArrayProperty("Plan-mode suggested compact card ids."),
+    helperProfiles: arrayProperty("Relevant $ helper profiles with useWhen, avoidWhen, static reference rules, lookup hints, and examples."),
     wrapperProfiles: arrayProperty("Relevant first-class wrapper lookup profiles with suggested lookups, tools, and next steps."),
     workflowGraph: arrayProperty("Relevant wrapper workflow graph nodes."),
     cards: arrayProperty("Compact curated API cards."),
@@ -507,7 +508,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     fileKey: stringProperty("Figma file key sent to official get_design_context."),
     nodeId: stringProperty("Figma node id sent to official get_design_context."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -521,7 +522,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     fileKey: stringProperty("Figma file key sent to official get_motion_context."),
     nodeId: stringProperty("Figma node id sent to official get_motion_context."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -536,7 +537,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     nodeId: stringProperty("Optional Figma node id sent to official export_video when starting an export."),
     jobId: stringProperty("Optional official export_video job id sent when polling an export."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -588,7 +589,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     cursor: stringProperty("Pagination cursor sent to official list_shader_effects when supplied."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -601,7 +602,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     id: stringProperty("Shader effect id sent to official get_shader_effect."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -614,7 +615,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     cursor: stringProperty("Pagination cursor sent to official list_shader_fills when supplied."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -627,7 +628,7 @@ const LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     id: stringProperty("Shader fill id sent to official get_shader_fill."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -980,16 +981,14 @@ function guidanceSuggestionsProperty(description: string): Record<string, unknow
   };
 }
 
-function wrapperGuidanceProperty(description: string): Record<string, unknown> {
+function wrapperGuidanceRefProperty(description: string): Record<string, unknown> {
   return {
     type: "object",
     description,
     properties: {
-      upstreamTool: stringProperty("Official upstream tool wrapped by this local tool."),
+      source: enumProperty(["figma_repl_guidance"], "Tool that owns the full wrapper guidance profile."),
+      query: stringProperty("Deterministic compact query to pass to figma_repl_guidance for the full wrapper profile."),
       workflowIds: stringArrayProperty("Related wrapper workflow graph ids."),
-      suggestedLookups: objectProperty("Suggested docs/API lookup queries."),
-      suggestedTools: stringArrayProperty("Suggested local follow-up tools."),
-      nextSteps: stringArrayProperty("Compact deterministic next-step hints."),
     },
     additionalProperties: true,
   };

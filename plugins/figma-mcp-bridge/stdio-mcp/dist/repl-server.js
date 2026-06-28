@@ -18817,6 +18817,107 @@ var FIGMA_REPL_QUERY_OUTPUT_FIELDS = [
   "guardrails",
   "referenceContext"
 ];
+var FIGMA_REPL_HELPER_HARD_RULES = [
+  'Use static helper references only: $.text(...), $["text"](...), or explicit destructuring such as const { text } = $.',
+  "Do not use dynamic $[name], alias $, object rest destructuring, or local $ declarations; helper injection must be statically knowable.",
+  "Native Figma Plugin API calls remain valid for advanced work when helpers are too narrow.",
+  "$.imageAsset is only for small inline PNG/JPEG payloads; use asset manifest/upload flow for larger files."
+];
+var FIGMA_REPL_HELPER_CATEGORIES = [
+  { id: "selection", title: "Selection and inspection", helpers: ["$.find", "$.findAll", "$.select", "$.inspect"], lookupHints: ["selection helper", "find node scoped", "inspect cached handle"] },
+  { id: "text", title: "Text", helpers: ["$.text"], lookupHints: ["text font helper", "loadFontAsync text"] },
+  { id: "layout", title: "Layout and placement", helpers: ["$.create", "$.layout", "$.placeNode", "$.findFreeSlot"], lookupHints: ["auto layout helper", "place node free slot"] },
+  { id: "assets", title: "Assets", helpers: ["$.imageAsset"], lookupHints: ["image fill helper", "asset manifest upload_assets"] },
+  { id: "capture", title: "Capture and QA", helpers: ["$.screenshot"], lookupHints: ["screenshot helper", "capture node QA"] },
+  { id: "repair", title: "Repair handles", helpers: ["$.checkpoint", "$.remember", "$.forget"], lookupHints: ["checkpoint handles", "remember forget handles"] },
+  { id: "clone", title: "Clone and rebuild", helpers: ["$.cloneNodeTree", "$.replaceGeneratedFrame"], lookupHints: ["clone node tree", "replace generated frame"] }
+];
+var FIGMA_REPL_HELPER_PROFILES = [
+  {
+    id: "selection",
+    category: "selection",
+    helpers: ["$.find", "$.findAll", "$.select", "$.inspect"],
+    useWhen: ["Find scoped nodes by name/type.", "Select or inspect cached handles during repair loops."],
+    avoidWhen: ["Root-wide scans in large files.", "Direct selection mutation when $.select can validate targets."],
+    allowedPatterns: ["await $.find({ name, type, within, as })", 'await $["inspect"]("$hero")', "const { find, select } = $"],
+    forbiddenPatterns: ["$[helperName](...)", "const helper = $", "const { find, ...rest } = $", "const $ = {}"],
+    apiSymbols: ["figma.currentPage.selection", "ChildrenMixin.findAll", "figma.getNodeByIdAsync"],
+    lookupHints: ["find one scoped node", "select remembered handle", "inspect cached handle"],
+    example: 'const node = await $.find({ name: "Hero", type: "FRAME", as: "$hero" }); await $.select([node]);'
+  },
+  {
+    id: "text",
+    category: "text",
+    helpers: ["$.text"],
+    useWhen: ["Create or update text with helper-managed font loading.", "Remember text nodes for follow-up edits."],
+    avoidWhen: ["Changing TextNode.characters manually before loading fonts.", "Guessing unavailable font family/style pairs."],
+    allowedPatterns: ["await $.text({ parent, text, font, as })", "const { text } = $"],
+    forbiddenPatterns: ["$[name](...)", "const helpers = $", "const { text, ...rest } = $", "const $ = {}"],
+    apiSymbols: ["figma.createText", "figma.loadFontAsync", "TextNode.characters", "TextNode.fontName"],
+    lookupHints: ["text font loadFontAsync", "create text node", "set characters safely"],
+    example: 'await $.text({ parent: "$card", text: "Settings", font: { family: "Inter", style: "Bold", size: 20 }, as: "$title" });'
+  },
+  {
+    id: "layout",
+    category: "layout",
+    helpers: ["$.create", "$.layout", "$.placeNode", "$.findFreeSlot"],
+    useWhen: ["Create common design nodes with size, layout, appearance, and handles.", "Place generated nodes in predictable non-overlapping slots."],
+    avoidWhen: ["Applying auto layout to unsupported node types.", "Absolute placement for content that should be auto layout."],
+    allowedPatterns: ["await $.create({ type, parent, size, layout, appearance, as })", 'await $.layout("$frame", { layoutMode: "VERTICAL" })', 'await $.placeNode({ node, parent, placement: "right" })'],
+    forbiddenPatterns: ["dynamic helper lookup", "local $ declarations"],
+    apiSymbols: ["figma.createFrame", "figma.createRectangle", "AutoLayoutMixin.layoutMode", "SceneNode.resize"],
+    lookupHints: ["auto layout frame", "create frame helper", "place node free slot"],
+    example: 'await $.create({ type: "FRAME", parent: "$currentPage", size: { width: 320, height: 180 }, layout: { layoutMode: "VERTICAL" }, as: "$panel" });'
+  },
+  {
+    id: "assets",
+    category: "assets",
+    helpers: ["$.imageAsset"],
+    useWhen: ["Apply a small inline PNG/JPEG base64 or byte array as an image fill.", "Create a quick image-fill rectangle during a compact script."],
+    avoidWhen: ["Large local assets or generated files.", "Slides upload paths or payloads likely to exceed MCP limits."],
+    allowedPatterns: ["await $.imageAsset({ base64, parent, size, position, as })", "create rectangles first, then figma_repl_apply_asset_manifest for large files"],
+    forbiddenPatterns: ["large base64 payloads in $.imageAsset", "using $.imageAsset instead of upload_assets for local files"],
+    apiSymbols: ["figma.createImage", "Image.hash", "ImagePaint", "MinimalFillsMixin.fills"],
+    lookupHints: ["image fill helper", "asset manifest upload_assets", "create image fill"],
+    example: 'await $.imageAsset({ base64, parent: "$card", size: { width: 160, height: 90 }, as: "$preview" });'
+  },
+  {
+    id: "capture",
+    category: "capture",
+    helpers: ["$.screenshot"],
+    useWhen: ["Capture opportunistic screenshot bytes from a script for a node that supports node.screenshot().", "Collect quick visual evidence inside a repairable script."],
+    avoidWhen: ["Final visual QA that needs a local PNG path.", "Assuming inline MCP media can be visually inspected by the agent."],
+    allowedPatterns: ['const bytes = await $.screenshot("$hero", { format: "PNG" })', "const { screenshot } = $"],
+    forbiddenPatterns: ["dynamic helper lookup", "using $.screenshot when figma_repl_capture_node should write a PNG file"],
+    apiSymbols: ["SceneNode.screenshot", "ExportSettingsImage", "figma_repl_capture_node"],
+    lookupHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
+    example: 'const screenshotBytes = Array.from(await $.screenshot("$hero", { format: "PNG" }));'
+  },
+  {
+    id: "repair",
+    category: "repair",
+    helpers: ["$.checkpoint", "$.remember", "$.forget"],
+    useWhen: ["Return compact node summaries and handles after meaningful milestones.", "Store or remove stable handles across reruns."],
+    avoidWhen: ["Using a handle string as the checkpoint name.", "Returning huge node trees instead of bounded summaries."],
+    allowedPatterns: ['await $.checkpoint("after-layout", ["$panel"], { depth: 1 })', 'await $.remember("$panel", node)', 'await $.forget("$old")'],
+    forbiddenPatterns: ['$.checkpoint("$panel") as a target shortcut', "dynamic helper lookup"],
+    apiSymbols: ["figma.currentPage", "BaseNode.id"],
+    lookupHints: ["checkpoint handles", "remember node handle", "repairPlan handles"],
+    example: 'return await $.checkpoint("panel-ready", ["$panel"], { depth: 1 });'
+  },
+  {
+    id: "clone",
+    category: "clone",
+    helpers: ["$.cloneNodeTree", "$.replaceGeneratedFrame"],
+    useWhen: ["Copy an existing node tree beside itself while preserving instance subtrees.", "Replace guarded generated frames by exact name during repair workflows."],
+    avoidWhen: ["Rebuilding internal children of InstanceNode.", "Deleting arbitrary user-authored frames."],
+    allowedPatterns: ['await $.cloneNodeTree({ source: "$card", placement: "right", as: "$copy" })', "await $.replaceGeneratedFrame({ name, replacement })"],
+    forbiddenPatterns: ["raw remove() for generated-frame swaps", "$.replaceGeneratedFrame without guarded name"],
+    apiSymbols: ["SceneNode.clone", "ChildrenMixin.appendChild", "BaseNodeMixin.remove"],
+    lookupHints: ["clone node tree", "preserve instance subtree", "replace generated frame"],
+    example: 'const copy = await $.cloneNodeTree({ source: "$card", placement: "right", as: "$cardCopy" });'
+  }
+];
 var FIGMA_REPL_WRAPPER_LOOKUP_PROFILES = [
   {
     tool: "figma_repl_get_design_context",
@@ -19195,6 +19296,19 @@ function chooseWrapperLookupProfilesForIntent(intent, maxProfiles) {
   })).filter((entry) => entry.score > 0).sort((left, right) => right.score - left.score || left.profile.tool.localeCompare(right.profile.tool)).slice(0, maxProfiles).map((entry) => entry.profile);
   return ranked.length > 0 ? ranked : FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.slice(0, maxProfiles);
 }
+function chooseHelperProfilesForIntent(intent, maxProfiles) {
+  const query = intent?.trim();
+  if (!query) {
+    return FIGMA_REPL_HELPER_PROFILES.slice(0, maxProfiles);
+  }
+  const tokens = tokenizeCatalogQuery(query);
+  const lowerQuery = query.toLowerCase();
+  const ranked = FIGMA_REPL_HELPER_PROFILES.map((profile) => ({
+    profile,
+    score: scoreHelperProfile(profile, tokens, lowerQuery)
+  })).filter((entry) => entry.score > 0).sort((left, right) => right.score - left.score || left.profile.id.localeCompare(right.profile.id)).slice(0, maxProfiles).map((entry) => entry.profile);
+  return ranked.length > 0 ? ranked : FIGMA_REPL_HELPER_PROFILES.slice(0, maxProfiles);
+}
 function selectWrapperWorkflowGraph(workflowIds, maxWorkflows) {
   if (!workflowIds || workflowIds.length === 0) {
     return FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.slice(0, maxWorkflows);
@@ -19247,6 +19361,22 @@ function scoreWrapperLookupProfile(profile, tokens, lowerQuery) {
     ...profile.nextSteps
   ].join(" ").toLowerCase();
   return (lowerTool === lowerQuery ? 120 : 0) + (profile.upstreamTool.toLowerCase() === lowerQuery ? 110 : 0) + (haystack.includes(lowerQuery) ? 50 : 0) + tokens.filter((token) => haystack.includes(token)).length * 10;
+}
+function scoreHelperProfile(profile, tokens, lowerQuery) {
+  const lowerId = profile.id.toLowerCase();
+  const haystack = [
+    profile.id,
+    profile.category,
+    ...profile.helpers,
+    ...profile.useWhen,
+    ...profile.avoidWhen,
+    ...profile.allowedPatterns,
+    ...profile.forbiddenPatterns,
+    ...profile.apiSymbols,
+    ...profile.lookupHints,
+    profile.example ?? ""
+  ].join(" ").toLowerCase();
+  return (lowerId === lowerQuery ? 120 : 0) + (profile.helpers.some((helper) => helper.toLowerCase() === lowerQuery) ? 110 : 0) + (haystack.includes(lowerQuery) ? 50 : 0) + tokens.filter((token) => haystack.includes(token)).length * 10;
 }
 function tokenizeCatalogQuery(query) {
   return query.toLowerCase().split(/[^a-z0-9_$:.-]+/u).map((token) => token.trim()).filter((token) => token.length >= 2);
@@ -41796,6 +41926,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     steps: stringArrayProperty("Plan-mode workflow steps."),
     recommendedTools: stringArrayProperty("Plan-mode recommended tools."),
     suggestedCards: stringArrayProperty("Plan-mode suggested compact card ids."),
+    helperProfiles: arrayProperty("Relevant $ helper profiles with useWhen, avoidWhen, static reference rules, lookup hints, and examples."),
     wrapperProfiles: arrayProperty("Relevant first-class wrapper lookup profiles with suggested lookups, tools, and next steps."),
     workflowGraph: arrayProperty("Relevant wrapper workflow graph nodes."),
     cards: arrayProperty("Compact curated API cards."),
@@ -41839,7 +41970,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     fileKey: stringProperty("Figma file key sent to official get_design_context."),
     nodeId: stringProperty("Figma node id sent to official get_design_context."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41853,7 +41984,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     fileKey: stringProperty("Figma file key sent to official get_motion_context."),
     nodeId: stringProperty("Figma node id sent to official get_motion_context."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41868,7 +41999,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     nodeId: stringProperty("Optional Figma node id sent to official export_video when starting an export."),
     jobId: stringProperty("Optional official export_video job id sent when polling an export."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41920,7 +42051,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     cursor: stringProperty("Pagination cursor sent to official list_shader_effects when supplied."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41933,7 +42064,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     id: stringProperty("Shader effect id sent to official get_shader_effect."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41946,7 +42077,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     cursor: stringProperty("Pagination cursor sent to official list_shader_fills when supplied."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41959,7 +42090,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     id: stringProperty("Shader fill id sent to official get_shader_fill."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_repl_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -42267,16 +42398,14 @@ function guidanceSuggestionsProperty(description) {
     additionalProperties: true
   };
 }
-function wrapperGuidanceProperty(description) {
+function wrapperGuidanceRefProperty(description) {
   return {
     type: "object",
     description,
     properties: {
-      upstreamTool: stringProperty("Official upstream tool wrapped by this local tool."),
-      workflowIds: stringArrayProperty("Related wrapper workflow graph ids."),
-      suggestedLookups: objectProperty("Suggested docs/API lookup queries."),
-      suggestedTools: stringArrayProperty("Suggested local follow-up tools."),
-      nextSteps: stringArrayProperty("Compact deterministic next-step hints.")
+      source: enumProperty(["figma_repl_guidance"], "Tool that owns the full wrapper guidance profile."),
+      query: stringProperty("Deterministic compact query to pass to figma_repl_guidance for the full wrapper profile."),
+      workflowIds: stringArrayProperty("Related wrapper workflow graph ids.")
     },
     additionalProperties: true
   };
@@ -44766,6 +44895,7 @@ async function handleGuidance(args) {
         "figma_repl_inspect"
       ],
       suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id),
+      helperProfiles: createPublicHelperProfilePayloads(chooseHelperProfilesForIntent(planIntent, 4)),
       wrapperProfiles: createPublicWrapperProfilePayloads(chooseWrapperLookupProfilesForIntent(planIntent, 4)),
       workflowGraph: createPublicWrapperWorkflowPayloads(
         selectWrapperWorkflowGraph(
@@ -44790,6 +44920,9 @@ async function handleGuidance(args) {
   const wrapperProfiles = createPublicWrapperProfilePayloads(
     chooseWrapperLookupProfilesForIntent(intent ?? cardQuery, 4)
   );
+  const helperProfiles = createPublicHelperProfilePayloads(
+    chooseHelperProfilesForIntent(intent ?? cardQuery, 4)
+  );
   const payload = {
     ok: true,
     cards: cards.map(createPublicApiCardPayload),
@@ -44799,6 +44932,7 @@ async function handleGuidance(args) {
     queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
     apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
     guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    helperProfiles,
     wrapperProfiles,
     workflowGraph: createPublicWrapperWorkflowPayloads(
       selectWrapperWorkflowGraph(uniqueStrings(wrapperProfiles.flatMap((profile) => profile.workflowIds), 4), 4)
@@ -45454,7 +45588,7 @@ async function executeDedicatedUpstreamTool(options) {
     ok: !parsed.upstreamError,
     session: responseSession(options.session),
     ...options.responseFields,
-    guidance: createWrapperResultGuidance(options.wrapperToolName),
+    guidanceRef: createWrapperGuidanceRef(options.wrapperToolName),
     ...upstreamResultFields({
       parsed,
       upstream
@@ -47707,6 +47841,42 @@ function createIntentSuggestions(intent, maxCards, referenceContext = []) {
     referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_repl_lookup kind=api query when exact API details are still missing."
   };
 }
+function createPublicHelperProfilePayloads(profiles) {
+  return profiles.map((profile) => ({
+    helper: profile.id,
+    category: profile.category,
+    helpers: profile.helpers,
+    useWhen: profile.useWhen,
+    avoidWhen: profile.avoidWhen,
+    allowedPatterns: profile.allowedPatterns,
+    forbiddenPatterns: profile.forbiddenPatterns,
+    apiSymbols: profile.apiSymbols,
+    lookupHints: profile.lookupHints,
+    example: profile.example
+  }));
+}
+function createCompactHelperCategoryPayloads() {
+  return FIGMA_REPL_HELPER_CATEGORIES.map((category) => ({
+    id: category.id,
+    helpers: category.helpers,
+    lookupHints: category.lookupHints.slice(0, 2)
+  }));
+}
+function createCompactHelperHardRules() {
+  return [
+    'Static only: $.x(...), $["x"](...), or const { x } = $.',
+    "Forbid dynamic $[name], alias $, rest destructuring, and local $.",
+    "$.imageAsset is small PNG/JPEG only; large files use manifest/upload."
+  ];
+}
+function createCompactHelperCategoryMap() {
+  return Object.fromEntries(
+    FIGMA_REPL_HELPER_CATEGORIES.map((category) => [
+      category.id,
+      category.helpers.map((helper) => helper.replace(/^\$\./u, ""))
+    ])
+  );
+}
 function createPublicWrapperProfilePayloads(profiles) {
   return profiles.map((profile) => ({
     tool: profile.tool,
@@ -47730,20 +47900,15 @@ function createPublicWrapperWorkflowPayloads(workflows) {
     guardrails: workflow.guardrails
   }));
 }
-function createWrapperResultGuidance(toolName) {
+function createWrapperGuidanceRef(toolName) {
   const profile = findWrapperLookupProfile(toolName);
   if (!profile) {
     return void 0;
   }
   return {
-    upstreamTool: profile.upstreamTool,
-    workflowIds: profile.workflowIds,
-    suggestedLookups: {
-      docs: profile.docsQueries,
-      api: profile.apiSymbols
-    },
-    suggestedTools: profile.suggestedTools,
-    nextSteps: profile.nextSteps
+    source: "figma_repl_guidance",
+    query: [profile.tool, profile.upstreamTool, ...profile.workflowIds].join(" "),
+    workflowIds: profile.workflowIds
   };
 }
 function createPublicApiCardPayload(card) {
@@ -47780,6 +47945,11 @@ function createCapabilitiesPayload() {
       upstreamEnvelope: "upstream.ok is the effective upstream/business status; consumed top-level ok fields are removed from upstream.result and bridge-internal metadata is not public.",
       referenceOwnership: "Static resources are routing/workflow docs only. Helper, API, pattern, safety, and example details belong to figma_repl_guidance, figma_repl_lookup, and BM25 snippets."
     },
+    helperGuidance: {
+      hardRules: createCompactHelperHardRules(),
+      categories: createCompactHelperCategoryMap(),
+      profileSource: "figma_repl_guidance.helperProfiles"
+    },
     resources: {
       guide: "figma-repl://guide",
       lookupIndex: "figma-repl://lookup-index",
@@ -47795,7 +47965,7 @@ function createCapabilitiesPayload() {
     wrapperGuidance: {
       profileTools: FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.tool),
       workflowIds: FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
-      resultField: "guidance"
+      resultField: "guidanceRef"
     }
   };
 }
@@ -47809,6 +47979,11 @@ function createGuidePayload() {
       "When repairPlan.status is parse_error, fix all syntax-error steps first and rerun; guardrail diagnostics are intentionally skipped until parsing succeeds.",
       "Use $.checkpoint and stable handles such as $hero to make repair loops compact. Read figma-repl://sessions/{id}/handles when only the handle map is needed."
     ],
+    helperIndex: {
+      hardRules: FIGMA_REPL_HELPER_HARD_RULES,
+      categories: createCompactHelperCategoryPayloads(),
+      profileSource: "Call figma_repl_guidance with helper/category keywords for helperProfiles."
+    },
     evalWorkflow: [
       "Use figma_repl_eval only for small ephemeral calls where a local file would add overhead.",
       "Move repairable, multi-step, asset-heavy, or user-visible mutations into .figma.js files so diagnostics and reruns remain stable."
@@ -47846,19 +48021,32 @@ function createGuidePayload() {
 }
 function createLookupIndexPayload() {
   return {
-    purpose: "Index for reference discovery. Static resources do not duplicate helper/API/pattern/safety bodies; search them through guidance and lookup.",
+    purpose: "Compact reference discovery index; use guidance/lookup for bodies.",
     guidance: {
       tool: "figma_repl_guidance",
-      useFor: ["workflow planning", "curated API cards", "query hints", "API symbol suggestions", "task guardrails"],
-      recommendedQueryStyle: "compact BM25 keywords, for example text font loadFontAsync or components variants properties",
+      useFor: ["workflow planning", "API cards", "query hints", "guardrails"],
+      recommendedQueryStyle: "compact BM25 keywords, e.g. text font loadFontAsync",
       outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
-      commonAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
-      commonCards: FIGMA_REPL_API_CARDS.map((card) => card.id),
+      commonCards: [
+        "text.font",
+        "layout.auto",
+        "variables.bind",
+        "components.variants",
+        "images.fill",
+        "selection",
+        "surface.figjam",
+        "surface.slides"
+      ],
       wrapperProfiles: {
         tools: FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.tool),
         upstreamTools: FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.upstreamTool),
         workflowIds: FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
-        fullProfileSource: "figma_repl_guidance.wrapperProfiles and wrapper result guidance"
+        fullProfileSource: "figma_repl_guidance.wrapperProfiles"
+      },
+      helperProfiles: {
+        categories: createCompactHelperCategoryMap(),
+        hardRules: createCompactHelperHardRules(),
+        fullProfileSource: "figma_repl_guidance.helperProfiles"
       },
       workflowGraph: FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id)
     },
@@ -47868,7 +48056,7 @@ function createLookupIndexPayload() {
       api: "Use kind=api with symbol for exact Plugin API snippets.",
       sizeControls: ["maxResults", "maxSnippetLines"]
     },
-    ownership: "Bundled corpus files remain internal lookup data. Agent-facing reference details should come from guidance cards, BM25 snippets, tool schemas, and output schemas."
+    ownership: "Bundled corpus stays internal; agent-facing details come from guidance, lookup, and schemas."
   };
 }
 function readStaticReplResource(uri) {
