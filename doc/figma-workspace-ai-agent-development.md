@@ -1,6 +1,6 @@
 # AI Agent Development Guide
 
-This document is for AI agents maintaining `figma-workspace`. It is not the user-facing Figma workflow. For user tasks, follow `skills/figma-workspace-router/SKILL.md` and the runtime MCP guidance first.
+This document is for AI agents maintaining `figma-workspace`. It is not the user-facing Figma workflow. For user tasks, follow `skills/figma-workspace/SKILL.md` and the runtime MCP guidance first.
 
 ## Current Direction
 
@@ -9,7 +9,7 @@ This document is for AI agents maintaining `figma-workspace`. It is not the user
 - Codex `node_repl` is not the normal live-Figma route. For Node-level live verification, inject a custom upstream client, preferably a child stdio MCP client launched from `mcp-server/dist/mcp/workspace-mcp-stdio-bin.js`; keep the `./node-upstream-client` no-client `createFigmaWorkspaceClient()` path local-only.
 - Local `.figma.js` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, and compact docs/API lookup are the supported workspace path.
 - DSL, `$.ops`, `figma_workspace_apply_ops`, `compileFigmaWorkspaceOps`, `FigmaWorkspaceOp`, and `FigmaWorkspaceApplyOpsArguments` are not part of the public or runtime contract.
-- Official upstream skill content is stored as internal JSONL corpus under `skills/figma-workspace-router/references/upstream-corpus/`. Do not route agents to read it directly.
+- Official upstream skill content is stored as internal JSONL corpus under `skills/figma-workspace/references/upstream-corpus/`. Do not route agents to read it directly.
 
 ## Canonical Contracts
 
@@ -56,15 +56,15 @@ Pin these facts when changing the router surface:
 - `mcp-server/src/contract/tool-args.ts`: tool argument interfaces, optional display-only title validation, and explicit low-risk runtime parsers.
 - `mcp-server/src/contract/tool-metadata.ts`: canonical local tool descriptions and input schemas.
 - `mcp-server/src/contract/tool-registry.ts`: local tool names and task-plan step aliases.
-- `skills/figma-workspace-router/SKILL.md`: lightweight user-task router, not the canonical schema source.
-- `skills/figma-workspace-router/agents/openai.yaml`: thin metadata that points agents at `$figma-workspace-router`; do not expand it into a second contract.
+- `skills/figma-workspace/SKILL.md`: lightweight user-task router, not the canonical schema source.
+- `skills/figma-workspace/agents/openai.yaml`: thin metadata that points agents at `$figma-workspace`; do not expand it into a second contract.
 
 ## Change Rules
 
 - Breaking changes to public tool names, resource URIs, result shapes, session semantics, and typed client signatures are allowed by default when they simplify the active contract; update runtime schemas, capabilities, docs, tests, and generated output in the same change.
 - Runtime parsers may reject removed or ambiguous public arguments. Keep parser behavior explicit, and do not duplicate path/workspace validation outside `workspace-files.ts`.
 - Keep generated `dist` outputs in sync when `npm run build` changes them.
-- Lightweight router references under `skills/figma-workspace-router/references/` are allowed for static workflow, lookup, and safety notes. Do not copy large runtime payloads there, and do not make those references a second canonical contract. Keep official upstream content in `upstream-corpus/manifest.json` and `upstream-corpus/corpus.jsonl`.
+- Lightweight router references under `skills/figma-workspace/references/` are allowed for static workflow, lookup, and safety notes. Do not copy large runtime payloads there, and do not make those references a second canonical contract. Keep official upstream content in `upstream-corpus/manifest.json` and `upstream-corpus/corpus.jsonl`.
 - Do not make docs canonical by copying large runtime payloads into markdown. Add or adjust narrow tests instead.
 - When changing plugin version numbers, update `plugins/figma-workspace/.codex-plugin/plugin.json` as part of the same release change.
 - When adding, renaming, or removing plugins under `plugins/*`, update `.agents/plugins/marketplace.json` and the root plugin list in `README.md`.

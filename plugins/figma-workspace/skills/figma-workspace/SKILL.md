@@ -1,5 +1,5 @@
 ---
-name: figma-workspace-router
+name: figma-workspace
 description: Route Figma work through the exact MCP server figma_workspace_mcp and its figma_workspace_ tool family. Use for Figma design, FigJam, Slides, design systems, tokens, components, use_figma, Plugin API lookup, or Figma MCP auth repair. When selected, first expose deferred tools with tool_search query "figma_workspace_mcp figma_workspace_ figma".
 ---
 

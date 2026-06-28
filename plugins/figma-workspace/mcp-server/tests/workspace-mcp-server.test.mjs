@@ -1906,8 +1906,8 @@ test("figma upstream-tools resource uses typed OAuth error codes without facade 
 });
 
 test("figma router docs preserve runtime-owned contract wording", async () => {
-  const skillText = await readFile(resolve(packageRoot, "../skills/figma-workspace-router/SKILL.md"), "utf8");
-  const openaiText = await readFile(resolve(packageRoot, "../skills/figma-workspace-router/agents/openai.yaml"), "utf8");
+  const skillText = await readFile(resolve(packageRoot, "../skills/figma-workspace/SKILL.md"), "utf8");
+  const openaiText = await readFile(resolve(packageRoot, "../skills/figma-workspace/agents/openai.yaml"), "utf8");
   const pluginReadme = await readFile(resolve(packageRoot, "../README.md"), "utf8");
   const stdioReadme = await readFile(resolve(packageRoot, "README.md"), "utf8");
   const docsText = [skillText, openaiText, pluginReadme, stdioReadme].join("\n");
@@ -1927,13 +1927,14 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   assert.match(stdioReadme, /bundled JSONL corpus files are internal and are not an agent-facing documentation path/);
   assert.match(stdioReadme, /explicit uncovered upstream capability/);
   assert.match(openaiText, /figma_workspace_mcp/);
+  assert.match(openaiText, /\$figma-workspace\b/);
   for (const term of forbiddenRouterContractTerms) {
     assert.ok(!docsText.includes(term), `router docs must not mention ${term}`);
   }
 });
 
 test("figma upstream corpus is JSONL-backed with motion and SwiftUI included", async () => {
-  const corpusDir = resolve(packageRoot, "../skills/figma-workspace-router/references/upstream-corpus");
+  const corpusDir = resolve(packageRoot, "../skills/figma-workspace/references/upstream-corpus");
   const manifest = JSON.parse(await readFile(resolve(corpusDir, "manifest.json"), "utf8"));
   const records = (await readFile(resolve(corpusDir, "corpus.jsonl"), "utf8"))
     .trim()

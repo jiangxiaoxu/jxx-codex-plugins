@@ -8,7 +8,7 @@ const defaultUpstreamSkillRoot = resolve(
   homedir(),
   ".codex/plugins/cache/openai-curated-remote/figma/2.0.12/skills",
 );
-const outputDir = resolve(pluginRoot, "skills/figma-workspace-router/references/upstream-corpus");
+const outputDir = resolve(pluginRoot, "skills/figma-workspace/references/upstream-corpus");
 
 const corpusEntries = [
   { id: "figma-use/SKILL.md", kind: "skill", format: "markdown" },

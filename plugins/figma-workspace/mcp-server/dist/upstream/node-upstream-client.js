@@ -19758,12 +19758,12 @@ async function resolveUpstreamCorpusRoot() {
   const moduleDir = dirname3(fileURLToPath2(import.meta.url));
   const cwd = typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : moduleDir;
   const candidates = [
-    resolve3(moduleDir, "../skills/figma-workspace-router/references/upstream-corpus"),
-    resolve3(moduleDir, "../../skills/figma-workspace-router/references/upstream-corpus"),
-    resolve3(moduleDir, "../../../skills/figma-workspace-router/references/upstream-corpus"),
-    resolve3(cwd, "skills/figma-workspace-router/references/upstream-corpus"),
-    resolve3(cwd, "plugins/figma-workspace/skills/figma-workspace-router/references/upstream-corpus"),
-    resolve3(cwd, "../skills/figma-workspace-router/references/upstream-corpus")
+    resolve3(moduleDir, "../skills/figma-workspace/references/upstream-corpus"),
+    resolve3(moduleDir, "../../skills/figma-workspace/references/upstream-corpus"),
+    resolve3(moduleDir, "../../../skills/figma-workspace/references/upstream-corpus"),
+    resolve3(cwd, "skills/figma-workspace/references/upstream-corpus"),
+    resolve3(cwd, "plugins/figma-workspace/skills/figma-workspace/references/upstream-corpus"),
+    resolve3(cwd, "../skills/figma-workspace/references/upstream-corpus")
   ];
   for (const candidate of candidates) {
     try {
