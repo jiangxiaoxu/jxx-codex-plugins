@@ -1154,6 +1154,9 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.deepEqual(capabilities.lookupStrategy.outputFields, queryOutputFields);
   assert.ok(capabilities.lookupStrategy.queryAnchors.includes("text/font"));
   assert.ok(capabilities.lookupStrategy.queryAnchors.includes("FigJam/Slides"));
+  assert.equal(capabilities.wrapperGuidance.resultField, "guidance");
+  assert.ok(capabilities.wrapperGuidance.profileTools.includes("figma_repl_get_design_context"));
+  assert.ok(capabilities.wrapperGuidance.workflowIds.includes("motion-implementation"));
 
   const compactCapabilitiesText = JSON.stringify(capabilities);
   assert.equal(capabilities.responseExamples, undefined);
@@ -1181,6 +1184,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.deepEqual(lookupIndex.guidance.outputFields, queryOutputFields);
   assert.ok(lookupIndex.guidance.commonCards.includes("text.font"));
   assert.ok(lookupIndex.guidance.commonCards.includes("surface.slides"));
+  assert.ok(lookupIndex.guidance.wrapperProfiles.upstreamTools.includes("get_motion_context"));
+  assert.ok(lookupIndex.guidance.workflowGraph.includes("shader-lookup"));
   assert.match(lookupIndex.ownership, /Bundled corpus files remain internal/);
 
   const tools = await mcpClient.listTools();
@@ -1668,6 +1673,7 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.ok(aggregateCapabilities.toolSelection.workflowAddOns.includes("figma_repl_export_video"));
   assert.ok(!aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("get_motion_context"));
   assert.deepEqual(aggregateCapabilities.lookupStrategy.outputFields, queryOutputFields);
+  assert.ok(aggregateCapabilities.wrapperGuidance.profileTools.includes("figma_repl_export_video"));
   assert.equal(aggregateCapabilities.apiCards, undefined);
   assert.equal(aggregateCapabilities.docsLookup, undefined);
   assert.ok(aggregateGuide.scriptFileWorkflow.some((step) => /figma_repl_prepare_task/.test(step)));
@@ -1680,6 +1686,8 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.equal(aggregateLookupIndex.lookup.tool, "figma_repl_lookup");
   assert.ok(aggregateLookupIndex.guidance.commonCards.includes("text.font"));
   assert.deepEqual(aggregateLookupIndex.guidance.outputFields, queryOutputFields);
+  assert.ok(aggregateLookupIndex.guidance.wrapperProfiles.tools.includes("figma_repl_list_shader_effects"));
+  assert.ok(aggregateLookupIndex.guidance.workflowGraph.includes("design-implementation-context"));
   for (const uri of removedStaticResourceUris) {
     await assert.rejects(
       mcpClient.readResource({ uri }),
@@ -2449,39 +2457,53 @@ test("figma REPL context motion video and shader wrappers call dedicated upstrea
     assert.equal(design.fileKey, "ExampleFigmaFileKey012");
     assert.equal(design.nodeId, "9:9");
     assert.equal(design.upstream.result.code, "<div data-node-id=\"9:9\" />");
+    assert.equal(design.guidance.upstreamTool, "get_design_context");
+    assert.ok(design.guidance.suggestedLookups.docs.some((query) => /design context/.test(query)));
+    assert.ok(design.guidance.suggestedTools.includes("figma_repl_capture_node"));
 
     const motion = await repl.getMotionContext({ sessionId: "context-main", target: "$button", recursive: true });
     assert.equal(motion.ok, true);
     assert.equal(motion.upstream.result.nodes[0].nodeId, "9:9");
+    assert.equal(motion.guidance.upstreamTool, "get_motion_context");
+    assert.ok(motion.guidance.workflowIds.includes("motion-implementation"));
+    assert.ok(motion.guidance.nextSteps.some((step) => /authoritative motion data/.test(step)));
 
     const exportStart = await repl.exportVideo({ sessionId: "context-main", target: "$button", quality: "low" });
     assert.equal(exportStart.ok, true);
     assert.equal(exportStart.nodeId, "9:9");
     assert.equal(exportStart.upstream.result.jobId, "job-123");
     assert.equal(exportStart.videoFile, undefined);
+    assert.equal(exportStart.guidance.upstreamTool, "export_video");
+    assert.ok(exportStart.guidance.nextSteps.some((step) => /render cost/.test(step)));
 
     const exportPoll = await repl.exportVideo({ sessionId: "context-main", file: "ExampleFigmaFileKey012", jobId: "job-123" });
     assert.equal(exportPoll.ok, true);
     assert.equal(exportPoll.jobId, "job-123");
     assert.equal(exportPoll.nodeId, undefined);
+    assert.ok(exportPoll.guidance.suggestedLookups.api.includes("export_video"));
 
     const effects = await repl.listShaderEffects({ sessionId: "context-main", cursor: "after-effects" });
     assert.equal(effects.ok, true);
     assert.equal(effects.upstream.result.effects[0].id, "effect-1");
+    assert.equal(effects.guidance.upstreamTool, "list_shader_effects");
+    assert.ok(effects.guidance.workflowIds.includes("shader-lookup"));
 
     const effect = await repl.getShaderEffect({ sessionId: "context-main", id: "effect-1" });
     assert.equal(effect.ok, true);
     assert.equal(effect.id, "effect-1");
     assert.equal(effect.upstream.result.source, "effect");
+    assert.ok(effect.guidance.suggestedTools.includes("figma_repl_list_shader_effects"));
 
     const fills = await repl.listShaderFills({ sessionId: "context-main", cursor: "after-fills" });
     assert.equal(fills.ok, true);
     assert.equal(fills.upstream.result.fills[0].id, "fill-1");
+    assert.equal(fills.guidance.upstreamTool, "list_shader_fills");
 
     const fill = await repl.getShaderFill({ sessionId: "context-main", id: "fill-1" });
     assert.equal(fill.ok, true);
     assert.equal(fill.id, "fill-1");
     assert.equal(fill.upstream.result.source, "fill");
+    assert.ok(fill.guidance.nextSteps.some((step) => /upstream fill manifest/.test(step)));
 
     await assert.rejects(
       repl.exportVideo({ sessionId: "context-main" }),
@@ -7272,6 +7294,8 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   assert.ok(planJson.recommendedTools.includes("figma_repl_prepare_task"));
   assert.ok(planJson.recommendedTools.includes("figma_repl_guidance"));
   assert.ok(planJson.suggestedCards.length > 0);
+  assert.ok(planJson.wrapperProfiles.some((profile) => profile.tool === "figma_repl_get_design_context"));
+  assert.ok(planJson.workflowGraph.some((workflow) => workflow.id === "design-implementation-context"));
 
   const longPlanResult = await mcpClient.callTool({
     name: "figma_repl_guidance",
@@ -7314,6 +7338,8 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
   assert.ok(suggestJson.suggestions.referenceContext.every((item) => ["exact-symbol", "phrase", "token"].includes(item.matchType)));
   assert.ok(suggestJson.suggestions.referenceContext.every((item) => item.snippet.split("\n").length <= 4));
   assert.equal(suggestJson.suggestions.workflow.primaryTool, "figma_repl_run_script_file");
+  assert.ok(suggestJson.wrapperProfiles.length > 0);
+  assert.ok(suggestJson.workflowGraph.length > 0);
 
   const longTaskResult = await mcpClient.callTool({
     name: "figma_repl_guidance",
@@ -7393,6 +7419,13 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
     assert.ok(upstreamAgentJson.suggestions.recommendedCards.includes(expectedCard));
     assert.ok(upstreamAgentJson.suggestions.apiSymbols.includes(expectedSymbol));
     assert.match(JSON.stringify(upstreamAgentJson.suggestions.cards), expectedGuardrail);
+    if (expectedSymbol === "get_design_context") {
+      assert.ok(upstreamAgentJson.wrapperProfiles.some((profile) => profile.tool === "figma_repl_get_design_context"));
+    }
+    if (expectedSymbol === "get_motion_context") {
+      assert.ok(upstreamAgentJson.wrapperProfiles.some((profile) => profile.tool === "figma_repl_get_motion_context"));
+      assert.ok(upstreamAgentJson.workflowGraph.some((workflow) => workflow.id === "motion-implementation"));
+    }
   }
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
