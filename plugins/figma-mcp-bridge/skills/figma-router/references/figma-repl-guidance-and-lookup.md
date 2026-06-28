@@ -16,7 +16,7 @@ Use this reference to choose between `figma_repl_guidance` and `figma_repl_looku
 
 ## Lookup When Exact Context Is Needed
 
-- Use `figma_repl_lookup({ kind: "docs", query })` for compact BM25-ranked workflow snippets.
+- Use `figma_repl_lookup({ kind: "docs", query })` for compact BM25-ranked workflow snippets and bridge-owned explanations for `guidanceRef`, wrapper profiles, helper profiles, and workflow graph routing.
 - Use `figma_repl_lookup({ kind: "api", symbol })` for exact Figma Plugin API symbols.
 - Lookup output is capped and confidence-labeled.
 - `figma-repl://lookup-index` exposes compact helper categories, wrapper profiles, and workflow graph nodes; use them instead of reading internal corpus files for sequencing.

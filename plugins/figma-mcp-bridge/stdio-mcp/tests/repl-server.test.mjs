@@ -2491,6 +2491,12 @@ test("figma REPL context motion video and shader wrappers call dedicated upstrea
     assert.equal(design.guidanceRef.source, "figma_repl_guidance");
     assert.equal(design.guidanceRef.query, "figma_repl_get_design_context get_design_context design-implementation-context");
     assert.deepEqual(design.guidanceRef.workflowIds, ["design-implementation-context"]);
+    const designGuidance = await repl.guidance({
+      query: design.guidanceRef.query,
+      maxCards: 3,
+    });
+    assert.ok(designGuidance.wrapperProfiles.some((profile) => profile.tool === "figma_repl_get_design_context"));
+    assert.ok(designGuidance.workflowGraph.some((workflow) => workflow.id === "design-implementation-context"));
 
     const motion = await repl.getMotionContext({ sessionId: "context-main", target: "$button", recursive: true });
     assert.equal(motion.ok, true);
@@ -5544,6 +5550,30 @@ test("figma REPL lookup kind=docs returns capped local reference snippets", asyn
   assert.equal(motionJson.ok, true);
   assert.ok(motionJson.results.some((item) => item.sourceId.includes("motion")));
   assert.match(JSON.stringify(motionJson.results), /motion|easing/iu);
+
+  const bridgeQueries = [
+    ["guidanceRef", /guidanceRef\.query/u],
+    ["wrapper profiles", /wrapperProfiles/u],
+    ["helper profiles", /helperProfiles/u],
+    ["workflow graph", /workflowGraph/u],
+  ];
+  for (const [query, expectedSnippet] of bridgeQueries) {
+    const bridgeResult = await mcpClient.callTool({
+      name: "figma_repl_lookup",
+      arguments: {
+        title: `Search bridge docs ${query}`,
+        kind: "docs",
+        query,
+        maxResults: 2,
+        maxSnippetLines: 3,
+      },
+    });
+    const bridgeJson = structuredToolResult(bridgeResult);
+    assert.equal(bridgeJson.ok, true);
+    assert.ok(bridgeJson.results.some((item) => item.sourceId.startsWith("internal:bridge/")));
+    assert.match(JSON.stringify(bridgeJson.results), expectedSnippet);
+    assert.equal(bridgeJson.results.some((item) => "file" in item), false);
+  }
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
 });
