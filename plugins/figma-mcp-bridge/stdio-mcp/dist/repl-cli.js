@@ -3643,49 +3643,49 @@ var require_fast_uri = __commonJS({
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative4, options, skipNormalization) {
+    function resolveComponent(base, relative3, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse7(serialize(base, options), options);
-        relative4 = parse7(serialize(relative4, options), options);
+        relative3 = parse7(serialize(relative3, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative4.scheme) {
-        target.scheme = relative4.scheme;
-        target.userinfo = relative4.userinfo;
-        target.host = relative4.host;
-        target.port = relative4.port;
-        target.path = removeDotSegments(relative4.path || "");
-        target.query = relative4.query;
+      if (!options.tolerant && relative3.scheme) {
+        target.scheme = relative3.scheme;
+        target.userinfo = relative3.userinfo;
+        target.host = relative3.host;
+        target.port = relative3.port;
+        target.path = removeDotSegments(relative3.path || "");
+        target.query = relative3.query;
       } else {
-        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
-          target.userinfo = relative4.userinfo;
-          target.host = relative4.host;
-          target.port = relative4.port;
-          target.path = removeDotSegments(relative4.path || "");
-          target.query = relative4.query;
+        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
+          target.userinfo = relative3.userinfo;
+          target.host = relative3.host;
+          target.port = relative3.port;
+          target.path = removeDotSegments(relative3.path || "");
+          target.query = relative3.query;
         } else {
-          if (!relative4.path) {
+          if (!relative3.path) {
             target.path = base.path;
-            if (relative4.query !== void 0) {
-              target.query = relative4.query;
+            if (relative3.query !== void 0) {
+              target.query = relative3.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative4.path[0] === "/") {
-              target.path = removeDotSegments(relative4.path);
+            if (relative3.path[0] === "/") {
+              target.path = removeDotSegments(relative3.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative4.path;
+                target.path = "/" + relative3.path;
               } else if (!base.path) {
-                target.path = relative4.path;
+                target.path = relative3.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative4.query;
+            target.query = relative3.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3693,7 +3693,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative4.fragment;
+      target.fragment = relative3.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -8994,13 +8994,13 @@ var $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
     }
     return propValues;
   });
-  const isObject2 = isObject;
+  const isObject3 = isObject;
   const catchall = def.catchall;
   let value;
   inst._zod.parse = (payload, ctx) => {
     value ?? (value = _normalized.value);
     const input = payload.value;
-    if (!isObject2(input)) {
+    if (!isObject3(input)) {
       payload.issues.push({
         expected: "object",
         code: "invalid_type",
@@ -9127,7 +9127,7 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
     return (payload, ctx) => fn(shape, payload, ctx);
   };
   let fastpass;
-  const isObject2 = isObject;
+  const isObject3 = isObject;
   const jit = !globalConfig.jitless;
   const allowsEval2 = allowsEval;
   const fastEnabled = jit && allowsEval2.value;
@@ -9136,7 +9136,7 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
   inst._zod.parse = (payload, ctx) => {
     value ?? (value = _normalized.value);
     const input = payload.value;
-    if (!isObject2(input)) {
+    if (!isObject3(input)) {
       payload.issues.push({
         expected: "object",
         code: "invalid_type",
@@ -13908,7 +13908,7 @@ import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { randomUUID } from "node:crypto";
 import { tmpdir as tmpdir2 } from "node:os";
 import { mkdir as mkdir3, readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
-import { dirname as dirname5, extname as extname2, isAbsolute as isAbsolute3, relative as relative3, resolve as resolve5 } from "node:path";
+import { dirname as dirname5, extname as extname2, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve5 } from "node:path";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
 function isZ4Schema(s) {
@@ -18455,7 +18455,7 @@ var StaleConnectionError = class extends Error {
 
 // src/repl-doc-search.ts
 import { readFile as readFile2 } from "node:fs/promises";
-import { dirname as dirname3, isAbsolute, relative, resolve as resolve3 } from "node:path";
+import { dirname as dirname3, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 var DEFAULT_DOCS_SEARCH_MAX_RESULTS = 5;
 var DEFAULT_DOCS_SEARCH_SNIPPET_LINES = 3;
@@ -18466,49 +18466,53 @@ var MAX_LOOKUP_QUERY_LENGTH = 120;
 var MAX_REFERENCE_CHUNK_LINES = 24;
 var REFERENCE_CHUNK_OVERLAP_LINES = 4;
 var DOCS_SEARCH_ALLOWLIST = [
-  "official-figma-skills/figma-use/SKILL.source.md",
-  "official-figma-skills/figma-use/references/api-reference.md",
-  "official-figma-skills/figma-use/references/common-patterns.md",
-  "official-figma-skills/figma-use/references/component-patterns.md",
-  "official-figma-skills/figma-use/references/effect-style-patterns.md",
-  "official-figma-skills/figma-use/references/gotchas.md",
-  "official-figma-skills/figma-use/references/plugin-api-patterns.md",
-  "official-figma-skills/figma-use/references/text-style-patterns.md",
-  "official-figma-skills/figma-use/references/validation-and-recovery.md",
-  "official-figma-skills/figma-use/references/variable-patterns.md",
-  "official-figma-skills/figma-use/references/working-with-design-systems/wwds.md",
-  "official-figma-skills/figma-use/references/working-with-design-systems/wwds-components.md",
-  "official-figma-skills/figma-use/references/working-with-design-systems/wwds-variables.md",
-  "official-figma-skills/figma-generate-library/SKILL.source.md",
-  "official-figma-skills/figma-generate-library/references/component-creation.md",
-  "official-figma-skills/figma-generate-library/references/discovery-phase.md",
-  "official-figma-skills/figma-generate-library/references/token-creation.md",
-  "official-figma-skills/figma-code-connect/SKILL.source.md",
-  "official-figma-skills/figma-code-connect/references/api.md",
-  "official-figma-skills/figma-use-figjam/SKILL.source.md",
-  "official-figma-skills/figma-use-slides/SKILL.source.md"
+  "figma-use/SKILL.md",
+  "figma-use/references/api-reference.md",
+  "figma-use/references/common-patterns.md",
+  "figma-use/references/component-patterns.md",
+  "figma-use/references/effect-style-patterns.md",
+  "figma-use/references/gotchas.md",
+  "figma-use/references/plugin-api-patterns.md",
+  "figma-use/references/text-style-patterns.md",
+  "figma-use/references/validation-and-recovery.md",
+  "figma-use/references/variable-patterns.md",
+  "figma-use/references/working-with-design-systems/wwds.md",
+  "figma-use/references/working-with-design-systems/wwds-components.md",
+  "figma-use/references/working-with-design-systems/wwds-variables.md",
+  "figma-generate-library/SKILL.md",
+  "figma-generate-library/references/component-creation.md",
+  "figma-generate-library/references/discovery-phase.md",
+  "figma-generate-library/references/token-creation.md",
+  "figma-code-connect/SKILL.md",
+  "figma-code-connect/references/api.md",
+  "figma-use-figjam/SKILL.md",
+  "figma-use-slides/SKILL.md",
+  "figma-use-motion/SKILL.md",
+  "figma-use-motion/references/motion-easing.md",
+  "figma-use-motion/references/motion-patterns.md",
+  "figma-implement-motion/SKILL.md",
+  "figma-implement-motion/references/examples-and-anti-examples.md",
+  "figma-implement-motion/references/framework-recommendations.md",
+  "figma-implement-motion/references/gotchas.md",
+  "figma-implement-motion/references/motion-lint-rules.md",
+  "figma-implement-motion/references/svg-and-path-motion.md",
+  "figma-implement-motion/references/unsupported-and-fallbacks.md"
 ];
 var API_LOOKUP_FILES = [
-  "official-figma-skills/figma-use/references/plugin-api-standalone.index.md",
-  "official-figma-skills/figma-use/references/api-reference.md",
-  "official-figma-skills/figma-use/references/plugin-api-standalone.d.ts"
+  "figma-use/references/plugin-api-standalone.index.md",
+  "figma-use/references/api-reference.md",
+  "figma-use/references/plugin-api-standalone.d.ts"
 ];
 async function searchReferenceFiles(options) {
-  const searchRoot = await resolveReferenceRoot();
+  const corpus = await loadUpstreamCorpus();
   const queryTokens = tokenizeQuery(options.query);
   const chunks = [];
   for (const file of options.files) {
-    const path = resolve3(searchRoot, file);
-    if (!isPathInside(searchRoot, path)) {
+    const record2 = corpus.records.get(file);
+    if (!record2) {
       continue;
     }
-    let text;
-    try {
-      text = await readFile2(path, "utf8");
-    } catch {
-      continue;
-    }
-    chunks.push(...buildReferenceChunks(file, text));
+    chunks.push(...buildReferenceChunks(record2.id, record2.text));
   }
   const results = scoreReferenceChunks({
     chunks,
@@ -18762,7 +18766,7 @@ function scoredChunkToResult(entry, options) {
   };
 }
 function publicReferenceSourceId(file, chunkId) {
-  const normalized = file.replace(/^official-figma-skills\//u, "").replace(/\/references\//gu, "/").replace(/\/SKILL\.source\.md$/u, "/skill").replace(/\.source\.md$/u, "").replace(/\.(?:md|d\.ts)$/u, "").replace(/[^A-Za-z0-9_:/.-]+/gu, "-");
+  const normalized = file.replace(/\/references\//gu, "/").replace(/\/SKILL\.md$/u, "/skill").replace(/\.(?:md|d\.ts)$/u, "").replace(/[^A-Za-z0-9_:/.-]+/gu, "-");
   const chunk = chunkId.split(":").pop() ?? "chunk";
   return `internal:${normalized}#${chunk}`;
 }
@@ -18800,20 +18804,40 @@ function countTokens(tokens) {
   }
   return counts;
 }
-async function resolveReferenceRoot() {
+var upstreamCorpusCache;
+function loadUpstreamCorpus() {
+  upstreamCorpusCache ??= readUpstreamCorpus();
+  return upstreamCorpusCache;
+}
+async function readUpstreamCorpus() {
+  const root = await resolveUpstreamCorpusRoot();
+  const manifest = parseUpstreamCorpusManifest(await readFile2(resolve3(root, "manifest.json"), "utf8"));
+  const corpusText = await readFile2(resolve3(root, manifest.corpus.file), "utf8");
+  const records = /* @__PURE__ */ new Map();
+  for (const line of corpusText.split(/\r?\n/u)) {
+    if (!line.trim()) {
+      continue;
+    }
+    const record2 = parseUpstreamCorpusRecord(line);
+    records.set(record2.id, record2);
+  }
+  return { root, manifest, records };
+}
+async function resolveUpstreamCorpusRoot() {
   const moduleDir = dirname3(fileURLToPath2(import.meta.url));
   const cwd = typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : moduleDir;
   const candidates = [
-    resolve3(moduleDir, "../skills/figma-router/references"),
-    resolve3(moduleDir, "../../skills/figma-router/references"),
-    resolve3(moduleDir, "../../../skills/figma-router/references"),
-    resolve3(cwd, "skills/figma-router/references"),
-    resolve3(cwd, "plugins/figma-mcp-bridge/skills/figma-router/references"),
-    resolve3(cwd, "../skills/figma-router/references")
+    resolve3(moduleDir, "../skills/figma-router/references/upstream-corpus"),
+    resolve3(moduleDir, "../../skills/figma-router/references/upstream-corpus"),
+    resolve3(moduleDir, "../../../skills/figma-router/references/upstream-corpus"),
+    resolve3(cwd, "skills/figma-router/references/upstream-corpus"),
+    resolve3(cwd, "plugins/figma-mcp-bridge/skills/figma-router/references/upstream-corpus"),
+    resolve3(cwd, "../skills/figma-router/references/upstream-corpus")
   ];
   for (const candidate of candidates) {
     try {
-      await readFile2(resolve3(candidate, "official-figma-skills/figma-use/SKILL.source.md"), "utf8");
+      await readFile2(resolve3(candidate, "manifest.json"), "utf8");
+      await readFile2(resolve3(candidate, "corpus.jsonl"), "utf8");
       return candidate;
     } catch {
     }
@@ -18822,9 +18846,46 @@ async function resolveReferenceRoot() {
     "Unable to locate internal Figma corpus for figma_repl_mcp docs/API lookup."
   );
 }
-function isPathInside(root, path) {
-  const rel = relative(root, path);
-  return rel === "" || !rel.startsWith("..") && !isAbsolute(rel);
+function parseUpstreamCorpusManifest(text) {
+  const value = JSON.parse(text);
+  if (!isObject2(value) || value.schemaVersion !== 1 || !isObject2(value.corpus)) {
+    throw new Error("Invalid internal Figma upstream corpus manifest.");
+  }
+  const corpus = value.corpus;
+  if (typeof corpus.file !== "string" || typeof corpus.recordCount !== "number" || typeof corpus.contract !== "string") {
+    throw new Error("Invalid internal Figma upstream corpus manifest.");
+  }
+  const includedSkills = Array.isArray(value.includedSkills) ? value.includedSkills.filter((item) => typeof item === "string") : [];
+  const outOfScopeSkills = Array.isArray(value.outOfScopeSkills) ? value.outOfScopeSkills.filter((item) => isObject2(item) && typeof item.skill === "string" && typeof item.reason === "string") : [];
+  return {
+    schemaVersion: 1,
+    corpus: {
+      file: corpus.file,
+      recordCount: corpus.recordCount,
+      contract: corpus.contract
+    },
+    includedSkills,
+    outOfScopeSkills
+  };
+}
+function parseUpstreamCorpusRecord(line) {
+  const value = JSON.parse(line);
+  if (!isObject2(value) || value.schemaVersion !== 1 || typeof value.id !== "string" || typeof value.skill !== "string" || typeof value.kind !== "string" || value.format !== "markdown" && value.format !== "typescript" || typeof value.sourcePath !== "string" || typeof value.lineCount !== "number" || typeof value.text !== "string") {
+    throw new Error("Invalid internal Figma upstream corpus JSONL record.");
+  }
+  return {
+    schemaVersion: 1,
+    id: value.id,
+    skill: value.skill,
+    kind: value.kind,
+    format: value.format,
+    sourcePath: value.sourcePath,
+    lineCount: value.lineCount,
+    text: value.text
+  };
+}
+function isObject2(value) {
+  return typeof value === "object" && value !== null;
 }
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
@@ -18841,6 +18902,8 @@ var FIGMA_REPL_QUERY_SEARCH_ANCHORS = [
   "images/fills",
   "selection",
   "capture/QA",
+  "implementation/parity",
+  "Code Connect",
   "FigJam/Slides"
 ];
 var FIGMA_REPL_QUERY_OUTPUT_FIELDS = [
@@ -18924,6 +18987,18 @@ var FIGMA_REPL_API_CARDS = [
     pitfalls: ["Variant combining requires component nodes.", "Use handles for source components before creating instances."]
   },
   {
+    id: "implementation.figma-to-code",
+    title: "Figma-to-code implementation workflow",
+    intents: ["implement", "implementation", "handoff", "figma to code", "production code", "design context"],
+    surface: "design",
+    helpers: ["figma_repl_call_upstream_tool(name=get_design_context)", "figma_repl_capture_node", "figma_repl_guidance", "figma_repl_lookup(kind=docs)"],
+    pluginApi: ["official get_design_context", "official get_screenshot"],
+    apiSymbols: ["get_design_context", "get_screenshot", "figma_repl_call_upstream_tool", "figma_repl_capture_node"],
+    queryHints: ["get design context before implementation", "capture node screenshot before coding", "reuse project tokens and components"],
+    avoid: ["Implementing from memory without design context and screenshot evidence", "Copying generated Tailwind/code output without adapting to project conventions"],
+    pitfalls: ["Route uncovered official context tools through figma_repl_call_upstream_tool.", "Treat upstream code output as a reference, then map to local components, tokens, a11y, and framework conventions.", "Record visible or technical deviations explicitly."]
+  },
+  {
     id: "instances.properties",
     title: "Instance properties",
     intents: ["instance", "instances", "property", "properties", "component property", "set properties", "variant property"],
@@ -18934,6 +19009,18 @@ var FIGMA_REPL_API_CARDS = [
     queryHints: ["set instance properties", "read component property definitions", "variant property values"],
     avoid: ["Using display labels instead of property keys with #uid suffixes", "Assuming setProperties throws when a key is wrong"],
     pitfalls: ["Read componentPropertyDefinitions before setProperties.", "TEXT, BOOLEAN, and INSTANCE_SWAP property names can include #uid suffixes."]
+  },
+  {
+    id: "code.connect",
+    title: "Code Connect component templates",
+    intents: ["code connect", "codeconnect", "template", "mapping", "published component", "component mapping"],
+    surface: "design",
+    helpers: ["figma_repl_call_upstream_tool(name=get_code_connect_map)", "figma_repl_call_upstream_tool(name=get_design_context)", "figma_repl_lookup(kind=docs)"],
+    pluginApi: ["official get_code_connect_map", "official Code Connect suggestions", "component properties"],
+    apiSymbols: ["get_code_connect_map", "get_design_context", "ComponentNode", "ComponentSetNode"],
+    queryHints: ["confirm published component or component set", "read component property context", "map candidate code components"],
+    avoid: ["Creating templates for unpublished or ambiguous component targets", "Choosing between multiple code candidates without documenting criteria"],
+    pitfalls: ["Use upstream Code Connect suggestions through figma_repl_call_upstream_tool before writing parserless templates.", "If the Figma target or code component choice is ambiguous, ask for confirmation before creating template files."]
   },
   {
     id: "images.fill",
@@ -18958,6 +19045,18 @@ var FIGMA_REPL_API_CARDS = [
     queryHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
     avoid: ["Treating opportunistic $.screenshot as final QA when no image payload is returned", "Relying only on inline MCP image payloads"],
     pitfalls: ["Prefer figma_repl_capture_node for final QA files.", "Inspect the saved local image/result when layout correctness matters."]
+  },
+  {
+    id: "review.design-parity",
+    title: "Design parity review",
+    intents: ["parity", "review", "regression", "visual review", "screenshot compare", "implementation review"],
+    surface: "any",
+    helpers: ["figma_repl_capture_node", "figma_repl_inspect(mode=style)", "figma_repl_call_upstream_tool(name=get_design_context)"],
+    pluginApi: ["official get_design_context", "node.screenshot", "style inspection"],
+    apiSymbols: ["get_design_context", "figma_repl_capture_node", "figma_repl_inspect", "SceneNode.screenshot"],
+    queryHints: ["compare implemented UI to Figma screenshot", "audit spacing typography tokens assets", "order visible regressions by severity"],
+    avoid: ["Guessing parity without screenshot or design context evidence", "Prioritizing code style over visible regressions and interaction mismatches"],
+    pitfalls: ["Request or capture missing visual/context evidence before judging parity.", "Call out token misuse, spacing drift, typography drift, and asset substitutions with severity."]
   },
   {
     id: "surface.figjam",
@@ -41870,7 +41969,7 @@ function toolOutputSchema(properties) {
 // src/repl-workspace-files.ts
 import { mkdir as mkdir2, readFile as readFile3, unlink, writeFile as writeFile2 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname as dirname4, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve4 } from "node:path";
+import { basename, dirname as dirname4, extname, isAbsolute, relative, resolve as resolve4 } from "node:path";
 var TASK_WORKSPACE_ROOT_ENV = "FIGMA_REPL_TASK_ROOT";
 var DEFAULT_WORKSPACE_DIR_NAME = "figma-mcp";
 function readProcessEnv(name) {
@@ -41906,7 +42005,7 @@ function createScriptOutputWriter(args, session) {
 function resolveScriptInputPath(args, session) {
   const scriptPath = asOptionalString(args.scriptPath);
   if (scriptPath) {
-    if (!isAbsolute2(scriptPath)) {
+    if (!isAbsolute(scriptPath)) {
       throw new Error('Tool argument "scriptPath" must be an absolute path. Use inputFile after figma_repl_prepare_task for workspace-relative files.');
     }
     return scriptPath;
@@ -41925,7 +42024,7 @@ function resolveWorkspaceAwareFile(value, session, argumentName) {
   if (!raw) {
     return void 0;
   }
-  if (isAbsolute2(raw)) {
+  if (isAbsolute(raw)) {
     return raw;
   }
   if (!session.workspace) {
@@ -42046,7 +42145,7 @@ function resolveTaskPlanResultFile(args, planPath, session) {
     );
   }
   const root = defaultTaskWorkspaceRoot();
-  if (!isAbsolute2(root)) {
+  if (!isAbsolute(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve4(root, "task-plan-results", "task-plan", "task-plan.plan.result.json");
@@ -42086,13 +42185,13 @@ async function writeJsonFile(path, value) {
 }
 function createSessionWorkspace(options) {
   const dirName = asOptionalString(options.dirName) ?? DEFAULT_WORKSPACE_DIR_NAME;
-  if (isAbsolute2(dirName) || dirName.includes("/") || dirName.includes("\\") || dirName.includes("..")) {
+  if (isAbsolute(dirName) || dirName.includes("/") || dirName.includes("\\") || dirName.includes("..")) {
     throw new Error('Tool argument "dirName" must be a simple directory name.');
   }
   const root = resolve4(options.cwd, dirName);
   const fileContext = normalizeFileContextDirectory(options.fileKey, options.fileSlug);
   const fileDir = resolve4(root, fileContext);
-  if (!isPathInside2(root, fileDir)) {
+  if (!isPathInside(root, fileDir)) {
     throw new Error("Resolved file workspace must stay inside the workspace root.");
   }
   const script = `${options.intentSlug}.figma.js`;
@@ -42128,7 +42227,7 @@ function resolvePreparedTaskWorkspace(options) {
   }
   const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
   if (explicitWorkspaceDir) {
-    if (!isAbsolute2(explicitWorkspaceDir)) {
+    if (!isAbsolute(explicitWorkspaceDir)) {
       throw new Error('Tool argument "workspaceDir" must be an absolute path.');
     }
     return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskName);
@@ -42141,18 +42240,18 @@ function resolvePreparedTaskWorkspace(options) {
   return createWorkspaceFromSessionDir(workspaceDir, options.taskName);
 }
 function resolveWorkspaceFile(baseDir, fileName, argumentName) {
-  if (isAbsolute2(fileName) || fileName.includes("..") || /^[A-Za-z]:/u.test(fileName) || fileName.startsWith("\\\\")) {
+  if (isAbsolute(fileName) || fileName.includes("..") || /^[A-Za-z]:/u.test(fileName) || fileName.startsWith("\\\\")) {
     throw new Error(`Tool argument "${argumentName}" must be a workspace-relative file name.`);
   }
   const resolved = resolve4(baseDir, fileName);
-  if (!isPathInside2(baseDir, resolved)) {
+  if (!isPathInside(baseDir, resolved)) {
     throw new Error(`Tool argument "${argumentName}" must stay inside the file-context workspace.`);
   }
   return resolved;
 }
 function normalizeTaskScriptName(value, taskName) {
   const scriptName = asOptionalString(value) ?? `${taskName}.figma.js`;
-  if (isAbsolute2(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
+  if (isAbsolute(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
     throw new Error('Tool argument "fileName" must be a file name, not a path.');
   }
   if (!scriptName.endsWith(".figma.js")) {
@@ -42207,7 +42306,7 @@ function compiledFilePathForResultFile(resultFile) {
 }
 function resolveWorkspaceOutputFile(value, baseDir, fallbackName, argumentName) {
   const raw = asOptionalString(value) ?? fallbackName;
-  return isAbsolute2(raw) ? raw : resolveWorkspaceFile(baseDir, raw, argumentName);
+  return isAbsolute(raw) ? raw : resolveWorkspaceFile(baseDir, raw, argumentName);
 }
 async function writeTextFile(path, content) {
   await mkdir2(dirname4(path), { recursive: true });
@@ -42269,14 +42368,14 @@ function countTextLines(content) {
 function resolveTaskWorkspace(options) {
   const explicitWorkspace = asOptionalString(options.workspaceDir);
   if (explicitWorkspace) {
-    if (!isAbsolute2(explicitWorkspace)) {
+    if (!isAbsolute(explicitWorkspace)) {
       throw new Error('Tool argument "workspaceDir" must be an absolute path.');
     }
     return explicitWorkspace;
   }
   const explicitRoot = asOptionalString(options.taskRoot);
   const root = explicitRoot ?? defaultTaskWorkspaceRoot();
-  if (!isAbsolute2(root)) {
+  if (!isAbsolute(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve4(root, options.taskName);
@@ -42292,7 +42391,7 @@ function createWorkspaceFromSessionDir(sessionDir, taskName) {
 function createWorkspaceFromFileDir(options) {
   const script = `${options.intentSlug}.figma.js`;
   const result = `${options.intentSlug}.result.json`;
-  if (!isPathInside2(options.root, options.fileDir)) {
+  if (!isPathInside(options.root, options.fileDir)) {
     throw new Error("Resolved file workspace must stay inside the workspace root.");
   }
   return {
@@ -42313,7 +42412,7 @@ function createWorkspaceFromFileDir(options) {
 }
 function normalizeFileContextDirectory(fileKey, fileSlug) {
   if (fileKey) {
-    if (isAbsolute2(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
+    if (isAbsolute(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
       throw new Error("Derived Figma file key must be a simple file key.");
     }
     return fileKey;
@@ -42431,9 +42530,9 @@ function slugifyTaskName(value) {
   const slug = source.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
   return slug || "figma-task";
 }
-function isPathInside2(root, path) {
-  const rel = relative2(root, path);
-  return rel === "" || !rel.startsWith("..") && !isAbsolute2(rel);
+function isPathInside(root, path) {
+  const rel = relative(root, path);
+  return rel === "" || !rel.startsWith("..") && !isAbsolute(rel);
 }
 function removeUndefined2(value) {
   if (Array.isArray(value)) {
@@ -42892,7 +42991,7 @@ function resolveEvalOutputFile(session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
   }
   const root = defaultTaskWorkspaceRoot2();
-  if (!isAbsolute3(root)) {
+  if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve5(root, "eval-results", session.slug, fileName);
@@ -42927,7 +43026,7 @@ function metadataResultFilePath(session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "metadataFile");
   }
   const root = defaultTaskWorkspaceRoot2();
-  if (!isAbsolute3(root)) {
+  if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve5(root, "metadata-results", session.slug, fileName);
@@ -42939,7 +43038,7 @@ function resolveCallUpstreamOutputFile(toolName, session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
   }
   const root = defaultTaskWorkspaceRoot2();
-  if (!isAbsolute3(root)) {
+  if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve5(root, "upstream-results", session.slug, fileName);
@@ -43385,7 +43484,7 @@ function resolveAssetManifestDebugFile(args, session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
   }
   const root = defaultTaskWorkspaceRoot2();
-  if (!isAbsolute3(root)) {
+  if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve5(root, "asset-results", session.slug, fileName);
@@ -43627,7 +43726,7 @@ function resolveDownloadAssetsOutputPaths(args, session) {
 }
 function resolveDownloadAssetsTempPath(session, fileName) {
   const root = defaultTaskWorkspaceRoot2();
-  if (!isAbsolute3(root)) {
+  if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve5(root, "download-results", session.slug, fileName);
@@ -43896,7 +43995,7 @@ function resolveCaptureOutputFile(args, session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "imageFile");
   }
   const root = defaultTaskWorkspaceRoot2();
-  if (!isAbsolute3(root)) {
+  if (!isAbsolute2(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve5(root, "capture-results", session.slug, fileName);
@@ -44092,7 +44191,7 @@ function resolvePrepareTaskWorkspace(args, taskName, fileSlug, session) {
   const parsedFile = parseFigmaFileReference(args.file);
   const fileKey = session?.fileKey ?? parsedFile.fileKey;
   if (typeof args.cwd === "string" && args.cwd.length > 0) {
-    if (!isAbsolute3(args.cwd)) {
+    if (!isAbsolute2(args.cwd)) {
       throw new Error('Tool argument "cwd" must be an absolute path.');
     }
     return createSessionWorkspace({
@@ -45871,7 +45970,7 @@ function normalizeManifestAsset(value, index, baseDir, session) {
   if (!rawPath) {
     throw new Error(`Asset manifest entry ${index} requires path.`);
   }
-  const path = isAbsolute3(rawPath) ? rawPath : baseDir ? resolve5(baseDir, rawPath) : void 0;
+  const path = isAbsolute2(rawPath) ? rawPath : baseDir ? resolve5(baseDir, rawPath) : void 0;
   if (!path) {
     throw new Error(`Asset manifest entry ${index} path must be absolute unless manifestPath is used.`);
   }
@@ -46783,7 +46882,7 @@ function bindOpenWorkspaceIfAvailable(session, args) {
   if (!session.fileKey && !session.fileUrl) {
     return;
   }
-  if (typeof args.cwd === "string" && args.cwd.length > 0 && !isAbsolute3(args.cwd)) {
+  if (typeof args.cwd === "string" && args.cwd.length > 0 && !isAbsolute2(args.cwd)) {
     throw new Error('Tool argument "cwd" must be an absolute path.');
   }
   const fileSlug = slugifyTaskName2(
@@ -46907,7 +47006,8 @@ function createCapabilitiesPayload() {
     toolSelection: {
       normalPath: ["figma_repl_prepare_task", "figma_repl_guidance", "figma_repl_run_script_file", "figma_repl_inspect", "figma_repl_capture_node"],
       contextAndLookup: ["figma_repl_get_metadata", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_lookup"],
-      advancedEscapeHatches: ["figma_repl_eval", "figma_repl_call_upstream_tool", "figma_repl_run_task_plan"]
+      advancedEscapeHatches: ["figma_repl_eval", "figma_repl_call_upstream_tool", "figma_repl_run_task_plan"],
+      upstreamEscapeHatchExamples: ["get_design_context", "get_motion_context", "export_video", "list_shader_effects", "get_shader_effect", "list_shader_fills", "get_shader_fill"]
     },
     contractNotes: {
       scriptPreflight: "figma_repl_run_script_file always runs local diagnostics/compile/strict checks first; phase=preflight means executed=false and upstream was not called, phase=execute means upstream execution was attempted. Parse errors return repairPlan.status=parse_error and no guardrail scan.",
@@ -46958,6 +47058,7 @@ function createGuidePayload() {
     ],
     upstreamEscapeHatch: [
       "Use figma_repl_call_upstream_tool only for explicit uncovered official upstream tools.",
+      "Examples currently exposed through upstream discovery include get_design_context, get_motion_context, export_video, and shader effect/fill library tools.",
       "Before using it, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs."
     ],
     responseContract: [
@@ -47022,7 +47123,7 @@ async function readReplResource(uri, runtime) {
           text: JSON.stringify({
             tools: tools.map((tool) => upstreamToolDirectoryEntry(tool)),
             detailTemplate: "figma-repl://upstream-tools/{name}",
-            categories: ["capture", "design-context", "execution", "assets", "code-connect", "libraries", "figjam", "generation", "account", "other"],
+            categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
             guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-repl://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_repl_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs."
           }, null, 2)
         }
@@ -47094,9 +47195,25 @@ function upstreamToolDirectoryEntry(tool) {
     description: upstreamToolDirectoryDescription(tool)
   };
 }
+var UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER = [
+  "capture",
+  "design-context",
+  "motion",
+  "video",
+  "execution",
+  "assets",
+  "code-connect",
+  "libraries",
+  "figjam",
+  "generation",
+  "shader",
+  "account",
+  "other"
+];
 var UPSTREAM_TOOL_DIRECTORY_CATEGORIES = {
   get_screenshot: "capture",
   get_design_context: "design-context",
+  get_motion_context: "motion",
   get_metadata: "design-context",
   get_variable_defs: "design-context",
   get_figjam: "figjam",
@@ -47113,11 +47230,17 @@ var UPSTREAM_TOOL_DIRECTORY_CATEGORIES = {
   search_design_system: "libraries",
   create_new_file: "generation",
   upload_assets: "assets",
-  download_assets: "assets"
+  download_assets: "assets",
+  export_video: "video",
+  list_shader_effects: "shader",
+  get_shader_effect: "shader",
+  list_shader_fills: "shader",
+  get_shader_fill: "shader"
 };
 var UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS = {
   get_screenshot: "Capture a screenshot for a selected or specified Figma node.",
   get_design_context: "Get design-to-code context, screenshot, and metadata for a node.",
+  get_motion_context: "Get keyframe animation data and motion code snippets for a node.",
   get_metadata: "Read XML metadata for a node or page when full design context is unnecessary.",
   get_variable_defs: "List variable definitions referenced by a node.",
   get_figjam: "Generate UI code or context for a FigJam node.",
@@ -47134,7 +47257,12 @@ var UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS = {
   search_design_system: "Search library components, variables, and styles by text query.",
   create_new_file: "Create a new blank Figma file.",
   upload_assets: "Get upload URLs for image assets before applying them in Figma.",
-  download_assets: "Download exported renders and source images for one Figma node."
+  download_assets: "Download exported renders and source images for one Figma node.",
+  export_video: "Export a Figma timeline node as an MP4 video.",
+  list_shader_effects: "List shader effects in the authenticated user's account library.",
+  get_shader_effect: "Read a shader effect source manifest by id.",
+  list_shader_fills: "List shader fills in the authenticated user's account library.",
+  get_shader_fill: "Read a shader fill source manifest by id."
 };
 function upstreamToolDirectoryCategory(tool) {
   return UPSTREAM_TOOL_DIRECTORY_CATEGORIES[tool.name] ?? "other";
@@ -47666,7 +47794,7 @@ function makeJsonToolResult(value) {
   };
 }
 function normalizeOAuthCachePath(oauthCachePath) {
-  if (!isAbsolute3(oauthCachePath)) {
+  if (!isAbsolute2(oauthCachePath)) {
     throw new Error("oauthCachePath must be an absolute path.");
   }
   return oauthCachePath;
@@ -47726,7 +47854,7 @@ function parseFigmaFileReference(file) {
       surface: inferFigmaSurface(value)
     };
   } catch {
-    if (isAbsolute3(value) || value.includes("/") || value.includes("\\") || value.includes("..")) {
+    if (isAbsolute2(value) || value.includes("/") || value.includes("\\") || value.includes("..")) {
       throw new Error('Tool argument "file" must be a Figma URL or a simple Figma file key.');
     }
     return { fileKey: value };

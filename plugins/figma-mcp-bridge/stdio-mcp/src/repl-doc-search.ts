@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_DOCS_SEARCH_MAX_RESULTS = 5;
@@ -13,33 +13,43 @@ const MAX_REFERENCE_CHUNK_LINES = 24;
 const REFERENCE_CHUNK_OVERLAP_LINES = 4;
 
 export const DOCS_SEARCH_ALLOWLIST = [
-  "official-figma-skills/figma-use/SKILL.source.md",
-  "official-figma-skills/figma-use/references/api-reference.md",
-  "official-figma-skills/figma-use/references/common-patterns.md",
-  "official-figma-skills/figma-use/references/component-patterns.md",
-  "official-figma-skills/figma-use/references/effect-style-patterns.md",
-  "official-figma-skills/figma-use/references/gotchas.md",
-  "official-figma-skills/figma-use/references/plugin-api-patterns.md",
-  "official-figma-skills/figma-use/references/text-style-patterns.md",
-  "official-figma-skills/figma-use/references/validation-and-recovery.md",
-  "official-figma-skills/figma-use/references/variable-patterns.md",
-  "official-figma-skills/figma-use/references/working-with-design-systems/wwds.md",
-  "official-figma-skills/figma-use/references/working-with-design-systems/wwds-components.md",
-  "official-figma-skills/figma-use/references/working-with-design-systems/wwds-variables.md",
-  "official-figma-skills/figma-generate-library/SKILL.source.md",
-  "official-figma-skills/figma-generate-library/references/component-creation.md",
-  "official-figma-skills/figma-generate-library/references/discovery-phase.md",
-  "official-figma-skills/figma-generate-library/references/token-creation.md",
-  "official-figma-skills/figma-code-connect/SKILL.source.md",
-  "official-figma-skills/figma-code-connect/references/api.md",
-  "official-figma-skills/figma-use-figjam/SKILL.source.md",
-  "official-figma-skills/figma-use-slides/SKILL.source.md",
+  "figma-use/SKILL.md",
+  "figma-use/references/api-reference.md",
+  "figma-use/references/common-patterns.md",
+  "figma-use/references/component-patterns.md",
+  "figma-use/references/effect-style-patterns.md",
+  "figma-use/references/gotchas.md",
+  "figma-use/references/plugin-api-patterns.md",
+  "figma-use/references/text-style-patterns.md",
+  "figma-use/references/validation-and-recovery.md",
+  "figma-use/references/variable-patterns.md",
+  "figma-use/references/working-with-design-systems/wwds.md",
+  "figma-use/references/working-with-design-systems/wwds-components.md",
+  "figma-use/references/working-with-design-systems/wwds-variables.md",
+  "figma-generate-library/SKILL.md",
+  "figma-generate-library/references/component-creation.md",
+  "figma-generate-library/references/discovery-phase.md",
+  "figma-generate-library/references/token-creation.md",
+  "figma-code-connect/SKILL.md",
+  "figma-code-connect/references/api.md",
+  "figma-use-figjam/SKILL.md",
+  "figma-use-slides/SKILL.md",
+  "figma-use-motion/SKILL.md",
+  "figma-use-motion/references/motion-easing.md",
+  "figma-use-motion/references/motion-patterns.md",
+  "figma-implement-motion/SKILL.md",
+  "figma-implement-motion/references/examples-and-anti-examples.md",
+  "figma-implement-motion/references/framework-recommendations.md",
+  "figma-implement-motion/references/gotchas.md",
+  "figma-implement-motion/references/motion-lint-rules.md",
+  "figma-implement-motion/references/svg-and-path-motion.md",
+  "figma-implement-motion/references/unsupported-and-fallbacks.md",
 ];
 
 export const API_LOOKUP_FILES = [
-  "official-figma-skills/figma-use/references/plugin-api-standalone.index.md",
-  "official-figma-skills/figma-use/references/api-reference.md",
-  "official-figma-skills/figma-use/references/plugin-api-standalone.d.ts",
+  "figma-use/references/plugin-api-standalone.index.md",
+  "figma-use/references/api-reference.md",
+  "figma-use/references/plugin-api-standalone.d.ts",
 ];
 
 export interface ReferenceSearchResult {
@@ -65,6 +75,34 @@ interface ReferenceChunk {
   tokenCounts: Map<string, number>;
 }
 
+interface UpstreamCorpusManifest {
+  schemaVersion: 1;
+  corpus: {
+    file: string;
+    recordCount: number;
+    contract: string;
+  };
+  includedSkills: string[];
+  outOfScopeSkills: Array<{ skill: string; reason: string }>;
+}
+
+interface UpstreamCorpusRecord {
+  schemaVersion: 1;
+  id: string;
+  skill: string;
+  kind: string;
+  format: "markdown" | "typescript";
+  sourcePath: string;
+  lineCount: number;
+  text: string;
+}
+
+interface UpstreamCorpus {
+  root: string;
+  manifest: UpstreamCorpusManifest;
+  records: Map<string, UpstreamCorpusRecord>;
+}
+
 interface ScoredReferenceChunk {
   chunk: ReferenceChunk;
   score: number;
@@ -83,21 +121,15 @@ export async function searchReferenceFiles(options: {
   maxSnippetLines: number;
   results: ReferenceSearchResult[];
 }> {
-  const searchRoot = await resolveReferenceRoot();
+  const corpus = await loadUpstreamCorpus();
   const queryTokens = tokenizeQuery(options.query);
   const chunks: ReferenceChunk[] = [];
   for (const file of options.files) {
-    const path = resolve(searchRoot, file);
-    if (!isPathInside(searchRoot, path)) {
+    const record = corpus.records.get(file);
+    if (!record) {
       continue;
     }
-    let text: string;
-    try {
-      text = await readFile(path, "utf8");
-    } catch {
-      continue;
-    }
-    chunks.push(...buildReferenceChunks(file, text));
+    chunks.push(...buildReferenceChunks(record.id, record.text));
   }
   const results = scoreReferenceChunks({
     chunks,
@@ -411,10 +443,8 @@ function scoredChunkToResult(entry: ScoredReferenceChunk, options: {
 
 function publicReferenceSourceId(file: string, chunkId: string): string {
   const normalized = file
-    .replace(/^official-figma-skills\//u, "")
     .replace(/\/references\//gu, "/")
-    .replace(/\/SKILL\.source\.md$/u, "/skill")
-    .replace(/\.source\.md$/u, "")
+    .replace(/\/SKILL\.md$/u, "/skill")
     .replace(/\.(?:md|d\.ts)$/u, "")
     .replace(/[^A-Za-z0-9_:/.-]+/gu, "-");
   const chunk = chunkId.split(":").pop() ?? "chunk";
@@ -470,22 +500,45 @@ function countTokens(tokens: string[]): Map<string, number> {
   return counts;
 }
 
-async function resolveReferenceRoot(): Promise<string> {
+let upstreamCorpusCache: Promise<UpstreamCorpus> | undefined;
+
+function loadUpstreamCorpus(): Promise<UpstreamCorpus> {
+  upstreamCorpusCache ??= readUpstreamCorpus();
+  return upstreamCorpusCache;
+}
+
+async function readUpstreamCorpus(): Promise<UpstreamCorpus> {
+  const root = await resolveUpstreamCorpusRoot();
+  const manifest = parseUpstreamCorpusManifest(await readFile(resolve(root, "manifest.json"), "utf8"));
+  const corpusText = await readFile(resolve(root, manifest.corpus.file), "utf8");
+  const records = new Map<string, UpstreamCorpusRecord>();
+  for (const line of corpusText.split(/\r?\n/u)) {
+    if (!line.trim()) {
+      continue;
+    }
+    const record = parseUpstreamCorpusRecord(line);
+    records.set(record.id, record);
+  }
+  return { root, manifest, records };
+}
+
+async function resolveUpstreamCorpusRoot(): Promise<string> {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const cwd = typeof process !== "undefined" && typeof process.cwd === "function"
     ? process.cwd()
     : moduleDir;
   const candidates = [
-    resolve(moduleDir, "../skills/figma-router/references"),
-    resolve(moduleDir, "../../skills/figma-router/references"),
-    resolve(moduleDir, "../../../skills/figma-router/references"),
-    resolve(cwd, "skills/figma-router/references"),
-    resolve(cwd, "plugins/figma-mcp-bridge/skills/figma-router/references"),
-    resolve(cwd, "../skills/figma-router/references"),
+    resolve(moduleDir, "../skills/figma-router/references/upstream-corpus"),
+    resolve(moduleDir, "../../skills/figma-router/references/upstream-corpus"),
+    resolve(moduleDir, "../../../skills/figma-router/references/upstream-corpus"),
+    resolve(cwd, "skills/figma-router/references/upstream-corpus"),
+    resolve(cwd, "plugins/figma-mcp-bridge/skills/figma-router/references/upstream-corpus"),
+    resolve(cwd, "../skills/figma-router/references/upstream-corpus"),
   ];
   for (const candidate of candidates) {
     try {
-      await readFile(resolve(candidate, "official-figma-skills/figma-use/SKILL.source.md"), "utf8");
+      await readFile(resolve(candidate, "manifest.json"), "utf8");
+      await readFile(resolve(candidate, "corpus.jsonl"), "utf8");
       return candidate;
     } catch {
       // Try the next runtime layout.
@@ -496,9 +549,63 @@ async function resolveReferenceRoot(): Promise<string> {
   );
 }
 
-function isPathInside(root: string, path: string): boolean {
-  const rel = relative(root, path);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+function parseUpstreamCorpusManifest(text: string): UpstreamCorpusManifest {
+  const value: unknown = JSON.parse(text);
+  if (!isObject(value) || value.schemaVersion !== 1 || !isObject(value.corpus)) {
+    throw new Error("Invalid internal Figma upstream corpus manifest.");
+  }
+  const corpus = value.corpus;
+  if (typeof corpus.file !== "string" || typeof corpus.recordCount !== "number" || typeof corpus.contract !== "string") {
+    throw new Error("Invalid internal Figma upstream corpus manifest.");
+  }
+  const includedSkills = Array.isArray(value.includedSkills)
+    ? value.includedSkills.filter((item): item is string => typeof item === "string")
+    : [];
+  const outOfScopeSkills = Array.isArray(value.outOfScopeSkills)
+    ? value.outOfScopeSkills.filter((item): item is { skill: string; reason: string } =>
+      isObject(item) && typeof item.skill === "string" && typeof item.reason === "string")
+    : [];
+  return {
+    schemaVersion: 1,
+    corpus: {
+      file: corpus.file,
+      recordCount: corpus.recordCount,
+      contract: corpus.contract,
+    },
+    includedSkills,
+    outOfScopeSkills,
+  };
+}
+
+function parseUpstreamCorpusRecord(line: string): UpstreamCorpusRecord {
+  const value: unknown = JSON.parse(line);
+  if (
+    !isObject(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== "string" ||
+    typeof value.skill !== "string" ||
+    typeof value.kind !== "string" ||
+    (value.format !== "markdown" && value.format !== "typescript") ||
+    typeof value.sourcePath !== "string" ||
+    typeof value.lineCount !== "number" ||
+    typeof value.text !== "string"
+  ) {
+    throw new Error("Invalid internal Figma upstream corpus JSONL record.");
+  }
+  return {
+    schemaVersion: 1,
+    id: value.id,
+    skill: value.skill,
+    kind: value.kind,
+    format: value.format,
+    sourcePath: value.sourcePath,
+    lineCount: value.lineCount,
+    text: value.text,
+  };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function escapeRegExp(value: string): string {

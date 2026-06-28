@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-28T06:58:16.449Z",
+  "upstream": {
+    "package": "openai-curated-remote/figma",
+    "version": "2.0.12",
+    "source": "local Codex plugin cache or --upstream-skill-root input"
+  },
+  "corpus": {
+    "file": "corpus.jsonl",
+    "recordCount": 36,
+    "contract": "Internal lookup corpus only; agents use figma_repl_guidance and figma_repl_lookup instead of reading upstream files directly."
+  },
+  "includedSkills": [
+    "figma-use",
+    "figma-generate-library",
+    "figma-code-connect",
+    "figma-use-figjam",
+    "figma-use-slides",
+    "figma-use-motion",
+    "figma-implement-motion",
+    "figma-swiftui"
+  ],
+  "outOfScopeSkills": []
+}

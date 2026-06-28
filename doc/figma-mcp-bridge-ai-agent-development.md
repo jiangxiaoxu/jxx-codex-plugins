@@ -9,7 +9,7 @@ This document is for AI agents maintaining `figma-mcp-bridge`. It is not the use
 - Codex `node_repl` is not the normal live-Figma route. For Node-level live verification, inject a custom upstream client, preferably a child stdio MCP client launched from `stdio-mcp/dist/repl-stdio-cli.js`; keep the `./node-repl` no-client `createFigmaReplClient()` path local-only.
 - Local `.figma.js` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, and compact docs/API lookup are the supported REPL path.
 - DSL, `$.ops`, `figma_repl_apply_ops`, `compileFigmaReplOps`, `FigmaReplOp`, and `FigmaReplApplyOpsArguments` are not part of the public or runtime contract.
-- Official files under `skills/figma-router/references/official-figma-skills/**` are internal corpus for lookup tools. Do not route agents to read them directly.
+- Official upstream skill content is stored as internal JSONL corpus under `skills/figma-router/references/upstream-corpus/`. Do not route agents to read it directly.
 
 ## Canonical Contracts
 
@@ -37,7 +37,7 @@ Pin these facts when changing the router surface:
 - Codex cannot visually read MCP image `content` items when a tool result also uses `structuredContent`. Visual QA and capture flows should return local file paths in `structuredContent`; agents should inspect those files with local image-reading tools instead of expecting inline MCP media rendering.
 - public tool schemas and docs expose the fixed response shape only. Public JSON result `outputFile` inputs are removed; legacy JSON result `outputFile`/`resultFile` inputs hard-reject because debug files are generated on demand. Legacy `figma_repl_run_script_file` `outputDir`/`diagnosticsFile`/`summaryFile` inputs also hard-reject because debug files are generated on demand and diagnostics are included in `outputFiles.debugFile`; do not remove `figma_repl_download_assets.outputDir`. Upstream-backed execution/debug tools may expose compact upstream envelopes inline, fixed official wrappers keep generic upstream details out of normal inline results, eval/script/upstream-tool/asset/download clean success does not write JSON result files, `figma_repl_prepare_task` does not create or return pending result stubs, result JSON files are minimal debug/audit envelopes without full `session`, `outputFiles`, paired sidecar paths, or copied success business arrays, public result pointers use `outputFiles.debugFile`, eval/script/upstream-tool result files never contain `upstream`, and `figma_repl_run_task_plan` is the only normal-path tool that still automatically writes a plan-level result/debug file while omitting the input-only `stopOnFailure` from inline/result-file output;
 - `figma-repl://capabilities` is a short routing manifest, `figma-repl://guide` is the workflow guide, `figma-repl://lookup-index` is the search/index entrypoint, and public tool schemas carry argument details;
-- bundled corpus files are internal lookup data, not agent-facing docs;
+- bundled JSONL corpus files are internal lookup data, not agent-facing docs;
 - `figma_repl_call_upstream_tool` is only for explicit uncovered upstream capabilities.
 
 ## Source Ownership Map
@@ -58,7 +58,7 @@ Pin these facts when changing the router surface:
 - Breaking changes to public tool names, resource URIs, result shapes, session semantics, and typed client signatures are allowed by default when they simplify the active contract; update runtime schemas, capabilities, docs, tests, and generated output in the same change.
 - Runtime parsers may reject removed or ambiguous public arguments. Keep parser behavior explicit, and do not duplicate path/workspace validation outside `repl-workspace-files.ts`.
 - Keep generated `dist` outputs in sync when `npm run build` changes them.
-- Lightweight router references under `skills/figma-router/references/` are allowed for static workflow, lookup, and safety notes. Do not copy large runtime payloads there, and do not make those references a second canonical contract. Keep official corpus files under `official-figma-skills/**`.
+- Lightweight router references under `skills/figma-router/references/` are allowed for static workflow, lookup, and safety notes. Do not copy large runtime payloads there, and do not make those references a second canonical contract. Keep official upstream content in `upstream-corpus/manifest.json` and `upstream-corpus/corpus.jsonl`.
 - Do not make docs canonical by copying large runtime payloads into markdown. Add or adjust narrow tests instead.
 - When changing plugin version numbers, update `plugins/figma-mcp-bridge/.codex-plugin/plugin.json` as part of the same release change.
 - When adding, renaming, or removing plugins under `plugins/*`, update `.agents/plugins/marketplace.json` and the root plugin list in `README.md`.
