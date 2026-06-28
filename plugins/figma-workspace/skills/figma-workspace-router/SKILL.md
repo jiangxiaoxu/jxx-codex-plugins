@@ -88,7 +88,7 @@ Use `figma_workspace_call_upstream_tool` only when a required official capabilit
 
 ## Figma MCP Login
 
-When a Figma Workspace MCP call or resource read reports missing/expired/cancelled OAuth authorization, ask the user whether to start browser authorization before running the login helper. If the user agrees, run the helper below, wait for completion, then verify connectivity by reading `figma-workspace://upstream-tools` or calling a small upstream account tool such as `whoami`. If the user declines, do not run the login helper; report that Figma upstream access remains unavailable until OAuth is completed.
+When a Figma Workspace MCP call or resource read returns an `upstreamError.code` of `FIGMA_UPSTREAM_AUTH_REQUIRED` or a code starting with `FIGMA_UPSTREAM_OAUTH_`, ask the user whether to start browser authorization before running the login helper. If the user agrees, run the helper below, wait for completion, then verify connectivity by reading `figma-workspace://upstream-tools`; use `figma-workspace://upstream-tools/{name}` only when one upstream tool's schema is needed after discovery succeeds. If the user declines, do not run the login helper; report that Figma upstream access remains unavailable until OAuth is completed.
 
 Run the login helper from the plugin root, which is two directories above this `SKILL.md`:
 
