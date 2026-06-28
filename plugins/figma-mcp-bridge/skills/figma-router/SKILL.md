@@ -15,7 +15,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 4. If direct `figma_repl_*` tools are not installed in the active Codex environment, do not use the `./node-repl` no-client default for live Figma work; use `figma_repl_mcp` after plugin reload, or use package-local `createFigmaReplClient` only with an explicit custom upstream `client`.
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, then run it with automatic preflight and write results to local files.
 6. Use `figma_repl_guidance` and `figma_repl_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-7. Local `figma_repl_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.result` or text from `upstream.text`, and use `outputFiles.debugFile` for generated JSON debug/result files. Use `figma_repl_get_metadata` for broad layer-tree discovery; it converts upstream XML to compact JSON, returns small trees inline, and writes oversized trees to `outputFiles.metadataFile`. Use `figma_repl_search_design_system`, `figma_repl_get_libraries`, and `figma_repl_get_variable_defs` for official design-system context.
+7. Local `figma_repl_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.result` or text from `upstream.text`, and use `outputFiles.debugFile` for generated JSON debug/result files. Use `figma_repl_get_metadata` for broad layer-tree discovery; it converts upstream XML to compact JSON, returns small trees inline, and writes oversized trees to `outputFiles.metadataFile`. Use `figma_repl_get_design_context`, `figma_repl_get_motion_context`, `figma_repl_export_video`, design-system wrappers, and shader wrappers for their covered official upstream tools.
 8. `createFigmaReplClient` mirrors the same result shape in Node: read `result.upstream.result`, compact asset entries, generated debug files, and capture `imageFile` on success.
 
 ## Node REPL Route
@@ -48,6 +48,7 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 - Execute: `figma_repl_run_script_file({ sessionId, inputFile, strict: true, surface })`; diagnostics and compiled payload preflight run before upstream execution.
 - For generated image assets, create target rectangles in the script, then call `figma_repl_apply_asset_manifest({ sessionId, manifestPath })`. Read `assets[].upload.response.imageHash` / `placedOnNodeId` for upload POST evidence, and read `validation` for canvas-side IMAGE fill confirmation. Default target validation checks IMAGE fills when upstream eval is available; incomplete validation records fail the workflow and point to `outputFiles.debugFile`.
 - For broad layer-tree discovery, call `figma_repl_get_metadata({ sessionId, target })` before targeted `figma_repl_inspect` style/fill/text checks.
+- For implementation context or motion, call `figma_repl_get_design_context({ sessionId, target })` and `figma_repl_get_motion_context({ sessionId, target, recursive: true })`; use `figma_repl_export_video` only when official video frame sampling is worth the render cost.
 - For visual QA, call `figma_repl_capture_node({ sessionId, target, imageFile })` and inspect the local image file.
 - For repeatable multi-step workflows, use `figma_repl_run_task_plan({ sessionId, planPath })`.
 
@@ -76,7 +77,7 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls shoul
 - Use `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 - For deeper static workflow, lookup, or safety notes, read `references/figma-repl-workflow.md`, `references/figma-repl-guidance-and-lookup.md`, or `references/figma-repl-safety.md`.
 
-Use `figma_repl_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers. Read `figma-repl://upstream-tools` first; it categorizes current escape-hatch tools such as `get_motion_context`, `export_video`, shader effect/fill tools, and design-context/code-connect helpers. Prefer `figma_repl_get_metadata`, `figma_repl_search_design_system`, `figma_repl_get_libraries`, and `figma_repl_get_variable_defs` over direct upstream calls for those official tools. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
+Use `figma_repl_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers. Read `figma-repl://upstream-tools` first when an uncovered upstream-only debug task depends on it. Prefer first-class wrappers for metadata, design context, motion context, video export, design-system reads, and shader effect/fill reads. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
 
 ## Query Strategy
 
@@ -107,5 +108,5 @@ command: npm run oauth-cache:path
 
 ## Bundled Servers
 
-- `figma_repl_mcp`: primary agent-facing facade after OAuth registration. It runs local `.figma.js` files, writes local output files, exposes compact docs/API lookup, stores process-local handles, can capture screenshots, applies generated assets, and delegates uncovered official capabilities.
+- `figma_repl_mcp`: primary agent-facing facade after OAuth registration. It runs local `.figma.js` files, writes local output files, exposes compact docs/API lookup, stores process-local handles, captures screenshots, applies generated assets, provides thin first-class wrappers for covered official upstream tools, and delegates only uncovered official capabilities.
 - `figma-stdio`: optional transparent bridge for upstream debugging and parity checks. It is not installed as a persistent plugin MCP server by default; use the package CLI or Node API `createRemoteMcpClient` when raw official MCP access is required.

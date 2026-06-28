@@ -2,7 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type RemoteMcpClientOptions } from "./client.js";
 import { type ReferenceSearchResult } from "./repl-doc-search.js";
 import { assertSafeFigmaReplCode, diagnoseFigmaReplCode, resolveFigmaReplScriptHelperSelection as resolveFigmaReplScriptHelperSelectionInternal, type FigmaReplDiagnostic, type FigmaReplDiagnosticsOptions, type FigmaReplDiagnosticSeverity, type FigmaReplFileDiagnostic, type FigmaReplRepairPlan, type FigmaReplSurface } from "./repl-script-runner.js";
-import type { FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplEvalArguments, FigmaReplGetLibrariesArguments, FigmaReplGetMetadataArguments, FigmaReplGetVariableDefsArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSearchDesignSystemArguments } from "./repl-tool-args.js";
+import type { FigmaReplApplyAssetManifestArguments, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplEvalArguments, FigmaReplExportVideoArguments, FigmaReplGetDesignContextArguments, FigmaReplGetLibrariesArguments, FigmaReplGetMetadataArguments, FigmaReplGetMotionContextArguments, FigmaReplGetShaderEffectArguments, FigmaReplGetShaderFillArguments, FigmaReplGetVariableDefsArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplListShaderEffectsArguments, FigmaReplListShaderFillsArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSearchDesignSystemArguments } from "./repl-tool-args.js";
 import { isMissingFileError as isFigmaReplMissingFileErrorForTesting, type FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
 import type { FigmaMcpProxyClient } from "./stdio-server.js";
 export declare const FIGMA_REPL_DEFAULT_SESSION_ID = "default";
@@ -19,7 +19,7 @@ export { isFigmaReplMissingFileErrorForTesting };
 export declare const resolveFigmaReplScriptHelperSelection: typeof resolveFigmaReplScriptHelperSelectionInternal;
 export type { FigmaReplDiagnostic, FigmaReplDiagnosticsOptions, FigmaReplDiagnosticSeverity, FigmaReplFileDiagnostic, FigmaReplSurface, };
 export type { FigmaReplSessionWorkspace } from "./repl-workspace-files.js";
-export type { FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplDownloadAssetsTarget, FigmaReplEvalArguments, FigmaReplGetLibrariesArguments, FigmaReplGetMetadataArguments, FigmaReplGetVariableDefsArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSearchDesignSystemArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
+export type { FigmaReplApplyAssetManifestArguments, FigmaReplAssetManifestAsset, FigmaReplCallUpstreamToolArguments, FigmaReplCaptureNodeArguments, FigmaReplDownloadAssetsArguments, FigmaReplDownloadAssetsTarget, FigmaReplEvalArguments, FigmaReplExportVideoArguments, FigmaReplGetDesignContextArguments, FigmaReplGetLibrariesArguments, FigmaReplGetMetadataArguments, FigmaReplGetMotionContextArguments, FigmaReplGetShaderEffectArguments, FigmaReplGetShaderFillArguments, FigmaReplGetVariableDefsArguments, FigmaReplGuidanceArguments, FigmaReplInspectArguments, FigmaReplListShaderEffectsArguments, FigmaReplListShaderFillsArguments, FigmaReplLookupArguments, FigmaReplOpenArguments, FigmaReplPrepareTaskArguments, FigmaReplRunScriptFileArguments, FigmaReplRunTaskPlanArguments, FigmaReplSearchDesignSystemArguments, FigmaReplTaskPlanStep, } from "./repl-tool-args.js";
 export declare const FIGMA_REPL_EVAL_COMMON_HELPER_NAMES: readonly ["remember", "forget", "resolveId", "node", "select", "cloneNodeTree", "findAll", "find", "text", "layout", "create", "findFreeSlot", "placeNode", "replaceGeneratedFrame", "inspect", "screenshot", "imageAsset", "checkpoint"];
 export interface FigmaReplMcpServerOptions extends RemoteMcpClientOptions {
     client?: FigmaMcpProxyClient;
@@ -315,6 +315,28 @@ export interface FigmaReplSearchDesignSystemResult extends FigmaReplUpstreamBack
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
+export interface FigmaReplGetDesignContextResult extends FigmaReplUpstreamBackedResult {
+    session: FigmaReplCompactSession;
+    fileKey: string;
+    nodeId: string;
+    outputFiles?: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+export interface FigmaReplGetMotionContextResult extends FigmaReplUpstreamBackedResult {
+    session: FigmaReplCompactSession;
+    fileKey: string;
+    nodeId: string;
+    outputFiles?: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+export interface FigmaReplExportVideoResult extends FigmaReplUpstreamBackedResult {
+    session: FigmaReplCompactSession;
+    fileKey: string;
+    nodeId?: string;
+    jobId?: string;
+    outputFiles?: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
+}
 export interface FigmaReplGetLibrariesResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplCompactSession;
     fileKey: string;
@@ -326,6 +348,30 @@ export interface FigmaReplGetVariableDefsResult extends FigmaReplUpstreamBackedR
     session: FigmaReplCompactSession;
     fileKey: string;
     nodeId: string;
+    outputFiles?: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+export interface FigmaReplListShaderEffectsResult extends FigmaReplUpstreamBackedResult {
+    session: FigmaReplCompactSession;
+    cursor?: string;
+    outputFiles?: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+export interface FigmaReplGetShaderEffectResult extends FigmaReplUpstreamBackedResult {
+    session: FigmaReplCompactSession;
+    id: string;
+    outputFiles?: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+export interface FigmaReplListShaderFillsResult extends FigmaReplUpstreamBackedResult {
+    session: FigmaReplCompactSession;
+    cursor?: string;
+    outputFiles?: FigmaReplOutputFiles;
+    inlineResultLimit?: FigmaReplInlineResultLimit;
+}
+export interface FigmaReplGetShaderFillResult extends FigmaReplUpstreamBackedResult {
+    session: FigmaReplCompactSession;
+    id: string;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -387,9 +433,16 @@ export interface FigmaReplClient {
     guidance(args: FigmaReplGuidanceArguments): Promise<FigmaReplGuidanceResult>;
     inspect(args?: FigmaReplInspectArguments): Promise<FigmaReplInspectResult>;
     getMetadata(args: FigmaReplGetMetadataArguments): Promise<FigmaReplGetMetadataResult>;
+    getDesignContext(args: FigmaReplGetDesignContextArguments): Promise<FigmaReplGetDesignContextResult>;
+    getMotionContext(args: FigmaReplGetMotionContextArguments): Promise<FigmaReplGetMotionContextResult>;
+    exportVideo(args: FigmaReplExportVideoArguments): Promise<FigmaReplExportVideoResult>;
     searchDesignSystem(args: FigmaReplSearchDesignSystemArguments): Promise<FigmaReplSearchDesignSystemResult>;
     getLibraries(args?: FigmaReplGetLibrariesArguments): Promise<FigmaReplGetLibrariesResult>;
     getVariableDefs(args: FigmaReplGetVariableDefsArguments): Promise<FigmaReplGetVariableDefsResult>;
+    listShaderEffects(args?: FigmaReplListShaderEffectsArguments): Promise<FigmaReplListShaderEffectsResult>;
+    getShaderEffect(args: FigmaReplGetShaderEffectArguments): Promise<FigmaReplGetShaderEffectResult>;
+    listShaderFills(args?: FigmaReplListShaderFillsArguments): Promise<FigmaReplListShaderFillsResult>;
+    getShaderFill(args: FigmaReplGetShaderFillArguments): Promise<FigmaReplGetShaderFillResult>;
     callUpstreamTool(args: FigmaReplCallUpstreamToolArguments): Promise<FigmaReplCallUpstreamToolResult>;
     lookup(args: FigmaReplLookupArguments): Promise<FigmaReplLookupResult>;
 }

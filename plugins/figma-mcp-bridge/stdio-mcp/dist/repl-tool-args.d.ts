@@ -111,6 +111,44 @@ export interface FigmaReplGetMetadataArguments {
     clientLanguages?: string;
     clientFrameworks?: string;
 }
+export interface FigmaReplGetDesignContextArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    file?: string;
+    cwd?: string;
+    dirName?: string;
+    target?: unknown;
+    refresh?: boolean;
+    inlineResultLimit?: number;
+    clientLanguages?: string;
+    clientFrameworks?: string;
+}
+export interface FigmaReplGetMotionContextArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    file?: string;
+    cwd?: string;
+    dirName?: string;
+    target?: unknown;
+    recursive?: boolean;
+    refresh?: boolean;
+    inlineResultLimit?: number;
+}
+export interface FigmaReplExportVideoArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    file?: string;
+    cwd?: string;
+    dirName?: string;
+    target?: unknown;
+    jobId?: string;
+    quality?: "low" | "medium" | "high";
+    refresh?: boolean;
+    inlineResultLimit?: number;
+}
 export interface FigmaReplSearchDesignSystemArguments {
     [key: string]: unknown;
     title?: string;
@@ -150,6 +188,38 @@ export interface FigmaReplGetVariableDefsArguments {
     inlineResultLimit?: number;
     clientLanguages?: string;
     clientFrameworks?: string;
+}
+export interface FigmaReplListShaderEffectsArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    cursor?: string;
+    refresh?: boolean;
+    inlineResultLimit?: number;
+}
+export interface FigmaReplGetShaderEffectArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    id: string;
+    refresh?: boolean;
+    inlineResultLimit?: number;
+}
+export interface FigmaReplListShaderFillsArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    cursor?: string;
+    refresh?: boolean;
+    inlineResultLimit?: number;
+}
+export interface FigmaReplGetShaderFillArguments {
+    [key: string]: unknown;
+    title?: string;
+    sessionId?: string;
+    id: string;
+    refresh?: boolean;
+    inlineResultLimit?: number;
 }
 export interface FigmaReplLookupArguments {
     [key: string]: unknown;
@@ -208,9 +278,16 @@ export declare function asGuidanceArgs(args: unknown): FigmaReplGuidanceArgument
 export declare function asInspectArgs(args: unknown): FigmaReplInspectArguments;
 export declare function asCallUpstreamToolArgs(args: unknown): FigmaReplCallUpstreamToolArguments;
 export declare function asGetMetadataArgs(args: unknown): FigmaReplGetMetadataArguments;
+export declare function asGetDesignContextArgs(args: unknown): FigmaReplGetDesignContextArguments;
+export declare function asGetMotionContextArgs(args: unknown): FigmaReplGetMotionContextArguments;
+export declare function asExportVideoArgs(args: unknown): FigmaReplExportVideoArguments;
 export declare function asSearchDesignSystemArgs(args: unknown): FigmaReplSearchDesignSystemArguments;
 export declare function asGetLibrariesArgs(args: unknown): FigmaReplGetLibrariesArguments;
 export declare function asGetVariableDefsArgs(args: unknown): FigmaReplGetVariableDefsArguments;
+export declare function asListShaderEffectsArgs(args: unknown): FigmaReplListShaderEffectsArguments;
+export declare function asGetShaderEffectArgs(args: unknown): FigmaReplGetShaderEffectArguments;
+export declare function asListShaderFillsArgs(args: unknown): FigmaReplListShaderFillsArguments;
+export declare function asGetShaderFillArgs(args: unknown): FigmaReplGetShaderFillArguments;
 export declare function asLookupArgs(args: unknown): FigmaReplLookupArguments;
 export declare function asTaskPlanSteps(value: unknown, displayName?: string): FigmaReplTaskPlanStep[];
 export declare function withDefaultTitle<T extends Record<string, unknown>>(args: T, _title: string): T;
