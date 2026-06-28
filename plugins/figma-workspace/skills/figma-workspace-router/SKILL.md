@@ -60,7 +60,7 @@ Workspace files live under `<cwd>/figma-workspace/<fileKey-or-fileSlug>/`. Calls
 - Keep each transaction small and repairable. If preflight diagnostics fail, fix diagnostics by file line and rerun the same script.
 - Return compact JSON with changed node ids, handles, and validation notes. Use generated `outputFiles.debugFile` pointers for failure or omitted-payload debug JSON instead of relying on inline MCP output.
 - Read parsed upstream JSON from `upstream.result`; if upstream output is not JSON, read `upstream.text`. Debug file pointers are reported in `outputFiles.debugFile`.
-- Ordinary tool responses return only a minimal session summary with `handleChanges` and optional top-level `sessionDir`; read `figma-workspace://sessions` for the compact list, `figma-workspace://sessions/{id}` for compact detail with handles, and `figma-workspace://sessions/{id}/handles` when only the remembered handle map is needed.
+- Ordinary tool responses return only a minimal `session` summary with `handleChanges` and optional `session.sessionDir`; read `figma-workspace://sessions` for the compact list, `figma-workspace://sessions/{id}` for compact detail with handles, and `figma-workspace://sessions/{id}/handles` when only the remembered handle map is needed.
 - Common helpers: `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`.
 - Prefer `$.select` over direct selection mutation. Use `figma_workspace_inspect({ mode: "validate" })` before reusing old handles.
 - For generated assets, use `$.imageAsset` only for small inline PNG/JPEG data; for larger local assets, create target rectangles and use `figma_workspace_apply_asset_manifest`.

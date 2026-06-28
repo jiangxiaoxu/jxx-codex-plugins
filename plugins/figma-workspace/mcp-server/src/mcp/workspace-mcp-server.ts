@@ -138,6 +138,7 @@ import {
   createScriptOutputWriter,
   createSessionWorkspace,
   ensureWorkspaceDirectories,
+  isMissingFileError,
   isMissingFileError as isFigmaWorkspaceMissingFileErrorForTesting,
   loadTaskPlan,
   normalizeTaskScriptName,
@@ -1656,7 +1657,50 @@ async function executeRunScriptFile(
 ): Promise<Record<string, unknown>> {
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const scriptPath = resolveScriptInputPath(args, session);
-  const source = await readFile(scriptPath, "utf8");
+  const outputWriter = createScriptOutputWriter(args, session);
+  await outputWriter.cleanupCompiledScriptFile();
+  const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
+  let source: string;
+  try {
+    source = await readFile(scriptPath, "utf8");
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
+    const diagnostics: FigmaWorkspaceFileDiagnostic[] = [
+      {
+        code: "FIGMA_WORKSPACE_INPUT_FILE_MISSING",
+        severity: "fatal",
+        message: `Figma Workspace script file was not found: ${scriptPath}`,
+        suggestion: "Create the workspace script file or rerun figma_workspace_prepare_task with overwrite=true before running it.",
+        docsHint: "Use figma_workspace_prepare_task to create the .figma.js file, then run figma_workspace_run_script_file with that inputFile.",
+        source: { scriptPath },
+      },
+    ];
+    session.lastDiagnostics = diagnostics;
+    touchSession(session);
+    const resultPayload = {
+      ok: false,
+      phase: "preflight",
+      executed: false,
+      session: responseSession(session),
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+      script: responseScriptMetadata({ scriptPath }),
+    };
+    const outputFiles = await outputWriter.write({
+      result: createRunScriptResultFilePayload({
+        session,
+        resultPayload,
+        diagnostics,
+      }),
+      writeResult: true,
+    });
+    return {
+      ...limitInlineScriptResult(resultPayload, inlineResultLimit, []),
+      outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
+    };
+  }
   const expectedSurface = normalizeSurface(args.surface) ?? session.surface;
   if (expectedSurface) {
     session.surface = expectedSurface;
@@ -1685,9 +1729,6 @@ async function executeRunScriptFile(
     ...diagnoseWrappedScriptSize(scriptPath, wrappedScript, Boolean(args.strict)),
   ];
   session.lastDiagnostics = diagnostics;
-  const outputWriter = createScriptOutputWriter(args, session);
-  await outputWriter.cleanupCompiledScriptFile();
-  const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const scriptMetadata = {
     ...compiled.metadata,
     compiledScriptBytes: Buffer.byteLength(wrappedScript, "utf8"),
@@ -7029,16 +7070,28 @@ async function readReplResource(
     return staticResource;
   }
   if (uri === "figma-workspace://upstream-tools") {
-    const tools = await runtime.upstreamToolCache.list(false);
+    let tools: UpstreamToolInfo[];
+    let upstreamError: FigmaWorkspaceUpstreamError | undefined;
+    try {
+      tools = await runtime.upstreamToolCache.list(false);
+    } catch (error) {
+      tools = [];
+      upstreamError = normalizeCaughtUpstreamError(error);
+    }
     return {
       contents: [
         {
           uri,
           mimeType: "application/json",
           text: JSON.stringify({
+            ok: upstreamError ? false : true,
             tools: tools.map((tool) => upstreamToolDirectoryEntry(tool)),
             detailTemplate: "figma-workspace://upstream-tools/{name}",
             categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
+            upstreamError: upstreamError ? responseUpstreamError(upstreamError) : undefined,
+            primaryFix: upstreamError
+              ? "Confirm Figma MCP OAuth/login and upstream connectivity, then reread figma-workspace://upstream-tools."
+              : undefined,
             guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_workspace_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, and shader effect/fill tools.",
           }, null, 2),
         },
@@ -7048,7 +7101,13 @@ async function readReplResource(
   const upstreamToolPrefix = "figma-workspace://upstream-tools/";
   if (uri.startsWith(upstreamToolPrefix)) {
     const toolName = decodeURIComponent(uri.slice(upstreamToolPrefix.length));
-    const tools = await runtime.upstreamToolCache.list(false);
+    let tools: UpstreamToolInfo[];
+    try {
+      tools = await runtime.upstreamToolCache.list(false);
+    } catch (error) {
+      const upstreamError = normalizeCaughtUpstreamError(error);
+      throw new Error(`Upstream Figma MCP tool directory unavailable: ${upstreamError.message}`);
+    }
     const tool = tools.find((item) => item.name === toolName);
     if (!tool) {
       throw new Error(`Upstream Figma MCP tool not found: ${toolName}`);
