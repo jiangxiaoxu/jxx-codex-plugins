@@ -149,6 +149,28 @@ test("resolve-oauth-cache-path.py can require an existing cache file", async () 
   await rm(dir, { recursive: true, force: true });
 });
 
+test("login-figma-http.mjs runs in foreground and validates OAuth cache", async () => {
+  const script = await readFile(
+    new URL("../mcp-server/scripts/login-figma-http.mjs", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(script, /FIGMA_WORKSPACE_BRIDGE_LOGIN_CHILD/u);
+  assert.doesNotMatch(script, /-NoExit/u);
+  assert.match(script, /async function testOAuthCacheReady/u);
+  assert.match(script, /function reportOAuthCacheWriteStatus/u);
+  assert.match(script, /async function removeOAuthCacheForForceLogin/u);
+  assert.match(script, /--force/u);
+  assert.match(script, /OAuth cache is not ready after adding the temporary server/u);
+  assert.match(script, /invokeCodexMcp\(\["mcp", "login", serverName\]\)/u);
+  assert.match(script, /tokens\.access_token/u);
+  assert.match(script, /expires within 60 seconds/u);
+  assert.match(script, /process\.exitCode = 2/u);
+  assert.match(script, /already usable; no new token was written/u);
+  assert.match(script, /Restored the previous OAuth cache after login failure/u);
+  assert.match(script, /OAuth cache ready/u);
+});
+
 test("createBridgeConfig fails without an allowed OAuth cache location", () => {
   withEnv(
     {
