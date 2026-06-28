@@ -1775,6 +1775,50 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   await mcpClient.close();
 });
 
+test("figma upstream-tools resource reports upstream connection failures as JSON", async () => {
+  const calls = [];
+  const fakeClient = {
+    async connect() {
+      calls.push(["connect"]);
+      throw new Error("MCP connection attempt was cancelled.");
+    },
+    async close() {
+      calls.push(["close"]);
+    },
+    async listTools() {
+      calls.push(["listTools"]);
+      return { tools: [] };
+    },
+    async callTool() {
+      throw new Error("unexpected upstream call");
+    },
+  };
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+
+  const upstreamResource = await mcpClient.readResource({ uri: "figma-workspace://upstream-tools" });
+  const upstream = JSON.parse(upstreamResource.contents[0].text);
+  assert.equal(upstream.ok, false);
+  assert.deepEqual(upstream.tools, []);
+  assert.equal(upstream.detailTemplate, "figma-workspace://upstream-tools/{name}");
+  assert.match(upstream.upstreamError.message, /MCP connection attempt was cancelled/);
+  assert.match(upstream.primaryFix, /OAuth\/login/);
+  assert.deepEqual(calls, [["connect"]]);
+
+  await assert.rejects(
+    mcpClient.readResource({ uri: "figma-workspace://upstream-tools/use_figma" }),
+    /Upstream Figma MCP tool directory unavailable: MCP connection attempt was cancelled/,
+  );
+  await mcpClient.close();
+});
+
 test("figma router docs preserve runtime-owned contract wording", async () => {
   const skillText = await readFile(resolve(packageRoot, "../skills/figma-workspace-router/SKILL.md"), "utf8");
   const openaiText = await readFile(resolve(packageRoot, "../skills/figma-workspace-router/agents/openai.yaml"), "utf8");
@@ -7082,6 +7126,36 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.match(failedCompiledFile, /Source: ExampleFigmaFileKey012\/settings-panel-polish\.figma\.js/);
     assert.match(failedCompiledFile, /workspace failure result/);
     assert.match(failedCompiledFile, /figma_workspace_run_script_file source:/);
+
+    const missingInputResult = await mcpClient.callTool({
+      name: "figma_workspace_run_script_file",
+      arguments: {
+        title: "Run missing workspace file",
+        sessionId: "settings-workspace",
+        inputFile: "missing-settings-panel.figma.js",
+        strict: true,
+      },
+    });
+    const missingInputJson = structuredToolResult(missingInputResult);
+    assert.equal(missingInputJson.ok, false);
+    assert.equal(missingInputJson.phase, "preflight");
+    assert.equal(missingInputJson.executed, false);
+    assert.equal(missingInputJson.diagnostics[0].code, "FIGMA_WORKSPACE_INPUT_FILE_MISSING");
+    assert.equal(missingInputJson.repairPlan.status, "blocked");
+    assert.equal(missingInputJson.upstream, undefined);
+    assert.equal(missingInputJson.upstreamError, undefined);
+    assertFilePointer(missingInputJson.outputFiles.debugFile, resolve(initJson.task.workspace.fileDir, "missing-settings-panel.result.json"));
+    const missingInputFile = await readPrettyJsonPointer(
+      missingInputJson.outputFiles.debugFile,
+      resolve(initJson.task.workspace.fileDir, "missing-settings-panel.result.json"),
+    );
+    assert.equal(missingInputFile.kind, "figma_workspace_result");
+    assert.equal(missingInputFile.tool, "figma_workspace_run_script_file");
+    assert.equal(missingInputFile.phase, "preflight");
+    assert.equal(missingInputFile.executed, false);
+    assert.equal(missingInputFile.diagnosticsCount, 1);
+    assert.equal(missingInputFile.diagnostics[0].code, "FIGMA_WORKSPACE_INPUT_FILE_MISSING");
+    assert.equal(missingInputFile.repairPlan.status, "blocked");
 
     const prepared = await mcpClient.callTool({
       name: "figma_workspace_prepare_task",
