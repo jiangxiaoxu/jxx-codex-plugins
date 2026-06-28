@@ -247,58 +247,6 @@ export const FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES: FigmaWorkspaceWrapperLooku
       "Poll an existing job with jobId instead of starting duplicate renders.",
     ],
   },
-  {
-    tool: "figma_workspace_list_shader_effects",
-    upstreamTool: "list_shader_effects",
-    workflowIds: ["shader-lookup"],
-    intents: ["shader", "geneffects", "effect library", "shader effect"],
-    docsQueries: ["shader effects library", "geneffects shader reads"],
-    apiSymbols: ["list_shader_effects", "figma_workspace_list_shader_effects"],
-    suggestedTools: ["figma_workspace_get_shader_effect", "figma_workspace_list_shader_fills"],
-    nextSteps: [
-      "List account-library shader effects before reading a specific effect id.",
-      "Keep shader payloads upstream-shaped; do not infer runtime shader behavior from list entries.",
-    ],
-  },
-  {
-    tool: "figma_workspace_get_shader_effect",
-    upstreamTool: "get_shader_effect",
-    workflowIds: ["shader-lookup"],
-    intents: ["shader", "geneffects", "effect source", "shader effect"],
-    docsQueries: ["shader effect source manifest", "geneffects shader reads"],
-    apiSymbols: ["get_shader_effect", "figma_workspace_get_shader_effect"],
-    suggestedTools: ["figma_workspace_list_shader_effects", "figma_workspace_get_motion_context"],
-    nextSteps: [
-      "Read an effect only after selecting a specific id from the account-library list.",
-      "Treat the official result as source context, not a bridge-normalized shader schema.",
-    ],
-  },
-  {
-    tool: "figma_workspace_list_shader_fills",
-    upstreamTool: "list_shader_fills",
-    workflowIds: ["shader-lookup"],
-    intents: ["shader", "geneffects", "fill library", "shader fill"],
-    docsQueries: ["shader fills library", "geneffects shader fills"],
-    apiSymbols: ["list_shader_fills", "figma_workspace_list_shader_fills"],
-    suggestedTools: ["figma_workspace_get_shader_fill", "figma_workspace_list_shader_effects"],
-    nextSteps: [
-      "List account-library shader fills before reading a specific fill id.",
-      "Use shader fills only when the task explicitly needs upstream shader context.",
-    ],
-  },
-  {
-    tool: "figma_workspace_get_shader_fill",
-    upstreamTool: "get_shader_fill",
-    workflowIds: ["shader-lookup"],
-    intents: ["shader", "geneffects", "fill source", "shader fill"],
-    docsQueries: ["shader fill source manifest", "geneffects shader fills"],
-    apiSymbols: ["get_shader_fill", "figma_workspace_get_shader_fill"],
-    suggestedTools: ["figma_workspace_list_shader_fills", "figma_workspace_get_motion_context"],
-    nextSteps: [
-      "Read a fill only after selecting a specific id from the account-library list.",
-      "Preserve the official upstream fill manifest in upstream.result or upstream.text.",
-    ],
-  },
 ];
 
 export const FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH: FigmaWorkspaceWrapperWorkflow[] = [
@@ -326,18 +274,6 @@ export const FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH: FigmaWorkspaceWrapperWorkfl
       "Export or poll video only when frame sampling is needed.",
     ],
     guardrails: ["Preserve upstream motion values as authoritative.", "Poll with jobId instead of starting duplicate exports."],
-  },
-  {
-    id: "shader-lookup",
-    title: "Shader library lookup",
-    intents: ["shader", "geneffects", "effect", "fill"],
-    tools: ["figma_workspace_list_shader_effects", "figma_workspace_get_shader_effect", "figma_workspace_list_shader_fills", "figma_workspace_get_shader_fill"],
-    sequence: [
-      "List shader effects or fills from the account library.",
-      "Read the selected effect or fill by id.",
-      "Combine with motion/design context only when implementation needs it.",
-    ],
-    guardrails: ["Use shader wrappers only for explicit shader tasks.", "Keep shader payloads upstream-shaped."],
   },
 ];
 

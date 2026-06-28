@@ -23,7 +23,7 @@ Use this reference only when `figma-workspace://capabilities` is not enough to c
 ## Workflow Add-ons
 
 - Use `figma_workspace_get_metadata` for broad layer-tree discovery before detailed style, fill, or text inspection.
-- Use `figma_workspace_guidance` or `figma-workspace://lookup-index` for wrapper profiles and workflow graph nodes when sequencing design-context, motion, video, or shader wrapper calls.
+- Use `figma_workspace_guidance` or `figma-workspace://lookup-index` for wrapper profiles and workflow graph nodes when sequencing design-context, motion, or video wrapper calls.
 - Follow wrapper `guidanceRef.query` with `figma_workspace_guidance` when a thin wrapper output needs detailed next-step guidance.
 - Use `figma_workspace_search_design_system`, `figma_workspace_get_libraries`, and `figma_workspace_get_variable_defs` for official design-system context. `get_variable_defs.target` accepts a raw node id, node URL, or local handle.
 - Use `figma_workspace_apply_asset_manifest` for large local generated image assets. Create target rectangles in the script first, then upload/fill through the manifest.

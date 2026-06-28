@@ -18797,9 +18797,9 @@ function normalizeLookupRankingQuery(value, name) {
 }
 var BRIDGE_DOCS_RECORDS = createBridgeDocsRecords();
 function createBridgeDocsRecords() {
-  const wrapperTools = "figma_workspace_get_design_context, figma_workspace_get_motion_context, figma_workspace_export_video, figma_workspace_list_shader_effects, figma_workspace_get_shader_effect, figma_workspace_list_shader_fills, figma_workspace_get_shader_fill";
+  const wrapperTools = "figma_workspace_get_design_context, figma_workspace_get_motion_context, figma_workspace_export_video";
   const upstreamTools = "get_design_context, get_motion_context, export_video, list_shader_effects, get_shader_effect, list_shader_fills, get_shader_fill";
-  const workflowIds = "design-implementation-context, motion-implementation, video-export, shader-lookup";
+  const workflowIds = "design-implementation-context, motion-implementation, video-export";
   const helperCategories = "selection: $.find, $.findAll, $.select, $.inspect; text: $.text; layout: $.create, $.layout, $.placeNode, $.findFreeSlot; assets: $.imageAsset; capture: $.screenshot; repair: $.checkpoint, $.remember, $.forget; clone: $.cloneNodeTree, $.replaceGeneratedFrame";
   const helperHardRules = 'Use static helper references only: $.text(...), $["text"](...), or explicit destructuring such as const { text } = $. Do not use dynamic $[name], alias $, object rest destructuring, or local $ declarations. Native Figma Plugin API remains valid for advanced work. $.imageAsset is only for small inline PNG/JPEG; larger files use asset manifest/upload flow.';
   return /* @__PURE__ */ new Map([
@@ -18826,7 +18826,7 @@ function createBridgeDocsRecords() {
           "Profiles include local tool, upstream tool, workflow ids, intents, suggested docs/API lookups, suggested tools, and next steps.",
           `Local wrapper tools: ${wrapperTools}.`,
           `Upstream tools: ${upstreamTools}.`,
-          "Use wrapper profiles to choose design context, motion context, video export, design-system, or shader wrapper sequencing before falling back to uncovered upstream tools."
+          "Use wrapper profiles to choose design context, motion context, or video export sequencing before falling back to upstream tools without local wrappers."
         ].join("\n")
       }
     ],
@@ -19360,58 +19360,6 @@ var FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES = [
       "Start an export with target only when frame sampling is worth the render cost.",
       "Poll an existing job with jobId instead of starting duplicate renders."
     ]
-  },
-  {
-    tool: "figma_workspace_list_shader_effects",
-    upstreamTool: "list_shader_effects",
-    workflowIds: ["shader-lookup"],
-    intents: ["shader", "geneffects", "effect library", "shader effect"],
-    docsQueries: ["shader effects library", "geneffects shader reads"],
-    apiSymbols: ["list_shader_effects", "figma_workspace_list_shader_effects"],
-    suggestedTools: ["figma_workspace_get_shader_effect", "figma_workspace_list_shader_fills"],
-    nextSteps: [
-      "List account-library shader effects before reading a specific effect id.",
-      "Keep shader payloads upstream-shaped; do not infer runtime shader behavior from list entries."
-    ]
-  },
-  {
-    tool: "figma_workspace_get_shader_effect",
-    upstreamTool: "get_shader_effect",
-    workflowIds: ["shader-lookup"],
-    intents: ["shader", "geneffects", "effect source", "shader effect"],
-    docsQueries: ["shader effect source manifest", "geneffects shader reads"],
-    apiSymbols: ["get_shader_effect", "figma_workspace_get_shader_effect"],
-    suggestedTools: ["figma_workspace_list_shader_effects", "figma_workspace_get_motion_context"],
-    nextSteps: [
-      "Read an effect only after selecting a specific id from the account-library list.",
-      "Treat the official result as source context, not a bridge-normalized shader schema."
-    ]
-  },
-  {
-    tool: "figma_workspace_list_shader_fills",
-    upstreamTool: "list_shader_fills",
-    workflowIds: ["shader-lookup"],
-    intents: ["shader", "geneffects", "fill library", "shader fill"],
-    docsQueries: ["shader fills library", "geneffects shader fills"],
-    apiSymbols: ["list_shader_fills", "figma_workspace_list_shader_fills"],
-    suggestedTools: ["figma_workspace_get_shader_fill", "figma_workspace_list_shader_effects"],
-    nextSteps: [
-      "List account-library shader fills before reading a specific fill id.",
-      "Use shader fills only when the task explicitly needs upstream shader context."
-    ]
-  },
-  {
-    tool: "figma_workspace_get_shader_fill",
-    upstreamTool: "get_shader_fill",
-    workflowIds: ["shader-lookup"],
-    intents: ["shader", "geneffects", "fill source", "shader fill"],
-    docsQueries: ["shader fill source manifest", "geneffects shader fills"],
-    apiSymbols: ["get_shader_fill", "figma_workspace_get_shader_fill"],
-    suggestedTools: ["figma_workspace_list_shader_fills", "figma_workspace_get_motion_context"],
-    nextSteps: [
-      "Read a fill only after selecting a specific id from the account-library list.",
-      "Preserve the official upstream fill manifest in upstream.result or upstream.text."
-    ]
   }
 ];
 var FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH = [
@@ -19439,18 +19387,6 @@ var FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH = [
       "Export or poll video only when frame sampling is needed."
     ],
     guardrails: ["Preserve upstream motion values as authoritative.", "Poll with jobId instead of starting duplicate exports."]
-  },
-  {
-    id: "shader-lookup",
-    title: "Shader library lookup",
-    intents: ["shader", "geneffects", "effect", "fill"],
-    tools: ["figma_workspace_list_shader_effects", "figma_workspace_get_shader_effect", "figma_workspace_list_shader_fills", "figma_workspace_get_shader_fill"],
-    sequence: [
-      "List shader effects or fills from the account library.",
-      "Read the selected effect or fill by id.",
-      "Combine with motion/design context only when implementation needs it."
-    ],
-    guardrails: ["Use shader wrappers only for explicit shader tasks.", "Keep shader payloads upstream-shaped."]
   }
 ];
 var FIGMA_WORKSPACE_API_CARDS = [
@@ -41569,30 +41505,6 @@ function asGetVariableDefsArgs(args) {
   assertOptionalTargetValue(record2.target, "target");
   return record2;
 }
-function asListShaderEffectsArgs(args) {
-  const record2 = parseToolArgs(args);
-  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
-  assertOptionalStringFields(record2, ["sessionId", "cursor"]);
-  return record2;
-}
-function asGetShaderEffectArgs(args) {
-  const record2 = parseToolArgs(args);
-  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
-  assertOptionalStringFields(record2, ["sessionId", "id"]);
-  return record2;
-}
-function asListShaderFillsArgs(args) {
-  const record2 = parseToolArgs(args);
-  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
-  assertOptionalStringFields(record2, ["sessionId", "cursor"]);
-  return record2;
-}
-function asGetShaderFillArgs(args) {
-  const record2 = parseToolArgs(args);
-  assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
-  assertOptionalStringFields(record2, ["sessionId", "id"]);
-  return record2;
-}
 function asLookupArgs(args) {
   const record2 = parseToolArgs(args);
   assertOptionalEnum(record2, "kind", FIGMA_WORKSPACE_LOOKUP_KINDS);
@@ -41863,10 +41775,6 @@ var LOCAL_WORKSPACE_TOOL_NAMES = [
   "figma_workspace_search_design_system",
   "figma_workspace_get_libraries",
   "figma_workspace_get_variable_defs",
-  "figma_workspace_list_shader_effects",
-  "figma_workspace_get_shader_effect",
-  "figma_workspace_list_shader_fills",
-  "figma_workspace_get_shader_fill",
   "figma_workspace_call_upstream_tool",
   "figma_workspace_lookup"
 ];
@@ -42182,52 +42090,8 @@ function createReplToolDescriptions(options) {
       })
     },
     {
-      name: "figma_workspace_list_shader_effects",
-      description: "Thin first-class wrapper for official upstream list_shader_effects. Lists shader effects in the authenticated account library and preserves the generic upstream envelope without normalizing shader manifests.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
-        cursor: stringProperty("Optional official pagination cursor."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
-      })
-    },
-    {
-      name: "figma_workspace_get_shader_effect",
-      description: "Thin first-class wrapper for official upstream get_shader_effect. Reads one shader effect source manifest by id and preserves the generic upstream envelope without bridge-owned shader schema normalization.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
-        id: stringProperty("Required official shader effect id."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
-      }, ["id"])
-    },
-    {
-      name: "figma_workspace_list_shader_fills",
-      description: "Thin first-class wrapper for official upstream list_shader_fills. Lists shader fills in the authenticated account library and preserves the generic upstream envelope without normalizing shader manifests.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
-        cursor: stringProperty("Optional official pagination cursor."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
-      })
-    },
-    {
-      name: "figma_workspace_get_shader_fill",
-      description: "Thin first-class wrapper for official upstream get_shader_fill. Reads one shader fill source manifest by id and preserves the generic upstream envelope without bridge-owned shader schema normalization.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
-        id: stringProperty("Required official shader fill id."),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
-      }, ["id"])
-    },
-    {
       name: "figma_workspace_call_upstream_tool",
-      description: "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, or shader effect/fill tools because dedicated wrappers cover them.",
+      description: "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}. Use this for official capabilities without a local wrapper, including shader effect/fill tools. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, or get_variable_defs because dedicated local workflow tools cover them.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
@@ -42439,58 +42303,6 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     fileKey: stringProperty("Figma file key sent to official get_variable_defs."),
     nodeId: stringProperty("Figma node id sent to official get_variable_defs."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: outputFilesProperty(
-      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["debugFile", "upstreamFile"]
-    ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
-  }),
-  figma_workspace_list_shader_effects: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-    cursor: stringProperty("Pagination cursor sent to official list_shader_effects when supplied."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
-    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: outputFilesProperty(
-      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["debugFile", "upstreamFile"]
-    ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
-  }),
-  figma_workspace_get_shader_effect: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-    id: stringProperty("Shader effect id sent to official get_shader_effect."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
-    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: outputFilesProperty(
-      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["debugFile", "upstreamFile"]
-    ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
-  }),
-  figma_workspace_list_shader_fills: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-    cursor: stringProperty("Pagination cursor sent to official list_shader_fills when supplied."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
-    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: outputFilesProperty(
-      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["debugFile", "upstreamFile"]
-    ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
-  }),
-  figma_workspace_get_shader_fill: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-    id: stringProperty("Shader fill id sent to official get_shader_fill."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -43507,10 +43319,6 @@ var EXPORT_VIDEO_TOOL_NAME = "export_video";
 var SEARCH_DESIGN_SYSTEM_TOOL_NAME = "search_design_system";
 var GET_LIBRARIES_TOOL_NAME = "get_libraries";
 var GET_VARIABLE_DEFS_TOOL_NAME = "get_variable_defs";
-var LIST_SHADER_EFFECTS_TOOL_NAME = "list_shader_effects";
-var GET_SHADER_EFFECT_TOOL_NAME = "get_shader_effect";
-var LIST_SHADER_FILLS_TOOL_NAME = "list_shader_fills";
-var GET_SHADER_FILL_TOOL_NAME = "get_shader_fill";
 function createFigmaWorkspaceSessionStore(options = {}) {
   const defaultSessionId = sanitizeSessionId(
     options.defaultSessionId ?? FIGMA_WORKSPACE_DEFAULT_SESSION_ID
@@ -43678,26 +43486,6 @@ function createFigmaWorkspaceMcpServer(options = {}) {
       case "figma_workspace_get_variable_defs":
         return handleGetVariableDefs(
           asGetVariableDefsArgs(withMcpDefaultTitle(rawArgs, "Get Figma variable definitions")),
-          runtime
-        );
-      case "figma_workspace_list_shader_effects":
-        return handleListShaderEffects(
-          asListShaderEffectsArgs(withMcpDefaultTitle(rawArgs, "List Figma shader effects")),
-          runtime
-        );
-      case "figma_workspace_get_shader_effect":
-        return handleGetShaderEffect(
-          asGetShaderEffectArgs(withMcpDefaultTitle(rawArgs, "Get Figma shader effect")),
-          runtime
-        );
-      case "figma_workspace_list_shader_fills":
-        return handleListShaderFills(
-          asListShaderFillsArgs(withMcpDefaultTitle(rawArgs, "List Figma shader fills")),
-          runtime
-        );
-      case "figma_workspace_get_shader_fill":
-        return handleGetShaderFill(
-          asGetShaderFillArgs(withMcpDefaultTitle(rawArgs, "Get Figma shader fill")),
           runtime
         );
       case "figma_workspace_call_upstream_tool":
@@ -45766,86 +45554,6 @@ async function executeGetVariableDefs(args, runtime) {
     nodeIds: [requested.nodeId]
   });
 }
-async function handleListShaderEffects(args, runtime) {
-  return makeJsonToolResult(await executeListShaderEffects(args, runtime));
-}
-async function executeListShaderEffects(args, runtime) {
-  const session = runtime.sessions.getOrCreate(args.sessionId);
-  return executeDedicatedUpstreamTool({
-    args,
-    runtime,
-    session,
-    wrapperToolName: "figma_workspace_list_shader_effects",
-    upstreamToolName: LIST_SHADER_EFFECTS_TOOL_NAME,
-    upstreamKind: "shader effect list",
-    requiredProperties: [],
-    optionalProperties: args.cursor === void 0 ? [] : ["cursor"],
-    upstreamArguments: removeUndefined3({ cursor: args.cursor }),
-    responseFields: removeUndefined3({ cursor: args.cursor }),
-    historySummary: "Listed Figma shader effects.",
-    nodeIds: []
-  });
-}
-async function handleGetShaderEffect(args, runtime) {
-  return makeJsonToolResult(await executeGetShaderEffect(args, runtime));
-}
-async function executeGetShaderEffect(args, runtime) {
-  const id = normalizeRequiredString(args.id, "id", "figma_workspace_get_shader_effect");
-  const session = runtime.sessions.getOrCreate(args.sessionId);
-  return executeDedicatedUpstreamTool({
-    args,
-    runtime,
-    session,
-    wrapperToolName: "figma_workspace_get_shader_effect",
-    upstreamToolName: GET_SHADER_EFFECT_TOOL_NAME,
-    upstreamKind: "shader effect read",
-    requiredProperties: ["id"],
-    upstreamArguments: { id },
-    responseFields: { id },
-    historySummary: `Read Figma shader effect ${id}.`,
-    nodeIds: []
-  });
-}
-async function handleListShaderFills(args, runtime) {
-  return makeJsonToolResult(await executeListShaderFills(args, runtime));
-}
-async function executeListShaderFills(args, runtime) {
-  const session = runtime.sessions.getOrCreate(args.sessionId);
-  return executeDedicatedUpstreamTool({
-    args,
-    runtime,
-    session,
-    wrapperToolName: "figma_workspace_list_shader_fills",
-    upstreamToolName: LIST_SHADER_FILLS_TOOL_NAME,
-    upstreamKind: "shader fill list",
-    requiredProperties: [],
-    optionalProperties: args.cursor === void 0 ? [] : ["cursor"],
-    upstreamArguments: removeUndefined3({ cursor: args.cursor }),
-    responseFields: removeUndefined3({ cursor: args.cursor }),
-    historySummary: "Listed Figma shader fills.",
-    nodeIds: []
-  });
-}
-async function handleGetShaderFill(args, runtime) {
-  return makeJsonToolResult(await executeGetShaderFill(args, runtime));
-}
-async function executeGetShaderFill(args, runtime) {
-  const id = normalizeRequiredString(args.id, "id", "figma_workspace_get_shader_fill");
-  const session = runtime.sessions.getOrCreate(args.sessionId);
-  return executeDedicatedUpstreamTool({
-    args,
-    runtime,
-    session,
-    wrapperToolName: "figma_workspace_get_shader_fill",
-    upstreamToolName: GET_SHADER_FILL_TOOL_NAME,
-    upstreamKind: "shader fill read",
-    requiredProperties: ["id"],
-    upstreamArguments: { id },
-    responseFields: { id },
-    historySummary: `Read Figma shader fill ${id}.`,
-    nodeIds: []
-  });
-}
 function prepareFileScopedSession(args, sessions) {
   const session = sessions.getOrCreate(args.sessionId);
   applySessionFileReference(session, args.file);
@@ -45894,12 +45602,6 @@ function resolveExportVideoRequest(args, session) {
     throw new Error('figma_workspace_export_video requires "target" to start an export, or "jobId" to poll an existing export.');
   }
   return { fileKey, nodeId };
-}
-function normalizeRequiredString(value, field, toolName) {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${toolName} requires "${field}" as a non-empty string.`);
-  }
-  return value.trim();
 }
 function resolveGetVariableDefsRequest(args, session) {
   return resolveRequiredNodeScopedRequest(args, session, "figma_workspace_get_variable_defs");
@@ -48273,7 +47975,7 @@ function createCapabilitiesPayload() {
     ],
     toolSelection: {
       normalPath: ["figma_workspace_prepare_task", "figma_workspace_guidance", "figma_workspace_run_script_file", "figma_workspace_inspect", "figma_workspace_capture_node"],
-      contextAndLookup: ["figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_list_shader_effects", "figma_workspace_get_shader_effect", "figma_workspace_list_shader_fills", "figma_workspace_get_shader_fill", "figma_workspace_lookup"],
+      contextAndLookup: ["figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_lookup"],
       workflowAddOns: ["figma_workspace_export_video", "figma_workspace_run_task_plan"],
       advancedEscapeHatches: ["figma_workspace_eval", "figma_workspace_call_upstream_tool"],
       upstreamEscapeHatchExamples: ["generate_figma_design", "generate_diagram", "create_new_file", "whoami", "add_code_connect_map", "get_code_connect_suggestions", "send_code_connect_mappings", "get_context_for_code_connect"]
@@ -48343,13 +48045,13 @@ function createGuidePayload() {
     ],
     motionAndShaders: [
       "Use figma_workspace_export_video to start/poll official motion video exports only when frame sampling is worth the upstream render cost.",
-      "Use figma_workspace_list_shader_effects/get_shader_effect/list_shader_fills/get_shader_fill for explicit shader library reads; payloads remain upstream-shaped."
+      "Use figma-workspace://upstream-tools/{name} plus figma_workspace_call_upstream_tool for explicit official shader library reads; payloads remain upstream-shaped."
     ],
     wrapperWorkflowGraph: createPublicWrapperWorkflowPayloads(FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH),
     upstreamEscapeHatch: [
       "Use figma_workspace_call_upstream_tool only for explicit uncovered official upstream tools.",
       "Examples currently exposed through upstream discovery but not covered by dedicated wrappers include file generation, FigJam diagram generation, account checks, and Code Connect mutation/suggestion helpers.",
-      "Before using it, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, and shader effect/fill tools."
+      "Before using it, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, and get_variable_defs."
     ],
     responseContract: [
       "Top-level ok reports local wrapper completion. upstream.ok reports effective upstream/business success when an upstream envelope is present.",
@@ -48444,7 +48146,7 @@ async function readReplResource(uri, runtime) {
             categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
             upstreamError: upstreamError ? responseUpstreamError(upstreamError) : void 0,
             primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : void 0,
-            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_workspace_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, and shader effect/fill tools."
+            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool for official capabilities without local wrappers, including shader effect/fill tools; use dedicated figma_workspace_* workflow tools for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, and get_variable_defs."
           }, null, 2)
         }
       ]
@@ -48489,7 +48191,7 @@ async function readReplResource(uri, runtime) {
             description: tool.description,
             inputSchema: tool.inputSchema,
             callTool: "figma_workspace_call_upstream_tool",
-            guidance: "Full upstream tool contract. Use figma_workspace_call_upstream_tool only for explicit uncovered official upstream capabilities; prefer dedicated figma_workspace_* workflow tools when available."
+            guidance: "Full upstream tool contract. Use figma_workspace_call_upstream_tool for official upstream capabilities without local wrappers; prefer dedicated figma_workspace_* workflow tools when available."
           }, null, 2)
         }
       ]

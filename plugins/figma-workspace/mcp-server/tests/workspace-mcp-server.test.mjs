@@ -1195,11 +1195,22 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(lookupIndex.guidance.helperProfiles.categories.capture.includes("screenshot"));
   assert.ok(lookupIndex.guidance.helperProfiles.hardRules.some((rule) => /imageAsset/.test(rule)));
   assert.ok(lookupIndex.guidance.wrapperProfiles.upstreamTools.includes("get_motion_context"));
-  assert.ok(lookupIndex.guidance.workflowGraph.includes("shader-lookup"));
+  assert.ok(!lookupIndex.guidance.workflowGraph.includes("shader" + "-lookup"));
   assert.match(lookupIndex.ownership, /Bundled corpus stays internal/);
 
   const tools = await mcpClient.listTools();
   assert.ok(!tools.tools.some((tool) => tool.name === "figma_workspace_capabilities"));
+  const removedLocalShaderToolNames = [
+    "figma_workspace_" + "list_shader_effects",
+    "figma_workspace_" + "get_shader_effect",
+    "figma_workspace_" + "list_shader_fills",
+    "figma_workspace_" + "get_shader_fill",
+  ];
+  for (const removedToolName of removedLocalShaderToolNames) {
+    assert.ok(!tools.tools.some((tool) => tool.name === removedToolName), `${removedToolName} is not a local public tool`);
+    assert.ok(!capabilities.toolSelection.contextAndLookup.includes(removedToolName), `${removedToolName} is not in capabilities`);
+    assert.ok(!lookupIndex.guidance.wrapperProfiles.tools.includes(removedToolName), `${removedToolName} is not a wrapper profile`);
+  }
   assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
     "figma_workspace_apply_asset_manifest",
     "figma_workspace_call_upstream_tool",
@@ -1211,13 +1222,9 @@ test("figma workspace exposes self-explaining capabilities and resources", async
     "figma_workspace_get_libraries",
     "figma_workspace_get_metadata",
     "figma_workspace_get_motion_context",
-    "figma_workspace_get_shader_effect",
-    "figma_workspace_get_shader_fill",
     "figma_workspace_get_variable_defs",
     "figma_workspace_guidance",
     "figma_workspace_inspect",
-    "figma_workspace_list_shader_effects",
-    "figma_workspace_list_shader_fills",
     "figma_workspace_lookup",
     "figma_workspace_open",
     "figma_workspace_prepare_task",
@@ -1225,7 +1232,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
     "figma_workspace_run_task_plan",
     "figma_workspace_search_design_system",
   ]);
-  assert.equal(tools.tools.length, 23);
+  assert.equal(tools.tools.length, 19);
   for (const tool of tools.tools) {
     assert.equal(
       tool.inputSchema.properties.title.description,
@@ -1538,30 +1545,10 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(getVariableDefsTool.outputSchema.properties.upstream);
   assert.ok(getVariableDefsTool.outputSchema.properties.outputFiles.properties.upstreamFile);
   assert.equal(getVariableDefsTool.outputSchema.properties.toolName, undefined);
-  const listShaderEffectsTool = tools.tools.find((tool) => tool.name === "figma_workspace_list_shader_effects");
-  assert.ok(listShaderEffectsTool);
-  assert.ok(listShaderEffectsTool.inputSchema.properties.cursor);
-  assert.ok(listShaderEffectsTool.outputSchema.properties.upstream);
-  const getShaderEffectTool = tools.tools.find((tool) => tool.name === "figma_workspace_get_shader_effect");
-  assert.ok(getShaderEffectTool);
-  assert.deepEqual(getShaderEffectTool.inputSchema.required, ["id"]);
-  assert.ok(getShaderEffectTool.outputSchema.properties.id);
-  const listShaderFillsTool = tools.tools.find((tool) => tool.name === "figma_workspace_list_shader_fills");
-  assert.ok(listShaderFillsTool);
-  assert.ok(listShaderFillsTool.inputSchema.properties.cursor);
-  assert.ok(listShaderFillsTool.outputSchema.properties.upstream);
-  const getShaderFillTool = tools.tools.find((tool) => tool.name === "figma_workspace_get_shader_fill");
-  assert.ok(getShaderFillTool);
-  assert.deepEqual(getShaderFillTool.inputSchema.required, ["id"]);
-  assert.ok(getShaderFillTool.outputSchema.properties.id);
   for (const wrapperTool of [
     getDesignContextTool,
     getMotionContextTool,
     exportVideoTool,
-    listShaderEffectsTool,
-    getShaderEffectTool,
-    listShaderFillsTool,
-    getShaderFillTool,
   ]) {
     assert.ok(wrapperTool.outputSchema.properties.guidanceRef, `${wrapperTool.name} advertises guidanceRef`);
     assert.equal(wrapperTool.outputSchema.properties.guidance, undefined, `${wrapperTool.name} does not advertise guidance`);
@@ -1596,6 +1583,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(callUpstreamTool);
   assert.match(callUpstreamTool.description, /Explicit upstream-only escape hatch/);
   assert.match(callUpstreamTool.description, /figma-workspace:\/\/upstream-tools\/\{name\}/);
+  assert.match(callUpstreamTool.description, /including shader effect\/fill tools/);
   assert.match(callUpstreamTool.description, /Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video/);
   assert.equal(callUpstreamTool.inputSchema.properties.outputFile, undefined);
   assert.ok(callUpstreamTool.inputSchema.properties.inlineResultLimit);
@@ -1696,7 +1684,6 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(aggregateCapabilities.resources.guide, "figma-workspace://guide");
   assert.equal(aggregateCapabilities.resources.lookupIndex, "figma-workspace://lookup-index");
   assert.ok(aggregateCapabilities.toolSelection.contextAndLookup.includes("figma_workspace_get_motion_context"));
-  assert.ok(aggregateCapabilities.toolSelection.contextAndLookup.includes("figma_workspace_list_shader_effects"));
   assert.ok(aggregateCapabilities.toolSelection.workflowAddOns.includes("figma_workspace_export_video"));
   assert.ok(!aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("get_motion_context"));
   assert.deepEqual(aggregateCapabilities.lookupStrategy.outputFields, queryOutputFields);
@@ -1717,8 +1704,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(aggregateLookupIndex.guidance.commonCards.includes("text.font"));
   assert.deepEqual(aggregateLookupIndex.guidance.outputFields, queryOutputFields);
   assert.ok(aggregateLookupIndex.guidance.helperProfiles.categories.repair.includes("checkpoint"));
-  assert.ok(aggregateLookupIndex.guidance.wrapperProfiles.tools.includes("figma_workspace_list_shader_effects"));
   assert.ok(aggregateLookupIndex.guidance.workflowGraph.includes("design-implementation-context"));
+  assert.ok(!aggregateLookupIndex.guidance.workflowGraph.includes("shader" + "-lookup"));
   for (const uri of removedStaticResourceUris) {
     await assert.rejects(
       mcpClient.readResource({ uri }),
@@ -1732,7 +1719,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(upstream.detailTemplate, "figma-workspace://upstream-tools/{name}");
   assert.deepEqual(upstream.categories, ["capture", "design-context", "motion", "video", "execution", "assets", "code-connect", "libraries", "figjam", "generation", "shader", "account", "other"]);
   assert.match(upstream.guidance, /figma_workspace_call_upstream_tool/);
-  assert.match(upstream.guidance, /dedicated figma_workspace_\* wrappers/);
+  assert.match(upstream.guidance, /including shader effect\/fill tools/);
+  assert.match(upstream.guidance, /dedicated figma_workspace_\* workflow tools/);
   assert.equal(upstream.tools[0].name, "use_figma");
   assert.equal(upstream.tools[0].category, "execution");
   assert.equal(upstream.tools[0].description, "Run Plugin API JavaScript to create, inspect, or edit Figma content.");
@@ -1760,7 +1748,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.match(upstreamTool.description, /Execute JavaScript/);
   assert.deepEqual(upstreamTool.inputSchema.required, ["code"]);
   assert.equal(upstreamTool.callTool, "figma_workspace_call_upstream_tool");
-  assert.match(upstreamTool.guidance, /explicit uncovered official upstream capabilities/);
+  assert.match(upstreamTool.guidance, /official upstream capabilities without local wrappers/);
 
   const motionToolResource = await mcpClient.readResource({ uri: "figma-workspace://upstream-tools/get_motion_context" });
   const motionTool = JSON.parse(motionToolResource.contents[0].text);
@@ -2536,7 +2524,7 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
   ]);
 });
 
-test("figma workspace context motion video and shader wrappers call dedicated upstream tools", async () => {
+test("figma workspace context motion video wrappers and shader upstream proxy call official tools", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(
     calls,
@@ -2570,24 +2558,6 @@ test("figma workspace context motion video and shader wrappers call dedicated up
           content: [{ type: "text", text: JSON.stringify({ ok: true, jobId: "job-123", status: "processing" }) }],
         };
       }
-      if (name === "list_shader_effects") {
-        assert.deepEqual(args, { cursor: "after-effects" });
-        return {
-          content: [{ type: "text", text: JSON.stringify({ ok: true, effects: [{ id: "effect-1" }] }) }],
-        };
-      }
-      if (name === "get_shader_effect") {
-        assert.deepEqual(args, { id: "effect-1" });
-        return {
-          content: [{ type: "text", text: JSON.stringify({ ok: true, id: "effect-1", source: "effect" }) }],
-        };
-      }
-      if (name === "list_shader_fills") {
-        assert.deepEqual(args, { cursor: "after-fills" });
-        return {
-          content: [{ type: "text", text: JSON.stringify({ ok: true, fills: [{ id: "fill-1" }] }) }],
-        };
-      }
       if (name === "get_shader_fill") {
         assert.deepEqual(args, { id: "fill-1" });
         return {
@@ -2602,9 +2572,6 @@ test("figma workspace context motion video and shader wrappers call dedicated up
         { name: "get_design_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
         { name: "get_motion_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, recursive: { type: "boolean" } } } },
         { name: "export_video", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, jobId: { type: "string" }, quality: { type: "string" } } } },
-        { name: "list_shader_effects", inputSchema: { type: "object", properties: { cursor: { type: "string" } } } },
-        { name: "get_shader_effect", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
-        { name: "list_shader_fills", inputSchema: { type: "object", properties: { cursor: { type: "string" } } } },
         { name: "get_shader_fill", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
       ],
     },
@@ -2665,33 +2632,14 @@ test("figma workspace context motion video and shader wrappers call dedicated up
     assert.equal(exportPoll.guidance, undefined);
     assert.equal(exportPoll.guidanceRef.query, "figma_workspace_export_video export_video motion-implementation video-export");
 
-    const effects = await repl.listShaderEffects({ sessionId: "context-main", cursor: "after-effects" });
-    assert.equal(effects.ok, true);
-    assert.equal(effects.upstream.result.effects[0].id, "effect-1");
-    assert.equal(effects.guidance, undefined);
-    assert.equal(effects.guidanceRef.source, "figma_workspace_guidance");
-    assert.equal(effects.guidanceRef.query, "figma_workspace_list_shader_effects list_shader_effects shader-lookup");
-    assert.deepEqual(effects.guidanceRef.workflowIds, ["shader-lookup"]);
-
-    const effect = await repl.getShaderEffect({ sessionId: "context-main", id: "effect-1" });
-    assert.equal(effect.ok, true);
-    assert.equal(effect.id, "effect-1");
-    assert.equal(effect.upstream.result.source, "effect");
-    assert.equal(effect.guidance, undefined);
-    assert.equal(effect.guidanceRef.query, "figma_workspace_get_shader_effect get_shader_effect shader-lookup");
-
-    const fills = await repl.listShaderFills({ sessionId: "context-main", cursor: "after-fills" });
-    assert.equal(fills.ok, true);
-    assert.equal(fills.upstream.result.fills[0].id, "fill-1");
-    assert.equal(fills.guidance, undefined);
-    assert.equal(fills.guidanceRef.query, "figma_workspace_list_shader_fills list_shader_fills shader-lookup");
-
-    const fill = await repl.getShaderFill({ sessionId: "context-main", id: "fill-1" });
+    const fill = await repl.callUpstreamTool({
+      sessionId: "context-main",
+      toolName: "get_shader_fill",
+      arguments: { id: "fill-1" },
+    });
     assert.equal(fill.ok, true);
-    assert.equal(fill.id, "fill-1");
+    assert.equal(fill.toolName, "get_shader_fill");
     assert.equal(fill.upstream.result.source, "fill");
-    assert.equal(fill.guidance, undefined);
-    assert.equal(fill.guidanceRef.query, "figma_workspace_get_shader_fill get_shader_fill shader-lookup");
 
     await assert.rejects(
       repl.exportVideo({ sessionId: "context-main" }),
@@ -2705,9 +2653,6 @@ test("figma workspace context motion video and shader wrappers call dedicated up
     "get_motion_context",
     "export_video",
     "export_video",
-    "list_shader_effects",
-    "get_shader_effect",
-    "list_shader_fills",
     "get_shader_fill",
   ]);
 });

@@ -7,7 +7,7 @@ Use this reference to choose between `figma_workspace_guidance` and `figma_works
 - Before writing `.figma.js`, call `figma_workspace_guidance({ query })` with compact BM25-style keywords, not natural-language task prose.
 - Use its `recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `referenceContext` fields to choose the next tool or API symbols.
 - Use `helperProfiles` when returned for `$` helper category choice, static-reference patterns, avoid notes, lookup hints, and compact examples.
-- Use `wrapperProfiles` and `workflowGraph` when returned to sequence first-class design-context, motion, video, or shader wrappers.
+- Use `wrapperProfiles` and `workflowGraph` when returned to sequence first-class design-context, motion, or video wrappers.
 - Wrapper outputs may include `guidanceRef`; pass its compact `query` to `figma_workspace_guidance` when full wrapper profile details are needed.
 - Common anchors are text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, and FigJam/Slides.
 - Treat `guardrails` as task-specific risk notes before modifying a file.

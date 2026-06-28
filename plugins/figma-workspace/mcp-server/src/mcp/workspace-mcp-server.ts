@@ -86,13 +86,9 @@ import {
   asGetLibrariesArgs,
   asGetMetadataArgs,
   asGetMotionContextArgs,
-  asGetShaderEffectArgs,
-  asGetShaderFillArgs,
   asGetVariableDefsArgs,
   asGuidanceArgs,
   asInspectArgs,
-  asListShaderEffectsArgs,
-  asListShaderFillsArgs,
   asLookupArgs,
   asOpenArgs,
   asPrepareTaskArgs,
@@ -113,13 +109,9 @@ import type {
   FigmaWorkspaceGetLibrariesArguments,
   FigmaWorkspaceGetMetadataArguments,
   FigmaWorkspaceGetMotionContextArguments,
-  FigmaWorkspaceGetShaderEffectArguments,
-  FigmaWorkspaceGetShaderFillArguments,
   FigmaWorkspaceGetVariableDefsArguments,
   FigmaWorkspaceGuidanceArguments,
   FigmaWorkspaceInspectArguments,
-  FigmaWorkspaceListShaderEffectsArguments,
-  FigmaWorkspaceListShaderFillsArguments,
   FigmaWorkspaceLookupArguments,
   FigmaWorkspaceOpenArguments,
   FigmaWorkspacePrepareTaskArguments,
@@ -211,13 +203,9 @@ export type {
   FigmaWorkspaceGetLibrariesArguments,
   FigmaWorkspaceGetMetadataArguments,
   FigmaWorkspaceGetMotionContextArguments,
-  FigmaWorkspaceGetShaderEffectArguments,
-  FigmaWorkspaceGetShaderFillArguments,
   FigmaWorkspaceGetVariableDefsArguments,
   FigmaWorkspaceGuidanceArguments,
   FigmaWorkspaceInspectArguments,
-  FigmaWorkspaceListShaderEffectsArguments,
-  FigmaWorkspaceListShaderFillsArguments,
   FigmaWorkspaceLookupArguments,
   FigmaWorkspaceOpenArguments,
   FigmaWorkspacePrepareTaskArguments,
@@ -267,10 +255,6 @@ const EXPORT_VIDEO_TOOL_NAME = "export_video";
 const SEARCH_DESIGN_SYSTEM_TOOL_NAME = "search_design_system";
 const GET_LIBRARIES_TOOL_NAME = "get_libraries";
 const GET_VARIABLE_DEFS_TOOL_NAME = "get_variable_defs";
-const LIST_SHADER_EFFECTS_TOOL_NAME = "list_shader_effects";
-const GET_SHADER_EFFECT_TOOL_NAME = "get_shader_effect";
-const LIST_SHADER_FILLS_TOOL_NAME = "list_shader_fills";
-const GET_SHADER_FILL_TOOL_NAME = "get_shader_fill";
 export interface FigmaWorkspaceMcpServerOptions extends RemoteMcpClientOptions {
   client?: FigmaUpstreamMcpProxyClient;
   name?: string;
@@ -649,38 +633,6 @@ export interface FigmaWorkspaceGetVariableDefsResult extends FigmaWorkspaceUpstr
   inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
 
-export interface FigmaWorkspaceListShaderEffectsResult extends FigmaWorkspaceUpstreamBackedResult {
-  session: FigmaWorkspaceCompactSession;
-  cursor?: string;
-  guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-  outputFiles?: FigmaWorkspaceOutputFiles;
-  inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
-
-export interface FigmaWorkspaceGetShaderEffectResult extends FigmaWorkspaceUpstreamBackedResult {
-  session: FigmaWorkspaceCompactSession;
-  id: string;
-  guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-  outputFiles?: FigmaWorkspaceOutputFiles;
-  inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
-
-export interface FigmaWorkspaceListShaderFillsResult extends FigmaWorkspaceUpstreamBackedResult {
-  session: FigmaWorkspaceCompactSession;
-  cursor?: string;
-  guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-  outputFiles?: FigmaWorkspaceOutputFiles;
-  inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
-
-export interface FigmaWorkspaceGetShaderFillResult extends FigmaWorkspaceUpstreamBackedResult {
-  session: FigmaWorkspaceCompactSession;
-  id: string;
-  guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-  outputFiles?: FigmaWorkspaceOutputFiles;
-  inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
-
 export interface FigmaWorkspaceMetadataTreeNode {
   [key: string]: unknown;
   nodeId?: string;
@@ -749,10 +701,6 @@ export interface FigmaWorkspaceClient {
   searchDesignSystem(args: FigmaWorkspaceSearchDesignSystemArguments): Promise<FigmaWorkspaceSearchDesignSystemResult>;
   getLibraries(args?: FigmaWorkspaceGetLibrariesArguments): Promise<FigmaWorkspaceGetLibrariesResult>;
   getVariableDefs(args: FigmaWorkspaceGetVariableDefsArguments): Promise<FigmaWorkspaceGetVariableDefsResult>;
-  listShaderEffects(args?: FigmaWorkspaceListShaderEffectsArguments): Promise<FigmaWorkspaceListShaderEffectsResult>;
-  getShaderEffect(args: FigmaWorkspaceGetShaderEffectArguments): Promise<FigmaWorkspaceGetShaderEffectResult>;
-  listShaderFills(args?: FigmaWorkspaceListShaderFillsArguments): Promise<FigmaWorkspaceListShaderFillsResult>;
-  getShaderFill(args: FigmaWorkspaceGetShaderFillArguments): Promise<FigmaWorkspaceGetShaderFillResult>;
   callUpstreamTool(args: FigmaWorkspaceCallUpstreamToolArguments): Promise<FigmaWorkspaceCallUpstreamToolResult>;
   lookup(args: FigmaWorkspaceLookupArguments): Promise<FigmaWorkspaceLookupResult>;
 }
@@ -1042,26 +990,6 @@ export function createFigmaWorkspaceClient(
         asGetVariableDefsArgs(withDefaultTitle(args, "Get Figma variable definitions")),
         runtime,
       ) as Promise<FigmaWorkspaceGetVariableDefsResult>,
-    listShaderEffects: async (args = {}) =>
-      executeListShaderEffects(
-        asListShaderEffectsArgs(withDefaultTitle(args, "List Figma shader effects")),
-        runtime,
-      ) as Promise<FigmaWorkspaceListShaderEffectsResult>,
-    getShaderEffect: async (args) =>
-      executeGetShaderEffect(
-        asGetShaderEffectArgs(withDefaultTitle(args, "Get Figma shader effect")),
-        runtime,
-      ) as Promise<FigmaWorkspaceGetShaderEffectResult>,
-    listShaderFills: async (args = {}) =>
-      executeListShaderFills(
-        asListShaderFillsArgs(withDefaultTitle(args, "List Figma shader fills")),
-        runtime,
-      ) as Promise<FigmaWorkspaceListShaderFillsResult>,
-    getShaderFill: async (args) =>
-      executeGetShaderFill(
-        asGetShaderFillArgs(withDefaultTitle(args, "Get Figma shader fill")),
-        runtime,
-      ) as Promise<FigmaWorkspaceGetShaderFillResult>,
     callUpstreamTool: async (args) =>
       executeCallUpstreamTool(
         asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool")),
@@ -1188,26 +1116,6 @@ export function createFigmaWorkspaceMcpServer(
       case "figma_workspace_get_variable_defs":
         return handleGetVariableDefs(
           asGetVariableDefsArgs(withMcpDefaultTitle(rawArgs, "Get Figma variable definitions")),
-          runtime,
-        );
-      case "figma_workspace_list_shader_effects":
-        return handleListShaderEffects(
-          asListShaderEffectsArgs(withMcpDefaultTitle(rawArgs, "List Figma shader effects")),
-          runtime,
-        );
-      case "figma_workspace_get_shader_effect":
-        return handleGetShaderEffect(
-          asGetShaderEffectArgs(withMcpDefaultTitle(rawArgs, "Get Figma shader effect")),
-          runtime,
-        );
-      case "figma_workspace_list_shader_fills":
-        return handleListShaderFills(
-          asListShaderFillsArgs(withMcpDefaultTitle(rawArgs, "List Figma shader fills")),
-          runtime,
-        );
-      case "figma_workspace_get_shader_fill":
-        return handleGetShaderFill(
-          asGetShaderFillArgs(withMcpDefaultTitle(rawArgs, "Get Figma shader fill")),
           runtime,
         );
       case "figma_workspace_call_upstream_tool":
@@ -3679,150 +3587,6 @@ async function executeGetVariableDefs(
     },
     historySummary: `Read Figma variable definitions for ${requested.nodeId}.`,
     nodeIds: [requested.nodeId],
-  });
-}
-
-async function handleListShaderEffects(
-  args: FigmaWorkspaceListShaderEffectsArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  return makeJsonToolResult(await executeListShaderEffects(args, runtime));
-}
-
-async function executeListShaderEffects(
-  args: FigmaWorkspaceListShaderEffectsArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  const session = runtime.sessions.getOrCreate(args.sessionId);
-  return executeDedicatedUpstreamTool({
-    args,
-    runtime,
-    session,
-    wrapperToolName: "figma_workspace_list_shader_effects",
-    upstreamToolName: LIST_SHADER_EFFECTS_TOOL_NAME,
-    upstreamKind: "shader effect list",
-    requiredProperties: [],
-    optionalProperties: args.cursor === undefined ? [] : ["cursor"],
-    upstreamArguments: removeUndefined({ cursor: args.cursor }) as Record<string, unknown>,
-    responseFields: removeUndefined({ cursor: args.cursor }) as Record<string, unknown>,
-    historySummary: "Listed Figma shader effects.",
-    nodeIds: [],
-  });
-}
-
-async function handleGetShaderEffect(
-  args: FigmaWorkspaceGetShaderEffectArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  return makeJsonToolResult(await executeGetShaderEffect(args, runtime));
-}
-
-async function executeGetShaderEffect(
-  args: FigmaWorkspaceGetShaderEffectArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  const id = normalizeRequiredString(args.id, "id", "figma_workspace_get_shader_effect");
-  const session = runtime.sessions.getOrCreate(args.sessionId);
-  return executeDedicatedUpstreamTool({
-    args,
-    runtime,
-    session,
-    wrapperToolName: "figma_workspace_get_shader_effect",
-    upstreamToolName: GET_SHADER_EFFECT_TOOL_NAME,
-    upstreamKind: "shader effect read",
-    requiredProperties: ["id"],
-    upstreamArguments: { id },
-    responseFields: { id },
-    historySummary: `Read Figma shader effect ${id}.`,
-    nodeIds: [],
-  });
-}
-
-async function handleListShaderFills(
-  args: FigmaWorkspaceListShaderFillsArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  return makeJsonToolResult(await executeListShaderFills(args, runtime));
-}
-
-async function executeListShaderFills(
-  args: FigmaWorkspaceListShaderFillsArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  const session = runtime.sessions.getOrCreate(args.sessionId);
-  return executeDedicatedUpstreamTool({
-    args,
-    runtime,
-    session,
-    wrapperToolName: "figma_workspace_list_shader_fills",
-    upstreamToolName: LIST_SHADER_FILLS_TOOL_NAME,
-    upstreamKind: "shader fill list",
-    requiredProperties: [],
-    optionalProperties: args.cursor === undefined ? [] : ["cursor"],
-    upstreamArguments: removeUndefined({ cursor: args.cursor }) as Record<string, unknown>,
-    responseFields: removeUndefined({ cursor: args.cursor }) as Record<string, unknown>,
-    historySummary: "Listed Figma shader fills.",
-    nodeIds: [],
-  });
-}
-
-async function handleGetShaderFill(
-  args: FigmaWorkspaceGetShaderFillArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  return makeJsonToolResult(await executeGetShaderFill(args, runtime));
-}
-
-async function executeGetShaderFill(
-  args: FigmaWorkspaceGetShaderFillArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  const id = normalizeRequiredString(args.id, "id", "figma_workspace_get_shader_fill");
-  const session = runtime.sessions.getOrCreate(args.sessionId);
-  return executeDedicatedUpstreamTool({
-    args,
-    runtime,
-    session,
-    wrapperToolName: "figma_workspace_get_shader_fill",
-    upstreamToolName: GET_SHADER_FILL_TOOL_NAME,
-    upstreamKind: "shader fill read",
-    requiredProperties: ["id"],
-    upstreamArguments: { id },
-    responseFields: { id },
-    historySummary: `Read Figma shader fill ${id}.`,
-    nodeIds: [],
   });
 }
 
@@ -6655,7 +6419,7 @@ function createToolTierPayload(): Record<string, unknown> {
     },
     contextAndLookup: {
       summary: "Use to plan, bind lightweight session context, or fetch compact docs/API context.",
-      tools: ["figma_workspace_open", "figma_workspace_guidance", "figma_workspace_lookup", "figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_list_shader_effects", "figma_workspace_get_shader_effect", "figma_workspace_list_shader_fills", "figma_workspace_get_shader_fill"],
+      tools: ["figma_workspace_open", "figma_workspace_guidance", "figma_workspace_lookup", "figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs"],
     },
     workflowAddOns: {
       summary: "Use when the primary script workflow needs generated assets, downloaded Figma assets, or repeatable multi-step orchestration.",
@@ -6813,22 +6577,6 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
         refresh: "Use only for upstream tool-cache debug.",
       },
     },
-    shaders: {
-      tier: "contextAndLookup",
-      guidance: "Use shader wrappers only when upstream shader effect/fill account-library reads are part of the task. Payloads remain official upstream JSON/text inside the generic envelope.",
-      tools: ["figma_workspace_list_shader_effects", "figma_workspace_get_shader_effect", "figma_workspace_list_shader_fills", "figma_workspace_get_shader_fill"],
-      recommendedCalls: {
-        listEffects: { sessionId: "<session>", cursor: "<optional cursor>" },
-        getEffect: { sessionId: "<session>", id: "<shader effect id>" },
-        listFills: { sessionId: "<session>", cursor: "<optional cursor>" },
-        getFill: { sessionId: "<session>", id: "<shader fill id>" },
-      },
-      advancedArguments: ["inlineResultLimit", "refresh", "cursor"],
-      avoidUnless: {
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
-        refresh: "Use only for upstream tool-cache debug.",
-      },
-    },
     assetManifest: {
       tool: "figma_workspace_apply_asset_manifest",
       tier: "workflowAddOns",
@@ -6886,7 +6634,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     callUpstreamTool: {
       tool: "figma_workspace_call_upstream_tool",
       tier: "advancedEscapeHatches",
-      guidance: "Explicit upstream escape hatch only for uncovered official Figma MCP capabilities. Read figma-workspace://upstream-tools, then figma-workspace://upstream-tools/{name}, and do not use for use_figma/get_metadata/get_screenshot/upload_assets/download_assets/get_design_context/get_motion_context/export_video/search_design_system/get_libraries/get_variable_defs/shader effect or fill wrappers.",
+      guidance: "Explicit upstream escape hatch for official Figma MCP capabilities without local wrappers, including shader effect/fill reads. Read figma-workspace://upstream-tools, then figma-workspace://upstream-tools/{name}, and do not use for use_figma/get_metadata/get_screenshot/upload_assets/download_assets/get_design_context/get_motion_context/export_video/search_design_system/get_libraries/get_variable_defs.",
       recommendedCalls: {
         explicit: { sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} },
       },
@@ -6911,7 +6659,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     ],
     toolSelection: {
       normalPath: ["figma_workspace_prepare_task", "figma_workspace_guidance", "figma_workspace_run_script_file", "figma_workspace_inspect", "figma_workspace_capture_node"],
-      contextAndLookup: ["figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_list_shader_effects", "figma_workspace_get_shader_effect", "figma_workspace_list_shader_fills", "figma_workspace_get_shader_fill", "figma_workspace_lookup"],
+      contextAndLookup: ["figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_lookup"],
       workflowAddOns: ["figma_workspace_export_video", "figma_workspace_run_task_plan"],
       advancedEscapeHatches: ["figma_workspace_eval", "figma_workspace_call_upstream_tool"],
       upstreamEscapeHatchExamples: ["generate_figma_design", "generate_diagram", "create_new_file", "whoami", "add_code_connect_map", "get_code_connect_suggestions", "send_code_connect_mappings", "get_context_for_code_connect"],
@@ -6982,13 +6730,13 @@ function createGuidePayload(): Record<string, unknown> {
     ],
     motionAndShaders: [
       "Use figma_workspace_export_video to start/poll official motion video exports only when frame sampling is worth the upstream render cost.",
-      "Use figma_workspace_list_shader_effects/get_shader_effect/list_shader_fills/get_shader_fill for explicit shader library reads; payloads remain upstream-shaped.",
+      "Use figma-workspace://upstream-tools/{name} plus figma_workspace_call_upstream_tool for explicit official shader library reads; payloads remain upstream-shaped.",
     ],
     wrapperWorkflowGraph: createPublicWrapperWorkflowPayloads(FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH),
     upstreamEscapeHatch: [
       "Use figma_workspace_call_upstream_tool only for explicit uncovered official upstream tools.",
       "Examples currently exposed through upstream discovery but not covered by dedicated wrappers include file generation, FigJam diagram generation, account checks, and Code Connect mutation/suggestion helpers.",
-      "Before using it, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, and shader effect/fill tools.",
+      "Before using it, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, and get_variable_defs.",
     ],
     responseContract: [
       "Top-level ok reports local wrapper completion. upstream.ok reports effective upstream/business success when an upstream envelope is present.",
@@ -7092,7 +6840,7 @@ async function readReplResource(
             categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
             upstreamError: upstreamError ? responseUpstreamError(upstreamError) : undefined,
             primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : undefined,
-            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_workspace_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, and shader effect/fill tools.",
+            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool for official capabilities without local wrappers, including shader effect/fill tools; use dedicated figma_workspace_* workflow tools for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, and get_variable_defs.",
           }, null, 2),
         },
       ],
@@ -7137,7 +6885,7 @@ async function readReplResource(
             description: tool.description,
             inputSchema: tool.inputSchema,
             callTool: "figma_workspace_call_upstream_tool",
-            guidance: "Full upstream tool contract. Use figma_workspace_call_upstream_tool only for explicit uncovered official upstream capabilities; prefer dedicated figma_workspace_* workflow tools when available.",
+            guidance: "Full upstream tool contract. Use figma_workspace_call_upstream_tool for official upstream capabilities without local wrappers; prefer dedicated figma_workspace_* workflow tools when available.",
           }, null, 2),
         },
       ],

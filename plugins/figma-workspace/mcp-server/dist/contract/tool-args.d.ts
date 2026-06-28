@@ -189,38 +189,6 @@ export interface FigmaWorkspaceGetVariableDefsArguments {
     clientLanguages?: string;
     clientFrameworks?: string;
 }
-export interface FigmaWorkspaceListShaderEffectsArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    cursor?: string;
-    refresh?: boolean;
-    inlineResultLimit?: number;
-}
-export interface FigmaWorkspaceGetShaderEffectArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    id: string;
-    refresh?: boolean;
-    inlineResultLimit?: number;
-}
-export interface FigmaWorkspaceListShaderFillsArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    cursor?: string;
-    refresh?: boolean;
-    inlineResultLimit?: number;
-}
-export interface FigmaWorkspaceGetShaderFillArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    id: string;
-    refresh?: boolean;
-    inlineResultLimit?: number;
-}
 export interface FigmaWorkspaceLookupArguments {
     [key: string]: unknown;
     title?: string;
@@ -284,10 +252,6 @@ export declare function asExportVideoArgs(args: unknown): FigmaWorkspaceExportVi
 export declare function asSearchDesignSystemArgs(args: unknown): FigmaWorkspaceSearchDesignSystemArguments;
 export declare function asGetLibrariesArgs(args: unknown): FigmaWorkspaceGetLibrariesArguments;
 export declare function asGetVariableDefsArgs(args: unknown): FigmaWorkspaceGetVariableDefsArguments;
-export declare function asListShaderEffectsArgs(args: unknown): FigmaWorkspaceListShaderEffectsArguments;
-export declare function asGetShaderEffectArgs(args: unknown): FigmaWorkspaceGetShaderEffectArguments;
-export declare function asListShaderFillsArgs(args: unknown): FigmaWorkspaceListShaderFillsArguments;
-export declare function asGetShaderFillArgs(args: unknown): FigmaWorkspaceGetShaderFillArguments;
 export declare function asLookupArgs(args: unknown): FigmaWorkspaceLookupArguments;
 export declare function asTaskPlanSteps(value: unknown, displayName?: string): FigmaWorkspaceTaskPlanStep[];
 export declare function withDefaultTitle<T extends Record<string, unknown>>(args: T, _title: string): T;

@@ -15,8 +15,9 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 4. If direct `figma_workspace_*` tools are not installed in the active Codex environment, do not use the `./node-upstream-client` no-client default for live Figma work; use `figma_workspace_mcp` after plugin reload, or use package-local `createFigmaWorkspaceClient` only with an explicit custom upstream `client`.
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.js` script, then run it with automatic preflight and write results to local files.
 6. Use `figma_workspace_guidance` and `figma_workspace_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-7. Local `figma_workspace_*` responses use a fixed structured shape; for upstream-backed single-call tools, read upstream JSON from `upstream.result` or text from `upstream.text`, and use `outputFiles.debugFile` for generated JSON debug/result files. Use `figma_workspace_get_metadata` for broad layer-tree discovery; it converts upstream XML to compact JSON, returns small trees inline, and writes oversized trees to `outputFiles.metadataFile`. Use `figma_workspace_get_design_context`, `figma_workspace_get_motion_context`, `figma_workspace_export_video`, design-system wrappers, and shader wrappers for their covered official upstream tools.
-8. `createFigmaWorkspaceClient` mirrors the same result shape in Node: read `result.upstream.result`, compact asset entries, generated debug files, and capture `imageFile` on success.
+7. Local `figma_workspace_*` tools return structured results; use each tool schema and `figma-workspace://guide` for response details.
+8. Use local first-class wrappers for official upstream capabilities they already cover, including metadata, design context, motion context, video export, and design-system reads. Use the Upstream Tool Discovery section for official capabilities that are hidden behind upstream resources instead of exposed as local tools.
+9. `createFigmaWorkspaceClient` mirrors the same result shape in Node: read `result.upstream.result`, compact asset entries, generated debug files, and capture `imageFile` on success.
 
 ## Node Tool Route
 
@@ -77,7 +78,26 @@ Workspace files live under `<cwd>/figma-workspace/<fileKey-or-fileSlug>/`. Calls
 - Use `figma_workspace_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 - For deeper static workflow, lookup, or safety notes, read `references/figma-workspace-workflow.md`, `references/figma-workspace-guidance-and-lookup.md`, or `references/figma-workspace-safety.md`.
 
-Use `figma_workspace_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers. Read `figma-workspace://upstream-tools` first when an uncovered upstream-only debug task depends on it. Prefer first-class wrappers for metadata, design context, motion context, video export, design-system reads, and shader effect/fill reads. Keep local workspace handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
+Use `figma_workspace_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers, including official shader effect/fill reads. Read `figma-workspace://upstream-tools` first when an uncovered upstream-only debug task depends on it. Prefer first-class wrappers for metadata, design context, motion context, video export, and design-system reads. Keep local workspace handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
+
+## Upstream Tool Discovery
+
+Most local `figma_workspace_*` tools are visible through tool descriptions. This section names official upstream capabilities that are useful but otherwise hidden behind resources.
+
+For any item below, first read `figma-workspace://upstream-tools` to confirm availability. Then read `figma-workspace://upstream-tools/{name}` to get that tool's full description and `inputSchema`. Call it with `figma_workspace_call_upstream_tool({ toolName: "<name>", arguments: { ... } })`.
+
+| Capability | Upstream tool names | Use when |
+|---|---|---|
+| Account/auth check | `whoami` | The user asks which Figma account/session is authenticated. |
+| New file creation | `create_new_file` | The task needs a new blank Figma file before canvas work starts. |
+| Design generation/import | `generate_figma_design` | The user asks to import/generate design content from URL or HTML into an existing design file. |
+| FigJam diagram generation | `generate_diagram` | The user explicitly wants a FigJam diagram from Mermaid-style input. |
+| FigJam context | `get_figjam` | The task targets FigJam content and no local workflow wrapper covers the needed read. |
+| Code Connect reads/suggestions | `get_code_connect_map`, `get_context_for_code_connect`, `get_code_connect_suggestions` | The user asks to inspect or prepare component-to-code mappings. |
+| Code Connect writes | `add_code_connect_map`, `send_code_connect_mappings` | The user explicitly asks to create, update, or publish mappings. |
+| Shader library reads | `list_shader_effects`, `get_shader_effect`, `list_shader_fills`, `get_shader_fill` | The task explicitly needs shader effect/fill library entries or source manifests. |
+
+Do not route covered official capabilities through this list just because they also appear upstream. Use local tools for Plugin API execution, screenshots/capture, metadata, asset upload/download workflows, design context, motion context, video export, library search, libraries, and variable definitions.
 
 ## Query Strategy
 
@@ -110,5 +130,5 @@ command: npm run oauth-cache:path
 
 ## Bundled Servers
 
-- `figma_workspace_mcp`: primary agent-facing facade after OAuth registration. It runs local `.figma.js` files, writes local output files, exposes compact docs/API lookup, stores process-local handles, captures screenshots, applies generated assets, provides thin first-class wrappers for covered official upstream tools, and delegates only uncovered official capabilities.
+- `figma_workspace_mcp`: primary agent-facing facade after OAuth registration. It runs local `.figma.js` files, writes local output files, exposes compact docs/API lookup, stores process-local handles, captures screenshots, applies generated assets, provides selected first-class wrappers for covered official upstream tools, and delegates only uncovered official capabilities.
 - `figma_workspace_upstream_stdio`: optional transparent bridge CLI/server for upstream debugging and parity checks. It is not installed as a persistent plugin MCP server by default; use the package CLI or Node API `createRemoteMcpClient` when raw official MCP access is required.

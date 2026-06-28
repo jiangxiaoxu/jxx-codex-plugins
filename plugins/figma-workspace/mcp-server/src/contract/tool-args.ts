@@ -208,42 +208,6 @@ export interface FigmaWorkspaceGetVariableDefsArguments {
   clientFrameworks?: string;
 }
 
-export interface FigmaWorkspaceListShaderEffectsArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  cursor?: string;
-  refresh?: boolean;
-  inlineResultLimit?: number;
-}
-
-export interface FigmaWorkspaceGetShaderEffectArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  id: string;
-  refresh?: boolean;
-  inlineResultLimit?: number;
-}
-
-export interface FigmaWorkspaceListShaderFillsArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  cursor?: string;
-  refresh?: boolean;
-  inlineResultLimit?: number;
-}
-
-export interface FigmaWorkspaceGetShaderFillArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  id: string;
-  refresh?: boolean;
-  inlineResultLimit?: number;
-}
-
 export interface FigmaWorkspaceLookupArguments {
   [key: string]: unknown;
   title?: string;
@@ -619,34 +583,6 @@ export function asGetVariableDefsArgs(args: unknown): FigmaWorkspaceGetVariableD
     "clientFrameworks",
   ]);
   assertOptionalTargetValue(record.target, "target");
-  return record;
-}
-
-export function asListShaderEffectsArgs(args: unknown): FigmaWorkspaceListShaderEffectsArguments {
-  const record = parseToolArgs<FigmaWorkspaceListShaderEffectsArguments>(args);
-  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
-  assertOptionalStringFields(record, ["sessionId", "cursor"]);
-  return record;
-}
-
-export function asGetShaderEffectArgs(args: unknown): FigmaWorkspaceGetShaderEffectArguments {
-  const record = parseToolArgs<FigmaWorkspaceGetShaderEffectArguments>(args);
-  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
-  assertOptionalStringFields(record, ["sessionId", "id"]);
-  return record;
-}
-
-export function asListShaderFillsArgs(args: unknown): FigmaWorkspaceListShaderFillsArguments {
-  const record = parseToolArgs<FigmaWorkspaceListShaderFillsArguments>(args);
-  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
-  assertOptionalStringFields(record, ["sessionId", "cursor"]);
-  return record;
-}
-
-export function asGetShaderFillArgs(args: unknown): FigmaWorkspaceGetShaderFillArguments {
-  const record = parseToolArgs<FigmaWorkspaceGetShaderFillArguments>(args);
-  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
-  assertOptionalStringFields(record, ["sessionId", "id"]);
   return record;
 }
 
