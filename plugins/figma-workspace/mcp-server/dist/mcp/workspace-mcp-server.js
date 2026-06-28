@@ -48466,7 +48466,22 @@ async function readReplResource(uri, runtime) {
       tools = await runtime.upstreamToolCache.list(false);
     } catch (error2) {
       const upstreamError = normalizeCaughtUpstreamError(error2);
-      throw new Error(`Upstream Figma MCP tool directory unavailable: ${upstreamError.message}`);
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify({
+              ok: false,
+              name: toolName,
+              upstreamError: responseUpstreamError(upstreamError),
+              primaryFix: primaryFixForUpstreamError(upstreamError),
+              callTool: "figma_workspace_call_upstream_tool",
+              guidance: "Upstream Figma MCP tool directory is unavailable. Retry this resource after upstream authentication or discovery succeeds; read figma-workspace://upstream-tools for directory status."
+            }, null, 2)
+          }
+        ]
+      };
     }
     const tool = tools.find((item) => item.name === toolName);
     if (!tool) {
