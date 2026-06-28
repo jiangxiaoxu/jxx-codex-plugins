@@ -29,13 +29,21 @@ export {
   type PersistentOAuthProviderOptions,
 } from "../auth/oauth-provider.js";
 export {
+  OAUTH_CALLBACK_ERROR_CODES,
+  OAuthCallbackError,
   startOAuthCallbackServer,
+  type OAuthCallbackErrorCode,
   type OAuthCallbackServer,
   type OAuthCallbackServerOptions,
 } from "../auth/oauth-callback.js";
 export {
+  REMOTE_MCP_OAUTH_ERROR_CODES,
+  RemoteMcpOAuthError,
   RemoteMcpClient,
   createRemoteMcpClient,
+  isRemoteMcpOAuthError,
+  type RemoteMcpOAuthErrorCode,
+  type RemoteMcpOAuthErrorDetails,
   type RemoteMcpClientOptions,
 } from "../upstream/remote-mcp-client.js";
 export {

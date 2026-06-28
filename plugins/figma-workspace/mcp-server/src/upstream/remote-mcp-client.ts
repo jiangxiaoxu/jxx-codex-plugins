@@ -14,6 +14,7 @@ import {
 } from "../auth/config.js";
 import { PersistentOAuthProvider } from "../auth/oauth-provider.js";
 import {
+  OAuthCallbackError,
   startOAuthCallbackServer,
   type OAuthCallbackServer,
   type OAuthCallbackServerOptions,
@@ -22,6 +23,56 @@ import {
 interface RemoteMcpConnection {
   client: Client;
   transport: StreamableHTTPClientTransport;
+}
+
+const OAUTH_CACHE_FILE_NAME = ".figma-workspace-oauth.json";
+const LOGIN_COMMAND = "npm run login:figma-http";
+
+export const REMOTE_MCP_OAUTH_ERROR_CODES = [
+  "FIGMA_UPSTREAM_AUTH_REQUIRED",
+  "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
+  "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT",
+  "FIGMA_UPSTREAM_OAUTH_CANCELLED",
+  "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED",
+  "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED",
+] as const;
+
+export type RemoteMcpOAuthErrorCode = (typeof REMOTE_MCP_OAUTH_ERROR_CODES)[number];
+
+export interface RemoteMcpOAuthErrorDetails {
+  [key: string]: unknown;
+  loginCommand?: string;
+  oauthCacheFile?: string;
+}
+
+export class RemoteMcpOAuthError extends Error {
+  readonly code: RemoteMcpOAuthErrorCode;
+  readonly details?: RemoteMcpOAuthErrorDetails;
+
+  constructor(
+    code: RemoteMcpOAuthErrorCode,
+    message: string,
+    options: { cause?: unknown; details?: RemoteMcpOAuthErrorDetails } = {},
+  ) {
+    super(message, { cause: options.cause });
+    this.name = "RemoteMcpOAuthError";
+    this.code = code;
+    this.details = options.details;
+  }
+}
+
+export function isRemoteMcpOAuthError(error: unknown): error is RemoteMcpOAuthError {
+  if (error instanceof RemoteMcpOAuthError) {
+    return true;
+  }
+  if (!isRecord(error)) {
+    return false;
+  }
+  return (
+    error.name === "RemoteMcpOAuthError" &&
+    typeof error.code === "string" &&
+    (REMOTE_MCP_OAUTH_ERROR_CODES as readonly string[]).includes(error.code)
+  );
 }
 
 export interface RemoteMcpClientOptions extends NodeReplConfigInput {
@@ -99,23 +150,31 @@ export class RemoteMcpClient {
         throw error;
       }
       const unauthorizedTransport = this.transport;
-      if (isForbiddenClientRegistrationError(error)) {
+      const registrationRejection = extractRegistrationRejection(error);
+      if (registrationRejection) {
         await this.closeTransport(unauthorizedTransport, {
           clearInFlight: false,
         });
-        throw new Error(
-          [
-            "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
-            "The official Figma remote MCP may only allow supported catalog clients or waitlisted custom clients.",
-            "If Figma provides a registered OAuth client for this runtime, seed that client information in the OAuth state file before connecting.",
-          ].join(" "),
-          { cause: error },
+        throw new RemoteMcpOAuthError(
+          "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
+          "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
+          {
+            cause: error,
+            details: {
+              oauthCacheFile: OAUTH_CACHE_FILE_NAME,
+              upstreamStatus: registrationRejection.status,
+              upstreamCode: registrationRejection.code,
+            },
+          },
         );
       }
       if (!isUnauthorizedError(error) || !unauthorizedTransport) {
         await this.closeTransport(unauthorizedTransport, {
           clearInFlight: false,
         });
+        if (isUnauthorizedError(error)) {
+          throw authRequiredError(error);
+        }
         throw error;
       }
 
@@ -132,19 +191,28 @@ export class RemoteMcpClient {
           });
         } catch (callbackServerError) {
           if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
-            throw new StaleConnectionError();
+            throw oauthCancelledError(new StaleConnectionError());
           }
-          throw callbackServerError;
+          throw oauthCallbackFailedError(callbackServerError);
         }
         if (!this.trackCallbackServer(callbackServer, connectionGeneration)) {
           await this.closeCallbackServer(callbackServer);
-          throw new StaleConnectionError();
+          throw oauthCancelledError(new StaleConnectionError());
         }
-        const authorizationCode = await callbackServer.waitForCode();
+        let authorizationCode: string;
+        try {
+          authorizationCode = await callbackServer.waitForCode();
+        } catch (callbackError) {
+          throw oauthCallbackError(callbackError);
+        }
         if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
-          throw new StaleConnectionError();
+          throw oauthCancelledError(new StaleConnectionError());
         }
-        await unauthorizedTransport.finishAuth(authorizationCode);
+        try {
+          await unauthorizedTransport.finishAuth(authorizationCode);
+        } catch (finishAuthError) {
+          throw oauthTokenExchangeFailedError(finishAuthError);
+        }
       } finally {
         await this.closeTransport(unauthorizedTransport, {
           clearInFlight: false,
@@ -152,10 +220,17 @@ export class RemoteMcpClient {
         await this.closeCallbackServer(callbackServer);
       }
 
-      await this.setConnectedIfCurrent(
-        await this.connectOnce(connectionGeneration),
-        connectionGeneration,
-      );
+      try {
+        await this.setConnectedIfCurrent(
+          await this.connectOnce(connectionGeneration),
+          connectionGeneration,
+        );
+      } catch (postAuthError) {
+        if (postAuthError instanceof StaleConnectionError) {
+          throw oauthCancelledError(postAuthError);
+        }
+        throw postAuthError;
+      }
     }
   }
 
@@ -329,15 +404,103 @@ export function createRemoteMcpClient(
   return new RemoteMcpClient(options);
 }
 
-function isForbiddenClientRegistrationError(error: unknown): boolean {
-  const message =
-    typeof error === "object" &&
-    error !== null &&
-    "message" in error &&
-    typeof error.message === "string"
-      ? error.message
-      : String(error);
-  return message.includes("HTTP 403") && message.includes("Forbidden");
+function extractRegistrationRejection(
+  error: unknown,
+): { status?: number; code?: string } | undefined {
+  const signals = collectErrorStatusSignals(error);
+  if (signals.status !== undefined) {
+    return signals.status === 403
+      ? { status: signals.status, code: signals.code }
+      : undefined;
+  }
+  if (signals.code !== undefined) {
+    return isForbiddenStatusCode(signals.code)
+      ? { code: signals.code }
+      : undefined;
+  }
+
+  const message = messageFromUnknown(error);
+  if (!message) {
+    return undefined;
+  }
+  return /\bHTTP 403\b/u.test(message) && /\bForbidden\b/u.test(message)
+    ? {}
+    : undefined;
+}
+
+function authRequiredError(error: unknown): RemoteMcpOAuthError {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_AUTH_REQUIRED",
+    "Figma MCP upstream authentication is required or incomplete.",
+    {
+      cause: error,
+      details: defaultOAuthRecoveryDetails(),
+    },
+  );
+}
+
+function oauthCallbackError(error: unknown): RemoteMcpOAuthError {
+  if (error instanceof OAuthCallbackError) {
+    switch (error.code) {
+      case "OAUTH_CALLBACK_TIMEOUT":
+        return new RemoteMcpOAuthError(
+          "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT",
+          "Figma MCP OAuth browser authorization timed out.",
+          {
+            cause: error,
+            details: defaultOAuthRecoveryDetails(),
+          },
+        );
+      case "OAUTH_CALLBACK_CANCELLED":
+        return oauthCancelledError(error);
+      case "OAUTH_CALLBACK_AUTHORIZATION_FAILED":
+      case "OAUTH_CALLBACK_INTERNAL_ERROR":
+      case "OAUTH_CALLBACK_MISSING_CODE":
+      case "OAUTH_CALLBACK_STATE_MISMATCH":
+        return oauthCallbackFailedError(error);
+    }
+  }
+  return oauthCallbackFailedError(error);
+}
+
+function oauthCancelledError(error: unknown): RemoteMcpOAuthError {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CANCELLED",
+    "Figma MCP OAuth browser authorization was cancelled before completion.",
+    {
+      cause: error,
+      details: defaultOAuthRecoveryDetails(),
+    },
+  );
+}
+
+function oauthCallbackFailedError(error: unknown): RemoteMcpOAuthError {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED",
+    "Figma MCP OAuth browser authorization did not complete.",
+    {
+      cause: error,
+      details: defaultOAuthRecoveryDetails(),
+    },
+  );
+}
+
+function oauthTokenExchangeFailedError(error: unknown): RemoteMcpOAuthError {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED",
+    "Figma MCP OAuth token exchange failed after browser authorization.",
+    {
+      cause: error,
+      details: defaultOAuthRecoveryDetails(),
+    },
+  );
+}
+
+function defaultOAuthRecoveryDetails(): RemoteMcpOAuthErrorDetails {
+  return {
+    loginCommand: LOGIN_COMMAND,
+    oauthCacheFile: OAUTH_CACHE_FILE_NAME,
+  };
 }
 
 function isUnauthorizedError(error: unknown): error is UnauthorizedError {
@@ -351,6 +514,82 @@ function isUnauthorizedError(error: unknown): error is UnauthorizedError {
     typeof error.constructor === "function" &&
     error.constructor.name === "UnauthorizedError"
   );
+}
+
+function messageFromUnknown(error: unknown): string | undefined {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (isRecord(error) && typeof error.message === "string") {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return undefined;
+}
+
+function collectErrorStatusSignals(
+  error: unknown,
+): { status?: number; code?: string } {
+  const visited = new Set<unknown>();
+  const pending: unknown[] = [error];
+  let code: string | undefined;
+
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (!isRecord(current) || visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    const status = numberFromStatusField(current.status) ??
+      numberFromStatusField(current.statusCode);
+    if (status !== undefined) {
+      return {
+        status,
+        code: code ?? stringFromStatusCodeField(current.code),
+      };
+    }
+    code ??= stringFromStatusCodeField(current.code);
+
+    for (const key of ["cause", "response", "error"] as const) {
+      if (isRecord(current[key])) {
+        pending.push(current[key]);
+      }
+    }
+  }
+
+  return { code };
+}
+
+function numberFromStatusField(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value !== "string" || !/^\d{3}$/u.test(value)) {
+    return undefined;
+  }
+  return Number(value);
+}
+
+function stringFromStatusCodeField(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return String(value);
+  }
+  if (typeof value !== "string" || value.length === 0) {
+    return undefined;
+  }
+  return value;
+}
+
+function isForbiddenStatusCode(value: string): boolean {
+  const normalized = value.trim().toUpperCase();
+  return normalized === "403" || normalized === "FORBIDDEN";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 class StaleConnectionError extends Error {

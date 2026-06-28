@@ -17,6 +17,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import {
   createRemoteMcpClient,
+  isRemoteMcpOAuthError,
+  type RemoteMcpOAuthError,
   type RemoteMcpClientOptions,
 } from "../upstream/remote-mcp-client.js";
 import {
@@ -7089,9 +7091,7 @@ async function readReplResource(
             detailTemplate: "figma-workspace://upstream-tools/{name}",
             categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
             upstreamError: upstreamError ? responseUpstreamError(upstreamError) : undefined,
-            primaryFix: upstreamError
-              ? "Confirm Figma MCP OAuth/login and upstream connectivity, then reread figma-workspace://upstream-tools."
-              : undefined,
+            primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : undefined,
             guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_workspace_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, and shader effect/fill tools.",
           }, null, 2),
         },
@@ -7379,22 +7379,89 @@ function extractFigmaDebugUuid(text: string): string | undefined {
 }
 
 function normalizeCaughtUpstreamError(error: unknown): FigmaWorkspaceUpstreamError {
+  const oauthError = normalizeOAuthUpstreamError(error);
+  if (oauthError) {
+    return oauthError;
+  }
   if (error instanceof Error) {
     return {
       message: error.message,
       code: typeof (error as { code?: unknown }).code === "string"
         ? (error as { code?: string }).code
-        : undefined,
-      details: error.stack,
+        : "FIGMA_UPSTREAM_FAILED",
     };
   }
   return {
     message: stringFromUnknown(error) ?? "Upstream Figma execution failed.",
+    code: "FIGMA_UPSTREAM_FAILED",
     details: error,
   };
 }
 
+function normalizeOAuthUpstreamError(error: unknown): FigmaWorkspaceUpstreamError | undefined {
+  if (!isRemoteMcpOAuthError(error)) {
+    return undefined;
+  }
+  return publicOAuthUpstreamError(error);
+}
+
+function publicOAuthUpstreamError(error: RemoteMcpOAuthError): FigmaWorkspaceUpstreamError {
+  const details = isRecord(error.details)
+    ? {
+        ...error.details,
+        loginCommand: error.details.loginCommand ?? "npm run login:figma-http",
+        oauthCacheFile: error.details.oauthCacheFile ?? ".figma-workspace-oauth.json",
+      }
+    : {
+        loginCommand: "npm run login:figma-http",
+        oauthCacheFile: ".figma-workspace-oauth.json",
+      };
+  return {
+    message: publicOAuthMessage(error.code),
+    code: error.code,
+    details,
+  };
+}
+
+function publicOAuthMessage(code: RemoteMcpOAuthError["code"]): string {
+  switch (code) {
+    case "FIGMA_UPSTREAM_AUTH_REQUIRED":
+      return "Figma MCP upstream authentication is required or incomplete.";
+    case "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED":
+      return "Figma MCP OAuth client registration was rejected before authorization.";
+    case "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT":
+      return "Figma MCP OAuth browser authorization timed out.";
+    case "FIGMA_UPSTREAM_OAUTH_CANCELLED":
+      return "Figma MCP OAuth browser authorization was cancelled before completion.";
+    case "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED":
+      return "Figma MCP OAuth browser authorization did not complete.";
+    case "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED":
+      return "Figma MCP OAuth token exchange failed after browser authorization.";
+  }
+}
+
 function primaryFixForUpstreamError(error: FigmaWorkspaceUpstreamError): string {
+  if (error.code === "FIGMA_UPSTREAM_AUTH_REQUIRED") {
+    return "Run npm run login:figma-http from the figma-workspace plugin root, complete browser OAuth, then retry the Figma Workspace MCP call.";
+  }
+  if (error.code === "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED") {
+    return "Use a Figma-supported OAuth client for this runtime or seed registered client metadata in .figma-workspace-oauth.json, then retry.";
+  }
+  if (error.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT") {
+    return "Rerun npm run login:figma-http, complete the browser OAuth callback before the timeout, then retry.";
+  }
+  if (error.code === "FIGMA_UPSTREAM_OAUTH_CANCELLED") {
+    return "Restart the Figma Workspace MCP call or npm run login:figma-http, complete browser OAuth, then retry.";
+  }
+  if (error.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED") {
+    return "Rerun npm run login:figma-http and complete a successful browser OAuth callback, then retry.";
+  }
+  if (error.code === "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED") {
+    return "Rerun npm run login:figma-http to refresh the OAuth token exchange, then retry the Figma Workspace MCP call.";
+  }
+  if (error.code === "FIGMA_UPSTREAM_FAILED") {
+    return "Check the upstream Figma MCP connection and retry the same Figma Workspace MCP call after the upstream issue is resolved.";
+  }
   const message = error.message.toLowerCase();
   if (message.includes("remove") && (message.includes("instance") || message.includes("children") || message.includes("subtree"))) {
     return "Use $.replaceGeneratedFrame({ name }) for guarded generated-frame replacement, or $.cloneNodeTree({ source, placement: 'right' }) for copy/rebuild workflows.";

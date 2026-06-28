@@ -17966,7 +17966,14 @@ ${authorizationUrl.toString()}`
 // src/auth/oauth-callback.ts
 import { createServer } from "node:http";
 import { URL as URL2 } from "node:url";
-var CLOSED_BEFORE_AUTHORIZATION_MESSAGE = "OAuth callback server was closed before authorization completed.";
+var OAuthCallbackError = class extends Error {
+  code;
+  constructor(code2, message, options = {}) {
+    super(message, { cause: options.cause });
+    this.name = "OAuthCallbackError";
+    this.code = code2;
+  }
+};
 function sendHtml(response, status, title, body) {
   response.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
   response.end(
@@ -18006,13 +18013,23 @@ async function startOAuthCallbackServer(options) {
         const description = url2.searchParams.get("error_description");
         const message = description ? `${error2}: ${description}` : error2;
         sendHtml(response, 400, "Authorization failed", message);
-        settleWithError(new Error(`OAuth authorization failed: ${message}`));
+        settleWithError(
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_AUTHORIZATION_FAILED",
+            `OAuth authorization failed: ${message}`
+          )
+        );
         return;
       }
       const code2 = url2.searchParams.get("code");
       if (!code2) {
         sendHtml(response, 400, "Authorization failed", "Missing authorization code.");
-        settleWithError(new Error("OAuth callback did not include a code."));
+        settleWithError(
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_MISSING_CODE",
+            "OAuth callback did not include a code."
+          )
+        );
         return;
       }
       const expectedState = await options.getExpectedState?.();
@@ -18020,7 +18037,10 @@ async function startOAuthCallbackServer(options) {
       if (expectedState && receivedState !== expectedState) {
         sendHtml(response, 400, "Authorization failed", "OAuth state mismatch.");
         settleWithError(
-          new Error("OAuth callback state did not match the saved state.")
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_STATE_MISMATCH",
+            "OAuth callback state did not match the saved state."
+          )
         );
         return;
       }
@@ -18036,7 +18056,7 @@ async function startOAuthCallbackServer(options) {
         if (!response.headersSent) {
           sendHtml(response, 500, "Authorization failed", "Internal callback error.");
         }
-        settleWithError(asError(error2));
+        settleWithError(asOAuthCallbackError(error2));
       }
     }
   });
@@ -18076,14 +18096,24 @@ async function startOAuthCallbackServer(options) {
     });
   });
   timeout = setTimeout(() => {
-    settleWithError(new Error("Timed out waiting for OAuth callback."));
+    settleWithError(
+      new OAuthCallbackError(
+        "OAUTH_CALLBACK_TIMEOUT",
+        "Timed out waiting for OAuth callback."
+      )
+    );
   }, options.timeoutMs);
   return {
     url: callbackUrl,
     waitForCode: () => codePromise,
     close: async () => {
       if (!settled) {
-        settleWithError(new Error(CLOSED_BEFORE_AUTHORIZATION_MESSAGE));
+        settleWithError(
+          new OAuthCallbackError(
+            "OAUTH_CALLBACK_CANCELLED",
+            "OAuth callback server was closed before authorization completed."
+          )
+        );
       } else {
         clearAuthTimeout();
       }
@@ -18091,11 +18121,47 @@ async function startOAuthCallbackServer(options) {
     }
   };
 }
-function asError(error2) {
-  return error2 instanceof Error ? error2 : new Error(String(error2));
+function asOAuthCallbackError(error2) {
+  if (error2 instanceof OAuthCallbackError) {
+    return error2;
+  }
+  return new OAuthCallbackError(
+    "OAUTH_CALLBACK_INTERNAL_ERROR",
+    error2 instanceof Error ? error2.message : String(error2),
+    { cause: error2 }
+  );
 }
 
 // src/upstream/remote-mcp-client.ts
+var OAUTH_CACHE_FILE_NAME = ".figma-workspace-oauth.json";
+var LOGIN_COMMAND = "npm run login:figma-http";
+var REMOTE_MCP_OAUTH_ERROR_CODES = [
+  "FIGMA_UPSTREAM_AUTH_REQUIRED",
+  "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
+  "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT",
+  "FIGMA_UPSTREAM_OAUTH_CANCELLED",
+  "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED",
+  "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED"
+];
+var RemoteMcpOAuthError = class extends Error {
+  code;
+  details;
+  constructor(code2, message, options = {}) {
+    super(message, { cause: options.cause });
+    this.name = "RemoteMcpOAuthError";
+    this.code = code2;
+    this.details = options.details;
+  }
+};
+function isRemoteMcpOAuthError(error2) {
+  if (error2 instanceof RemoteMcpOAuthError) {
+    return true;
+  }
+  if (!isRecord2(error2)) {
+    return false;
+  }
+  return error2.name === "RemoteMcpOAuthError" && typeof error2.code === "string" && REMOTE_MCP_OAUTH_ERROR_CODES.includes(error2.code);
+}
 var RemoteMcpClient = class {
   config;
   authProvider;
@@ -18154,23 +18220,31 @@ ${authorizationUrl.toString()}`
         throw error2;
       }
       const unauthorizedTransport = this.transport;
-      if (isForbiddenClientRegistrationError(error2)) {
+      const registrationRejection = extractRegistrationRejection(error2);
+      if (registrationRejection) {
         await this.closeTransport(unauthorizedTransport, {
           clearInFlight: false
         });
-        throw new Error(
-          [
-            "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
-            "The official Figma remote MCP may only allow supported catalog clients or waitlisted custom clients.",
-            "If Figma provides a registered OAuth client for this runtime, seed that client information in the OAuth state file before connecting."
-          ].join(" "),
-          { cause: error2 }
+        throw new RemoteMcpOAuthError(
+          "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
+          "Figma MCP OAuth client registration was rejected before a browser authorization URL was issued.",
+          {
+            cause: error2,
+            details: {
+              oauthCacheFile: OAUTH_CACHE_FILE_NAME,
+              upstreamStatus: registrationRejection.status,
+              upstreamCode: registrationRejection.code
+            }
+          }
         );
       }
       if (!isUnauthorizedError(error2) || !unauthorizedTransport) {
         await this.closeTransport(unauthorizedTransport, {
           clearInFlight: false
         });
+        if (isUnauthorizedError(error2)) {
+          throw authRequiredError(error2);
+        }
         throw error2;
       }
       let callbackServer;
@@ -18185,29 +18259,45 @@ ${authorizationUrl.toString()}`
           });
         } catch (callbackServerError) {
           if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
-            throw new StaleConnectionError();
+            throw oauthCancelledError(new StaleConnectionError());
           }
-          throw callbackServerError;
+          throw oauthCallbackFailedError(callbackServerError);
         }
         if (!this.trackCallbackServer(callbackServer, connectionGeneration)) {
           await this.closeCallbackServer(callbackServer);
-          throw new StaleConnectionError();
+          throw oauthCancelledError(new StaleConnectionError());
         }
-        const authorizationCode = await callbackServer.waitForCode();
+        let authorizationCode;
+        try {
+          authorizationCode = await callbackServer.waitForCode();
+        } catch (callbackError) {
+          throw oauthCallbackError(callbackError);
+        }
         if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
-          throw new StaleConnectionError();
+          throw oauthCancelledError(new StaleConnectionError());
         }
-        await unauthorizedTransport.finishAuth(authorizationCode);
+        try {
+          await unauthorizedTransport.finishAuth(authorizationCode);
+        } catch (finishAuthError) {
+          throw oauthTokenExchangeFailedError(finishAuthError);
+        }
       } finally {
         await this.closeTransport(unauthorizedTransport, {
           clearInFlight: false
         });
         await this.closeCallbackServer(callbackServer);
       }
-      await this.setConnectedIfCurrent(
-        await this.connectOnce(connectionGeneration),
-        connectionGeneration
-      );
+      try {
+        await this.setConnectedIfCurrent(
+          await this.connectOnce(connectionGeneration),
+          connectionGeneration
+        );
+      } catch (postAuthError) {
+        if (postAuthError instanceof StaleConnectionError) {
+          throw oauthCancelledError(postAuthError);
+        }
+        throw postAuthError;
+      }
     }
   }
   async connectOnce(connectionGeneration = this.connectionGeneration) {
@@ -18340,15 +18430,157 @@ ${authorizationUrl.toString()}`
 function createRemoteMcpClient(options = {}) {
   return new RemoteMcpClient(options);
 }
-function isForbiddenClientRegistrationError(error2) {
-  const message = typeof error2 === "object" && error2 !== null && "message" in error2 && typeof error2.message === "string" ? error2.message : String(error2);
-  return message.includes("HTTP 403") && message.includes("Forbidden");
+function extractRegistrationRejection(error2) {
+  const signals = collectErrorStatusSignals(error2);
+  if (signals.status !== void 0) {
+    return signals.status === 403 ? { status: signals.status, code: signals.code } : void 0;
+  }
+  if (signals.code !== void 0) {
+    return isForbiddenStatusCode(signals.code) ? { code: signals.code } : void 0;
+  }
+  const message = messageFromUnknown(error2);
+  if (!message) {
+    return void 0;
+  }
+  return /\bHTTP 403\b/u.test(message) && /\bForbidden\b/u.test(message) ? {} : void 0;
+}
+function authRequiredError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_AUTH_REQUIRED",
+    "Figma MCP upstream authentication is required or incomplete.",
+    {
+      cause: error2,
+      details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function oauthCallbackError(error2) {
+  if (error2 instanceof OAuthCallbackError) {
+    switch (error2.code) {
+      case "OAUTH_CALLBACK_TIMEOUT":
+        return new RemoteMcpOAuthError(
+          "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT",
+          "Figma MCP OAuth browser authorization timed out.",
+          {
+            cause: error2,
+            details: defaultOAuthRecoveryDetails()
+          }
+        );
+      case "OAUTH_CALLBACK_CANCELLED":
+        return oauthCancelledError(error2);
+      case "OAUTH_CALLBACK_AUTHORIZATION_FAILED":
+      case "OAUTH_CALLBACK_INTERNAL_ERROR":
+      case "OAUTH_CALLBACK_MISSING_CODE":
+      case "OAUTH_CALLBACK_STATE_MISMATCH":
+        return oauthCallbackFailedError(error2);
+    }
+  }
+  return oauthCallbackFailedError(error2);
+}
+function oauthCancelledError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CANCELLED",
+    "Figma MCP OAuth browser authorization was cancelled before completion.",
+    {
+      cause: error2,
+      details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function oauthCallbackFailedError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED",
+    "Figma MCP OAuth browser authorization did not complete.",
+    {
+      cause: error2,
+      details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function oauthTokenExchangeFailedError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED",
+    "Figma MCP OAuth token exchange failed after browser authorization.",
+    {
+      cause: error2,
+      details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function defaultOAuthRecoveryDetails() {
+  return {
+    loginCommand: LOGIN_COMMAND,
+    oauthCacheFile: OAUTH_CACHE_FILE_NAME
+  };
 }
 function isUnauthorizedError(error2) {
   if (error2 instanceof UnauthorizedError) {
     return true;
   }
   return typeof error2 === "object" && error2 !== null && "constructor" in error2 && typeof error2.constructor === "function" && error2.constructor.name === "UnauthorizedError";
+}
+function messageFromUnknown(error2) {
+  if (error2 instanceof Error) {
+    return error2.message;
+  }
+  if (isRecord2(error2) && typeof error2.message === "string") {
+    return error2.message;
+  }
+  if (typeof error2 === "string") {
+    return error2;
+  }
+  return void 0;
+}
+function collectErrorStatusSignals(error2) {
+  const visited = /* @__PURE__ */ new Set();
+  const pending = [error2];
+  let code2;
+  while (pending.length > 0) {
+    const current2 = pending.shift();
+    if (!isRecord2(current2) || visited.has(current2)) {
+      continue;
+    }
+    visited.add(current2);
+    const status = numberFromStatusField(current2.status) ?? numberFromStatusField(current2.statusCode);
+    if (status !== void 0) {
+      return {
+        status,
+        code: code2 ?? stringFromStatusCodeField(current2.code)
+      };
+    }
+    code2 ??= stringFromStatusCodeField(current2.code);
+    for (const key of ["cause", "response", "error"]) {
+      if (isRecord2(current2[key])) {
+        pending.push(current2[key]);
+      }
+    }
+  }
+  return { code: code2 };
+}
+function numberFromStatusField(value) {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value !== "string" || !/^\d{3}$/u.test(value)) {
+    return void 0;
+  }
+  return Number(value);
+}
+function stringFromStatusCodeField(value) {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return String(value);
+  }
+  if (typeof value !== "string" || value.length === 0) {
+    return void 0;
+  }
+  return value;
+}
+function isForbiddenStatusCode(value) {
+  const normalized = value.trim().toUpperCase();
+  return normalized === "403" || normalized === "FORBIDDEN";
+}
+function isRecord2(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 var StaleConnectionError = class extends Error {
   constructor() {
@@ -41278,7 +41510,7 @@ function parseToolArgs(value) {
   if (value === void 0) {
     return {};
   }
-  if (!isRecord2(value)) {
+  if (!isRecord3(value)) {
     throw new Error("Tool arguments must be an object.");
   }
   return { ...value };
@@ -41297,7 +41529,7 @@ function assertOptionalRecord(record2, key, displayName = key) {
   if (value === void 0) {
     return;
   }
-  if (!isRecord2(value)) {
+  if (!isRecord3(value)) {
     throw new Error(`Tool argument "${displayName}" must be an object.`);
   }
 }
@@ -41360,7 +41592,7 @@ function assertOptionalAssets(record2) {
   }
   assets.forEach((asset, index) => {
     const assetName = `assets[${index}]`;
-    if (!isRecord2(asset)) {
+    if (!isRecord3(asset)) {
       throw new Error(`Tool argument "${assetName}" must be an object.`);
     }
     assertOptionalStringFieldsWithPrefix(asset, assetName, [
@@ -41390,7 +41622,7 @@ function assertOptionalDownloadAssetTargets(record2) {
   }
   return targets.map((target, index) => {
     const targetName = `targets[${index}]`;
-    if (!isRecord2(target)) {
+    if (!isRecord3(target)) {
       throw new Error(`Tool argument "${targetName}" must be an object.`);
     }
     assertRemovedArguments(
@@ -41424,7 +41656,7 @@ function assertOptionalTargetValue(value, displayName) {
   if (typeof value === "string") {
     return;
   }
-  if (!isRecord2(value)) {
+  if (!isRecord3(value)) {
     throw new Error(`Tool argument "${displayName}" must be a string or object.`);
   }
   assertRemovedArguments(
@@ -41439,7 +41671,7 @@ function assertOptionalCaptureTargetValue(value, displayName) {
   if (value === void 0 || typeof value === "string") {
     return;
   }
-  if (!isRecord2(value)) {
+  if (!isRecord3(value)) {
     throw new Error(`Tool argument "${displayName}" must be a string or object.`);
   }
   assertOptionalStringFieldsWithPrefix(value, displayName, [
@@ -41468,7 +41700,7 @@ function assertOptionalTaskPlanSteps(record2) {
   return asTaskPlanSteps(steps);
 }
 function asTaskPlanStep(value, displayName) {
-  if (!isRecord2(value)) {
+  if (!isRecord3(value)) {
     throw new Error(`Tool argument "${displayName}" must be an object.`);
   }
   assertRemovedArguments(value, ["tool"], "type", `${displayName}.tool`);
@@ -41506,11 +41738,11 @@ function assertOptionalStringFieldsWithPrefix(record2, prefix2, keys) {
     }
   }
 }
-function isRecord2(value) {
+function isRecord3(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function withDefaultTitle(args, _title) {
-  if (!isRecord2(args)) {
+  if (!isRecord3(args)) {
     throw new Error("Tool arguments must be an object.");
   }
   if (args.title !== void 0 && typeof args.title !== "string") {
@@ -42612,7 +42844,7 @@ function resolveWorkspaceAwareFile(value, session, argumentName) {
 }
 async function writeCaptureOutputFile(outputFile, upstream, parsed) {
   const rawContent = asRecord(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord3) : [];
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord4) : [];
   const image = content.find((item) => item.type === "image" && typeof item.data === "string");
   if (image && typeof image.data === "string") {
     const buffer = Buffer.from(image.data, "base64");
@@ -42997,7 +43229,7 @@ function normalizeFileContextDirectory(fileKey, fileSlug) {
 }
 function extractCaptureImageUrl(upstream, parsed) {
   const rawContent = asRecord(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord3) : [];
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord4) : [];
   for (const item of content) {
     if (item.type === "image") {
       const imageUrl = firstHttpUrl([
@@ -43041,7 +43273,7 @@ function findCaptureImageUrlInValue(value, depth) {
     }
     return void 0;
   }
-  if (!isRecord3(value)) {
+  if (!isRecord4(value)) {
     return void 0;
   }
   const priorityKeys = [
@@ -43114,7 +43346,7 @@ function removeUndefined2(value) {
   if (Array.isArray(value)) {
     return value.map(removeUndefined2);
   }
-  if (!isRecord3(value)) {
+  if (!isRecord4(value)) {
     return value;
   }
   return Object.fromEntries(
@@ -43122,12 +43354,12 @@ function removeUndefined2(value) {
   );
 }
 function asRecord(value) {
-  if (isRecord3(value)) {
+  if (isRecord4(value)) {
     return value;
   }
   return {};
 }
-function isRecord3(value) {
+function isRecord4(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function asOptionalString(value) {
@@ -43666,7 +43898,7 @@ async function handleEval(args, runtime) {
   };
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
-  const needsOutputFile = parsed.upstreamError || isRecord4(limitedPayload.inlineResultLimit);
+  const needsOutputFile = parsed.upstreamError || isRecord5(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return makeJsonToolResult(limitedPayload);
   }
@@ -43806,7 +44038,7 @@ function createUpstreamBackedResultFilePayload(options) {
       ...options.fields,
       upstreamKind: asOptionalString2(options.upstream?.kind),
       upstreamOk: typeof options.upstream?.ok === "boolean" ? options.upstream.ok : void 0,
-      upstreamError: isRecord4(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : void 0
+      upstreamError: isRecord5(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : void 0
     }
   });
 }
@@ -44046,7 +44278,7 @@ async function executeRunScriptFile(args, runtime) {
     inlineResultLimit,
     ["upstream.result", "upstream.text"]
   );
-  const needsOutputFile = diagnostics.length > 0 || isRecord4(limitedPayload.inlineResultLimit);
+  const needsOutputFile = diagnostics.length > 0 || isRecord5(limitedPayload.inlineResultLimit);
   const outputFiles = needsOutputFile ? await addUpstreamSidecar(await outputWriter.write({
     result: createRunScriptResultFilePayload({
       session,
@@ -44262,7 +44494,7 @@ function compactUploadSummary(upload) {
   });
 }
 function compactUploadResponse(response) {
-  if (!isRecord4(response)) {
+  if (!isRecord5(response)) {
     return response;
   }
   return removeUndefined3({
@@ -44468,7 +44700,7 @@ function asOptionalDownloadAssetFormat(value) {
   return void 0;
 }
 function extractFigmaFileKeyFromTargetInput(input) {
-  if (isRecord4(input)) {
+  if (isRecord5(input)) {
     return extractFigmaFileKeyFromTargetInput(input.url) ?? extractFigmaFileKeyFromTargetInput(input.nodeUrl) ?? extractFigmaFileKeyFromTargetInput(input.target);
   }
   return extractFigmaFileKey(asOptionalString2(input));
@@ -44516,7 +44748,7 @@ function collectDownloadAssetLinks(value) {
       item.forEach((child, index) => visit(child, [...path, String(index)]));
       return;
     }
-    if (!isRecord4(item)) {
+    if (!isRecord5(item)) {
       return;
     }
     for (const [key, child] of Object.entries(item)) {
@@ -44889,7 +45121,7 @@ function compactTaskPlanFailure(step) {
     index: typeof step.index === "number" ? step.index : void 0,
     type: asOptionalString2(step.type) ?? "",
     status: asOptionalString2(step.status) ?? "failed",
-    error: isRecord4(step.error) ? step.error : void 0
+    error: isRecord5(step.error) ? step.error : void 0
   });
 }
 function compactTaskPlanStepDetail(step) {
@@ -44904,7 +45136,7 @@ function compactTaskPlanStepDetail(step) {
     finishedAt: asOptionalString2(step.finishedAt),
     diagnostics: typeof summary.diagnostics === "number" ? summary.diagnostics : void 0,
     failures: typeof summary.failures === "number" ? summary.failures : void 0,
-    error: isRecord4(step.error) ? step.error : void 0
+    error: isRecord5(step.error) ? step.error : void 0
   });
 }
 async function handlePrepareTask(args, runtime) {
@@ -45344,7 +45576,7 @@ async function executeGetMetadata(args, runtime) {
   });
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["metadata.json"]);
-  if (metadataOk && metadata && isRecord4(limitedPayload.inlineResultLimit)) {
+  if (metadataOk && metadata && isRecord5(limitedPayload.inlineResultLimit)) {
     const outputFiles = asRecord2(limitedPayload.outputFiles);
     outputFiles.metadataFile = await writeMetadataFile({ args, session, metadata });
     limitedPayload.outputFiles = outputFiles;
@@ -45712,7 +45944,7 @@ async function executeDedicatedUpstreamTool(options) {
   });
   const inlineResultLimit = normalizeInlineResultLimit(options.args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
-  const needsOutputFile = parsed.upstreamError || isRecord4(limitedPayload.inlineResultLimit);
+  const needsOutputFile = parsed.upstreamError || isRecord5(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
   }
@@ -45736,7 +45968,7 @@ async function executeCallUpstreamTool(args, runtime) {
       `Refusing to proxy local figma_workspace_mcp tool "${args.toolName}". Call it directly instead.`
     );
   }
-  const upstreamArgs = isRecord4(args.arguments) ? args.arguments : {};
+  const upstreamArgs = isRecord5(args.arguments) ? args.arguments : {};
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = tools.find((item) => item.name === args.toolName);
   if (!tool) {
@@ -45768,7 +46000,7 @@ async function executeCallUpstreamTool(args, runtime) {
   };
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
-  const needsOutputFile = parsed.upstreamError || isRecord4(limitedPayload.inlineResultLimit);
+  const needsOutputFile = parsed.upstreamError || isRecord5(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
   }
@@ -45844,7 +46076,7 @@ function createUpstreamToolCache(client) {
       await client.connect();
       const result = asRecord2(await client.listTools());
       const tools = Array.isArray(result.tools) ? result.tools : [];
-      cached2 = tools.filter(isRecord4).map((tool) => ({
+      cached2 = tools.filter(isRecord5).map((tool) => ({
         name: String(tool.name ?? ""),
         description: asOptionalString2(tool.description),
         inputSchema: tool.inputSchema
@@ -46973,7 +47205,7 @@ function assertRemovedManifestAssetFields(record2, index) {
   if (targetAliases.length > 0) {
     throw new Error(`Asset manifest entry ${index} field "${targetAliases.join("/")}" was removed. Use "target".`);
   }
-  const targetRecord = isRecord4(record2.target) ? record2.target : void 0;
+  const targetRecord = isRecord5(record2.target) ? record2.target : void 0;
   if (targetRecord) {
     const nestedAliases = ["nodeId", "targetNodeId", "targetHandle", "targetId"].filter((field) => targetRecord[field] !== void 0);
     if (nestedAliases.length > 0) {
@@ -47002,8 +47234,8 @@ function assertUpstreamToolHasProperty(tool, propertyName, kind) {
   );
 }
 function upstreamToolHasProperty(tool, propertyName) {
-  const schema = isRecord4(tool.inputSchema) ? tool.inputSchema : void 0;
-  const properties = isRecord4(schema?.properties) ? schema.properties : void 0;
+  const schema = isRecord5(tool.inputSchema) ? tool.inputSchema : void 0;
+  const properties = isRecord5(schema?.properties) ? schema.properties : void 0;
   return Boolean(properties && propertyName in properties);
 }
 function assertUpstreamToolHasProperties(tool, propertyNames, kind) {
@@ -47045,7 +47277,7 @@ function readTemplatePath(context, path) {
   const parts = path.split(".").filter(Boolean);
   let current2 = context;
   for (const part of parts) {
-    if (!isRecord4(current2)) {
+    if (!isRecord5(current2)) {
       return void 0;
     }
     current2 = current2[part];
@@ -47161,7 +47393,7 @@ return {
         applications: []
       };
     }
-    const applications = Array.isArray(applicationResult.result.applications) ? applicationResult.result.applications.filter(isRecord4) : [];
+    const applications = Array.isArray(applicationResult.result.applications) ? applicationResult.result.applications.filter(isRecord5) : [];
     const failedCount = Number(applicationResult.result.failedCount ?? applications.filter((item) => item.status !== "applied").length);
     const appliedTargetNodeIds = new Set(applications.map((item) => asOptionalString2(item.targetNodeId)).filter((nodeId) => nodeId !== void 0));
     const missingApplicationCount = candidates.filter((asset) => !appliedTargetNodeIds.has(asset.targetNodeId)).length;
@@ -47207,7 +47439,7 @@ function findAssetManifestApplicationResult(value, depth = 0, sourcePath = "pars
   }
   if (Array.isArray(value)) {
     if (value.some(isAssetManifestApplicationRecord)) {
-      return { result: { applications: value.filter(isRecord4) }, sourcePath };
+      return { result: { applications: value.filter(isRecord5) }, sourcePath };
     }
     for (let index = 0; index < value.length; index += 1) {
       const nested = findAssetManifestApplicationResult(value[index], depth + 1, `${sourcePath}[${index}]`);
@@ -47333,7 +47565,7 @@ return {
         validations: []
       };
     }
-    const validations = Array.isArray(validationResult.result.validations) ? validationResult.result.validations.filter(isRecord4) : [];
+    const validations = Array.isArray(validationResult.result.validations) ? validationResult.result.validations.filter(isRecord5) : [];
     const invalidCount = Number(validationResult.result.invalidCount ?? validations.filter((item) => item.status !== "valid").length);
     const validatedTargetNodeIds = new Set(validations.map((item) => asOptionalString2(item.targetNodeId)).filter((nodeId) => nodeId !== void 0));
     const missingValidationCount = targetNodeIds.filter((targetNodeId) => !validatedTargetNodeIds.has(targetNodeId)).length;
@@ -47374,7 +47606,7 @@ function findAssetManifestValidationResult(value, depth = 0, sourcePath = "parse
   }
   if (Array.isArray(value)) {
     if (value.some(isAssetManifestValidationRecord)) {
-      return { result: { validations: value.filter(isRecord4) }, sourcePath };
+      return { result: { validations: value.filter(isRecord5) }, sourcePath };
     }
     for (let index = 0; index < value.length; index += 1) {
       const nested = findAssetManifestValidationResult(value[index], depth + 1, `${sourcePath}[${index}]`);
@@ -47447,7 +47679,7 @@ async function submitLocalAssetUploadIfAvailable(asset, parsed) {
 }
 function extractAssetSubmitUrl(value) {
   const record2 = asRecord2(value);
-  if (isRecord4(record2.result)) {
+  if (isRecord5(record2.result)) {
     const nestedUrl = extractAssetSubmitUrl(record2.result);
     if (nestedUrl) {
       return nestedUrl;
@@ -47566,7 +47798,7 @@ function expandTaskPlanReferenceValue(value, context) {
   if (Array.isArray(value)) {
     return value.map((item) => expandTaskPlanReferenceValue(item, context));
   }
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, expandTaskPlanReferenceValue(item, context)])
     );
@@ -47587,9 +47819,9 @@ function createTaskPlanStepReference(options) {
   const upstream = asRecord2(options.result.upstream);
   const upstreamPayload = runScriptUpstreamPayload(options.result);
   const result = asRecord2(upstreamPayload);
-  const nestedResult = isRecord4(result.result) ? asRecord2(result.result) : result;
+  const nestedResult = isRecord5(result.result) ? asRecord2(result.result) : result;
   const session = asRecord2(options.result.session);
-  const handles = isRecord4(session.handles) ? session.handles : isRecord4(result.handles) ? result.handles : isRecord4(nestedResult.handles) ? nestedResult.handles : void 0;
+  const handles = isRecord5(session.handles) ? session.handles : isRecord5(result.handles) ? result.handles : isRecord5(nestedResult.handles) ? nestedResult.handles : void 0;
   return {
     id: options.id,
     index: options.index,
@@ -47779,7 +48011,7 @@ function inlineResultLimitTarget(payload, field) {
   let parent = payload;
   for (const part of parts.slice(0, -1)) {
     const next = parent[part];
-    if (!isRecord4(next)) {
+    if (!isRecord5(next)) {
       return void 0;
     }
     const cloned = { ...next };
@@ -48219,7 +48451,7 @@ async function readReplResource(uri, runtime) {
             detailTemplate: "figma-workspace://upstream-tools/{name}",
             categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
             upstreamError: upstreamError ? responseUpstreamError(upstreamError) : void 0,
-            primaryFix: upstreamError ? "Confirm Figma MCP OAuth/login and upstream connectivity, then reread figma-workspace://upstream-tools." : void 0,
+            primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : void 0,
             guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_workspace_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, get_variable_defs, and shader effect/fill tools."
           }, null, 2)
         }
@@ -48452,19 +48684,81 @@ function extractFigmaDebugUuid(text) {
   return match?.[1];
 }
 function normalizeCaughtUpstreamError(error2) {
+  const oauthError = normalizeOAuthUpstreamError(error2);
+  if (oauthError) {
+    return oauthError;
+  }
   if (error2 instanceof Error) {
     return {
       message: error2.message,
-      code: typeof error2.code === "string" ? error2.code : void 0,
-      details: error2.stack
+      code: typeof error2.code === "string" ? error2.code : "FIGMA_UPSTREAM_FAILED"
     };
   }
   return {
     message: stringFromUnknown(error2) ?? "Upstream Figma execution failed.",
+    code: "FIGMA_UPSTREAM_FAILED",
     details: error2
   };
 }
+function normalizeOAuthUpstreamError(error2) {
+  if (!isRemoteMcpOAuthError(error2)) {
+    return void 0;
+  }
+  return publicOAuthUpstreamError(error2);
+}
+function publicOAuthUpstreamError(error2) {
+  const details = isRecord5(error2.details) ? {
+    ...error2.details,
+    loginCommand: error2.details.loginCommand ?? "npm run login:figma-http",
+    oauthCacheFile: error2.details.oauthCacheFile ?? ".figma-workspace-oauth.json"
+  } : {
+    loginCommand: "npm run login:figma-http",
+    oauthCacheFile: ".figma-workspace-oauth.json"
+  };
+  return {
+    message: publicOAuthMessage(error2.code),
+    code: error2.code,
+    details
+  };
+}
+function publicOAuthMessage(code2) {
+  switch (code2) {
+    case "FIGMA_UPSTREAM_AUTH_REQUIRED":
+      return "Figma MCP upstream authentication is required or incomplete.";
+    case "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED":
+      return "Figma MCP OAuth client registration was rejected before authorization.";
+    case "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT":
+      return "Figma MCP OAuth browser authorization timed out.";
+    case "FIGMA_UPSTREAM_OAUTH_CANCELLED":
+      return "Figma MCP OAuth browser authorization was cancelled before completion.";
+    case "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED":
+      return "Figma MCP OAuth browser authorization did not complete.";
+    case "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED":
+      return "Figma MCP OAuth token exchange failed after browser authorization.";
+  }
+}
 function primaryFixForUpstreamError(error2) {
+  if (error2.code === "FIGMA_UPSTREAM_AUTH_REQUIRED") {
+    return "Run npm run login:figma-http from the figma-workspace plugin root, complete browser OAuth, then retry the Figma Workspace MCP call.";
+  }
+  if (error2.code === "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED") {
+    return "Use a Figma-supported OAuth client for this runtime or seed registered client metadata in .figma-workspace-oauth.json, then retry.";
+  }
+  if (error2.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT") {
+    return "Rerun npm run login:figma-http, complete the browser OAuth callback before the timeout, then retry.";
+  }
+  if (error2.code === "FIGMA_UPSTREAM_OAUTH_CANCELLED") {
+    return "Restart the Figma Workspace MCP call or npm run login:figma-http, complete browser OAuth, then retry.";
+  }
+  if (error2.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED") {
+    return "Rerun npm run login:figma-http and complete a successful browser OAuth callback, then retry.";
+  }
+  if (error2.code === "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED") {
+    return "Rerun npm run login:figma-http to refresh the OAuth token exchange, then retry the Figma Workspace MCP call.";
+  }
+  if (error2.code === "FIGMA_UPSTREAM_FAILED") {
+    return "Check the upstream Figma MCP connection and retry the same Figma Workspace MCP call after the upstream issue is resolved.";
+  }
   const message = error2.message.toLowerCase();
   if (message.includes("remove") && (message.includes("instance") || message.includes("children") || message.includes("subtree"))) {
     return "Use $.replaceGeneratedFrame({ name }) for guarded generated-frame replacement, or $.cloneNodeTree({ source, placement: 'right' }) for copy/rebuild workflows.";
@@ -48481,7 +48775,7 @@ function stringFromUnknown(value) {
   if (typeof value === "string" && value.length > 0) {
     return value;
   }
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     const message = asOptionalString2(value.message);
     if (message) return message;
   }
@@ -48574,7 +48868,7 @@ function collectNodeIds(value) {
       item.forEach(visit);
       return;
     }
-    if (isRecord4(item)) {
+    if (isRecord5(item)) {
       if (typeof item.id === "string") ids.add(item.id);
       for (const child of Object.values(item)) visit(child);
     }
@@ -48585,7 +48879,7 @@ function collectNodeIds(value) {
 function summarizeParsedResult(parsed) {
   const record2 = asRecord2(parsed.json);
   const result = record2.result;
-  if (isRecord4(result)) {
+  if (isRecord5(result)) {
     if (typeof result.summary === "string") return result.summary;
     if (typeof result.opCount === "number") return `Returned opCount=${result.opCount}.`;
   }
@@ -48739,7 +49033,7 @@ function shapePublicUpstreamResult(value) {
   return { result: Object.keys(result).length > 0 ? result : void 0 };
 }
 function consumeTopLevelOk(value) {
-  if (!isRecord4(value)) {
+  if (!isRecord5(value)) {
     return { result: value };
   }
   if (!Object.prototype.hasOwnProperty.call(value, "ok")) {
@@ -48752,7 +49046,7 @@ function consumeTopLevelOk(value) {
   };
 }
 function addFailureSourceToUpstreamResult(result, source) {
-  if (isRecord4(result)) {
+  if (isRecord5(result)) {
     return {
       ...result,
       source
@@ -48826,7 +49120,7 @@ function normalizeLocalHandleName(name) {
   return name.startsWith("$") ? name : `$${name}`;
 }
 function resolveSessionTargetInput(input, session) {
-  if (isRecord4(input)) {
+  if (isRecord5(input)) {
     const explicitHandle = asOptionalString2(input.handle) ?? asOptionalString2(input.targetHandle);
     const explicitFileKey = asOptionalString2(input.fileKey) ?? extractFigmaFileKey(asOptionalString2(input.url)) ?? extractFigmaFileKey(asOptionalString2(input.nodeUrl)) ?? extractFigmaFileKey(asOptionalString2(input.target));
     const nodeValue = explicitHandle ?? asOptionalString2(input.nodeId) ?? asOptionalString2(input.targetNodeId) ?? asOptionalString2(input.target) ?? asOptionalString2(input.id) ?? asOptionalString2(input.url) ?? asOptionalString2(input.nodeUrl);
@@ -48916,7 +49210,7 @@ function removeUndefined3(value) {
   if (Array.isArray(value)) {
     return value.map(removeUndefined3);
   }
-  if (!isRecord4(value)) {
+  if (!isRecord5(value)) {
     return value;
   }
   return Object.fromEntries(
@@ -48924,19 +49218,19 @@ function removeUndefined3(value) {
   );
 }
 function asRecord2(value) {
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     return value;
   }
   return {};
 }
 function recordFromUnknown(value) {
-  return isRecord4(value) ? value : void 0;
+  return isRecord5(value) ? value : void 0;
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function isStringRecord(value) {
-  return isRecord4(value) && Object.values(value).every((item) => typeof item === "string");
+  return isRecord5(value) && Object.values(value).every((item) => typeof item === "string");
 }
 function asOptionalString2(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;

@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
-import { RemoteMcpClient } from "../dist/mcp/index.js";
+import {
+  OAuthCallbackError,
+  RemoteMcpClient,
+  RemoteMcpOAuthError,
+} from "../dist/mcp/index.js";
 
 test("RemoteMcpClient does not start the OAuth callback server when cached auth connects", async () => {
   const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));
@@ -196,7 +200,12 @@ test("RemoteMcpClient keeps unauthorized transport after SDK error callback", as
       }),
     });
 
-    await assert.rejects(client.connect(), /token exchange failed/);
+    await assert.rejects(client.connect(), (error) => {
+      assert.equal(error instanceof RemoteMcpOAuthError, true);
+      assert.equal(error.code, "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED");
+      assert.match(error.cause?.message, /token exchange failed/);
+      return true;
+    });
     assert.equal(client.transportCloseCalls, 1);
     assert.equal(callbackClosed, true);
   } finally {
@@ -234,9 +243,140 @@ test("RemoteMcpClient cleans up unauthorized transport when OAuth retry fails", 
       }),
     });
 
-    await assert.rejects(client.connect(), /token exchange failed/);
+    await assert.rejects(client.connect(), (error) => {
+      assert.equal(error instanceof RemoteMcpOAuthError, true);
+      assert.equal(error.code, "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED");
+      assert.match(error.cause?.message, /token exchange failed/);
+      return true;
+    });
     assert.equal(client.transportCloseCalls, 1);
     assert.equal(callbackClosed, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("RemoteMcpClient classifies OAuth client registration rejection from structured status", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));
+  try {
+    class RegistrationRejectedRemoteMcpClient extends RemoteMcpClient {
+      async connectOnce() {
+        const error = new Error("Figma OAuth client registration rejected.");
+        error.response = { status: 403 };
+        error.code = "FORBIDDEN";
+        throw error;
+      }
+    }
+
+    const client = new RegistrationRejectedRemoteMcpClient({
+      statePath: join(dir, "state.json"),
+    });
+
+    await assert.rejects(client.connect(), (error) => {
+      assert.equal(error instanceof RemoteMcpOAuthError, true);
+      assert.equal(error.code, "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED");
+      assert.equal(error.details.oauthCacheFile, ".figma-workspace-oauth.json");
+      assert.equal(error.details.upstreamStatus, 403);
+      assert.equal(error.details.upstreamCode, "FORBIDDEN");
+      return true;
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("RemoteMcpClient ignores OAuth-looking registration text when structured status disagrees", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));
+  try {
+    const originalError = new Error("HTTP 403 Forbidden");
+    originalError.status = 500;
+    class RegistrationFailedRemoteMcpClient extends RemoteMcpClient {
+      async connectOnce() {
+        throw originalError;
+      }
+    }
+
+    const client = new RegistrationFailedRemoteMcpClient({
+      statePath: join(dir, "state.json"),
+    });
+
+    await assert.rejects(client.connect(), (error) => {
+      assert.equal(error, originalError);
+      assert.equal(error instanceof RemoteMcpOAuthError, false);
+      return true;
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("RemoteMcpClient maps typed OAuth callback timeout without message matching", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));
+  try {
+    class UnauthorizedRemoteMcpClient extends RemoteMcpClient {
+      async connectOnce() {
+        const transport = {
+          close: async () => undefined,
+          finishAuth: async () => undefined,
+        };
+        this.trackTransport(transport);
+        throw new UnauthorizedError("authorization required");
+      }
+    }
+
+    const client = new UnauthorizedRemoteMcpClient({
+      statePath: join(dir, "state.json"),
+      callbackServerFactory: async () => ({
+        waitForCode: async () => {
+          throw new OAuthCallbackError(
+            "OAUTH_CALLBACK_TIMEOUT",
+            "Different localized timeout text.",
+          );
+        },
+        close: async () => undefined,
+      }),
+    });
+
+    await assert.rejects(client.connect(), (error) => {
+      assert.equal(error instanceof RemoteMcpOAuthError, true);
+      assert.equal(error.code, "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT");
+      assert.match(error.cause?.message, /Different localized timeout text/);
+      return true;
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("RemoteMcpClient treats callback-like plain messages as generic callback failures", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));
+  try {
+    class UnauthorizedRemoteMcpClient extends RemoteMcpClient {
+      async connectOnce() {
+        const transport = {
+          close: async () => undefined,
+          finishAuth: async () => undefined,
+        };
+        this.trackTransport(transport);
+        throw new UnauthorizedError("authorization required");
+      }
+    }
+
+    const client = new UnauthorizedRemoteMcpClient({
+      statePath: join(dir, "state.json"),
+      callbackServerFactory: async () => ({
+        waitForCode: async () => {
+          throw new Error("Timed out waiting for OAuth callback.");
+        },
+        close: async () => undefined,
+      }),
+    });
+
+    await assert.rejects(client.connect(), (error) => {
+      assert.equal(error instanceof RemoteMcpOAuthError, true);
+      assert.equal(error.code, "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED");
+      return true;
+    });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -281,7 +421,8 @@ test("RemoteMcpClient cancels a pending OAuth callback when closed", async () =>
         close: async () => {
           callbackCloseCalls += 1;
           rejectWaitForCode?.(
-            new Error(
+            new OAuthCallbackError(
+              "OAUTH_CALLBACK_CANCELLED",
               "OAuth callback server was closed before authorization completed.",
             ),
           );
@@ -295,11 +436,62 @@ test("RemoteMcpClient cancels a pending OAuth callback when closed", async () =>
     await client.close();
 
     await withTimeout(
-      assert.rejects(connectPromise, /closed before authorization/),
+      assert.rejects(connectPromise, (error) => {
+        assert.equal(error instanceof RemoteMcpOAuthError, true);
+        assert.equal(error.code, "FIGMA_UPSTREAM_OAUTH_CANCELLED");
+        assert.match(error.cause?.message, /closed before authorization/);
+        return true;
+      }),
       1000,
     );
     assert.equal(callbackCloseCalls, 1);
     assert.equal(finishAuthCalls, 0);
+    assert.equal(transportCloseCalls >= 1, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("RemoteMcpClient reports stale OAuth retry as typed cancellation", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));
+  try {
+    let callbackCloseCalls = 0;
+    let transportCloseCalls = 0;
+
+    class UnauthorizedRemoteMcpClient extends RemoteMcpClient {
+      async connectOnce() {
+        const transport = {
+          close: async () => {
+            transportCloseCalls += 1;
+          },
+          finishAuth: async () => undefined,
+        };
+        this.trackTransport(transport);
+        throw new UnauthorizedError("authorization required");
+      }
+    }
+
+    let client;
+    client = new UnauthorizedRemoteMcpClient({
+      statePath: join(dir, "state.json"),
+      callbackServerFactory: async () => {
+        await client.close();
+        return {
+          waitForCode: async () => "unused",
+          close: async () => {
+            callbackCloseCalls += 1;
+          },
+        };
+      },
+    });
+
+    await assert.rejects(client.connect(), (error) => {
+      assert.equal(error instanceof RemoteMcpOAuthError, true);
+      assert.equal(error.code, "FIGMA_UPSTREAM_OAUTH_CANCELLED");
+      assert.equal(error.cause?.message, "MCP connection attempt was cancelled.");
+      return true;
+    });
+    assert.equal(callbackCloseCalls, 1);
     assert.equal(transportCloseCalls >= 1, true);
   } finally {
     await rm(dir, { recursive: true, force: true });
