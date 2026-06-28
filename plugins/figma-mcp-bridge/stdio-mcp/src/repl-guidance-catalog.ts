@@ -13,6 +13,26 @@ export interface FigmaReplApiCard {
   pitfalls: string[];
 }
 
+export interface FigmaReplWrapperLookupProfile {
+  tool: string;
+  upstreamTool: string;
+  workflowIds: string[];
+  intents: string[];
+  docsQueries: string[];
+  apiSymbols: string[];
+  suggestedTools: string[];
+  nextSteps: string[];
+}
+
+export interface FigmaReplWrapperWorkflow {
+  id: string;
+  title: string;
+  intents: string[];
+  tools: string[];
+  sequence: string[];
+  guardrails: string[];
+}
+
 export const FIGMA_REPL_QUERY_SEARCH_ANCHORS = [
   "text/font",
   "auto layout",
@@ -61,6 +81,140 @@ export const FIGMA_REPL_INTENT_EXAMPLE_QUERIES = [
   "implement animation from Figma motion context",
   "review implementation against Figma screenshot",
   "create Code Connect template for component",
+];
+
+export const FIGMA_REPL_WRAPPER_LOOKUP_PROFILES: FigmaReplWrapperLookupProfile[] = [
+  {
+    tool: "figma_repl_get_design_context",
+    upstreamTool: "get_design_context",
+    workflowIds: ["design-implementation-context"],
+    intents: ["implementation", "design context", "handoff", "parity", "swiftui"],
+    docsQueries: ["get design context implementation", "design parity review", "swiftui design context"],
+    apiSymbols: ["get_design_context", "figma_repl_get_design_context"],
+    suggestedTools: ["figma_repl_get_motion_context", "figma_repl_capture_node", "figma_repl_lookup"],
+    nextSteps: [
+      "Use upstream.result as official reference context, then adapt to project components and tokens.",
+      "Capture the target node when visual QA or parity review needs evidence.",
+    ],
+  },
+  {
+    tool: "figma_repl_get_motion_context",
+    upstreamTool: "get_motion_context",
+    workflowIds: ["motion-implementation"],
+    intents: ["motion", "animation", "keyframes", "timeline"],
+    docsQueries: ["motion context implementation", "motion keyframes gotchas", "recursive motion context"],
+    apiSymbols: ["get_motion_context", "figma_repl_get_motion_context"],
+    suggestedTools: ["figma_repl_get_design_context", "figma_repl_export_video", "figma_repl_lookup"],
+    nextSteps: [
+      "Pair motion data with design context for the same node before coding animation.",
+      "Preserve upstream timing, easing, and transform-origin values as authoritative motion data.",
+    ],
+  },
+  {
+    tool: "figma_repl_export_video",
+    upstreamTool: "export_video",
+    workflowIds: ["motion-implementation", "video-export"],
+    intents: ["video", "export", "motion preview", "frame sampling", "poll"],
+    docsQueries: ["export video jobId poll", "motion fallback video export"],
+    apiSymbols: ["export_video", "figma_repl_export_video"],
+    suggestedTools: ["figma_repl_get_motion_context", "figma_repl_get_design_context"],
+    nextSteps: [
+      "Start an export with target only when frame sampling is worth the render cost.",
+      "Poll an existing job with jobId instead of starting duplicate renders.",
+    ],
+  },
+  {
+    tool: "figma_repl_list_shader_effects",
+    upstreamTool: "list_shader_effects",
+    workflowIds: ["shader-lookup"],
+    intents: ["shader", "geneffects", "effect library", "shader effect"],
+    docsQueries: ["shader effects library", "geneffects shader reads"],
+    apiSymbols: ["list_shader_effects", "figma_repl_list_shader_effects"],
+    suggestedTools: ["figma_repl_get_shader_effect", "figma_repl_list_shader_fills"],
+    nextSteps: [
+      "List account-library shader effects before reading a specific effect id.",
+      "Keep shader payloads upstream-shaped; do not infer runtime shader behavior from list entries.",
+    ],
+  },
+  {
+    tool: "figma_repl_get_shader_effect",
+    upstreamTool: "get_shader_effect",
+    workflowIds: ["shader-lookup"],
+    intents: ["shader", "geneffects", "effect source", "shader effect"],
+    docsQueries: ["shader effect source manifest", "geneffects shader reads"],
+    apiSymbols: ["get_shader_effect", "figma_repl_get_shader_effect"],
+    suggestedTools: ["figma_repl_list_shader_effects", "figma_repl_get_motion_context"],
+    nextSteps: [
+      "Read an effect only after selecting a specific id from the account-library list.",
+      "Treat the official result as source context, not a bridge-normalized shader schema.",
+    ],
+  },
+  {
+    tool: "figma_repl_list_shader_fills",
+    upstreamTool: "list_shader_fills",
+    workflowIds: ["shader-lookup"],
+    intents: ["shader", "geneffects", "fill library", "shader fill"],
+    docsQueries: ["shader fills library", "geneffects shader fills"],
+    apiSymbols: ["list_shader_fills", "figma_repl_list_shader_fills"],
+    suggestedTools: ["figma_repl_get_shader_fill", "figma_repl_list_shader_effects"],
+    nextSteps: [
+      "List account-library shader fills before reading a specific fill id.",
+      "Use shader fills only when the task explicitly needs upstream shader context.",
+    ],
+  },
+  {
+    tool: "figma_repl_get_shader_fill",
+    upstreamTool: "get_shader_fill",
+    workflowIds: ["shader-lookup"],
+    intents: ["shader", "geneffects", "fill source", "shader fill"],
+    docsQueries: ["shader fill source manifest", "geneffects shader fills"],
+    apiSymbols: ["get_shader_fill", "figma_repl_get_shader_fill"],
+    suggestedTools: ["figma_repl_list_shader_fills", "figma_repl_get_motion_context"],
+    nextSteps: [
+      "Read a fill only after selecting a specific id from the account-library list.",
+      "Preserve the official upstream fill manifest in upstream.result or upstream.text.",
+    ],
+  },
+];
+
+export const FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH: FigmaReplWrapperWorkflow[] = [
+  {
+    id: "design-implementation-context",
+    title: "Design implementation context",
+    intents: ["implementation", "handoff", "parity", "swiftui"],
+    tools: ["figma_repl_get_design_context", "figma_repl_capture_node", "figma_repl_lookup"],
+    sequence: [
+      "Open or prepare a session with file context.",
+      "Call figma_repl_get_design_context for the target node.",
+      "Capture the node when visual evidence is needed.",
+      "Use lookup only for missing framework, API, or workflow details.",
+    ],
+    guardrails: ["Do not copy generated code verbatim without adapting it to the project.", "Do not derive bridge-owned fields from upstream.result."],
+  },
+  {
+    id: "motion-implementation",
+    title: "Motion implementation",
+    intents: ["motion", "animation", "keyframes", "video"],
+    tools: ["figma_repl_get_design_context", "figma_repl_get_motion_context", "figma_repl_export_video"],
+    sequence: [
+      "Read design context for structure and assets.",
+      "Read motion context for animated-node inventory and keyframes.",
+      "Export or poll video only when frame sampling is needed.",
+    ],
+    guardrails: ["Preserve upstream motion values as authoritative.", "Poll with jobId instead of starting duplicate exports."],
+  },
+  {
+    id: "shader-lookup",
+    title: "Shader library lookup",
+    intents: ["shader", "geneffects", "effect", "fill"],
+    tools: ["figma_repl_list_shader_effects", "figma_repl_get_shader_effect", "figma_repl_list_shader_fills", "figma_repl_get_shader_fill"],
+    sequence: [
+      "List shader effects or fills from the account library.",
+      "Read the selected effect or fill by id.",
+      "Combine with motion/design context only when implementation needs it.",
+    ],
+    guardrails: ["Use shader wrappers only for explicit shader tasks.", "Keep shader payloads upstream-shaped."],
+  },
 ];
 
 export const FIGMA_REPL_API_CARDS: FigmaReplApiCard[] = [
@@ -301,6 +455,45 @@ export function chooseApiCardsForIntent(intent: string, maxCards: number): Figma
   return cards.length > 0 ? cards : FIGMA_REPL_API_CARDS.slice(0, maxCards);
 }
 
+export function findWrapperLookupProfile(tool: string): FigmaReplWrapperLookupProfile | undefined {
+  return FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.find((profile) => profile.tool === tool);
+}
+
+export function chooseWrapperLookupProfilesForIntent(
+  intent: string | undefined,
+  maxProfiles: number,
+): FigmaReplWrapperLookupProfile[] {
+  const query = intent?.trim();
+  if (!query) {
+    return FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.slice(0, maxProfiles);
+  }
+  const tokens = tokenizeCatalogQuery(query);
+  const lowerQuery = query.toLowerCase();
+  const ranked = FIGMA_REPL_WRAPPER_LOOKUP_PROFILES
+    .map((profile) => ({
+      profile,
+      score: scoreWrapperLookupProfile(profile, tokens, lowerQuery),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || left.profile.tool.localeCompare(right.profile.tool))
+    .slice(0, maxProfiles)
+    .map((entry) => entry.profile);
+  return ranked.length > 0 ? ranked : FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.slice(0, maxProfiles);
+}
+
+export function selectWrapperWorkflowGraph(
+  workflowIds: string[] | undefined,
+  maxWorkflows: number,
+): FigmaReplWrapperWorkflow[] {
+  if (!workflowIds || workflowIds.length === 0) {
+    return FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.slice(0, maxWorkflows);
+  }
+  const idSet = new Set(workflowIds);
+  return FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH
+    .filter((workflow) => idSet.has(workflow.id))
+    .slice(0, maxWorkflows);
+}
+
 export function uniqueStrings(values: string[], maxItems: number): string[] {
   const seen = new Set<string>();
   const results: string[] = [];
@@ -335,6 +528,30 @@ function scoreApiCard(card: FigmaReplApiCard, tokens: string[], lowerQuery: stri
   return (
     (lowerId === lowerQuery ? 120 : 0) +
     (lowerId.startsWith(`${lowerQuery}.`) ? 100 : 0) +
+    (haystack.includes(lowerQuery) ? 50 : 0) +
+    tokens.filter((token) => haystack.includes(token)).length * 10
+  );
+}
+
+function scoreWrapperLookupProfile(
+  profile: FigmaReplWrapperLookupProfile,
+  tokens: string[],
+  lowerQuery: string,
+): number {
+  const lowerTool = profile.tool.toLowerCase();
+  const haystack = [
+    profile.tool,
+    profile.upstreamTool,
+    ...profile.workflowIds,
+    ...profile.intents,
+    ...profile.docsQueries,
+    ...profile.apiSymbols,
+    ...profile.suggestedTools,
+    ...profile.nextSteps,
+  ].join(" ").toLowerCase();
+  return (
+    (lowerTool === lowerQuery ? 120 : 0) +
+    (profile.upstreamTool.toLowerCase() === lowerQuery ? 110 : 0) +
     (haystack.includes(lowerQuery) ? 50 : 0) +
     tokens.filter((token) => haystack.includes(token)).length * 10
   );

@@ -18913,6 +18913,138 @@ var FIGMA_REPL_QUERY_OUTPUT_FIELDS = [
   "guardrails",
   "referenceContext"
 ];
+var FIGMA_REPL_WRAPPER_LOOKUP_PROFILES = [
+  {
+    tool: "figma_repl_get_design_context",
+    upstreamTool: "get_design_context",
+    workflowIds: ["design-implementation-context"],
+    intents: ["implementation", "design context", "handoff", "parity", "swiftui"],
+    docsQueries: ["get design context implementation", "design parity review", "swiftui design context"],
+    apiSymbols: ["get_design_context", "figma_repl_get_design_context"],
+    suggestedTools: ["figma_repl_get_motion_context", "figma_repl_capture_node", "figma_repl_lookup"],
+    nextSteps: [
+      "Use upstream.result as official reference context, then adapt to project components and tokens.",
+      "Capture the target node when visual QA or parity review needs evidence."
+    ]
+  },
+  {
+    tool: "figma_repl_get_motion_context",
+    upstreamTool: "get_motion_context",
+    workflowIds: ["motion-implementation"],
+    intents: ["motion", "animation", "keyframes", "timeline"],
+    docsQueries: ["motion context implementation", "motion keyframes gotchas", "recursive motion context"],
+    apiSymbols: ["get_motion_context", "figma_repl_get_motion_context"],
+    suggestedTools: ["figma_repl_get_design_context", "figma_repl_export_video", "figma_repl_lookup"],
+    nextSteps: [
+      "Pair motion data with design context for the same node before coding animation.",
+      "Preserve upstream timing, easing, and transform-origin values as authoritative motion data."
+    ]
+  },
+  {
+    tool: "figma_repl_export_video",
+    upstreamTool: "export_video",
+    workflowIds: ["motion-implementation", "video-export"],
+    intents: ["video", "export", "motion preview", "frame sampling", "poll"],
+    docsQueries: ["export video jobId poll", "motion fallback video export"],
+    apiSymbols: ["export_video", "figma_repl_export_video"],
+    suggestedTools: ["figma_repl_get_motion_context", "figma_repl_get_design_context"],
+    nextSteps: [
+      "Start an export with target only when frame sampling is worth the render cost.",
+      "Poll an existing job with jobId instead of starting duplicate renders."
+    ]
+  },
+  {
+    tool: "figma_repl_list_shader_effects",
+    upstreamTool: "list_shader_effects",
+    workflowIds: ["shader-lookup"],
+    intents: ["shader", "geneffects", "effect library", "shader effect"],
+    docsQueries: ["shader effects library", "geneffects shader reads"],
+    apiSymbols: ["list_shader_effects", "figma_repl_list_shader_effects"],
+    suggestedTools: ["figma_repl_get_shader_effect", "figma_repl_list_shader_fills"],
+    nextSteps: [
+      "List account-library shader effects before reading a specific effect id.",
+      "Keep shader payloads upstream-shaped; do not infer runtime shader behavior from list entries."
+    ]
+  },
+  {
+    tool: "figma_repl_get_shader_effect",
+    upstreamTool: "get_shader_effect",
+    workflowIds: ["shader-lookup"],
+    intents: ["shader", "geneffects", "effect source", "shader effect"],
+    docsQueries: ["shader effect source manifest", "geneffects shader reads"],
+    apiSymbols: ["get_shader_effect", "figma_repl_get_shader_effect"],
+    suggestedTools: ["figma_repl_list_shader_effects", "figma_repl_get_motion_context"],
+    nextSteps: [
+      "Read an effect only after selecting a specific id from the account-library list.",
+      "Treat the official result as source context, not a bridge-normalized shader schema."
+    ]
+  },
+  {
+    tool: "figma_repl_list_shader_fills",
+    upstreamTool: "list_shader_fills",
+    workflowIds: ["shader-lookup"],
+    intents: ["shader", "geneffects", "fill library", "shader fill"],
+    docsQueries: ["shader fills library", "geneffects shader fills"],
+    apiSymbols: ["list_shader_fills", "figma_repl_list_shader_fills"],
+    suggestedTools: ["figma_repl_get_shader_fill", "figma_repl_list_shader_effects"],
+    nextSteps: [
+      "List account-library shader fills before reading a specific fill id.",
+      "Use shader fills only when the task explicitly needs upstream shader context."
+    ]
+  },
+  {
+    tool: "figma_repl_get_shader_fill",
+    upstreamTool: "get_shader_fill",
+    workflowIds: ["shader-lookup"],
+    intents: ["shader", "geneffects", "fill source", "shader fill"],
+    docsQueries: ["shader fill source manifest", "geneffects shader fills"],
+    apiSymbols: ["get_shader_fill", "figma_repl_get_shader_fill"],
+    suggestedTools: ["figma_repl_list_shader_fills", "figma_repl_get_motion_context"],
+    nextSteps: [
+      "Read a fill only after selecting a specific id from the account-library list.",
+      "Preserve the official upstream fill manifest in upstream.result or upstream.text."
+    ]
+  }
+];
+var FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH = [
+  {
+    id: "design-implementation-context",
+    title: "Design implementation context",
+    intents: ["implementation", "handoff", "parity", "swiftui"],
+    tools: ["figma_repl_get_design_context", "figma_repl_capture_node", "figma_repl_lookup"],
+    sequence: [
+      "Open or prepare a session with file context.",
+      "Call figma_repl_get_design_context for the target node.",
+      "Capture the node when visual evidence is needed.",
+      "Use lookup only for missing framework, API, or workflow details."
+    ],
+    guardrails: ["Do not copy generated code verbatim without adapting it to the project.", "Do not derive bridge-owned fields from upstream.result."]
+  },
+  {
+    id: "motion-implementation",
+    title: "Motion implementation",
+    intents: ["motion", "animation", "keyframes", "video"],
+    tools: ["figma_repl_get_design_context", "figma_repl_get_motion_context", "figma_repl_export_video"],
+    sequence: [
+      "Read design context for structure and assets.",
+      "Read motion context for animated-node inventory and keyframes.",
+      "Export or poll video only when frame sampling is needed."
+    ],
+    guardrails: ["Preserve upstream motion values as authoritative.", "Poll with jobId instead of starting duplicate exports."]
+  },
+  {
+    id: "shader-lookup",
+    title: "Shader library lookup",
+    intents: ["shader", "geneffects", "effect", "fill"],
+    tools: ["figma_repl_list_shader_effects", "figma_repl_get_shader_effect", "figma_repl_list_shader_fills", "figma_repl_get_shader_fill"],
+    sequence: [
+      "List shader effects or fills from the account library.",
+      "Read the selected effect or fill by id.",
+      "Combine with motion/design context only when implementation needs it."
+    ],
+    guardrails: ["Use shader wrappers only for explicit shader tasks.", "Keep shader payloads upstream-shaped."]
+  }
+];
 var FIGMA_REPL_API_CARDS = [
   {
     id: "nodes",
@@ -19143,6 +19275,29 @@ function chooseApiCardsForIntent(intent, maxCards) {
   const cards = searchApiCards(intent, maxCards);
   return cards.length > 0 ? cards : FIGMA_REPL_API_CARDS.slice(0, maxCards);
 }
+function findWrapperLookupProfile(tool) {
+  return FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.find((profile) => profile.tool === tool);
+}
+function chooseWrapperLookupProfilesForIntent(intent, maxProfiles) {
+  const query = intent?.trim();
+  if (!query) {
+    return FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.slice(0, maxProfiles);
+  }
+  const tokens = tokenizeCatalogQuery(query);
+  const lowerQuery = query.toLowerCase();
+  const ranked = FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => ({
+    profile,
+    score: scoreWrapperLookupProfile(profile, tokens, lowerQuery)
+  })).filter((entry) => entry.score > 0).sort((left, right) => right.score - left.score || left.profile.tool.localeCompare(right.profile.tool)).slice(0, maxProfiles).map((entry) => entry.profile);
+  return ranked.length > 0 ? ranked : FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.slice(0, maxProfiles);
+}
+function selectWrapperWorkflowGraph(workflowIds, maxWorkflows) {
+  if (!workflowIds || workflowIds.length === 0) {
+    return FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.slice(0, maxWorkflows);
+  }
+  const idSet = new Set(workflowIds);
+  return FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.filter((workflow) => idSet.has(workflow.id)).slice(0, maxWorkflows);
+}
 function uniqueStrings(values, maxItems) {
   const seen = /* @__PURE__ */ new Set();
   const results = [];
@@ -19174,6 +19329,20 @@ function scoreApiCard(card, tokens, lowerQuery) {
     ...card.pitfalls
   ].join(" ").toLowerCase();
   return (lowerId === lowerQuery ? 120 : 0) + (lowerId.startsWith(`${lowerQuery}.`) ? 100 : 0) + (haystack.includes(lowerQuery) ? 50 : 0) + tokens.filter((token) => haystack.includes(token)).length * 10;
+}
+function scoreWrapperLookupProfile(profile, tokens, lowerQuery) {
+  const lowerTool = profile.tool.toLowerCase();
+  const haystack = [
+    profile.tool,
+    profile.upstreamTool,
+    ...profile.workflowIds,
+    ...profile.intents,
+    ...profile.docsQueries,
+    ...profile.apiSymbols,
+    ...profile.suggestedTools,
+    ...profile.nextSteps
+  ].join(" ").toLowerCase();
+  return (lowerTool === lowerQuery ? 120 : 0) + (profile.upstreamTool.toLowerCase() === lowerQuery ? 110 : 0) + (haystack.includes(lowerQuery) ? 50 : 0) + tokens.filter((token) => haystack.includes(token)).length * 10;
 }
 function tokenizeCatalogQuery(query) {
   return query.toLowerCase().split(/[^a-z0-9_$:.-]+/u).map((token) => token.trim()).filter((token) => token.length >= 2);
@@ -41720,6 +41889,8 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     steps: stringArrayProperty("Plan-mode workflow steps."),
     recommendedTools: stringArrayProperty("Plan-mode recommended tools."),
     suggestedCards: stringArrayProperty("Plan-mode suggested compact card ids."),
+    wrapperProfiles: arrayProperty("Relevant first-class wrapper lookup profiles with suggested lookups, tools, and next steps."),
+    workflowGraph: arrayProperty("Relevant wrapper workflow graph nodes."),
     cards: arrayProperty("Compact curated API cards."),
     catalogSize: numberProperty("Total curated API card count when returned."),
     guidance: stringProperty("Compact follow-up guidance text when returned."),
@@ -41761,6 +41932,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     fileKey: stringProperty("Figma file key sent to official get_design_context."),
     nodeId: stringProperty("Figma node id sent to official get_design_context."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41774,6 +41946,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     fileKey: stringProperty("Figma file key sent to official get_motion_context."),
     nodeId: stringProperty("Figma node id sent to official get_motion_context."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41788,6 +41961,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     nodeId: stringProperty("Optional Figma node id sent to official export_video when starting an export."),
     jobId: stringProperty("Optional official export_video job id sent when polling an export."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41839,6 +42013,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     cursor: stringProperty("Pagination cursor sent to official list_shader_effects when supplied."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41851,6 +42026,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     id: stringProperty("Shader effect id sent to official get_shader_effect."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41863,6 +42039,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     cursor: stringProperty("Pagination cursor sent to official list_shader_fills when supplied."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -41875,6 +42052,7 @@ var LOCAL_REPL_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local REPL session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     id: stringProperty("Shader fill id sent to official get_shader_fill."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
+    guidance: wrapperGuidanceProperty("Deterministic wrapper follow-up hints derived from the centralized wrapper profile."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -42178,6 +42356,20 @@ function guidanceSuggestionsProperty(description) {
           additionalProperties: true
         }
       }
+    },
+    additionalProperties: true
+  };
+}
+function wrapperGuidanceProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      upstreamTool: stringProperty("Official upstream tool wrapped by this local tool."),
+      workflowIds: stringArrayProperty("Related wrapper workflow graph ids."),
+      suggestedLookups: objectProperty("Suggested docs/API lookup queries."),
+      suggestedTools: stringArrayProperty("Suggested local follow-up tools."),
+      nextSteps: stringArrayProperty("Compact deterministic next-step hints.")
     },
     additionalProperties: true
   };
@@ -44565,7 +44757,14 @@ async function handleGuidance(args) {
         "figma_repl_run_script_file",
         "figma_repl_inspect"
       ],
-      suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id)
+      suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id),
+      wrapperProfiles: createPublicWrapperProfilePayloads(chooseWrapperLookupProfilesForIntent(planIntent, 4)),
+      workflowGraph: createPublicWrapperWorkflowPayloads(
+        selectWrapperWorkflowGraph(
+          uniqueStrings(chooseWrapperLookupProfilesForIntent(planIntent, 4).flatMap((profile) => profile.workflowIds), 4),
+          4
+        )
+      )
     };
     return makeJsonToolResult(payload2);
   }
@@ -44580,6 +44779,9 @@ async function handleGuidance(args) {
     exactSymbol: false
   }) : { results: [] };
   const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
+  const wrapperProfiles = createPublicWrapperProfilePayloads(
+    chooseWrapperLookupProfilesForIntent(intent ?? cardQuery, 4)
+  );
   const payload = {
     ok: true,
     cards: cards.map(createPublicApiCardPayload),
@@ -44589,6 +44791,10 @@ async function handleGuidance(args) {
     queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
     apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
     guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    wrapperProfiles,
+    workflowGraph: createPublicWrapperWorkflowPayloads(
+      selectWrapperWorkflowGraph(uniqueStrings(wrapperProfiles.flatMap((profile) => profile.workflowIds), 4), 4)
+    ),
     suggestions
   };
   return makeJsonToolResult(payload);
@@ -45240,6 +45446,7 @@ async function executeDedicatedUpstreamTool(options) {
     ok: !parsed.upstreamError,
     session: responseSession(options.session),
     ...options.responseFields,
+    guidance: createWrapperResultGuidance(options.wrapperToolName),
     ...upstreamResultFields({
       parsed,
       upstream
@@ -47492,6 +47699,45 @@ function createIntentSuggestions(intent, maxCards, referenceContext = []) {
     referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_repl_lookup kind=api query when exact API details are still missing."
   };
 }
+function createPublicWrapperProfilePayloads(profiles) {
+  return profiles.map((profile) => ({
+    tool: profile.tool,
+    upstreamTool: profile.upstreamTool,
+    workflowIds: profile.workflowIds,
+    intents: profile.intents.slice(0, 5),
+    suggestedLookups: {
+      docs: profile.docsQueries.slice(0, 3),
+      api: profile.apiSymbols.slice(0, 4)
+    },
+    suggestedTools: profile.suggestedTools,
+    nextSteps: profile.nextSteps
+  }));
+}
+function createPublicWrapperWorkflowPayloads(workflows) {
+  return workflows.map((workflow) => ({
+    id: workflow.id,
+    title: workflow.title,
+    tools: workflow.tools,
+    sequence: workflow.sequence,
+    guardrails: workflow.guardrails
+  }));
+}
+function createWrapperResultGuidance(toolName) {
+  const profile = findWrapperLookupProfile(toolName);
+  if (!profile) {
+    return void 0;
+  }
+  return {
+    upstreamTool: profile.upstreamTool,
+    workflowIds: profile.workflowIds,
+    suggestedLookups: {
+      docs: profile.docsQueries,
+      api: profile.apiSymbols
+    },
+    suggestedTools: profile.suggestedTools,
+    nextSteps: profile.nextSteps
+  };
+}
 function createPublicApiCardPayload(card) {
   const { avoid, ...publicCard } = card;
   return {
@@ -47537,6 +47783,11 @@ function createCapabilitiesPayload() {
       lookupTool: "figma_repl_lookup",
       outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
       queryAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS
+    },
+    wrapperGuidance: {
+      profileTools: FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.tool),
+      workflowIds: FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
+      resultField: "guidance"
     }
   };
 }
@@ -47572,6 +47823,7 @@ function createGuidePayload() {
       "Use figma_repl_export_video to start/poll official motion video exports only when frame sampling is worth the upstream render cost.",
       "Use figma_repl_list_shader_effects/get_shader_effect/list_shader_fills/get_shader_fill for explicit shader library reads; payloads remain upstream-shaped."
     ],
+    wrapperWorkflowGraph: createPublicWrapperWorkflowPayloads(FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH),
     upstreamEscapeHatch: [
       "Use figma_repl_call_upstream_tool only for explicit uncovered official upstream tools.",
       "Examples currently exposed through upstream discovery but not covered by dedicated wrappers include file generation, FigJam diagram generation, account checks, and Code Connect mutation/suggestion helpers.",
@@ -47593,7 +47845,14 @@ function createLookupIndexPayload() {
       recommendedQueryStyle: "compact BM25 keywords, for example text font loadFontAsync or components variants properties",
       outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
       commonAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
-      commonCards: FIGMA_REPL_API_CARDS.map((card) => card.id)
+      commonCards: FIGMA_REPL_API_CARDS.map((card) => card.id),
+      wrapperProfiles: {
+        tools: FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.tool),
+        upstreamTools: FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.upstreamTool),
+        workflowIds: FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
+        fullProfileSource: "figma_repl_guidance.wrapperProfiles and wrapper result guidance"
+      },
+      workflowGraph: FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id)
     },
     lookup: {
       tool: "figma_repl_lookup",

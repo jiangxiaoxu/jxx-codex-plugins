@@ -39,9 +39,16 @@ import {
   FIGMA_REPL_INTENT_EXAMPLE_QUERIES,
   FIGMA_REPL_QUERY_OUTPUT_FIELDS,
   FIGMA_REPL_QUERY_SEARCH_ANCHORS,
+  FIGMA_REPL_WRAPPER_LOOKUP_PROFILES,
+  FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH,
   chooseApiCardsForIntent,
+  chooseWrapperLookupProfilesForIntent,
+  findWrapperLookupProfile,
   searchApiCards,
+  selectWrapperWorkflowGraph,
   type FigmaReplApiCard,
+  type FigmaReplWrapperLookupProfile,
+  type FigmaReplWrapperWorkflow,
   uniqueStrings,
 } from "./repl-guidance-catalog.js";
 import {
@@ -551,6 +558,8 @@ export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {
   steps?: string[];
   recommendedTools?: string[];
   suggestedCards?: string[];
+  wrapperProfiles?: Array<Record<string, unknown>>;
+  workflowGraph?: Array<Record<string, unknown>>;
   cards?: Array<Record<string, unknown>>;
   catalogSize?: number;
   guidance?: string;
@@ -582,10 +591,23 @@ export interface FigmaReplSearchDesignSystemResult extends FigmaReplUpstreamBack
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 
+export interface FigmaReplWrapperResultGuidance {
+  [key: string]: unknown;
+  upstreamTool: string;
+  workflowIds: string[];
+  suggestedLookups: {
+    docs: string[];
+    api: string[];
+  };
+  suggestedTools: string[];
+  nextSteps: string[];
+}
+
 export interface FigmaReplGetDesignContextResult extends FigmaReplUpstreamBackedResult {
   session: FigmaReplCompactSession;
   fileKey: string;
   nodeId: string;
+  guidance?: FigmaReplWrapperResultGuidance;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -594,6 +616,7 @@ export interface FigmaReplGetMotionContextResult extends FigmaReplUpstreamBacked
   session: FigmaReplCompactSession;
   fileKey: string;
   nodeId: string;
+  guidance?: FigmaReplWrapperResultGuidance;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -603,6 +626,7 @@ export interface FigmaReplExportVideoResult extends FigmaReplUpstreamBackedResul
   fileKey: string;
   nodeId?: string;
   jobId?: string;
+  guidance?: FigmaReplWrapperResultGuidance;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -626,6 +650,7 @@ export interface FigmaReplGetVariableDefsResult extends FigmaReplUpstreamBackedR
 export interface FigmaReplListShaderEffectsResult extends FigmaReplUpstreamBackedResult {
   session: FigmaReplCompactSession;
   cursor?: string;
+  guidance?: FigmaReplWrapperResultGuidance;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -633,6 +658,7 @@ export interface FigmaReplListShaderEffectsResult extends FigmaReplUpstreamBacke
 export interface FigmaReplGetShaderEffectResult extends FigmaReplUpstreamBackedResult {
   session: FigmaReplCompactSession;
   id: string;
+  guidance?: FigmaReplWrapperResultGuidance;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -640,6 +666,7 @@ export interface FigmaReplGetShaderEffectResult extends FigmaReplUpstreamBackedR
 export interface FigmaReplListShaderFillsResult extends FigmaReplUpstreamBackedResult {
   session: FigmaReplCompactSession;
   cursor?: string;
+  guidance?: FigmaReplWrapperResultGuidance;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -647,6 +674,7 @@ export interface FigmaReplListShaderFillsResult extends FigmaReplUpstreamBackedR
 export interface FigmaReplGetShaderFillResult extends FigmaReplUpstreamBackedResult {
   session: FigmaReplCompactSession;
   id: string;
+  guidance?: FigmaReplWrapperResultGuidance;
   outputFiles?: FigmaReplOutputFiles;
   inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -2904,6 +2932,13 @@ async function handleGuidance(
         "figma_repl_inspect",
       ],
       suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id),
+      wrapperProfiles: createPublicWrapperProfilePayloads(chooseWrapperLookupProfilesForIntent(planIntent, 4)),
+      workflowGraph: createPublicWrapperWorkflowPayloads(
+        selectWrapperWorkflowGraph(
+          uniqueStrings(chooseWrapperLookupProfilesForIntent(planIntent, 4).flatMap((profile) => profile.workflowIds), 4),
+          4,
+        ),
+      ),
     };
     return makeJsonToolResult(payload);
   }
@@ -2930,6 +2965,9 @@ async function handleGuidance(
       })
     : { results: [] };
   const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
+  const wrapperProfiles = createPublicWrapperProfilePayloads(
+    chooseWrapperLookupProfilesForIntent(intent ?? cardQuery, 4),
+  );
   const payload = {
     ok: true,
     cards: cards.map(createPublicApiCardPayload),
@@ -2939,6 +2977,10 @@ async function handleGuidance(
     queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
     apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
     guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    wrapperProfiles,
+    workflowGraph: createPublicWrapperWorkflowPayloads(
+      selectWrapperWorkflowGraph(uniqueStrings(wrapperProfiles.flatMap((profile) => profile.workflowIds as string[]), 4), 4),
+    ),
     suggestions,
   };
   return makeJsonToolResult(payload);
@@ -3866,6 +3908,7 @@ async function executeDedicatedUpstreamTool(options: {
     ok: !parsed.upstreamError,
     session: responseSession(options.session),
     ...options.responseFields,
+    guidance: createWrapperResultGuidance(options.wrapperToolName),
     ...upstreamResultFields({
       parsed,
       upstream,
@@ -6425,6 +6468,67 @@ function createIntentSuggestions(
   };
 }
 
+function createPublicWrapperProfilePayloads(
+  profiles: FigmaReplWrapperLookupProfile[],
+): Array<Record<string, unknown>> {
+  return profiles.map((profile) => ({
+    tool: profile.tool,
+    upstreamTool: profile.upstreamTool,
+    workflowIds: profile.workflowIds,
+    intents: profile.intents.slice(0, 5),
+    suggestedLookups: {
+      docs: profile.docsQueries.slice(0, 3),
+      api: profile.apiSymbols.slice(0, 4),
+    },
+    suggestedTools: profile.suggestedTools,
+    nextSteps: profile.nextSteps,
+  }));
+}
+
+function createCompactWrapperProfilePayloads(): Array<Record<string, unknown>> {
+  return FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => ({
+    tool: profile.tool,
+    upstreamTool: profile.upstreamTool,
+    workflowIds: profile.workflowIds,
+  }));
+}
+
+function createPublicWrapperWorkflowPayloads(
+  workflows: FigmaReplWrapperWorkflow[],
+): Array<Record<string, unknown>> {
+  return workflows.map((workflow) => ({
+    id: workflow.id,
+    title: workflow.title,
+    tools: workflow.tools,
+    sequence: workflow.sequence,
+    guardrails: workflow.guardrails,
+  }));
+}
+
+function createCompactWrapperWorkflowPayloads(): Array<Record<string, unknown>> {
+  return FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => ({
+    id: workflow.id,
+    tools: workflow.tools,
+  }));
+}
+
+function createWrapperResultGuidance(toolName: string): FigmaReplWrapperResultGuidance | undefined {
+  const profile = findWrapperLookupProfile(toolName);
+  if (!profile) {
+    return undefined;
+  }
+  return {
+    upstreamTool: profile.upstreamTool,
+    workflowIds: profile.workflowIds,
+    suggestedLookups: {
+      docs: profile.docsQueries,
+      api: profile.apiSymbols,
+    },
+    suggestedTools: profile.suggestedTools,
+    nextSteps: profile.nextSteps,
+  };
+}
+
 function createPublicApiCardPayload(card: FigmaReplApiCard): Record<string, unknown> {
   const { avoid, ...publicCard } = card;
   return {
@@ -6746,6 +6850,11 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
       queryAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
     },
+    wrapperGuidance: {
+      profileTools: FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.tool),
+      workflowIds: FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
+      resultField: "guidance",
+    },
   };
 }
 
@@ -6781,6 +6890,7 @@ function createGuidePayload(): Record<string, unknown> {
       "Use figma_repl_export_video to start/poll official motion video exports only when frame sampling is worth the upstream render cost.",
       "Use figma_repl_list_shader_effects/get_shader_effect/list_shader_fills/get_shader_fill for explicit shader library reads; payloads remain upstream-shaped.",
     ],
+    wrapperWorkflowGraph: createPublicWrapperWorkflowPayloads(FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH),
     upstreamEscapeHatch: [
       "Use figma_repl_call_upstream_tool only for explicit uncovered official upstream tools.",
       "Examples currently exposed through upstream discovery but not covered by dedicated wrappers include file generation, FigJam diagram generation, account checks, and Code Connect mutation/suggestion helpers.",
@@ -6804,6 +6914,13 @@ function createLookupIndexPayload(): Record<string, unknown> {
       outputFields: FIGMA_REPL_QUERY_OUTPUT_FIELDS,
       commonAnchors: FIGMA_REPL_QUERY_SEARCH_ANCHORS,
       commonCards: FIGMA_REPL_API_CARDS.map((card) => card.id),
+      wrapperProfiles: {
+        tools: FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.tool),
+        upstreamTools: FIGMA_REPL_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.upstreamTool),
+        workflowIds: FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
+        fullProfileSource: "figma_repl_guidance.wrapperProfiles and wrapper result guidance",
+      },
+      workflowGraph: FIGMA_REPL_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
     },
     lookup: {
       tool: "figma_repl_lookup",

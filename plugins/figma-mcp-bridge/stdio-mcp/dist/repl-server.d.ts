@@ -288,6 +288,8 @@ export interface FigmaReplGuidanceResult extends FigmaReplToolResultBase {
     steps?: string[];
     recommendedTools?: string[];
     suggestedCards?: string[];
+    wrapperProfiles?: Array<Record<string, unknown>>;
+    workflowGraph?: Array<Record<string, unknown>>;
     cards?: Array<Record<string, unknown>>;
     catalogSize?: number;
     guidance?: string;
@@ -315,10 +317,22 @@ export interface FigmaReplSearchDesignSystemResult extends FigmaReplUpstreamBack
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
+export interface FigmaReplWrapperResultGuidance {
+    [key: string]: unknown;
+    upstreamTool: string;
+    workflowIds: string[];
+    suggestedLookups: {
+        docs: string[];
+        api: string[];
+    };
+    suggestedTools: string[];
+    nextSteps: string[];
+}
 export interface FigmaReplGetDesignContextResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplCompactSession;
     fileKey: string;
     nodeId: string;
+    guidance?: FigmaReplWrapperResultGuidance;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -326,6 +340,7 @@ export interface FigmaReplGetMotionContextResult extends FigmaReplUpstreamBacked
     session: FigmaReplCompactSession;
     fileKey: string;
     nodeId: string;
+    guidance?: FigmaReplWrapperResultGuidance;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -334,6 +349,7 @@ export interface FigmaReplExportVideoResult extends FigmaReplUpstreamBackedResul
     fileKey: string;
     nodeId?: string;
     jobId?: string;
+    guidance?: FigmaReplWrapperResultGuidance;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
@@ -354,24 +370,28 @@ export interface FigmaReplGetVariableDefsResult extends FigmaReplUpstreamBackedR
 export interface FigmaReplListShaderEffectsResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplCompactSession;
     cursor?: string;
+    guidance?: FigmaReplWrapperResultGuidance;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 export interface FigmaReplGetShaderEffectResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplCompactSession;
     id: string;
+    guidance?: FigmaReplWrapperResultGuidance;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 export interface FigmaReplListShaderFillsResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplCompactSession;
     cursor?: string;
+    guidance?: FigmaReplWrapperResultGuidance;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
 export interface FigmaReplGetShaderFillResult extends FigmaReplUpstreamBackedResult {
     session: FigmaReplCompactSession;
     id: string;
+    guidance?: FigmaReplWrapperResultGuidance;
     outputFiles?: FigmaReplOutputFiles;
     inlineResultLimit?: FigmaReplInlineResultLimit;
 }
