@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma Workspace"
+  short_description: "Figma MCP workspace guide for figma_workspace_mcp and figma_workspace_ tools"
+  default_prompt: "Use $figma-workspace for Figma MCP work; discover figma_workspace_mcp / figma_workspace_ tools first."

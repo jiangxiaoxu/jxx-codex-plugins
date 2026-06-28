@@ -606,12 +606,12 @@ async function resolveUpstreamCorpusRoot(): Promise<string> {
     ? process.cwd()
     : moduleDir;
   const candidates = [
-    resolve(moduleDir, "../skills/figma-workspace-router/references/upstream-corpus"),
-    resolve(moduleDir, "../../skills/figma-workspace-router/references/upstream-corpus"),
-    resolve(moduleDir, "../../../skills/figma-workspace-router/references/upstream-corpus"),
-    resolve(cwd, "skills/figma-workspace-router/references/upstream-corpus"),
-    resolve(cwd, "plugins/figma-workspace/skills/figma-workspace-router/references/upstream-corpus"),
-    resolve(cwd, "../skills/figma-workspace-router/references/upstream-corpus"),
+    resolve(moduleDir, "../skills/figma-workspace/references/upstream-corpus"),
+    resolve(moduleDir, "../../skills/figma-workspace/references/upstream-corpus"),
+    resolve(moduleDir, "../../../skills/figma-workspace/references/upstream-corpus"),
+    resolve(cwd, "skills/figma-workspace/references/upstream-corpus"),
+    resolve(cwd, "plugins/figma-workspace/skills/figma-workspace/references/upstream-corpus"),
+    resolve(cwd, "../skills/figma-workspace/references/upstream-corpus"),
   ];
   for (const candidate of candidates) {
     try {
