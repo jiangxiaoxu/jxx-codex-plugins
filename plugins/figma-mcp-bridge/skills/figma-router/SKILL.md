@@ -5,7 +5,7 @@ description: Route Figma work through the exact MCP server figma_repl_mcp and it
 
 # Figma Router
 
-Use this skill as the lightweight router for Figma MCP work. After OAuth registration, use `figma_repl_mcp` as the agent-facing entrypoint. Bundled reference files are internal lookup corpus; do not read or route agents to them directly.
+Use this skill as the lightweight router for Figma MCP work. After OAuth registration, use `figma_repl_mcp` as the agent-facing entrypoint. Bundled JSONL upstream corpus files are internal lookup data; do not read or route agents to them directly.
 
 ## Default Route
 
@@ -76,7 +76,7 @@ Workspace files live under `<cwd>/figma-mcp/<fileKey-or-fileSlug>/`. Calls shoul
 - Use `figma_repl_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 - For deeper static workflow, lookup, or safety notes, read `references/figma-repl-workflow.md`, `references/figma-repl-guidance-and-lookup.md`, or `references/figma-repl-safety.md`.
 
-Use `figma_repl_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers. Prefer `figma_repl_get_metadata`, `figma_repl_search_design_system`, `figma_repl_get_libraries`, and `figma_repl_get_variable_defs` over direct upstream calls for those official tools. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
+Use `figma_repl_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers. Read `figma-repl://upstream-tools` first; it categorizes current escape-hatch tools such as `get_motion_context`, `export_video`, shader effect/fill tools, and design-context/code-connect helpers. Prefer `figma_repl_get_metadata`, `figma_repl_search_design_system`, `figma_repl_get_libraries`, and `figma_repl_get_variable_defs` over direct upstream calls for those official tools. Keep local REPL handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
 
 ## Query Strategy
 

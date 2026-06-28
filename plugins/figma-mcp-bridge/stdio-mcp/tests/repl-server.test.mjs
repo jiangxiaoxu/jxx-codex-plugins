@@ -1056,6 +1056,67 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const { server } = createFigmaReplMcpServer({
     client: createFakeFigmaClient(calls, () => {
       throw new Error("unexpected upstream call");
+    }, {
+      tools: [
+        {
+          name: "use_figma",
+          description: "Execute JavaScript in the active Figma file.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              code: { type: "string" },
+            },
+            required: ["code"],
+          },
+        },
+        {
+          name: "get_motion_context",
+          description: "Get keyframe animation data for a Figma node. Returns animated-node inventory, keyframe tracks, code snippets, and recursive timeline hints.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              nodeId: { type: "string" },
+              fileKey: { type: "string" },
+              recursive: { type: "boolean" },
+            },
+            required: ["nodeId", "fileKey"],
+          },
+        },
+        {
+          name: "export_video",
+          description: "Export a Figma timeline node as an MP4 video with polling via jobId.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              jobId: { type: "string" },
+              quality: { type: "string", enum: ["low", "medium", "high"] },
+            },
+            required: ["fileKey"],
+          },
+        },
+        {
+          name: "list_shader_effects",
+          description: "Lists shader effects in the authenticated user's account library.",
+          inputSchema: { type: "object", properties: { cursor: { type: "string" } } },
+        },
+        {
+          name: "get_shader_effect",
+          description: "Reads a shader effect from the account library by id.",
+          inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        },
+        {
+          name: "list_shader_fills",
+          description: "Lists shader fills in the authenticated user's account library.",
+          inputSchema: { type: "object", properties: { cursor: { type: "string" } } },
+        },
+        {
+          name: "get_shader_fill",
+          description: "Reads a shader fill from the account library by id.",
+          inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        },
+      ],
     }),
   });
   const mcpClient = new Client(
@@ -1555,12 +1616,17 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const aggregateLookupIndex = JSON.parse(aggregateLookupIndexResource.contents[0].text);
   assert.equal(aggregateCapabilities.resources.guide, "figma-repl://guide");
   assert.equal(aggregateCapabilities.resources.lookupIndex, "figma-repl://lookup-index");
+  assert.ok(aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("get_motion_context"));
+  assert.ok(aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("export_video"));
+  assert.ok(aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("list_shader_effects"));
   assert.deepEqual(aggregateCapabilities.lookupStrategy.outputFields, queryOutputFields);
   assert.equal(aggregateCapabilities.apiCards, undefined);
   assert.equal(aggregateCapabilities.docsLookup, undefined);
   assert.ok(aggregateGuide.scriptFileWorkflow.some((step) => /figma_repl_prepare_task/.test(step)));
   assert.ok(aggregateGuide.assetWorkflow.some((step) => /figma_repl_apply_asset_manifest/.test(step)));
   assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /figma-repl:\/\/upstream-tools\/\{name\}/.test(step)));
+  assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /get_motion_context/.test(step)));
+  assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /shader effect\/fill/.test(step)));
   assert.equal(aggregateLookupIndex.guidance.tool, "figma_repl_guidance");
   assert.equal(aggregateLookupIndex.lookup.tool, "figma_repl_lookup");
   assert.ok(aggregateLookupIndex.guidance.commonCards.includes("text.font"));
@@ -1576,12 +1642,24 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   const upstream = JSON.parse(upstreamResource.contents[0].text);
   assert.ok(Array.isArray(upstream.tools));
   assert.equal(upstream.detailTemplate, "figma-repl://upstream-tools/{name}");
-  assert.deepEqual(upstream.categories, ["capture", "design-context", "execution", "assets", "code-connect", "libraries", "figjam", "generation", "account", "other"]);
+  assert.deepEqual(upstream.categories, ["capture", "design-context", "motion", "video", "execution", "assets", "code-connect", "libraries", "figjam", "generation", "shader", "account", "other"]);
   assert.match(upstream.guidance, /figma_repl_call_upstream_tool/);
   assert.match(upstream.guidance, /dedicated figma_repl_\* wrappers/);
   assert.equal(upstream.tools[0].name, "use_figma");
   assert.equal(upstream.tools[0].category, "execution");
   assert.equal(upstream.tools[0].description, "Run Plugin API JavaScript to create, inspect, or edit Figma content.");
+  assert.deepEqual(
+    Object.fromEntries(upstream.tools.map((tool) => [tool.name, [tool.category, tool.description]])),
+    {
+      use_figma: ["execution", "Run Plugin API JavaScript to create, inspect, or edit Figma content."],
+      get_motion_context: ["motion", "Get keyframe animation data and motion code snippets for a node."],
+      export_video: ["video", "Export a Figma timeline node as an MP4 video."],
+      list_shader_effects: ["shader", "List shader effects in the authenticated user's account library."],
+      get_shader_effect: ["shader", "Read a shader effect source manifest by id."],
+      list_shader_fills: ["shader", "List shader fills in the authenticated user's account library."],
+      get_shader_fill: ["shader", "Read a shader fill source manifest by id."],
+    },
+  );
   assert.ok(upstream.tools.every((tool) => !tool.description || tool.description.length <= 96));
   assert.ok(upstream.tools.every((tool) => typeof tool.category === "string"));
   assert.equal(upstream.tools[0].resource, undefined);
@@ -1595,6 +1673,17 @@ test("figma REPL exposes self-explaining capabilities and resources", async () =
   assert.deepEqual(upstreamTool.inputSchema.required, ["code"]);
   assert.equal(upstreamTool.callTool, "figma_repl_call_upstream_tool");
   assert.match(upstreamTool.guidance, /explicit uncovered official upstream capabilities/);
+
+  const motionToolResource = await mcpClient.readResource({ uri: "figma-repl://upstream-tools/get_motion_context" });
+  const motionTool = JSON.parse(motionToolResource.contents[0].text);
+  assert.equal(motionTool.name, "get_motion_context");
+  assert.deepEqual(motionTool.inputSchema.required, ["nodeId", "fileKey"]);
+  assert.equal(motionTool.callTool, "figma_repl_call_upstream_tool");
+
+  const shaderToolResource = await mcpClient.readResource({ uri: "figma-repl://upstream-tools/get_shader_fill" });
+  const shaderTool = JSON.parse(shaderToolResource.contents[0].text);
+  assert.equal(shaderTool.name, "get_shader_fill");
+  assert.deepEqual(shaderTool.inputSchema.required, ["id"]);
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
   await mcpClient.close();
 });
@@ -1608,7 +1697,7 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
 
   assert.match(skillText, /After OAuth registration, use `figma_repl_mcp` as the agent-facing entrypoint/);
   assert.match(skillText, /read `figma-repl:\/\/capabilities`/);
-  assert.match(skillText, /Bundled reference files are internal lookup corpus/);
+  assert.match(skillText, /Bundled JSONL upstream corpus files are internal lookup data/);
   assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `referenceContext`/);
   assert.match(skillText, /figma_repl_lookup\(\{ kind: "docs" \}\)/);
   for (const uri of removedStaticResourceUris) {
@@ -1616,14 +1705,38 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   }
   assert.match(pluginReadme, /`figma_repl_mcp` is the primary agent workflow after OAuth registration/);
   assert.match(pluginReadme, /server id changed from `figma-repl-mcp` to `figma_repl_mcp`/);
-  assert.match(pluginReadme, /Bundled reference files are internal lookup corpus/);
+  assert.match(pluginReadme, /`upstream-corpus\/manifest\.json` and `upstream-corpus\/corpus\.jsonl` files are internal lookup corpus/);
   assert.match(stdioReadme, /old persistent server id `figma-repl-mcp`/);
-  assert.match(stdioReadme, /bundled corpus files are internal and are not an agent-facing documentation path/);
+  assert.match(stdioReadme, /bundled JSONL corpus files are internal and are not an agent-facing documentation path/);
   assert.match(stdioReadme, /explicit uncovered upstream capability/);
   assert.match(openaiText, /figma_repl_mcp/);
   for (const term of forbiddenRouterContractTerms) {
     assert.ok(!docsText.includes(term), `router docs must not mention ${term}`);
   }
+});
+
+test("figma upstream corpus is JSONL-backed with motion and SwiftUI included", async () => {
+  const corpusDir = resolve(packageRoot, "../skills/figma-router/references/upstream-corpus");
+  const manifest = JSON.parse(await readFile(resolve(corpusDir, "manifest.json"), "utf8"));
+  const records = (await readFile(resolve(corpusDir, "corpus.jsonl"), "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+
+  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.corpus.file, "corpus.jsonl");
+  assert.equal(manifest.corpus.recordCount, records.length);
+  assert.match(manifest.corpus.contract, /Internal lookup corpus only/);
+  assert.ok(manifest.includedSkills.includes("figma-use-motion"));
+  assert.ok(manifest.includedSkills.includes("figma-implement-motion"));
+  assert.ok(manifest.includedSkills.includes("figma-swiftui"));
+  assert.ok(manifest.outOfScopeSkills.every((item) => item.skill !== "figma-swiftui"));
+  assert.ok(records.some((record) => record.id === "figma-use-motion/SKILL.md"));
+  assert.ok(records.some((record) => record.id === "figma-implement-motion/references/motion-lint-rules.md"));
+  assert.ok(records.some((record) => record.id === "figma-swiftui/SKILL.md"));
+  assert.ok(records.some((record) => record.id === "figma-swiftui/references/design-to-code.md"));
+  assert.ok(records.some((record) => record.id === "figma-swiftui/references/code-to-design.md"));
+  assert.ok(records.every((record) => typeof record.text === "string" && record.text.length > 0));
 });
 
 test("figma REPL proxies a fake upstream official tool and rejects local tool names", async () => {
@@ -5159,6 +5272,21 @@ test("figma REPL lookup kind=docs returns capped local reference snippets", asyn
     assert.equal("file" in item, false);
   }
   assert.match(json.guidance, /BM25-ranked chunks/);
+
+  const motionResult = await mcpClient.callTool({
+    name: "figma_repl_lookup",
+    arguments: {
+      title: "Search motion docs",
+      kind: "docs",
+      query: "motion easing",
+      maxResults: 3,
+      maxSnippetLines: 3,
+    },
+  });
+  const motionJson = structuredToolResult(motionResult);
+  assert.equal(motionJson.ok, true);
+  assert.ok(motionJson.results.some((item) => item.sourceId.includes("motion")));
+  assert.match(JSON.stringify(motionJson.results), /motion|easing/iu);
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
 });
@@ -7028,6 +7156,42 @@ test("figma REPL guidance returns compact cards and intent routing without upstr
     assert.ok(commonJson.suggestions.queryHints.length > 0);
     assert.ok(commonJson.suggestions.guardrails.length > 0);
     assert.equal(commonJson.suggestions.avoid, undefined);
+  }
+
+  const upstreamAgentGuidanceExpectations = [
+    [
+      "implement selected Figma node production code visual parity",
+      "implementation.figma-to-code",
+      "get_design_context",
+      /figma_repl_call_upstream_tool/,
+    ],
+    [
+      "design parity review screenshot spacing typography regression",
+      "review.design-parity",
+      "figma_repl_capture_node",
+      /screenshot or design context/,
+    ],
+    [
+      "Code Connect template published component mapping",
+      "code.connect",
+      "get_code_connect_map",
+      /ambiguous component targets/,
+    ],
+  ];
+  for (const [query, expectedCard, expectedSymbol, expectedGuardrail] of upstreamAgentGuidanceExpectations) {
+    const upstreamAgentResult = await mcpClient.callTool({
+      name: "figma_repl_guidance",
+      arguments: {
+        title: `Suggest ${expectedCard}`,
+        query,
+        maxCards: 4,
+      },
+    });
+    const upstreamAgentJson = structuredToolResult(upstreamAgentResult);
+    assert.ok(upstreamAgentJson.recommendedCards.includes(expectedCard));
+    assert.ok(upstreamAgentJson.suggestions.recommendedCards.includes(expectedCard));
+    assert.ok(upstreamAgentJson.suggestions.apiSymbols.includes(expectedSymbol));
+    assert.match(JSON.stringify(upstreamAgentJson.suggestions.cards), expectedGuardrail);
   }
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();

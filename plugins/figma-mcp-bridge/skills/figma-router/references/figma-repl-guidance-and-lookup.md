@@ -8,13 +8,14 @@ Use this reference to choose between `figma_repl_guidance` and `figma_repl_looku
 - Use its `recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `referenceContext` fields to choose the next tool or API symbols.
 - Common anchors are text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, and FigJam/Slides.
 - Treat `guardrails` as task-specific risk notes before modifying a file.
+- For implementation from Figma, visual parity review, or Code Connect tasks, use the dedicated guidance cards. They route upstream-only context through `figma_repl_call_upstream_tool`, local screenshot QA through `figma_repl_capture_node`, and project-side work through local files instead of upstream agent markdown.
 
 ## Lookup When Exact Context Is Needed
 
 - Use `figma_repl_lookup({ kind: "docs", query })` for compact BM25-ranked workflow snippets.
 - Use `figma_repl_lookup({ kind: "api", symbol })` for exact Figma Plugin API symbols.
 - Lookup output is capped and confidence-labeled.
-- Bundled corpus files are internal lookup data and should not be routed to agents as documents.
+- Bundled `upstream-corpus/manifest.json` and `upstream-corpus/corpus.jsonl` files are internal lookup data and should not be routed to agents as documents.
 
 ## API Cards
 

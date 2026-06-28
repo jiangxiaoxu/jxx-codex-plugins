@@ -6181,6 +6181,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
       normalPath: ["figma_repl_prepare_task", "figma_repl_guidance", "figma_repl_run_script_file", "figma_repl_inspect", "figma_repl_capture_node"],
       contextAndLookup: ["figma_repl_get_metadata", "figma_repl_search_design_system", "figma_repl_get_libraries", "figma_repl_get_variable_defs", "figma_repl_lookup"],
       advancedEscapeHatches: ["figma_repl_eval", "figma_repl_call_upstream_tool", "figma_repl_run_task_plan"],
+      upstreamEscapeHatchExamples: ["get_design_context", "get_motion_context", "export_video", "list_shader_effects", "get_shader_effect", "list_shader_fills", "get_shader_fill"],
     },
     contractNotes: {
       scriptPreflight: "figma_repl_run_script_file always runs local diagnostics/compile/strict checks first; phase=preflight means executed=false and upstream was not called, phase=execute means upstream execution was attempted. Parse errors return repairPlan.status=parse_error and no guardrail scan.",
@@ -6232,6 +6233,7 @@ function createGuidePayload(): Record<string, unknown> {
     ],
     upstreamEscapeHatch: [
       "Use figma_repl_call_upstream_tool only for explicit uncovered official upstream tools.",
+      "Examples currently exposed through upstream discovery include get_design_context, get_motion_context, export_video, and shader effect/fill library tools.",
       "Before using it, read figma-repl://upstream-tools and then figma-repl://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs.",
     ],
     responseContract: [
@@ -6305,7 +6307,7 @@ async function readReplResource(
           text: JSON.stringify({
             tools: tools.map((tool) => upstreamToolDirectoryEntry(tool)),
             detailTemplate: "figma-repl://upstream-tools/{name}",
-            categories: ["capture", "design-context", "execution", "assets", "code-connect", "libraries", "figjam", "generation", "account", "other"],
+            categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
             guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-repl://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_repl_call_upstream_tool only for an explicit uncovered upstream capability; use dedicated figma_repl_* wrappers for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, search_design_system, get_libraries, and get_variable_defs.",
           }, null, 2),
         },
@@ -6384,18 +6386,38 @@ function upstreamToolDirectoryEntry(tool: UpstreamToolInfo): Record<string, unkn
 type UpstreamToolDirectoryCategory =
   | "capture"
   | "design-context"
+  | "motion"
+  | "video"
   | "execution"
   | "assets"
   | "code-connect"
   | "libraries"
   | "figjam"
   | "generation"
+  | "shader"
   | "account"
   | "other";
+
+const UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER: UpstreamToolDirectoryCategory[] = [
+  "capture",
+  "design-context",
+  "motion",
+  "video",
+  "execution",
+  "assets",
+  "code-connect",
+  "libraries",
+  "figjam",
+  "generation",
+  "shader",
+  "account",
+  "other",
+];
 
 const UPSTREAM_TOOL_DIRECTORY_CATEGORIES: Record<string, UpstreamToolDirectoryCategory> = {
   get_screenshot: "capture",
   get_design_context: "design-context",
+  get_motion_context: "motion",
   get_metadata: "design-context",
   get_variable_defs: "design-context",
   get_figjam: "figjam",
@@ -6413,11 +6435,17 @@ const UPSTREAM_TOOL_DIRECTORY_CATEGORIES: Record<string, UpstreamToolDirectoryCa
   create_new_file: "generation",
   upload_assets: "assets",
   download_assets: "assets",
+  export_video: "video",
+  list_shader_effects: "shader",
+  get_shader_effect: "shader",
+  list_shader_fills: "shader",
+  get_shader_fill: "shader",
 };
 
 const UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS: Record<string, string> = {
   get_screenshot: "Capture a screenshot for a selected or specified Figma node.",
   get_design_context: "Get design-to-code context, screenshot, and metadata for a node.",
+  get_motion_context: "Get keyframe animation data and motion code snippets for a node.",
   get_metadata: "Read XML metadata for a node or page when full design context is unnecessary.",
   get_variable_defs: "List variable definitions referenced by a node.",
   get_figjam: "Generate UI code or context for a FigJam node.",
@@ -6435,6 +6463,11 @@ const UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS: Record<string, string> = {
   create_new_file: "Create a new blank Figma file.",
   upload_assets: "Get upload URLs for image assets before applying them in Figma.",
   download_assets: "Download exported renders and source images for one Figma node.",
+  export_video: "Export a Figma timeline node as an MP4 video.",
+  list_shader_effects: "List shader effects in the authenticated user's account library.",
+  get_shader_effect: "Read a shader effect source manifest by id.",
+  list_shader_fills: "List shader fills in the authenticated user's account library.",
+  get_shader_fill: "Read a shader fill source manifest by id.",
 };
 
 function upstreamToolDirectoryCategory(tool: UpstreamToolInfo): UpstreamToolDirectoryCategory {

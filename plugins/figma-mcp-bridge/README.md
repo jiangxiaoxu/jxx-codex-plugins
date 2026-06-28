@@ -78,7 +78,7 @@ In workspace workflows, prefer `taskName`, `inputFile`, `manifestPath`, `target`
 
 Asset manifests validate target IMAGE fills after upload when upstream eval is available. Successful submitUrl POSTs expose compact `assets[].upload` evidence such as `imageHash` and `placedOnNodeId` without returning raw submit URLs. If default validation cannot confirm every target record, `figma_repl_apply_asset_manifest` fails the workflow and writes details to `outputFiles.debugFile`; use `validateTargets: false` only when validation is intentionally skipped.
 
-For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. Bundled reference files are internal lookup corpus and are not an agent-facing documentation path.
+For API guidance, use `figma_repl_guidance` and `figma_repl_lookup` with `kind: "docs"` or `kind: "api"`. The bundled `upstream-corpus/manifest.json` and `upstream-corpus/corpus.jsonl` files are internal lookup corpus and are not an agent-facing documentation path.
 
 The MCP resource surface is intentionally small: `figma-repl://capabilities`, `figma-repl://guide`, `figma-repl://lookup-index`, `figma-repl://sessions`, session detail resources, session handle-map resources, `figma-repl://upstream-tools`, and upstream tool detail resources. `capabilities` is the short routing manifest, `guide` is the workflow sequence, and `lookup-index` points to `figma_repl_guidance` / `figma_repl_lookup`; common task routing and reference details should use those tools instead of static duplicated docs.
 

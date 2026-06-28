@@ -23,6 +23,8 @@ export const FIGMA_REPL_QUERY_SEARCH_ANCHORS = [
   "images/fills",
   "selection",
   "capture/QA",
+  "implementation/parity",
+  "Code Connect",
   "FigJam/Slides",
 ];
 
@@ -43,6 +45,9 @@ export const FIGMA_REPL_COMMON_TASK_LABELS = [
   "instance properties",
   "generated image fills",
   "screenshot QA",
+  "Figma-to-code implementation",
+  "design parity review",
+  "Code Connect templates",
   "FigJam board work",
   "Slides deck work",
 ];
@@ -51,6 +56,9 @@ export const FIGMA_REPL_INTENT_EXAMPLE_QUERIES = [
   "create UI card with auto layout and text",
   "make component variants",
   "update color token",
+  "implement selected Figma node in app code",
+  "review implementation against Figma screenshot",
+  "create Code Connect template for component",
 ];
 
 export const FIGMA_REPL_API_CARDS: FigmaReplApiCard[] = [
@@ -127,6 +135,18 @@ export const FIGMA_REPL_API_CARDS: FigmaReplApiCard[] = [
     pitfalls: ["Variant combining requires component nodes.", "Use handles for source components before creating instances."],
   },
   {
+    id: "implementation.figma-to-code",
+    title: "Figma-to-code implementation workflow",
+    intents: ["implement", "implementation", "handoff", "figma to code", "production code", "design context"],
+    surface: "design",
+    helpers: ["figma_repl_call_upstream_tool(name=get_design_context)", "figma_repl_capture_node", "figma_repl_guidance", "figma_repl_lookup(kind=docs)"],
+    pluginApi: ["official get_design_context", "official get_screenshot"],
+    apiSymbols: ["get_design_context", "get_screenshot", "figma_repl_call_upstream_tool", "figma_repl_capture_node"],
+    queryHints: ["get design context before implementation", "capture node screenshot before coding", "reuse project tokens and components"],
+    avoid: ["Implementing from memory without design context and screenshot evidence", "Copying generated Tailwind/code output without adapting to project conventions"],
+    pitfalls: ["Route uncovered official context tools through figma_repl_call_upstream_tool.", "Treat upstream code output as a reference, then map to local components, tokens, a11y, and framework conventions.", "Record visible or technical deviations explicitly."],
+  },
+  {
     id: "instances.properties",
     title: "Instance properties",
     intents: ["instance", "instances", "property", "properties", "component property", "set properties", "variant property"],
@@ -137,6 +157,18 @@ export const FIGMA_REPL_API_CARDS: FigmaReplApiCard[] = [
     queryHints: ["set instance properties", "read component property definitions", "variant property values"],
     avoid: ["Using display labels instead of property keys with #uid suffixes", "Assuming setProperties throws when a key is wrong"],
     pitfalls: ["Read componentPropertyDefinitions before setProperties.", "TEXT, BOOLEAN, and INSTANCE_SWAP property names can include #uid suffixes."],
+  },
+  {
+    id: "code.connect",
+    title: "Code Connect component templates",
+    intents: ["code connect", "codeconnect", "template", "mapping", "published component", "component mapping"],
+    surface: "design",
+    helpers: ["figma_repl_call_upstream_tool(name=get_code_connect_map)", "figma_repl_call_upstream_tool(name=get_design_context)", "figma_repl_lookup(kind=docs)"],
+    pluginApi: ["official get_code_connect_map", "official Code Connect suggestions", "component properties"],
+    apiSymbols: ["get_code_connect_map", "get_design_context", "ComponentNode", "ComponentSetNode"],
+    queryHints: ["confirm published component or component set", "read component property context", "map candidate code components"],
+    avoid: ["Creating templates for unpublished or ambiguous component targets", "Choosing between multiple code candidates without documenting criteria"],
+    pitfalls: ["Use upstream Code Connect suggestions through figma_repl_call_upstream_tool before writing parserless templates.", "If the Figma target or code component choice is ambiguous, ask for confirmation before creating template files."],
   },
   {
     id: "images.fill",
@@ -161,6 +193,18 @@ export const FIGMA_REPL_API_CARDS: FigmaReplApiCard[] = [
     queryHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
     avoid: ["Treating opportunistic $.screenshot as final QA when no image payload is returned", "Relying only on inline MCP image payloads"],
     pitfalls: ["Prefer figma_repl_capture_node for final QA files.", "Inspect the saved local image/result when layout correctness matters."],
+  },
+  {
+    id: "review.design-parity",
+    title: "Design parity review",
+    intents: ["parity", "review", "regression", "visual review", "screenshot compare", "implementation review"],
+    surface: "any",
+    helpers: ["figma_repl_capture_node", "figma_repl_inspect(mode=style)", "figma_repl_call_upstream_tool(name=get_design_context)"],
+    pluginApi: ["official get_design_context", "node.screenshot", "style inspection"],
+    apiSymbols: ["get_design_context", "figma_repl_capture_node", "figma_repl_inspect", "SceneNode.screenshot"],
+    queryHints: ["compare implemented UI to Figma screenshot", "audit spacing typography tokens assets", "order visible regressions by severity"],
+    avoid: ["Guessing parity without screenshot or design context evidence", "Prioritizing code style over visible regressions and interaction mismatches"],
+    pitfalls: ["Request or capture missing visual/context evidence before judging parity.", "Call out token misuse, spacing drift, typography drift, and asset substitutions with severity."],
   },
   {
     id: "surface.figjam",
