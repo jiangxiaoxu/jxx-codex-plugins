@@ -1820,10 +1820,20 @@ test("figma upstream-tools resource reports upstream connection failures as JSON
   assert.match(upstream.primaryFix, /npm run login:figma-http/);
   assert.deepEqual(calls, [["connect"]]);
 
-  await assert.rejects(
-    mcpClient.readResource({ uri: "figma-workspace://upstream-tools/use_figma" }),
-    /Upstream Figma MCP tool directory unavailable: Figma MCP upstream authentication is required or incomplete\./,
-  );
+  const upstreamDetailResource = await mcpClient.readResource({ uri: "figma-workspace://upstream-tools/use_figma" });
+  const upstreamDetail = JSON.parse(upstreamDetailResource.contents[0].text);
+  assert.equal(upstreamDetail.ok, false);
+  assert.equal(upstreamDetail.name, "use_figma");
+  assert.equal(upstreamDetail.upstreamError.message, "Figma MCP upstream authentication is required or incomplete.");
+  assert.equal(upstreamDetail.upstreamError.code, "FIGMA_UPSTREAM_AUTH_REQUIRED");
+  assert.equal(upstreamDetail.upstreamError.details.loginCommand, "npm run login:figma-http");
+  assert.equal(upstreamDetail.upstreamError.details.oauthCacheFile, ".figma-workspace-oauth.json");
+  assert.doesNotMatch(JSON.stringify(upstreamDetail.upstreamError), /StaleConnectionError|connectOnce|workspace-mcp-cli/u);
+  assert.match(upstreamDetail.primaryFix, /npm run login:figma-http/);
+  assert.equal(upstreamDetail.callTool, "figma_workspace_call_upstream_tool");
+  assert.match(upstreamDetail.guidance, /Retry this resource/);
+  assert.deepEqual(calls, [["connect"], ["connect"]]);
+
   await mcpClient.close();
 });
 
