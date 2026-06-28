@@ -147,7 +147,7 @@ export class RemoteMcpClient {
       return;
     } catch (error) {
       if (error instanceof StaleConnectionError) {
-        throw error;
+        throw oauthCancelledError(error);
       }
       const unauthorizedTransport = this.transport;
       const registrationRejection = extractRegistrationRejection(error);
