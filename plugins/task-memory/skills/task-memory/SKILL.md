@@ -27,7 +27,7 @@ Critical guardrails:
 - Never archive a live `Status: in-progress` report while the child may still write to it.
 - Never record routine validation, review, build, test, state-check output, raw stdout, or command history in `task_state.md`.
 - Never expose the script path or workspace args in normal handoff briefs unless overriding the current workspace.
-- After successful `init`, put agent-created task temporary assets under the task `artifacts/` directory by default. This applies to temporary files the agent creates for the current task, such as generated images, manual downloads, extracted archives, temporary clones, scratch scripts, screenshots, and intermediate bundles. Do not move or redirect normal tool/build/test outputs solely because task memory exists.
+- After successful `init`, agent-created task-flow files must go under the task `artifacts/` directory unless a user instruction, task requirement, tool, script, or project convention requires a fixed different path. Path precedence is: explicit required path, normal tool output location, then task-memory `artifacts/`. Task-flow files include scratch scripts, temporary files, generated images, exported assets, downloaded or extracted materials, screenshots, captures, temporary clones, and intermediate bundles. Do not move or redirect normal tool/build/test outputs solely because task memory exists.
 
 ## Modes And Ownership
 On activation, follow the caller-selected mode. If a handoff brief does not select `Report-required` or `Command-only`, do not infer ownership.
@@ -64,7 +64,16 @@ Validation, review, build, test, and state-check results are non-durable. Do not
 `Goal` stores objective/success criteria. `State` stores phase, durable understanding, completed work, decisions, and high-signal evidence. `Open` stores active questions, blockers, risks, and handoff-ready gaps. `Reports` stores only pending/unabsorbed report notes; no absorbed/archive history and no `Validation` section.
 
 ## Artifact Storage
-After task memory is initialized, store agent-created task temporary assets in `--workspace/task-memory/<task-id>/artifacts/` unless the user or tool requires another location. Use this directory for files the agent intentionally creates for the current task, such as generated images, manual downloads, temporary cloned repositories, extracted archives, screenshots, scratch scripts, and intermediate bundles that may be useful for cleanup, handoff, resume, or audit.
+After task memory is initialized, store task-flow files created or collected by the agent in `--workspace/task-memory/<task-id>/artifacts/` unless a higher-priority path rule applies. This is the required default for agent-created task-flow files, but it must not change task behavior or override fixed output paths.
+
+Path precedence:
+1. Explicit required paths from user instructions, task requirements, tools, scripts, or project conventions, including paths that are part of behavior being tested or implemented.
+2. Normal output locations for existing repo tools.
+3. Task-memory `artifacts/` default for all other agent-created task-flow files.
+
+Use `artifacts/` for scratch scripts, temporary files, generated images, exported assets, manually downloaded files, extracted archives, screenshots, captures, temporary cloned repositories, and intermediate bundles whenever no higher-priority path rule requires another location. When a higher-priority path rule applies, preserve that original location and do not change the workflow to satisfy task memory.
+
+If it is safe and useful to preserve a task-specific result, copy the final artifact into `artifacts/` as a secondary record rather than moving it. Copy only when doing so does not change the tested object, affect subsequent tool reads, or create a competing source of truth. If the outside location is resume-critical or cannot be mirrored safely, record the stable path and reason in `task_state.md` or the relevant report instead.
 
 Do not move, copy, or redirect normal outputs produced by existing repo tools just to centralize them. Build/test logs, compiler caches, package-manager caches, coverage output, framework-generated files, and other command side effects should stay where the tool normally writes them unless the user asks, the command explicitly supports a harmless output path, or the agent is creating a separate task-specific capture file.
 
