@@ -2,3 +2,12 @@ node_modules/
 .mcp-oauth-state.json
 .mcp-oauth-state.json.tmp
 figma-workspace/
+!dist/skills/
+dist/skills/*
+!dist/skills/figma-workspace/
+dist/skills/figma-workspace/*
+!dist/skills/figma-workspace/references/
+dist/skills/figma-workspace/references/*
+!dist/skills/figma-workspace/references/upstream-corpus/
+!dist/skills/figma-workspace/references/upstream-corpus/manifest.json
+!dist/skills/figma-workspace/references/upstream-corpus/corpus.jsonl

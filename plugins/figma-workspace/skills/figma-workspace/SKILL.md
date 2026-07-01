@@ -52,6 +52,7 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 - For targeted inspect/style/handle validation, call `figma_workspace_inspect({ sessionId, target })` only after the session has file context from `open` or `prepare_task`; `target` is string-only and does not accept `{ fileKey, nodeId }`.
 - For implementation context or motion, call `figma_workspace_get_design_context({ sessionId, target })` and `figma_workspace_get_motion_context({ sessionId, target, recursive: true })`; node-scoped wrappers also accept node URLs and `{ fileKey, nodeId }` targets when no session file context is available.
 - For visual QA, call `figma_workspace_capture_node({ sessionId, target, imageFile })` and inspect the local image file; node URL or `target:{ fileKey, nodeId }` can supply file context directly.
+- For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot so they do not cover primary controls, text, or content being captured.
 - For repeatable multi-step workflows, use `figma_workspace_run_task_plan({ sessionId, planPath })`.
 
 Workspace files live under `<cwd>/figma-workspace/<fileKey-or-fileSlug>/`. Calls should use simple `file`, `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath` defaults after workspace initialization. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, absolute `scriptPath`, and upstream overrides are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Use tool input schemas for argument details.
@@ -102,7 +103,7 @@ Do not route covered official capabilities through this list just because they a
 
 ## Query Strategy
 
-- For planning/search, call `figma_workspace_guidance({ query })` first with compact keyword queries such as `text font loadFontAsync` or `components variants properties`, then use its `recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `referenceContext` fields before writing `.figma.js`.
+- For planning/search, call `figma_workspace_guidance({ query })` first with compact keyword queries such as `text font loadFontAsync` or `components variants properties`, then use its `recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `suggestions.referenceContext` fields before writing `.figma.js`.
 - Use `figma_workspace_guidance` for compact patterns, then use `apiSymbols` with `figma_workspace_lookup({ kind: "api" })` only when exact Plugin API details are still missing.
 - Treat `guardrails` as task-specific risk notes, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
 - For typography from 96 DPI game UI systems such as UE5/UMG/Slate, read `references/figma-workspace-safety.md` for the 72 DPI Figma conversion guardrail.

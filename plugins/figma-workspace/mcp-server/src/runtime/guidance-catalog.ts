@@ -73,7 +73,7 @@ export const FIGMA_WORKSPACE_QUERY_OUTPUT_FIELDS = [
   "queryHints",
   "apiSymbols",
   "guardrails",
-  "referenceContext",
+  "suggestions.referenceContext",
 ];
 
 export const FIGMA_WORKSPACE_COMMON_TASK_LABELS = [

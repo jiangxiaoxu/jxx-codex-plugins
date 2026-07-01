@@ -47,7 +47,7 @@ const queryOutputFields = [
   "queryHints",
   "apiSymbols",
   "guardrails",
-  "referenceContext",
+  "suggestions.referenceContext",
 ];
 const forbiddenRouterContractTerms = [
   "figma_workspace_apply_ops",
@@ -1252,6 +1252,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(guide.assetWorkflow.some((step) => /figma_workspace_apply_asset_manifest/.test(step)));
   assert.ok(guide.inspectionAndQa.some((step) => /figma_workspace_capture_node/.test(step)));
   assert.ok(guide.inspectionAndQa.some((step) => /node URL targets or target:\{ fileKey, nodeId \} can supply file context directly/.test(step)));
+  assert.ok(guide.inspectionAndQa.some((step) => /visible audit markers.*free slot/i.test(step)));
   assert.ok(guide.designSystem.some((step) => /figma_workspace_search_design_system/.test(step)));
   assert.ok(guide.upstreamEscapeHatch.some((step) => /figma_workspace_call_upstream_tool/.test(step)));
   assert.ok(guide.responseContract.some((step) => /upstream\.ok/.test(step)));
@@ -2020,7 +2021,7 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   assert.match(skillText, /After OAuth registration, use `figma_workspace_mcp` as the agent-facing entrypoint/);
   assert.match(skillText, /read `figma-workspace:\/\/capabilities`/);
   assert.match(skillText, /Bundled JSONL upstream corpus files are internal lookup data/);
-  assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `referenceContext`/);
+  assert.match(skillText, /recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `suggestions\.referenceContext`/);
   assert.match(skillText, /figma_workspace_lookup\(\{ kind: "docs" \}\)/);
   for (const uri of removedStaticResourceUris) {
     assert.ok(!skillText.includes(uri), `SKILL.md must not route agents to removed resource ${uri}`);
