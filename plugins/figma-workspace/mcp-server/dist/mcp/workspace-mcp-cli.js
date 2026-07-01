@@ -43669,10 +43669,14 @@ async function handleEval(args, runtime) {
   const session = runtime.sessions.getOrCreate(args.sessionId);
   let handleChanges = isStringRecord(args.handleUpdates) ? updateSessionHandles(session, args.handleUpdates) : emptyHandleChanges();
   const mode = args.mode ?? "write";
+  const expectedSurface = normalizeSurface(args.surface) ?? session.surface;
+  if (expectedSurface) {
+    session.surface = expectedSurface;
+  }
   const diagnosticOptions = {
     allowDangerousOperations: Boolean(args.allowDangerousOperations),
     mode,
-    expectedSurface: normalizeSurface(args.surface) ?? session.surface
+    expectedSurface
   };
   const diagnostics = toFigmaWorkspaceFileDiagnostics(
     "<inline eval>",

@@ -822,6 +822,111 @@ test("figma workspace eval rejects dynamic helper access before upstream executi
   await mcpClient.close();
 });
 
+test("figma workspace eval applies per-call figjam surface before diagnostics", async () => {
+  const calls = [];
+  const { server } = createFigmaWorkspaceMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+
+  const openResult = await mcpClient.callTool({
+    name: "figma_workspace_open",
+    arguments: {
+      title: "Seed design session",
+      sessionId: "surface-main",
+      connect: false,
+      surface: "design",
+    },
+  });
+  assert.equal(structuredToolResult(openResult).session.surface, "design");
+
+  const blockedEval = await mcpClient.callTool({
+    name: "figma_workspace_eval",
+    arguments: {
+      title: "Reject design API in figjam eval",
+      sessionId: "surface-main",
+      surface: "figjam",
+      code: "const frame = figma.createFrame();\nreturn { id: frame.id };",
+    },
+  });
+  const blockedJson = structuredToolResult(blockedEval);
+  assert.equal(blockedJson.ok, false);
+  assert.equal(blockedJson.session.surface, "figjam");
+  assert.deepEqual(blockedJson.repairPlan.steps.map((step) => step.code), [
+    "FIGMA_WORKSPACE_SURFACE_DESIGN_API_IN_FIGJAM",
+  ]);
+  assert.deepEqual(calls.map((call) => call[0]), []);
+  await mcpClient.close();
+});
+
+test("figma workspace eval sends per-call figjam surface in harmless wrapper", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.match(args.code, /surface: "figjam"/u);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          __figmaRepl: {
+            sessionId: "surface-main",
+            surface: "figjam",
+            handles: {},
+          },
+          result: { summary: "figjam noop" },
+        }),
+      }],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+
+  const openResult = await mcpClient.callTool({
+    name: "figma_workspace_open",
+    arguments: {
+      title: "Seed design session",
+      sessionId: "surface-main",
+      connect: false,
+      surface: "design",
+    },
+  });
+  assert.equal(structuredToolResult(openResult).session.surface, "design");
+
+  const evalResult = await mcpClient.callTool({
+    name: "figma_workspace_eval",
+    arguments: {
+      title: "Harmless figjam eval",
+      sessionId: "surface-main",
+      surface: "figjam",
+      mode: "read",
+      code: "return { summary: 'figjam noop' };",
+    },
+  });
+  const evalJson = structuredToolResult(evalResult);
+  assert.equal(evalJson.ok, true);
+  assert.equal(evalJson.session.surface, "figjam");
+  assert.equal(evalJson.upstream.result.summary, "figjam noop");
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), ["use_figma"]);
+  await mcpClient.close();
+});
+
 test("figma workspace eval supports direct async node lookup followed by $.select", async () => {
   const zoomedNodes = [];
   const page = {
