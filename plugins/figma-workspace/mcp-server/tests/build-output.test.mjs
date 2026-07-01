@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createFigmaWorkspaceMcpServer } from "../dist/mcp/index.js";
 
 test("build publishes CLI and TypeScript declaration contract", async () => {
   const [
@@ -107,5 +110,66 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.equal(distFiles.includes("mcp/workspace-mcp-server.js"), true);
   assert.equal(distFiles.includes("mcp/workspace-mcp-stdio-bin.js"), true);
   assert.equal(distFiles.includes("upstream/upstream-stdio-bin.js"), true);
+  assert.equal(distFiles.includes("skills/figma-workspace/references/upstream-corpus/manifest.json"), true);
+  assert.equal(distFiles.includes("skills/figma-workspace/references/upstream-corpus/corpus.jsonl"), true);
   assert.equal(distFiles.some((file) => file.endsWith(".d.ts.map")), false);
+
+  const stagedCorpusManifest = JSON.parse(
+    await readFile(new URL("../dist/skills/figma-workspace/references/upstream-corpus/manifest.json", import.meta.url), "utf8"),
+  );
+  assert.equal(stagedCorpusManifest.corpus.file, "corpus.jsonl");
+  assert.match(stagedCorpusManifest.corpus.contract, /Internal lookup corpus only/);
 });
+
+test("build output serves guidance and lookup from staged upstream corpus", async () => {
+  const { server } = createFigmaWorkspaceMcpServer();
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+
+  try {
+    const guidanceResult = await mcpClient.callTool({
+      name: "figma_workspace_guidance",
+      arguments: {
+        title: "Built guidance",
+        query: "component variants text",
+        surface: "design",
+      },
+    });
+    const guidanceJson = structuredToolResult(guidanceResult);
+    assert.equal(guidanceJson.ok, true);
+    assert.equal(guidanceJson.referenceContext, undefined);
+    assert.ok(guidanceJson.suggestions.referenceContext.length > 0);
+    assert.ok(guidanceJson.suggestions.referenceContext.every((item) => item.sourceId.startsWith("internal:")));
+
+    const lookupResult = await mcpClient.callTool({
+      name: "figma_workspace_lookup",
+      arguments: {
+        title: "Built lookup",
+        kind: "api",
+        symbol: "createFrame",
+        maxResults: 2,
+        maxSnippetLines: 3,
+      },
+    });
+    const lookupJson = structuredToolResult(lookupResult);
+    assert.equal(lookupJson.ok, true);
+    assert.ok(lookupJson.results.length > 0);
+    assert.equal(lookupJson.results[0].matchType, "exact-symbol");
+    assert.match(JSON.stringify(lookupJson.results), /createFrame/);
+  } finally {
+    await mcpClient.close().catch(() => undefined);
+  }
+});
+
+function structuredToolResult(result) {
+  assert.ok(result.structuredContent);
+  const content = Array.isArray(result.content) ? result.content : [];
+  assert.equal(content.some((item) => item?.type === "text"), false);
+  return result.structuredContent;
+}

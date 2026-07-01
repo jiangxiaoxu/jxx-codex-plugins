@@ -20019,7 +20019,7 @@ var init_guidance_catalog = __esm({
       "queryHints",
       "apiSymbols",
       "guardrails",
-      "referenceContext"
+      "suggestions.referenceContext"
     ];
     FIGMA_WORKSPACE_HELPER_HARD_RULES = [
       'Use static helper references only: $.text(...), $["text"](...), or explicit destructuring such as const { text } = $.',
@@ -48845,6 +48845,7 @@ function createFileWorkflowPayload() {
       "Use figma_workspace_inspect only after the session has file context from figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task. It executes upstream use_figma; target must be a string such as $selection, $currentPage, a handle, raw node id, or node URL, not { fileKey, nodeId }.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
+      "For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot; avoid covering primary controls, text, or content that visual QA must inspect.",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
       "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
       "When upstream execution fails after preflight, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; preflight failures and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing."
@@ -49029,7 +49030,8 @@ function createGuidePayload() {
     inspectionAndQa: [
       "Use figma_workspace_get_metadata for broad recursive layer-tree discovery with compact lock/layout-state enrichment, then figma_workspace_inspect for targeted node/style/handle validation.",
       "Use figma_workspace_get_design_context when implementation or parity review needs official design-to-code context, and figma_workspace_get_motion_context when animation data is needed.",
-      "Use figma_workspace_capture_node for final visual QA because it writes a local PNG path in structuredContent. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly."
+      "Use figma_workspace_capture_node for final visual QA because it writes a local PNG path in structuredContent. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly.",
+      "For visible audit markers or temporary verification labels, use metadata/inspect or $.findFreeSlot to place them outside the target frame or in a confirmed free slot, then capture to confirm they do not occlude the design under review."
     ],
     designSystem: [
       "Use native Plugin API calls in .figma.js for local variables, styles, components, and bindings.",

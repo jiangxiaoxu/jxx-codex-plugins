@@ -17,6 +17,7 @@ Use this reference when diagnostics or guardrails need more context. Runtime dia
 - Use `figma.setCurrentPageAsync` or `targetPageId`; do not assign `figma.currentPage` directly.
 - Avoid `figma.root.findAll`; scope searches to the current page or a known handle.
 - Do not use PluginData APIs for agent state. Use local session handles.
+- Place visible audit markers or temporary verification labels outside the inspected frame or in a confirmed free slot; do not cover primary controls, text, or content that a capture must validate.
 - Destructive operations require explicit review and guarded patterns.
 
 ## Surfaces

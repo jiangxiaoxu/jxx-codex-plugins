@@ -1,5 +1,17 @@
 node_modules/
 dist/
+# Keep the generated Figma Workspace lookup corpus visible when build stages it under dist.
+!plugins/figma-workspace/mcp-server/dist/
+plugins/figma-workspace/mcp-server/dist/*
+!plugins/figma-workspace/mcp-server/dist/skills/
+plugins/figma-workspace/mcp-server/dist/skills/*
+!plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/
+plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/*
+!plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/
+plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/*
+!plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/upstream-corpus/
+!plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/upstream-corpus/manifest.json
+!plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/upstream-corpus/corpus.jsonl
 downloads/
 tmp/
 *.log

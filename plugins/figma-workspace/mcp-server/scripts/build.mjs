@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -69,6 +69,15 @@ for (const output of outputs) {
   }
 }
 
+await stageUpstreamCorpus();
+
 function stripTrailingWhitespace(value) {
   return value.replace(/[ \t]+$/gm, "");
+}
+
+async function stageUpstreamCorpus() {
+  const source = resolve(root, "../skills/figma-workspace/references/upstream-corpus");
+  const target = resolve(dist, "skills/figma-workspace/references/upstream-corpus");
+  await rm(target, { recursive: true, force: true });
+  await cp(source, target, { recursive: true });
 }
