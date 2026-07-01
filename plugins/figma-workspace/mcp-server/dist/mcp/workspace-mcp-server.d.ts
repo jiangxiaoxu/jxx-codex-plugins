@@ -372,6 +372,16 @@ export interface FigmaWorkspaceMetadataTreeNode {
     height?: number;
     children?: FigmaWorkspaceMetadataTreeNode[];
 }
+declare const FIGMA_METADATA_ENRICHMENT_FIELDS: readonly ["locked", "visible", "layoutPositioning", "layoutMode", "primaryAxisSizingMode", "counterAxisSizingMode", "primaryAxisAlignItems", "counterAxisAlignItems", "itemSpacing", "counterAxisSpacing", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "layoutWrap"];
+type FigmaWorkspaceMetadataEnrichmentField = typeof FIGMA_METADATA_ENRICHMENT_FIELDS[number];
+interface FigmaWorkspaceMetadataEnrichmentSummary {
+    ok: boolean;
+    source: "use_figma";
+    requestedNodeCount: number;
+    enrichedNodeCount: number;
+    fields: FigmaWorkspaceMetadataEnrichmentField[];
+    warning?: Record<string, unknown>;
+}
 export interface FigmaWorkspaceMetadataJson {
     [key: string]: unknown;
     format: "figma-metadata-tree";
@@ -391,8 +401,10 @@ export interface FigmaWorkspaceGetMetadataResult extends FigmaWorkspaceToolResul
         source: "get_metadata";
         nodeCount: number;
         jsonBytes: number;
+        enrichment?: FigmaWorkspaceMetadataEnrichmentSummary;
         json?: FigmaWorkspaceMetadataJson;
     };
+    diagnostics: FigmaWorkspaceDiagnostic[];
     upstream: FigmaWorkspaceUpstreamEnvelope;
     upstreamError?: FigmaWorkspacePublicUpstreamError;
     primaryFix?: string;

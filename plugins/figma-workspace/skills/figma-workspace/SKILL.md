@@ -104,6 +104,7 @@ Do not route covered official capabilities through this list just because they a
 - For planning/search, call `figma_workspace_guidance({ query })` first with compact keyword queries such as `text font loadFontAsync` or `components variants properties`, then use its `recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `referenceContext` fields before writing `.figma.js`.
 - Use `figma_workspace_guidance` for compact patterns, then use `apiSymbols` with `figma_workspace_lookup({ kind: "api" })` only when exact Plugin API details are still missing.
 - Treat `guardrails` as task-specific risk notes, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
+- When translating typography from game engines such as UE5/UMG/Slate, account for DPI differences: common engine UI sizes use 96 DPI while Figma text size is 72 DPI. Convert engine font pixels to Figma size with `figmaSize = engineSize * 72 / 96` (for example UE5 16 px -> Figma 12), and convert Figma back to engine size with `engineSize = figmaSize * 96 / 72`.
 - Prefer these anchors when narrowing a query: text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, FigJam/Slides.
 
 ## Figma MCP Login

@@ -312,7 +312,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     apiSymbols: ["AutoLayoutMixin.layoutMode", "AutoLayoutMixin.itemSpacing", "AutoLayoutMixin.paddingLeft", "AutoLayoutMixin.primaryAxisSizingMode"],
     queryHints: ["auto layout frame", "padding item spacing", "responsive stack"],
     avoid: ["Lowercase layout mode values", "Applying auto layout to unsupported node types"],
-    pitfalls: ["Use valid uppercase layout modes.", "Apply layout to frames, components, or component sets only."],
+    pitfalls: ["Use valid uppercase layout modes.", "Apply layout to frames, components, or component sets only.", "Auto-layout parents can reposition or grow children; set child layoutPositioning to ABSOLUTE only under an auto-layout parent."],
   },
   {
     id: "variables.bind",

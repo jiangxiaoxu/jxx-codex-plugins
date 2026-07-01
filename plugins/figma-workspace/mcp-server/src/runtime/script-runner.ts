@@ -803,6 +803,21 @@ $.checkpoint = async function checkpoint(name, targets = [], options = {}) {
   return checkpoint;
 };
 $.checkpoints = __figmaReplScriptCheckpoints;`;
+  if (!options.baseProperties.has("handles")) {
+    bootstrap = bootstrap.replace("$.handles = __figmaRepl.handles;\n", "");
+  }
+  if (!options.baseProperties.has("remember")) {
+    bootstrap = bootstrap.replace("$.remember = remember;\n", "");
+  }
+  if (!options.baseProperties.has("forget")) {
+    bootstrap = bootstrap.replace("$.forget = forget;\n", "");
+  }
+  if (!options.baseProperties.has("resolveId")) {
+    bootstrap = bootstrap.replace("$.resolveId = resolveHandleId;\n", "");
+  }
+  if (!options.baseProperties.has("node")) {
+    bootstrap = bootstrap.replace("$.node = $;\n", "");
+  }
   if (!options.helperNames.has("select")) {
     bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.select = async function select", "$.findAll = async function findAll", "");
   }
