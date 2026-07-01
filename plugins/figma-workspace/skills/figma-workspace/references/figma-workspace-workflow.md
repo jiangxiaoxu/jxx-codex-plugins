@@ -4,7 +4,7 @@ Use this reference only when `figma-workspace://capabilities` is not enough to c
 
 ## Primary File Workflow
 
-- Start non-trivial work with `figma_workspace_prepare_task({ title, file, task, surface })`.
+- Start non-trivial work with `figma_workspace_prepare_task({ file, taskName, surface })`.
 - Edit the generated `.figma.js` file in the task workspace.
 - Run `figma_workspace_run_script_file({ title, sessionId, inputFile, strict: true, surface })`; diagnostics and compiled payload preflight run before upstream execution.
 - If preflight diagnostics fail, repair the same file and rerun it.
@@ -22,13 +22,14 @@ Use this reference only when `figma-workspace://capabilities` is not enough to c
 
 ## Workflow Add-ons
 
-- Use `figma_workspace_get_metadata` for broad layer-tree discovery before detailed style, fill, or text inspection.
+- Use `figma_workspace_get_metadata` for broad layer-tree discovery before detailed style, fill, or text inspection. It converts upstream XML to a compact tree and enriches supported lock/layout-state fields with one read-only `use_figma` readback.
+- Use `figma_workspace_inspect` only after `figma_workspace_open({ sessionId, file })` or `figma_workspace_prepare_task` has bound file context. Its `target` is string-only: `$selection`, `$currentPage`, a stored handle, raw node id, or node URL string. Do not pass `{ fileKey, nodeId }` to `inspect`.
 - Use `figma_workspace_guidance` or `figma-workspace://lookup-index` for wrapper profiles and workflow graph nodes when sequencing design-context, motion, or video wrapper calls.
 - Follow wrapper `guidanceRef.query` with `figma_workspace_guidance` when a thin wrapper output needs detailed next-step guidance.
-- Use `figma_workspace_search_design_system`, `figma_workspace_get_libraries`, and `figma_workspace_get_variable_defs` for official design-system context. `get_variable_defs.target` accepts a raw node id, node URL, or local handle.
+- Use `figma_workspace_search_design_system`, `figma_workspace_get_libraries`, and `figma_workspace_get_variable_defs` for official design-system context. Node-scoped wrappers such as metadata, design context, motion context, export video, and variable defs accept string raw node ids, node URLs, `$handles`, `{ handle:"$hero" }`, and `{ fileKey, nodeId }`; raw node id and handle strings require session file context.
 - Use `figma_workspace_apply_asset_manifest` for large local generated image assets. Create target rectangles in the script first, then upload/fill through the manifest.
 - Use `figma_workspace_download_assets` for official asset download workflows.
-- Use `figma_workspace_capture_node` for final visual QA captures saved as local PNG files.
+- Use `figma_workspace_capture_node` for final visual QA captures saved as local PNG files. Raw node id or `$handle` string targets require session file context; node URL targets or `target:{ fileKey, nodeId }` can supply file context directly.
 - Use `figma_workspace_run_task_plan` only for repeatable multi-step script, asset, download, capture, and upstream-tool workflows.
 
 ## Payload And Output Files
