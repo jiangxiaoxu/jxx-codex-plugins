@@ -12,6 +12,7 @@ Use this reference when diagnostics or guardrails need more context. Runtime dia
 ## Guardrails
 
 - Load fonts before mutating text characters or font names.
+- Convert typography sizes when translating from 96 DPI game-engine UI systems such as UE5/UMG/Slate to Figma's 72 DPI text sizing: `figmaSize = engineSize * 72 / 96`; convert back with `engineSize = figmaSize * 96 / 72`.
 - Use `$.select` instead of direct `figma.currentPage.selection` mutation.
 - Use `figma.setCurrentPageAsync` or `targetPageId`; do not assign `figma.currentPage` directly.
 - Avoid `figma.root.findAll`; scope searches to the current page or a known handle.

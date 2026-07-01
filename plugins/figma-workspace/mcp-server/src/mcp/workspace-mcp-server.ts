@@ -645,6 +645,42 @@ export interface FigmaWorkspaceMetadataTreeNode {
   children?: FigmaWorkspaceMetadataTreeNode[];
 }
 
+const FIGMA_METADATA_ENRICHMENT_FIELDS = [
+  "locked",
+  "visible",
+  "layoutPositioning",
+  "layoutMode",
+  "primaryAxisSizingMode",
+  "counterAxisSizingMode",
+  "primaryAxisAlignItems",
+  "counterAxisAlignItems",
+  "itemSpacing",
+  "counterAxisSpacing",
+  "paddingLeft",
+  "paddingRight",
+  "paddingTop",
+  "paddingBottom",
+  "layoutWrap",
+] as const;
+
+type FigmaWorkspaceMetadataEnrichmentField = typeof FIGMA_METADATA_ENRICHMENT_FIELDS[number];
+type FigmaWorkspaceMetadataEnrichmentValue = string | number | boolean | null;
+type FigmaWorkspaceMetadataNativeFields = Partial<Record<FigmaWorkspaceMetadataEnrichmentField, FigmaWorkspaceMetadataEnrichmentValue>>;
+
+interface FigmaWorkspaceMetadataEnrichmentSummary {
+  ok: boolean;
+  source: "use_figma";
+  requestedNodeCount: number;
+  enrichedNodeCount: number;
+  fields: FigmaWorkspaceMetadataEnrichmentField[];
+  warning?: Record<string, unknown>;
+}
+
+interface FigmaWorkspaceMetadataEnrichmentResult {
+  summary?: FigmaWorkspaceMetadataEnrichmentSummary;
+  diagnostics: FigmaWorkspaceDiagnostic[];
+}
+
 export interface FigmaWorkspaceMetadataJson {
   [key: string]: unknown;
   format: "figma-metadata-tree";
@@ -665,8 +701,10 @@ export interface FigmaWorkspaceGetMetadataResult extends FigmaWorkspaceToolResul
     source: "get_metadata";
     nodeCount: number;
     jsonBytes: number;
+    enrichment?: FigmaWorkspaceMetadataEnrichmentSummary;
     json?: FigmaWorkspaceMetadataJson;
   };
+  diagnostics: FigmaWorkspaceDiagnostic[];
   upstream: FigmaWorkspaceUpstreamEnvelope;
   upstreamError?: FigmaWorkspacePublicUpstreamError;
   primaryFix?: string;
@@ -3155,7 +3193,7 @@ async function executeValidateHandles(
     "  }",
     "  try {",
     "    const __node = await $(__name);",
-    "    __validations.push({ handle: __name, status: 'valid', id: __node.id, type: __node.type, name: __node.name });",
+    "    __validations.push({ handle: __name, status: 'valid', id: __node.id, type: __node.type, name: __node.name, locked: 'locked' in __node ? __node.locked : undefined, layoutMode: 'layoutMode' in __node ? __node.layoutMode : undefined, layoutPositioning: 'layoutPositioning' in __node ? __node.layoutPositioning : undefined });",
     "  } catch (__error) {",
     "    __validations.push({ handle: __name, status: 'stale', error: String(__error && __error.message ? __error.message : __error) });",
     "  }",
@@ -3248,6 +3286,9 @@ async function executeGetMetadata(
   const metadata = xml && !parsed.upstreamError
     ? metadataJsonFromXml(xml, requested.fileKey, requested.nodeId)
     : undefined;
+  const enrichment = metadata?.root
+    ? await enrichMetadataJson(metadata, session, runtime)
+    : emptyMetadataEnrichment();
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -3276,8 +3317,10 @@ async function executeGetMetadata(
       source: "get_metadata",
       nodeCount: metadata?.nodeCount ?? 0,
       jsonBytes,
+      enrichment: enrichment.summary,
       json: metadata,
     },
+    diagnostics: enrichment.diagnostics,
     upstream: upstreamResult,
     ...upstreamFailureFields(parsed),
     upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError,
@@ -3912,7 +3955,7 @@ async function resolveEvalSettings(
     typeof upstreamArguments.fileKey !== "string" ||
     upstreamArguments.fileKey.length === 0
   ) {
-    const fileKey = extractFigmaFileKey(session.fileUrl);
+    const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl);
     if (fileKey) {
       upstreamArguments.fileKey = fileKey;
     }
@@ -4665,7 +4708,9 @@ function summarizeNode(node, depth = 1) {
     y: read("y"),
     width: read("width"),
     height: read("height"),
+    locked: read("locked"),
     layoutMode: read("layoutMode"),
+    layoutPositioning: read("layoutPositioning"),
     characters: typeof read("characters") === "string" ? read("characters") : undefined,
     children: undefined,
   };
@@ -5883,6 +5928,183 @@ function metadataXmlFromParsedResult(parsed: ParsedUpstreamToolResult): string |
   return text.slice(start);
 }
 
+async function enrichMetadataJson(
+  metadata: FigmaWorkspaceMetadataJson,
+  session: FigmaWorkspaceSession,
+  runtime: {
+    client: FigmaUpstreamMcpProxyClient;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<FigmaWorkspaceMetadataEnrichmentResult> {
+  const nodeIds = metadata.root ? collectMetadataTreeNodeIds(metadata.root) : [];
+  if (nodeIds.length === 0) {
+    return emptyMetadataEnrichment();
+  }
+  try {
+    const evalSettings = await resolveEvalSettings(session, {}, runtime);
+    const upstream = await callUpstreamEval(
+      runtime.client,
+      evalSettings,
+      buildFigmaEvalScript({
+        session,
+        mode: "read",
+        includeEvalHelpers: false,
+        code: buildMetadataEnrichmentReadbackCode(nodeIds),
+      }),
+    );
+    const parsed = parseUpstreamToolResult(upstream);
+    if (parsed.upstreamError) {
+      return failedMetadataEnrichment(
+        nodeIds.length,
+        parsed.upstreamError.message,
+        parsed.upstreamError.code ?? "FIGMA_METADATA_ENRICHMENT_FAILED",
+        responseUpstreamError(parsed.upstreamError),
+      );
+    }
+    const nativeFieldsByNodeId = metadataNativeFieldsByNodeId(parsed.json);
+    const enrichedNodeCount = metadata.root
+      ? mergeMetadataNativeFields(metadata.root, nativeFieldsByNodeId)
+      : 0;
+    return {
+      summary: {
+        ok: true,
+        source: "use_figma",
+        requestedNodeCount: nodeIds.length,
+        enrichedNodeCount,
+        fields: [...FIGMA_METADATA_ENRICHMENT_FIELDS],
+      },
+      diagnostics: [],
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return failedMetadataEnrichment(nodeIds.length, message, "FIGMA_METADATA_ENRICHMENT_FAILED");
+  }
+}
+
+function emptyMetadataEnrichment(): FigmaWorkspaceMetadataEnrichmentResult {
+  return { diagnostics: [] };
+}
+
+function failedMetadataEnrichment(
+  requestedNodeCount: number,
+  message: string,
+  code: string,
+  details?: Record<string, unknown>,
+): FigmaWorkspaceMetadataEnrichmentResult {
+  const warning = removeUndefined({
+    code,
+    message,
+    details,
+  }) as Record<string, unknown>;
+  return {
+    summary: {
+      ok: false,
+      source: "use_figma",
+      requestedNodeCount,
+      enrichedNodeCount: 0,
+      fields: [...FIGMA_METADATA_ENRICHMENT_FIELDS],
+      warning,
+    },
+    diagnostics: [
+      {
+        code: "FIGMA_METADATA_ENRICHMENT_FAILED",
+        severity: "warning",
+        message: `Metadata XML conversion succeeded, but native layout-state enrichment failed: ${message}`,
+        suggestion: "Use figma_workspace_inspect or figma_workspace_eval for targeted lock/layout readback if these fields are required.",
+        docsHint: "figma_workspace_get_metadata enrichment",
+      },
+    ],
+  };
+}
+
+function buildMetadataEnrichmentReadbackCode(nodeIds: string[]): string {
+  return [
+    `const __metadataNodeIds = ${literal(nodeIds)};`,
+    `const __metadataFields = ${literal([...FIGMA_METADATA_ENRICHMENT_FIELDS])};`,
+    "async function __metadataGetNodeById(__id) {",
+    "  if (figma && typeof figma.getNodeByIdAsync === 'function') return await figma.getNodeByIdAsync(__id);",
+    "  if (figma && typeof figma.getNodeById === 'function') return figma.getNodeById(__id);",
+    "  return null;",
+    "}",
+    "function __metadataReadSupportedFields(__node) {",
+    "  const __out = {};",
+    "  for (const __field of __metadataFields) {",
+    "    if (!(__field in __node)) continue;",
+    "    const __value = __node[__field];",
+    "    if (__value === undefined || typeof __value === 'function' || typeof __value === 'symbol') continue;",
+    "    if (__value === null || typeof __value === 'string' || typeof __value === 'number' || typeof __value === 'boolean') {",
+    "      __out[__field] = __value;",
+    "    }",
+    "  }",
+    "  return __out;",
+    "}",
+    "const __metadataNodes = {};",
+    "for (const __id of __metadataNodeIds) {",
+    "  const __node = await __metadataGetNodeById(__id);",
+    "  if (!__node) continue;",
+    "  const __fields = __metadataReadSupportedFields(__node);",
+    "  if (Object.keys(__fields).length > 0) __metadataNodes[__id] = __fields;",
+    "}",
+    "return { enrichment: { requestedNodeCount: __metadataNodeIds.length, fields: __metadataFields, nodes: __metadataNodes } };",
+  ].join("\n");
+}
+
+function collectMetadataTreeNodeIds(root: FigmaWorkspaceMetadataTreeNode): string[] {
+  const ids = new Set<string>();
+  const visit = (node: FigmaWorkspaceMetadataTreeNode) => {
+    if (node.nodeId) {
+      ids.add(node.nodeId);
+    }
+    for (const child of Array.isArray(node.children) ? node.children : []) {
+      visit(child);
+    }
+  };
+  visit(root);
+  return [...ids];
+}
+
+function metadataNativeFieldsByNodeId(value: unknown): Map<string, FigmaWorkspaceMetadataNativeFields> {
+  const record = asRecord(value);
+  const result = asRecord(record.result);
+  const enrichment = asRecord(result.enrichment ?? record.enrichment);
+  const nodes = asRecord(enrichment.nodes);
+  const fieldsByNodeId = new Map<string, FigmaWorkspaceMetadataNativeFields>();
+  for (const [nodeId, nodeValue] of Object.entries(nodes)) {
+    const nodeRecord = asRecord(nodeValue);
+    const fields: FigmaWorkspaceMetadataNativeFields = {};
+    for (const field of FIGMA_METADATA_ENRICHMENT_FIELDS) {
+      const value = nodeRecord[field];
+      if (isMetadataEnrichmentValue(value)) {
+        fields[field] = value;
+      }
+    }
+    if (Object.keys(fields).length > 0) {
+      fieldsByNodeId.set(nodeId, fields);
+    }
+  }
+  return fieldsByNodeId;
+}
+
+function mergeMetadataNativeFields(
+  node: FigmaWorkspaceMetadataTreeNode,
+  fieldsByNodeId: Map<string, FigmaWorkspaceMetadataNativeFields>,
+): number {
+  let enrichedNodeCount = 0;
+  const fields = node.nodeId ? fieldsByNodeId.get(node.nodeId) : undefined;
+  if (fields) {
+    Object.assign(node, fields);
+    enrichedNodeCount += 1;
+  }
+  for (const child of Array.isArray(node.children) ? node.children : []) {
+    enrichedNodeCount += mergeMetadataNativeFields(child, fieldsByNodeId);
+  }
+  return enrichedNodeCount;
+}
+
+function isMetadataEnrichmentValue(value: unknown): value is FigmaWorkspaceMetadataEnrichmentValue {
+  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
 function metadataJsonFromXml(
   xml: string,
   fileKey: string,
@@ -6241,7 +6463,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use figma_workspace_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
       "Use figma_workspace_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
       "Use figma_workspace_run_task_plan for sequential file-plan workflows that combine preflighted script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
-      "Use figma_workspace_get_metadata for broad layer-tree discovery: it calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
+      "Use figma_workspace_get_metadata for broad layer-tree discovery: it calls official get_metadata, converts XML to a compact JSON node tree, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
@@ -6505,7 +6727,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     getMetadata: {
       tool: "figma_workspace_get_metadata",
       tier: "contextAndLookup",
-      guidance: "Use for broad recursive layer-tree discovery before detailed style/fill/text inspection. It calls official get_metadata, converts XML to compact JSON, returns small trees inline, and writes oversized trees to outputFiles.metadataFile.",
+      guidance: "Use for broad recursive layer-tree discovery before detailed style/fill/text inspection. It calls official get_metadata, converts XML to compact JSON, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small trees inline, and writes oversized trees to outputFiles.metadataFile.",
       recommendedCalls: {
         fromSession: { sessionId: "<session>", target: "<node id or $handle>" },
         fromFile: { file: "<figma file URL or file key>", target: "<node id>" },
@@ -6720,7 +6942,7 @@ function createGuidePayload(): Record<string, unknown> {
       "Use figma_workspace_download_assets when official download_assets should export renders or raw/source images to local folders.",
     ],
     inspectionAndQa: [
-      "Use figma_workspace_get_metadata for broad recursive layer-tree discovery, then figma_workspace_inspect for targeted node/style/handle validation.",
+      "Use figma_workspace_get_metadata for broad recursive layer-tree discovery with compact lock/layout-state enrichment, then figma_workspace_inspect for targeted node/style/handle validation.",
       "Use figma_workspace_get_design_context when implementation or parity review needs official design-to-code context, and figma_workspace_get_motion_context when animation data is needed.",
       "Use figma_workspace_capture_node for final visual QA because it writes a local PNG path in structuredContent.",
     ],

@@ -299,6 +299,76 @@ test("figma workspace eval wraps code and persists returned handles", async () =
   await mcpClient.close();
 });
 
+test("figma workspace eval and run_script_file pass raw session fileKey to upstream use_figma", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-raw-file-key-"));
+  const scriptPath = resolve(tempDir, "raw-file-key.figma.js");
+  await writeFile(scriptPath, "return { source: 'script' };", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.equal(args.fileKey, "RawFileKey012");
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          __figmaRepl: { sessionId: "raw-key", handles: {}, fileKey: "RawFileKey012" },
+          result: { source: args.code.includes("source: 'script'") ? "script" : "eval" },
+        }),
+      }],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+
+    const openResult = await mcpClient.callTool({
+      name: "figma_workspace_open",
+      arguments: {
+        title: "Open raw file key",
+        sessionId: "raw-key",
+        file: "RawFileKey012",
+        connect: false,
+      },
+    });
+    assert.equal(structuredToolResult(openResult).session.fileKey, "RawFileKey012");
+
+    const evalResult = await mcpClient.callTool({
+      name: "figma_workspace_eval",
+      arguments: {
+        title: "Eval raw file key",
+        sessionId: "raw-key",
+        code: "return { source: 'eval' };",
+      },
+    });
+    assert.equal(structuredToolResult(evalResult).ok, true);
+
+    const scriptResult = await mcpClient.callTool({
+      name: "figma_workspace_run_script_file",
+      arguments: {
+        title: "Run raw file key script",
+        sessionId: "raw-key",
+        scriptPath,
+      },
+    });
+    assert.equal(structuredToolResult(scriptResult).ok, true);
+    assert.deepEqual(
+      calls.filter((call) => call[0] === "callTool").map((call) => call[2].fileKey),
+      ["RawFileKey012", "RawFileKey012"],
+    );
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("figma workspace eval reports authoritative handle removals separately from additive updates", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name }) => {
@@ -1472,10 +1542,14 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(inspectTool.outputSchema.properties.style.properties.imageNodes);
   assert.ok(inspectTool.outputSchema.properties.validations.items.properties.handle);
   assert.ok(inspectTool.outputSchema.properties.validations.items.properties.status);
+  assert.ok(inspectTool.outputSchema.properties.validations.items.properties.locked);
+  assert.ok(inspectTool.outputSchema.properties.validations.items.properties.layoutMode);
+  assert.ok(inspectTool.outputSchema.properties.validations.items.properties.layoutPositioning);
   const getMetadataTool = tools.tools.find((tool) => tool.name === "figma_workspace_get_metadata");
   assert.ok(getMetadataTool);
   assert.match(getMetadataTool.description, /Metadata-first read tool/);
   assert.match(getMetadataTool.description, /converts returned XML into a compact JSON node tree/);
+  assert.match(getMetadataTool.description, /one batched read-only use_figma readback/);
   assert.ok(getMetadataTool.inputSchema.properties.file);
   assert.ok(getMetadataTool.inputSchema.properties.target);
   assert.ok(getMetadataTool.inputSchema.properties.inlineResultLimit);
@@ -1488,6 +1562,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(getMetadataTool.inputSchema.properties.resultFile, undefined);
   assert.equal(getMetadataTool.inputSchema.properties.metadataFile, undefined);
   assert.ok(getMetadataTool.outputSchema.properties.metadata);
+  assert.ok(getMetadataTool.outputSchema.properties.diagnostics);
   assert.ok(getMetadataTool.outputSchema.properties.outputFiles.properties.metadataFile);
   assert.equal(getMetadataTool.outputSchema.properties.outputFiles.properties.upstreamFile, undefined);
   assert.ok(getMetadataTool.outputSchema.properties.inlineResultLimit);
@@ -2279,19 +2354,69 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
   const fakeClient = createFakeFigmaClient(
     calls,
     ({ name, args }) => {
-      assert.equal(name, "get_metadata");
-      assert.deepEqual(args, {
-        fileKey: "ExampleFigmaFileKey012",
-        nodeId: "1:2",
-        clientLanguages: "unknown",
-        clientFrameworks: "unknown",
-      });
+      if (name === "get_metadata") {
+        assert.deepEqual(args, {
+          fileKey: "ExampleFigmaFileKey012",
+          nodeId: "1:2",
+          clientLanguages: "unknown",
+          clientFrameworks: "unknown",
+        });
+        return {
+          content: [{ type: "text", text: xml }],
+        };
+      }
+      assert.equal(name, "use_figma");
+      assert.equal(args.fileKey, "ExampleFigmaFileKey012");
+      assert.match(args.code, /const __metadataNodeIds = \["1:2","1:3","1:4"\]/u);
+      assert.match(args.code, /const __metadataFields = \["locked","visible","layoutPositioning"/u);
+      assert.match(args.code, /figma\.getNodeByIdAsync/u);
       return {
-        content: [{ type: "text", text: xml }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              __figmaRepl: { sessionId: "metadata-main", handles: {} },
+              result: {
+                enrichment: {
+                  nodes: {
+                    "1:2": {
+                      locked: true,
+                      visible: false,
+                      layoutPositioning: "AUTO",
+                      layoutMode: "HORIZONTAL",
+                      primaryAxisSizingMode: "FIXED",
+                      counterAxisSizingMode: "AUTO",
+                      primaryAxisAlignItems: "CENTER",
+                      counterAxisAlignItems: "MIN",
+                      itemSpacing: 12,
+                      counterAxisSpacing: 8,
+                      paddingLeft: 16,
+                      paddingRight: 18,
+                      paddingTop: 20,
+                      paddingBottom: 22,
+                      layoutWrap: "WRAP",
+                    },
+                    "1:4": {
+                      locked: false,
+                      visible: true,
+                      layoutPositioning: "ABSOLUTE",
+                    },
+                  },
+                },
+              },
+            }),
+          },
+        ],
       };
     },
     {
       tools: [
+        {
+          name: "use_figma",
+          description: "Execute JavaScript in the active Figma file.",
+          inputSchema: { type: "object", properties: { code: { type: "string" }, fileKey: { type: "string" } } },
+        },
         {
           name: "get_metadata",
           description: "Read XML metadata.",
@@ -2322,7 +2447,28 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     assert.equal(result.metadata.json.root.nodeId, "1:2");
     assert.equal(result.metadata.json.root.type, "frame");
     assert.equal(result.metadata.json.root.name, "Root & Frame");
+    assert.equal(result.metadata.enrichment.ok, true);
+    assert.equal(result.metadata.enrichment.requestedNodeCount, 3);
+    assert.equal(result.metadata.enrichment.enrichedNodeCount, 2);
+    assert.equal(result.metadata.json.root.locked, true);
+    assert.equal(result.metadata.json.root.visible, false);
+    assert.equal(result.metadata.json.root.layoutPositioning, "AUTO");
+    assert.equal(result.metadata.json.root.layoutMode, "HORIZONTAL");
+    assert.equal(result.metadata.json.root.primaryAxisSizingMode, "FIXED");
+    assert.equal(result.metadata.json.root.counterAxisSizingMode, "AUTO");
+    assert.equal(result.metadata.json.root.primaryAxisAlignItems, "CENTER");
+    assert.equal(result.metadata.json.root.counterAxisAlignItems, "MIN");
+    assert.equal(result.metadata.json.root.itemSpacing, 12);
+    assert.equal(result.metadata.json.root.counterAxisSpacing, 8);
+    assert.equal(result.metadata.json.root.paddingLeft, 16);
+    assert.equal(result.metadata.json.root.paddingRight, 18);
+    assert.equal(result.metadata.json.root.paddingTop, 20);
+    assert.equal(result.metadata.json.root.paddingBottom, 22);
+    assert.equal(result.metadata.json.root.layoutWrap, "WRAP");
     assert.equal(result.metadata.json.root.children[1].type, "rounded-rectangle");
+    assert.equal(result.metadata.json.root.children[1].locked, false);
+    assert.equal(result.metadata.json.root.children[1].layoutPositioning, "ABSOLUTE");
+    assert.deepEqual(result.diagnostics, []);
     assert.equal(result.inlineResultLimit, undefined);
     assert.deepEqual(result.outputFiles, {});
 
@@ -2339,6 +2485,7 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     assert.match(omitted.inlineResultLimit.guidance, /outputFiles pointer/);
     const omittedMetadataFile = await readPrettyJsonPointer(omitted.outputFiles.metadataFile, omitted.outputFiles.metadataFile.path);
     assert.equal(omittedMetadataFile.nodeCount, 3);
+    assert.equal(omittedMetadataFile.root.layoutMode, "HORIZONTAL");
     assert.equal(omitted.outputFiles.upstreamFile, undefined);
 
     const fileOnly = await repl.getMetadata({
@@ -2354,6 +2501,7 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     assert.deepEqual(fileOnly.inlineResultLimit.omitted.map((item) => item.field), ["metadata.json"]);
     const fileOnlyMetadataFile = await readPrettyJsonPointer(fileOnly.outputFiles.metadataFile, fileOnly.outputFiles.metadataFile.path);
     assert.equal(fileOnlyMetadataFile.root.nodeId, "1:2");
+    assert.equal(fileOnlyMetadataFile.root.locked, true);
     assert.equal(fileOnly.outputFiles.upstreamFile, undefined);
   } finally {
     await repl.close();
@@ -2365,7 +2513,70 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     "callTool",
     "callTool",
     "callTool",
+    "callTool",
+    "callTool",
+    "callTool",
   ]);
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), [
+    "get_metadata",
+    "use_figma",
+    "get_metadata",
+    "use_figma",
+    "get_metadata",
+    "use_figma",
+  ]);
+});
+
+test("figma workspace get_metadata returns nonfatal warning when enrichment fails", async () => {
+  const calls = [];
+  const xml = `<frame id="1:2" name="Root" width="300" height="200" />`;
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name }) => {
+      if (name === "get_metadata") {
+        return {
+          content: [{ type: "text", text: xml }],
+        };
+      }
+      assert.equal(name, "use_figma");
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: false, message: "Readback denied", code: "READBACK_DENIED" }) }],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "use_figma",
+          inputSchema: { type: "object", properties: { code: { type: "string" } } },
+        },
+        {
+          name: "get_metadata",
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" } } },
+        },
+      ],
+    },
+  );
+  const repl = createFigmaWorkspaceClient({ client: fakeClient });
+
+  try {
+    const result = await repl.getMetadata({
+      sessionId: "metadata-warning",
+      file: "ExampleFigmaFileKey012",
+      target: "1:2",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.metadata.json.root.nodeId, "1:2");
+    assert.equal(result.metadata.json.root.locked, undefined);
+    assert.equal(result.metadata.enrichment.ok, false);
+    assert.equal(result.metadata.enrichment.warning.code, "READBACK_DENIED");
+    assert.equal(result.diagnostics[0].severity, "warning");
+    assert.equal(result.diagnostics[0].code, "FIGMA_METADATA_ENRICHMENT_FAILED");
+    assert.equal(result.upstream.ok, true);
+    assert.equal(result.upstreamError, undefined);
+  } finally {
+    await repl.close();
+  }
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), ["get_metadata", "use_figma"]);
 });
 
 test("figma workspace design system wrappers call dedicated upstream tools", async () => {
@@ -6533,6 +6744,58 @@ test("figma workspace run_script_file keeps resolveHandleId for node helper usag
   }
 });
 
+test("figma workspace run_script_file does not emit resolveHandleId for remember-only helper usage", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-remember-helper-"));
+  const scriptPath = resolve(tempDir, "remember-script.figma.js");
+  await writeFile(scriptPath, "const frame = figma.createFrame();\n$.remember('$card', frame);\nreturn { id: frame.id };", "utf8");
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.match(args.code, /\$\.remember = remember;/);
+    assert.doesNotMatch(args.code, /\$\.resolveId = resolveHandleId;/);
+    assert.doesNotMatch(args.code, /\bresolveHandleId\b/);
+    assert.doesNotMatch(args.code, /\$\.find = async function find/);
+    assert.doesNotMatch(args.code, /\$\.create = async function create/);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          __figmaRepl: { sessionId: "main", handles: { "$card": "60:1" } },
+          result: { id: "60:1" },
+        }),
+      }],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+
+    const result = await mcpClient.callTool({
+      name: "figma_workspace_run_script_file",
+      arguments: {
+        title: "Run remember helper script",
+        sessionId: "main",
+        scriptPath,
+        surface: "design",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.deepEqual(json.session.handleChanges.updated, ["$card"]);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("figma workspace run_script_file rejects dynamic helper access instead of full injection fallback", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-dynamic-helper-"));
   const scriptPath = resolve(tempDir, "dynamic-helper.figma.js");
@@ -7533,6 +7796,18 @@ test("figma workspace guidance returns compact cards and intent routing without 
   assert.ok(suggestJson.wrapperProfiles.length > 0);
   assert.ok(suggestJson.workflowGraph.length > 0);
 
+  const layoutResult = await mcpClient.callTool({
+    name: "figma_workspace_guidance",
+    arguments: {
+      title: "Suggest layout",
+      query: "auto layout absolute positioning",
+      surface: "design",
+    },
+  });
+  const layoutJson = structuredToolResult(layoutResult);
+  assert.ok(layoutJson.recommendedCards.includes("layout.auto"));
+  assert.match(JSON.stringify(layoutJson.cards), /layoutPositioning.*ABSOLUTE.*auto-layout parent/);
+
   const longTaskResult = await mcpClient.callTool({
     name: "figma_workspace_guidance",
     arguments: {
@@ -7647,6 +7922,60 @@ test("figma workspace guidance returns compact cards and intent routing without 
   await mcpClient.close();
 });
 
+test("figma workspace inspect returns compact lock and layout operation state", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
+    assert.match(args.code, /locked: read\("locked"\)/);
+    assert.match(args.code, /layoutMode: read\("layoutMode"\)/);
+    assert.match(args.code, /layoutPositioning: read\("layoutPositioning"\)/);
+    assert.doesNotMatch(args.code, /\$\.create = async function create/);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          result: {
+            target: "94:2",
+            summary: {
+              id: "94:2",
+              type: "FRAME",
+              name: "Panel",
+              locked: true,
+              layoutMode: "VERTICAL",
+              layoutPositioning: "AUTO",
+            },
+            handles: {},
+          },
+        }),
+      }],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  const result = await mcpClient.callTool({
+    name: "figma_workspace_inspect",
+    arguments: {
+      title: "Inspect state",
+      sessionId: "inspect-state",
+      target: "94:2",
+    },
+  });
+  const json = structuredToolResult(result);
+  assert.equal(json.ok, true);
+  assert.equal(json.summary.locked, true);
+  assert.equal(json.summary.layoutMode, "VERTICAL");
+  assert.equal(json.summary.layoutPositioning, "AUTO");
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+  await mcpClient.close();
+});
+
 test("figma workspace inspect mode=style returns compact visual token audit", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
@@ -7751,6 +8080,7 @@ test("figma workspace inspect mode=validate reports valid, missing, and stale", 
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.match(args.code, /__requestedHandles/);
+    assert.match(args.code, /layoutPositioning/);
     assert.doesNotMatch(args.code, /\$\.create = async function create/);
     assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
     assert.doesNotMatch(args.code, /const __figmaReplEvalCheckpoints = \[\]/);
@@ -7762,7 +8092,7 @@ test("figma workspace inspect mode=validate reports valid, missing, and stale", 
             ok: true,
             result: {
               validations: [
-                { handle: "$valid", status: "valid", id: "10:1", type: "FRAME", name: "Valid" },
+                { handle: "$valid", status: "valid", id: "10:1", type: "FRAME", name: "Valid", locked: false, layoutMode: "HORIZONTAL", layoutPositioning: "AUTO" },
                 { handle: "$missing", status: "missing" },
                 { handle: "$stale", status: "stale", error: "Figma node not found: 10:2" },
               ],
@@ -7808,6 +8138,9 @@ test("figma workspace inspect mode=validate reports valid, missing, and stale", 
     json.validations.map((item) => item.status),
     ["valid", "missing", "stale"],
   );
+  assert.equal(json.validations[0].locked, false);
+  assert.equal(json.validations[0].layoutMode, "HORIZONTAL");
+  assert.equal(json.validations[0].layoutPositioning, "AUTO");
   assert.equal(json.upstream, undefined);
   assert.equal(json.primaryFix, undefined);
   assert.equal(json.result, undefined);

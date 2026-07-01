@@ -20225,7 +20225,7 @@ var init_guidance_catalog = __esm({
         apiSymbols: ["AutoLayoutMixin.layoutMode", "AutoLayoutMixin.itemSpacing", "AutoLayoutMixin.paddingLeft", "AutoLayoutMixin.primaryAxisSizingMode"],
         queryHints: ["auto layout frame", "padding item spacing", "responsive stack"],
         avoid: ["Lowercase layout mode values", "Applying auto layout to unsupported node types"],
-        pitfalls: ["Use valid uppercase layout modes.", "Apply layout to frames, components, or component sets only."]
+        pitfalls: ["Use valid uppercase layout modes.", "Apply layout to frames, components, or component sets only.", "Auto-layout parents can reposition or grow children; set child layoutPositioning to ABSOLUTE only under an auto-layout parent."]
       },
       {
         id: "variables.bind",
@@ -40949,6 +40949,21 @@ $.checkpoint = async function checkpoint(name, targets = [], options = {}) {
   return checkpoint;
 };
 $.checkpoints = __figmaReplScriptCheckpoints;`;
+  if (!options.baseProperties.has("handles")) {
+    bootstrap = bootstrap.replace("$.handles = __figmaRepl.handles;\n", "");
+  }
+  if (!options.baseProperties.has("remember")) {
+    bootstrap = bootstrap.replace("$.remember = remember;\n", "");
+  }
+  if (!options.baseProperties.has("forget")) {
+    bootstrap = bootstrap.replace("$.forget = forget;\n", "");
+  }
+  if (!options.baseProperties.has("resolveId")) {
+    bootstrap = bootstrap.replace("$.resolveId = resolveHandleId;\n", "");
+  }
+  if (!options.baseProperties.has("node")) {
+    bootstrap = bootstrap.replace("$.node = $;\n", "");
+  }
   if (!options.helperNames.has("select")) {
     bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.select = async function select", "$.findAll = async function findAll", "");
   }
@@ -42685,7 +42700,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_workspace_get_metadata",
-      description: "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata and converts returned XML into a compact JSON node tree. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { sessionId, file?, target? }. Use inspect/style afterward for fills, text, and visual tokens.",
+      description: "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata, converts returned XML into a compact JSON node tree, then attempts one batched read-only use_figma readback to enrich nodes with supported lock/layout-state fields. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { sessionId, file?, target? }. Use inspect/eval afterward for fills, text, visual tokens, or targeted operation-state validation.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -43154,6 +43169,9 @@ function inspectHandleValidationsProperty(description) {
         id: stringProperty("Resolved node id when valid."),
         type: stringProperty("Resolved node type when valid."),
         name: stringProperty("Resolved node name when valid."),
+        locked: booleanProperty("Resolved node locked state when available."),
+        layoutMode: stringProperty("Resolved auto-layout mode when available."),
+        layoutPositioning: stringProperty("Resolved child layout positioning when available."),
         error: stringProperty("Validation error text when stale.")
       },
       additionalProperties: true
@@ -43293,7 +43311,8 @@ var init_tool_metadata = __esm({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
         fileKey: stringProperty("Figma file key sent to official get_metadata."),
         nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
-        metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
+        metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree plus any supported lock/layout-state enrichment when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
+        diagnostics: arrayProperty("Nonfatal metadata enrichment warnings."),
         upstream: upstreamEnvelopeProperty("Compact upstream status envelope. Raw XML text is not returned inline by this wrapper."),
         upstreamError: objectProperty("Normalized upstream or XML parse failure details when metadata conversion failed."),
         primaryFix: stringProperty("Suggested primary repair when upstream execution failed."),
@@ -46051,7 +46070,7 @@ async function executeValidateHandles(args, runtime) {
     "  }",
     "  try {",
     "    const __node = await $(__name);",
-    "    __validations.push({ handle: __name, status: 'valid', id: __node.id, type: __node.type, name: __node.name });",
+    "    __validations.push({ handle: __name, status: 'valid', id: __node.id, type: __node.type, name: __node.name, locked: 'locked' in __node ? __node.locked : undefined, layoutMode: 'layoutMode' in __node ? __node.layoutMode : undefined, layoutPositioning: 'layoutPositioning' in __node ? __node.layoutPositioning : undefined });",
     "  } catch (__error) {",
     "    __validations.push({ handle: __name, status: 'stale', error: String(__error && __error.message ? __error.message : __error) });",
     "  }",
@@ -46118,6 +46137,7 @@ async function executeGetMetadata(args, runtime) {
   const upstreamResult = upstreamEnvelope(parsed, { includePayload: false });
   const xml = metadataXmlFromParsedResult(parsed);
   const metadata = xml && !parsed.upstreamError ? metadataJsonFromXml(xml, requested.fileKey, requested.nodeId) : void 0;
+  const enrichment = metadata?.root ? await enrichMetadataJson(metadata, session, runtime) : emptyMetadataEnrichment();
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -46144,8 +46164,10 @@ async function executeGetMetadata(args, runtime) {
       source: "get_metadata",
       nodeCount: metadata?.nodeCount ?? 0,
       jsonBytes,
+      enrichment: enrichment.summary,
       json: metadata
     },
+    diagnostics: enrichment.diagnostics,
     upstream: upstreamResult,
     ...upstreamFailureFields(parsed),
     upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError,
@@ -46590,7 +46612,7 @@ async function resolveEvalSettings(session, args, runtime) {
   const upstreamArguments = {};
   upstreamArguments.description = DEFAULT_EVAL_DESCRIPTION;
   if (typeof upstreamArguments.fileKey !== "string" || upstreamArguments.fileKey.length === 0) {
-    const fileKey = extractFigmaFileKey(session.fileUrl);
+    const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl);
     if (fileKey) {
       upstreamArguments.fileKey = fileKey;
     }
@@ -47323,7 +47345,9 @@ function summarizeNode(node, depth = 1) {
     y: read("y"),
     width: read("width"),
     height: read("height"),
+    locked: read("locked"),
     layoutMode: read("layoutMode"),
+    layoutPositioning: read("layoutPositioning"),
     characters: typeof read("characters") === "string" ? read("characters") : undefined,
     children: undefined,
   };
@@ -48375,6 +48399,158 @@ function metadataXmlFromParsedResult(parsed) {
   }
   return text.slice(start);
 }
+async function enrichMetadataJson(metadata, session, runtime) {
+  const nodeIds = metadata.root ? collectMetadataTreeNodeIds(metadata.root) : [];
+  if (nodeIds.length === 0) {
+    return emptyMetadataEnrichment();
+  }
+  try {
+    const evalSettings = await resolveEvalSettings(session, {}, runtime);
+    const upstream = await callUpstreamEval(
+      runtime.client,
+      evalSettings,
+      buildFigmaEvalScript({
+        session,
+        mode: "read",
+        includeEvalHelpers: false,
+        code: buildMetadataEnrichmentReadbackCode(nodeIds)
+      })
+    );
+    const parsed = parseUpstreamToolResult(upstream);
+    if (parsed.upstreamError) {
+      return failedMetadataEnrichment(
+        nodeIds.length,
+        parsed.upstreamError.message,
+        parsed.upstreamError.code ?? "FIGMA_METADATA_ENRICHMENT_FAILED",
+        responseUpstreamError(parsed.upstreamError)
+      );
+    }
+    const nativeFieldsByNodeId = metadataNativeFieldsByNodeId(parsed.json);
+    const enrichedNodeCount = metadata.root ? mergeMetadataNativeFields(metadata.root, nativeFieldsByNodeId) : 0;
+    return {
+      summary: {
+        ok: true,
+        source: "use_figma",
+        requestedNodeCount: nodeIds.length,
+        enrichedNodeCount,
+        fields: [...FIGMA_METADATA_ENRICHMENT_FIELDS]
+      },
+      diagnostics: []
+    };
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    return failedMetadataEnrichment(nodeIds.length, message, "FIGMA_METADATA_ENRICHMENT_FAILED");
+  }
+}
+function emptyMetadataEnrichment() {
+  return { diagnostics: [] };
+}
+function failedMetadataEnrichment(requestedNodeCount, message, code2, details) {
+  const warning = removeUndefined3({
+    code: code2,
+    message,
+    details
+  });
+  return {
+    summary: {
+      ok: false,
+      source: "use_figma",
+      requestedNodeCount,
+      enrichedNodeCount: 0,
+      fields: [...FIGMA_METADATA_ENRICHMENT_FIELDS],
+      warning
+    },
+    diagnostics: [
+      {
+        code: "FIGMA_METADATA_ENRICHMENT_FAILED",
+        severity: "warning",
+        message: `Metadata XML conversion succeeded, but native layout-state enrichment failed: ${message}`,
+        suggestion: "Use figma_workspace_inspect or figma_workspace_eval for targeted lock/layout readback if these fields are required.",
+        docsHint: "figma_workspace_get_metadata enrichment"
+      }
+    ]
+  };
+}
+function buildMetadataEnrichmentReadbackCode(nodeIds) {
+  return [
+    `const __metadataNodeIds = ${literal4(nodeIds)};`,
+    `const __metadataFields = ${literal4([...FIGMA_METADATA_ENRICHMENT_FIELDS])};`,
+    "async function __metadataGetNodeById(__id) {",
+    "  if (figma && typeof figma.getNodeByIdAsync === 'function') return await figma.getNodeByIdAsync(__id);",
+    "  if (figma && typeof figma.getNodeById === 'function') return figma.getNodeById(__id);",
+    "  return null;",
+    "}",
+    "function __metadataReadSupportedFields(__node) {",
+    "  const __out = {};",
+    "  for (const __field of __metadataFields) {",
+    "    if (!(__field in __node)) continue;",
+    "    const __value = __node[__field];",
+    "    if (__value === undefined || typeof __value === 'function' || typeof __value === 'symbol') continue;",
+    "    if (__value === null || typeof __value === 'string' || typeof __value === 'number' || typeof __value === 'boolean') {",
+    "      __out[__field] = __value;",
+    "    }",
+    "  }",
+    "  return __out;",
+    "}",
+    "const __metadataNodes = {};",
+    "for (const __id of __metadataNodeIds) {",
+    "  const __node = await __metadataGetNodeById(__id);",
+    "  if (!__node) continue;",
+    "  const __fields = __metadataReadSupportedFields(__node);",
+    "  if (Object.keys(__fields).length > 0) __metadataNodes[__id] = __fields;",
+    "}",
+    "return { enrichment: { requestedNodeCount: __metadataNodeIds.length, fields: __metadataFields, nodes: __metadataNodes } };"
+  ].join("\n");
+}
+function collectMetadataTreeNodeIds(root) {
+  const ids = /* @__PURE__ */ new Set();
+  const visit = (node) => {
+    if (node.nodeId) {
+      ids.add(node.nodeId);
+    }
+    for (const child of Array.isArray(node.children) ? node.children : []) {
+      visit(child);
+    }
+  };
+  visit(root);
+  return [...ids];
+}
+function metadataNativeFieldsByNodeId(value) {
+  const record2 = asRecord2(value);
+  const result = asRecord2(record2.result);
+  const enrichment = asRecord2(result.enrichment ?? record2.enrichment);
+  const nodes = asRecord2(enrichment.nodes);
+  const fieldsByNodeId = /* @__PURE__ */ new Map();
+  for (const [nodeId, nodeValue] of Object.entries(nodes)) {
+    const nodeRecord = asRecord2(nodeValue);
+    const fields = {};
+    for (const field of FIGMA_METADATA_ENRICHMENT_FIELDS) {
+      const value2 = nodeRecord[field];
+      if (isMetadataEnrichmentValue(value2)) {
+        fields[field] = value2;
+      }
+    }
+    if (Object.keys(fields).length > 0) {
+      fieldsByNodeId.set(nodeId, fields);
+    }
+  }
+  return fieldsByNodeId;
+}
+function mergeMetadataNativeFields(node, fieldsByNodeId) {
+  let enrichedNodeCount = 0;
+  const fields = node.nodeId ? fieldsByNodeId.get(node.nodeId) : void 0;
+  if (fields) {
+    Object.assign(node, fields);
+    enrichedNodeCount += 1;
+  }
+  for (const child of Array.isArray(node.children) ? node.children : []) {
+    enrichedNodeCount += mergeMetadataNativeFields(child, fieldsByNodeId);
+  }
+  return enrichedNodeCount;
+}
+function isMetadataEnrichmentValue(value) {
+  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
 function metadataJsonFromXml(xml, fileKey, nodeId) {
   const root = parseMetadataXml(xml);
   const tree = root ? metadataTreeFromXmlElement(root) : void 0;
@@ -48647,7 +48823,7 @@ function createFileWorkflowPayload() {
       "Use figma_workspace_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
       "Use figma_workspace_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
       "Use figma_workspace_run_task_plan for sequential file-plan workflows that combine preflighted script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
-      "Use figma_workspace_get_metadata for broad layer-tree discovery: it calls official get_metadata, converts XML to a compact JSON node tree, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
+      "Use figma_workspace_get_metadata for broad layer-tree discovery: it calls official get_metadata, converts XML to a compact JSON node tree, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
@@ -48832,7 +49008,7 @@ function createGuidePayload() {
       "Use figma_workspace_download_assets when official download_assets should export renders or raw/source images to local folders."
     ],
     inspectionAndQa: [
-      "Use figma_workspace_get_metadata for broad recursive layer-tree discovery, then figma_workspace_inspect for targeted node/style/handle validation.",
+      "Use figma_workspace_get_metadata for broad recursive layer-tree discovery with compact lock/layout-state enrichment, then figma_workspace_inspect for targeted node/style/handle validation.",
       "Use figma_workspace_get_design_context when implementation or parity review needs official design-to-code context, and figma_workspace_get_motion_context when animation data is needed.",
       "Use figma_workspace_capture_node for final visual QA because it writes a local PNG path in structuredContent."
     ],
@@ -49776,7 +49952,7 @@ function normalizeBoundedInteger(value, fallback, max) {
 function literal4(value) {
   return JSON.stringify(value);
 }
-var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, resolveFigmaWorkspaceScriptHelperSelection2, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, EXPORT_VIDEO_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS, FIGMA_FILE_URL_KINDS;
+var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, resolveFigmaWorkspaceScriptHelperSelection2, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, EXPORT_VIDEO_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, FIGMA_METADATA_ENRICHMENT_FIELDS, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS, FIGMA_FILE_URL_KINDS;
 var init_workspace_mcp_server = __esm({
   "src/mcp/workspace-mcp-server.ts"() {
     "use strict";
@@ -49828,6 +50004,23 @@ var init_workspace_mcp_server = __esm({
     SEARCH_DESIGN_SYSTEM_TOOL_NAME = "search_design_system";
     GET_LIBRARIES_TOOL_NAME = "get_libraries";
     GET_VARIABLE_DEFS_TOOL_NAME = "get_variable_defs";
+    FIGMA_METADATA_ENRICHMENT_FIELDS = [
+      "locked",
+      "visible",
+      "layoutPositioning",
+      "layoutMode",
+      "primaryAxisSizingMode",
+      "counterAxisSizingMode",
+      "primaryAxisAlignItems",
+      "counterAxisAlignItems",
+      "itemSpacing",
+      "counterAxisSpacing",
+      "paddingLeft",
+      "paddingRight",
+      "paddingTop",
+      "paddingBottom",
+      "layoutWrap"
+    ];
     UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER = [
       "capture",
       "design-context",

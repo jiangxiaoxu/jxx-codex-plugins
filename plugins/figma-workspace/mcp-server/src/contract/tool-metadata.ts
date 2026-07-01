@@ -185,7 +185,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_get_metadata",
       description:
-        "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata and converts returned XML into a compact JSON node tree. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { sessionId, file?, target? }. Use inspect/style afterward for fills, text, and visual tokens.",
+        "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata, converts returned XML into a compact JSON node tree, then attempts one batched read-only use_figma readback to enrich nodes with supported lock/layout-state fields. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { sessionId, file?, target? }. Use inspect/eval afterward for fills, text, visual tokens, or targeted operation-state validation.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -445,7 +445,8 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     fileKey: stringProperty("Figma file key sent to official get_metadata."),
     nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
-    metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
+    metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree plus any supported lock/layout-state enrichment when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
+    diagnostics: arrayProperty("Nonfatal metadata enrichment warnings."),
     upstream: upstreamEnvelopeProperty("Compact upstream status envelope. Raw XML text is not returned inline by this wrapper."),
     upstreamError: objectProperty("Normalized upstream or XML parse failure details when metadata conversion failed."),
     primaryFix: stringProperty("Suggested primary repair when upstream execution failed."),
@@ -922,6 +923,9 @@ function inspectHandleValidationsProperty(description: string): Record<string, u
         id: stringProperty("Resolved node id when valid."),
         type: stringProperty("Resolved node type when valid."),
         name: stringProperty("Resolved node name when valid."),
+        locked: booleanProperty("Resolved node locked state when available."),
+        layoutMode: stringProperty("Resolved auto-layout mode when available."),
+        layoutPositioning: stringProperty("Resolved child layout positioning when available."),
         error: stringProperty("Validation error text when stale."),
       },
       additionalProperties: true,
