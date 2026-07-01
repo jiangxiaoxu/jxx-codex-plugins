@@ -1251,6 +1251,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(guide.evalWorkflow.some((step) => /small ephemeral/.test(step)));
   assert.ok(guide.assetWorkflow.some((step) => /figma_workspace_apply_asset_manifest/.test(step)));
   assert.ok(guide.inspectionAndQa.some((step) => /figma_workspace_capture_node/.test(step)));
+  assert.ok(guide.inspectionAndQa.some((step) => /node URL targets or target:\{ fileKey, nodeId \} can supply file context directly/.test(step)));
   assert.ok(guide.designSystem.some((step) => /figma_workspace_search_design_system/.test(step)));
   assert.ok(guide.upstreamEscapeHatch.some((step) => /figma_workspace_call_upstream_tool/.test(step)));
   assert.ok(guide.responseContract.some((step) => /upstream\.ok/.test(step)));
@@ -1454,6 +1455,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   const captureNodeTool = tools.tools.find((tool) => tool.name === "figma_workspace_capture_node");
   assert.ok(captureNodeTool);
   assert.match(captureNodeTool.description, /imageFile\?/);
+  assert.match(captureNodeTool.description, /Recommended session call for raw string targets/);
+  assert.match(captureNodeTool.description, /No-session calls may pass target as a node URL or \{ fileKey, nodeId \}/);
   assert.match(captureNodeTool.description, /saved as PNG/);
   assert.deepEqual(captureNodeTool.inputSchema.required, ["target"]);
   assert.equal(captureNodeTool.inputSchema.required.includes("title"), false);
@@ -1461,7 +1464,11 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(captureNodeTool.inputSchema.properties.targetNodeId, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.handle, undefined);
   assert.match(captureNodeTool.inputSchema.properties.target.description, /Target node/);
+  assert.match(captureNodeTool.inputSchema.properties.target.description, /string raw node id/);
+  assert.match(captureNodeTool.inputSchema.properties.target.description, /\{ handle:"\$hero" \}/);
   assert.match(captureNodeTool.inputSchema.properties.target.description, /\{ fileKey, nodeId \}/);
+  assert.match(captureNodeTool.inputSchema.properties.target.description, /Raw node id and handle strings require an open\/prepare file-context session/);
+  assert.match(captureNodeTool.inputSchema.properties.target.description, /node URL and \{ fileKey, nodeId \} can supply file context directly/);
   assert.equal(captureNodeTool.inputSchema.properties.outputFile, undefined);
   assert.match(captureNodeTool.inputSchema.properties.imageFile.description, /local PNG output path/);
   assert.match(captureNodeTool.inputSchema.properties.imageFile.description, /non-\.png values normalize to \.png/);
@@ -1530,7 +1537,11 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   const inspectTool = tools.tools.find((tool) => tool.name === "figma_workspace_inspect");
   assert.ok(inspectTool);
   assert.match(inspectTool.description, /fixed upstream use_figma/);
+  assert.match(inspectTool.description, /Requires a file-context session/);
   assert.deepEqual(inspectTool.inputSchema.properties.mode.enum, ["inspect", "validate", "style"]);
+  assert.match(inspectTool.inputSchema.properties.sessionId.description, /file context/);
+  assert.match(inspectTool.inputSchema.properties.target.description, /String-only target/);
+  assert.match(inspectTool.inputSchema.properties.target.description, /Do not pass \{ fileKey, nodeId \}/);
   assert.equal(inspectTool.inputSchema.properties.upstreamTool, undefined);
   assert.equal(inspectTool.inputSchema.properties.upstreamArgument, undefined);
   assert.equal(inspectTool.inputSchema.properties.upstreamArguments, undefined);
@@ -1550,8 +1561,12 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.match(getMetadataTool.description, /Metadata-first read tool/);
   assert.match(getMetadataTool.description, /converts returned XML into a compact JSON node tree/);
   assert.match(getMetadataTool.description, /one batched read-only use_figma readback/);
+  assert.match(getMetadataTool.description, /\{ target:\{ fileKey, nodeId \} \}/);
   assert.ok(getMetadataTool.inputSchema.properties.file);
   assert.ok(getMetadataTool.inputSchema.properties.target);
+  assert.match(getMetadataTool.inputSchema.properties.target.description, /string node URL/);
+  assert.match(getMetadataTool.inputSchema.properties.target.description, /\{ handle:"\$hero" \}/);
+  assert.match(getMetadataTool.inputSchema.properties.target.description, /\{ fileKey, nodeId \}/);
   assert.ok(getMetadataTool.inputSchema.properties.inlineResultLimit);
   assert.match(getMetadataTool.inputSchema.properties.inlineResultLimit.description, /10 KB/);
   assert.match(getMetadataTool.inputSchema.properties.inlineResultLimit.description, /0 forces/);
@@ -1569,6 +1584,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   const getDesignContextTool = tools.tools.find((tool) => tool.name === "figma_workspace_get_design_context");
   assert.ok(getDesignContextTool);
   assert.match(getDesignContextTool.description, /official upstream get_design_context/);
+  assert.match(getDesignContextTool.description, /\{ target:\{ fileKey, nodeId \} \}/);
   assert.ok(getDesignContextTool.inputSchema.properties.target);
   assert.ok(getDesignContextTool.inputSchema.properties.clientLanguages);
   assert.ok(getDesignContextTool.inputSchema.properties.clientFrameworks);
@@ -1580,12 +1596,14 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   const getMotionContextTool = tools.tools.find((tool) => tool.name === "figma_workspace_get_motion_context");
   assert.ok(getMotionContextTool);
   assert.match(getMotionContextTool.description, /official upstream get_motion_context/);
+  assert.match(getMotionContextTool.description, /\{ target:\{ fileKey, nodeId \}, recursive\? \}/);
   assert.ok(getMotionContextTool.inputSchema.properties.recursive);
   assert.ok(getMotionContextTool.outputSchema.properties.nodeId);
   assert.ok(getMotionContextTool.outputSchema.properties.upstream);
   const exportVideoTool = tools.tools.find((tool) => tool.name === "figma_workspace_export_video");
   assert.ok(exportVideoTool);
   assert.match(exportVideoTool.description, /official upstream export_video/);
+  assert.match(exportVideoTool.description, /\{ target:\{ fileKey, nodeId \}, quality\? \}/);
   assert.deepEqual(exportVideoTool.inputSchema.properties.quality.enum, ["low", "medium", "high"]);
   assert.ok(exportVideoTool.inputSchema.properties.jobId);
   assert.ok(exportVideoTool.outputSchema.properties.jobId);
@@ -1613,13 +1631,25 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(getLibrariesTool.outputSchema.properties.toolName, undefined);
   const getVariableDefsTool = tools.tools.find((tool) => tool.name === "figma_workspace_get_variable_defs");
   assert.ok(getVariableDefsTool);
-  assert.match(getVariableDefsTool.description, /target accepts a raw node id, node URL, local handle/);
+  assert.match(getVariableDefsTool.description, /\{ target:\{ fileKey, nodeId \} \}/);
   assert.match(getVariableDefsTool.inputSchema.properties.clientLanguages.description, /Defaults to unknown/);
   assert.equal(getVariableDefsTool.inputSchema.properties.nodeId, undefined);
   assert.ok(getVariableDefsTool.outputSchema.properties.nodeId);
   assert.ok(getVariableDefsTool.outputSchema.properties.upstream);
   assert.ok(getVariableDefsTool.outputSchema.properties.outputFiles.properties.upstreamFile);
   assert.equal(getVariableDefsTool.outputSchema.properties.toolName, undefined);
+  for (const wrapperTool of [
+    getMetadataTool,
+    getDesignContextTool,
+    getMotionContextTool,
+    exportVideoTool,
+    getVariableDefsTool,
+  ]) {
+    assert.match(wrapperTool.inputSchema.properties.target.description, /string raw node id/);
+    assert.match(wrapperTool.inputSchema.properties.target.description, /\{ handle:"\$hero" \}/);
+    assert.match(wrapperTool.inputSchema.properties.target.description, /\{ fileKey, nodeId \}/);
+    assert.match(wrapperTool.inputSchema.properties.target.description, /node URL and \{ fileKey, nodeId \} can supply file context directly/);
+  }
   for (const wrapperTool of [
     getDesignContextTool,
     getMotionContextTool,
@@ -2986,6 +3016,16 @@ test("figma workspace runtime parsers reject malformed tool argument shapes", as
       },
     }),
     /Tool argument "upstreamArguments" was removed\. Use "fixed use_figma execution"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_inspect",
+      arguments: {
+        title: "Reject inspect object target",
+        target: { fileKey: "file123", nodeId: "22:7" },
+      },
+    }),
+    /Tool argument "target" must be a string selector, handle, node id, or node URL\. Do not pass \{ fileKey, nodeId \} to figma_workspace_inspect\./,
   );
   await assert.rejects(
     mcpClient.callTool({
@@ -7749,6 +7789,13 @@ test("figma workspace guidance returns compact cards and intent routing without 
   assert.ok(planJson.helperProfiles.some((profile) => profile.allowedPatterns.some((pattern) => /\$\.text/.test(pattern))));
   assert.ok(planJson.wrapperProfiles.some((profile) => profile.tool === "figma_workspace_get_design_context"));
   assert.ok(planJson.workflowGraph.some((workflow) => workflow.id === "design-implementation-context"));
+  assert.ok(planJson.workflow.guidance.some((step) => /target:\{ fileKey, nodeId \} can supply file context directly/.test(step)));
+
+  const serverSource = await readFile(resolve(packageRoot, "src/mcp/workspace-mcp-server.ts"), "utf8");
+  assert.match(serverSource, /captureFromObjectTarget: \{ target: \{ fileKey: "<figma file key>", nodeId: "<node id>" \}/);
+  assert.match(serverSource, /fromHandleObject: \{ sessionId: "<session>", target: \{ handle: "\$hero" \} \}/);
+  assert.match(serverSource, /fromObjectTarget: \{ target: \{ fileKey: "<figma file key>", nodeId: "<node id>" \} \}/);
+  assert.match(serverSource, /variableDefsFromObjectTarget: \{ target: \{ fileKey: "<figma file key>", nodeId: "<node id>" \} \}/);
 
   const longPlanResult = await mcpClient.callTool({
     name: "figma_workspace_guidance",
@@ -7925,6 +7972,7 @@ test("figma workspace guidance returns compact cards and intent routing without 
 test("figma workspace inspect returns compact lock and layout operation state", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
+    assert.equal(args.fileKey, "InspectFileKey012");
     assert.match(args.code, /locked: read\("locked"\)/);
     assert.match(args.code, /layoutMode: read\("layoutMode"\)/);
     assert.match(args.code, /layoutPositioning: read\("layoutPositioning"\)/);
@@ -7959,6 +8007,15 @@ test("figma workspace inspect returns compact lock and layout operation state", 
 
   await server.connect(serverTransport);
   await mcpClient.connect(clientTransport);
+  await mcpClient.callTool({
+    name: "figma_workspace_open",
+    arguments: {
+      title: "Open inspect file context",
+      sessionId: "inspect-state",
+      file: "InspectFileKey012",
+      connect: false,
+    },
+  });
   const result = await mcpClient.callTool({
     name: "figma_workspace_inspect",
     arguments: {
@@ -7976,9 +8033,39 @@ test("figma workspace inspect returns compact lock and layout operation state", 
   await mcpClient.close();
 });
 
+test("figma workspace inspect requires local file context before upstream execution", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, () => {
+    throw new Error("unexpected upstream call");
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_inspect",
+      arguments: {
+        title: "Inspect without file context",
+        sessionId: "inspect-missing-context",
+        target: "$selection",
+      },
+    }),
+    /figma_workspace_inspect requires file context\. Call figma_workspace_open\(\{ sessionId, file \}\) or figma_workspace_prepare_task first\./,
+  );
+  assert.deepEqual(calls, []);
+  await mcpClient.close();
+});
+
 test("figma workspace inspect mode=style returns compact visual token audit", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
+    assert.equal(args.fileKey, "StyleFileKey012");
     assert.match(args.code, /__colorCounts/);
     assert.match(args.code, /textStyles/);
     assert.match(args.code, /imageNodes/);
@@ -8018,6 +8105,15 @@ test("figma workspace inspect mode=style returns compact visual token audit", as
 
   await server.connect(serverTransport);
   await mcpClient.connect(clientTransport);
+  await mcpClient.callTool({
+    name: "figma_workspace_open",
+    arguments: {
+      title: "Open style file context",
+      sessionId: "style",
+      file: "StyleFileKey012",
+      connect: false,
+    },
+  });
   const result = await mcpClient.callTool({
     name: "figma_workspace_inspect",
     arguments: {
@@ -8042,6 +8138,7 @@ test("figma workspace inspect mode=style returns compact visual token audit", as
 test("figma workspace inspect failures return upstreamError without upstream wrapper fields", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
+    assert.equal(args.fileKey, "InspectFailureFileKey012");
     assert.match(args.code, /summarizeNode/);
     return {
       content: [{
@@ -8059,6 +8156,15 @@ test("figma workspace inspect failures return upstreamError without upstream wra
 
   await server.connect(serverTransport);
   await mcpClient.connect(clientTransport);
+  await mcpClient.callTool({
+    name: "figma_workspace_open",
+    arguments: {
+      title: "Open inspect failure file context",
+      sessionId: "inspect-failure",
+      file: "InspectFailureFileKey012",
+      connect: false,
+    },
+  });
   const result = await mcpClient.callTool({
     name: "figma_workspace_inspect",
     arguments: {
@@ -8079,6 +8185,7 @@ test("figma workspace inspect failures return upstreamError without upstream wra
 test("figma workspace inspect mode=validate reports valid, missing, and stale", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
+    assert.equal(args.fileKey, "ValidateFileKey012");
     assert.match(args.code, /__requestedHandles/);
     assert.match(args.code, /layoutPositioning/);
     assert.doesNotMatch(args.code, /\$\.create = async function create/);
@@ -8118,6 +8225,7 @@ test("figma workspace inspect mode=validate reports valid, missing, and stale", 
       title: "Open session",
       sessionId: "main",
       connect: false,
+      file: "ValidateFileKey012",
       handles: {
         "$valid": "10:1",
         "$stale": "10:2",
