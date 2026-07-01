@@ -3003,6 +3003,7 @@ async function handleInspect(
     return makeJsonToolResult(await executeInspectStyle(args, runtime));
   }
   const session = runtime.sessions.getOrCreate(asOptionalString(args.sessionId));
+  assertInspectFileContext(session);
   const target = asOptionalString(args.target) ?? "$selection";
   const depth = normalizePositiveInteger(args.depth, 2);
   const code = [
@@ -3056,6 +3057,7 @@ async function executeInspectStyle(
   },
 ): Promise<Record<string, unknown>> {
   const session = runtime.sessions.getOrCreate(asOptionalString(args.sessionId));
+  assertInspectFileContext(session);
   const target = asOptionalString(args.target) ?? "$selection";
   const depth = normalizePositiveInteger(args.depth, 1);
   const code = [
@@ -3178,6 +3180,7 @@ async function executeValidateHandles(
   },
 ): Promise<Record<string, unknown>> {
   const session = runtime.sessions.getOrCreate(asOptionalString(args.sessionId));
+  assertInspectFileContext(session);
   const requested = Array.isArray(args.handles)
     ? args.handles.filter((item): item is string => typeof item === "string" && item.length > 0)
     : Object.keys(session.handles);
@@ -3230,6 +3233,15 @@ async function executeValidateHandles(
     ...inspectInlineResultFields(parsed),
   };
   return payload;
+}
+
+function assertInspectFileContext(session: FigmaWorkspaceSession): void {
+  if (session.fileKey || extractFigmaFileKey(session.fileUrl)) {
+    return;
+  }
+  throw new Error(
+    'figma_workspace_inspect requires file context. Call figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task first. target must be a string such as "$selection", "$currentPage", a stored handle, raw node id, or node URL; do not pass { fileKey, nodeId }.',
+  );
 }
 
 async function handleCallUpstreamTool(
@@ -6447,7 +6459,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
     planTool: "figma_workspace_guidance",
     workspaceLayout: "<cwd>/figma-workspace/<fileKey-or-fileSlug>/<taskName>.figma.js; debug JSON files are generated on demand",
     outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
-    workflowTools: ["figma_workspace_get_metadata", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan"],
+    workflowTools: ["figma_workspace_get_metadata", "figma_workspace_inspect", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan"],
     helpers: createEvalHelperPathList(),
     defaultTaskRoot: `${TASK_WORKSPACE_ROOT_ENV}, then OS temp figma-workspace/tasks/<slug>`,
     guidance: [
@@ -6461,9 +6473,10 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_workspace_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
       "Use figma_workspace_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
-      "Use figma_workspace_capture_node to write final visual QA captures to local PNG files. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
+      "Use figma_workspace_capture_node to write final visual QA captures to local PNG files. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
       "Use figma_workspace_run_task_plan for sequential file-plan workflows that combine preflighted script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
       "Use figma_workspace_get_metadata for broad layer-tree discovery: it calls official get_metadata, converts XML to a compact JSON node tree, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
+      "Use figma_workspace_inspect only after the session has file context from figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task. It executes upstream use_figma; target must be a string such as $selection, $currentPage, a handle, raw node id, or node URL, not { fileKey, nodeId }.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
@@ -6655,6 +6668,7 @@ function createToolTierPayload(): Record<string, unknown> {
 }
 
 function createToolArgumentGuidancePayload(): Record<string, unknown> {
+  const nodeScopedTargetGuidance = "Targets accept a string raw node id, string node URL, string $handle, { handle:\"$hero\" }, or { fileKey, nodeId }. Raw node id / $handle strings require open/prepare file context; node URL and { fileKey, nodeId } can supply file context directly.";
   return {
     title: {
       optional: true,
@@ -6714,6 +6728,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     inspect: {
       tool: "figma_workspace_inspect",
       tier: "normalPath",
+      guidance: "Requires a file-context session because it executes upstream use_figma. Open or prepare with file first; target is string-only ($selection, $currentPage, handle, raw node id, or node URL), not { fileKey, nodeId }.",
       recommendedCalls: {
         inspectTarget: { sessionId: "<session>", target: "$selection" },
         inspectStyle: { sessionId: "<session>", mode: "style", target: "$selection" },
@@ -6727,10 +6742,12 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     getMetadata: {
       tool: "figma_workspace_get_metadata",
       tier: "contextAndLookup",
-      guidance: "Use for broad recursive layer-tree discovery before detailed style/fill/text inspection. It calls official get_metadata, converts XML to compact JSON, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small trees inline, and writes oversized trees to outputFiles.metadataFile.",
+      guidance: `Use for broad recursive layer-tree discovery before detailed style/fill/text inspection. ${nodeScopedTargetGuidance} It calls official get_metadata, converts XML to compact JSON, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small trees inline, and writes oversized trees to outputFiles.metadataFile.`,
       recommendedCalls: {
-        fromSession: { sessionId: "<session>", target: "<node id or $handle>" },
+        fromSession: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>" },
         fromFile: { file: "<figma file URL or file key>", target: "<node id>" },
+        fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
+        fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
       },
       advancedArguments: ["inlineResultLimit", "refresh", "clientLanguages", "clientFrameworks"],
       avoidUnless: {
@@ -6742,10 +6759,12 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     designContext: {
       tool: "figma_workspace_get_design_context",
       tier: "contextAndLookup",
-      guidance: "Use for official design-to-code context when implementation, parity review, Code Connect, or SwiftUI handoff needs upstream generated structure. The bridge preserves the official payload inside the generic upstream envelope.",
+      guidance: `Use for official design-to-code context when implementation, parity review, Code Connect, or SwiftUI handoff needs upstream generated structure. ${nodeScopedTargetGuidance} The bridge preserves the official payload inside the generic upstream envelope.`,
       recommendedCalls: {
-        fromSession: { sessionId: "<session>", target: "<node id or $handle>" },
+        fromSession: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>" },
         fromFile: { file: "<figma file URL or file key>", target: "<node id>", clientLanguages: "unknown", clientFrameworks: "unknown" },
+        fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
+        fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
       },
       advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "clientLanguages", "clientFrameworks"],
       avoidUnless: {
@@ -6756,10 +6775,12 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     motionContext: {
       tool: "figma_workspace_get_motion_context",
       tier: "contextAndLookup",
-      guidance: "Use for official animation/keyframe context. Pair with figma_workspace_get_design_context by node id; preserve upstream motion payloads as authoritative animation data.",
+      guidance: `Use for official animation/keyframe context. ${nodeScopedTargetGuidance} Pair with figma_workspace_get_design_context by node id; preserve upstream motion payloads as authoritative animation data.`,
       recommendedCalls: {
-        fromSession: { sessionId: "<session>", target: "<node id or $handle>", recursive: true },
+        fromSession: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>", recursive: true },
         fromFile: { file: "<figma file URL or file key>", target: "<node id>", recursive: true },
+        fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" }, recursive: true },
+        fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" }, recursive: true },
       },
       advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "recursive"],
       avoidUnless: {
@@ -6771,9 +6792,10 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     exportVideo: {
       tool: "figma_workspace_export_video",
       tier: "workflowAddOns",
-      guidance: "Use for official motion video export when frame sampling is worth the upstream render cost. Start with a target, then poll with jobId; no local videoFile is claimed by the wrapper.",
+      guidance: `Use for official motion video export when frame sampling is worth the upstream render cost. ${nodeScopedTargetGuidance} Start with a target, then poll with jobId; no local videoFile is claimed by the wrapper.`,
       recommendedCalls: {
         start: { sessionId: "<session>", target: "<top-level timeline frame>", quality: "low" },
+        startFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<timeline node id>" }, quality: "low" },
         poll: { sessionId: "<session>", file: "<figma file URL or file key>", jobId: "<job id>" },
       },
       advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "quality"],
@@ -6785,12 +6807,14 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     },
     designSystem: {
       tier: "contextAndLookup",
-      guidance: "Use the dedicated design-system wrappers when a task needs official Figma design-system search, library listing, or variable definitions. They preserve the generic upstream envelope and minimal session summary.",
+      guidance: `Use the dedicated design-system wrappers when a task needs official Figma design-system search, library listing, or variable definitions. Variable-def targets accept the same node-scoped shapes: ${nodeScopedTargetGuidance} They preserve the generic upstream envelope and minimal session summary.`,
       tools: ["figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs"],
       recommendedCalls: {
         search: { sessionId: "<session>", query: "<component, variable, or token query>" },
         libraries: { sessionId: "<session>" },
-        variableDefs: { sessionId: "<session>", target: "<node id or $handle>" },
+        variableDefs: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>" },
+        variableDefsFromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
+        variableDefsFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
       },
       advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName"],
       avoidUnless: {
@@ -6826,8 +6850,11 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     captureNode: {
       tool: "figma_workspace_capture_node",
       tier: "normalPath",
+      guidance: "Use for final visual QA captures. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly.",
       recommendedCalls: {
-        capture: { sessionId: "<session>", target: "$target", imageFile: "<capture>.png" },
+        captureFromSession: { sessionId: "<session>", target: "$target", imageFile: "<capture>.png" },
+        captureFromNodeUrl: { target: "<figma node URL>", imageFile: "<capture>.png" },
+        captureFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" }, imageFile: "<capture>.png" },
       },
     },
     taskPlan: {
@@ -6944,7 +6971,7 @@ function createGuidePayload(): Record<string, unknown> {
     inspectionAndQa: [
       "Use figma_workspace_get_metadata for broad recursive layer-tree discovery with compact lock/layout-state enrichment, then figma_workspace_inspect for targeted node/style/handle validation.",
       "Use figma_workspace_get_design_context when implementation or parity review needs official design-to-code context, and figma_workspace_get_motion_context when animation data is needed.",
-      "Use figma_workspace_capture_node for final visual QA because it writes a local PNG path in structuredContent.",
+      "Use figma_workspace_capture_node for final visual QA because it writes a local PNG path in structuredContent. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly.",
     ],
     designSystem: [
       "Use native Plugin API calls in .figma.js for local variables, styles, components, and bindings.",

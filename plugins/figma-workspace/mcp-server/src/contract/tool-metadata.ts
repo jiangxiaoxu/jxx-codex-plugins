@@ -15,6 +15,7 @@ export type ReplToolDescriptionOptions = {
 
 const DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4_000;
 const MAX_INLINE_RESULT_LIMIT_BYTES = 10_000;
+const NODE_SCOPED_TARGET_SHAPES = "Accepts string raw node id, string node URL, string local handle like $hero, { handle:\"$hero\" }, or { fileKey, nodeId }. Raw node id and handle strings require an open/prepare file-context session; node URL and { fileKey, nodeId } can supply file context directly.";
 
 export function createReplToolDescriptions(
   options: ReplToolDescriptionOptions,
@@ -104,12 +105,12 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_capture_node",
       description:
-        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended call: { target, sessionId?, imageFile? }. Captures are saved as PNG; extensionless or non-.png imageFile values normalize to .png. Results return the local PNG path in structuredContent.imageFile.",
+        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended session call for raw string targets: { sessionId, target, imageFile? } after opening or preparing a file-context session. No-session calls may pass target as a node URL or { fileKey, nodeId }. Captures are saved as PNG; extensionless or non-.png imageFile values normalize to .png. Results return the local PNG path in structuredContent.imageFile.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context and history. Defaults to 'default'."),
         target: {
-          description: "Target node to capture. Accepts a Figma node id when the session has file context, node URL, local handle like $hero, { handle:\"$hero\" }, or { fileKey, nodeId }.",
+          description: `Target node to capture. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
         imageFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted imageFile auto-generates capture-<timestamp>.png."),
       }, ["target"]),
@@ -168,12 +169,12 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_inspect",
       description:
-        "Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Recommended calls: { sessionId, target } or { sessionId, mode:\"style\", target }. Uses fixed upstream use_figma execution.",
+        "Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Requires a file-context session because it executes fixed upstream use_figma; call figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task first. Recommended calls: { sessionId, target } or { sessionId, mode:\"style\", target }.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id. Defaults to 'default'."),
+        sessionId: stringProperty("Local workspace session id with file context. Defaults to 'default'."),
         mode: enumProperty(["inspect", "validate", "style"], "Use inspect for target summaries, validate for cached handle status, or style for compact visual-token audits. Defaults to inspect."),
-        target: stringProperty("$selection, $currentPage, a stored handle like $header, or a raw node id. Defaults to $selection."),
+        target: stringProperty("String-only target: $selection, $currentPage, a stored handle like $header, a raw node id, or a node URL string. Defaults to $selection. Do not pass { fileKey, nodeId }."),
         depth: numberProperty("Child summary depth. Defaults to 2."),
         handles: {
           type: "array",
@@ -185,7 +186,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_get_metadata",
       description:
-        "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata, converts returned XML into a compact JSON node tree, then attempts one batched read-only use_figma readback to enrich nodes with supported lock/layout-state fields. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended call: { sessionId, file?, target? }. Use inspect/eval afterward for fills, text, visual tokens, or targeted operation-state validation.",
+        "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata, converts returned XML into a compact JSON node tree, then attempts one batched read-only use_figma readback to enrich nodes with supported lock/layout-state fields. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended calls: { sessionId, target? } after opening/preparing file context, { file, target? }, or { target:{ fileKey, nodeId } }. Use inspect/eval afterward for fills, text, visual tokens, or targeted operation-state validation.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -193,7 +194,7 @@ export function createReplToolDescriptions(
         cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
         dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
         target: {
-          description: "Optional metadata root. Accepts a raw node id, node URL, local handle like $hero, or { handle:\"$hero\" }. Dynamic selectors such as $selection are not resolved here.",
+          description: `Optional metadata root. ${NODE_SCOPED_TARGET_SHAPES} Dynamic selectors such as $selection are not resolved here.`,
         },
         nodeId: stringProperty("Optional raw Figma node id. Prefer target for handles or node URLs."),
         clientLanguages: stringProperty("Optional official get_metadata clientLanguages hint. Defaults to unknown."),
@@ -205,7 +206,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_get_design_context",
       description:
-        "Thin first-class wrapper for official upstream get_design_context. Recommended call: { sessionId, target } after opening or preparing a session with file context. target accepts a raw node id, node URL, or local handle. Returns the generic upstream envelope without normalizing official design-context payloads.",
+        "Thin first-class wrapper for official upstream get_design_context. Recommended calls: { sessionId, target } after opening or preparing file context, { file, target }, or { target:{ fileKey, nodeId } }. Returns the generic upstream envelope without normalizing official design-context payloads.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -213,7 +214,7 @@ export function createReplToolDescriptions(
         cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
         dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
         target: {
-          description: "Required target node. Accepts a raw node id, node URL, local handle like $frame, or { handle:\"$frame\" }.",
+          description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
         clientLanguages: stringProperty("Optional official get_design_context clientLanguages hint. Defaults to unknown."),
         clientFrameworks: stringProperty("Optional official get_design_context clientFrameworks hint. Defaults to unknown."),
@@ -224,7 +225,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_get_motion_context",
       description:
-        "Thin first-class wrapper for official upstream get_motion_context. Recommended call: { sessionId, target, recursive? } after opening or preparing a session with file context. Returns keyframe/motion data through the generic upstream envelope without bridge-owned normalization.",
+        "Thin first-class wrapper for official upstream get_motion_context. Recommended calls: { sessionId, target, recursive? } after opening or preparing file context, { file, target, recursive? }, or { target:{ fileKey, nodeId }, recursive? }. Returns keyframe/motion data through the generic upstream envelope without bridge-owned normalization.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -232,7 +233,7 @@ export function createReplToolDescriptions(
         cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
         dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
         target: {
-          description: "Required target node. Accepts a raw node id, node URL, local handle like $frame, or { handle:\"$frame\" }.",
+          description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
         recursive: booleanProperty("Optional official get_motion_context flag for descendant motion data."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
@@ -242,7 +243,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_export_video",
       description:
-        "Thin first-class wrapper for official upstream export_video. Recommended call: { sessionId, target, quality? } to start a render, then { sessionId, file, jobId } to poll. Returns the generic upstream envelope; it does not claim a local videoFile path.",
+        "Thin first-class wrapper for official upstream export_video. Recommended calls: { sessionId, target, quality? } after opening/preparing file context, { target:{ fileKey, nodeId }, quality? } to start a render, then { sessionId, file, jobId } to poll. Returns the generic upstream envelope; it does not claim a local videoFile path.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -250,7 +251,7 @@ export function createReplToolDescriptions(
         cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
         dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
         target: {
-          description: "Target node for starting an export. Accepts a raw node id, node URL, local handle like $frame, or { handle:\"$frame\" }. Omit when polling with jobId.",
+          description: `Target node for starting an export. ${NODE_SCOPED_TARGET_SHAPES} Omit when polling with jobId.`,
         },
         jobId: stringProperty("Optional official export_video job id used to poll an existing export."),
         quality: enumProperty(["low", "medium", "high"], "Optional official export_video quality hint."),
@@ -296,7 +297,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_get_variable_defs",
       description:
-        "Thin first-class wrapper for official upstream get_variable_defs. Recommended call: { sessionId, target } after opening or preparing a session with file context. target accepts a raw node id, node URL, local handle like $button, or { handle:\"$button\" }. Returns the generic upstream envelope in upstream.result/upstream.text plus a minimal session summary.",
+        "Thin first-class wrapper for official upstream get_variable_defs. Recommended calls: { sessionId, target } after opening or preparing file context, { file, target }, or { target:{ fileKey, nodeId } }. Returns the generic upstream envelope in upstream.result/upstream.text plus a minimal session summary.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
@@ -304,7 +305,7 @@ export function createReplToolDescriptions(
         cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
         dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
         target: {
-          description: "Required target node. Accepts a raw node id, node URL, local handle like $button, or { handle:\"$button\" }.",
+          description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
         clientLanguages: stringProperty("Optional official get_variable_defs clientLanguages hint. Defaults to unknown."),
         clientFrameworks: stringProperty("Optional official get_variable_defs clientFrameworks hint. Defaults to unknown."),

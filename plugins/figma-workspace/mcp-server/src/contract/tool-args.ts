@@ -452,8 +452,8 @@ export function asInspectArgs(args: unknown): FigmaWorkspaceInspectArguments {
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
   assertOptionalStringFields(record, [
     "sessionId",
-    "target",
   ]);
+  assertOptionalInspectTarget(record.target);
   assertOptionalEnum(record, "mode", FIGMA_WORKSPACE_INSPECT_MODES);
   const handles = assertOptionalArray(record, "handles");
   handles?.forEach((handle, index) => {
@@ -462,6 +462,13 @@ export function asInspectArgs(args: unknown): FigmaWorkspaceInspectArguments {
     }
   });
   return record;
+}
+
+function assertOptionalInspectTarget(value: unknown): void {
+  if (value === undefined || typeof value === "string") {
+    return;
+  }
+  throw new Error('Tool argument "target" must be a string selector, handle, node id, or node URL. Do not pass { fileKey, nodeId } to figma_workspace_inspect.');
 }
 
 export function asCallUpstreamToolArgs(args: unknown): FigmaWorkspaceCallUpstreamToolArguments {
