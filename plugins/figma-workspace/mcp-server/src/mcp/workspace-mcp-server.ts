@@ -2805,45 +2805,106 @@ async function handlePrepareTask(
   runtime?: { sessions: FigmaWorkspaceSessionStore },
 ): Promise<Record<string, unknown>> {
   const session = runtime?.sessions.getOrCreate(args.sessionId);
-  const previousTask = session?.workspace ? taskChangeSnapshot(session.workspace) : undefined;
-  applyWorkspaceFileContextArgs(session, args);
-  const taskName = deriveTaskName(args, "figma-task");
-  const fileSlug = deriveFileSlug(args, session);
-  const workspace = resolvePrepareTaskWorkspace(args, taskName, fileSlug, session);
-  if (session) {
-    session.workspace = workspace;
-    touchSession(session);
-  }
-  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskName);
-  const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
+  const sessionSnapshot = session ? snapshotPrepareTaskSessionState(session) : undefined;
+  try {
+    const previousTask = session?.workspace ? taskChangeSnapshot(session.workspace) : undefined;
+    applyWorkspaceFileContextArgs(session, args);
+    const taskName = deriveTaskName(args, "figma-task");
+    const fileSlug = deriveFileSlug(args, session);
+    const workspace = resolvePrepareTaskWorkspace(args, taskName, fileSlug, session);
+    if (session) {
+      session.workspace = workspace;
+      touchSession(session);
+    }
+    const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskName);
+    const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
 
-  await ensureWorkspaceDirectories(workspace);
-  await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, args), Boolean(args.overwrite));
-  const payload = {
-    ok: true,
-    session: session ? responseSession(session) : undefined,
-    task: {
-      taskName,
-      fileContext: workspace.fileContext,
-      inputFile: scriptName,
-      workspace: responseWorkspace(workspace),
-      scriptPath,
-      overwritten: Boolean(args.overwrite),
-    },
-    taskChange: {
-      previous: previousTask,
-      current: taskChangeSnapshot(workspace, scriptName),
-      changed: !previousTask || previousTask.taskName !== workspace.intentSlug ||
-        previousTask.inputFile !== scriptName ||
-        previousTask.sessionDir !== workspace.sessionDir,
-    },
-    next: [
-      "Edit the .figma.js file in this task folder.",
-      "Run figma_workspace_run_script_file; it preflights diagnostics before upstream execution.",
-      "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions.",
-    ],
+    await ensureWorkspaceDirectories(workspace);
+    await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, args), Boolean(args.overwrite));
+    const payload = {
+      ok: true,
+      session: session ? responseSession(session) : undefined,
+      task: {
+        taskName,
+        fileContext: workspace.fileContext,
+        inputFile: scriptName,
+        workspace: responseWorkspace(workspace),
+        scriptPath,
+        overwritten: Boolean(args.overwrite),
+      },
+      taskChange: {
+        previous: previousTask,
+        current: taskChangeSnapshot(workspace, scriptName),
+        changed: !previousTask || previousTask.taskName !== workspace.intentSlug ||
+          previousTask.inputFile !== scriptName ||
+          previousTask.sessionDir !== workspace.sessionDir,
+      },
+      next: [
+        "Edit the .figma.js file in this task folder.",
+        "Run figma_workspace_run_script_file; it preflights diagnostics before upstream execution.",
+        "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions.",
+      ],
+    };
+    return makeJsonToolResult(payload);
+  } catch (error) {
+    if (session && sessionSnapshot) {
+      restorePrepareTaskSessionState(session, sessionSnapshot);
+    }
+    throw error;
+  }
+}
+
+interface PrepareTaskSessionSnapshot {
+  fileUrl?: string;
+  fileKey?: string;
+  surface?: FigmaWorkspaceSurface;
+  lastDiagnostics: FigmaWorkspaceDiagnostic[];
+  updatedAt: string;
+  workspace?: FigmaWorkspaceSessionWorkspace;
+  hadFileUrl: boolean;
+  hadFileKey: boolean;
+  hadSurface: boolean;
+  hadWorkspace: boolean;
+}
+
+function snapshotPrepareTaskSessionState(session: FigmaWorkspaceSession): PrepareTaskSessionSnapshot {
+  return {
+    fileUrl: session.fileUrl,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    lastDiagnostics: [...session.lastDiagnostics],
+    updatedAt: session.updatedAt,
+    workspace: session.workspace,
+    hadFileUrl: Object.prototype.hasOwnProperty.call(session, "fileUrl"),
+    hadFileKey: Object.prototype.hasOwnProperty.call(session, "fileKey"),
+    hadSurface: Object.prototype.hasOwnProperty.call(session, "surface"),
+    hadWorkspace: Object.prototype.hasOwnProperty.call(session, "workspace"),
   };
-  return makeJsonToolResult(payload);
+}
+
+function restorePrepareTaskSessionState(
+  session: FigmaWorkspaceSession,
+  snapshot: PrepareTaskSessionSnapshot,
+): void {
+  restoreOptionalSessionProperty(session, "fileUrl", snapshot.fileUrl, snapshot.hadFileUrl);
+  restoreOptionalSessionProperty(session, "fileKey", snapshot.fileKey, snapshot.hadFileKey);
+  restoreOptionalSessionProperty(session, "surface", snapshot.surface, snapshot.hadSurface);
+  restoreOptionalSessionProperty(session, "workspace", snapshot.workspace, snapshot.hadWorkspace);
+  session.lastDiagnostics = [...snapshot.lastDiagnostics];
+  session.updatedAt = snapshot.updatedAt;
+}
+
+function restoreOptionalSessionProperty<K extends "fileUrl" | "fileKey" | "surface" | "workspace">(
+  session: FigmaWorkspaceSession,
+  key: K,
+  value: FigmaWorkspaceSession[K],
+  hadValue: boolean,
+): void {
+  if (hadValue) {
+    session[key] = value;
+  } else {
+    delete session[key];
+  }
 }
 
 function resolvePrepareTaskWorkspace(
@@ -3340,7 +3401,6 @@ async function executeGetMetadata(
     upstream: upstreamResult,
     ...upstreamFailureFields(parsed),
     upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError,
-    outputFiles: {},
   }) as Record<string, unknown>;
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["metadata.json"]);
@@ -5098,11 +5158,7 @@ function normalizeManifestAsset(
   if (!rawPath) {
     throw new Error(`Asset manifest entry ${index} requires path.`);
   }
-  const path = isAbsolute(rawPath)
-    ? rawPath
-    : baseDir
-      ? resolve(baseDir, rawPath)
-      : undefined;
+  const path = resolveManifestAssetPath(rawPath, index, baseDir);
   if (!path) {
     throw new Error(`Asset manifest entry ${index} path must be absolute unless manifestPath is used.`);
   }
@@ -5121,6 +5177,21 @@ function normalizeManifestAsset(
     name: asOptionalString(record.name),
     metadata: recordFromUnknown(record.metadata),
   };
+}
+
+function resolveManifestAssetPath(rawPath: string, index: number, baseDir: string | undefined): string | undefined {
+  if (isAbsolute(rawPath)) {
+    return rawPath;
+  }
+  if (!baseDir) {
+    return undefined;
+  }
+  const path = resolve(baseDir, rawPath);
+  const relativePath = relative(baseDir, path);
+  if (relativePath === ".." || relativePath.startsWith("../") || relativePath.startsWith("..\\") || isAbsolute(relativePath)) {
+    throw new Error(`Asset manifest entry ${index} path must stay inside manifest directory.`);
+  }
+  return path;
 }
 
 function assertRemovedManifestAssetFields(record: Record<string, unknown>, index: number): void {
@@ -7451,6 +7522,10 @@ function publicOAuthMessage(code: RemoteMcpOAuthError["code"]): string {
       return "Figma MCP OAuth browser authorization timed out.";
     case "FIGMA_UPSTREAM_OAUTH_CANCELLED":
       return "Figma MCP OAuth browser authorization was cancelled before completion.";
+    case "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE":
+      return "Figma MCP OAuth callback port is already in use.";
+    case "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED":
+      return "Figma MCP OAuth callback listener failed to start.";
     case "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED":
       return "Figma MCP OAuth browser authorization did not complete.";
     case "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED":
@@ -7470,6 +7545,15 @@ function primaryFixForUpstreamError(error: FigmaWorkspaceUpstreamError): string 
   }
   if (error.code === "FIGMA_UPSTREAM_OAUTH_CANCELLED") {
     return "Restart the Figma Workspace MCP call or npm run login:figma-http, complete browser OAuth, then retry.";
+  }
+  if (error.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE") {
+    const callbackPort = isRecord(error.details) && typeof error.details.callbackPort === "number"
+      ? ` ${error.details.callbackPort}`
+      : "";
+    return `Free OAuth callback port${callbackPort} or configure this runtime with a different callback port, then rerun npm run login:figma-http.`;
+  }
+  if (error.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED") {
+    return "Free or change the OAuth callback host/port, then rerun npm run login:figma-http and retry the Figma Workspace MCP call.";
   }
   if (error.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED") {
     return "Rerun npm run login:figma-http and complete a successful browser OAuth callback, then retry.";
@@ -7733,6 +7817,7 @@ function responseUpstreamError(error: FigmaWorkspaceUpstreamError): Record<strin
 function upstreamFailureFields(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
   return {
     upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined,
+    primaryFix: parsed.primaryFix,
   };
 }
 

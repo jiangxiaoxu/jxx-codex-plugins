@@ -18219,9 +18219,12 @@ async function startOAuthCallbackServer(options) {
     requestClose().catch(() => void 0);
   };
   await new Promise((resolve7, reject) => {
-    server.once("error", reject);
+    const rejectStartup = (error2) => {
+      reject(asOAuthCallbackStartupError(error2, options, callbackUrl));
+    };
+    server.once("error", rejectStartup);
     server.listen(options.port, options.host, () => {
-      server.off("error", reject);
+      server.off("error", rejectStartup);
       resolve7();
     });
   });
@@ -18261,16 +18264,52 @@ function asOAuthCallbackError(error2) {
     { cause: error2 }
   );
 }
+function asOAuthCallbackStartupError(error2, options, callbackUrl) {
+  if (error2 instanceof OAuthCallbackError) {
+    return error2;
+  }
+  const details = {
+    callbackHost: options.host,
+    callbackPort: options.port,
+    callbackPath: options.path,
+    callbackUrl
+  };
+  const upstreamCode = errorCodeFromUnknown(error2);
+  if (upstreamCode) {
+    details.upstreamCode = upstreamCode;
+  }
+  if (upstreamCode === "EADDRINUSE") {
+    return new OAuthCallbackError(
+      "OAUTH_CALLBACK_PORT_IN_USE",
+      `OAuth callback port ${options.port} on ${options.host} is already in use.`,
+      { cause: error2, details }
+    );
+  }
+  return new OAuthCallbackError(
+    "OAUTH_CALLBACK_STARTUP_FAILED",
+    `OAuth callback server failed to start on ${callbackUrl}: ${error2.message}`,
+    { cause: error2, details }
+  );
+}
+function errorCodeFromUnknown(error2) {
+  if (!error2 || typeof error2 !== "object" || Array.isArray(error2)) {
+    return void 0;
+  }
+  const code2 = error2.code;
+  return typeof code2 === "string" && code2.length > 0 ? code2 : void 0;
+}
 var OAuthCallbackError;
 var init_oauth_callback = __esm({
   "src/auth/oauth-callback.ts"() {
     "use strict";
     OAuthCallbackError = class extends Error {
       code;
+      details;
       constructor(code2, message, options = {}) {
         super(message, { cause: options.cause });
         this.name = "OAuthCallbackError";
         this.code = code2;
+        this.details = options.details;
       }
     };
   }
@@ -18335,6 +18374,10 @@ function oauthCallbackError(error2) {
         );
       case "OAUTH_CALLBACK_CANCELLED":
         return oauthCancelledError(error2);
+      case "OAUTH_CALLBACK_PORT_IN_USE":
+        return oauthCallbackPortInUseError(error2);
+      case "OAUTH_CALLBACK_STARTUP_FAILED":
+        return oauthCallbackStartupFailedError(error2);
       case "OAUTH_CALLBACK_AUTHORIZATION_FAILED":
       case "OAUTH_CALLBACK_INTERNAL_ERROR":
       case "OAUTH_CALLBACK_MISSING_CODE":
@@ -18351,6 +18394,26 @@ function oauthCancelledError(error2) {
     {
       cause: error2,
       details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function oauthCallbackPortInUseError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE",
+    "Figma MCP OAuth callback port is already in use.",
+    {
+      cause: error2,
+      details: oauthCallbackRecoveryDetails(error2)
+    }
+  );
+}
+function oauthCallbackStartupFailedError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED",
+    "Figma MCP OAuth callback listener failed to start.",
+    {
+      cause: error2,
+      details: oauthCallbackRecoveryDetails(error2)
     }
   );
 }
@@ -18379,6 +18442,9 @@ function defaultOAuthRecoveryDetails() {
     loginCommand: LOGIN_COMMAND,
     oauthCacheFile: OAUTH_CACHE_FILE_NAME
   };
+}
+function oauthCallbackRecoveryDetails(error2) {
+  return isRecord2(error2.details) ? { ...defaultOAuthRecoveryDetails(), ...error2.details } : defaultOAuthRecoveryDetails();
 }
 function isUnauthorizedError(error2) {
   if (error2 instanceof UnauthorizedError) {
@@ -18467,6 +18533,8 @@ var init_remote_mcp_client = __esm({
       "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
       "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT",
       "FIGMA_UPSTREAM_OAUTH_CANCELLED",
+      "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE",
+      "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED",
       "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED",
       "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED"
     ];
@@ -18579,7 +18647,7 @@ ${authorizationUrl.toString()}`
               if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
                 throw oauthCancelledError(new StaleConnectionError());
               }
-              throw oauthCallbackFailedError(callbackServerError);
+              throw oauthCallbackError(callbackServerError);
             }
             if (!this.trackCallbackServer(callbackServer, connectionGeneration)) {
               await this.closeCallbackServer(callbackServer);
@@ -45748,42 +45816,79 @@ function compactTaskPlanStepDetail(step) {
 }
 async function handlePrepareTask(args, runtime) {
   const session = runtime?.sessions.getOrCreate(args.sessionId);
-  const previousTask = session?.workspace ? taskChangeSnapshot(session.workspace) : void 0;
-  applyWorkspaceFileContextArgs(session, args);
-  const taskName = deriveTaskName(args, "figma-task");
-  const fileSlug = deriveFileSlug(args, session);
-  const workspace = resolvePrepareTaskWorkspace(args, taskName, fileSlug, session);
-  if (session) {
-    session.workspace = workspace;
-    touchSession(session);
+  const sessionSnapshot = session ? snapshotPrepareTaskSessionState(session) : void 0;
+  try {
+    const previousTask = session?.workspace ? taskChangeSnapshot(session.workspace) : void 0;
+    applyWorkspaceFileContextArgs(session, args);
+    const taskName = deriveTaskName(args, "figma-task");
+    const fileSlug = deriveFileSlug(args, session);
+    const workspace = resolvePrepareTaskWorkspace(args, taskName, fileSlug, session);
+    if (session) {
+      session.workspace = workspace;
+      touchSession(session);
+    }
+    const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskName);
+    const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
+    await ensureWorkspaceDirectories(workspace);
+    await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, args), Boolean(args.overwrite));
+    const payload = {
+      ok: true,
+      session: session ? responseSession(session) : void 0,
+      task: {
+        taskName,
+        fileContext: workspace.fileContext,
+        inputFile: scriptName,
+        workspace: responseWorkspace(workspace),
+        scriptPath,
+        overwritten: Boolean(args.overwrite)
+      },
+      taskChange: {
+        previous: previousTask,
+        current: taskChangeSnapshot(workspace, scriptName),
+        changed: !previousTask || previousTask.taskName !== workspace.intentSlug || previousTask.inputFile !== scriptName || previousTask.sessionDir !== workspace.sessionDir
+      },
+      next: [
+        "Edit the .figma.js file in this task folder.",
+        "Run figma_workspace_run_script_file; it preflights diagnostics before upstream execution.",
+        "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions."
+      ]
+    };
+    return makeJsonToolResult(payload);
+  } catch (error2) {
+    if (session && sessionSnapshot) {
+      restorePrepareTaskSessionState(session, sessionSnapshot);
+    }
+    throw error2;
   }
-  const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskName);
-  const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
-  await ensureWorkspaceDirectories(workspace);
-  await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, args), Boolean(args.overwrite));
-  const payload = {
-    ok: true,
-    session: session ? responseSession(session) : void 0,
-    task: {
-      taskName,
-      fileContext: workspace.fileContext,
-      inputFile: scriptName,
-      workspace: responseWorkspace(workspace),
-      scriptPath,
-      overwritten: Boolean(args.overwrite)
-    },
-    taskChange: {
-      previous: previousTask,
-      current: taskChangeSnapshot(workspace, scriptName),
-      changed: !previousTask || previousTask.taskName !== workspace.intentSlug || previousTask.inputFile !== scriptName || previousTask.sessionDir !== workspace.sessionDir
-    },
-    next: [
-      "Edit the .figma.js file in this task folder.",
-      "Run figma_workspace_run_script_file; it preflights diagnostics before upstream execution.",
-      "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions."
-    ]
+}
+function snapshotPrepareTaskSessionState(session) {
+  return {
+    fileUrl: session.fileUrl,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    lastDiagnostics: [...session.lastDiagnostics],
+    updatedAt: session.updatedAt,
+    workspace: session.workspace,
+    hadFileUrl: Object.prototype.hasOwnProperty.call(session, "fileUrl"),
+    hadFileKey: Object.prototype.hasOwnProperty.call(session, "fileKey"),
+    hadSurface: Object.prototype.hasOwnProperty.call(session, "surface"),
+    hadWorkspace: Object.prototype.hasOwnProperty.call(session, "workspace")
   };
-  return makeJsonToolResult(payload);
+}
+function restorePrepareTaskSessionState(session, snapshot) {
+  restoreOptionalSessionProperty(session, "fileUrl", snapshot.fileUrl, snapshot.hadFileUrl);
+  restoreOptionalSessionProperty(session, "fileKey", snapshot.fileKey, snapshot.hadFileKey);
+  restoreOptionalSessionProperty(session, "surface", snapshot.surface, snapshot.hadSurface);
+  restoreOptionalSessionProperty(session, "workspace", snapshot.workspace, snapshot.hadWorkspace);
+  session.lastDiagnostics = [...snapshot.lastDiagnostics];
+  session.updatedAt = snapshot.updatedAt;
+}
+function restoreOptionalSessionProperty(session, key, value, hadValue) {
+  if (hadValue) {
+    session[key] = value;
+  } else {
+    delete session[key];
+  }
 }
 function resolvePrepareTaskWorkspace(args, taskName, fileSlug, session) {
   const parsedFile = parseFigmaFileReference(args.file);
@@ -46192,8 +46297,7 @@ async function executeGetMetadata(args, runtime) {
     diagnostics: enrichment.diagnostics,
     upstream: upstreamResult,
     ...upstreamFailureFields(parsed),
-    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError,
-    outputFiles: {}
+    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError
   });
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["metadata.json"]);
@@ -47713,7 +47817,7 @@ function normalizeManifestAsset(value, index, baseDir, session) {
   if (!rawPath) {
     throw new Error(`Asset manifest entry ${index} requires path.`);
   }
-  const path = isAbsolute2(rawPath) ? rawPath : baseDir ? resolve5(baseDir, rawPath) : void 0;
+  const path = resolveManifestAssetPath(rawPath, index, baseDir);
   if (!path) {
     throw new Error(`Asset manifest entry ${index} path must be absolute unless manifestPath is used.`);
   }
@@ -47732,6 +47836,20 @@ function normalizeManifestAsset(value, index, baseDir, session) {
     name: asOptionalString2(record2.name),
     metadata: recordFromUnknown(record2.metadata)
   };
+}
+function resolveManifestAssetPath(rawPath, index, baseDir) {
+  if (isAbsolute2(rawPath)) {
+    return rawPath;
+  }
+  if (!baseDir) {
+    return void 0;
+  }
+  const path = resolve5(baseDir, rawPath);
+  const relativePath = relative2(baseDir, path);
+  if (relativePath === ".." || relativePath.startsWith("../") || relativePath.startsWith("..\\") || isAbsolute2(relativePath)) {
+    throw new Error(`Asset manifest entry ${index} path must stay inside manifest directory.`);
+  }
+  return path;
 }
 function assertRemovedManifestAssetFields(record2, index) {
   const pathAliases = ["filePath", "localPath"].filter((field) => record2[field] !== void 0);
@@ -49369,6 +49487,10 @@ function publicOAuthMessage(code2) {
       return "Figma MCP OAuth browser authorization timed out.";
     case "FIGMA_UPSTREAM_OAUTH_CANCELLED":
       return "Figma MCP OAuth browser authorization was cancelled before completion.";
+    case "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE":
+      return "Figma MCP OAuth callback port is already in use.";
+    case "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED":
+      return "Figma MCP OAuth callback listener failed to start.";
     case "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED":
       return "Figma MCP OAuth browser authorization did not complete.";
     case "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED":
@@ -49387,6 +49509,13 @@ function primaryFixForUpstreamError(error2) {
   }
   if (error2.code === "FIGMA_UPSTREAM_OAUTH_CANCELLED") {
     return "Restart the Figma Workspace MCP call or npm run login:figma-http, complete browser OAuth, then retry.";
+  }
+  if (error2.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE") {
+    const callbackPort = isRecord5(error2.details) && typeof error2.details.callbackPort === "number" ? ` ${error2.details.callbackPort}` : "";
+    return `Free OAuth callback port${callbackPort} or configure this runtime with a different callback port, then rerun npm run login:figma-http.`;
+  }
+  if (error2.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED") {
+    return "Free or change the OAuth callback host/port, then rerun npm run login:figma-http and retry the Figma Workspace MCP call.";
   }
   if (error2.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED") {
     return "Rerun npm run login:figma-http and complete a successful browser OAuth callback, then retry.";
@@ -49617,7 +49746,8 @@ function responseUpstreamError(error2) {
 }
 function upstreamFailureFields(parsed) {
   return {
-    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0
+    upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0,
+    primaryFix: parsed.primaryFix
   };
 }
 function inspectInlineResultFields(parsed) {

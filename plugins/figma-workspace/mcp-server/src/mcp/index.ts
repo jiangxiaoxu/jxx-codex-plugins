@@ -32,6 +32,7 @@ export {
   OAUTH_CALLBACK_ERROR_CODES,
   OAuthCallbackError,
   startOAuthCallbackServer,
+  type OAuthCallbackErrorDetails,
   type OAuthCallbackErrorCode,
   type OAuthCallbackServer,
   type OAuthCallbackServerOptions,

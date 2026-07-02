@@ -33,6 +33,8 @@ export const REMOTE_MCP_OAUTH_ERROR_CODES = [
   "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
   "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT",
   "FIGMA_UPSTREAM_OAUTH_CANCELLED",
+  "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE",
+  "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED",
   "FIGMA_UPSTREAM_OAUTH_CALLBACK_FAILED",
   "FIGMA_UPSTREAM_OAUTH_TOKEN_EXCHANGE_FAILED",
 ] as const;
@@ -193,7 +195,7 @@ export class RemoteMcpClient {
           if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
             throw oauthCancelledError(new StaleConnectionError());
           }
-          throw oauthCallbackFailedError(callbackServerError);
+          throw oauthCallbackError(callbackServerError);
         }
         if (!this.trackCallbackServer(callbackServer, connectionGeneration)) {
           await this.closeCallbackServer(callbackServer);
@@ -453,6 +455,10 @@ function oauthCallbackError(error: unknown): RemoteMcpOAuthError {
         );
       case "OAUTH_CALLBACK_CANCELLED":
         return oauthCancelledError(error);
+      case "OAUTH_CALLBACK_PORT_IN_USE":
+        return oauthCallbackPortInUseError(error);
+      case "OAUTH_CALLBACK_STARTUP_FAILED":
+        return oauthCallbackStartupFailedError(error);
       case "OAUTH_CALLBACK_AUTHORIZATION_FAILED":
       case "OAUTH_CALLBACK_INTERNAL_ERROR":
       case "OAUTH_CALLBACK_MISSING_CODE":
@@ -470,6 +476,28 @@ function oauthCancelledError(error: unknown): RemoteMcpOAuthError {
     {
       cause: error,
       details: defaultOAuthRecoveryDetails(),
+    },
+  );
+}
+
+function oauthCallbackPortInUseError(error: OAuthCallbackError): RemoteMcpOAuthError {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE",
+    "Figma MCP OAuth callback port is already in use.",
+    {
+      cause: error,
+      details: oauthCallbackRecoveryDetails(error),
+    },
+  );
+}
+
+function oauthCallbackStartupFailedError(error: OAuthCallbackError): RemoteMcpOAuthError {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED",
+    "Figma MCP OAuth callback listener failed to start.",
+    {
+      cause: error,
+      details: oauthCallbackRecoveryDetails(error),
     },
   );
 }
@@ -501,6 +529,12 @@ function defaultOAuthRecoveryDetails(): RemoteMcpOAuthErrorDetails {
     loginCommand: LOGIN_COMMAND,
     oauthCacheFile: OAUTH_CACHE_FILE_NAME,
   };
+}
+
+function oauthCallbackRecoveryDetails(error: OAuthCallbackError): RemoteMcpOAuthErrorDetails {
+  return isRecord(error.details)
+    ? { ...defaultOAuthRecoveryDetails(), ...error.details }
+    : defaultOAuthRecoveryDetails();
 }
 
 function isUnauthorizedError(error: unknown): error is UnauthorizedError {
