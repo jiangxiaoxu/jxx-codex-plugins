@@ -2088,6 +2088,37 @@ test("figma upstream-tools resource uses typed OAuth error codes without facade 
   assert.equal(timeout.upstreamError.code, "FIGMA_UPSTREAM_OAUTH_CALLBACK_TIMEOUT");
   assert.match(timeout.primaryFix, /before the timeout/);
 
+  const portInUse = await readUpstreamToolsFailure(
+    new RemoteMcpOAuthError(
+      "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE",
+      "Figma MCP OAuth callback port is already in use.",
+      {
+        details: {
+          callbackHost: "127.0.0.1",
+          callbackPort: 18765,
+          callbackUrl: "http://127.0.0.1:18765/oauth/callback",
+          upstreamCode: "EADDRINUSE",
+        },
+      },
+    ),
+  );
+  assert.equal(portInUse.upstreamError.code, "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE");
+  assert.equal(portInUse.upstreamError.message, "Figma MCP OAuth callback port is already in use.");
+  assert.equal(portInUse.upstreamError.details.callbackPort, 18765);
+  assert.equal(portInUse.upstreamError.details.upstreamCode, "EADDRINUSE");
+  assert.match(portInUse.primaryFix, /Free OAuth callback port 18765/);
+  assert.match(portInUse.primaryFix, /different callback port/);
+
+  const startupFailed = await readUpstreamToolsFailure(
+    new RemoteMcpOAuthError(
+      "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED",
+      "Figma MCP OAuth callback listener failed to start.",
+    ),
+  );
+  assert.equal(startupFailed.upstreamError.code, "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED");
+  assert.equal(startupFailed.upstreamError.message, "Figma MCP OAuth callback listener failed to start.");
+  assert.match(startupFailed.primaryFix, /host\/port/);
+
   const cancelled = await readUpstreamToolsFailure(
     new RemoteMcpOAuthError(
       "FIGMA_UPSTREAM_OAUTH_CANCELLED",
@@ -2268,6 +2299,7 @@ test("figma workspace proxies a fake upstream official tool and rejects local to
   assert.match(failureJson.upstreamError.message, /Diagram failed/);
   assert.equal(failureJson.upstreamError.text, undefined);
   assert.equal(failureJson.upstreamError.parsed, undefined);
+  assert.match(failureJson.primaryFix, /repair the upstream Plugin API error/);
   assert.equal(failureJson.result, undefined);
   assert.equal(failureJson.text, undefined);
 
@@ -2459,6 +2491,7 @@ test("figma workspace call_upstream_tool writes debug result and upstream sideca
     assert.equal(wrappedFailure.upstream.result.source, "call");
     assert.equal(wrappedFailure.upstream.result.ok, undefined);
     assert.equal(wrappedFailure.upstream.result.__figmaRepl, undefined);
+    assert.match(wrappedFailure.primaryFix, /repair the upstream Plugin API error/);
     const wrappedFailureUpstreamFile = await readPrettyJsonPointer(
       wrappedFailure.outputFiles.upstreamFile,
       wrappedFailure.outputFiles.upstreamFile.path,
@@ -2606,7 +2639,7 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     assert.equal(result.metadata.json.root.children[1].layoutPositioning, "ABSOLUTE");
     assert.deepEqual(result.diagnostics, []);
     assert.equal(result.inlineResultLimit, undefined);
-    assert.deepEqual(result.outputFiles, {});
+    assert.equal(result.outputFiles, undefined);
 
     const omitted = await repl.getMetadata({
       title: "Read metadata omitted",
@@ -2878,6 +2911,17 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     calls,
     ({ name, args }) => {
       if (name === "get_design_context") {
+        if (args.clientLanguages === "fail") {
+          assert.deepEqual(args, {
+            fileKey: "ExampleFigmaFileKey012",
+            nodeId: "9:9",
+            clientLanguages: "fail",
+            clientFrameworks: "swiftui",
+          });
+          return {
+            content: [{ type: "text", text: JSON.stringify({ ok: false, message: "Design context failed", code: "DESIGN_CONTEXT_FAILED" }) }],
+          };
+        }
         assert.deepEqual(args, {
           fileKey: "ExampleFigmaFileKey012",
           nodeId: "9:9",
@@ -2989,6 +3033,16 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     assert.equal(fill.toolName, "get_shader_fill");
     assert.equal(fill.upstream.result.source, "fill");
 
+    const failedDesign = await repl.getDesignContext({
+      sessionId: "context-main",
+      target: "$button",
+      clientLanguages: "fail",
+      clientFrameworks: "swiftui",
+    });
+    assert.equal(failedDesign.ok, false);
+    assert.equal(failedDesign.upstreamError.code, "DESIGN_CONTEXT_FAILED");
+    assert.match(failedDesign.primaryFix, /repair the upstream Plugin API error/);
+
     await assert.rejects(
       repl.exportVideo({ sessionId: "context-main" }),
       /requires "target" to start an export, or "jobId" to poll/,
@@ -3002,6 +3056,7 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     "export_video",
     "export_video",
     "get_shader_fill",
+    "get_design_context",
   ]);
 });
 
@@ -3520,6 +3575,26 @@ test("figma workspace runtime parsers reject malformed tool argument shapes", as
       }),
       /Asset manifest entry 0 fields "toolName\/arguments\/refresh" were removed\. Use "figma_workspace_call_upstream_tool"\./,
     );
+    const manifestSubdir = resolve(badManifestDir, "nested");
+    await mkdir(manifestSubdir);
+    const escapedAsset = resolve(badManifestDir, "outside.png");
+    await writeFile(escapedAsset, "outside asset", "utf8");
+    const escapedManifest = resolve(manifestSubdir, "escaped-asset.json");
+    await writeFile(
+      escapedManifest,
+      JSON.stringify({ assets: [{ path: "../outside.png", target: "12:34" }] }),
+      "utf8",
+    );
+    await assert.rejects(
+      mcpClient.callTool({
+        name: "figma_workspace_apply_asset_manifest",
+        arguments: {
+          title: "Reject relative asset path traversal",
+          manifestPath: escapedManifest,
+        },
+      }),
+      /Asset manifest entry 0 path must stay inside manifest directory\./,
+    );
   } finally {
     await rm(badManifestDir, { recursive: true, force: true });
   }
@@ -3696,6 +3771,102 @@ test("figma workspace applies asset manifests through official upload_assets", a
     assert.equal(json.assets[0].result, undefined);
     assert.equal(json.assets[0].arguments, undefined);
     assert.equal(json.assets[0].upstream, undefined);
+    assert.equal(json.failures, undefined);
+    assert.equal(json.outputFiles, undefined);
+    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma workspace applies same-directory relative asset manifest paths", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-assets-relative-"));
+  const assetPath = resolve(tempDir, "hero.png");
+  const manifestPath = resolve(tempDir, "assets.json");
+  await writeFile(assetPath, "fake image bytes", "utf8");
+  await writeFile(
+    manifestPath,
+    JSON.stringify({ assets: [{ path: "hero.png", target: "12:34", name: "Hero art" }] }),
+    "utf8",
+  );
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      assert.equal(name, "upload_assets");
+      assert.deepEqual(args, {
+        fileKey: "file123",
+        count: 1,
+        nodeId: "12:34",
+        scaleMode: "FILL",
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              result: {
+                summary: "asset filled",
+                id: "12:34",
+              },
+            }),
+          },
+        ],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "upload_assets",
+          description: "Official upload_assets tool.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              count: { type: "number" },
+              nodeId: { type: "string" },
+              scaleMode: { type: "string" },
+            },
+          },
+        },
+      ],
+    },
+  );
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_workspace_open",
+      arguments: {
+        title: "Open relative asset file context",
+        sessionId: "asset-relative",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+      },
+    });
+
+    const result = await mcpClient.callTool({
+      name: "figma_workspace_apply_asset_manifest",
+      arguments: {
+        title: "Apply relative manifest assets",
+        sessionId: "asset-relative",
+        manifestPath,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.assets.length, 1);
+    assert.equal(json.assets[0].path, assetPath);
+    assert.equal(json.assets[0].upstreamError, undefined);
     assert.equal(json.failures, undefined);
     assert.equal(json.outputFiles, undefined);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
@@ -7503,6 +7674,25 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.equal(sessionJson.workspace.fileContext, undefined);
     assert.equal(sessionJson.workspace.fileKey, undefined);
     assert.equal(sessionJson.workspace.fileSlug, undefined);
+
+    await assert.rejects(
+      mcpClient.callTool({
+        name: "figma_workspace_prepare_task",
+        arguments: {
+          title: "Rollback failed prepare",
+          sessionId: "settings-workspace",
+          file: "OtherFigmaFileKey34567",
+          surface: "figjam",
+          workspaceDir: initJson.task.workspace.sessionDir,
+          fileName: "settings-panel-polish.figma.js",
+          taskName: "settings-panel-polish",
+        },
+      }),
+      /Refusing to overwrite/,
+    );
+    const rollbackSessionResource = await mcpClient.readResource({ uri: "figma-workspace://sessions/settings-workspace" });
+    const rollbackSessionJson = JSON.parse(rollbackSessionResource.contents[0].text);
+    assert.deepEqual(rollbackSessionJson, sessionJson);
     assert.equal(sessionJson.workspace.scriptPath, undefined);
     assert.equal(sessionJson.workspace.files, undefined);
 

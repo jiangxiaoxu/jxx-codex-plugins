@@ -18058,10 +18058,12 @@ import { createServer } from "node:http";
 import { URL as URL2 } from "node:url";
 var OAuthCallbackError = class extends Error {
   code;
+  details;
   constructor(code, message, options = {}) {
     super(message, { cause: options.cause });
     this.name = "OAuthCallbackError";
     this.code = code;
+    this.details = options.details;
   }
 };
 function sendHtml(response, status, title, body) {
@@ -18179,9 +18181,12 @@ async function startOAuthCallbackServer(options) {
     requestClose().catch(() => void 0);
   };
   await new Promise((resolve4, reject) => {
-    server.once("error", reject);
+    const rejectStartup = (error2) => {
+      reject(asOAuthCallbackStartupError(error2, options, callbackUrl));
+    };
+    server.once("error", rejectStartup);
     server.listen(options.port, options.host, () => {
-      server.off("error", reject);
+      server.off("error", rejectStartup);
       resolve4();
     });
   });
@@ -18220,6 +18225,40 @@ function asOAuthCallbackError(error2) {
     error2 instanceof Error ? error2.message : String(error2),
     { cause: error2 }
   );
+}
+function asOAuthCallbackStartupError(error2, options, callbackUrl) {
+  if (error2 instanceof OAuthCallbackError) {
+    return error2;
+  }
+  const details = {
+    callbackHost: options.host,
+    callbackPort: options.port,
+    callbackPath: options.path,
+    callbackUrl
+  };
+  const upstreamCode = errorCodeFromUnknown(error2);
+  if (upstreamCode) {
+    details.upstreamCode = upstreamCode;
+  }
+  if (upstreamCode === "EADDRINUSE") {
+    return new OAuthCallbackError(
+      "OAUTH_CALLBACK_PORT_IN_USE",
+      `OAuth callback port ${options.port} on ${options.host} is already in use.`,
+      { cause: error2, details }
+    );
+  }
+  return new OAuthCallbackError(
+    "OAUTH_CALLBACK_STARTUP_FAILED",
+    `OAuth callback server failed to start on ${callbackUrl}: ${error2.message}`,
+    { cause: error2, details }
+  );
+}
+function errorCodeFromUnknown(error2) {
+  if (!error2 || typeof error2 !== "object" || Array.isArray(error2)) {
+    return void 0;
+  }
+  const code = error2.code;
+  return typeof code === "string" && code.length > 0 ? code : void 0;
 }
 
 // src/upstream/remote-mcp-client.ts
@@ -18334,7 +18373,7 @@ ${authorizationUrl.toString()}`
           if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
             throw oauthCancelledError(new StaleConnectionError());
           }
-          throw oauthCallbackFailedError(callbackServerError);
+          throw oauthCallbackError(callbackServerError);
         }
         if (!this.trackCallbackServer(callbackServer, connectionGeneration)) {
           await this.closeCallbackServer(callbackServer);
@@ -18541,6 +18580,10 @@ function oauthCallbackError(error2) {
         );
       case "OAUTH_CALLBACK_CANCELLED":
         return oauthCancelledError(error2);
+      case "OAUTH_CALLBACK_PORT_IN_USE":
+        return oauthCallbackPortInUseError(error2);
+      case "OAUTH_CALLBACK_STARTUP_FAILED":
+        return oauthCallbackStartupFailedError(error2);
       case "OAUTH_CALLBACK_AUTHORIZATION_FAILED":
       case "OAUTH_CALLBACK_INTERNAL_ERROR":
       case "OAUTH_CALLBACK_MISSING_CODE":
@@ -18557,6 +18600,26 @@ function oauthCancelledError(error2) {
     {
       cause: error2,
       details: defaultOAuthRecoveryDetails()
+    }
+  );
+}
+function oauthCallbackPortInUseError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE",
+    "Figma MCP OAuth callback port is already in use.",
+    {
+      cause: error2,
+      details: oauthCallbackRecoveryDetails(error2)
+    }
+  );
+}
+function oauthCallbackStartupFailedError(error2) {
+  return new RemoteMcpOAuthError(
+    "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED",
+    "Figma MCP OAuth callback listener failed to start.",
+    {
+      cause: error2,
+      details: oauthCallbackRecoveryDetails(error2)
     }
   );
 }
@@ -18585,6 +18648,9 @@ function defaultOAuthRecoveryDetails() {
     loginCommand: LOGIN_COMMAND,
     oauthCacheFile: OAUTH_CACHE_FILE_NAME
   };
+}
+function oauthCallbackRecoveryDetails(error2) {
+  return isRecord2(error2.details) ? { ...defaultOAuthRecoveryDetails(), ...error2.details } : defaultOAuthRecoveryDetails();
 }
 function isUnauthorizedError(error2) {
   if (error2 instanceof UnauthorizedError) {

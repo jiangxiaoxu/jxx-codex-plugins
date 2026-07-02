@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,6 +9,7 @@ import {
   OAuthCallbackError,
   RemoteMcpClient,
   RemoteMcpOAuthError,
+  startOAuthCallbackServer,
 } from "../dist/mcp/index.js";
 
 test("RemoteMcpClient does not start the OAuth callback server when cached auth connects", async () => {
@@ -353,6 +355,93 @@ test("RemoteMcpClient maps typed OAuth callback timeout without message matching
   }
 });
 
+test("startOAuthCallbackServer reports port conflicts as typed startup errors", async () => {
+  const occupiedServer = createServer((_request, response) => {
+    response.end("busy");
+  });
+  await listen(occupiedServer, 0, "127.0.0.1");
+  const address = occupiedServer.address();
+  assert.equal(typeof address, "object");
+  assert.notEqual(address, null);
+
+  try {
+    await assert.rejects(
+      startOAuthCallbackServer({
+        host: "127.0.0.1",
+        port: address.port,
+        path: "/oauth/callback",
+        timeoutMs: 1000,
+      }),
+      (error) => {
+        assert.equal(error instanceof OAuthCallbackError, true);
+        assert.equal(error.code, "OAUTH_CALLBACK_PORT_IN_USE");
+        assert.equal(error.details.callbackHost, "127.0.0.1");
+        assert.equal(error.details.callbackPort, address.port);
+        assert.equal(error.details.callbackPath, "/oauth/callback");
+        assert.equal(error.details.callbackUrl, `http://127.0.0.1:${address.port}/oauth/callback`);
+        assert.equal(error.details.upstreamCode, "EADDRINUSE");
+        assert.equal(error.cause?.code, "EADDRINUSE");
+        assert.match(error.message, /already in use/u);
+        return true;
+      },
+    );
+  } finally {
+    await closeServer(occupiedServer);
+  }
+});
+
+test("RemoteMcpClient maps OAuth callback port conflicts to specific recovery details", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));
+  try {
+    class UnauthorizedRemoteMcpClient extends RemoteMcpClient {
+      async connectOnce() {
+        const transport = {
+          close: async () => undefined,
+          finishAuth: async () => undefined,
+        };
+        this.trackTransport(transport);
+        throw new UnauthorizedError("authorization required");
+      }
+    }
+
+    const client = new UnauthorizedRemoteMcpClient({
+      statePath: join(dir, "state.json"),
+      callbackHost: "127.0.0.1",
+      callbackPort: 39123,
+      callbackServerFactory: async () => {
+        throw new OAuthCallbackError(
+          "OAUTH_CALLBACK_PORT_IN_USE",
+          "OAuth callback port 39123 on 127.0.0.1 is already in use.",
+          {
+            details: {
+              callbackHost: "127.0.0.1",
+              callbackPort: 39123,
+              callbackPath: "/oauth/callback",
+              callbackUrl: "http://127.0.0.1:39123/oauth/callback",
+              upstreamCode: "EADDRINUSE",
+            },
+          },
+        );
+      },
+    });
+
+    await assert.rejects(client.connect(), (error) => {
+      assert.equal(error instanceof RemoteMcpOAuthError, true);
+      assert.equal(error.code, "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE");
+      assert.equal(error.message, "Figma MCP OAuth callback port is already in use.");
+      assert.equal(error.details.loginCommand, "npm run login:figma-http");
+      assert.equal(error.details.oauthCacheFile, ".figma-workspace-oauth.json");
+      assert.equal(error.details.callbackHost, "127.0.0.1");
+      assert.equal(error.details.callbackPort, 39123);
+      assert.equal(error.details.callbackUrl, "http://127.0.0.1:39123/oauth/callback");
+      assert.equal(error.details.upstreamCode, "EADDRINUSE");
+      return true;
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("RemoteMcpClient treats callback-like plain messages as generic callback failures", async () => {
   const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));
   try {
@@ -513,4 +602,23 @@ function withTimeout(promise, timeoutMs) {
       }, timeoutMs);
     }),
   ]).finally(() => clearTimeout(timeout));
+}
+
+function listen(server, port, host) {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+}
+
+function closeServer(server) {
+  if (!server.listening) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
 }

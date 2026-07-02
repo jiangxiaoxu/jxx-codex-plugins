@@ -15,12 +15,23 @@ export interface OAuthCallbackServer {
   close(): Promise<void>;
 }
 
+export interface OAuthCallbackErrorDetails {
+  [key: string]: unknown;
+  callbackHost?: string;
+  callbackPort?: number;
+  callbackPath?: string;
+  callbackUrl?: string;
+  upstreamCode?: string;
+}
+
 export const OAUTH_CALLBACK_ERROR_CODES = [
   "OAUTH_CALLBACK_AUTHORIZATION_FAILED",
   "OAUTH_CALLBACK_CANCELLED",
   "OAUTH_CALLBACK_INTERNAL_ERROR",
   "OAUTH_CALLBACK_MISSING_CODE",
+  "OAUTH_CALLBACK_PORT_IN_USE",
   "OAUTH_CALLBACK_STATE_MISMATCH",
+  "OAUTH_CALLBACK_STARTUP_FAILED",
   "OAUTH_CALLBACK_TIMEOUT",
 ] as const;
 
@@ -28,15 +39,17 @@ export type OAuthCallbackErrorCode = (typeof OAUTH_CALLBACK_ERROR_CODES)[number]
 
 export class OAuthCallbackError extends Error {
   readonly code: OAuthCallbackErrorCode;
+  readonly details?: OAuthCallbackErrorDetails;
 
   constructor(
     code: OAuthCallbackErrorCode,
     message: string,
-    options: { cause?: unknown } = {},
+    options: { cause?: unknown; details?: OAuthCallbackErrorDetails } = {},
   ) {
     super(message, { cause: options.cause });
     this.name = "OAuthCallbackError";
     this.code = code;
+    this.details = options.details;
   }
 }
 
@@ -172,9 +185,12 @@ export async function startOAuthCallbackServer(
   };
 
   await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
+    const rejectStartup = (error: Error) => {
+      reject(asOAuthCallbackStartupError(error, options, callbackUrl));
+    };
+    server.once("error", rejectStartup);
     server.listen(options.port, options.host, () => {
-      server.off("error", reject);
+      server.off("error", rejectStartup);
       resolve();
     });
   });
@@ -216,4 +232,47 @@ function asOAuthCallbackError(error: unknown): OAuthCallbackError {
     error instanceof Error ? error.message : String(error),
     { cause: error },
   );
+}
+
+function asOAuthCallbackStartupError(
+  error: Error,
+  options: OAuthCallbackServerOptions,
+  callbackUrl: string,
+): OAuthCallbackError {
+  if (error instanceof OAuthCallbackError) {
+    return error;
+  }
+
+  const details: OAuthCallbackErrorDetails = {
+    callbackHost: options.host,
+    callbackPort: options.port,
+    callbackPath: options.path,
+    callbackUrl,
+  };
+  const upstreamCode = errorCodeFromUnknown(error);
+  if (upstreamCode) {
+    details.upstreamCode = upstreamCode;
+  }
+
+  if (upstreamCode === "EADDRINUSE") {
+    return new OAuthCallbackError(
+      "OAUTH_CALLBACK_PORT_IN_USE",
+      `OAuth callback port ${options.port} on ${options.host} is already in use.`,
+      { cause: error, details },
+    );
+  }
+
+  return new OAuthCallbackError(
+    "OAUTH_CALLBACK_STARTUP_FAILED",
+    `OAuth callback server failed to start on ${callbackUrl}: ${error.message}`,
+    { cause: error, details },
+  );
+}
+
+function errorCodeFromUnknown(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || Array.isArray(error)) {
+    return undefined;
+  }
+  const code = (error as Record<string, unknown>).code;
+  return typeof code === "string" && code.length > 0 ? code : undefined;
 }
