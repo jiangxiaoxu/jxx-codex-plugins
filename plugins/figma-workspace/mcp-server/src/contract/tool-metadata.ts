@@ -194,9 +194,9 @@ export function createReplToolDescriptions(
         cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
         dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
         target: {
-          description: `Optional metadata root. ${NODE_SCOPED_TARGET_SHAPES} Dynamic selectors such as $selection are not resolved here.`,
+          description: `Optional metadata root. ${NODE_SCOPED_TARGET_SHAPES} Also accepts $currentPage or a single-node $selection, which are resolved with a read-only use_figma call before official get_metadata. Other dynamic selectors are rejected.`,
         },
-        nodeId: stringProperty("Optional raw Figma node id. Prefer target for handles or node URLs."),
+        nodeId: stringProperty("Optional raw Figma node id. Prefer target for handles, node URLs, $currentPage, or $selection."),
         clientLanguages: stringProperty("Optional official get_metadata clientLanguages hint. Defaults to unknown."),
         clientFrameworks: stringProperty("Optional official get_metadata clientFrameworks hint. Defaults to unknown."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
