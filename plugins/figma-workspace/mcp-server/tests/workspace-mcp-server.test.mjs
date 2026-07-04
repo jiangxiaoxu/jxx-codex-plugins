@@ -1673,6 +1673,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.match(getMetadataTool.inputSchema.properties.target.description, /string node URL/);
   assert.match(getMetadataTool.inputSchema.properties.target.description, /\{ handle:"\$hero" \}/);
   assert.match(getMetadataTool.inputSchema.properties.target.description, /\{ fileKey, nodeId \}/);
+  assert.match(getMetadataTool.inputSchema.properties.target.description, /\$currentPage/);
+  assert.match(getMetadataTool.inputSchema.properties.target.description, /single-node \$selection/);
   assert.ok(getMetadataTool.inputSchema.properties.inlineResultLimit);
   assert.match(getMetadataTool.inputSchema.properties.inlineResultLimit.description, /10 KB/);
   assert.match(getMetadataTool.inputSchema.properties.inlineResultLimit.description, /0 forces/);
@@ -2694,6 +2696,136 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     "get_metadata",
     "use_figma",
   ]);
+});
+
+test("figma workspace get_metadata resolves supported dynamic selectors before upstream metadata read", async () => {
+  const calls = [];
+  const metadataNodeIds = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "get_metadata") {
+        metadataNodeIds.push(args.nodeId);
+        return {
+          content: [{ type: "text", text: `<frame id="${args.nodeId}" name="Resolved" width="100" height="80" />` }],
+        };
+      }
+      assert.equal(name, "use_figma");
+      assert.equal(args.fileKey, "ExampleFigmaFileKey012");
+      if (/const __selector/u.test(args.code)) {
+        const selector = /const __selector = "\$currentPage"/u.test(args.code) ? "$currentPage" : "$selection";
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                ok: true,
+                __figmaRepl: { sessionId: "metadata-dynamic", handles: {} },
+                result: {
+                  target: selector,
+                  nodeId: selector === "$currentPage" ? "0:1" : "2:3",
+                  nodeType: selector === "$currentPage" ? "PAGE" : "FRAME",
+                  name: selector === "$currentPage" ? "Page 1" : "Selected frame",
+                },
+              }),
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              __figmaRepl: { sessionId: "metadata-dynamic", handles: {} },
+              result: { enrichment: { nodes: {} } },
+            }),
+          },
+        ],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "use_figma",
+          description: "Execute JavaScript in the active Figma file.",
+          inputSchema: { type: "object", properties: { code: { type: "string" }, fileKey: { type: "string" } } },
+        },
+        {
+          name: "get_metadata",
+          description: "Read XML metadata.",
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } },
+        },
+      ],
+    },
+  );
+  const repl = createFigmaWorkspaceClient({ client: fakeClient });
+
+  try {
+    const currentPage = await repl.getMetadata({
+      sessionId: "metadata-dynamic",
+      file: "ExampleFigmaFileKey012",
+      target: "$currentPage",
+    });
+    assert.equal(currentPage.ok, true);
+    assert.equal(currentPage.nodeId, "0:1");
+    assert.equal(currentPage.metadata.json.root.nodeId, "0:1");
+
+    const selection = await repl.getMetadata({
+      sessionId: "metadata-dynamic",
+      file: "ExampleFigmaFileKey012",
+      target: "$selection",
+    });
+    assert.equal(selection.ok, true);
+    assert.equal(selection.nodeId, "2:3");
+    assert.equal(selection.metadata.json.root.nodeId, "2:3");
+  } finally {
+    await repl.close();
+  }
+
+  assert.deepEqual(metadataNodeIds, ["0:1", "2:3"]);
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), [
+    "use_figma",
+    "get_metadata",
+    "use_figma",
+    "use_figma",
+    "get_metadata",
+    "use_figma",
+  ]);
+});
+
+test("figma workspace get_metadata rejects missing file context before upstream discovery", async () => {
+  const calls = [];
+  const repl = createFigmaWorkspaceClient({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("upstream should not be called for missing file context");
+    }, {
+      tools: [
+        {
+          name: "use_figma",
+          description: "Execute JavaScript in the active Figma file.",
+          inputSchema: { type: "object", properties: { code: { type: "string" }, fileKey: { type: "string" } } },
+        },
+        {
+          name: "get_metadata",
+          description: "Read XML metadata.",
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } },
+        },
+      ],
+    }),
+  });
+
+  try {
+    await assert.rejects(
+      repl.getMetadata({ sessionId: "metadata-missing-context", target: "$currentPage" }),
+      /figma_workspace_get_metadata requires a Figma file key/,
+    );
+  } finally {
+    await repl.close();
+  }
+
+  assert.deepEqual(calls, [["close"]]);
 });
 
 test("figma workspace get_metadata returns nonfatal warning when enrichment fails", async () => {

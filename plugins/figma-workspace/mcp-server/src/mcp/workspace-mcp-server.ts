@@ -3345,7 +3345,7 @@ async function executeGetMetadata(
     bindOpenWorkspaceIfAvailable(session, args);
   }
   touchSession(session);
-  const requested = resolveGetMetadataRequest(args, session);
+  const requested = await resolveGetMetadataRequest(args, session, runtime);
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = selectRequiredUpstreamTool(tools, GET_METADATA_TOOL_NAME, "metadata read");
   assertUpstreamToolHasProperty(tool, "fileKey", "metadata read");
@@ -3412,10 +3412,14 @@ async function executeGetMetadata(
   return limitedPayload;
 }
 
-function resolveGetMetadataRequest(
+async function resolveGetMetadataRequest(
   args: FigmaWorkspaceGetMetadataArguments,
   session: FigmaWorkspaceSession,
-): { fileKey: string; nodeId?: string } {
+  runtime: {
+    client: FigmaUpstreamMcpProxyClient;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  },
+): Promise<{ fileKey: string; nodeId?: string }> {
   const fileReference = parseFigmaFileReference(args.file);
   const target = resolveSessionTargetInput(args.target ?? args.nodeId ?? extractFigmaNodeId(args.file), session);
   const fileKey =
@@ -3428,9 +3432,62 @@ function resolveGetMetadataRequest(
   }
   const nodeId = target.nodeId;
   if (nodeId?.startsWith("$")) {
-    throw new Error(`figma_workspace_get_metadata cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, or cached handle.`);
+    return resolveGetMetadataDynamicSelector({ fileKey, selector: nodeId, session, runtime });
   }
   return { fileKey, nodeId };
+}
+
+async function resolveGetMetadataDynamicSelector(options: {
+  fileKey: string;
+  selector: string;
+  session: FigmaWorkspaceSession;
+  runtime: {
+    client: FigmaUpstreamMcpProxyClient;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  };
+}): Promise<{ fileKey: string; nodeId: string }> {
+  const { fileKey, selector, session, runtime } = options;
+  if (selector !== "$currentPage" && selector !== "$selection") {
+    throw new Error(`figma_workspace_get_metadata cannot resolve target "${selector}" as a cached handle or supported dynamic selector. Pass a raw node id, node URL, cached handle, $currentPage, or a single-node $selection.`);
+  }
+  const code = [
+    `const __selector = ${literal(selector)};`,
+    "let __node;",
+    "if (__selector === '$currentPage') {",
+    "  __node = figma.currentPage;",
+    "} else {",
+    "  const __selection = figma.currentPage.selection;",
+    "  if (__selection.length !== 1) {",
+    "    throw new Error(`$selection must contain exactly one node for figma_workspace_get_metadata; found ${__selection.length}.`);",
+    "  }",
+    "  __node = __selection[0];",
+    "}",
+    "return {",
+    "  target: __selector,",
+    "  nodeId: __node.id,",
+    "  nodeType: __node.type,",
+    "  name: __node.name,",
+    "  handles: __figmaRepl.handles,",
+    "};",
+  ].join("\n");
+  const evalSettings = await resolveEvalSettings(session, {}, runtime);
+  const upstream = await callUpstreamEval(
+    runtime.client,
+    evalSettings,
+    buildFigmaEvalScript({ session, code, mode: "read" }),
+  );
+  const parsed = parseUpstreamToolResult(upstream);
+  updateSessionFromParsedResult(session, parsed.json);
+  if (parsed.upstreamError) {
+    throw new Error(`figma_workspace_get_metadata failed to resolve dynamic selector "${selector}": ${parsed.upstreamError.message}`);
+  }
+  const parsedRecord = asRecord(parsed.json);
+  const resultRecord = asRecord(parsedRecord.result);
+  const resolvedNodeId = asOptionalString(resultRecord.nodeId);
+  if (!resolvedNodeId) {
+    throw new Error(`figma_workspace_get_metadata failed to resolve dynamic selector "${selector}" to a node id.`);
+  }
+  return { fileKey, nodeId: resolvedNodeId };
 }
 
 async function handleGetDesignContext(
