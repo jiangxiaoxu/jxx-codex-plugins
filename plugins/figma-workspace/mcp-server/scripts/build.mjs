@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -14,6 +14,15 @@ const sharedBuildOptions = {
   format: "esm",
   target: "node20",
 };
+const bundledEsmRequireBanner =
+  [
+    'import { createRequire as __figmaWorkspaceCreateRequire } from "node:module";',
+    'import { fileURLToPath as __figmaWorkspaceFileURLToPath } from "node:url";',
+    'import { dirname as __figmaWorkspacePathDirname } from "node:path";',
+    "const require = __figmaWorkspaceCreateRequire(import.meta.url);",
+    "const __filename = __figmaWorkspaceFileURLToPath(import.meta.url);",
+    "const __dirname = __figmaWorkspacePathDirname(__filename);",
+  ].join("\n");
 
 const outputs = [
   {
@@ -59,7 +68,7 @@ for (const output of outputs) {
   await build({
     ...sharedBuildOptions,
     bundle: output.bundle,
-    external: output.bundle ? ["typescript"] : undefined,
+    banner: output.bundle ? { js: bundledEsmRequireBanner } : undefined,
     entryPoints: [output.entryPoint],
     outfile: output.outfile,
   });
@@ -86,6 +95,26 @@ async function stageUpstreamCorpus() {
 
 async function stageHelperDeclarations() {
   const source = resolve(root, "src/runtime/figma-workspace-helpers.d.ts");
+  const figmaTypings = resolve(root, "node_modules/@figma/plugin-typings");
+  const typescriptLib = resolve(root, "node_modules/typescript/lib");
   await cp(source, resolve(dist, "mcp/figma-workspace-helpers.d.ts"));
   await cp(source, resolve(dist, "upstream/figma-workspace-helpers.d.ts"));
+  await stageFigmaPluginTypings(figmaTypings, resolve(dist, "mcp/figma-plugin-typings"));
+  await stageFigmaPluginTypings(figmaTypings, resolve(dist, "upstream/figma-plugin-typings"));
+  await stageTypescriptLib(typescriptLib, resolve(dist, "mcp/typescript-lib"));
+  await stageTypescriptLib(typescriptLib, resolve(dist, "upstream/typescript-lib"));
+}
+
+async function stageFigmaPluginTypings(sourceDir, targetDir) {
+  await mkdir(targetDir, { recursive: true });
+  await Promise.all(["index.d.ts", "plugin-api.d.ts"]
+    .map((entry) => cp(resolve(sourceDir, entry), resolve(targetDir, entry))));
+}
+
+async function stageTypescriptLib(sourceDir, targetDir) {
+  await mkdir(targetDir, { recursive: true });
+  const entries = await readdir(sourceDir);
+  await Promise.all(entries
+    .filter((entry) => /^lib\..*\.d\.ts$/u.test(entry))
+    .map((entry) => cp(resolve(sourceDir, entry), resolve(targetDir, entry))));
 }
