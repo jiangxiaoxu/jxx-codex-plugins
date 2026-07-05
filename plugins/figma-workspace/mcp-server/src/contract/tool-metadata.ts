@@ -42,11 +42,11 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_eval",
       description:
-        "Small ephemeral JavaScript call for quick reads or tightly scoped updates only. Recommended call: { sessionId, code, mode, surface }. Use prepare_task + run_script_file for repairable scripts, multi-step work, and large structured results.",
+        "Small ephemeral Plugin API call for quick reads or tightly scoped updates only. Recommended call: { sessionId, code, mode, surface }. Use prepare_task + run_script_file for repairable TypeScript scripts, multi-step work, and large structured results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id. Defaults to 'default'."),
-        code: stringProperty("JavaScript body executed inside an async function in the Figma Plugin API context. Use return to send structured output."),
+        code: stringProperty("Plugin API body executed inside an async function in the Figma context. Use return to send structured output."),
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
@@ -57,12 +57,12 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_run_script_file",
       description:
-        "Primary file-based JavaScript workflow for Figma Workspace. Recommended workspace call: { sessionId, inputFile, strict, surface }. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
+        "Primary file-based TypeScript workflow for Figma Workspace. Recommended workspace call: { sessionId, inputFile, strict, surface }. The tool only accepts .figma.ts files, strict-checks them with Figma Plugin API typings, and compiles the upstream payload internally before execution. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id or task name. Defaults to 'default'."),
-        scriptPath: stringProperty("Advanced absolute-path escape hatch only. Prefer inputFile after figma_workspace_prepare_task creates a file-context workspace."),
-        inputFile: stringProperty("Recommended workspace script file name after figma_workspace_prepare_task; preferred over scriptPath for agents."),
+        scriptPath: stringProperty("Advanced absolute .figma.ts path escape hatch only. Prefer inputFile after figma_workspace_prepare_task creates a file-context workspace."),
+        inputFile: stringProperty("Recommended workspace .figma.ts script file name after figma_workspace_prepare_task; preferred over scriptPath for agents."),
         strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
@@ -73,7 +73,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_apply_asset_manifest",
       description:
-        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { sessionId, manifestPath } after .figma.js creates target rectangles. Debug JSON files are generated on demand for failures. Use figma_workspace_call_upstream_tool only for explicit uncovered upstream capabilities.",
+        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { sessionId, manifestPath } after .figma.ts creates target rectangles. Debug JSON files are generated on demand for failures. Use figma_workspace_call_upstream_tool only for explicit uncovered upstream capabilities.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
@@ -134,28 +134,28 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_prepare_task",
       description:
-        "Core workflow entrypoint for creating or reusing a task-specific .figma.js script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, surface }. Follow with guidance/lookup, run_script_file, inspect, and capture.",
+        "Core workflow entrypoint for creating or reusing a task-specific .figma.ts script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, surface }. Follow with guidance/lookup, run_script_file, inspect, and capture.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id. If initialized, files are created under that session file-context workspace."),
-        taskName: stringProperty("Required slug-style task/workspace name such as settings-panel-polish; used to derive <taskName>.figma.js."),
+        taskName: stringProperty("Required slug-style task/workspace name such as settings-panel-polish; used to derive <taskName>.figma.ts by default."),
         file: stringProperty("Recommended Figma file URL or raw file key used to derive the file context when preparing a workspace."),
         fileSlug: stringProperty("Advanced file-context slug override to use when file cannot derive a key."),
         cwd: stringProperty("Optional absolute project directory where the figma-workspace workspace directory will be created. Defaults to the MCP server process cwd when file context is present."),
         dirName: stringProperty("Advanced workspace directory name under cwd. Defaults to figma-workspace."),
-        fileName: stringProperty("Advanced script file-name override ending in .figma.js."),
+        fileName: stringProperty("Advanced script file-name override ending in .figma.ts."),
         taskRoot: stringProperty(`Advanced absolute task root for temp task workspaces. Defaults to ${options.taskWorkspaceRootEnv}, then OS temp figma-workspace/tasks.`),
         workspaceDir: stringProperty("Advanced absolute workspace directory override."),
         surface: enumProperty(["design", "figjam", "slides"], "Recommended expected Figma surface persisted on the session and copied into generated guidance."),
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
-        template: stringProperty("Template hint copied into the generated .figma.js comments. V1 templates are curated guidance only."),
+        template: stringProperty("Template hint copied into the generated .figma.ts comments. V1 templates are curated guidance only."),
         overwrite: booleanProperty("Advanced destructive overwrite of an existing script/result pair. Defaults false."),
       }),
     },
     {
       name: "figma_workspace_guidance",
       description:
-        "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { query, surface }. Use BM25-style keyword queries before writing .figma.js; pair with lookup only when exact docs/API snippets are needed.",
+        "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { query, surface }. Use BM25-style keyword queries before writing .figma.ts; pair with lookup only when exact docs/API snippets are needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query fields."),

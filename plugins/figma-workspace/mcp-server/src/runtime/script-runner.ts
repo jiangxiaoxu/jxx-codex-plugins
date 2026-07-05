@@ -1,5 +1,10 @@
 import { parse } from "acorn";
 import { parse as parseBabel } from "@babel/parser";
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import * as ts from "typescript";
 
 export type FigmaWorkspaceSurface = "design" | "figjam" | "slides";
 
@@ -58,11 +63,7 @@ export interface FigmaWorkspaceDiagnosticsOptions {
 
 export type FigmaWorkspaceScriptHelperName =
   | "select"
-  | "findAll"
-  | "find"
   | "text"
-  | "layout"
-  | "create"
   | "findFreeSlot"
   | "placeNode"
   | "replaceGeneratedFrame"
@@ -101,6 +102,17 @@ export interface CompiledFigmaWorkspaceScriptFile {
   };
 }
 
+const nodeRequire = createRequire(import.meta.url);
+const runtimeDirname = dirname(fileURLToPath(import.meta.url));
+const FIGMA_TYPESCRIPT_EXTENSION = ".figma.ts";
+const TYPESCRIPT_WRAPPER_START = "// __FIGMA_WORKSPACE_TS_BODY_START__";
+const TYPESCRIPT_WRAPPER_END = "// __FIGMA_WORKSPACE_TS_BODY_END__";
+const TYPESCRIPT_WRAPPER_PREFIX = `async function __figmaWorkspaceTypescriptBody() {\n${TYPESCRIPT_WRAPPER_START}\n`;
+const TYPESCRIPT_WRAPPER_SUFFIX = `\n${TYPESCRIPT_WRAPPER_END}\n}`;
+const TYPESCRIPT_SOURCE_LINE_OFFSET = countLines(TYPESCRIPT_WRAPPER_PREFIX) - 1;
+const TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH = "__figma_workspace_helpers.d.ts";
+const FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH = resolve(runtimeDirname, "figma-workspace-helpers.d.ts");
+
 export function compileFigmaWorkspaceScriptFile(options: {
   scriptPath: string;
   source: string;
@@ -109,25 +121,30 @@ export function compileFigmaWorkspaceScriptFile(options: {
   allowDangerousOperations?: boolean;
   strict?: boolean;
 }): CompiledFigmaWorkspaceScriptFile {
-  const helperSelection = resolveFigmaWorkspaceScriptHelperSelection(options.source);
+  const preparedSource = prepareFigmaWorkspaceScriptSource(options);
+  const helperSelection = resolveFigmaWorkspaceScriptHelperSelection(preparedSource.source);
   const diagnosticOptions: FigmaWorkspaceDiagnosticsOptions = {
     allowDangerousOperations: options.allowDangerousOperations,
     expectedSurface: options.expectedSurface,
     mode: "write",
     strict: options.strict,
   };
-  const diagnostics = toFigmaWorkspaceFileDiagnostics(
+  const runtimeDiagnostics = toFigmaWorkspaceFileDiagnostics(
     options.scriptPath,
-    options.source,
-    diagnoseFigmaWorkspaceCode(options.source, diagnosticOptions),
+    preparedSource.source,
+    diagnoseFigmaWorkspaceCode(preparedSource.source, diagnosticOptions),
     diagnosticOptions,
   );
+  const hasRuntimeParseError = runtimeDiagnostics.some((diagnostic) => diagnostic.code === "FIGMA_WORKSPACE_PARSE_ERROR");
+  const diagnostics = hasRuntimeParseError
+    ? runtimeDiagnostics
+    : [...preparedSource.diagnostics, ...runtimeDiagnostics];
   const lines = [createFigmaWorkspaceScriptHelperBootstrap(helperSelection)];
   if (options.targetPageId) {
     lines.push(`{ const __targetPage = await getNodeById(${literal(options.targetPageId)}); if (__targetPage.type !== "PAGE") throw new Error("targetPageId must resolve to a PAGE node."); await figma.setCurrentPageAsync(__targetPage); }`);
   }
   lines.push(`// figma_workspace_run_script_file source: ${options.scriptPath}`);
-  lines.push(options.source);
+  lines.push(preparedSource.source);
   return {
     code: lines.join("\n"),
     diagnostics,
@@ -142,6 +159,175 @@ export function compileFigmaWorkspaceScriptFile(options: {
       expectedSurface: options.expectedSurface,
     },
   };
+}
+
+function prepareFigmaWorkspaceScriptSource(options: {
+  scriptPath: string;
+  source: string;
+  strict?: boolean;
+}): { source: string; diagnostics: FigmaWorkspaceFileDiagnostic[] } {
+  if (!options.scriptPath.endsWith(FIGMA_TYPESCRIPT_EXTENSION)) {
+    return { source: options.source, diagnostics: [] };
+  }
+  return compileFigmaWorkspaceTypescriptSource(options.scriptPath, options.source, Boolean(options.strict));
+}
+
+function compileFigmaWorkspaceTypescriptSource(
+  scriptPath: string,
+  source: string,
+  strict: boolean,
+): { source: string; diagnostics: FigmaWorkspaceFileDiagnostic[] } {
+  const wrappedSource = `${TYPESCRIPT_WRAPPER_PREFIX}${source}${TYPESCRIPT_WRAPPER_SUFFIX}`;
+  const compilerOptions = createFigmaWorkspaceTypescriptCompilerOptions(strict);
+  const typescriptScriptPath = normalizeTypescriptFileName(scriptPath);
+  const helperTypesPath = normalizeTypescriptFileName(`${scriptPath}.${TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH}`);
+  const figmaTypingsPath = resolveFigmaPluginTypingsPath();
+  const host = ts.createCompilerHost(compilerOptions, true);
+  const originalReadFile = host.readFile.bind(host);
+  const originalFileExists = host.fileExists.bind(host);
+  host.readFile = (fileName) => {
+    const normalizedFileName = normalizeTypescriptFileName(fileName);
+    if (normalizedFileName === typescriptScriptPath) return wrappedSource;
+    if (normalizedFileName === helperTypesPath) return readFigmaWorkspaceHelperDeclarations();
+    return originalReadFile(fileName);
+  };
+  host.fileExists = (fileName) => {
+    const normalizedFileName = normalizeTypescriptFileName(fileName);
+    return normalizedFileName === typescriptScriptPath ||
+      normalizedFileName === helperTypesPath ||
+      originalFileExists(fileName);
+  };
+  const program = ts.createProgram({
+    rootNames: [figmaTypingsPath, helperTypesPath, typescriptScriptPath],
+    options: compilerOptions,
+    host,
+  });
+  const sourceFile = program.getSourceFile(typescriptScriptPath);
+  const syntacticDiagnostics = sourceFile ? program.getSyntacticDiagnostics(sourceFile) : [];
+  const syntacticDiagnosticKeys = new Set(syntacticDiagnostics.map(typescriptDiagnosticIdentity));
+  const preEmitDiagnostics = syntacticDiagnostics.length > 0
+    ? syntacticDiagnostics
+    : ts.getPreEmitDiagnostics(program);
+  const diagnostics = preEmitDiagnostics
+    .filter((diagnostic) => diagnostic.file === undefined || diagnostic.file === sourceFile)
+    .map((diagnostic) => typescriptDiagnosticToFileDiagnostic(
+      diagnostic,
+      scriptPath,
+      sourceFile,
+      syntacticDiagnosticKeys.has(typescriptDiagnosticIdentity(diagnostic)),
+    ));
+  const transpiled = ts.transpileModule(wrappedSource, {
+    fileName: scriptPath,
+    compilerOptions,
+    reportDiagnostics: false,
+  });
+  const transpiledBody = extractTypescriptTranspiledBody(transpiled.outputText);
+  if (transpiledBody === undefined) {
+    diagnostics.push({
+      code: "FIGMA_WORKSPACE_TS_COMPILE_ERROR",
+      severity: "fatal",
+      message: "TypeScript preflight could not extract the compiled Figma script body.",
+      suggestion: "Remove unusual top-level wrapper-like code and rerun the .figma.ts script.",
+      docsHint: "figma_workspace_lookup kind=docs query=\"TypeScript Figma plugin typings\"",
+      source: { scriptPath },
+    });
+  }
+  return {
+    source: transpiledBody ?? source,
+    diagnostics,
+  };
+}
+
+function createFigmaWorkspaceTypescriptCompilerOptions(strict: boolean): ts.CompilerOptions {
+  return {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Node10,
+    lib: ["lib.es2022.d.ts", "lib.dom.d.ts"],
+    strict: true,
+    noImplicitAny: true,
+    strictNullChecks: true,
+    skipLibCheck: true,
+    noEmitOnError: strict,
+    isolatedModules: false,
+    esModuleInterop: false,
+    allowSyntheticDefaultImports: false,
+    removeComments: false,
+  };
+}
+
+function resolveFigmaPluginTypingsPath(): string {
+  return nodeRequire.resolve("@figma/plugin-typings/index.d.ts");
+}
+
+function readFigmaWorkspaceHelperDeclarations(): string {
+  return readFileSync(FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, "utf8");
+}
+
+function normalizeTypescriptFileName(fileName: string): string {
+  const normalized = fileName.replace(/\\/gu, "/");
+  return ts.sys.useCaseSensitiveFileNames ? normalized : normalized.toLowerCase();
+}
+
+function typescriptDiagnosticToFileDiagnostic(
+  diagnostic: ts.Diagnostic,
+  scriptPath: string,
+  sourceFile: ts.SourceFile | undefined,
+  syntaxError: boolean,
+): FigmaWorkspaceFileDiagnostic {
+  const location = typescriptDiagnosticLocation(diagnostic, sourceFile);
+  const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+  return {
+    code: syntaxError ? "FIGMA_WORKSPACE_PARSE_ERROR" : "FIGMA_WORKSPACE_TS_TYPE_ERROR",
+    severity: "fatal",
+    message: `${syntaxError ? "TypeScript syntax preflight failed" : "TypeScript preflight failed"}: ${message}`,
+    suggestion: syntaxError
+      ? "Fix all TypeScript syntax errors before running the Figma Workspace script; rerun afterward to get guardrail diagnostics."
+      : "Fix the TypeScript error before running the Figma script. Use Figma Plugin API node types such as FrameNode, PageNode, or RectangleNode to model allowed methods.",
+    docsHint: syntaxError
+      ? "figma-workspace://guide#responseContract"
+      : "figma_workspace_lookup kind=api symbol=ChildrenMixin.appendChild",
+    source: {
+      scriptPath,
+      ...location,
+    },
+  };
+}
+
+function typescriptDiagnosticIdentity(diagnostic: ts.Diagnostic): string {
+  const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+  return `${diagnostic.code}:${diagnostic.start ?? ""}:${diagnostic.length ?? ""}:${message}`;
+}
+
+function typescriptDiagnosticLocation(
+  diagnostic: ts.Diagnostic,
+  sourceFile: ts.SourceFile | undefined,
+): { line?: number; column?: number } {
+  if (!sourceFile || diagnostic.file !== sourceFile || diagnostic.start === undefined) {
+    return {};
+  }
+  const location = sourceFile.getLineAndCharacterOfPosition(diagnostic.start);
+  const sourceLine = location.line + 1 - TYPESCRIPT_SOURCE_LINE_OFFSET;
+  if (sourceLine < 1) {
+    return {};
+  }
+  return {
+    line: sourceLine,
+    column: location.character + 1,
+  };
+}
+
+function extractTypescriptTranspiledBody(outputText: string): string | undefined {
+  const startMarkerIndex = outputText.indexOf(TYPESCRIPT_WRAPPER_START);
+  const endMarkerIndex = outputText.indexOf(TYPESCRIPT_WRAPPER_END);
+  if (startMarkerIndex < 0 || endMarkerIndex < 0 || endMarkerIndex <= startMarkerIndex) {
+    return undefined;
+  }
+  const bodyStart = outputText.indexOf("\n", startMarkerIndex);
+  if (bodyStart < 0 || bodyStart >= endMarkerIndex) {
+    return undefined;
+  }
+  return outputText.slice(bodyStart + 1, endMarkerIndex).replace(/\n\s*$/u, "");
 }
 
 /**
@@ -189,11 +375,7 @@ export function resolveFigmaWorkspaceScriptHelperSelection(
 
 const FIGMA_WORKSPACE_SCRIPT_HELPERS: readonly FigmaWorkspaceScriptHelperName[] = [
   "select",
-  "findAll",
-  "find",
   "text",
-  "layout",
-  "create",
   "findFreeSlot",
   "placeNode",
   "replaceGeneratedFrame",
@@ -283,11 +465,6 @@ function expandFigmaWorkspaceScriptHelperDependencies(helperNames: Set<FigmaWork
         changed = true;
       }
     };
-    if (helperNames.has("find")) add("findAll");
-    if (helperNames.has("create")) {
-      add("placeNode");
-      add("findFreeSlot");
-    }
     if (helperNames.has("placeNode")) add("findFreeSlot");
     if (helperNames.has("replaceGeneratedFrame")) {
       add("placeNode");
@@ -427,28 +604,6 @@ $.select = async function select(targets = "$selection", options = {}) {
     summaries: nodes.map((node) => summarizeNode(node, options.depth || 0)),
   };
 };
-$.findAll = async function findAll(criteria = {}) {
-  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
-  const root = input.within ? await $(input.within) : figma.currentPage;
-  const matches = queryNodes(root, {
-    name: input.name,
-    type: input.type,
-    includeInvisible: input.includeInvisible,
-    limit: input.limit || 50,
-  });
-  if (input.as && matches[0]) remember(input.as, matches[0]);
-  return matches;
-};
-$.find = async function find(criteria = {}) {
-  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
-  const matches = await $.findAll({ ...input, limit: input.limit || 1 });
-  const node = matches[0] || null;
-  if (!node && input.required !== false) {
-    throw new Error("No Figma node matched $.find criteria.");
-  }
-  if (node && input.as) remember(input.as, node);
-  return node;
-};
 $.text = async function text(targetOrOptions, textValue, options = {}) {
   const input = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions)
     ? targetOrOptions
@@ -481,37 +636,6 @@ $.text = async function text(targetOrOptions, textValue, options = {}) {
   if (input.position !== undefined) setNodePositionFromInput(node, input.position);
   if (input.size !== undefined) setNodeSizeFromInput(node, input.size);
   if (input.as) remember(input.as, node);
-  return node;
-};
-$.layout = async function layout(target, layoutOptions = {}) {
-  const node = await $(target);
-  applyAutoLayout(node, layoutOptions);
-  return node;
-};
-$.create = async function create(options = {}) {
-  const type = String(options.type || "FRAME").toUpperCase();
-  const node = createHelperNode(type);
-  if (options.name !== undefined) node.name = String(options.name);
-  if (type === "TEXT") {
-    await applyTextHelper(node, { text: options.text || "", font: options.font, style: options.style });
-    if (options.appearance !== undefined) applyAppearance(node, options.appearance);
-  } else if (options.size !== undefined) {
-    setNodeSizeFromInput(node, options.size);
-  }
-  if (options.layout !== undefined) applyAutoLayout(node, options.layout);
-  if (options.appearance !== undefined && type !== "TEXT") applyAppearance(node, options.appearance);
-  if (options.parent) {
-    const parent = await $(options.parent);
-    parent.appendChild(node);
-  } else {
-    figma.currentPage.appendChild(node);
-  }
-  if (options.placement && options.placement.avoidOverlap) {
-    await $.placeNode(node, { ...options.placement, size: options.placement.size || (options.size || { width: node.width, height: node.height }), exclude: node });
-  } else if (options.position !== undefined) {
-    setNodePositionFromInput(node, options.position);
-  }
-  if (options.as) remember(options.as, node);
   return node;
 };
 function __figmaReplResolveSceneNodeForPlacement(value, name) {
@@ -819,22 +943,10 @@ $.checkpoints = __figmaReplScriptCheckpoints;`;
     bootstrap = bootstrap.replace("$.node = $;\n", "");
   }
   if (!options.helperNames.has("select")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.select = async function select", "$.findAll = async function findAll", "");
-  }
-  if (!options.helperNames.has("findAll")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.findAll = async function findAll", "$.find = async function find", "");
-  }
-  if (!options.helperNames.has("find")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.find = async function find", "$.text = async function text", "");
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.select = async function select", "$.text = async function text", "");
   }
   if (!options.helperNames.has("text")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.text = async function text", "$.layout = async function layout", "");
-  }
-  if (!options.helperNames.has("layout")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.layout = async function layout", "$.create = async function create", "");
-  }
-  if (!options.helperNames.has("create")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.create = async function create", "function __figmaReplResolveSceneNodeForPlacement", "");
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.text = async function text", "function __figmaReplResolveSceneNodeForPlacement", "");
   }
   if (!options.helperNames.has("findFreeSlot")) {
     bootstrap = replaceHelperBootstrapBlock(bootstrap, "function __figmaReplResolveSceneNodeForPlacement(value, name) {", "$.placeNode = async function placeNode", "");
@@ -958,7 +1070,7 @@ export function diagnoseFigmaWorkspaceCode(
         "FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT",
         "fatal",
         "read mode rejected a likely property assignment.",
-        "Use mode=write or a .figma.js script when mutation is intended.",
+        "Use mode=write or figma_workspace_run_script_file when mutation is intended.",
         "figma-workspace://guide#evalWorkflow",
       ));
     }
@@ -977,7 +1089,7 @@ export function diagnoseFigmaWorkspaceCode(
       "FIGMA_WORKSPACE_IMAGE_ASSET_INLINE_TOO_LARGE",
       "warning",
       `Inline $.imageAsset base64 is ${analysis.oversizedImageAssetBase64Length} characters and may exceed upstream MCP payload limits.`,
-      "For large generated PNG/JPEG assets, create target rectangles in .figma.js and use the official upload_assets/upstream asset workflow to fill them.",
+      "For large generated PNG/JPEG assets, create target rectangles in a .figma.ts script and use the official upload_assets/upstream asset workflow to fill them.",
       "figma-workspace://guide#assetWorkflow",
     ));
   }
@@ -1010,7 +1122,7 @@ export function diagnoseWrappedScriptSize(
     code: "FIGMA_WORKSPACE_SCRIPT_PAYLOAD_TOO_LARGE",
     severity: overLimit || strict ? "fatal" : "warning",
     message: `Compiled Figma script payload is ${byteLength} bytes; upstream use_figma accepts at most about ${UPSTREAM_EVAL_CODE_LIMIT_BYTES} characters.`,
-    suggestion: "Split the work into smaller .figma.js files, for example skeleton, asset targets, upload fills, and visual fixes.",
+    suggestion: "Split the work into smaller .figma.ts files, for example skeleton, asset targets, upload fills, and visual fixes.",
     docsHint: "figma-workspace://guide#scriptFileWorkflow",
     source: { scriptPath },
   }];
@@ -1053,7 +1165,7 @@ function repairPlanSummary(
   warningCount: number,
 ): string {
   if (status === "parse_error") {
-    return "Fix all JavaScript syntax errors first, then rerun to get full Figma Workspace guardrail diagnostics.";
+    return "Fix all TypeScript syntax errors first, then rerun to get full Figma Workspace guardrail diagnostics.";
   }
   if (status === "blocked") {
     return `Preflight blocked execution with ${fatalCount} fatal diagnostic${fatalCount === 1 ? "" : "s"}; apply all repair steps before rerunning.`;
@@ -1143,7 +1255,7 @@ function locationLabel(line: number | undefined, column: number | undefined): st
 const DANGEROUS_DIAGNOSTICS = [
   {
     code: "FIGMA_WORKSPACE_DYNAMIC_EVAL",
-    message: "Dynamic JavaScript evaluation is disabled by default.",
+    message: "Dynamic code evaluation is disabled by default.",
     suggestion: "Pass allowDangerousOperations=true only after reviewing the exact script.",
     docsHint: "figma_workspace_lookup kind=docs query=\"dynamic code safety\"",
   },
@@ -1201,7 +1313,7 @@ const READ_MODE_WRITE_DIAGNOSTICS = [
   {
     code: "FIGMA_WORKSPACE_READ_MODE_RESIZE",
     message: "read mode rejected resize.",
-    suggestion: "Use mode=write or a .figma.js script when mutation is intended.",
+    suggestion: "Use mode=write or figma_workspace_run_script_file when mutation is intended.",
     docsHint: "figma-workspace://guide#evalWorkflow",
   },
 ];
@@ -1251,8 +1363,8 @@ function parseFigmaWorkspaceCodeForDiagnostics(code: string): ParsedDiagnosticAs
           diagnostics: [createDiagnostic(
             "FIGMA_WORKSPACE_PARSE_ERROR",
             "fatal",
-            "Script could not be parsed as JavaScript.",
-            "Fix JavaScript syntax before running the Figma Workspace script.",
+            "Script could not be parsed.",
+            "Fix script syntax before running the Figma Workspace script.",
             "figma-workspace://guide#responseContract",
           )],
         };
@@ -1265,8 +1377,8 @@ function parseFigmaWorkspaceCodeForDiagnostics(code: string): ParsedDiagnosticAs
       diagnostics: [createDiagnostic(
         "FIGMA_WORKSPACE_PARSE_ERROR",
         "fatal",
-        `Script could not be parsed as JavaScript.${formatErrorDetail(error)}`,
-        "Fix JavaScript syntax before running the Figma Workspace script.",
+        `Script could not be parsed.${formatErrorDetail(error)}`,
+        "Fix script syntax before running the Figma Workspace script.",
         "figma-workspace://guide#responseContract",
       )],
     };
@@ -1293,8 +1405,8 @@ function createParseDiagnostic(error: unknown, source: string): FigmaWorkspaceDi
     ...createDiagnostic(
     "FIGMA_WORKSPACE_PARSE_ERROR",
     "fatal",
-    `Script could not be parsed as JavaScript.${detail}`,
-    "Fix all JavaScript syntax errors before running the Figma Workspace script; rerun afterward to get guardrail diagnostics.",
+    `Script could not be parsed.${detail}`,
+    "Fix all script syntax errors before running the Figma Workspace script; rerun afterward to get guardrail diagnostics.",
     "figma-workspace://guide#responseContract",
     ),
     location: parseErrorLocation(error, source),
@@ -1671,7 +1783,7 @@ const API_CONTRACT_DIAGNOSTICS = [
   {
     code: "FIGMA_WORKSPACE_ROOT_FIND_ALL",
     message: "figma.root.findAll() can scan the whole file and is not allowed through this layer.",
-    suggestion: "Use $.find or $.findAll with a scoped parent such as $currentPage or a cached handle; avoid proving file-wide absence from one root scan.",
+    suggestion: "Use scoped Plugin API queries such as figma.currentPage.findAll(...) or figma_workspace_inspect for known targets; avoid proving file-wide absence from one root scan.",
     docsHint: "figma_workspace_lookup kind=docs query=\"selection query findAll\"",
   },
   {
@@ -1689,7 +1801,7 @@ const API_CONTRACT_DIAGNOSTICS = [
   {
     code: "FIGMA_WORKSPACE_DYNAMIC_HELPER_ACCESS",
     message: "Dynamic $ helper access cannot be statically analyzed for on-demand helper injection.",
-    suggestion: "Use a literal helper access such as $.find(...) or $[\"find\"](...); avoid $[name](...), object rest destructuring, aliasing $, or declaring a local $.",
+    suggestion: "Use a literal retained helper access such as $.text(...) or $[\"text\"](...); avoid $[name](...), object rest destructuring, aliasing $, or declaring a local $.",
     docsHint: "figma-workspace://guide#scriptFileWorkflow",
   },
 ];

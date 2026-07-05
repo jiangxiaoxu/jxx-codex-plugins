@@ -3,6 +3,12 @@ dist/
 # Keep the generated Figma Workspace lookup corpus visible when build stages it under dist.
 !plugins/figma-workspace/mcp-server/dist/
 plugins/figma-workspace/mcp-server/dist/*
+!plugins/figma-workspace/mcp-server/dist/mcp/
+plugins/figma-workspace/mcp-server/dist/mcp/*
+!plugins/figma-workspace/mcp-server/dist/mcp/figma-workspace-helpers.d.ts
+!plugins/figma-workspace/mcp-server/dist/upstream/
+plugins/figma-workspace/mcp-server/dist/upstream/*
+!plugins/figma-workspace/mcp-server/dist/upstream/figma-workspace-helpers.d.ts
 !plugins/figma-workspace/mcp-server/dist/skills/
 plugins/figma-workspace/mcp-server/dist/skills/*
 !plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/
