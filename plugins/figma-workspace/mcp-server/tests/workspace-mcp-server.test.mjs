@@ -2988,6 +2988,9 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
             type: "object",
             properties: {
               fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              clientLanguages: { type: "string" },
+              clientFrameworks: { type: "string" },
             },
           },
         },
@@ -3108,6 +3111,79 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     "use_figma",
     "get_metadata",
     "use_figma",
+  ]);
+});
+
+test("figma workspace get_metadata warns and omits derived optional nodeId missing from live upstream schema", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "get_metadata") {
+        assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012" });
+        return {
+          content: [{ type: "text", text: '<frame id="1:2" name="Root" width="100" height="80" />' }],
+        };
+      }
+      assert.equal(name, "use_figma");
+      assert.equal(args.fileKey, "ExampleFigmaFileKey012");
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            __figmaRepl: { sessionId: "metadata-nodeid-drift", handles: {} },
+            result: { enrichment: { nodes: { "1:2": { visible: true, locked: false } } } },
+          }),
+        }],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "use_figma",
+          description: "Execute JavaScript in the active Figma file.",
+          inputSchema: { type: "object", properties: { code: { type: "string" }, fileKey: { type: "string" } } },
+        },
+        {
+          name: "get_metadata",
+          description: "Read XML metadata after nodeId was removed upstream.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+            },
+          },
+        },
+      ],
+    },
+  );
+  const repl = createFigmaWorkspaceClient({ client: fakeClient });
+
+  try {
+    const result = await repl.getMetadata({
+      title: "Read metadata with optional nodeId drift",
+      sessionId: "metadata-nodeid-drift",
+      target: { fileKey: "ExampleFigmaFileKey012", nodeId: "1:2" },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.nodeId, "1:2");
+    assert.equal(result.metadata.json.root.nodeId, "1:2");
+    const nodeIdSkip = result.diagnostics.find((diagnostic) =>
+      diagnostic.code === "FIGMA_WORKSPACE_UPSTREAM_OPTIONAL_SKIPPED" &&
+      /nodeId/.test(diagnostic.message)
+    );
+    assert.ok(nodeIdSkip);
+    assert.equal(nodeIdSkip.severity, "warning");
+    assert.match(nodeIdSkip.message, /get_metadata/);
+  } finally {
+    await repl.close();
+  }
+  assert.deepEqual(calls.filter((call) => call[0] !== "close").map((call) => call[0]), [
+    "connect",
+    "listTools",
+    "callTool",
+    "callTool",
   ]);
 });
 
@@ -3697,6 +3773,63 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     "export_video",
     "get_shader_fill",
     "get_design_context",
+  ]);
+});
+
+test("figma workspace thin wrappers warn and omit supplied optional args missing from live upstream schema", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      assert.equal(name, "get_design_context");
+      assert.deepEqual(args, {
+        fileKey: "ExampleFigmaFileKey012",
+        nodeId: "9:9",
+        clientLanguages: "typescript",
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, code: "<div data-node-id=\"9:9\" />" }) }],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "get_design_context",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              clientLanguages: { type: "string" },
+            },
+            required: ["fileKey", "nodeId"],
+          },
+        },
+      ],
+    },
+  );
+  const repl = createFigmaWorkspaceClient({ client: fakeClient });
+
+  try {
+    const result = await repl.getDesignContext({
+      target: { fileKey: "ExampleFigmaFileKey012", nodeId: "9:9" },
+      clientLanguages: "typescript",
+      forceCode: true,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.upstream.result.code, "<div data-node-id=\"9:9\" />");
+    assert.equal(result.diagnostics.length, 1);
+    assert.equal(result.diagnostics[0].code, "FIGMA_WORKSPACE_UPSTREAM_OPTIONAL_SKIPPED");
+    assert.equal(result.diagnostics[0].severity, "warning");
+    assert.match(result.diagnostics[0].message, /forceCode/);
+    assert.match(result.diagnostics[0].message, /get_design_context/);
+  } finally {
+    await repl.close();
+  }
+  assert.deepEqual(calls.filter((call) => call[0] !== "close").map((call) => call[0]), [
+    "connect",
+    "listTools",
+    "callTool",
   ]);
 });
 
@@ -5828,18 +5961,33 @@ test("figma workspace download_assets local download failures use downloadError,
   }
 });
 
-test("figma workspace download_assets rejects drifted official schema fields", async () => {
+test("figma workspace download_assets warns and omits supplied optional args missing from live upstream schema", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-download-optional-drift-"));
+  const outputDir = resolve(tempDir, "downloads");
+  const pngBytes = Buffer.from("downloaded png bytes");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(pngBytes, { status: 200, headers: { "Content-Type": "image/png" } });
   const calls = [];
   const fakeClient = createFakeFigmaClient(
     calls,
-    () => {
-      throw new Error("unexpected upstream call");
+    ({ name, args }) => {
+      assert.equal(name, "download_assets");
+      assert.deepEqual(args, {
+        fileKey: "file123",
+        nodeId: "22:8",
+      });
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ exports: [{ url: "https://assets.example/hero.png", format: "png" }] }),
+        }],
+      };
     },
     {
       tools: [
         {
           name: "download_assets",
-          description: "Drifted download tool.",
+          description: "Download tool with optional defaultFormat drift.",
           inputSchema: {
             type: "object",
             properties: {
@@ -5859,30 +6007,42 @@ test("figma workspace download_assets rejects drifted official schema fields", a
   );
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
-  await server.connect(serverTransport);
-  await mcpClient.connect(clientTransport);
-  await mcpClient.callTool({
-    name: "figma_workspace_open",
-    arguments: {
-      title: "Open drifted download file context",
-      sessionId: "drifted-download",
-      connect: false,
-      file: "https://www.figma.com/design/file123/Test",
-    },
-  });
-  await assert.rejects(
-    mcpClient.callTool({
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_workspace_open",
+      arguments: {
+        title: "Open drifted download file context",
+        sessionId: "drifted-download",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+      },
+    });
+    const result = await mcpClient.callTool({
       name: "figma_workspace_download_assets",
       arguments: {
         title: "Download drifted assets",
         sessionId: "drifted-download",
-        targets: [{ target: "22:8", defaultFormat: "png" }],
+        targets: [{ target: "22:8", name: "Hero", defaultFormat: "png" }],
+        outputDir,
       },
-    }),
-    /inputSchema\.properties\.defaultFormat.*upstream contract drift/,
-  );
-  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
-  await mcpClient.close();
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.targets.length, 1);
+    assert.equal(json.targets[0].downloadedFiles[0].path, resolve(outputDir, "hero", "exported.png"));
+    assert.deepEqual(await readFile(resolve(outputDir, "hero", "exported.png")), pngBytes);
+    assert.equal(json.diagnostics.length, 1);
+    assert.equal(json.diagnostics[0].code, "FIGMA_WORKSPACE_UPSTREAM_OPTIONAL_SKIPPED");
+    assert.equal(json.diagnostics[0].severity, "warning");
+    assert.match(json.diagnostics[0].message, /defaultFormat/);
+    assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+    await mcpClient.close();
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("figma workspace captures node screenshot responses to a local file", async () => {

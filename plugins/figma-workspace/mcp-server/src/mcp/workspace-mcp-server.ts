@@ -304,32 +304,67 @@ function requireWrapperUpstreamProperty(
   return property;
 }
 
-function collectContractPassthroughArguments(
-  args: Record<string, unknown>,
-  contract: FigmaWorkspaceWrapperContract,
-): Record<string, unknown> {
-  return Object.fromEntries(
-    contract.parameterMatrix.passthroughOptional
-      .filter((property) => args[property] !== undefined)
-      .map((property) => [property, args[property]]),
-  );
+function collectContractPassthroughArguments(options: {
+  args: object;
+  contract: FigmaWorkspaceWrapperContract;
+}): Record<string, unknown> {
+  const upstreamArguments: Record<string, unknown> = {};
+  for (const property of options.contract.parameterMatrix.passthroughOptional) {
+    const value = property in options.args
+      ? (options.args as Record<string, unknown>)[property]
+      : undefined;
+    if (value !== undefined) {
+      upstreamArguments[property] = value;
+    }
+  }
+  return upstreamArguments;
 }
 
-function collectPresentPassthroughProperties(
-  contract: FigmaWorkspaceWrapperContract,
-  upstreamArguments: Record<string, unknown>,
-): string[] {
-  const required = new Set(contract.parameterMatrix.requiredUpstream);
-  const handledUpstreamProperties = sortedUnique([
-    ...contract.parameterMatrix.publicPassthrough,
-    ...contract.parameterMatrix.derivedUpstream,
-    ...contract.parameterMatrix.fixedUpstream,
-    ...contract.parameterMatrix.passthroughOptional,
-  ]);
-  return handledUpstreamProperties.filter((property) =>
-    !required.has(property) && upstreamArguments[property] !== undefined
-  );
+function filterAdvertisedUpstreamArguments(options: {
+  upstreamArguments: Record<string, unknown>;
+  contract: FigmaWorkspaceWrapperContract;
+  tool: UpstreamToolInfo;
+  upstreamKind: string;
+}): {
+  arguments: Record<string, unknown>;
+  diagnostics: FigmaWorkspaceDiagnostic[];
+} {
+  const required = new Set(options.contract.requiredUpstreamProperties ?? []);
+  const upstreamArguments: Record<string, unknown> = {};
+  const diagnostics: FigmaWorkspaceDiagnostic[] = [];
+  for (const [property, value] of Object.entries(options.upstreamArguments)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (required.has(property) || upstreamToolHasProperty(options.tool, property)) {
+      upstreamArguments[property] = value;
+      continue;
+    }
+    diagnostics.push(createSkippedOptionalUpstreamDiagnostic({
+      toolName: options.contract.toolName,
+      upstreamToolName: options.tool.name,
+      upstreamKind: options.upstreamKind,
+      property,
+    }));
+  }
+  return { arguments: upstreamArguments, diagnostics };
 }
+
+function createSkippedOptionalUpstreamDiagnostic(options: {
+  toolName: LocalWorkspaceToolName;
+  upstreamToolName: string;
+  upstreamKind: string;
+  property: string;
+}): FigmaWorkspaceDiagnostic {
+  return {
+    code: "FIGMA_WORKSPACE_UPSTREAM_OPTIONAL_SKIPPED",
+    severity: "warning",
+    message: `${options.toolName} skipped optional upstream argument "${options.property}" because live official ${options.upstreamKind} tool "${options.upstreamToolName}" does not advertise inputSchema.properties.${options.property}.`,
+    suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/mcp-server to audit official schema drift.",
+    docsHint: "Use figma_workspace_call_upstream_tool only for explicit uncovered upstream capability debugging; first-class wrappers tolerate missing optional upstream passthrough fields.",
+  };
+}
+
 export interface FigmaWorkspaceMcpServerOptions extends RemoteMcpClientOptions {
   client?: FigmaUpstreamMcpProxyClient;
   name?: string;
@@ -2167,15 +2202,10 @@ async function executeDownloadAssets(
   const downloadKind = requireWrapperUpstreamKind(DOWNLOAD_ASSETS_CONTRACT);
   const tool = selectRequiredUpstreamTool(tools, DOWNLOAD_ASSETS_TOOL_NAME, downloadKind);
   assertUpstreamToolHasProperties(tool, [...(DOWNLOAD_ASSETS_CONTRACT.requiredUpstreamProperties ?? [])], downloadKind);
-  if (manifest.targets.some((target) => target.defaultFormat !== undefined)) {
-    assertUpstreamToolHasProperty(tool, "defaultFormat", downloadKind);
-  }
-  if (manifest.targets.some((target) => target.defaultScale !== undefined)) {
-    assertUpstreamToolHasProperty(tool, "defaultScale", downloadKind);
-  }
   const targetResults: Array<Record<string, unknown>> = [];
   const targetDetails: Array<Record<string, unknown>> = [];
   const failures: Array<Record<string, unknown>> = [];
+  const diagnostics: FigmaWorkspaceDiagnostic[] = [];
   const usedSlugs = new Set<string>();
   await runtime.client.connect();
 
@@ -2183,7 +2213,18 @@ async function executeDownloadAssets(
     const startedAt = new Date().toISOString();
     const targetSlug = uniqueDownloadTargetSlug(target, index, usedSlugs);
     const targetOutputDir = resolve(paths.outputDir, targetSlug);
-    const upstreamArguments = buildDownloadAssetsUpstreamArguments(target);
+    const passthrough = collectContractPassthroughArguments({
+      args: target,
+      contract: DOWNLOAD_ASSETS_CONTRACT,
+    });
+    const filtered = filterAdvertisedUpstreamArguments({
+      upstreamArguments: buildDownloadAssetsUpstreamArguments(target, passthrough),
+      contract: DOWNLOAD_ASSETS_CONTRACT,
+      tool,
+      upstreamKind: downloadKind,
+    });
+    diagnostics.push(...filtered.diagnostics);
+    const upstreamArguments = filtered.arguments;
     try {
       const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
       const parsed = parseUpstreamToolResult(upstream);
@@ -2274,6 +2315,7 @@ async function executeDownloadAssets(
     session: responseSession(session),
     outputDir: paths.outputDir,
     targets: targetResults,
+    diagnostics: diagnostics.length > 0 ? diagnosticsForResponse(dedupeDiagnostics(diagnostics)) : undefined,
     failures: failures.length > 0 ? failures : undefined,
   }) as Record<string, unknown>;
   const outputFiles: FigmaWorkspaceOutputFiles = {};
@@ -2402,12 +2444,14 @@ function resolveDownloadAssetsTempPath(session: FigmaWorkspaceSession, fileName:
   return resolve(root, "download-results", session.slug, fileName);
 }
 
-function buildDownloadAssetsUpstreamArguments(target: NormalizedDownloadAssetsTarget): Record<string, unknown> {
+function buildDownloadAssetsUpstreamArguments(
+  target: NormalizedDownloadAssetsTarget,
+  passthroughArguments: Record<string, unknown>,
+): Record<string, unknown> {
   return removeUndefined({
     fileKey: target.fileKey,
     nodeId: target.targetNodeId,
-    defaultFormat: target.defaultFormat,
-    defaultScale: target.defaultScale,
+    ...passthroughArguments,
   }) as Record<string, unknown>;
 }
 
@@ -2640,17 +2684,22 @@ async function executeCaptureNodeForTool(
     [...(CAPTURE_NODE_CONTRACT.requiredUpstreamProperties ?? [])],
     requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT),
   );
-  assertUpstreamToolHasProperties(
-    tool,
-    collectPresentPassthroughProperties(CAPTURE_NODE_CONTRACT, args),
-    requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT),
-  );
-  const upstreamArguments = buildCaptureUpstreamArguments({
-    fileKey,
-    nodeId,
+  const passthrough = collectContractPassthroughArguments({
     args,
-    tool,
+    contract: CAPTURE_NODE_CONTRACT,
   });
+  const filtered = filterAdvertisedUpstreamArguments({
+    upstreamArguments: buildCaptureUpstreamArguments({
+      fileKey,
+      nodeId,
+      tool,
+      passthroughArguments: passthrough,
+    }),
+    contract: CAPTURE_NODE_CONTRACT,
+    tool,
+    upstreamKind: requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT),
+  });
+  const upstreamArguments = filtered.arguments;
   await runtime.client.connect();
   const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
   const parsed = parseUpstreamToolResult(upstream);
@@ -2659,6 +2708,7 @@ async function executeCaptureNodeForTool(
       ok: false,
       session: responseSession(session),
       nodeId,
+      diagnostics: filtered.diagnostics.length > 0 ? diagnosticsForResponse(filtered.diagnostics) : undefined,
       upstreamError: responseUpstreamError(parsed.upstreamError),
     };
     return payload;
@@ -2671,6 +2721,7 @@ async function executeCaptureNodeForTool(
       ok: false,
       session: responseSession(session),
       nodeId,
+      diagnostics: filtered.diagnostics.length > 0 ? diagnosticsForResponse(filtered.diagnostics) : undefined,
       upstreamError: normalizeCaughtUpstreamError(error),
     };
     return payload;
@@ -2691,6 +2742,7 @@ async function executeCaptureNodeForTool(
     bytes: saved.bytes,
     width: saved.width,
     height: saved.height,
+    diagnostics: filtered.diagnostics.length > 0 ? diagnosticsForResponse(filtered.diagnostics) : undefined,
   };
   return payload;
 }
@@ -3439,13 +3491,22 @@ async function executeGetMetadata(
     [...(GET_METADATA_CONTRACT.requiredUpstreamProperties ?? [])],
     requireWrapperUpstreamKind(GET_METADATA_CONTRACT),
   );
+  const passthrough = collectContractPassthroughArguments({
+    args,
+    contract: GET_METADATA_CONTRACT,
+  });
   await runtime.client.connect();
-  const upstreamArgs = removeUndefined({
-    fileKey: requested.fileKey,
-    nodeId: requested.nodeId,
-    clientLanguages: args.clientLanguages,
-    clientFrameworks: args.clientFrameworks,
-  }) as Record<string, unknown>;
+  const filtered = filterAdvertisedUpstreamArguments({
+    upstreamArguments: removeUndefined({
+      fileKey: requested.fileKey,
+      nodeId: requested.nodeId,
+      ...passthrough,
+    }) as Record<string, unknown>,
+    contract: GET_METADATA_CONTRACT,
+    tool,
+    upstreamKind: requireWrapperUpstreamKind(GET_METADATA_CONTRACT),
+  });
+  const upstreamArgs = filtered.arguments;
   const upstream = await runtime.client.callTool(GET_METADATA_TOOL_NAME, upstreamArgs);
   const parsed = parseUpstreamToolResult(upstream);
   const upstreamResult = upstreamEnvelope(parsed, { includePayload: false });
@@ -3487,7 +3548,7 @@ async function executeGetMetadata(
       enrichment: enrichment.summary,
       json: metadata,
     },
-    diagnostics: enrichment.diagnostics,
+    diagnostics: [...filtered.diagnostics, ...enrichment.diagnostics],
     upstream: upstreamResult,
     ...upstreamFailureFields(parsed),
     upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError,
@@ -3607,7 +3668,6 @@ async function executeGetDesignContext(
     upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      ...collectContractPassthroughArguments(args, GET_DESIGN_CONTEXT_CONTRACT),
     }) as Record<string, unknown>,
     responseFields: {
       fileKey: requested.fileKey,
@@ -3647,7 +3707,6 @@ async function executeGetMotionContext(
     upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      ...collectContractPassthroughArguments(args, GET_MOTION_CONTEXT_CONTRACT),
     }) as Record<string, unknown>,
     responseFields: {
       fileKey: requested.fileKey,
@@ -3687,7 +3746,6 @@ async function executeExportVideo(
     upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      ...collectContractPassthroughArguments(args, EXPORT_VIDEO_CONTRACT),
     }) as Record<string, unknown>,
     responseFields: removeUndefined({
       fileKey: requested.fileKey,
@@ -3734,7 +3792,6 @@ async function executeSearchDesignSystem(
     upstreamArguments: removeUndefined({
       fileKey,
       query,
-      ...collectContractPassthroughArguments(args, SEARCH_DESIGN_SYSTEM_CONTRACT),
     }) as Record<string, unknown>,
     responseFields: { fileKey, query },
     historySummary: `Searched Figma design system for ${query}.`,
@@ -3770,7 +3827,6 @@ async function executeGetLibraries(
     session,
     upstreamArguments: removeUndefined({
       fileKey,
-      ...collectContractPassthroughArguments(args, GET_LIBRARIES_CONTRACT),
     }) as Record<string, unknown>,
     responseFields: removeUndefined({ fileKey, offset: args.offset }) as Record<string, unknown>,
     historySummary: `Read Figma libraries for ${fileKey}.`,
@@ -3901,7 +3957,6 @@ async function executeDedicatedUpstreamTool(options: {
     upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
   };
   session: FigmaWorkspaceSession;
-  optionalProperties?: string[];
   upstreamArguments: Record<string, unknown>;
   responseFields: Record<string, unknown>;
   historySummary: string;
@@ -3911,17 +3966,27 @@ async function executeDedicatedUpstreamTool(options: {
   const upstreamKind = requireWrapperUpstreamKind(options.contract);
   const tools = await options.runtime.upstreamToolCache.list(Boolean(options.args.refresh));
   const tool = selectRequiredUpstreamTool(tools, upstreamToolName, upstreamKind);
-  const optionalProperties = sortedUnique([
-    ...(options.optionalProperties ?? []),
-    ...collectPresentPassthroughProperties(options.contract, options.upstreamArguments),
-  ]);
   assertUpstreamToolHasProperties(
     tool,
-    [...(options.contract.requiredUpstreamProperties ?? []), ...optionalProperties],
+    [...(options.contract.requiredUpstreamProperties ?? [])],
     upstreamKind,
   );
+  const passthrough = collectContractPassthroughArguments({
+    args: options.args,
+    contract: options.contract,
+  });
+  const filtered = filterAdvertisedUpstreamArguments({
+    upstreamArguments: removeUndefined({
+      ...options.upstreamArguments,
+      ...passthrough,
+    }) as Record<string, unknown>,
+    contract: options.contract,
+    tool,
+    upstreamKind,
+  });
+  const upstreamArguments = filtered.arguments;
   await options.runtime.client.connect();
-  const upstream = await options.runtime.client.callTool(upstreamToolName, options.upstreamArguments);
+  const upstream = await options.runtime.client.callTool(upstreamToolName, upstreamArguments);
   const parsed = parseUpstreamToolResult(upstream);
   options.runtime.sessions.rememberHistory(options.session, {
     id: randomUUID(),
@@ -3935,6 +4000,7 @@ async function executeDedicatedUpstreamTool(options: {
     ok: !parsed.upstreamError,
     session: responseSession(options.session),
     ...options.responseFields,
+    diagnostics: filtered.diagnostics.length > 0 ? diagnosticsForResponse(filtered.diagnostics) : undefined,
     guidanceRef: createWrapperGuidanceRef(options.contract.toolName),
     ...upstreamResultFields({
       parsed,
@@ -5240,14 +5306,14 @@ function buildUploadAssetsArguments(asset: NormalizedAssetManifestAsset): Record
 function buildCaptureUpstreamArguments(options: {
   fileKey: string;
   nodeId: string;
-  args: FigmaWorkspaceCaptureNodeArguments;
   tool: UpstreamToolInfo;
+  passthroughArguments: Record<string, unknown>;
 }): Record<string, unknown> {
   if (options.tool.name === "get_screenshot") {
     return removeUndefined({
       fileKey: options.fileKey,
       nodeId: options.nodeId,
-      ...collectContractPassthroughArguments(options.args, CAPTURE_NODE_CONTRACT),
+      ...options.passthroughArguments,
     }) as Record<string, unknown>;
   }
   throw new Error(
@@ -7668,6 +7734,20 @@ function diagnosticsForResponse(
   diagnostics: FigmaWorkspaceDiagnostic[] | undefined,
 ): FigmaWorkspaceDiagnostic[] {
   return diagnostics ?? [];
+}
+
+function dedupeDiagnostics(diagnostics: FigmaWorkspaceDiagnostic[]): FigmaWorkspaceDiagnostic[] {
+  const seen = new Set<string>();
+  const result: FigmaWorkspaceDiagnostic[] = [];
+  for (const diagnostic of diagnostics) {
+    const key = `${diagnostic.code}\n${diagnostic.message}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(diagnostic);
+  }
+  return result;
 }
 
 function responseSession(

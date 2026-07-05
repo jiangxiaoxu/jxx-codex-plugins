@@ -47,8 +47,9 @@
     "@babel/parser": "^8.0.0",
     "@figma/plugin-typings": "^1.130.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@typescript/typescript6": "6.0.1",
     "acorn": "^8.17.0",
-    "typescript": "^5.9.3"
+    "typescript": "7.0.1-rc"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
