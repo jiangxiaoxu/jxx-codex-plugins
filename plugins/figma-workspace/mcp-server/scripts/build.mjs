@@ -59,6 +59,7 @@ for (const output of outputs) {
   await build({
     ...sharedBuildOptions,
     bundle: output.bundle,
+    external: output.bundle ? ["typescript"] : undefined,
     entryPoints: [output.entryPoint],
     outfile: output.outfile,
   });
@@ -70,6 +71,7 @@ for (const output of outputs) {
 }
 
 await stageUpstreamCorpus();
+await stageHelperDeclarations();
 
 function stripTrailingWhitespace(value) {
   return value.replace(/[ \t]+$/gm, "");
@@ -80,4 +82,10 @@ async function stageUpstreamCorpus() {
   const target = resolve(dist, "skills/figma-workspace/references/upstream-corpus");
   await rm(target, { recursive: true, force: true });
   await cp(source, target, { recursive: true });
+}
+
+async function stageHelperDeclarations() {
+  const source = resolve(root, "src/runtime/figma-workspace-helpers.d.ts");
+  await cp(source, resolve(dist, "mcp/figma-workspace-helpers.d.ts"));
+  await cp(source, resolve(dist, "upstream/figma-workspace-helpers.d.ts"));
 }

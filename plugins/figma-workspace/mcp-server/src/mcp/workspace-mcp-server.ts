@@ -217,7 +217,7 @@ export type {
 
 const DEFAULT_EVAL_TOOL_NAME = "use_figma";
 const DEFAULT_EVAL_ARGUMENT_NAME = "code";
-const DEFAULT_EVAL_DESCRIPTION = "Figma Workspace JavaScript execution";
+const DEFAULT_EVAL_DESCRIPTION = "Figma Workspace Plugin API execution";
 export const FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES = [
   "remember",
   "forget",
@@ -225,11 +225,7 @@ export const FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES = [
   "node",
   "select",
   "cloneNodeTree",
-  "findAll",
-  "find",
   "text",
-  "layout",
-  "create",
   "findFreeSlot",
   "placeNode",
   "replaceGeneratedFrame",
@@ -949,13 +945,13 @@ export function createFigmaWorkspaceClient(
     eval: async (args) =>
       parseJsonToolResult<FigmaWorkspaceEvalResult>(
         await handleEval(
-          asEvalArgs(withDefaultTitle(args, "Run Figma Workspace JavaScript")),
+          asEvalArgs(withDefaultTitle(args, "Run Figma Workspace Plugin API")),
           runtime,
         ),
       ),
     runScriptFile: async (args) =>
       executeRunScriptFile(
-        asRunScriptFileArgs(withDefaultTitle(args, "Run Figma JavaScript file")),
+        asRunScriptFileArgs(withDefaultTitle(args, "Run Figma TypeScript file")),
         runtime,
       ) as Promise<FigmaWorkspaceRunScriptFileResult>,
     applyAssetManifest: async (args) =>
@@ -1069,7 +1065,7 @@ export function createFigmaWorkspaceMcpServer(
       },
       instructions: [
         "Stateful workspace MCP proxy for the official Figma MCP server.",
-        "Use figma_workspace_prepare_task and figma_workspace_run_script_file for repairable .figma.js workflows, figma_workspace_eval for small batched Plugin API JavaScript, and figma-workspace://sessions resources to inspect local state.",
+        "Use figma_workspace_prepare_task and figma_workspace_run_script_file for repairable .figma.ts workflows, figma_workspace_eval for small batched Plugin API calls, and figma-workspace://sessions resources to inspect local state.",
         "The proxy stores only local session metadata and node-id handles; Figma execution still happens through the upstream use_figma tool.",
       ].join(" "),
     },
@@ -1096,11 +1092,11 @@ export function createFigmaWorkspaceMcpServer(
         );
       case "figma_workspace_eval":
         return handleEval(
-          asEvalArgs(withMcpDefaultTitle(rawArgs, "Run Figma Workspace JavaScript")),
+          asEvalArgs(withMcpDefaultTitle(rawArgs, "Run Figma Workspace Plugin API")),
           runtime,
         );
       case "figma_workspace_run_script_file":
-        return handleRunScriptFile(asRunScriptFileArgs(withMcpDefaultTitle(rawArgs, "Run Figma JavaScript file")), runtime);
+        return handleRunScriptFile(asRunScriptFileArgs(withMcpDefaultTitle(rawArgs, "Run Figma TypeScript file")), runtime);
       case "figma_workspace_apply_asset_manifest":
         return handleApplyAssetManifest(asApplyAssetManifestArgs(withMcpDefaultTitle(rawArgs, "Apply Figma asset manifest")), runtime);
       case "figma_workspace_download_assets":
@@ -1625,7 +1621,7 @@ async function executeRunScriptFile(
         severity: "fatal",
         message: `Figma Workspace script file was not found: ${scriptPath}`,
         suggestion: "Create the workspace script file or rerun figma_workspace_prepare_task with overwrite=true before running it.",
-        docsHint: "Use figma_workspace_prepare_task to create the .figma.js file, then run figma_workspace_run_script_file with that inputFile.",
+        docsHint: "Use figma_workspace_prepare_task to create the .figma.ts file, then run figma_workspace_run_script_file with that inputFile.",
         source: { scriptPath },
       },
     ];
@@ -2820,7 +2816,7 @@ async function handlePrepareTask(
     const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
 
     await ensureWorkspaceDirectories(workspace);
-    await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, args), Boolean(args.overwrite));
+    await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, scriptName, args), Boolean(args.overwrite));
     const payload = {
       ok: true,
       session: session ? responseSession(session) : undefined,
@@ -2840,8 +2836,8 @@ async function handlePrepareTask(
           previousTask.sessionDir !== workspace.sessionDir,
       },
       next: [
-        "Edit the .figma.js file in this task folder.",
-        "Run figma_workspace_run_script_file; it preflights diagnostics before upstream execution.",
+        "Edit the .figma.ts file in this task folder.",
+        "Run figma_workspace_run_script_file; it strict-checks TypeScript and preflights diagnostics before upstream execution.",
         "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions.",
       ],
     };
@@ -2973,7 +2969,7 @@ async function handleGuidance(
       workflow: createFileWorkflowPayload(),
       steps: [
         "Prepare or reuse a task workspace with figma_workspace_prepare_task.",
-        "Write the transaction in a local .figma.js file using $ helpers and native Figma Plugin API calls.",
+        "Write the transaction in a local .figma.ts file using $ helpers and native Figma Plugin API calls.",
         "Call figma_workspace_run_script_file with strict=true, surface, inputFile, and inlineResultLimit.",
         "If preflight diagnostics fail, repair local file/line diagnostics and rerun the same script file.",
         "Inspect the paired .result.json file first when inline results are capped.",
@@ -3029,7 +3025,7 @@ async function handleGuidance(
     ok: true,
     cards: cards.map(createPublicApiCardPayload),
     catalogSize: FIGMA_WORKSPACE_API_CARDS.length,
-    guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, guardrails, and pitfalls for .figma.js file workflows.",
+    guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, guardrails, and pitfalls for .figma.ts file workflows.",
     recommendedCards: cards.map((card) => card.id),
     queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
     apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
@@ -4533,28 +4529,6 @@ function resolveHandleId(nameOrId) {
   return nameOrId;
 }
 
-function createHelperNode(type) {
-  switch (type) {
-    case "FRAME":
-      return figma.createFrame();
-    case "TEXT":
-      return figma.createText();
-    case "RECTANGLE":
-      return figma.createRectangle();
-    case "ELLIPSE":
-      return figma.createEllipse();
-    case "LINE":
-      return figma.createLine();
-    case "COMPONENT":
-      if (typeof figma.createComponent !== "function") {
-        throw new Error("figma.createComponent is not available on this surface.");
-      }
-      return figma.createComponent();
-    default:
-      throw new Error("Unsupported createNode type: " + type);
-  }
-}
-
 function readFiniteNumber(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number)) {
@@ -4625,76 +4599,6 @@ async function applyTextHelper(node, options) {
   node.characters = String(options && options.text !== undefined ? options.text : "");
   if (options && options.style) {
     await applyStyleReference(node, options.style);
-  }
-}
-
-function applyAutoLayout(node, layout) {
-  if (!layout || typeof layout !== "object") return;
-  const assign = (name) => {
-    if (layout[name] !== undefined) node[name] = layout[name];
-  };
-  assign("layoutMode");
-  assign("primaryAxisSizingMode");
-  assign("counterAxisSizingMode");
-  assign("primaryAxisAlignItems");
-  assign("counterAxisAlignItems");
-  assign("itemSpacing");
-  assign("paddingLeft");
-  assign("paddingRight");
-  assign("paddingTop");
-  assign("paddingBottom");
-  assign("layoutWrap");
-  assign("counterAxisSpacing");
-}
-
-function queryNodes(root, criteria) {
-  const limit = Number(criteria && criteria.limit ? criteria.limit : 50);
-  const matches = [];
-  const visit = (node) => {
-    if (!node || matches.length >= limit) return;
-    if (node !== root) {
-      const nameMatches = !criteria.name || node.name === criteria.name || (typeof node.name === "string" && node.name.includes(criteria.name));
-      const typeMatches = !criteria.type || node.type === String(criteria.type).toUpperCase();
-      const visibleMatches = criteria.includeInvisible || node.visible !== false;
-      if (nameMatches && typeMatches && visibleMatches) {
-        matches.push(node);
-      }
-    }
-    if ("children" in node && Array.isArray(node.children)) {
-      for (const child of node.children) visit(child);
-    }
-  };
-  visit(root);
-  return matches;
-}
-
-function setNodeProperties(node, properties) {
-  const allowed = new Set([
-    "name",
-    "visible",
-    "opacity",
-    "x",
-    "y",
-    "rotation",
-    "layoutMode",
-    "primaryAxisSizingMode",
-    "counterAxisSizingMode",
-    "primaryAxisAlignItems",
-    "counterAxisAlignItems",
-    "itemSpacing",
-    "paddingLeft",
-    "paddingRight",
-    "paddingTop",
-    "paddingBottom",
-    "layoutWrap",
-    "counterAxisSpacing",
-    "fontSize",
-  ]);
-  for (const [key, value] of Object.entries(properties || {})) {
-    if (!allowed.has(key)) {
-      throw new Error("set op does not allow property: " + key);
-    }
-    node[key] = value;
   }
 }
 
@@ -4864,28 +4768,6 @@ $.cloneNodeTree = cloneNodeTreeForRepl;
 $.findFreeSlot = findFreeSlotForRepl;
 $.placeNode = placeNodeForRepl;
 $.replaceGeneratedFrame = replaceGeneratedFrameForRepl;
-$.findAll = async function findAll(criteria = {}) {
-  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
-  const root = input.within ? await $(input.within) : figma.currentPage;
-  const matches = queryNodes(root, {
-    name: input.name,
-    type: input.type,
-    includeInvisible: input.includeInvisible,
-    limit: input.limit || 50,
-  });
-  if (input.as && matches[0]) remember(input.as, matches[0]);
-  return matches;
-};
-$.find = async function find(criteria = {}) {
-  const input = typeof criteria === "string" ? { name: criteria } : (criteria || {});
-  const matches = await $.findAll({ ...input, limit: input.limit || 1 });
-  const node = matches[0] || null;
-  if (!node && input.required !== false) {
-    throw new Error("No Figma node matched $.find criteria.");
-  }
-  if (node && input.as) remember(input.as, node);
-  return node;
-};
 $.text = async function text(targetOrOptions, textValue, options = {}) {
   const input = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions)
     ? targetOrOptions
@@ -4918,32 +4800,6 @@ $.text = async function text(targetOrOptions, textValue, options = {}) {
   if (input.position !== undefined) setNodePositionFromInput(node, input.position);
   if (input.size !== undefined) setNodeSizeFromInput(node, input.size);
   if (input.as) remember(input.as, node);
-  return node;
-};
-$.layout = async function layout(target, layoutOptions = {}) {
-  const node = await $(target);
-  applyAutoLayout(node, layoutOptions);
-  return node;
-};
-$.create = async function create(options = {}) {
-  const type = String(options.type || "FRAME").toUpperCase();
-  const node = createHelperNode(type);
-  if (options.name !== undefined) node.name = String(options.name);
-  if (type === "TEXT") {
-    await applyTextHelper(node, { text: options.text || "", font: options.font, style: options.style });
-    if (options.appearance !== undefined) applyAppearance(node, options.appearance);
-  } else if (options.size !== undefined) {
-    setNodeSizeFromInput(node, options.size);
-  }
-  if (options.layout !== undefined) applyAutoLayout(node, options.layout);
-  if (options.appearance !== undefined && type !== "TEXT") applyAppearance(node, options.appearance);
-  if (options.parent) {
-    const parent = await $(options.parent);
-    parent.appendChild(node);
-  } else {
-    figma.currentPage.appendChild(node);
-  }
-  if (options.as) remember(options.as, node);
   return node;
 };
 ${includeEvalHelpers ? `
@@ -5054,13 +4910,11 @@ function stripFigmaWorkspacePreludeForEvalHelpers(source: string, injectedHelper
   const needsPlaceNode = has("placeNode") || has("replaceGeneratedFrame");
   const needsReplaceGeneratedFrame = has("replaceGeneratedFrame");
   const needsClone = has("cloneNodeTree");
-  const needsReadFiniteNumber = has("text") || has("create") || has("imageAsset") || needsPlacement || needsClone;
-  const needsSizeInput = has("text") || has("create") || has("imageAsset") || needsReplaceGeneratedFrame;
+  const needsReadFiniteNumber = has("text") || has("imageAsset") || needsPlacement || needsClone;
+  const needsSizeInput = has("text") || has("imageAsset") || needsReplaceGeneratedFrame;
   const needsPositionInput = has("text") || has("imageAsset") || needsReplaceGeneratedFrame || needsClone;
-  const needsAppearance = has("text") || has("create");
-  const needsText = has("text") || has("create");
-  const needsAutoLayout = has("layout") || has("create");
-  const needsQuery = has("find") || has("findAll");
+  const needsAppearance = has("text");
+  const needsText = has("text");
   const needsResolveHandleId = has("resolveId") || has("node") || needsText;
 
   if (!needsSelect) prelude = replaceDelimitedSource(prelude, "async function selectNodesForRepl", "function resolveSceneNodeForPlacement", "");
@@ -5073,21 +4927,17 @@ function stripFigmaWorkspacePreludeForEvalHelpers(source: string, injectedHelper
   if (!needsClone) prelude = replaceDelimitedSource(prelude, "async function cloneNodeTreeForRepl", "function solidPaint", "");
   if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function solidPaint", "function resolveHandleId", "");
   else prelude = replaceDelimitedSource(prelude, "function normalizeRgba", "function resolveHandleId", "");
-  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function createHelperNode", "");
-  if (!has("create")) prelude = replaceDelimitedSource(prelude, "function createHelperNode", "function readFiniteNumber", "");
+  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function readFiniteNumber", "");
   if (!needsReadFiniteNumber) prelude = replaceDelimitedSource(prelude, "function readFiniteNumber", "function setNodeSizeFromInput", "");
   if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSizeFromInput", "function setNodePositionFromInput", "");
   if (!needsPositionInput) prelude = replaceDelimitedSource(prelude, "function setNodePositionFromInput", "function applyAppearance", "");
   if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function applyAppearance", "function applyConstraints", "");
   prelude = replaceDelimitedSource(prelude, "function applyConstraints", "function fontFromHelperInput", "");
   if (!needsText) {
-    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function applyAutoLayout", "");
-  } else if (!has("create")) {
-    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function applyAutoLayout", "");
+    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function setNodeSize", "");
+  } else {
+    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function setNodeSize", "");
   }
-  if (!needsAutoLayout) prelude = replaceDelimitedSource(prelude, "function applyAutoLayout", "function queryNodes", "");
-  if (!needsQuery) prelude = replaceDelimitedSource(prelude, "function queryNodes", "function setNodeProperties", "");
-  prelude = replaceDelimitedSource(prelude, "function setNodeProperties", "function setNodeSize", "");
   if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSize", "async function loadFont", "");
   if (!needsText) prelude = replaceDelimitedSource(prelude, "async function loadFont", "function applyCollectionModes", "");
   prelude = replaceDelimitedSource(prelude, "function applyCollectionModes", "async function applyStyleReference", "");
@@ -5103,11 +4953,7 @@ function stripFigmaWorkspacePreludeForEvalHelpers(source: string, injectedHelper
   if (!has("findFreeSlot")) removeLine("$.findFreeSlot = findFreeSlotForRepl;");
   if (!has("placeNode")) removeLine("$.placeNode = placeNodeForRepl;");
   if (!has("replaceGeneratedFrame")) removeLine("$.replaceGeneratedFrame = replaceGeneratedFrameForRepl;");
-  if (!has("findAll")) prelude = replaceDelimitedSource(prelude, "$.findAll = async function findAll", "$.find = async function find", "");
-  if (!has("find")) prelude = replaceDelimitedSource(prelude, "$.find = async function find", "$.text = async function text", "");
-  if (!has("text")) prelude = replaceDelimitedSource(prelude, "$.text = async function text", "$.layout = async function layout", "");
-  if (!has("layout")) prelude = replaceDelimitedSource(prelude, "$.layout = async function layout", "$.create = async function create", "");
-  if (!has("create")) prelude = replaceDelimitedSource(prelude, "$.create = async function create", "function __figmaReplDecodeBase64", "");
+  if (!has("text")) prelude = replaceDelimitedSource(prelude, "$.text = async function text", "function __figmaReplDecodeBase64", "");
   if (!has("imageAsset")) prelude = replaceDelimitedSource(prelude, "function __figmaReplDecodeBase64", "$.inspect = async function inspect", "");
   if (!has("inspect")) prelude = replaceDelimitedSource(prelude, "$.inspect = async function inspect", "$.screenshot = async function screenshot", "");
   if (!has("screenshot")) prelude = replaceDelimitedSource(prelude, "$.screenshot = async function screenshot", "$.checkpoint = async function checkpoint", "");
@@ -5122,33 +4968,27 @@ function stripFigmaWorkspacePreludeForScriptHelpers(source: string, injectedHelp
   let prelude = source;
   const has = (helper: string) => injectedHelpers.has(`$.${helper}`);
   const needsSummary = has("select") || has("inspect") || has("cloneNodeTree") || has("checkpoint") || has("replaceGeneratedFrame");
-  const needsReadFiniteNumber = has("text") || has("create") || has("imageAsset") || has("cloneNodeTree") || has("placeNode") || has("findFreeSlot") || has("replaceGeneratedFrame");
-  const needsSizeInput = has("text") || has("create") || has("imageAsset") || has("replaceGeneratedFrame");
+  const needsReadFiniteNumber = has("text") || has("imageAsset") || has("cloneNodeTree") || has("placeNode") || has("findFreeSlot") || has("replaceGeneratedFrame");
+  const needsSizeInput = has("text") || has("imageAsset") || has("replaceGeneratedFrame");
   const needsPositionInput = has("text") || has("imageAsset") || has("cloneNodeTree") || has("replaceGeneratedFrame");
-  const needsAppearance = has("text") || has("create");
-  const needsText = has("text") || has("create");
-  const needsAutoLayout = has("layout") || has("create");
-  const needsQuery = has("find") || has("findAll");
+  const needsAppearance = has("text");
+  const needsText = has("text");
   const needsResolveHandleId = has("resolveId") || has("node") || needsText;
 
   prelude = replaceDelimitedSource(prelude, "async function selectNodesForRepl", "function solidPaint", "");
   if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function solidPaint", "function resolveHandleId", "");
   else prelude = replaceDelimitedSource(prelude, "function normalizeRgba", "function resolveHandleId", "");
-  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function createHelperNode", "");
-  if (!has("create")) prelude = replaceDelimitedSource(prelude, "function createHelperNode", "function readFiniteNumber", "");
+  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function readFiniteNumber", "");
   if (!needsReadFiniteNumber) prelude = replaceDelimitedSource(prelude, "function readFiniteNumber", "function setNodeSizeFromInput", "");
   if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSizeFromInput", "function setNodePositionFromInput", "");
   if (!needsPositionInput) prelude = replaceDelimitedSource(prelude, "function setNodePositionFromInput", "function applyAppearance", "");
   if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function applyAppearance", "function applyConstraints", "");
   prelude = replaceDelimitedSource(prelude, "function applyConstraints", "function fontFromHelperInput", "");
   if (!needsText) {
-    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function applyAutoLayout", "");
-  } else if (!has("create")) {
-    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function applyAutoLayout", "");
+    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function setNodeSize", "");
+  } else {
+    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function setNodeSize", "");
   }
-  if (!needsAutoLayout) prelude = replaceDelimitedSource(prelude, "function applyAutoLayout", "function queryNodes", "");
-  if (!needsQuery) prelude = replaceDelimitedSource(prelude, "function queryNodes", "function setNodeProperties", "");
-  prelude = replaceDelimitedSource(prelude, "function setNodeProperties", "function setNodeSize", "");
   if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSize", "async function loadFont", "");
   if (!needsText) prelude = replaceDelimitedSource(prelude, "async function loadFont", "function applyCollectionModes", "");
   prelude = replaceDelimitedSource(prelude, "function applyCollectionModes", "async function applyStyleReference", "");
@@ -6532,10 +6372,13 @@ function deriveTaskName(
   return value;
 }
 
-function createTaskScriptTemplate(taskName: string, args: FigmaWorkspacePrepareTaskArguments): string {
+function createTaskScriptTemplate(taskName: string, scriptName: string, args: FigmaWorkspacePrepareTaskArguments): string {
   return [
-    `// ${taskName}.figma.js`,
+    `// ${scriptName}`,
     "// Async Figma Plugin API body for figma_workspace_run_script_file.",
+    scriptName.endsWith(".figma.ts")
+      ? "// TypeScript is strict-checked with Figma Plugin API typings before execution."
+      : undefined,
     "// Use $ helpers plus native Figma Plugin API calls and return compact JSON.",
     args.taskName ? `// Task: ${String(args.taskName)}` : undefined,
     args.surface ? `// Surface: ${String(args.surface)}` : undefined,
@@ -6555,11 +6398,7 @@ const FIGMA_WORKSPACE_EVAL_HELPER_DESCRIPTIONS: Record<FigmaWorkspaceEvalHelperP
   "$.node": "Resolve a cached handle or raw node id to the Figma node.",
   "$.select": "Resolve handles/node ids, validate selectable scene nodes, update selection, and optionally zoom.",
   "$.cloneNodeTree": "Copy a source node beside itself with outer-to-inner cloning and instance-subtree preservation.",
-  "$.findAll": "Find matching nodes by scoped criteria.",
-  "$.find": "Find one node by { name, type, within, as, required } and optionally remember it.",
   "$.text": "Create or update a text node with font loading and optional handle storage.",
-  "$.layout": "Apply auto-layout properties to a target node.",
-  "$.create": "Create a common Design node with optional parent, size, layout, appearance, and handle.",
   "$.findFreeSlot": "Find a non-overlapping slot in one parent using a preferred x/y, fixed size, gap, and direction.",
   "$.placeNode": "Move a node to an explicit or non-overlapping generated slot and return placement metadata.",
   "$.replaceGeneratedFrame": "Safely replace generated top-level FRAME nodes whose names match a guarded prefix.",
@@ -6586,23 +6425,24 @@ function createEvalHelperDescriptionsPayload(): Record<FigmaWorkspaceEvalHelperP
 function createFileWorkflowPayload(): Record<string, unknown> {
   return {
     primaryTool: "figma_workspace_run_script_file",
-    fileExtension: ".figma.js",
+    fileExtension: ".figma.ts",
+    supportedFileExtensions: [".figma.ts"],
     prepareTool: "figma_workspace_prepare_task",
     planTool: "figma_workspace_guidance",
-    workspaceLayout: "<cwd>/figma-workspace/<fileKey-or-fileSlug>/<taskName>.figma.js; debug JSON files are generated on demand",
+    workspaceLayout: "<cwd>/figma-workspace/<fileKey-or-fileSlug>/<taskName>.figma.ts; debug JSON files are generated on demand",
     outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
     workflowTools: ["figma_workspace_get_metadata", "figma_workspace_inspect", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan"],
     helpers: createEvalHelperPathList(),
     defaultTaskRoot: `${TASK_WORKSPACE_ROOT_ENV}, then OS temp figma-workspace/tasks/<slug>`,
     guidance: [
-      "Keep non-trivial Plugin API work in local .figma.js files.",
+      "Keep non-trivial Plugin API work in local .figma.ts files.",
       "Initialize a file workspace once, then keep task scripts in that file-context folder.",
-      "Run figma_workspace_run_script_file directly; it preflights file-aware diagnostics before upstream calls.",
-      "Keep each .figma.js transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The runner and eval wrapper parse JavaScript ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; compact session state and workspace file context are available through figma-workspace://sessions/{id}, and the full handle map is available through figma-workspace://sessions/{id}/handles.",
+      "Run figma_workspace_run_script_file directly; it strict-checks .figma.ts files with Figma Plugin API typings, compiles the upstream payload internally, and preflights file-aware diagnostics before upstream calls.",
+      "Keep each .figma.ts transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
+      "The runner and eval wrapper parse script ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; compact session state and workspace file context are available through figma-workspace://sessions/{id}, and the full handle map is available through figma-workspace://sessions/{id}/handles.",
       "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
-      "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.js and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
+      "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.ts and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
       "Use figma_workspace_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
       "Use figma_workspace_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
       "Use figma_workspace_capture_node to write final visual QA captures to local PNG files. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
@@ -6614,7 +6454,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot; avoid covering primary controls, text, or content that visual QA must inspect.",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
       "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
-      "When upstream execution fails after preflight, outputFiles.compiledScriptFile points to a *.failure.compiled.js wrapper with a failure header for line-aware repair; preflight failures and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
+      "When upstream execution fails after preflight, outputFiles.compiledScriptFile points to a *.failure.compiled.txt payload with a failure header for line-aware repair; preflight failures and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
     ],
   };
 }
@@ -6824,7 +6664,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       avoidUnless: {
         cwd: "Omit cwd for the MCP server process cwd; pass it only when the server cwd is not the intended project directory.",
         workspaceOverrides: "Use workspaceDir/taskRoot only when deliberately bypassing the default <cwd>/figma-workspace/<fileKey-or-fileSlug> layout.",
-        fileName: "Use fileName only when the generated <task>.figma.js name is unsuitable.",
+        fileName: "Use fileName only when the generated <task>.figma.ts name is unsuitable.",
         overwrite: "Use only after deciding that replacing an existing script/result pair is intended.",
       },
     },
@@ -7034,7 +6874,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
   return {
     purpose: "Routing manifest for the Figma Workspace MCP facade. Stay on figma_workspace_mcp for normal work; it keeps local sessions, handles, workspace files, diagnostics, and structured tool results while upstream execution still goes through official Figma MCP tools.",
     defaultFlow: [
-      "Use figma_workspace_prepare_task with file, taskName, and surface for repairable .figma.js work.",
+      "Use figma_workspace_prepare_task with file, taskName, and surface for repairable .figma.ts work.",
       "Use figma_workspace_guidance with compact keywords before writing scripts; use figma_workspace_lookup only for exact docs/API snippets.",
       "Run figma_workspace_run_script_file with inputFile and strict=true; repair every repairPlan.steps item and rerun the same file.",
       "Use inspect/metadata/capture/design-system/asset tools as workflow add-ons, not as replacements for the file-script path.",
@@ -7081,8 +6921,8 @@ function createGuidePayload(): Record<string, unknown> {
   return {
     purpose: "Continuous workflow guide for common figma_workspace_mcp tasks. For exact helper/API/reference details, use figma_workspace_guidance or figma_workspace_lookup instead of static resources.",
     scriptFileWorkflow: [
-      "Start non-trivial work with figma_workspace_prepare_task so the session has file context and a local .figma.js workspace.",
-      "Write an async script body using static $ helper references and native Figma Plugin API calls. Dynamic $ helper lookup, aliasing $, object rest destructuring of $, and local $ declarations are blocked because helper injection must be statically knowable.",
+      "Start non-trivial work with figma_workspace_prepare_task so the session has file context and a local .figma.ts workspace.",
+      "Write an async script body using static $ helper references and native Figma Plugin API calls. .figma.ts scripts are strict-checked with Figma Plugin API typings and compiled before upstream execution. Dynamic $ helper lookup, aliasing $, object rest destructuring of $, and local $ declarations are blocked because helper injection must be statically knowable.",
       "Run figma_workspace_run_script_file with inputFile. The runner compiles and preflights before upstream use_figma execution; fatal preflight diagnostics return repairPlan.steps with line:column occurrences without calling upstream.",
       "When repairPlan.status is parse_error, fix all syntax-error steps first and rerun; guardrail diagnostics are intentionally skipped until parsing succeeds.",
       "Use $.checkpoint and stable handles such as $hero to make repair loops compact. Read figma-workspace://sessions/{id}/handles when only the handle map is needed.",
@@ -7094,7 +6934,7 @@ function createGuidePayload(): Record<string, unknown> {
     },
     evalWorkflow: [
       "Use figma_workspace_eval only for small ephemeral calls where a local file would add overhead.",
-      "Move repairable, multi-step, asset-heavy, or user-visible mutations into .figma.js files so diagnostics and reruns remain stable.",
+      "Move repairable, multi-step, asset-heavy, or user-visible mutations into .figma.ts files so diagnostics and reruns remain stable.",
     ],
     assetWorkflow: [
       "For small generated PNG/JPEG payloads, $.imageAsset can create or update image-fill rectangles from base64 or byte arrays.",
@@ -7108,7 +6948,7 @@ function createGuidePayload(): Record<string, unknown> {
       "For visible audit markers or temporary verification labels, use metadata/inspect or $.findFreeSlot to place them outside the target frame or in a confirmed free slot, then capture to confirm they do not occlude the design under review.",
     ],
     designSystem: [
-      "Use native Plugin API calls in .figma.js for local variables, styles, components, and bindings.",
+      "Use native Plugin API calls in .figma.ts for local variables, styles, components, and bindings.",
       "Use figma_workspace_search_design_system, figma_workspace_get_libraries, and figma_workspace_get_variable_defs when official design-system context is needed through first-class wrappers.",
     ],
     motionAndShaders: [
@@ -7393,7 +7233,7 @@ const UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS: Record<string, string> = {
   get_code_connect_suggestions: "Suggest Code Connect mappings for a Figma node.",
   send_code_connect_mappings: "Save approved Code Connect mappings in bulk.",
   get_context_for_code_connect: "Get component metadata needed for Code Connect mapping.",
-  use_figma: "Run Plugin API JavaScript to create, inspect, or edit Figma content.",
+  use_figma: "Run Plugin API code to create, inspect, or edit Figma content.",
   get_libraries: "List subscribed and available libraries for a Figma file.",
   search_design_system: "Search library components, variables, and styles by text query.",
   create_new_file: "Create a new blank Figma file.",
@@ -7631,7 +7471,7 @@ function primaryFixForUpstreamError(error: FigmaWorkspaceUpstreamError): string 
   if (message.includes("selection")) {
     return "Use $.select([...]) or explicit node ids/handles instead of direct figma.currentPage.selection access.";
   }
-  return "Open the paired .figma.js file, repair the upstream Plugin API error, then rerun the same script with strict=true.";
+  return "Open the paired .figma.ts file, repair the upstream Plugin API error, then rerun the same script with strict=true.";
 }
 
 function stringFromUnknown(value: unknown): string | undefined {

@@ -48,7 +48,7 @@ export interface FigmaWorkspaceDiagnosticsOptions {
     expectedSurface?: FigmaWorkspaceSurface;
     strict?: boolean;
 }
-export type FigmaWorkspaceScriptHelperName = "select" | "findAll" | "find" | "text" | "layout" | "create" | "findFreeSlot" | "placeNode" | "replaceGeneratedFrame" | "imageAsset" | "inspect" | "screenshot" | "cloneNodeTree" | "checkpoint";
+export type FigmaWorkspaceScriptHelperName = "select" | "text" | "findFreeSlot" | "placeNode" | "replaceGeneratedFrame" | "imageAsset" | "inspect" | "screenshot" | "cloneNodeTree" | "checkpoint";
 export interface FigmaWorkspaceScriptHelperSelection {
     helperNames: Set<FigmaWorkspaceScriptHelperName>;
     baseProperties: Set<string>;
