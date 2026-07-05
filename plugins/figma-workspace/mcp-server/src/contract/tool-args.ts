@@ -492,6 +492,7 @@ export function asGetMetadataArgs(args: unknown): FigmaWorkspaceGetMetadataArgum
     "clientLanguages",
     "clientFrameworks",
   ]);
+  assertOptionalTargetValue(record.target, "target");
   return record;
 }
 

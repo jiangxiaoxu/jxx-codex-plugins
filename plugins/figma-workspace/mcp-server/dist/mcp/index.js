@@ -41606,6 +41606,7 @@ function asGetMetadataArgs(args) {
     "clientLanguages",
     "clientFrameworks"
   ]);
+  assertOptionalTargetValue(record2.target, "target");
   return record2;
 }
 function asGetDesignContextArgs(args) {
@@ -45962,10 +45963,7 @@ async function executeGetMetadata(args, runtime) {
   const tool = selectRequiredUpstreamTool(tools, GET_METADATA_TOOL_NAME, requireWrapperUpstreamKind(GET_METADATA_CONTRACT));
   assertUpstreamToolHasProperties(
     tool,
-    [
-      ...GET_METADATA_CONTRACT.requiredUpstreamProperties ?? [],
-      ...GET_METADATA_CONTRACT.optionalUpstreamProperties ?? []
-    ],
+    [...GET_METADATA_CONTRACT.requiredUpstreamProperties ?? []],
     requireWrapperUpstreamKind(GET_METADATA_CONTRACT)
   );
   await runtime.client.connect();

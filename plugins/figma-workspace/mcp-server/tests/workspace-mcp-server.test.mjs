@@ -2685,9 +2685,6 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
             type: "object",
             properties: {
               fileKey: { type: "string" },
-              nodeId: { type: "string" },
-              clientLanguages: { type: "string" },
-              clientFrameworks: { type: "string" },
             },
           },
         },
@@ -2772,6 +2769,15 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     assert.equal(fileOnlyMetadataFile.root.nodeId, "1:2");
     assert.equal(fileOnlyMetadataFile.root.locked, true);
     assert.equal(fileOnly.outputFiles.upstreamFile, undefined);
+
+    const objectTarget = await repl.getMetadata({
+      title: "Read metadata object target",
+      sessionId: "metadata-main",
+      target: { fileKey: "ExampleFigmaFileKey012", nodeId: "1:2" },
+    });
+    assert.equal(objectTarget.ok, true);
+    assert.equal(objectTarget.fileKey, "ExampleFigmaFileKey012");
+    assert.equal(objectTarget.nodeId, "1:2");
   } finally {
     await repl.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -2785,8 +2791,12 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     "callTool",
     "callTool",
     "callTool",
+    "callTool",
+    "callTool",
   ]);
   assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), [
+    "get_metadata",
+    "use_figma",
     "get_metadata",
     "use_figma",
     "get_metadata",
@@ -3460,6 +3470,26 @@ test("figma workspace runtime parsers reject malformed tool argument shapes", as
       },
     }),
     /Tool argument "target" must be a string selector, handle, node id, or node URL\. Do not pass \{ fileKey, nodeId \} to figma_workspace_inspect\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_get_metadata",
+      arguments: {
+        title: "Reject metadata numeric target",
+        target: 123,
+      },
+    }),
+    /Tool argument "target" must be a string or object\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_get_metadata",
+      arguments: {
+        title: "Reject metadata malformed object target",
+        target: { nodeId: 123 },
+      },
+    }),
+    /Tool argument "target\.nodeId" must be a string\./,
   );
   await assert.rejects(
     mcpClient.callTool({

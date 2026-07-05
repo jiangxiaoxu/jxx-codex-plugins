@@ -3397,10 +3397,7 @@ async function executeGetMetadata(
   const tool = selectRequiredUpstreamTool(tools, GET_METADATA_TOOL_NAME, requireWrapperUpstreamKind(GET_METADATA_CONTRACT));
   assertUpstreamToolHasProperties(
     tool,
-    [
-      ...(GET_METADATA_CONTRACT.requiredUpstreamProperties ?? []),
-      ...(GET_METADATA_CONTRACT.optionalUpstreamProperties ?? []),
-    ],
+    [...(GET_METADATA_CONTRACT.requiredUpstreamProperties ?? [])],
     requireWrapperUpstreamKind(GET_METADATA_CONTRACT),
   );
   await runtime.client.connect();
