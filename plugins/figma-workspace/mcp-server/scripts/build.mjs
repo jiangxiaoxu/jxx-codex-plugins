@@ -96,7 +96,7 @@ async function stageUpstreamCorpus() {
 async function stageHelperDeclarations() {
   const source = resolve(root, "src/runtime/figma-workspace-helpers.d.ts");
   const figmaTypings = resolve(root, "node_modules/@figma/plugin-typings");
-  const typescriptLib = resolve(root, "node_modules/typescript/lib");
+  const typescriptLib = resolve(root, "node_modules/@typescript/typescript6/node_modules/typescript/lib");
   await cp(source, resolve(dist, "mcp/figma-workspace-helpers.d.ts"));
   await cp(source, resolve(dist, "upstream/figma-workspace-helpers.d.ts"));
   await stageFigmaPluginTypings(figmaTypings, resolve(dist, "mcp/figma-plugin-typings"));

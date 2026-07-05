@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import * as ts from "typescript";
+import * as ts from "@typescript/typescript6";
 
 export type FigmaWorkspaceSurface = "design" | "figjam" | "slides";
 
@@ -280,7 +280,7 @@ function createFigmaWorkspaceTypescriptCompilerOptions(strict: boolean): ts.Comp
   return {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Node10,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
     lib: ["lib.es2022.d.ts", "lib.dom.d.ts"],
     strict: true,
     noImplicitAny: true,
@@ -288,8 +288,9 @@ function createFigmaWorkspaceTypescriptCompilerOptions(strict: boolean): ts.Comp
     skipLibCheck: true,
     noEmitOnError: strict,
     isolatedModules: false,
-    esModuleInterop: false,
-    allowSyntheticDefaultImports: false,
+    esModuleInterop: true,
+    allowSyntheticDefaultImports: true,
+    ignoreDeprecations: "6.0",
     removeComments: false,
   };
 }
