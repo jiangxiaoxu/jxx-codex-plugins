@@ -280,6 +280,9 @@ const fakeUpstream = {
   async listResources() {
     return { resources: [] };
   },
+  async listResourceTemplates() {
+    return { resourceTemplates: [] };
+  },
   async readResource() {
     return { contents: [] };
   },

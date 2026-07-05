@@ -74,6 +74,8 @@ export interface FigmaWorkspaceCaptureNodeArguments {
     sessionId?: string;
     target: unknown;
     imageFile?: string;
+    maxDimension?: number;
+    contentsOnly?: boolean;
 }
 export interface FigmaWorkspaceTaskPlanStep {
     id?: string;
@@ -123,6 +125,9 @@ export interface FigmaWorkspaceGetDesignContextArguments {
     inlineResultLimit?: number;
     clientLanguages?: string;
     clientFrameworks?: string;
+    forceCode?: boolean;
+    disableCodeConnect?: boolean;
+    excludeScreenshot?: boolean;
 }
 export interface FigmaWorkspaceGetMotionContextArguments {
     [key: string]: unknown;
@@ -133,6 +138,8 @@ export interface FigmaWorkspaceGetMotionContextArguments {
     dirName?: string;
     target?: unknown;
     recursive?: boolean;
+    clientLanguages?: string;
+    clientFrameworks?: string;
     refresh?: boolean;
     inlineResultLimit?: number;
 }
@@ -146,8 +153,15 @@ export interface FigmaWorkspaceExportVideoArguments {
     target?: unknown;
     jobId?: string;
     quality?: "low" | "medium" | "high";
+    fps?: number;
+    constraint?: FigmaWorkspaceExportVideoConstraint;
+    ttlSeconds?: number;
     refresh?: boolean;
     inlineResultLimit?: number;
+}
+export interface FigmaWorkspaceExportVideoConstraint {
+    type: "SCALE" | "WIDTH" | "HEIGHT";
+    value: number;
 }
 export interface FigmaWorkspaceSearchDesignSystemArguments {
     [key: string]: unknown;
@@ -186,8 +200,6 @@ export interface FigmaWorkspaceGetVariableDefsArguments {
     target?: unknown;
     refresh?: boolean;
     inlineResultLimit?: number;
-    clientLanguages?: string;
-    clientFrameworks?: string;
 }
 export interface FigmaWorkspaceLookupArguments {
     [key: string]: unknown;

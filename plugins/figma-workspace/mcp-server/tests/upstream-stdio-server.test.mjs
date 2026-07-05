@@ -55,6 +55,17 @@ test("upstream stdio MCP server proxies tools and resources to the Figma client"
       calls.push(["listResources"]);
       return { resources: [{ uri: "figma://doc", name: "doc" }] };
     },
+    async listResourceTemplates() {
+      calls.push(["listResourceTemplates"]);
+      return {
+        resourceTemplates: [
+          {
+            uriTemplate: "figma://docs/{name}",
+            name: "doc by name",
+          },
+        ],
+      };
+    },
     async readResource(uri) {
       calls.push(["readResource", uri]);
       return {
@@ -139,6 +150,14 @@ test("upstream stdio MCP server proxies tools and resources to the Figma client"
   assert.deepEqual(await mcpClient.listResources(), {
     resources: [{ uri: "figma://doc", name: "doc" }],
   });
+  assert.deepEqual(await mcpClient.listResourceTemplates(), {
+    resourceTemplates: [
+      {
+        uriTemplate: "figma://docs/{name}",
+        name: "doc by name",
+      },
+    ],
+  });
   assert.deepEqual(await mcpClient.readResource({ uri: "figma://doc" }), {
     contents: [
       {
@@ -156,6 +175,7 @@ test("upstream stdio MCP server proxies tools and resources to the Figma client"
     ["callTool", "whoami", { verbose: true }],
     ["callTool", "whoami", { verbose: false }],
     ["listResources"],
+    ["listResourceTemplates"],
     ["readResource", "figma://doc"],
   ]);
 });

@@ -46,6 +46,7 @@ const [
 ]);
 
 export const RemoteMcpClient = clientModule.RemoteMcpClient;
+export const isRemoteMcpOAuthError = clientModule.isRemoteMcpOAuthError;
 export function createRemoteMcpClient(
   options: RemoteMcpClientOptions = {},
 ): ReturnType<typeof clientModule.createRemoteMcpClient> {
@@ -103,11 +104,27 @@ function createNodeReplDefaultUpstreamClient(): NodeReplUpstreamClient {
     async listResources() {
       rejectUpstreamUse();
     },
+    async listResourceTemplates() {
+      rejectUpstreamUse();
+    },
     async readResource() {
       rejectUpstreamUse();
     },
   };
 }
+export {
+  FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION,
+  createFigmaUpstreamContractSnapshot,
+  diffFigmaUpstreamContractSnapshots,
+  formatFigmaUpstreamContractElapsedTime,
+  formatFigmaUpstreamContractDrift,
+  normalizeFigmaUpstreamContractSnapshot,
+  readFigmaUpstreamContractSnapshotFile,
+  writeFigmaUpstreamContractSnapshotFile,
+  type FigmaUpstreamContractClient,
+  type FigmaUpstreamContractDrift,
+  type FigmaUpstreamContractSnapshot,
+} from "./upstream-contract-snapshot.js";
 export type { RemoteMcpClientOptions } from "./remote-mcp-client.js";
 export type {
   FigmaWorkspaceClient,

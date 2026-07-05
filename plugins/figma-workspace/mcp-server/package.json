@@ -38,6 +38,8 @@
   "scripts": {
     "build": "npm run typecheck && node scripts/build.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
     "login:figma-http": "node scripts/login-figma-http.mjs",
+    "upstream:contract:check": "npm run build && node scripts/compare-upstream-contract.mjs",
+    "upstream:contract:refresh": "npm run build && node scripts/refresh-upstream-contract.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs"
   },

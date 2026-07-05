@@ -18469,6 +18469,9 @@ ${authorizationUrl.toString()}`
   async listResources() {
     return this.requireClient().listResources();
   }
+  async listResourceTemplates() {
+    return this.requireClient().listResourceTemplates();
+  }
   async readResource(uri) {
     return this.requireClient().readResource({ uri });
   }
@@ -18775,6 +18778,13 @@ function createFigmaWorkspaceUpstreamStdioServer(options = {}) {
     async (_request) => {
       await client.connect();
       return asMcpResult(await client.listResources());
+    }
+  );
+  server.setRequestHandler(
+    ListResourceTemplatesRequestSchema,
+    async (_request) => {
+      await client.connect();
+      return asMcpResult(await client.listResourceTemplates());
     }
   );
   server.setRequestHandler(

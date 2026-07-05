@@ -229145,6 +229145,9 @@ ${authorizationUrl.toString()}`
   async listResources() {
     return this.requireClient().listResources();
   }
+  async listResourceTemplates() {
+    return this.requireClient().listResourceTemplates();
+  }
   async readResource(uri) {
     return this.requireClient().readResource({ uri });
   }
@@ -252172,6 +252175,7 @@ function asRunScriptFileArgs(args) {
 function asApplyAssetManifestArgs(args) {
   const record2 = parseToolArgs(args);
   assertRemovedArguments(record2, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_workspace_call_upstream_tool");
+  assertRemovedArguments(record2, ["batchCommit"], "figma_workspace_call_upstream_tool");
   assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record2, [
     "sessionId",
@@ -252204,10 +252208,13 @@ function asCaptureNodeArgs(args) {
   assertRemovedArguments(record2, ["resultFile"], "imageFile");
   assertRemovedArguments(record2, ["metadataFile"], "figma_workspace_call_upstream_tool");
   assertRemovedArguments(record2, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_workspace_call_upstream_tool");
+  assertRemovedArguments(record2, ["enableBase64Response"], "figma_workspace_call_upstream_tool");
   assertOptionalStringFields(record2, [
     "sessionId",
     "imageFile"
   ]);
+  assertOptionalIntegerRange(record2, "maxDimension", 1, 65536);
+  assertOptionalBooleanFields(record2, ["contentsOnly"]);
   assertOptionalCaptureTargetValue(record2.target, "target");
   return record2;
 }
@@ -252314,6 +252321,11 @@ function asGetDesignContextArgs(args) {
     "clientLanguages",
     "clientFrameworks"
   ]);
+  assertOptionalBooleanFields(record2, [
+    "forceCode",
+    "disableCodeConnect",
+    "excludeScreenshot"
+  ]);
   assertOptionalTargetValue(record2.target, "target");
   return record2;
 }
@@ -252325,7 +252337,9 @@ function asGetMotionContextArgs(args) {
     "sessionId",
     "file",
     "cwd",
-    "dirName"
+    "dirName",
+    "clientLanguages",
+    "clientFrameworks"
   ]);
   assertOptionalBooleanFields(record2, ["recursive"]);
   assertOptionalTargetValue(record2.target, "target");
@@ -252343,6 +252357,9 @@ function asExportVideoArgs(args) {
     "jobId"
   ]);
   assertOptionalEnum(record2, "quality", FIGMA_WORKSPACE_EXPORT_VIDEO_QUALITIES);
+  assertOptionalIntegerRange(record2, "fps", 1, 60);
+  assertOptionalIntegerRange(record2, "ttlSeconds", 30, 604800);
+  assertOptionalExportVideoConstraint(record2.constraint);
   assertOptionalTargetValue(record2.target, "target");
   return record2;
 }
@@ -252383,13 +252400,17 @@ function asGetVariableDefsArgs(args) {
   const record2 = parseToolArgs(args);
   assertRemovedFileReferenceFields(record2);
   assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
+  assertRemovedArguments(
+    record2,
+    ["clientLanguages", "clientFrameworks"],
+    "figma_workspace_get_design_context",
+    "clientLanguages/clientFrameworks"
+  );
   assertOptionalStringFields(record2, [
     "sessionId",
     "file",
     "cwd",
-    "dirName",
-    "clientLanguages",
-    "clientFrameworks"
+    "dirName"
   ]);
   assertOptionalTargetValue(record2.target, "target");
   return record2;
@@ -252569,6 +252590,36 @@ function assertOptionalTargetValue(value, displayName) {
     "nodeUrl"
   ]);
 }
+function assertOptionalIntegerRange(record2, key, min, max) {
+  const value = record2[key];
+  if (value === void 0) {
+    return;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`Tool argument "${key}" must be an integer from ${min} to ${max}.`);
+  }
+}
+function assertOptionalExportVideoConstraint(value) {
+  if (value === void 0) {
+    return;
+  }
+  if (!isRecord3(value)) {
+    throw new Error('Tool argument "constraint" must be an object with type and value.');
+  }
+  const type = value.type;
+  const constraintValue = value.value;
+  if (type !== "SCALE" && type !== "WIDTH" && type !== "HEIGHT") {
+    throw new Error('Tool argument "constraint.type" must be one of: SCALE, WIDTH, HEIGHT.');
+  }
+  if (typeof constraintValue !== "number" || !Number.isFinite(constraintValue) || constraintValue <= 0) {
+    throw new Error('Tool argument "constraint.value" must be a positive number.');
+  }
+  const keys = Object.keys(value);
+  const extra = keys.filter((key) => key !== "type" && key !== "value");
+  if (extra.length > 0) {
+    throw new Error(`Tool argument "constraint" does not allow extra fields: ${extra.join(", ")}.`);
+  }
+}
 function assertOptionalCaptureTargetValue(value, displayName) {
   if (value === void 0 || typeof value === "string") {
     return;
@@ -252708,6 +252759,28 @@ function normalizeTaskPlanStepType(value) {
 
 // src/contract/wrapper-contracts.ts
 var UPSTREAM_INLINE_FIELDS = ["upstream.result", "upstream.text"];
+var EMPTY_PARAMETER_MATRIX = {
+  requiredUpstream: [],
+  publicPassthrough: [],
+  derivedUpstream: [],
+  fixedUpstream: [],
+  passthroughOptional: [],
+  hiddenUpstreamOptional: [],
+  localOnly: [],
+  removedLegacy: []
+};
+function parameterMatrix(matrix) {
+  return {
+    requiredUpstream: matrix.requiredUpstream ?? EMPTY_PARAMETER_MATRIX.requiredUpstream,
+    publicPassthrough: matrix.publicPassthrough ?? EMPTY_PARAMETER_MATRIX.publicPassthrough,
+    derivedUpstream: matrix.derivedUpstream ?? EMPTY_PARAMETER_MATRIX.derivedUpstream,
+    fixedUpstream: matrix.fixedUpstream ?? EMPTY_PARAMETER_MATRIX.fixedUpstream,
+    passthroughOptional: matrix.passthroughOptional ?? EMPTY_PARAMETER_MATRIX.passthroughOptional,
+    hiddenUpstreamOptional: matrix.hiddenUpstreamOptional ?? EMPTY_PARAMETER_MATRIX.hiddenUpstreamOptional,
+    localOnly: matrix.localOnly ?? EMPTY_PARAMETER_MATRIX.localOnly,
+    removedLegacy: matrix.removedLegacy ?? EMPTY_PARAMETER_MATRIX.removedLegacy
+  };
+}
 var FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION = 'Accepts string raw node id, string node URL, string local handle like $hero, { handle:"$hero" }, or { fileKey, nodeId }. Raw node id and handle strings require an open/prepare file-context session; node URL and { fileKey, nodeId } can supply file context directly.';
 var FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES = [
   "use_figma",
@@ -252729,7 +252802,17 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     category: "fixed-execution",
     upstreamToolName: "use_figma",
     upstreamKind: "execution",
-    requiredUpstreamProperties: ["code"],
+    requiredUpstreamProperties: ["code", "description", "fileKey"],
+    optionalUpstreamProperties: ["skillNames"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["code", "description", "fileKey"],
+      publicPassthrough: ["code"],
+      derivedUpstream: ["fileKey"],
+      fixedUpstream: ["description"],
+      hiddenUpstreamOptional: ["skillNames"],
+      localOnly: ["title", "sessionId", "mode", "surface", "allowDangerousOperations", "handleUpdates", "inlineResultLimit"],
+      removedLegacy: ["outputFile", "resultFile", "upstreamTool", "upstreamArgument", "upstreamArguments"]
+    }),
     targetSupport: "none",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -252742,7 +252825,16 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     category: "fixed-execution",
     upstreamToolName: "use_figma",
     upstreamKind: "execution",
-    requiredUpstreamProperties: ["code"],
+    requiredUpstreamProperties: ["code", "description", "fileKey"],
+    optionalUpstreamProperties: ["skillNames"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["code", "description", "fileKey"],
+      derivedUpstream: ["code", "fileKey"],
+      fixedUpstream: ["description"],
+      hiddenUpstreamOptional: ["skillNames"],
+      localOnly: ["title", "sessionId", "scriptPath", "inputFile", "strict", "surface", "targetPageId", "allowDangerousOperations", "inlineResultLimit"],
+      removedLegacy: ["dryRun", "outputFile", "resultFile", "outputDir", "diagnosticsFile", "summaryFile", "upstreamTool", "upstreamArgument", "upstreamArguments"]
+    }),
     targetSupport: "none",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -252755,7 +252847,16 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     category: "fixed-execution",
     upstreamToolName: "use_figma",
     upstreamKind: "inspection",
-    requiredUpstreamProperties: ["code"],
+    requiredUpstreamProperties: ["code", "description", "fileKey"],
+    optionalUpstreamProperties: ["skillNames"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["code", "description", "fileKey"],
+      derivedUpstream: ["fileKey"],
+      fixedUpstream: ["code", "description"],
+      hiddenUpstreamOptional: ["skillNames"],
+      localOnly: ["title", "sessionId", "mode", "target", "depth", "handles"],
+      removedLegacy: ["upstreamTool", "upstreamArgument", "upstreamArguments"]
+    }),
     targetSupport: "string-only",
     outputPolicy: {
       inlineLimitFields: [],
@@ -252770,6 +252871,14 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamKind: "metadata read",
     requiredUpstreamProperties: ["fileKey"],
     optionalUpstreamProperties: ["nodeId", "clientLanguages", "clientFrameworks"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey"],
+      publicPassthrough: ["nodeId", "clientLanguages", "clientFrameworks"],
+      derivedUpstream: ["fileKey"],
+      passthroughOptional: ["nodeId", "clientLanguages", "clientFrameworks"],
+      localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+      removedLegacy: ["outputFile", "resultFile", "metadataFile", "fileUrl", "fileKey"]
+    }),
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: ["metadata.json"],
@@ -252786,7 +252895,15 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "get_design_context",
     upstreamKind: "design context read",
     requiredUpstreamProperties: ["fileKey", "nodeId"],
-    optionalUpstreamProperties: ["clientLanguages", "clientFrameworks"],
+    optionalUpstreamProperties: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      publicPassthrough: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      passthroughOptional: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+      localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+      removedLegacy: ["outputFile", "resultFile", "fileUrl", "fileKey"]
+    }),
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -252803,7 +252920,15 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "get_motion_context",
     upstreamKind: "motion context read",
     requiredUpstreamProperties: ["fileKey", "nodeId"],
-    optionalUpstreamProperties: ["recursive"],
+    optionalUpstreamProperties: ["recursive", "clientLanguages", "clientFrameworks"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      publicPassthrough: ["recursive", "clientLanguages", "clientFrameworks"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      passthroughOptional: ["recursive", "clientLanguages", "clientFrameworks"],
+      localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+      removedLegacy: ["outputFile", "resultFile", "fileUrl", "fileKey"]
+    }),
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -252820,7 +252945,15 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "export_video",
     upstreamKind: "video export",
     requiredUpstreamProperties: ["fileKey"],
-    optionalUpstreamProperties: ["nodeId", "jobId", "quality"],
+    optionalUpstreamProperties: ["nodeId", "jobId", "quality", "fps", "constraint", "ttlSeconds"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey"],
+      publicPassthrough: ["jobId", "quality", "fps", "constraint", "ttlSeconds"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      passthroughOptional: ["jobId", "quality", "fps", "constraint", "ttlSeconds"],
+      localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+      removedLegacy: ["outputFile", "resultFile", "videoFile", "fileUrl", "fileKey"]
+    }),
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -252844,6 +252977,14 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       "includeStyles",
       "includeLibraryKeys"
     ],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "query"],
+      publicPassthrough: ["query", "disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"],
+      derivedUpstream: ["fileKey"],
+      passthroughOptional: ["disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"],
+      localOnly: ["title", "sessionId", "file", "cwd", "dirName", "refresh", "inlineResultLimit"],
+      removedLegacy: ["outputFile", "resultFile", "fileUrl", "fileKey"]
+    }),
     targetSupport: "none",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -252861,6 +253002,14 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamKind: "library read",
     requiredUpstreamProperties: ["fileKey"],
     optionalUpstreamProperties: ["offset"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey"],
+      publicPassthrough: ["offset"],
+      derivedUpstream: ["fileKey"],
+      passthroughOptional: ["offset"],
+      localOnly: ["title", "sessionId", "file", "cwd", "dirName", "refresh", "inlineResultLimit"],
+      removedLegacy: ["outputFile", "resultFile", "fileUrl", "fileKey"]
+    }),
     targetSupport: "none",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -252877,7 +253026,12 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "get_variable_defs",
     upstreamKind: "variable definition read",
     requiredUpstreamProperties: ["fileKey", "nodeId"],
-    optionalUpstreamProperties: ["clientLanguages", "clientFrameworks"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+      removedLegacy: ["clientLanguages", "clientFrameworks", "outputFile", "resultFile", "fileUrl", "fileKey"]
+    }),
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -252894,6 +253048,15 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "upload_assets",
     upstreamKind: "asset upload/fill",
     requiredUpstreamProperties: ["fileKey", "count", "nodeId", "scaleMode"],
+    optionalUpstreamProperties: ["batchCommit"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey"],
+      derivedUpstream: ["fileKey", "nodeId", "scaleMode"],
+      fixedUpstream: ["count"],
+      hiddenUpstreamOptional: ["batchCommit"],
+      localOnly: ["title", "sessionId", "assets", "manifestPath", "validateTargets"],
+      removedLegacy: ["argumentsTemplate", "toolName", "arguments", "refresh", "outputFile", "resultFile"]
+    }),
     targetSupport: "node-scoped-list",
     outputPolicy: {
       inlineLimitFields: [],
@@ -252908,6 +253071,14 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamKind: "asset download",
     requiredUpstreamProperties: ["fileKey", "nodeId"],
     optionalUpstreamProperties: ["defaultFormat", "defaultScale"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      publicPassthrough: ["defaultFormat", "defaultScale"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      passthroughOptional: ["defaultFormat", "defaultScale"],
+      localOnly: ["title", "sessionId", "targets", "manifestPath", "outputDir"],
+      removedLegacy: ["target", "assets", "toolName", "arguments", "refresh", "download", "outputFile", "resultFile"]
+    }),
     targetSupport: "node-scoped-list",
     outputPolicy: {
       inlineLimitFields: [],
@@ -252921,6 +253092,16 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "get_screenshot",
     upstreamKind: "node screenshot",
     requiredUpstreamProperties: ["fileKey", "nodeId"],
+    optionalUpstreamProperties: ["maxDimension", "contentsOnly", "enableBase64Response"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      publicPassthrough: ["maxDimension", "contentsOnly"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      passthroughOptional: ["maxDimension", "contentsOnly"],
+      hiddenUpstreamOptional: ["enableBase64Response"],
+      localOnly: ["title", "sessionId", "target", "imageFile"],
+      removedLegacy: ["nodeId", "targetNodeId", "handle", "outputFile", "resultFile", "metadataFile", "argumentsTemplate", "toolName", "arguments", "refresh", "preview", "thumbnail", "thumbnailMaxSize"]
+    }),
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: [],
@@ -252931,6 +253112,10 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
   {
     toolName: "figma_workspace_run_task_plan",
     category: "asset-capture-workflow",
+    parameterMatrix: parameterMatrix({
+      localOnly: ["title", "sessionId", "planPath", "steps", "stopOnFailure"],
+      removedLegacy: ["outputFile", "resultFile"]
+    }),
     targetSupport: "none",
     outputPolicy: {
       inlineLimitFields: [],
@@ -252941,6 +253126,10 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
   {
     toolName: "figma_workspace_call_upstream_tool",
     category: "upstream-escape-hatch",
+    parameterMatrix: parameterMatrix({
+      localOnly: ["title", "sessionId", "toolName", "arguments", "refresh", "inlineResultLimit"],
+      removedLegacy: ["outputFile", "resultFile"]
+    }),
     targetSupport: "freeform-upstream",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253058,7 +253247,9 @@ function createReplToolDescriptions(options) {
         target: {
           description: `Target node to capture. ${NODE_SCOPED_TARGET_SHAPES}`
         },
-        imageFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted imageFile auto-generates capture-<timestamp>.png.")
+        imageFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted imageFile auto-generates capture-<timestamp>.png."),
+        maxDimension: numberProperty("Optional official get_screenshot maxDimension forwarded upstream when explicitly supplied.", { type: "integer", minimum: 1, maximum: 65536 }),
+        contentsOnly: booleanProperty("Optional official get_screenshot contentsOnly flag forwarded upstream when explicitly supplied.")
       }, ["target"])
     },
     {
@@ -253158,6 +253349,9 @@ function createReplToolDescriptions(options) {
         },
         clientLanguages: stringProperty("Optional official get_design_context clientLanguages hint. Sent upstream only when explicitly supplied."),
         clientFrameworks: stringProperty("Optional official get_design_context clientFrameworks hint. Sent upstream only when explicitly supplied."),
+        forceCode: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
+        disableCodeConnect: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
+        excludeScreenshot: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
@@ -253175,6 +253369,8 @@ function createReplToolDescriptions(options) {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`
         },
         recursive: booleanProperty("Optional official get_motion_context flag for descendant motion data."),
+        clientLanguages: stringProperty("Optional official get_motion_context clientLanguages hint. Sent upstream only when explicitly supplied."),
+        clientFrameworks: stringProperty("Optional official get_motion_context clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
@@ -253193,6 +253389,9 @@ function createReplToolDescriptions(options) {
         },
         jobId: stringProperty("Optional official export_video job id used to poll an existing export."),
         quality: enumProperty(["low", "medium", "high"], "Optional official export_video quality hint."),
+        fps: numberProperty("Optional official export_video fps hint forwarded upstream when explicitly supplied.", { type: "integer", minimum: 1, maximum: 60 }),
+        constraint: exportVideoConstraintProperty("Optional official export_video constraint object forwarded upstream when explicitly supplied."),
+        ttlSeconds: numberProperty("Optional official export_video ttlSeconds hint forwarded upstream when explicitly supplied.", { type: "integer", minimum: 30, maximum: 604800 }),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file"), requiredBranch("jobId")] })
@@ -253242,8 +253441,6 @@ function createReplToolDescriptions(options) {
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`
         },
-        clientLanguages: stringProperty("Optional official get_variable_defs clientLanguages hint. Sent upstream only when explicitly supplied."),
-        clientFrameworks: stringProperty("Optional official get_variable_defs clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
@@ -253538,6 +253735,18 @@ function numberProperty(description, extra = {}) {
 }
 function objectProperty(description) {
   return { type: "object", description, additionalProperties: true };
+}
+function exportVideoConstraintProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      type: enumProperty(["SCALE", "WIDTH", "HEIGHT"], "Constraint mode."),
+      value: numberProperty("Constraint value. SCALE is a multiplier; WIDTH/HEIGHT are pixels.", { exclusiveMinimum: 0 })
+    },
+    required: ["type", "value"],
+    additionalProperties: false
+  };
 }
 function jsonProperty(description) {
   return { description };
@@ -254516,6 +254725,23 @@ function requireWrapperUpstreamProperty(contract, property) {
     throw new Error(`Internal wrapper contract ${contract.toolName} is missing upstream property ${property}.`);
   }
   return property;
+}
+function collectContractPassthroughArguments(args, contract) {
+  return Object.fromEntries(
+    contract.parameterMatrix.passthroughOptional.filter((property) => args[property] !== void 0).map((property) => [property, args[property]])
+  );
+}
+function collectPresentPassthroughProperties(contract, upstreamArguments) {
+  const required2 = new Set(contract.parameterMatrix.requiredUpstream);
+  const handledUpstreamProperties = sortedUnique([
+    ...contract.parameterMatrix.publicPassthrough,
+    ...contract.parameterMatrix.derivedUpstream,
+    ...contract.parameterMatrix.fixedUpstream,
+    ...contract.parameterMatrix.passthroughOptional
+  ]);
+  return handledUpstreamProperties.filter(
+    (property) => !required2.has(property) && upstreamArguments[property] !== void 0
+  );
 }
 var FIGMA_METADATA_ENRICHMENT_FIELDS = [
   "locked",
@@ -256001,9 +256227,15 @@ async function executeCaptureNodeForTool(args, runtime) {
     [...CAPTURE_NODE_CONTRACT.requiredUpstreamProperties ?? []],
     requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT)
   );
+  assertUpstreamToolHasProperties(
+    tool,
+    collectPresentPassthroughProperties(CAPTURE_NODE_CONTRACT, args),
+    requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT)
+  );
   const upstreamArguments = buildCaptureUpstreamArguments({
     fileKey,
     nodeId,
+    args,
     tool
   });
   await runtime.client.connect();
@@ -256797,8 +257029,7 @@ async function executeGetDesignContext(args, runtime) {
     upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages,
-      clientFrameworks: args.clientFrameworks
+      ...collectContractPassthroughArguments(args, GET_DESIGN_CONTEXT_CONTRACT)
     }),
     responseFields: {
       fileKey: requested.fileKey,
@@ -256819,11 +257050,10 @@ async function executeGetMotionContext(args, runtime) {
     contract: GET_MOTION_CONTEXT_CONTRACT,
     runtime,
     session,
-    optionalProperties: args.recursive === void 0 ? [] : ["recursive"],
     upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      recursive: args.recursive
+      ...collectContractPassthroughArguments(args, GET_MOTION_CONTEXT_CONTRACT)
     }),
     responseFields: {
       fileKey: requested.fileKey,
@@ -256844,16 +257074,10 @@ async function executeExportVideo(args, runtime) {
     contract: EXPORT_VIDEO_CONTRACT,
     runtime,
     session,
-    optionalProperties: [
-      requested.nodeId === void 0 ? void 0 : "nodeId",
-      args.jobId === void 0 ? void 0 : "jobId",
-      args.quality === void 0 ? void 0 : "quality"
-    ].filter((value) => typeof value === "string"),
     upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      jobId: args.jobId,
-      quality: args.quality
+      ...collectContractPassthroughArguments(args, EXPORT_VIDEO_CONTRACT)
     }),
     responseFields: removeUndefined3({
       fileKey: requested.fileKey,
@@ -256879,21 +257103,10 @@ async function executeSearchDesignSystem(args, runtime) {
     contract: SEARCH_DESIGN_SYSTEM_CONTRACT,
     runtime,
     session,
-    optionalProperties: [
-      args.disableCodeConnect === void 0 ? void 0 : "disableCodeConnect",
-      args.includeComponents === void 0 ? void 0 : "includeComponents",
-      args.includeVariables === void 0 ? void 0 : "includeVariables",
-      args.includeStyles === void 0 ? void 0 : "includeStyles",
-      args.includeLibraryKeys === void 0 ? void 0 : "includeLibraryKeys"
-    ].filter((value) => typeof value === "string"),
     upstreamArguments: removeUndefined3({
       fileKey,
       query,
-      disableCodeConnect: args.disableCodeConnect,
-      includeComponents: args.includeComponents,
-      includeVariables: args.includeVariables,
-      includeStyles: args.includeStyles,
-      includeLibraryKeys: args.includeLibraryKeys
+      ...collectContractPassthroughArguments(args, SEARCH_DESIGN_SYSTEM_CONTRACT)
     }),
     responseFields: { fileKey, query },
     historySummary: `Searched Figma design system for ${query}.`,
@@ -256911,8 +257124,10 @@ async function executeGetLibraries(args, runtime) {
     contract: GET_LIBRARIES_CONTRACT,
     runtime,
     session,
-    optionalProperties: args.offset === void 0 ? [] : ["offset"],
-    upstreamArguments: removeUndefined3({ fileKey, offset: args.offset }),
+    upstreamArguments: removeUndefined3({
+      fileKey,
+      ...collectContractPassthroughArguments(args, GET_LIBRARIES_CONTRACT)
+    }),
     responseFields: removeUndefined3({ fileKey, offset: args.offset }),
     historySummary: `Read Figma libraries for ${fileKey}.`,
     nodeIds: []
@@ -256931,9 +257146,7 @@ async function executeGetVariableDefs(args, runtime) {
     session,
     upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
-      nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages,
-      clientFrameworks: args.clientFrameworks
+      nodeId: requested.nodeId
     }),
     responseFields: {
       fileKey: requested.fileKey,
@@ -256994,7 +257207,10 @@ async function executeDedicatedUpstreamTool(options) {
   const upstreamKind = requireWrapperUpstreamKind(options.contract);
   const tools = await options.runtime.upstreamToolCache.list(Boolean(options.args.refresh));
   const tool = selectRequiredUpstreamTool(tools, upstreamToolName, upstreamKind);
-  const optionalProperties = options.optionalProperties ?? [];
+  const optionalProperties = sortedUnique([
+    ...options.optionalProperties ?? [],
+    ...collectPresentPassthroughProperties(options.contract, options.upstreamArguments)
+  ]);
   assertUpstreamToolHasProperties(
     tool,
     [...options.contract.requiredUpstreamProperties ?? [], ...optionalProperties],
@@ -257168,16 +257384,31 @@ async function resolveEvalSettings(session, args, runtime) {
   }
   const argumentName = DEFAULT_EVAL_ARGUMENT_NAME;
   assertUpstreamToolHasProperty(tool, argumentName, "execution");
+  const requiredUpstreamProperties = upstreamToolRequiredProperties(tool);
+  if (requiredUpstreamProperties.has("description")) {
+    assertUpstreamToolHasProperty(tool, "description", "execution");
+  }
+  if (requiredUpstreamProperties.has("fileKey")) {
+    assertUpstreamToolHasProperty(tool, "fileKey", "execution");
+  }
   const upstreamArguments = {};
   upstreamArguments.description = DEFAULT_EVAL_DESCRIPTION;
+  const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl);
   if (typeof upstreamArguments.fileKey !== "string" || upstreamArguments.fileKey.length === 0) {
-    const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl);
     if (fileKey) {
       upstreamArguments.fileKey = fileKey;
     }
   }
+  if (requiredUpstreamProperties.has("fileKey") && typeof upstreamArguments.fileKey !== "string") {
+    throw new Error('Required official upstream Figma MCP execution tool "use_figma" requires fileKey. Call figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task first.');
+  }
   touchSession(session);
   return { toolName, argumentName, upstreamArguments };
+}
+function upstreamToolRequiredProperties(tool) {
+  const schema = isRecord5(tool.inputSchema) ? tool.inputSchema : void 0;
+  const required2 = Array.isArray(schema?.required) ? schema.required : [];
+  return new Set(required2.filter((value) => typeof value === "string"));
 }
 function buildFigmaEvalScript(options) {
   const includeEvalHelpers = options.includeEvalHelpers !== false;
@@ -258199,7 +258430,11 @@ function buildUploadAssetsArguments(asset) {
 }
 function buildCaptureUpstreamArguments(options) {
   if (options.tool.name === "get_screenshot") {
-    return { fileKey: options.fileKey, nodeId: options.nodeId };
+    return removeUndefined3({
+      fileKey: options.fileKey,
+      nodeId: options.nodeId,
+      ...collectContractPassthroughArguments(options.args, CAPTURE_NODE_CONTRACT)
+    });
   }
   throw new Error(
     `Required official upstream Figma MCP node screenshot tool "${SCREENSHOT_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_workspace_call_upstream_tool" for explicit upstream debugging.`

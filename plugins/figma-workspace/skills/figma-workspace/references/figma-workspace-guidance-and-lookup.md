@@ -13,7 +13,7 @@ Use this reference to choose between `figma_workspace_guidance` and `figma_works
 - Treat `guardrails` as task-specific risk notes before modifying a file.
 - `$` helper references must be static: use `$.helper(...)`, `$["helper"](...)`, or explicit destructuring. Avoid dynamic `$[name]`, aliasing `$`, object rest destructuring, and local `$` declarations.
 - For visible audit markers or temporary verification labels, use guidance/lookup plus metadata or inspect results to place them outside the reviewed frame or in a confirmed free slot before capture.
-- For implementation from Figma, visual parity review, motion, or Code Connect tasks, use the dedicated guidance cards. They route covered official context through first-class wrappers such as `figma_workspace_get_design_context` and `figma_workspace_get_motion_context`, keep uncovered official capabilities behind `figma_workspace_call_upstream_tool`, use `figma_workspace_capture_node` for local screenshot QA, and keep project-side work in local files instead of upstream agent markdown.
+- For implementation from Figma, visual parity review, motion, or Code Connect tasks, use the dedicated guidance cards. They route covered official context through first-class wrappers such as `figma_workspace_get_design_context` and `figma_workspace_get_motion_context`, expose only curated upstream optionals on those wrappers, keep uncovered official capabilities behind `figma_workspace_call_upstream_tool`, use `figma_workspace_capture_node` for local screenshot QA, and keep project-side work in local files instead of upstream agent markdown.
 
 ## Lookup When Exact Context Is Needed
 

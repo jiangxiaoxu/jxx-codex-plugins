@@ -11,6 +11,7 @@ export interface FigmaUpstreamMcpProxyClient {
     listTools(): Promise<unknown>;
     callTool(name: string, args?: Record<string, unknown>): Promise<unknown>;
     listResources(): Promise<unknown>;
+    listResourceTemplates(): Promise<unknown>;
     readResource(uri: string): Promise<unknown>;
 }
 export declare function createFigmaWorkspaceUpstreamStdioServer(options?: FigmaWorkspaceUpstreamStdioServerOptions): {

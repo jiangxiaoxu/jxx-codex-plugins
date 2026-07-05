@@ -119,6 +119,8 @@ export function createReplToolDescriptions(
           description: `Target node to capture. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
         imageFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted imageFile auto-generates capture-<timestamp>.png."),
+        maxDimension: numberProperty("Optional official get_screenshot maxDimension forwarded upstream when explicitly supplied.", { type: "integer", minimum: 1, maximum: 65536 }),
+        contentsOnly: booleanProperty("Optional official get_screenshot contentsOnly flag forwarded upstream when explicitly supplied."),
       }, ["target"]),
     },
     {
@@ -224,6 +226,9 @@ export function createReplToolDescriptions(
         },
         clientLanguages: stringProperty("Optional official get_design_context clientLanguages hint. Sent upstream only when explicitly supplied."),
         clientFrameworks: stringProperty("Optional official get_design_context clientFrameworks hint. Sent upstream only when explicitly supplied."),
+        forceCode: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
+        disableCodeConnect: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
+        excludeScreenshot: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] }),
@@ -242,6 +247,8 @@ export function createReplToolDescriptions(
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
         recursive: booleanProperty("Optional official get_motion_context flag for descendant motion data."),
+        clientLanguages: stringProperty("Optional official get_motion_context clientLanguages hint. Sent upstream only when explicitly supplied."),
+        clientFrameworks: stringProperty("Optional official get_motion_context clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] }),
@@ -261,6 +268,9 @@ export function createReplToolDescriptions(
         },
         jobId: stringProperty("Optional official export_video job id used to poll an existing export."),
         quality: enumProperty(["low", "medium", "high"], "Optional official export_video quality hint."),
+        fps: numberProperty("Optional official export_video fps hint forwarded upstream when explicitly supplied.", { type: "integer", minimum: 1, maximum: 60 }),
+        constraint: exportVideoConstraintProperty("Optional official export_video constraint object forwarded upstream when explicitly supplied."),
+        ttlSeconds: numberProperty("Optional official export_video ttlSeconds hint forwarded upstream when explicitly supplied.", { type: "integer", minimum: 30, maximum: 604800 }),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
       }, { anyOf: [requiredBranch("target"), requiredBranch("file"), requiredBranch("jobId")] }),
@@ -313,8 +323,6 @@ export function createReplToolDescriptions(
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
-        clientLanguages: stringProperty("Optional official get_variable_defs clientLanguages hint. Sent upstream only when explicitly supplied."),
-        clientFrameworks: stringProperty("Optional official get_variable_defs clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] }),
@@ -630,6 +638,19 @@ function numberProperty(description: string, extra: Record<string, unknown> = {}
 
 function objectProperty(description: string): Record<string, unknown> {
   return { type: "object", description, additionalProperties: true };
+}
+
+function exportVideoConstraintProperty(description: string): Record<string, unknown> {
+  return {
+    type: "object",
+    description,
+    properties: {
+      type: enumProperty(["SCALE", "WIDTH", "HEIGHT"], "Constraint mode."),
+      value: numberProperty("Constraint value. SCALE is a multiplier; WIDTH/HEIGHT are pixels.", { exclusiveMinimum: 0 }),
+    },
+    required: ["type", "value"],
+    additionalProperties: false,
+  };
 }
 
 function jsonProperty(description: string): Record<string, unknown> {

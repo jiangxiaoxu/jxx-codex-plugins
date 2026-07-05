@@ -26,7 +26,9 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly category: "fixed-execution";
     readonly upstreamToolName: "use_figma";
     readonly upstreamKind: "execution";
-    readonly requiredUpstreamProperties: readonly ["code"];
+    readonly requiredUpstreamProperties: readonly ["code", "description", "fileKey"];
+    readonly optionalUpstreamProperties: readonly ["skillNames"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "none";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
@@ -38,7 +40,9 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly category: "fixed-execution";
     readonly upstreamToolName: "use_figma";
     readonly upstreamKind: "execution";
-    readonly requiredUpstreamProperties: readonly ["code"];
+    readonly requiredUpstreamProperties: readonly ["code", "description", "fileKey"];
+    readonly optionalUpstreamProperties: readonly ["skillNames"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "none";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
@@ -50,7 +54,9 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly category: "fixed-execution";
     readonly upstreamToolName: "use_figma";
     readonly upstreamKind: "inspection";
-    readonly requiredUpstreamProperties: readonly ["code"];
+    readonly requiredUpstreamProperties: readonly ["code", "description", "fileKey"];
+    readonly optionalUpstreamProperties: readonly ["skillNames"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "string-only";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly [];
@@ -64,6 +70,7 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamKind: "metadata read";
     readonly requiredUpstreamProperties: readonly ["fileKey"];
     readonly optionalUpstreamProperties: readonly ["nodeId", "clientLanguages", "clientFrameworks"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "node-scoped";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["metadata.json"];
@@ -79,7 +86,8 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamToolName: "get_design_context";
     readonly upstreamKind: "design context read";
     readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
-    readonly optionalUpstreamProperties: readonly ["clientLanguages", "clientFrameworks"];
+    readonly optionalUpstreamProperties: readonly ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "node-scoped";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
@@ -95,7 +103,8 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamToolName: "get_motion_context";
     readonly upstreamKind: "motion context read";
     readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
-    readonly optionalUpstreamProperties: readonly ["recursive"];
+    readonly optionalUpstreamProperties: readonly ["recursive", "clientLanguages", "clientFrameworks"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "node-scoped";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
@@ -111,7 +120,8 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamToolName: "export_video";
     readonly upstreamKind: "video export";
     readonly requiredUpstreamProperties: readonly ["fileKey"];
-    readonly optionalUpstreamProperties: readonly ["nodeId", "jobId", "quality"];
+    readonly optionalUpstreamProperties: readonly ["nodeId", "jobId", "quality", "fps", "constraint", "ttlSeconds"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "node-scoped";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
@@ -128,6 +138,7 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamKind: "design system search";
     readonly requiredUpstreamProperties: readonly ["fileKey", "query"];
     readonly optionalUpstreamProperties: readonly ["disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "none";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
@@ -144,6 +155,7 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamKind: "library read";
     readonly requiredUpstreamProperties: readonly ["fileKey"];
     readonly optionalUpstreamProperties: readonly ["offset"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "none";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
@@ -159,7 +171,7 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamToolName: "get_variable_defs";
     readonly upstreamKind: "variable definition read";
     readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
-    readonly optionalUpstreamProperties: readonly ["clientLanguages", "clientFrameworks"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "node-scoped";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
@@ -175,6 +187,8 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamToolName: "upload_assets";
     readonly upstreamKind: "asset upload/fill";
     readonly requiredUpstreamProperties: readonly ["fileKey", "count", "nodeId", "scaleMode"];
+    readonly optionalUpstreamProperties: readonly ["batchCommit"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "node-scoped-list";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly [];
@@ -188,6 +202,7 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamKind: "asset download";
     readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
     readonly optionalUpstreamProperties: readonly ["defaultFormat", "defaultScale"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "node-scoped-list";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly [];
@@ -200,6 +215,8 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamToolName: "get_screenshot";
     readonly upstreamKind: "node screenshot";
     readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
+    readonly optionalUpstreamProperties: readonly ["maxDimension", "contentsOnly", "enableBase64Response"];
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "node-scoped";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly [];
@@ -209,6 +226,7 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
 }, {
     readonly toolName: "figma_workspace_run_task_plan";
     readonly category: "asset-capture-workflow";
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "none";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly [];
@@ -218,6 +236,7 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
 }, {
     readonly toolName: "figma_workspace_call_upstream_tool";
     readonly category: "upstream-escape-hatch";
+    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "freeform-upstream";
     readonly outputPolicy: {
         readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
