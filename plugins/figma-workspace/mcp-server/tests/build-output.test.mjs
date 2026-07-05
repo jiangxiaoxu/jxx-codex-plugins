@@ -14,6 +14,8 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
     upstreamCliDeclarations,
     workspaceDeclarations,
     nodeWorkspaceDeclarations,
+    mcpHelperDeclarations,
+    upstreamHelperDeclarations,
   ] =
     await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -23,6 +25,8 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
     readFile(new URL("../dist/upstream/upstream-stdio-cli.d.ts", import.meta.url), "utf8"),
     readFile(new URL("../dist/mcp/workspace-mcp-server.d.ts", import.meta.url), "utf8"),
     readFile(new URL("../dist/upstream/node-upstream-client.d.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dist/mcp/figma-workspace-helpers.d.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dist/upstream/figma-workspace-helpers.d.ts", import.meta.url), "utf8"),
   ]);
   const distFiles = (await readdir(new URL("../dist/", import.meta.url), {
     recursive: true,
@@ -77,6 +81,9 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.match(nodeWorkspaceDeclarations, /createRemoteMcpClient/);
   assert.match(nodeWorkspaceDeclarations, /createFigmaWorkspaceClient/);
   assert.match(nodeWorkspaceDeclarations, /installNodeReplWebStreamGlobals/);
+  assert.equal(mcpHelperDeclarations, upstreamHelperDeclarations);
+  assert.match(mcpHelperDeclarations, /readonly handles: Readonly<Record<string, string>>;/);
+  assert.doesNotMatch(mcpHelperDeclarations, /\$\.create|\$\.layout|\$\.find\b|\$\.findAll\b/);
   assert.match(workspaceDeclarations, /eval\(args: FigmaWorkspaceEvalArguments\): Promise<FigmaWorkspaceEvalResult>/);
   assert.match(workspaceDeclarations, /runScriptFile\(args: FigmaWorkspaceRunScriptFileArguments\): Promise<FigmaWorkspaceRunScriptFileResult>/);
   assert.match(workspaceDeclarations, /applyAssetManifest\(args: FigmaWorkspaceApplyAssetManifestArguments\): Promise<FigmaWorkspaceApplyAssetManifestResult>/);

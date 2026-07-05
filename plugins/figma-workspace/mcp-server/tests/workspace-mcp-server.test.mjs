@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
@@ -59,6 +59,11 @@ const forbiddenRouterContractTerms = [
   "FigmaWorkspaceOp",
   "FigmaWorkspaceApplyOpsArguments",
 ];
+const removedDollarHelperTerms = ["$.create", "$.layout", "$.find", "$.findAll"];
+
+function dollarHelperTermPattern(term) {
+  return new RegExp(`${term.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![A-Za-z0-9_])`, "u");
+}
 
 function structuredToolResult(result) {
   assert.ok(result.structuredContent);
@@ -100,6 +105,38 @@ async function readTextPointer(pointer, expectedPath) {
   assert.equal(countTextLines(content), pointer.lineCount);
   assert.equal(Buffer.byteLength(content, "utf8"), pointer.bytes);
   return content;
+}
+
+async function readPublicFigmaWorkspaceContractTexts() {
+  const roots = [
+    resolve(packageRoot, "../README.md"),
+    resolve(packageRoot, "README.md"),
+    resolve(packageRoot, "../skills/figma-workspace"),
+    resolve(packageRoot, "src/runtime/guidance-catalog.ts"),
+    resolve(packageRoot, "src/contract/tool-metadata.ts"),
+    resolve(packageRoot, "src/mcp/workspace-mcp-server.ts"),
+    resolve(packageRoot, "../../../doc/figma-workspace-ai-agent-development.md"),
+  ];
+  const files = [];
+  async function collectTextFiles(path) {
+    const normalizedPath = path.replace(/\\/gu, "/");
+    if (normalizedPath.includes("/upstream-corpus/")) return;
+    if (/\.(md|ya?ml|ts)$/u.test(path)) {
+      files.push(path);
+      return;
+    }
+    const entries = await readdir(path, { withFileTypes: true });
+    for (const entry of entries) {
+      const childPath = resolve(path, entry.name);
+      if (entry.isDirectory()) {
+        await collectTextFiles(childPath);
+      } else if (entry.isFile() && /\.(md|ya?ml|ts)$/u.test(entry.name)) {
+        files.push(childPath);
+      }
+    }
+  }
+  for (const root of roots) await collectTextFiles(root);
+  return Promise.all(files.map(async (path) => ({ path, text: await readFile(path, "utf8") })));
 }
 
 async function openTestWorkspace(mcpClient, { tempDir, sessionId = "default" }) {
@@ -185,8 +222,6 @@ test("figma workspace eval wraps code and persists returned handles", async () =
     assert.equal(typeof args.code, "string");
     assert.match(args.code, /async function \$\(nameOrId\)/);
     assert.match(args.code, /const read = \(key\) => key in node/);
-    assert.doesNotMatch(args.code, /\$\.findAll = async function findAll/);
-    assert.doesNotMatch(args.code, /\$\.create = async function create/);
     assert.doesNotMatch(args.code, /const __figmaReplEvalCheckpoints = \[\]/);
     assert.match(args.code, /remember\('\$card', frame\)/);
     return {
@@ -301,7 +336,7 @@ test("figma workspace eval wraps code and persists returned handles", async () =
 
 test("figma workspace eval and run_script_file pass raw session fileKey to upstream use_figma", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-raw-file-key-"));
-  const scriptPath = resolve(tempDir, "raw-file-key.figma.js");
+  const scriptPath = resolve(tempDir, "raw-file-key.figma.ts");
   await writeFile(scriptPath, "return { source: 'script' };", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
@@ -986,8 +1021,6 @@ test("figma workspace eval supports direct async node lookup followed by $.selec
     ].join("\n"),
   });
   assert.match(script, /\$\.select = selectNodesForRepl/);
-  assert.doesNotMatch(script, /\$\.create = async function create/);
-  assert.doesNotMatch(script, /\$\.findAll = async function findAll/);
   const runScript = new Function("figma", `return (async () => {\n${script}\n})();`);
   const result = await runScript(figma);
 
@@ -1007,7 +1040,7 @@ test("figma workspace eval helper selection rejects ambiguous $ binding syntax",
   const assignmentDiagnostics = diagnoseFigmaWorkspaceCode("let helper;\nhelper = $;\nreturn helper;");
   assert.deepEqual(assignmentDiagnostics.map((item) => item.code), ["FIGMA_WORKSPACE_DYNAMIC_HELPER_ACCESS"]);
 
-  const shadowCode = "const $ = { find() { return null; } };\nreturn $.find();";
+  const shadowCode = "const $ = { text() { return null; } };\nreturn $.text();";
   const shadowDiagnostics = diagnoseFigmaWorkspaceCode(shadowCode);
   assert.deepEqual(shadowDiagnostics.map((item) => item.code), ["FIGMA_WORKSPACE_DYNAMIC_HELPER_ACCESS"]);
 
@@ -1023,36 +1056,32 @@ test("figma workspace eval helper selection rejects ambiguous $ binding syntax",
     },
     code: shadowCode,
   });
-  assert.doesNotMatch(script, /\$\.find = async function find/);
-  assert.doesNotMatch(script, /\$\.findAll = async function findAll/);
+  assert.doesNotMatch(script, /\$\.text = async function text/);
 });
 
 test("figma workspace helper selector reports injected helpers and dependencies", () => {
-  const findSelection = resolveFigmaWorkspaceScriptHelperSelection("return await $.find({ name: 'Card' });");
-  assert.deepEqual(findSelection.injectedHelpers, [
+  const textSelection = resolveFigmaWorkspaceScriptHelperSelection("return await $.text({ text: 'Card' });");
+  assert.deepEqual(textSelection.injectedHelpers, [
     "$",
     "$.forget",
     "$.handles",
     "$.node",
     "$.remember",
     "$.resolveId",
-    "$.findAll",
-    "$.find",
+    "$.text",
   ]);
-  assert.deepEqual(findSelection.helperUsage.direct, ["$.find"]);
-  assert.deepEqual(findSelection.helperUsage.transitive, ["$.findAll"]);
-  assert.deepEqual(findSelection.helperUsage.runtimeBase, ["$.forget", "$.handles", "$.node", "$.remember", "$.resolveId"]);
-  assert.deepEqual(findSelection.helperUsage.injected, findSelection.injectedHelpers);
+  assert.deepEqual(textSelection.helperUsage.direct, ["$.text"]);
+  assert.deepEqual(textSelection.helperUsage.transitive, []);
+  assert.deepEqual(textSelection.helperUsage.runtimeBase, ["$.forget", "$.handles", "$.node", "$.remember", "$.resolveId"]);
+  assert.deepEqual(textSelection.helperUsage.injected, textSelection.injectedHelpers);
 
-  const createSelection = resolveFigmaWorkspaceScriptHelperSelection("return await $.create('FRAME');");
-  assert.ok(createSelection.injectedHelpers.includes("$.create"));
-  assert.ok(createSelection.injectedHelpers.includes("$.findFreeSlot"));
-  assert.ok(createSelection.injectedHelpers.includes("$.placeNode"));
-  assert.equal(createSelection.injectedHelpers.includes("$.find"), false);
+  const placementSelection = resolveFigmaWorkspaceScriptHelperSelection("return await $.placeNode('$card', { avoidOverlap: true });");
+  assert.ok(placementSelection.injectedHelpers.includes("$.findFreeSlot"));
+  assert.ok(placementSelection.injectedHelpers.includes("$.placeNode"));
+  assert.equal(placementSelection.injectedHelpers.includes("$.text"), false);
 
-  const literalSelection = resolveFigmaWorkspaceScriptHelperSelection("return await $['find']({ name: 'Card' });");
-  assert.ok(literalSelection.injectedHelpers.includes("$.find"));
-  assert.ok(literalSelection.injectedHelpers.includes("$.findAll"));
+  const literalSelection = resolveFigmaWorkspaceScriptHelperSelection("return await $['text']({ text: 'Card' });");
+  assert.ok(literalSelection.injectedHelpers.includes("$.text"));
 
   const baseSelection = resolveFigmaWorkspaceScriptHelperSelection("return await $('$selection');");
   assert.deepEqual(baseSelection.injectedHelpers, ["$"]);
@@ -1060,7 +1089,7 @@ test("figma workspace helper selector reports injected helpers and dependencies"
   assert.deepEqual(baseSelection.helperUsage.transitive, []);
   assert.deepEqual(baseSelection.helperUsage.runtimeBase, []);
 
-  const shadowSelection = resolveFigmaWorkspaceScriptHelperSelection("const $ = { find() { return null; } };\nreturn $.find();");
+  const shadowSelection = resolveFigmaWorkspaceScriptHelperSelection("const $ = { text() { return null; } };\nreturn $.text();");
   assert.deepEqual(shadowSelection.injectedHelpers, []);
   assert.deepEqual(shadowSelection.helperUsage, { direct: [], transitive: [], runtimeBase: [], injected: [] });
 });
@@ -1077,6 +1106,17 @@ test("figma workspace eval exposes and executes the common $ helper surface", as
     children: [],
     appendChild(node) {
       appendChild(this, node);
+    },
+    findAll(predicate) {
+      const matches = [];
+      const visit = (node) => {
+        if (node !== this && predicate(node)) matches.push(node);
+        if (Array.isArray(node.children)) {
+          for (const child of node.children) visit(child);
+        }
+      };
+      visit(this);
+      return matches;
     },
   };
   nodesById.set(page.id, page);
@@ -1182,11 +1222,16 @@ test("figma workspace eval exposes and executes the common $ helper surface", as
       "}",
       "if (typeof $.handles !== 'object') throw new Error('$.handles is not an object');",
       "if (!Array.isArray($.checkpoints)) throw new Error('$.checkpoints is not an array');",
-      "const root = await $.create({ type: 'FRAME', as: '$root', name: 'Eval helper root', size: { width: 120, height: 80 }, layout: { layoutMode: 'VERTICAL' } });",
-      "await $.layout('$root', { itemSpacing: 4 });",
+      "const root = figma.createFrame();",
+      "root.name = 'Eval helper root';",
+      "root.resize(120, 80);",
+      "root.layoutMode = 'VERTICAL';",
+      "root.itemSpacing = 4;",
+      "figma.currentPage.appendChild(root);",
+      "$.remember('$root', root);",
       "const title = await $.text({ parent: '$root', as: '$title', name: 'Eval helper title', text: 'Hello', font: { family: 'Inter', style: 'Regular', size: 12 } });",
-      "const allText = await $.findAll({ type: 'TEXT' });",
-      "const found = await $.find({ name: 'Eval helper title' });",
+      "const allText = figma.currentPage.findAll((node) => node.type === 'TEXT');",
+      "const found = allText.find((node) => node.name === 'Eval helper title');",
       "const selected = await $.select('$title', { zoom: false });",
       "const inspected = await $.inspect('$title', 0);",
       "const screenshotBytes = Array.from(await $.screenshot('$root', { format: 'PNG' }));",
@@ -1426,12 +1471,14 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   }
   const runScriptFileTool = tools.tools.find((tool) => tool.name === "figma_workspace_run_script_file");
   assert.ok(runScriptFileTool);
+  assert.match(runScriptFileTool.description, /\.figma\.ts/);
+  assert.match(runScriptFileTool.description, /Figma Plugin API typings/);
   assert.match(runScriptFileTool.description, /always preflights diagnostics/);
   assert.match(runScriptFileTool.description, /Debug JSON files are generated on demand/);
   assert.match(runScriptFileTool.description, /fixed upstream use_figma\/code/);
   assert.doesNotMatch(runScriptFileTool.description, /\$\[name\]/);
   assert.equal(runScriptFileTool.inputSchema.properties.dryRun, undefined);
-  assert.match(runScriptFileTool.inputSchema.properties.inputFile.description, /Recommended workspace script file name/);
+  assert.match(runScriptFileTool.inputSchema.properties.inputFile.description, /Recommended workspace \.figma\.ts script file name/);
   assert.match(runScriptFileTool.inputSchema.properties.inputFile.description, /preferred over scriptPath/);
   assert.match(runScriptFileTool.inputSchema.properties.scriptPath.description, /escape hatch/);
   assert.equal(runScriptFileTool.inputSchema.properties.outputFile, undefined);
@@ -1471,7 +1518,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   );
   const evalTool = tools.tools.find((tool) => tool.name === "figma_workspace_eval");
   assert.ok(evalTool);
-  assert.match(evalTool.description, /Small ephemeral JavaScript call/);
+  assert.match(evalTool.description, /Small ephemeral Plugin API call/);
   assert.match(evalTool.description, /prepare_task \+ run_script_file/);
   assert.doesNotMatch(evalTool.description, /\$\[name\]/);
   assert.equal(evalTool.inputSchema.properties.outputFile, undefined);
@@ -1620,6 +1667,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   );
   const prepareTaskTool = tools.tools.find((tool) => tool.name === "figma_workspace_prepare_task");
   assert.ok(prepareTaskTool);
+  assert.match(prepareTaskTool.description, /\.figma\.ts/);
   assert.match(prepareTaskTool.description, /Recommended workspace call: \{ file, taskName, surface \}/);
   assert.match(prepareTaskTool.inputSchema.properties.file.description, /Figma file URL or raw file key/);
   assert.equal(prepareTaskTool.inputSchema.properties.fileUrl, undefined);
@@ -1628,6 +1676,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(prepareTaskTool.inputSchema.properties.goal, undefined);
   assert.equal(prepareTaskTool.inputSchema.properties.task, undefined);
   assert.match(prepareTaskTool.inputSchema.properties.taskName.description, /slug-style task\/workspace name/);
+  assert.match(prepareTaskTool.inputSchema.properties.fileName.description, /\.figma\.ts/);
   assert.equal(prepareTaskTool.inputSchema.properties.taskDir, undefined);
   assert.equal(prepareTaskTool.inputSchema.properties.scriptName, undefined);
   assert.equal(prepareTaskTool.inputSchema.properties.expectedSurface, undefined);
@@ -1936,11 +1985,11 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.match(upstream.guidance, /dedicated figma_workspace_\* workflow tools/);
   assert.equal(upstream.tools[0].name, "use_figma");
   assert.equal(upstream.tools[0].category, "execution");
-  assert.equal(upstream.tools[0].description, "Run Plugin API JavaScript to create, inspect, or edit Figma content.");
+  assert.equal(upstream.tools[0].description, "Run Plugin API code to create, inspect, or edit Figma content.");
   assert.deepEqual(
     Object.fromEntries(upstream.tools.map((tool) => [tool.name, [tool.category, tool.description]])),
     {
-      use_figma: ["execution", "Run Plugin API JavaScript to create, inspect, or edit Figma content."],
+      use_figma: ["execution", "Run Plugin API code to create, inspect, or edit Figma content."],
       get_motion_context: ["motion", "Get keyframe animation data and motion code snippets for a node."],
       export_video: ["video", "Export a Figma timeline node as an MP4 video."],
       list_shader_effects: ["shader", "List shader effects in the authenticated user's account library."],
@@ -2174,6 +2223,18 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   assert.match(openaiText, /\$figma-workspace\b/);
   for (const term of forbiddenRouterContractTerms) {
     assert.ok(!docsText.includes(term), `router docs must not mention ${term}`);
+  }
+});
+
+test("figma public guidance text excludes legacy script and removed helper wording", async () => {
+  const publicTexts = await readPublicFigmaWorkspaceContractTexts();
+  assert.ok(publicTexts.length > 0);
+  for (const { path, text } of publicTexts) {
+    assert.equal(path.replace(/\\/gu, "/").includes("/upstream-corpus/"), false);
+    assert.equal(text.includes(".figma.js"), false, `${path} must not mention legacy .figma.js scripts`);
+    for (const helperTerm of removedDollarHelperTerms) {
+      assert.equal(dollarHelperTermPattern(helperTerm).test(text), false, `${path} must not mention removed helper ${helperTerm}`);
+    }
   }
 });
 
@@ -3755,7 +3816,7 @@ test("figma workspace runtime parsers reject malformed tool argument shapes", as
       name: "figma_workspace_prepare_task",
       arguments: {
         title: "Reject prepare scriptName alias",
-        scriptName: "task.figma.js",
+        scriptName: "task.figma.ts",
       },
     }),
     /Tool argument "scriptName" was removed\. Use "fileName"\./,
@@ -4031,7 +4092,6 @@ test("figma workspace validates asset manifest targets when upstream eval is ava
         assert.equal(typeof args.code, "string");
         assert.match(args.code, /targetNodeIds/);
         assert.match(args.code, /12:34/);
-        assert.doesNotMatch(args.code, /\$\.create = async function create/);
         assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
         assert.doesNotMatch(args.code, /const __figmaReplEvalCheckpoints = \[\]/);
         return {
@@ -5818,7 +5878,7 @@ test("figma workspace task plans run steps in order and stop on failure by defau
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-plan-"));
   const previousTaskRoot = process.env.FIGMA_WORKSPACE_TASK_ROOT;
   process.env.FIGMA_WORKSPACE_TASK_ROOT = tempDir;
-  const scriptPath = resolve(tempDir, "script.figma.js");
+  const scriptPath = resolve(tempDir, "script.figma.ts");
   await writeFile(scriptPath, "return { summary: 'script executed' };", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(
@@ -6167,7 +6227,7 @@ test("figma workspace task plans resolve workspace-relative step files consisten
     });
     const initJson = structuredToolResult(initResult);
     const fileDir = initJson.task.workspace.fileDir;
-    await writeFile(resolve(fileDir, "workspace-plan.figma.js"), "return { summary: 'dry run' };", "utf8");
+    await writeFile(resolve(fileDir, "workspace-plan.figma.ts"), "return { summary: 'dry run' };", "utf8");
     await writeFile(resolve(fileDir, "asset.png"), "asset bytes", "utf8");
 
     const result = await mcpClient.callTool({
@@ -6180,7 +6240,7 @@ test("figma workspace task plans resolve workspace-relative step files consisten
             id: "script",
             type: "script-file",
             args: {
-              inputFile: "workspace-plan.figma.js",
+              inputFile: "workspace-plan.figma.ts",
             },
           },
           {
@@ -6408,6 +6468,24 @@ test("figma workspace diagnostics return stable codes and strict promotes warnin
     ["FIGMA_WORKSPACE_ROOT_FIND_ALL"],
   );
   assert.deepEqual(
+    diagnoseFigmaWorkspaceCode(
+      [
+        "const frame = figma.createFrame();",
+        "frame.layoutMode = 'VERTICAL';",
+        "frame.primaryAxisSizingMode = 'AUTO';",
+        "figma.currentPage.appendChild(frame);",
+        "const cards = frame.findAll((node) => node.type === 'FRAME');",
+        "return { frameId: frame.id, cards: cards.length };",
+      ].join("\n"),
+      { strict: true, expectedSurface: "design" },
+    ).map((item) => item.code),
+    [],
+  );
+  assert.deepEqual(
+    diagnoseFigmaWorkspaceCode("const helperName = 'text';\nreturn await $[helperName]({ text: 'Card' });").map((item) => item.code),
+    ["FIGMA_WORKSPACE_DYNAMIC_HELPER_ACCESS"],
+  );
+  assert.deepEqual(
     diagnoseFigmaWorkspaceCode("node.characters = 'Hello';").map((item) => item.code),
     ["FIGMA_WORKSPACE_TEXT_MUTATION_NEEDS_FONT"],
   );
@@ -6512,7 +6590,7 @@ test("figma workspace diagnostics return stable codes and strict promotes warnin
 
 test("figma workspace run_script_file returns preflight diagnostics without upstream execution", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-script-"));
-  const scriptName = "script.figma.js";
+  const scriptName = "script.figma.ts";
   const calls = [];
   const { server } = createFigmaWorkspaceMcpServer({
     client: createFakeFigmaClient(calls, () => {
@@ -6533,9 +6611,9 @@ test("figma workspace run_script_file returns preflight diagnostics without upst
     await writeFile(
       scriptPath,
       [
-        "const title = await $.text({ parent: '$currentPage', as: '$title', text: 'Draft' });",
+        "const title = figma.createText();",
         "title.characters = 'Published';",
-        "return await $.checkpoint('text-updated', ['$title']);",
+        "return { id: title.id };",
       ].join("\n"),
       "utf8",
     );
@@ -6564,17 +6642,17 @@ test("figma workspace run_script_file returns preflight diagnostics without upst
     assert.equal(json.compiledScript, undefined);
     assert.equal(json.diagnostics[0].code, "FIGMA_WORKSPACE_TEXT_MUTATION_NEEDS_FONT");
     assert.equal(json.diagnostics[0].source.scriptPath, scriptPath);
-    assert.equal(json.diagnostics[0].source.line, 2);
-    assert.equal(json.diagnostics[0].source.column, 1);
+    assert.equal(json.diagnostics[0].source.line, 1);
+    assert.equal(json.diagnostics[0].source.column, 19);
     assert.equal(json.primaryFix, undefined);
     assert.equal(json.repairPlan.status, "blocked");
     assert.equal(json.repairPlan.steps.length, 1);
     assert.equal(json.repairPlan.steps[0].code, "FIGMA_WORKSPACE_TEXT_MUTATION_NEEDS_FONT");
     assert.deepEqual(json.repairPlan.steps[0].occurrences, [{
       scriptPath,
-      line: 2,
-      column: 1,
-      label: "2:1",
+      line: 1,
+      column: 19,
+      label: "1:19",
     }]);
     const resultFile = await readPrettyJsonPointer(json.outputFiles.debugFile, resolve(fileDir, "script.result.json"));
     assert.equal(resultFile.phase, "preflight");
@@ -6582,10 +6660,10 @@ test("figma workspace run_script_file returns preflight diagnostics without upst
     assert.equal(resultFile.script.diagnosticsCount, undefined);
     assert.equal(resultFile.script.executed, undefined);
     assert.equal(resultFile.diagnosticsCount, 1);
-    assert.equal(resultFile.diagnostics[0].source.column, 1);
+    assert.equal(resultFile.diagnostics[0].source.column, 19);
     assert.equal(resultFile.primaryFix, undefined);
     assert.equal(resultFile.repairPlan.status, "blocked");
-    assert.equal(resultFile.repairPlan.steps[0].occurrences[0].label, "2:1");
+    assert.equal(resultFile.repairPlan.steps[0].occurrences[0].label, "1:19");
     assert.equal(resultFile.compiledScript, undefined);
     assert.equal(resultFile.raw, undefined);
     assert.equal(json.outputFiles.compiledScriptFile, undefined);
@@ -6598,9 +6676,211 @@ test("figma workspace run_script_file returns preflight diagnostics without upst
   }
 });
 
+test("figma workspace run_script_file type-checks .figma.ts before upstream execution", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-ts-preflight-"));
+  const scriptName = "typed-error.figma.ts";
+  const calls = [];
+  const { server } = createFigmaWorkspaceMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    const fileDir = await openTestWorkspace(mcpClient, { tempDir, sessionId: "typed-main" });
+    const scriptPath = resolve(fileDir, scriptName);
+    await writeFile(
+      scriptPath,
+      [
+        "const rect: RectangleNode = figma.createRectangle();",
+        "rect.appendChild(figma.createFrame());",
+        "return { id: rect.id };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await mcpClient.callTool({
+      name: "figma_workspace_run_script_file",
+      arguments: {
+        sessionId: "typed-main",
+        inputFile: scriptName,
+        strict: true,
+        surface: "design",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, false);
+    assert.equal(json.phase, "preflight");
+    assert.equal(json.executed, false);
+    assert.equal(json.diagnostics[0].code, "FIGMA_WORKSPACE_TS_TYPE_ERROR");
+    assert.match(json.diagnostics[0].message, /appendChild/u);
+    assert.match(json.diagnostics[0].message, /RectangleNode/u);
+    assert.equal(json.diagnostics[0].source.scriptPath, scriptPath);
+    assert.equal(json.diagnostics[0].source.line, 2);
+    assert.equal(json.repairPlan.status, "blocked");
+    assert.equal(json.repairPlan.steps[0].code, "FIGMA_WORKSPACE_TS_TYPE_ERROR");
+    assert.equal(json.outputFiles.compiledScriptFile, undefined);
+    const resultFile = await readPrettyJsonPointer(json.outputFiles.debugFile, resolve(fileDir, "typed-error.result.json"));
+    assert.equal(resultFile.phase, "preflight");
+    assert.equal(resultFile.diagnostics[0].code, "FIGMA_WORKSPACE_TS_TYPE_ERROR");
+    assert.deepEqual(calls.map((call) => call[0]), []);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma workspace run_script_file reads canonical helper declarations and rejects removed helpers", async () => {
+  const helperDeclarations = await readFile(resolve(packageRoot, "src/runtime/figma-workspace-helpers.d.ts"), "utf8");
+  const scriptRunnerSource = await readFile(resolve(packageRoot, "src/runtime/script-runner.ts"), "utf8");
+  assert.match(helperDeclarations, /interface FigmaWorkspaceDollar/);
+  assert.match(helperDeclarations, /readonly handles: Readonly<Record<string, string>>;/);
+  assert.doesNotMatch(scriptRunnerSource, /interface FigmaWorkspaceDollar/);
+  assert.match(scriptRunnerSource, /readFileSync\(FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, "utf8"\)/);
+  for (const helperTerm of removedDollarHelperTerms) {
+    assert.equal(helperDeclarations.includes(helperTerm), false, `canonical helper declaration must not include ${helperTerm}`);
+  }
+
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-removed-helper-"));
+  const scriptName = "removed-helper.figma.ts";
+  const calls = [];
+  const { server } = createFigmaWorkspaceMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    const fileDir = await openTestWorkspace(mcpClient, { tempDir, sessionId: "helper-contract" });
+    await writeFile(
+      resolve(fileDir, scriptName),
+      "return await $.find({ name: 'Card' });",
+      "utf8",
+    );
+
+    const result = await mcpClient.callTool({
+      name: "figma_workspace_run_script_file",
+      arguments: {
+        sessionId: "helper-contract",
+        inputFile: scriptName,
+        strict: true,
+        surface: "design",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, false);
+    assert.equal(json.phase, "preflight");
+    assert.equal(json.executed, false);
+    assert.equal(json.diagnostics[0].code, "FIGMA_WORKSPACE_TS_TYPE_ERROR");
+    assert.match(json.diagnostics[0].message, /Property 'find' does not exist on type 'FigmaWorkspaceDollar'/u);
+    assert.deepEqual(calls.map((call) => call[0]), []);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma workspace run_script_file rejects direct handles mutation and accepts remember", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-handles-mutation-"));
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.match(args.code, /\$\.remember = remember;/u);
+    assert.doesNotMatch(args.code, /\$\.handles = __figmaRepl\.handles;/u);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          __figmaRepl: { sessionId: "handles-main", handles: { "$card": "70:1" } },
+          result: { remembered: "70:1" },
+        }),
+      }],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    const fileDir = await openTestWorkspace(mcpClient, { tempDir, sessionId: "handles-main" });
+    const directMutationScript = "handles-direct-mutation.figma.ts";
+    await writeFile(
+      resolve(fileDir, directMutationScript),
+      "$.handles['$card'] = '70:1';\nreturn { handles: $.handles };",
+      "utf8",
+    );
+
+    const directMutationResult = await mcpClient.callTool({
+      name: "figma_workspace_run_script_file",
+      arguments: {
+        sessionId: "handles-main",
+        inputFile: directMutationScript,
+        strict: true,
+        surface: "design",
+      },
+    });
+    const directMutationJson = structuredToolResult(directMutationResult);
+    assert.equal(directMutationJson.ok, false);
+    assert.equal(directMutationJson.phase, "preflight");
+    assert.equal(directMutationJson.executed, false);
+    assert.equal(directMutationJson.diagnostics[0].code, "FIGMA_WORKSPACE_TS_TYPE_ERROR");
+    assert.match(directMutationJson.diagnostics[0].message, /only permits reading/u);
+
+    const rememberScript = "handles-remember.figma.ts";
+    await writeFile(
+      resolve(fileDir, rememberScript),
+      [
+        "const frame: FrameNode = figma.createFrame();",
+        "frame.name = 'Remembered frame';",
+        "const remembered: string = $.remember('$card', frame);",
+        "return { remembered };",
+      ].join("\n"),
+      "utf8",
+    );
+    const rememberResult = await mcpClient.callTool({
+      name: "figma_workspace_run_script_file",
+      arguments: {
+        sessionId: "handles-main",
+        inputFile: rememberScript,
+        strict: true,
+        surface: "design",
+      },
+    });
+    const rememberJson = structuredToolResult(rememberResult);
+    assert.equal(rememberJson.ok, true);
+    assert.equal(rememberJson.phase, "execute");
+    assert.deepEqual(rememberJson.session.handleChanges.updated, ["$card"]);
+    assert.equal(rememberJson.upstream.result.remembered, "70:1");
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), ["use_figma"]);
+});
+
 test("figma workspace run_script_file returns all recoverable parse errors without guardrail scan", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-parse-plan-"));
-  const scriptName = "parse-errors.figma.js";
+  const scriptName = "parse-errors.figma.ts";
   const calls = [];
   const { server } = createFigmaWorkspaceMcpServer({
     client: createFakeFigmaClient(calls, () => {
@@ -6651,15 +6931,15 @@ test("figma workspace run_script_file returns all recoverable parse errors witho
       "FIGMA_WORKSPACE_PARSE_ERROR",
     ]);
     assert.equal(json.repairPlan.status, "parse_error");
-    assert.match(json.repairPlan.summary, /Fix all JavaScript syntax errors/);
+    assert.match(json.repairPlan.summary, /Fix all TypeScript syntax errors/);
     assert.deepEqual(json.repairPlan.steps.map((step) => step.code), [
       "FIGMA_WORKSPACE_PARSE_ERROR",
       "FIGMA_WORKSPACE_PARSE_ERROR",
     ]);
-    assert.deepEqual(json.repairPlan.steps.map((step) => step.occurrences[0].label), ["2:1", "3:12"]);
+    assert.deepEqual(json.repairPlan.steps.map((step) => step.occurrences[0].label), ["2:5", "4:9"]);
     assert.equal(json.repairPlan.steps.some((step) => /selection|remove|createImage/u.test(step.message)), false);
     const resultFile = await readPrettyJsonPointer(json.outputFiles.debugFile, resolve(fileDir, "parse-errors.result.json"));
-    assert.deepEqual(resultFile.repairPlan.steps.map((step) => step.occurrences[0].label), ["2:1", "3:12"]);
+    assert.deepEqual(resultFile.repairPlan.steps.map((step) => step.occurrences[0].label), ["2:5", "4:9"]);
     assert.deepEqual(calls.map((call) => call[0]), []);
     await mcpClient.close();
   } finally {
@@ -6669,7 +6949,7 @@ test("figma workspace run_script_file returns all recoverable parse errors witho
 
 test("figma workspace run_script_file repairPlan dedupes guardrails and preserves all occurrences", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-guardrail-plan-"));
-  const scriptName = "guardrails.figma.js";
+  const scriptName = "guardrails.figma.ts";
   const calls = [];
   const { server } = createFigmaWorkspaceMcpServer({
     client: createFakeFigmaClient(calls, () => {
@@ -6690,6 +6970,8 @@ test("figma workspace run_script_file repairPlan dedupes guardrails and preserve
     await writeFile(
       scriptPath,
       [
+        "const node = figma.createText();",
+        "const bytes = new Uint8Array();",
         "figma.currentPage.selection = [node];",
         "figma.root.findAll(() => true);",
         "node.characters = 'Hello';",
@@ -6725,8 +7007,8 @@ test("figma workspace run_script_file repairPlan dedupes guardrails and preserve
     const selectionStep = json.repairPlan.steps.find((step) => step.code === "FIGMA_WORKSPACE_DIRECT_SELECTION_ACCESS");
     assert.ok(selectionStep);
     assert.deepEqual(selectionStep.occurrences, [
-      { scriptPath, line: 1, column: 1, label: "1:1" },
-      { scriptPath, line: 6, column: 18, label: "6:18" },
+      { scriptPath, line: 3, column: 5, label: "3:5" },
+      { scriptPath, line: 8, column: 22, label: "8:22" },
     ]);
     assert.match(selectionStep.suggestion, /\$\.select/);
     const imageStep = json.repairPlan.steps.find((step) => step.code === "FIGMA_WORKSPACE_IMAGE_CREATION");
@@ -6778,7 +7060,7 @@ test("figma workspace eval returns structured repairPlan for blocked diagnostics
 
 test("figma workspace run_script_file blocks oversized compiled script payloads before upstream", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-large-script-"));
-  const scriptPath = resolve(tempDir, "large-script.figma.js");
+  const scriptPath = resolve(tempDir, "large-script.figma.ts");
   await writeFile(
     scriptPath,
     [
@@ -6828,14 +7110,19 @@ test("figma workspace run_script_file blocks oversized compiled script payloads 
 
 test("figma workspace run_script_file executes helper-backed scripts through upstream eval", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-script-"));
-  const scriptPath = resolve(tempDir, "script.js");
+  const scriptPath = resolve(tempDir, "script.figma.ts");
   await writeFile(
     scriptPath,
     [
-      "await $.create({ type: 'FRAME', as: '$scriptFrame', name: 'Script frame', size: { width: 320, height: 160 } });",
+      "const scriptFrame = figma.createFrame();",
+      "scriptFrame.name = 'Script frame';",
+      "scriptFrame.resize(320, 160);",
+      "scriptFrame.layoutMode = 'VERTICAL';",
+      "figma.currentPage.appendChild(scriptFrame);",
+      "$.remember('$scriptFrame', scriptFrame);",
       "await $.text({ parent: '$scriptFrame', as: '$scriptTitle', text: 'Hello', font: { family: 'Inter', style: 'Bold', size: 18 } });",
-      "await $.layout('$scriptFrame', { layoutMode: 'VERTICAL', itemSpacing: 8 });",
-      "const frame = await $('$scriptFrame');",
+      "scriptFrame.itemSpacing = 8;",
+      "const frame = await $('$scriptFrame') as FrameNode;",
       "frame.resize(360, 180);",
       "const checkpoint = await $.checkpoint('script-created', ['$scriptFrame', '$scriptTitle']);",
       "return { checkpoint, resized: { id: frame.id, width: frame.width, height: frame.height }, handles: $.handles };",
@@ -6845,14 +7132,12 @@ test("figma workspace run_script_file executes helper-backed scripts through ups
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
     assert.equal(name, "use_figma");
-    assert.doesNotMatch(args.code, /\$\.findAll = async function findAll/);
     assert.doesNotMatch(args.code, /\$\.select = async function select/);
     assert.doesNotMatch(args.code, /figma\.createImage\(bytes\)/);
     assert.doesNotMatch(args.code, /\$\.screenshot = async function screenshot/);
     assert.match(args.code, /\$\.text = async function text/);
-    assert.match(args.code, /\$\.create = async function create/);
-    assert.match(args.code, /\$\.findFreeSlot = __figmaReplFindFreeSlot/);
-    assert.match(args.code, /\$\.placeNode = async function placeNode/);
+    assert.doesNotMatch(args.code, /\$\.findFreeSlot = __figmaReplFindFreeSlot/);
+    assert.doesNotMatch(args.code, /\$\.placeNode = async function placeNode/);
     assert.doesNotMatch(args.code, /\$\.replaceGeneratedFrame = async function replaceGeneratedFrame/);
     assert.doesNotMatch(args.code, /\$\.ops = async function ops/);
     assert.match(args.code, /\$\.checkpoint = async function checkpoint/);
@@ -6941,9 +7226,87 @@ test("figma workspace run_script_file executes helper-backed scripts through ups
   }
 });
 
+test("figma workspace run_script_file transpiles valid .figma.ts before upstream eval", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-script-ts-"));
+  const scriptPath = resolve(tempDir, "typed-script.figma.ts");
+  await writeFile(
+    scriptPath,
+    [
+      "const frame: FrameNode = figma.createFrame();",
+      "frame.name = 'Typed frame';",
+      "const title: TextNode = await $.text({ parent: frame, text: 'Typed title', as: '$typedTitle' });",
+      "return { frameId: frame.id, titleId: title.id, handles: $.handles } as const;",
+    ].join("\n"),
+    "utf8",
+  );
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.match(args.code, /figma\.createFrame\(\)/u);
+    assert.match(args.code, /\$\.text = async function text/u);
+    assert.match(args.code, /Typed title/u);
+    assert.doesNotMatch(args.code, /: FrameNode/u);
+    assert.doesNotMatch(args.code, /: TextNode/u);
+    assert.doesNotMatch(args.code, /as const/u);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            __figmaRepl: {
+              sessionId: "typed-main",
+              handles: { "$typedTitle": "30:2" },
+            },
+            result: {
+              frameId: "30:1",
+              titleId: "30:2",
+              handles: { "$typedTitle": "30:2" },
+            },
+          }),
+        },
+      ],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    const result = await mcpClient.callTool({
+      name: "figma_workspace_run_script_file",
+      arguments: {
+        sessionId: "typed-main",
+        scriptPath,
+        strict: true,
+        surface: "design",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.phase, "execute");
+    assert.equal(json.executed, true);
+    assert.equal(json.script.scriptPath, scriptPath);
+    assert.equal(json.script.expectedSurface, "design");
+    assert.ok(json.script.compiledScriptBytes > 0);
+    assert.deepEqual(json.diagnostics, []);
+    assert.equal(json.upstream.result.frameId, "30:1");
+    assert.equal(json.outputFiles, undefined);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), ["use_figma"]);
+});
+
 test("figma workspace run_script_file keeps wrapper success when nested business ok is false", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-script-nested-ok-"));
-  const scriptPath = resolve(tempDir, "nested-ok.figma.js");
+  const scriptPath = resolve(tempDir, "nested-ok.figma.ts");
   await writeFile(
     scriptPath,
     "return { ok: false, reason: 'business validation evidence', target: '20:1' };",
@@ -7011,7 +7374,7 @@ test("figma workspace run_script_file keeps wrapper success when nested business
 
 test("figma workspace run_script_file avoids helper injection for native Plugin API scripts", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-native-"));
-  const scriptPath = resolve(tempDir, "native-script.figma.js");
+  const scriptPath = resolve(tempDir, "native-script.figma.ts");
   await writeFile(
     scriptPath,
     [
@@ -7026,8 +7389,6 @@ test("figma workspace run_script_file avoids helper injection for native Plugin 
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
     assert.equal(name, "use_figma");
     assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
-    assert.doesNotMatch(args.code, /\$\.findAll = async function findAll/);
-    assert.doesNotMatch(args.code, /\$\.create = async function create/);
     assert.doesNotMatch(args.code, /const __figmaReplEvalCheckpoints = \[\]/);
     assert.match(args.code, /Native frame/);
     return {
@@ -7078,14 +7439,14 @@ test("figma workspace run_script_file avoids helper injection for native Plugin 
 });
 
 test("figma workspace run_script_file injects helper dependencies from AST usage", async () => {
-  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-find-helper-"));
-  const scriptPath = resolve(tempDir, "find-script.figma.js");
-  await writeFile(scriptPath, "return await $.find({ name: 'Card', type: 'FRAME' });", "utf8");
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-place-helper-"));
+  const scriptPath = resolve(tempDir, "place-script.figma.ts");
+  await writeFile(scriptPath, "return await $.placeNode('$card', { avoidOverlap: true });", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
     assert.equal(name, "use_figma");
-    assert.match(args.code, /\$\.find = async function find/);
-    assert.match(args.code, /\$\.findAll = async function findAll/);
+    assert.match(args.code, /\$\.findFreeSlot = __figmaReplFindFreeSlot/);
+    assert.match(args.code, /\$\.placeNode = async function placeNode/);
     assert.doesNotMatch(args.code, /\$\.text = async function text/);
     assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
     return {
@@ -7095,7 +7456,7 @@ test("figma workspace run_script_file injects helper dependencies from AST usage
           text: JSON.stringify({
             ok: true,
             __figmaRepl: { sessionId: "main", handles: {} },
-            result: { id: "60:1", name: "Card" },
+            result: { x: 0, y: 0, shiftedSlots: 0, collidedNodeIds: [] },
           }),
         },
       ],
@@ -7115,7 +7476,7 @@ test("figma workspace run_script_file injects helper dependencies from AST usage
     const result = await mcpClient.callTool({
       name: "figma_workspace_run_script_file",
       arguments: {
-        title: "Run find helper script",
+        title: "Run placement helper script",
         sessionId: "main",
         scriptPath,
         surface: "design",
@@ -7134,14 +7495,13 @@ test("figma workspace run_script_file injects helper dependencies from AST usage
 
 test("figma workspace run_script_file keeps resolveHandleId for node helper usage", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-node-helper-"));
-  const scriptPath = resolve(tempDir, "node-script.figma.js");
+  const scriptPath = resolve(tempDir, "node-script.figma.ts");
   await writeFile(scriptPath, "return await $.node('$card');", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
     assert.equal(name, "use_figma");
     assert.match(args.code, /function resolveHandleId/);
     assert.match(args.code, /\$\.node = \$;/);
-    assert.doesNotMatch(args.code, /\$\.find = async function find/);
     assert.doesNotMatch(args.code, /\$\.text = async function text/);
     return {
       content: [
@@ -7195,7 +7555,7 @@ test("figma workspace run_script_file keeps resolveHandleId for node helper usag
 
 test("figma workspace run_script_file does not emit resolveHandleId for remember-only helper usage", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-remember-helper-"));
-  const scriptPath = resolve(tempDir, "remember-script.figma.js");
+  const scriptPath = resolve(tempDir, "remember-script.figma.ts");
   await writeFile(scriptPath, "const frame = figma.createFrame();\n$.remember('$card', frame);\nreturn { id: frame.id };", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
@@ -7203,8 +7563,6 @@ test("figma workspace run_script_file does not emit resolveHandleId for remember
     assert.match(args.code, /\$\.remember = remember;/);
     assert.doesNotMatch(args.code, /\$\.resolveId = resolveHandleId;/);
     assert.doesNotMatch(args.code, /\bresolveHandleId\b/);
-    assert.doesNotMatch(args.code, /\$\.find = async function find/);
-    assert.doesNotMatch(args.code, /\$\.create = async function create/);
     return {
       content: [{
         type: "text",
@@ -7247,12 +7605,12 @@ test("figma workspace run_script_file does not emit resolveHandleId for remember
 
 test("figma workspace run_script_file rejects dynamic helper access instead of full injection fallback", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-dynamic-helper-"));
-  const scriptPath = resolve(tempDir, "dynamic-helper.figma.js");
+  const scriptPath = resolve(tempDir, "dynamic-helper.figma.ts");
   await writeFile(
     scriptPath,
     [
-      "const helperName = 'find';",
-      "return await $[helperName]({ name: 'Card', type: 'FRAME' });",
+      "const helperName = 'text' as 'text';",
+      "return await $[helperName]({ text: 'Card' });",
     ].join("\n"),
     "utf8",
   );
@@ -7295,14 +7653,13 @@ test("figma workspace run_script_file rejects dynamic helper access instead of f
 
 test("figma workspace run_script_file allows literal computed helper access", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-literal-helper-"));
-  const scriptPath = resolve(tempDir, "literal-helper.figma.js");
-  await writeFile(scriptPath, "return await $['find']({ name: 'Card', type: 'FRAME' });", "utf8");
+  const scriptPath = resolve(tempDir, "literal-helper.figma.ts");
+  await writeFile(scriptPath, "return await $['text']({ text: 'Card' });", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
     assert.equal(name, "use_figma");
-    assert.match(args.code, /\$\.find = async function find/);
-    assert.match(args.code, /\$\.findAll = async function findAll/);
-    assert.doesNotMatch(args.code, /\$\.text = async function text/);
+    assert.match(args.code, /\$\.text = async function text/);
+    assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
     return {
       content: [
         {
@@ -7310,7 +7667,7 @@ test("figma workspace run_script_file allows literal computed helper access", as
           text: JSON.stringify({
             ok: true,
             __figmaRepl: { sessionId: "main", handles: {} },
-            result: { id: "61:1", name: "Card" },
+            result: { id: "61:1", characters: "Card" },
           }),
         },
       ],
@@ -7349,11 +7706,15 @@ test("figma workspace run_script_file allows literal computed helper access", as
 
 test("figma workspace run_script_file supports generated image asset helper without raw createImage in source", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-image-"));
-  const scriptPath = resolve(tempDir, "image-script.figma.js");
+  const scriptPath = resolve(tempDir, "image-script.figma.ts");
   await writeFile(
     scriptPath,
     [
-      "const root = await $.create({ type: 'FRAME', as: '$root', name: 'Image asset root', size: { width: 240, height: 180 } });",
+      "const root = figma.createFrame();",
+      "root.name = 'Image asset root';",
+      "root.resize(240, 180);",
+      "figma.currentPage.appendChild(root);",
+      "$.remember('$root', root);",
       "await $.imageAsset({ parent: '$root', as: '$icon', name: 'Generated icon asset', base64: 'AQIDBA==', size: { width: 64, height: 64 } });",
       "return await $.checkpoint('image-asset-created', ['$root', '$icon']);",
     ].join("\n"),
@@ -7363,8 +7724,8 @@ test("figma workspace run_script_file supports generated image asset helper with
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
     assert.equal(name, "use_figma");
     assert.match(args.code, /\$\.imageAsset = async function imageAsset/);
-    assert.match(args.code, /\$\.findFreeSlot = __figmaReplFindFreeSlot/);
-    assert.match(args.code, /\$\.placeNode = async function placeNode/);
+    assert.doesNotMatch(args.code, /\$\.findFreeSlot = __figmaReplFindFreeSlot/);
+    assert.doesNotMatch(args.code, /\$\.placeNode = async function placeNode/);
     assert.doesNotMatch(args.code, /\$\.replaceGeneratedFrame = async function replaceGeneratedFrame/);
     assert.match(args.code, /figma\.createImage\(bytes\)/);
     assert.match(args.code, /Generated icon asset/);
@@ -7419,7 +7780,7 @@ test("figma workspace run_script_file supports generated image asset helper with
 
 test("figma workspace run_script_file structures upstream call failure errors", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-upstream-error-"));
-  const scriptName = "script.figma.js";
+  const scriptName = "script.figma.ts";
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     if (/success after failure/u.test(args.code)) {
@@ -7484,7 +7845,7 @@ test("figma workspace run_script_file structures upstream call failure errors", 
     assert.equal(json.compiledScript, undefined);
     assert.equal(json.raw, undefined);
     const resultFile = await readPrettyJsonPointer(json.outputFiles.debugFile, resolve(fileDir, "script.result.json"));
-    const compiledFilePath = resolve(fileDir, "script.failure.compiled.js");
+    const compiledFilePath = resolve(fileDir, "script.failure.compiled.txt");
     const compiledFile = await readTextPointer(json.outputFiles.compiledScriptFile, compiledFilePath);
     assert.equal(resultFile.ok, false);
     assert.equal(resultFile.kind, "figma_workspace_result");
@@ -7516,7 +7877,7 @@ test("figma workspace run_script_file structures upstream call failure errors", 
     assert.equal(resultFile.upstreamError.parsed, undefined);
     assert.equal(resultFile.upstreamError.text, undefined);
     assert.match(compiledFile, /Generated by figma_workspace_run_script_file after upstream execution failure/);
-    assert.match(compiledFile, /This is the compiled wrapper sent to upstream Figma MCP/);
+    assert.match(compiledFile, /This is the compiled payload sent to upstream Figma MCP/);
     assert.match(compiledFile, /\$\.cloneNodeTree/);
     assert.match(compiledFile, /figma_workspace_run_script_file source:/);
 
@@ -7544,7 +7905,7 @@ test("figma workspace run_script_file structures upstream call failure errors", 
 
 test("figma workspace run_script_file structures upstream text errors without implicit files", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-upstream-text-error-"));
-  const scriptPath = resolve(tempDir, "script.figma.js");
+  const scriptPath = resolve(tempDir, "script.figma.ts");
   await writeFile(scriptPath, "figma.currentPage.selection = [];", "utf8");
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, () => ({
@@ -7596,11 +7957,11 @@ test("figma workspace run_script_file structures upstream text errors without im
     assert.equal(json.compiledScript, undefined);
     assert.equal(json.outputFiles, undefined);
     await assert.rejects(
-      readFile(resolve(tempDir, "script.compiled.js"), "utf8"),
+      readFile(resolve(tempDir, "script.compiled.txt"), "utf8"),
       /ENOENT/,
     );
     await assert.rejects(
-      readFile(resolve(tempDir, "script.failure.compiled.js"), "utf8"),
+      readFile(resolve(tempDir, "script.failure.compiled.txt"), "utf8"),
       /ENOENT/,
     );
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
@@ -7612,7 +7973,7 @@ test("figma workspace run_script_file structures upstream text errors without im
 
 test("figma workspace run_script_file writes output files and limits inline result fields", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-output-"));
-  const scriptName = "script.figma.js";
+  const scriptName = "script.figma.ts";
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.match(args.code, /large result/);
@@ -7754,7 +8115,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.equal(initJson.task.taskName, "settings-panel-polish");
     assert.equal(initJson.task.taskSlug, undefined);
     assert.equal(initJson.task.intentSlug, undefined);
-    assert.equal(initJson.task.inputFile, "settings-panel-polish.figma.js");
+    assert.equal(initJson.task.inputFile, "settings-panel-polish.figma.ts");
     assert.equal(initJson.task.outputFile, undefined);
     assert.equal(initJson.task.resultFile, undefined);
     assert.equal(initJson.task.fileDir, undefined);
@@ -7766,13 +8127,13 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.equal(initJson.task.workspace.taskSlug, undefined);
     assert.equal(initJson.task.workspace.intentSlug, undefined);
     assert.equal(initJson.task.workspace.resultFile, undefined);
-    assert.equal(initJson.task.workspace.files.inputFile, "settings-panel-polish.figma.js");
+    assert.equal(initJson.task.workspace.files.inputFile, "settings-panel-polish.figma.ts");
     assert.equal(initJson.task.workspace.files.outputFile, undefined);
     assert.equal(initJson.taskChange.previous, undefined);
     assert.equal(initJson.taskChange.changed, true);
     assert.deepEqual(initJson.taskChange.current, {
       taskName: "settings-panel-polish",
-      inputFile: "settings-panel-polish.figma.js",
+      inputFile: "settings-panel-polish.figma.ts",
       sessionDir: initJson.task.workspace.sessionDir,
     });
     assert.equal(initJson.outputFiles, undefined);
@@ -7816,7 +8177,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
           file: "OtherFigmaFileKey34567",
           surface: "figjam",
           workspaceDir: initJson.task.workspace.sessionDir,
-          fileName: "settings-panel-polish.figma.js",
+          fileName: "settings-panel-polish.figma.ts",
           taskName: "settings-panel-polish",
         },
       }),
@@ -7829,7 +8190,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.equal(sessionJson.workspace.files, undefined);
 
     await writeFile(
-      resolve(initJson.task.workspace.fileDir, "settings-panel-polish.figma.js"),
+      resolve(initJson.task.workspace.fileDir, "settings-panel-polish.figma.ts"),
       "return { summary: 'workspace file result' };",
       "utf8",
     );
@@ -7839,7 +8200,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
       arguments: {
         title: "Run workspace file",
         sessionId: "settings-workspace",
-        inputFile: "settings-panel-polish.figma.js",
+        inputFile: "settings-panel-polish.figma.ts",
         inlineResultLimit: 40,
       },
     });
@@ -7874,7 +8235,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.equal(upstreamFile.result.result, undefined);
 
     await writeFile(
-      resolve(initJson.task.workspace.fileDir, "settings-panel-polish.figma.js"),
+      resolve(initJson.task.workspace.fileDir, "settings-panel-polish.figma.ts"),
       "return { summary: 'workspace failure result' };",
       "utf8",
     );
@@ -7883,7 +8244,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
       arguments: {
         title: "Run failed workspace file",
         sessionId: "settings-workspace",
-        inputFile: "settings-panel-polish.figma.js",
+        inputFile: "settings-panel-polish.figma.ts",
       },
     });
     const failedJson = structuredToolResult(failedResult);
@@ -7895,10 +8256,10 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.equal(failedUpstreamFile.callOk, undefined);
     const failedCompiledFile = await readTextPointer(
       failedJson.outputFiles.compiledScriptFile,
-      resolve(initJson.task.workspace.fileDir, "settings-panel-polish.failure.compiled.js"),
+      resolve(initJson.task.workspace.fileDir, "settings-panel-polish.failure.compiled.txt"),
     );
     assert.match(failedCompiledFile, /Generated by figma_workspace_run_script_file after upstream execution failure/);
-    assert.match(failedCompiledFile, /Source: ExampleFigmaFileKey012\/settings-panel-polish\.figma\.js/);
+    assert.match(failedCompiledFile, /Source: ExampleFigmaFileKey012\/settings-panel-polish\.figma\.ts/);
     assert.match(failedCompiledFile, /workspace failure result/);
     assert.match(failedCompiledFile, /figma_workspace_run_script_file source:/);
 
@@ -7907,7 +8268,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
       arguments: {
         title: "Run missing workspace file",
         sessionId: "settings-workspace",
-        inputFile: "missing-settings-panel.figma.js",
+        inputFile: "missing-settings-panel.figma.ts",
         strict: true,
       },
     });
@@ -7948,17 +8309,17 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.equal(preparedJson.task.taskName, "token-audit");
     assert.equal(preparedJson.task.taskSlug, undefined);
     assert.equal(preparedJson.task.intentSlug, undefined);
-    assert.equal(preparedJson.task.inputFile, "token-audit.figma.js");
+    assert.equal(preparedJson.task.inputFile, "token-audit.figma.ts");
     assert.equal(preparedJson.task.outputFile, undefined);
     assert.equal(preparedJson.task.workspaceDir, undefined);
     assert.equal(preparedJson.task.taskDir, undefined);
-    assert.equal(preparedJson.task.scriptPath, resolve(initJson.task.workspace.fileDir, "token-audit.figma.js"));
+    assert.equal(preparedJson.task.scriptPath, resolve(initJson.task.workspace.fileDir, "token-audit.figma.ts"));
     assert.equal(preparedJson.task.resultFile, undefined);
     assert.equal(preparedJson.taskChange.changed, true);
     assert.equal(preparedJson.taskChange.previous.taskName, "settings-panel-polish");
     assert.deepEqual(preparedJson.taskChange.current, {
       taskName: "token-audit",
-      inputFile: "token-audit.figma.js",
+      inputFile: "token-audit.figma.ts",
       sessionDir: initJson.task.workspace.sessionDir,
     });
     assert.equal(preparedJson.outputFiles, undefined);
@@ -7978,13 +8339,37 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.equal(preparedAgainJson.taskChange.previous.taskName, "token-audit");
     assert.deepEqual(preparedAgainJson.taskChange.current, preparedJson.taskChange.current);
 
+    const preparedTs = await mcpClient.callTool({
+      name: "figma_workspace_prepare_task",
+      arguments: {
+        title: "Prepare typed task",
+        sessionId: "settings-workspace",
+        taskName: "token-audit-ts",
+        fileName: "token-audit-ts.figma.ts",
+        surface: "design",
+        overwrite: true,
+      },
+    });
+    const preparedTsJson = structuredToolResult(preparedTs);
+    assert.equal(preparedTsJson.task.inputFile, "token-audit-ts.figma.ts");
+    assert.equal(preparedTsJson.task.scriptPath, resolve(initJson.task.workspace.fileDir, "token-audit-ts.figma.ts"));
+    assert.deepEqual(preparedTsJson.taskChange.current, {
+      taskName: "token-audit-ts",
+      inputFile: "token-audit-ts.figma.ts",
+      sessionDir: initJson.task.workspace.sessionDir,
+    });
+    const preparedTsSource = await readFile(preparedTsJson.task.scriptPath, "utf8");
+    assert.match(preparedTsSource, /token-audit-ts\.figma\.ts/);
+    assert.match(preparedTsSource, /strict-checked with Figma Plugin API typings/);
+    assert.match(preparedTsJson.next[0], /\.figma\.ts/);
+
     await assert.rejects(
       mcpClient.callTool({
         name: "figma_workspace_run_script_file",
         arguments: {
           title: "Reject traversal",
           sessionId: "settings-workspace",
-          inputFile: "../bad.figma.js",
+          inputFile: "../bad.figma.ts",
         },
       }),
       /inputFile" must be a workspace-relative file name/,
@@ -8016,7 +8401,7 @@ test("figma workspace run_script_file rejects relative script paths", async () =
         name: "figma_workspace_run_script_file",
         arguments: {
           title: `Reject ${legacyArgument}`,
-          scriptPath: resolve(tmpdir(), "script.figma.js"),
+          scriptPath: resolve(tmpdir(), "script.figma.ts"),
           [legacyArgument]: resolve(tmpdir(), `${legacyArgument}.out`),
         },
       }),
@@ -8028,10 +8413,20 @@ test("figma workspace run_script_file rejects relative script paths", async () =
       name: "figma_workspace_run_script_file",
       arguments: {
         title: "Reject relative script",
-        scriptPath: "relative-script.js",
+        scriptPath: "relative-script.figma.ts",
       },
     }),
     /scriptPath" must be an absolute path/,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_run_script_file",
+      arguments: {
+        title: "Reject non-TypeScript script",
+        scriptPath: resolve(tmpdir(), "script.txt"),
+      },
+    }),
+    /scriptPath" must end with "\.figma\.ts"/,
   );
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
@@ -8056,7 +8451,7 @@ test("figma workspace open accepts unified file input and auto-binds a workspace
   await repl.close();
 });
 
-test("figma workspace prepare_task creates .figma.js workspace and enforces overwrite and path rules", async () => {
+test("figma workspace prepare_task creates .figma.ts workspace and enforces overwrite and path rules", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-task-"));
   const workspaceDir = resolve(tempDir, "workspace");
   const calls = [];
@@ -8080,7 +8475,7 @@ test("figma workspace prepare_task creates .figma.js workspace and enforces over
       arguments: {
         title: "Prepare task",
         workspaceDir,
-        fileName: "settings-panel.figma.js",
+        fileName: "settings-panel.figma.ts",
         taskName: "settings-panel",
         surface: "design",
         targetPageId: "0:1",
@@ -8092,9 +8487,9 @@ test("figma workspace prepare_task creates .figma.js workspace and enforces over
     assert.equal(json.task.taskDir, undefined);
     assert.equal(json.task.workspace.fileDir, workspaceDir);
     assert.equal(json.task.workspace.sessionDir, workspaceDir);
-    assert.equal(json.task.inputFile, "settings-panel.figma.js");
+    assert.equal(json.task.inputFile, "settings-panel.figma.ts");
     assert.equal(json.task.outputFile, undefined);
-    assert.equal(json.task.scriptPath, resolve(workspaceDir, "settings-panel.figma.js"));
+    assert.equal(json.task.scriptPath, resolve(workspaceDir, "settings-panel.figma.ts"));
     assert.equal(json.task.intentSlug, undefined);
     assert.equal(json.task.resultFile, undefined);
     assert.equal(json.task.taskName, "settings-panel");
@@ -8147,10 +8542,22 @@ test("figma workspace prepare_task creates .figma.js workspace and enforces over
           title: "Reject absolute script name",
           taskName: "absolute-script-name",
           workspaceDir: resolve(tempDir, "other"),
-          fileName: resolve(tempDir, "bad.figma.js"),
+          fileName: resolve(tempDir, "bad.figma.ts"),
         },
       }),
       /fileName" must be a file name/,
+    );
+    await assert.rejects(
+      mcpClient.callTool({
+        name: "figma_workspace_prepare_task",
+        arguments: {
+          title: "Reject non-TypeScript script name",
+          taskName: "bad-script-name",
+          workspaceDir: resolve(tempDir, "other"),
+          fileName: "bad-script.txt",
+        },
+      }),
+      /fileName" must end with "\.figma\.ts"/,
     );
     assert.deepEqual(calls.map((call) => call[0]), []);
     await mcpClient.close();
@@ -8404,7 +8811,6 @@ test("figma workspace inspect returns compact lock and layout operation state", 
     assert.match(args.code, /locked: read\("locked"\)/);
     assert.match(args.code, /layoutMode: read\("layoutMode"\)/);
     assert.match(args.code, /layoutPositioning: read\("layoutPositioning"\)/);
-    assert.doesNotMatch(args.code, /\$\.create = async function create/);
     return {
       content: [{
         type: "text",
@@ -8497,7 +8903,6 @@ test("figma workspace inspect mode=style returns compact visual token audit", as
     assert.match(args.code, /__colorCounts/);
     assert.match(args.code, /textStyles/);
     assert.match(args.code, /imageNodes/);
-    assert.doesNotMatch(args.code, /\$\.create = async function create/);
     assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
     return {
       content: [
@@ -8616,7 +9021,6 @@ test("figma workspace inspect mode=validate reports valid, missing, and stale", 
     assert.equal(args.fileKey, "ValidateFileKey012");
     assert.match(args.code, /__requestedHandles/);
     assert.match(args.code, /layoutPositioning/);
-    assert.doesNotMatch(args.code, /\$\.create = async function create/);
     assert.doesNotMatch(args.code, /\$\.checkpoint = async function checkpoint/);
     assert.doesNotMatch(args.code, /const __figmaReplEvalCheckpoints = \[\]/);
     return {
@@ -8706,7 +9110,7 @@ test("figma workspace programmatic client sends fixed eval description without M
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.equal(typeof args.code, "string");
     assert.equal(args.fileKey, "ExampleFigmaFileKey012");
-    assert.equal(args.description, "Figma Workspace JavaScript execution");
+    assert.equal(args.description, "Figma Workspace Plugin API execution");
     return {
       content: [
         {
@@ -8753,7 +9157,7 @@ test("figma workspace eval sends fixed upstream description when official schema
     ({ args }) => {
       assert.equal(typeof args.code, "string");
       assert.equal(args.fileKey, "ExampleFigmaFileKey012");
-      assert.equal(args.description, "Figma Workspace JavaScript execution");
+      assert.equal(args.description, "Figma Workspace Plugin API execution");
       assert.notEqual(args.description, "User-visible title only");
       return {
         content: [
@@ -8808,7 +9212,7 @@ test("figma workspace eval sends fixed upstream description when official schema
 
 test("figma workspace programmatic client returns typed output contracts", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-mcp-client-typed-"));
-  const scriptPath = resolve(tempDir, "typed-client.figma.js");
+  const scriptPath = resolve(tempDir, "typed-client.figma.ts");
   const assetPath = resolve(tempDir, "asset.png");
   const capturePath = resolve(tempDir, "capture.png");
   const plannedCapturePath = resolve(tempDir, "capture.png");
@@ -9031,17 +9435,17 @@ test("figma workspace programmatic client returns typed output contracts", async
 
     const preparedResult = await repl.prepareTask({
       workspaceDir,
-      fileName: "typed-task.figma.js",
+      fileName: "typed-task.figma.ts",
       taskName: "typed-task",
     });
     assert.equal(preparedResult.ok, true);
     assert.equal(preparedResult.task.taskName, "typed-task");
     assert.equal(preparedResult.task.taskSlug, undefined);
     assert.equal(preparedResult.task.intentSlug, undefined);
-    assert.equal(preparedResult.task.inputFile, "typed-task.figma.js");
+    assert.equal(preparedResult.task.inputFile, "typed-task.figma.ts");
     assert.equal(preparedResult.task.outputFile, undefined);
     assert.equal(preparedResult.task.workspace.fileDir, workspaceDir);
-    assert.equal(preparedResult.task.workspace.files.inputFile, "typed-task.figma.js");
+    assert.equal(preparedResult.task.workspace.files.inputFile, "typed-task.figma.ts");
     assert.equal(preparedResult.task.workspace.files.outputFile, undefined);
     assert.equal(preparedResult.task.resultFile, undefined);
     assert.equal(preparedResult.outputFiles, undefined);
@@ -9143,8 +9547,8 @@ test("node-upstream-client entrypoint exports workspace and remote clients in co
 test("workspace cleanup treats message-only ENOENT as a missing file", () => {
   const codeOnlyError = new Error("unlink failed");
   codeOnlyError.code = "ENOENT";
-  const messageOnlyError = new Error("ENOENT: no such file or directory, unlink 'script.failure.compiled.js'");
-  const accessError = new Error("EACCES: permission denied, unlink 'script.failure.compiled.js'");
+  const messageOnlyError = new Error("ENOENT: no such file or directory, unlink 'script.failure.compiled.txt'");
+  const accessError = new Error("EACCES: permission denied, unlink 'script.failure.compiled.txt'");
 
   assert.equal(isFigmaWorkspaceMissingFileErrorForTesting(codeOnlyError), true);
   assert.equal(isFigmaWorkspaceMissingFileErrorForTesting(messageOnlyError), true);

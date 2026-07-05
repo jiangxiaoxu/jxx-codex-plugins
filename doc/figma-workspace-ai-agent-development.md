@@ -7,7 +7,7 @@ This document is for AI agents maintaining `figma-workspace`. It is not the user
 - `figma_workspace_mcp` is the primary agent-facing Figma workflow after OAuth.
 - `figma_workspace_upstream_stdio` is the transparent upstream bridge CLI/server name for parity checks and raw official MCP debugging.
 - Codex `node_repl` is not the normal live-Figma route. For Node-level live verification, inject a custom upstream client, preferably a child stdio MCP client launched from `mcp-server/dist/mcp/workspace-mcp-stdio-bin.js`; keep the `./node-upstream-client` no-client `createFigmaWorkspaceClient()` path local-only.
-- Local `.figma.js` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, and compact docs/API lookup are the supported workspace path.
+- Local `.figma.ts` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, and compact docs/API lookup are the supported workspace path.
 - DSL, `$.ops`, `figma_workspace_apply_ops`, `compileFigmaWorkspaceOps`, `FigmaWorkspaceOp`, and `FigmaWorkspaceApplyOpsArguments` are not part of the public or runtime contract.
 - Official upstream skill content is stored as internal JSONL corpus under `skills/figma-workspace/references/upstream-corpus/`. Do not route agents to read it directly.
 
@@ -49,7 +49,7 @@ Pin these facts when changing the router surface:
 - `mcp-server/src/upstream/remote-mcp-client.ts`: remote official Figma MCP client.
 - `mcp-server/src/upstream/node-upstream-client.ts`: Node smoke/debug entrypoint with Web Streams guards.
 - `mcp-server/src/auth/*.ts`: browser, config, OAuth callback/provider/state, and auth constants.
-- `mcp-server/src/runtime/script-runner.ts`: `.figma.js` compilation, helper bootstrap, helper profiles, preflight diagnostics, context diagnostics, and payload-size diagnostics.
+- `mcp-server/src/runtime/script-runner.ts`: `.figma.ts` typecheck/compilation, helper bootstrap, helper profiles, preflight diagnostics, context diagnostics, and payload-size diagnostics.
 - `mcp-server/src/runtime/workspace-files.ts`: workspace/path/script-output/capture-output/task-plan file helpers and `FigmaWorkspaceSessionWorkspace`.
 - `mcp-server/src/runtime/guidance-catalog.ts`: API cards, task buckets, query anchors, and pure guidance helpers.
 - `mcp-server/src/runtime/doc-search.ts`: corpus allowlists, reference-root resolution, chunking, ranking, opaque `sourceId`, and lookup shaping.

@@ -5,16 +5,16 @@ Use this reference only when `figma-workspace://capabilities` is not enough to c
 ## Primary File Workflow
 
 - Start non-trivial work with `figma_workspace_prepare_task({ file, taskName, surface })`.
-- Edit the generated `.figma.js` file in the task workspace.
+- Edit the generated `.figma.ts` file in the task workspace.
 - Run `figma_workspace_run_script_file({ title, sessionId, inputFile, strict: true, surface })`; diagnostics and compiled payload preflight run before upstream execution.
 - If preflight diagnostics fail, repair the same file and rerun it.
 - Return compact JSON with changed node ids, handles, and validation notes.
 
 ## Script Shape
 
-- `.figma.js` files are async function bodies executed in Figma Plugin API context.
+- `.figma.ts` files are async TypeScript script bodies executed in Figma Plugin API context after strict preflight.
 - Use native Plugin API for advanced work and `$` helpers for common agent tasks.
-- Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`.
+- Common helpers include `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`. Use native Figma Plugin API for node creation, querying, and auto layout.
 - Helper access must be static so runtime injection can be analyzed: use `$.helper(...)`, `$["helper"](...)`, or explicit destructuring; avoid dynamic `$[name]`, aliasing `$`, object rest destructuring, and local `$` declarations.
 - Use `figma_workspace_guidance({ query })` for on-demand `helperProfiles` when choosing between selection, text, layout, assets, capture/QA, repair, and clone/rebuild helpers.
 - Prefer `$.select` over direct selection mutation.

@@ -57,7 +57,7 @@ The plugin's `.mcp.json` installs:
 }
 ```
 
-`figma_workspace_mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.js` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, metadata XML-to-JSON conversion, thin first-class official upstream wrappers, screenshot/capture output, task plans, process-local handles, and explicit delegated upstream official tools for uncovered capabilities.
+`figma_workspace_mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.ts` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, metadata XML-to-JSON conversion, thin first-class official upstream wrappers, screenshot/capture output, task plans, process-local handles, and explicit delegated upstream official tools for uncovered capabilities.
 
 Upgrade note: the persistent MCP server id is `figma_workspace_mcp`. Reload or reinstall the plugin, or restart the MCP server, so old cached hyphenated tool schemas are not exposed.
 
@@ -71,7 +71,7 @@ Agents should use `figma_workspace_mcp` first:
 
 1. read `figma-workspace://capabilities` and `figma-workspace://guide` when workflow sequencing is needed
 2. `figma_workspace_prepare_task({ file, taskName, surface })`
-3. edit local `.figma.js`
+3. edit local `.figma.ts`
 4. `figma_workspace_run_script_file({ sessionId, inputFile, strict: true, surface })`; preflight diagnostics run before upstream execution
 5. `figma_workspace_get_design_context`, `figma_workspace_get_motion_context`, `figma_workspace_export_video`, or design-system wrappers when official upstream context is needed through first-class tools; use `figma_workspace_call_upstream_tool` for official shader effect/fill reads after checking `figma-workspace://upstream-tools/{name}`
 6. `figma_workspace_apply_asset_manifest({ sessionId, manifestPath })`, `figma_workspace_capture_node({ sessionId, target, imageFile })`, or `figma_workspace_run_task_plan({ sessionId, planPath })` when needed
@@ -97,7 +97,7 @@ await figma.open({
 });
 const run = await figma.runScriptFile({
   sessionId: "ui-work",
-  inputFile: "edit-panel.figma.js",
+  inputFile: "edit-panel.figma.ts",
   strict: true,
   surface: "design",
 });

@@ -4,7 +4,7 @@ Use this reference to choose between `figma_workspace_guidance` and `figma_works
 
 ## Guidance First
 
-- Before writing `.figma.js`, call `figma_workspace_guidance({ query })` with compact BM25-style keywords, not natural-language task prose.
+- Before writing `.figma.ts`, call `figma_workspace_guidance({ query })` with compact BM25-style keywords, not natural-language task prose.
 - Use its `recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `suggestions.referenceContext` fields to choose the next tool or API symbols.
 - Use `helperProfiles` when returned for `$` helper category choice, static-reference patterns, avoid notes, lookup hints, and compact examples.
 - Use `wrapperProfiles` and `workflowGraph` when returned to sequence first-class design-context, motion, or video wrappers.
