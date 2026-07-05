@@ -1,8 +1,8 @@
 import { parse } from "acorn";
 import { parse as parseBabel } from "@babel/parser";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as ts from "typescript";
 
@@ -112,6 +112,8 @@ const TYPESCRIPT_WRAPPER_SUFFIX = `\n${TYPESCRIPT_WRAPPER_END}\n}`;
 const TYPESCRIPT_SOURCE_LINE_OFFSET = countLines(TYPESCRIPT_WRAPPER_PREFIX) - 1;
 const TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH = "__figma_workspace_helpers.d.ts";
 const FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH = resolve(runtimeDirname, "figma-workspace-helpers.d.ts");
+const FIGMA_PLUGIN_TYPINGS_PATH = resolve(runtimeDirname, "figma-plugin-typings/index.d.ts");
+const TYPESCRIPT_LIB_DIR = resolve(runtimeDirname, "typescript-lib");
 
 export function compileFigmaWorkspaceScriptFile(options: {
   scriptPath: string;
@@ -189,12 +191,15 @@ function compileFigmaWorkspaceTypescriptSource(
     const normalizedFileName = normalizeTypescriptFileName(fileName);
     if (normalizedFileName === typescriptScriptPath) return wrappedSource;
     if (normalizedFileName === helperTypesPath) return readFigmaWorkspaceHelperDeclarations();
+    const bundledLibPath = resolveBundledTypescriptLibPath(fileName);
+    if (bundledLibPath) return readFileSync(bundledLibPath, "utf8");
     return originalReadFile(fileName);
   };
   host.fileExists = (fileName) => {
     const normalizedFileName = normalizeTypescriptFileName(fileName);
     return normalizedFileName === typescriptScriptPath ||
       normalizedFileName === helperTypesPath ||
+      resolveBundledTypescriptLibPath(fileName) !== undefined ||
       originalFileExists(fileName);
   };
   const program = ts.createProgram({
@@ -257,7 +262,20 @@ function createFigmaWorkspaceTypescriptCompilerOptions(strict: boolean): ts.Comp
 }
 
 function resolveFigmaPluginTypingsPath(): string {
-  return nodeRequire.resolve("@figma/plugin-typings/index.d.ts");
+  try {
+    return nodeRequire.resolve("@figma/plugin-typings/index.d.ts");
+  } catch {
+    return FIGMA_PLUGIN_TYPINGS_PATH;
+  }
+}
+
+function resolveBundledTypescriptLibPath(fileName: string): string | undefined {
+  const file = basename(fileName);
+  if (!/^lib\..*\.d\.ts$/u.test(file)) {
+    return undefined;
+  }
+  const bundledPath = resolve(TYPESCRIPT_LIB_DIR, file);
+  return existsSync(bundledPath) ? bundledPath : undefined;
 }
 
 function readFigmaWorkspaceHelperDeclarations(): string {

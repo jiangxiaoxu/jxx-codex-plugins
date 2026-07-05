@@ -1,3 +1,9 @@
+import { createRequire as __figmaWorkspaceCreateRequire } from "node:module";
+import { fileURLToPath as __figmaWorkspaceFileURLToPath } from "node:url";
+import { dirname as __figmaWorkspacePathDirname } from "node:path";
+const require = __figmaWorkspaceCreateRequire(import.meta.url);
+const __filename = __figmaWorkspaceFileURLToPath(import.meta.url);
+const __dirname = __figmaWorkspacePathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
