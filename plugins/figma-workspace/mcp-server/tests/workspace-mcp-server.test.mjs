@@ -853,7 +853,7 @@ test("figma workspace eval rejects dynamic helper access before upstream executi
     arguments: {
       title: "Reject dynamic helper access",
       sessionId: "main",
-      code: "const helperName = 'find';\nreturn await $[helperName]({ name: 'Card' });",
+      code: "const helperName = 'findFreeSlot';\nreturn await ($ as unknown as Record<string, (input: { gap: number }) => Promise<unknown>>)[helperName]({ gap: 8 });",
     },
   });
   const blockedJson = structuredToolResult(blockedEval);
@@ -1573,6 +1573,9 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(evalTool.inputSchema.properties.upstreamTool, undefined);
   assert.equal(evalTool.inputSchema.properties.upstreamArgument, undefined);
   assert.equal(evalTool.inputSchema.properties.upstreamArguments, undefined);
+  assert.equal(evalTool.inputSchema.properties.strict, undefined);
+  assert.equal(evalTool.inputSchema.properties.typescript, undefined);
+  assert.equal(evalTool.inputSchema.properties.compile, undefined);
   assert.match(evalTool.inputSchema.properties.handleUpdates.description, /handle-import escape hatch/);
   assert.ok(evalTool.outputSchema.properties.outputFiles.properties.upstreamFile);
   assert.deepEqual(evalTool.outputSchema.properties.upstream.properties.kind.enum, ["json", "text", "unknown"]);
@@ -1831,7 +1834,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   const getVariableDefsTool = tools.tools.find((tool) => tool.name === "figma_workspace_get_variable_defs");
   assert.ok(getVariableDefsTool);
   assert.match(getVariableDefsTool.description, /\{ target:\{ fileKey, nodeId \} \}/);
-  assert.match(getVariableDefsTool.inputSchema.properties.clientLanguages.description, /Defaults to unknown/);
+  assert.match(getVariableDefsTool.inputSchema.properties.clientLanguages.description, /explicitly supplied/);
   assert.equal(getVariableDefsTool.inputSchema.properties.nodeId, undefined);
   assert.ok(getVariableDefsTool.outputSchema.properties.nodeId);
   assert.ok(getVariableDefsTool.outputSchema.properties.upstream);
@@ -2637,12 +2640,19 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     calls,
     ({ name, args }) => {
       if (name === "get_metadata") {
-        assert.deepEqual(args, {
-          fileKey: "ExampleFigmaFileKey012",
-          nodeId: "1:2",
-          clientLanguages: "unknown",
-          clientFrameworks: "unknown",
-        });
+        if (args.clientLanguages !== undefined || args.clientFrameworks !== undefined) {
+          assert.deepEqual(args, {
+            fileKey: "ExampleFigmaFileKey012",
+            nodeId: "1:2",
+            clientLanguages: "typescript",
+            clientFrameworks: "react",
+          });
+        } else {
+          assert.deepEqual(args, {
+            fileKey: "ExampleFigmaFileKey012",
+            nodeId: "1:2",
+          });
+        }
         return {
           content: [{ type: "text", text: xml }],
         };
@@ -2795,6 +2805,8 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
       title: "Read metadata object target",
       sessionId: "metadata-main",
       target: { fileKey: "ExampleFigmaFileKey012", nodeId: "1:2" },
+      clientLanguages: "typescript",
+      clientFrameworks: "react",
     });
     assert.equal(objectTarget.ok, true);
     assert.equal(objectTarget.fileKey, "ExampleFigmaFileKey012");
@@ -3068,12 +3080,19 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
         };
       }
       if (name === "get_variable_defs") {
-        assert.deepEqual(args, {
-          fileKey: "ExampleFigmaFileKey012",
-          nodeId: "9:9",
-          clientLanguages: "unknown",
-          clientFrameworks: "unknown",
-        });
+        if (args.clientLanguages !== undefined || args.clientFrameworks !== undefined) {
+          assert.deepEqual(args, {
+            fileKey: "ExampleFigmaFileKey012",
+            nodeId: "9:9",
+            clientLanguages: "typescript",
+            clientFrameworks: "react",
+          });
+        } else {
+          assert.deepEqual(args, {
+            fileKey: "ExampleFigmaFileKey012",
+            nodeId: "9:9",
+          });
+        }
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: true, variables: [{ name: "color.bg" }] }) }],
         };
@@ -3099,7 +3118,7 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
           },
         },
         { name: "get_libraries", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, offset: { type: "number" } } } },
-        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
+        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
       ],
     },
   );
@@ -3152,6 +3171,15 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
     assert.equal(variableDefs.upstream.result.variables[0].name, "color.bg");
     assert.equal(variableDefs.toolName, undefined);
 
+    const variableDefsWithHints = await repl.getVariableDefs({
+      sessionId: "design-system",
+      target: "$button",
+      clientLanguages: "typescript",
+      clientFrameworks: "react",
+    });
+    assert.equal(variableDefsWithHints.ok, true);
+    assert.equal(variableDefsWithHints.nodeId, "9:9");
+
     const large = await repl.searchDesignSystem({
       sessionId: "design-system",
       query: "Large",
@@ -3187,6 +3215,7 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
     "callTool",
     "callTool",
     "callTool",
+    "callTool",
   ]);
 });
 
@@ -3205,6 +3234,15 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
           });
           return {
             content: [{ type: "text", text: JSON.stringify({ ok: false, message: "Design context failed", code: "DESIGN_CONTEXT_FAILED" }) }],
+          };
+        }
+        if (args.clientLanguages === undefined && args.clientFrameworks === undefined) {
+          assert.deepEqual(args, {
+            fileKey: "ExampleFigmaFileKey012",
+            nodeId: "9:9",
+          });
+          return {
+            content: [{ type: "text", text: JSON.stringify({ ok: true, code: "<div data-node-id=\"9:9\" data-hints=\"none\" />" }) }],
           };
         }
         assert.deepEqual(args, {
@@ -3286,12 +3324,11 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
 
     const designFromObjectTarget = await repl.getDesignContext({
       target: { fileKey: "ExampleFigmaFileKey012", nodeId: "9:9" },
-      clientLanguages: "swift",
-      clientFrameworks: "swiftui",
     });
     assert.equal(designFromObjectTarget.ok, true);
     assert.equal(designFromObjectTarget.fileKey, "ExampleFigmaFileKey012");
     assert.equal(designFromObjectTarget.nodeId, "9:9");
+    assert.equal(designFromObjectTarget.upstream.result.code, "<div data-node-id=\"9:9\" data-hints=\"none\" />");
 
     const motion = await repl.getMotionContext({ sessionId: "context-main", target: "$button", recursive: true });
     assert.equal(motion.ok, true);
@@ -6704,6 +6741,14 @@ test("figma workspace diagnostics return stable codes and strict promotes warnin
     ["FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT"],
   );
   assert.deepEqual(
+    diagnoseFigmaWorkspaceCode("node.x = node.x + 1;", { mode: "read" }).map((item) => item.code),
+    ["FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT"],
+  );
+  assert.deepEqual(
+    diagnoseFigmaWorkspaceCode("node['visible'] = false;", { mode: "read" }).map((item) => item.code),
+    ["FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT"],
+  );
+  assert.deepEqual(
     diagnoseFigmaWorkspaceCode("node.paddingLeft += 8;", { mode: "read" }).map((item) => item.code),
     ["FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT"],
   );
@@ -7171,7 +7216,7 @@ test("figma workspace eval returns structured repairPlan for blocked diagnostics
     arguments: {
       sessionId: "eval-blocked",
       mode: "write",
-      code: "figma.createImage(bytes);",
+      code: "figma.createImage(new Uint8Array([1, 2, 3]));",
     },
   });
   const json = structuredToolResult(result);
@@ -7182,9 +7227,116 @@ test("figma workspace eval returns structured repairPlan for blocked diagnostics
   assert.deepEqual(json.repairPlan.steps[0].occurrences, [{
     scriptPath: "<inline eval>",
     line: 1,
-    column: 1,
-    label: "1:1",
+    column: 5,
+    label: "1:5",
   }]);
+  assert.deepEqual(calls.map((call) => call[0]), []);
+  await mcpClient.close();
+});
+
+test("figma workspace eval strict-checks TypeScript before upstream execution", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.equal(args.code.includes(": FrameNode"), false);
+    assert.match(args.code, /const frame = figma\.createFrame\(\);/u);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          __figmaRepl: { sessionId: "eval-ts", handles: {} },
+          result: { nodeType: "FRAME" },
+        }),
+      }],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  const result = await mcpClient.callTool({
+    name: "figma_workspace_eval",
+    arguments: {
+      sessionId: "eval-ts",
+      code: "const frame: FrameNode = figma.createFrame();\nreturn { nodeType: frame.type };",
+    },
+  });
+  const json = structuredToolResult(result);
+  assert.equal(json.ok, true);
+  assert.deepEqual(json.diagnostics, []);
+  assert.equal(json.upstream.result.nodeType, "FRAME");
+  assert.equal(json.script, undefined);
+  assert.equal(json.outputFiles, undefined);
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+  await mcpClient.close();
+});
+
+test("figma workspace eval blocks TypeScript diagnostics without upstream calls", async () => {
+  const calls = [];
+  const { server } = createFigmaWorkspaceMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  const result = await mcpClient.callTool({
+    name: "figma_workspace_eval",
+    arguments: {
+      sessionId: "eval-ts-blocked",
+      code: "const frame: RectangleNode = figma.createFrame();\nreturn frame.id;",
+    },
+  });
+  const json = structuredToolResult(result);
+  assert.equal(json.ok, false);
+  assert.equal(json.diagnostics[0].code, "FIGMA_WORKSPACE_TS_TYPE_ERROR");
+  assert.match(json.diagnostics[0].message, /TypeScript preflight failed/u);
+  assert.equal(json.repairPlan.status, "blocked");
+  assert.equal(json.upstream, undefined);
+  assert.deepEqual(calls.map((call) => call[0]), []);
+  await mcpClient.close();
+});
+
+test("figma workspace eval keeps read-mode AST guardrails after TypeScript compilation", async () => {
+  const calls = [];
+  const { server } = createFigmaWorkspaceMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  const result = await mcpClient.callTool({
+    name: "figma_workspace_eval",
+    arguments: {
+      sessionId: "eval-read-blocked",
+      mode: "read",
+      code: "const nodes = await $('$selection') as SceneNode[];\nconst node = nodes[0];\nnode.x = node.x + 1;\nreturn node.id;",
+    },
+  });
+  const json = structuredToolResult(result);
+  assert.equal(json.ok, false);
+  assert.equal(json.diagnostics[0].code, "FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT");
+  assert.equal(json.repairPlan.status, "blocked");
+  assert.equal(json.upstream, undefined);
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
 });
@@ -9407,8 +9559,6 @@ test("figma workspace programmatic client returns typed output contracts", async
         assert.deepEqual(args, {
           fileKey: "file123",
           nodeId: "12:36",
-          clientLanguages: "unknown",
-          clientFrameworks: "unknown",
         });
         return {
           content: [
@@ -9463,7 +9613,7 @@ test("figma workspace programmatic client returns typed output contracts", async
         { name: "fake_upstream", inputSchema: { type: "object", properties: {} } },
         { name: "search_design_system", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, query: { type: "string" } } } },
         { name: "get_libraries", inputSchema: { type: "object", properties: { fileKey: { type: "string" } } } },
-        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
+        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
         { name: "upload_assets", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
         { name: "get_screenshot", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] } },
       ],

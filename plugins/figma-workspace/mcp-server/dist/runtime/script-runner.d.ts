@@ -75,6 +75,10 @@ export interface CompiledFigmaWorkspaceScriptFile {
         expectedSurface?: FigmaWorkspaceSurface;
     };
 }
+export interface CompiledFigmaWorkspaceEvalCode {
+    code: string;
+    diagnostics: FigmaWorkspaceFileDiagnostic[];
+}
 export declare function compileFigmaWorkspaceScriptFile(options: {
     scriptPath: string;
     source: string;
@@ -83,6 +87,9 @@ export declare function compileFigmaWorkspaceScriptFile(options: {
     allowDangerousOperations?: boolean;
     strict?: boolean;
 }): CompiledFigmaWorkspaceScriptFile;
+export declare function compileFigmaWorkspaceEvalCode(options: {
+    code: string;
+}): CompiledFigmaWorkspaceEvalCode;
 /**
  * @internal Internal helper-selection utility used by the workspace compiler.
  * This reports injected helper metadata; it is not an MCP caller configuration surface.
