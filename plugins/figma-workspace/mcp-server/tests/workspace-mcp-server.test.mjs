@@ -16,6 +16,7 @@ import {
   RemoteMcpOAuthError,
 } from "../dist/mcp/index.js";
 import {
+  FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS,
   FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES,
   buildFigmaEvalScript,
   createFigmaWorkspaceSessionStore,
@@ -1455,6 +1456,27 @@ test("figma workspace exposes self-explaining capabilities and resources", async
     "figma_workspace_search_design_system",
   ]);
   assert.equal(tools.tools.length, 19);
+  const wrapperContracts = FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS;
+  const wrapperContractsByTool = new Map(wrapperContracts.map((contract) => [contract.toolName, contract]));
+  assert.deepEqual(
+    [...new Set(wrapperContracts.map((contract) => contract.category))].sort(),
+    ["asset-capture-workflow", "enhanced-wrapper", "fixed-execution", "thin-wrapper", "upstream-escape-hatch"],
+  );
+  for (const contract of wrapperContracts) {
+    const tool = tools.tools.find((item) => item.name === contract.toolName);
+    assert.ok(tool, `${contract.toolName} has public metadata for its internal wrapper contract`);
+    const outputFilesSchema = tool.outputSchema.properties.outputFiles?.properties ?? {};
+    for (const debugFile of contract.outputPolicy.debugFiles) {
+      assert.ok(outputFilesSchema[debugFile], `${contract.toolName} output policy advertises ${debugFile}`);
+    }
+    for (const inlineField of contract.outputPolicy.inlineLimitFields) {
+      assert.match(inlineField, /^(?:upstream\.(?:result|text)|metadata\.json)$/u, `${contract.toolName} keeps inline result budget fields narrow`);
+    }
+  }
+  assert.equal(wrapperContractsByTool.get("figma_workspace_inspect").targetSupport, "string-only");
+  assert.equal(wrapperContractsByTool.get("figma_workspace_call_upstream_tool").category, "upstream-escape-hatch");
+  assert.equal(wrapperContractsByTool.get("figma_workspace_get_design_context").upstreamToolName, "get_design_context");
+  assert.deepEqual(wrapperContractsByTool.get("figma_workspace_get_metadata").outputPolicy.debugFiles, ["metadataFile"]);
   for (const tool of tools.tools) {
     assert.equal(
       tool.inputSchema.properties.title.description,
@@ -1847,6 +1869,11 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.match(callUpstreamTool.description, /figma-workspace:\/\/upstream-tools\/\{name\}/);
   assert.match(callUpstreamTool.description, /including shader effect\/fill tools/);
   assert.match(callUpstreamTool.description, /Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video/);
+  for (const upstreamToolName of wrapperContracts
+    .map((contract) => contract.upstreamToolName)
+    .filter((value) => typeof value === "string")) {
+    assert.match(callUpstreamTool.description, new RegExp(`\\b${upstreamToolName}\\b`, "u"));
+  }
   assert.equal(callUpstreamTool.inputSchema.properties.outputFile, undefined);
   assert.ok(callUpstreamTool.inputSchema.properties.inlineResultLimit);
   assert.equal(callUpstreamTool.inputSchema.properties.inlineResultLimit.default, 4000);
@@ -2219,6 +2246,8 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   assert.match(stdioReadme, /old hyphenated persistent server ids/);
   assert.match(stdioReadme, /bundled JSONL corpus files are internal and are not an agent-facing documentation path/);
   assert.match(stdioReadme, /explicit uncovered upstream capability/);
+  assert.match(docsText, /Use `figma_workspace_call_upstream_tool` only when a required official capability is explicitly not covered/);
+  assert.match(docsText, /Do not route covered official capabilities through this list/);
   assert.match(openaiText, /figma_workspace_mcp/);
   assert.match(openaiText, /\$figma-workspace\b/);
   for (const term of forbiddenRouterContractTerms) {
@@ -2652,7 +2681,15 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
         {
           name: "get_metadata",
           description: "Read XML metadata.",
-          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } },
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              clientLanguages: { type: "string" },
+              clientFrameworks: { type: "string" },
+            },
+          },
         },
       ],
     },
@@ -2816,7 +2853,15 @@ test("figma workspace get_metadata resolves supported dynamic selectors before u
         {
           name: "get_metadata",
           description: "Read XML metadata.",
-          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } },
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              clientLanguages: { type: "string" },
+              clientFrameworks: { type: "string" },
+            },
+          },
         },
       ],
     },
@@ -2871,7 +2916,15 @@ test("figma workspace get_metadata rejects missing file context before upstream 
         {
           name: "get_metadata",
           description: "Read XML metadata.",
-          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } },
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              clientLanguages: { type: "string" },
+              clientFrameworks: { type: "string" },
+            },
+          },
         },
       ],
     }),
@@ -2913,7 +2966,15 @@ test("figma workspace get_metadata returns nonfatal warning when enrichment fail
         },
         {
           name: "get_metadata",
-          inputSchema: { type: "object", properties: { fileKey: { type: "string" } } },
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              clientLanguages: { type: "string" },
+              clientFrameworks: { type: "string" },
+            },
+          },
         },
       ],
     },
@@ -3007,7 +3068,7 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
           },
         },
         { name: "get_libraries", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, offset: { type: "number" } } } },
-        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
+        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
       ],
     },
   );
@@ -3154,7 +3215,7 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     },
     {
       tools: [
-        { name: "get_design_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
+        { name: "get_design_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
         { name: "get_motion_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, recursive: { type: "boolean" } } } },
         { name: "export_video", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, jobId: { type: "string" }, quality: { type: "string" } } } },
         { name: "get_shader_fill", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
@@ -3192,6 +3253,15 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     assert.ok(designGuidance.wrapperProfiles.some((profile) => profile.tool === "figma_workspace_get_design_context"));
     assert.ok(designGuidance.workflowGraph.some((workflow) => workflow.id === "design-implementation-context"));
 
+    const designFromObjectTarget = await repl.getDesignContext({
+      target: { fileKey: "ExampleFigmaFileKey012", nodeId: "9:9" },
+      clientLanguages: "swift",
+      clientFrameworks: "swiftui",
+    });
+    assert.equal(designFromObjectTarget.ok, true);
+    assert.equal(designFromObjectTarget.fileKey, "ExampleFigmaFileKey012");
+    assert.equal(designFromObjectTarget.nodeId, "9:9");
+
     const motion = await repl.getMotionContext({ sessionId: "context-main", target: "$button", recursive: true });
     assert.equal(motion.ok, true);
     assert.equal(motion.upstream.result.nodes[0].nodeId, "9:9");
@@ -3199,6 +3269,14 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     assert.equal(motion.guidanceRef.source, "figma_workspace_guidance");
     assert.equal(motion.guidanceRef.query, "figma_workspace_get_motion_context get_motion_context motion-implementation");
     assert.deepEqual(motion.guidanceRef.workflowIds, ["motion-implementation"]);
+
+    const motionFromNodeUrl = await repl.getMotionContext({
+      target: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=9-9",
+      recursive: true,
+    });
+    assert.equal(motionFromNodeUrl.ok, true);
+    assert.equal(motionFromNodeUrl.fileKey, "ExampleFigmaFileKey012");
+    assert.equal(motionFromNodeUrl.nodeId, "9:9");
 
     const exportStart = await repl.exportVideo({ sessionId: "context-main", target: "$button", quality: "low" });
     assert.equal(exportStart.ok, true);
@@ -3245,6 +3323,8 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
   }
   assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), [
     "get_design_context",
+    "get_design_context",
+    "get_motion_context",
     "get_motion_context",
     "export_video",
     "export_video",
