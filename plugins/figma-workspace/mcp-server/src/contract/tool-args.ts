@@ -82,6 +82,8 @@ export interface FigmaWorkspaceCaptureNodeArguments {
   sessionId?: string;
   target: unknown;
   imageFile?: string;
+  maxDimension?: number;
+  contentsOnly?: boolean;
 }
 
 export interface FigmaWorkspaceTaskPlanStep {
@@ -136,6 +138,9 @@ export interface FigmaWorkspaceGetDesignContextArguments {
   inlineResultLimit?: number;
   clientLanguages?: string;
   clientFrameworks?: string;
+  forceCode?: boolean;
+  disableCodeConnect?: boolean;
+  excludeScreenshot?: boolean;
 }
 
 export interface FigmaWorkspaceGetMotionContextArguments {
@@ -147,6 +152,8 @@ export interface FigmaWorkspaceGetMotionContextArguments {
   dirName?: string;
   target?: unknown;
   recursive?: boolean;
+  clientLanguages?: string;
+  clientFrameworks?: string;
   refresh?: boolean;
   inlineResultLimit?: number;
 }
@@ -161,8 +168,16 @@ export interface FigmaWorkspaceExportVideoArguments {
   target?: unknown;
   jobId?: string;
   quality?: "low" | "medium" | "high";
+  fps?: number;
+  constraint?: FigmaWorkspaceExportVideoConstraint;
+  ttlSeconds?: number;
   refresh?: boolean;
   inlineResultLimit?: number;
+}
+
+export interface FigmaWorkspaceExportVideoConstraint {
+  type: "SCALE" | "WIDTH" | "HEIGHT";
+  value: number;
 }
 
 export interface FigmaWorkspaceSearchDesignSystemArguments {
@@ -204,8 +219,6 @@ export interface FigmaWorkspaceGetVariableDefsArguments {
   target?: unknown;
   refresh?: boolean;
   inlineResultLimit?: number;
-  clientLanguages?: string;
-  clientFrameworks?: string;
 }
 
 export interface FigmaWorkspaceLookupArguments {
@@ -356,6 +369,7 @@ export function asRunScriptFileArgs(args: unknown): FigmaWorkspaceRunScriptFileA
 export function asApplyAssetManifestArgs(args: unknown): FigmaWorkspaceApplyAssetManifestArguments {
   const record = parseToolArgs<FigmaWorkspaceApplyAssetManifestArguments>(args);
   assertRemovedArguments(record, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_workspace_call_upstream_tool");
+  assertRemovedArguments(record, ["batchCommit"], "figma_workspace_call_upstream_tool");
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, [
     "sessionId",
@@ -390,10 +404,13 @@ export function asCaptureNodeArgs(args: unknown): FigmaWorkspaceCaptureNodeArgum
   assertRemovedArguments(record, ["resultFile"], "imageFile");
   assertRemovedArguments(record, ["metadataFile"], "figma_workspace_call_upstream_tool");
   assertRemovedArguments(record, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_workspace_call_upstream_tool");
+  assertRemovedArguments(record, ["enableBase64Response"], "figma_workspace_call_upstream_tool");
   assertOptionalStringFields(record, [
     "sessionId",
     "imageFile",
   ]);
+  assertOptionalIntegerRange(record, "maxDimension", 1, 65536);
+  assertOptionalBooleanFields(record, ["contentsOnly"]);
   assertOptionalCaptureTargetValue(record.target, "target");
   return record;
 }
@@ -508,6 +525,11 @@ export function asGetDesignContextArgs(args: unknown): FigmaWorkspaceGetDesignCo
     "clientLanguages",
     "clientFrameworks",
   ]);
+  assertOptionalBooleanFields(record, [
+    "forceCode",
+    "disableCodeConnect",
+    "excludeScreenshot",
+  ]);
   assertOptionalTargetValue(record.target, "target");
   return record;
 }
@@ -521,6 +543,8 @@ export function asGetMotionContextArgs(args: unknown): FigmaWorkspaceGetMotionCo
     "file",
     "cwd",
     "dirName",
+    "clientLanguages",
+    "clientFrameworks",
   ]);
   assertOptionalBooleanFields(record, ["recursive"]);
   assertOptionalTargetValue(record.target, "target");
@@ -539,6 +563,9 @@ export function asExportVideoArgs(args: unknown): FigmaWorkspaceExportVideoArgum
     "jobId",
   ]);
   assertOptionalEnum(record, "quality", FIGMA_WORKSPACE_EXPORT_VIDEO_QUALITIES);
+  assertOptionalIntegerRange(record, "fps", 1, 60);
+  assertOptionalIntegerRange(record, "ttlSeconds", 30, 604800);
+  assertOptionalExportVideoConstraint(record.constraint);
   assertOptionalTargetValue(record.target, "target");
   return record;
 }
@@ -582,13 +609,17 @@ export function asGetVariableDefsArgs(args: unknown): FigmaWorkspaceGetVariableD
   const record = parseToolArgs<FigmaWorkspaceGetVariableDefsArguments>(args);
   assertRemovedFileReferenceFields(record);
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertRemovedArguments(
+    record,
+    ["clientLanguages", "clientFrameworks"],
+    "figma_workspace_get_design_context",
+    "clientLanguages/clientFrameworks",
+  );
   assertOptionalStringFields(record, [
     "sessionId",
     "file",
     "cwd",
     "dirName",
-    "clientLanguages",
-    "clientFrameworks",
   ]);
   assertOptionalTargetValue(record.target, "target");
   return record;
@@ -787,6 +818,38 @@ function assertOptionalTargetValue(value: unknown, displayName: string): void {
     "url",
     "nodeUrl",
   ]);
+}
+
+function assertOptionalIntegerRange(record: Record<string, unknown>, key: string, min: number, max: number): void {
+  const value = record[key];
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`Tool argument "${key}" must be an integer from ${min} to ${max}.`);
+  }
+}
+
+function assertOptionalExportVideoConstraint(value: unknown): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!isRecord(value)) {
+    throw new Error('Tool argument "constraint" must be an object with type and value.');
+  }
+  const type = value.type;
+  const constraintValue = value.value;
+  if (type !== "SCALE" && type !== "WIDTH" && type !== "HEIGHT") {
+    throw new Error('Tool argument "constraint.type" must be one of: SCALE, WIDTH, HEIGHT.');
+  }
+  if (typeof constraintValue !== "number" || !Number.isFinite(constraintValue) || constraintValue <= 0) {
+    throw new Error('Tool argument "constraint.value" must be a positive number.');
+  }
+  const keys = Object.keys(value);
+  const extra = keys.filter((key) => key !== "type" && key !== "value");
+  if (extra.length > 0) {
+    throw new Error(`Tool argument "constraint" does not allow extra fields: ${extra.join(", ")}.`);
+  }
 }
 
 function assertOptionalCaptureTargetValue(value: unknown, displayName: string): void {

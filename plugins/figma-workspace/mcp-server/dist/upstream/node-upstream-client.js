@@ -17947,17 +17947,17 @@ var init_config = __esm({
 });
 
 // src/auth/oauth-state.ts
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile as readFile2, rename, rm, writeFile as writeFile2 } from "node:fs/promises";
 import { dirname as dirname2 } from "node:path";
-function isRecord(value) {
+function isRecord2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function optionalRecord(value) {
-  return isRecord(value) ? value : void 0;
+  return isRecord2(value) ? value : void 0;
 }
 function parseOAuthState(json) {
   const value = JSON.parse(json);
-  if (!isRecord(value)) {
+  if (!isRecord2(value)) {
     return {};
   }
   return {
@@ -17982,7 +17982,7 @@ var init_oauth_state = __esm({
       statePath;
       async read() {
         try {
-          return parseOAuthState(await readFile(this.statePath, "utf8"));
+          return parseOAuthState(await readFile2(this.statePath, "utf8"));
         } catch (error2) {
           if (error2 instanceof Error && "code" in error2 && error2.code === "ENOENT") {
             return {};
@@ -17993,7 +17993,7 @@ var init_oauth_state = __esm({
       async write(state) {
         await mkdir(dirname2(this.statePath), { recursive: true });
         const tmpPath = `${this.statePath}.tmp`;
-        await writeFile(tmpPath, `${JSON.stringify(state, null, 2)}
+        await writeFile2(tmpPath, `${JSON.stringify(state, null, 2)}
 `, {
           encoding: "utf8",
           mode: 384
@@ -18340,7 +18340,7 @@ function isRemoteMcpOAuthError(error2) {
   if (error2 instanceof RemoteMcpOAuthError) {
     return true;
   }
-  if (!isRecord2(error2)) {
+  if (!isRecord3(error2)) {
     return false;
   }
   return error2.name === "RemoteMcpOAuthError" && typeof error2.code === "string" && REMOTE_MCP_OAUTH_ERROR_CODES.includes(error2.code);
@@ -18456,7 +18456,7 @@ function defaultOAuthRecoveryDetails() {
   };
 }
 function oauthCallbackRecoveryDetails(error2) {
-  return isRecord2(error2.details) ? { ...defaultOAuthRecoveryDetails(), ...error2.details } : defaultOAuthRecoveryDetails();
+  return isRecord3(error2.details) ? { ...defaultOAuthRecoveryDetails(), ...error2.details } : defaultOAuthRecoveryDetails();
 }
 function isUnauthorizedError(error2) {
   if (error2 instanceof UnauthorizedError) {
@@ -18468,7 +18468,7 @@ function messageFromUnknown(error2) {
   if (error2 instanceof Error) {
     return error2.message;
   }
-  if (isRecord2(error2) && typeof error2.message === "string") {
+  if (isRecord3(error2) && typeof error2.message === "string") {
     return error2.message;
   }
   if (typeof error2 === "string") {
@@ -18482,7 +18482,7 @@ function collectErrorStatusSignals(error2) {
   let code2;
   while (pending.length > 0) {
     const current2 = pending.shift();
-    if (!isRecord2(current2) || visited.has(current2)) {
+    if (!isRecord3(current2) || visited.has(current2)) {
       continue;
     }
     visited.add(current2);
@@ -18495,7 +18495,7 @@ function collectErrorStatusSignals(error2) {
     }
     code2 ??= stringFromStatusCodeField(current2.code);
     for (const key of ["cause", "response", "error"]) {
-      if (isRecord2(current2[key])) {
+      if (isRecord3(current2[key])) {
         pending.push(current2[key]);
       }
     }
@@ -18524,7 +18524,7 @@ function isForbiddenStatusCode(value) {
   const normalized = value.trim().toUpperCase();
   return normalized === "403" || normalized === "FORBIDDEN";
 }
-function isRecord2(value) {
+function isRecord3(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 var OAUTH_CACHE_FILE_NAME, LOGIN_COMMAND, REMOTE_MCP_OAUTH_ERROR_CODES, RemoteMcpOAuthError, RemoteMcpClient, StaleConnectionError;
@@ -18748,6 +18748,9 @@ ${authorizationUrl.toString()}`
       }
       async listResources() {
         return this.requireClient().listResources();
+      }
+      async listResourceTemplates() {
+        return this.requireClient().listResourceTemplates();
       }
       async readResource(uri) {
         return this.requireClient().readResource({ uri });
@@ -19445,7 +19448,7 @@ var init_server2 = __esm({
 });
 
 // src/runtime/doc-search.ts
-import { readFile as readFile2 } from "node:fs/promises";
+import { readFile as readFile3 } from "node:fs/promises";
 import { dirname as dirname3, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 async function searchReferenceFiles(options) {
@@ -19822,8 +19825,8 @@ function loadUpstreamCorpus() {
 }
 async function readUpstreamCorpus() {
   const root = await resolveUpstreamCorpusRoot();
-  const manifest = parseUpstreamCorpusManifest(await readFile2(resolve3(root, "manifest.json"), "utf8"));
-  const corpusText = await readFile2(resolve3(root, manifest.corpus.file), "utf8");
+  const manifest = parseUpstreamCorpusManifest(await readFile3(resolve3(root, "manifest.json"), "utf8"));
+  const corpusText = await readFile3(resolve3(root, manifest.corpus.file), "utf8");
   const records = /* @__PURE__ */ new Map();
   for (const line of corpusText.split(/\r?\n/u)) {
     if (!line.trim()) {
@@ -19847,8 +19850,8 @@ async function resolveUpstreamCorpusRoot() {
   ];
   for (const candidate of candidates) {
     try {
-      await readFile2(resolve3(candidate, "manifest.json"), "utf8");
-      await readFile2(resolve3(candidate, "corpus.jsonl"), "utf8");
+      await readFile3(resolve3(candidate, "manifest.json"), "utf8");
+      await readFile3(resolve3(candidate, "corpus.jsonl"), "utf8");
       return candidate;
     } catch {
     }
@@ -42649,7 +42652,7 @@ var require_typescript = __commonJS({
         walkUpParenthesizedTypesAndGetParentAndChild: () => walkUpParenthesizedTypesAndGetParentAndChild,
         whitespaceOrMapCommentRegExp: () => whitespaceOrMapCommentRegExp,
         writeCommentRange: () => writeCommentRange,
-        writeFile: () => writeFile4,
+        writeFile: () => writeFile5,
         writeFileEnsuringDirectories: () => writeFileEnsuringDirectories,
         zipWith: () => zipWith
       });
@@ -48981,7 +48984,7 @@ ${lanes.join("\n")}
             writeOutputIsTTY() {
               return process.stdout.isTTY;
             },
-            readFile: readFile5,
+            readFile: readFile6,
             writeFile: writeFile22,
             watchFile: watchFile2,
             watchDirectory,
@@ -49187,7 +49190,7 @@ ${lanes.join("\n")}
               callback
             );
           }
-          function readFile5(fileName, _encoding) {
+          function readFile6(fileName, _encoding) {
             let buffer;
             try {
               buffer = _fs.readFileSync(fileName);
@@ -61292,7 +61295,7 @@ ${lanes.join("\n")}
         sourceFilePath = isSourceFileInCommonSourceDirectory ? sourceFilePath.substring(commonSourceDirectory.length) : sourceFilePath;
         return combinePaths(newDirPath, sourceFilePath);
       }
-      function writeFile4(host, diagnostics, fileName, text, writeByteOrderMark, sourceFiles, data2) {
+      function writeFile5(host, diagnostics, fileName, text, writeByteOrderMark, sourceFiles, data2) {
         host.writeFile(
           fileName,
           text,
@@ -85743,7 +85746,7 @@ ${lanes.join("\n")}
         const possibleOption = getSpellingSuggestion(unknownOption, diagnostics.optionDeclarations, getOptionName);
         return possibleOption ? createDiagnosticForNodeInSourceFileOrCompilerDiagnostic(sourceFile, node, diagnostics.unknownDidYouMeanDiagnostic, unknownOptionErrorText || unknownOption, possibleOption.name) : createDiagnosticForNodeInSourceFileOrCompilerDiagnostic(sourceFile, node, diagnostics.unknownOptionDiagnostic, unknownOptionErrorText || unknownOption);
       }
-      function parseCommandLineWorker(diagnostics, commandLine, readFile5) {
+      function parseCommandLineWorker(diagnostics, commandLine, readFile6) {
         const options = {};
         let watchOptions;
         const fileNames = [];
@@ -85791,7 +85794,7 @@ ${lanes.join("\n")}
           }
         }
         function parseResponseFile(fileName) {
-          const text = tryReadFile(fileName, readFile5 || ((fileName2) => sys2.readFile(fileName2)));
+          const text = tryReadFile(fileName, readFile6 || ((fileName2) => sys2.readFile(fileName2)));
           if (!isString(text)) {
             errors.push(text);
             return;
@@ -85894,8 +85897,8 @@ ${lanes.join("\n")}
         unknownDidYouMeanDiagnostic: Diagnostics.Unknown_compiler_option_0_Did_you_mean_1,
         optionTypeMismatchDiagnostic: Diagnostics.Compiler_option_0_expects_an_argument
       };
-      function parseCommandLine(commandLine, readFile5) {
-        return parseCommandLineWorker(compilerOptionsDidYouMeanDiagnostics, commandLine, readFile5);
+      function parseCommandLine(commandLine, readFile6) {
+        return parseCommandLineWorker(compilerOptionsDidYouMeanDiagnostics, commandLine, readFile6);
       }
       function getOptionFromName(optionName, allowShort) {
         return getOptionDeclarationFromName(getOptionsNameMap, optionName, allowShort);
@@ -85977,8 +85980,8 @@ ${lanes.join("\n")}
           watchOptionsToExtend
         );
       }
-      function readConfigFile(fileName, readFile5) {
-        const textOrDiagnostic = tryReadFile(fileName, readFile5);
+      function readConfigFile(fileName, readFile6) {
+        const textOrDiagnostic = tryReadFile(fileName, readFile6);
         return isString(textOrDiagnostic) ? parseConfigFileTextToJson(fileName, textOrDiagnostic) : { config: {}, error: textOrDiagnostic };
       }
       function parseConfigFileTextToJson(fileName, jsonText) {
@@ -85993,14 +85996,14 @@ ${lanes.join("\n")}
           error: jsonSourceFile.parseDiagnostics.length ? jsonSourceFile.parseDiagnostics[0] : void 0
         };
       }
-      function readJsonConfigFile(fileName, readFile5) {
-        const textOrDiagnostic = tryReadFile(fileName, readFile5);
+      function readJsonConfigFile(fileName, readFile6) {
+        const textOrDiagnostic = tryReadFile(fileName, readFile6);
         return isString(textOrDiagnostic) ? parseJsonText(fileName, textOrDiagnostic) : { fileName, parseDiagnostics: [textOrDiagnostic] };
       }
-      function tryReadFile(fileName, readFile5) {
+      function tryReadFile(fileName, readFile6) {
         let text;
         try {
-          text = readFile5(fileName);
+          text = readFile6(fileName);
         } catch (e) {
           return createCompilerDiagnostic(Diagnostics.Cannot_read_file_0_Colon_1, fileName, e.message);
         }
@@ -170043,7 +170046,7 @@ ${lanes.join("\n")}
             return;
           }
           const buildInfo = host.getBuildInfo() || { version: version3 };
-          writeFile4(
+          writeFile5(
             host,
             emitterDiagnostics,
             buildInfoPath,
@@ -170255,7 +170258,7 @@ ${lanes.join("\n")}
             }
             if (sourceMapFilePath) {
               const sourceMap = sourceMapGenerator.toString();
-              writeFile4(
+              writeFile5(
                 host,
                 emitterDiagnostics,
                 sourceMapFilePath,
@@ -170270,7 +170273,7 @@ ${lanes.join("\n")}
           }
           const text = writer.getText();
           const data2 = { sourceMapUrlPos, diagnostics: transform22.diagnostics };
-          writeFile4(host, emitterDiagnostics, jsFilePath, text, !!compilerOptions.emitBOM, sourceFiles, data2);
+          writeFile5(host, emitterDiagnostics, jsFilePath, text, !!compilerOptions.emitBOM, sourceFiles, data2);
           writer.clear();
           return !data2.skippedDtsWrite;
         }
@@ -175658,12 +175661,12 @@ ${lanes.join("\n")}
       function createCompilerHost2(options, setParentNodes) {
         return createCompilerHostWorker(options, setParentNodes);
       }
-      function createGetSourceFile(readFile5, setParentNodes) {
+      function createGetSourceFile(readFile6, setParentNodes) {
         return (fileName, languageVersionOrOptions, onError) => {
           let text;
           try {
             mark("beforeIORead");
-            text = readFile5(fileName);
+            text = readFile6(fileName);
             mark("afterIORead");
             measure("I/O Read", "beforeIORead", "afterIORead");
           } catch (e) {
@@ -176567,7 +176570,7 @@ ${lanes.join("\n")}
           getRedirectFromOutput,
           forEachResolvedProjectReference: forEachResolvedProjectReference2
         });
-        const readFile5 = host.readFile.bind(host);
+        const readFile6 = host.readFile.bind(host);
         (_e = tracing) == null ? void 0 : _e.push(tracing.Phase.Program, "shouldProgramCreateNewSourceFiles", { hasOldProgram: !!oldProgram });
         const shouldCreateNewSourceFile = shouldProgramCreateNewSourceFiles(oldProgram, options);
         (_f = tracing) == null ? void 0 : _f.pop();
@@ -176793,7 +176796,7 @@ ${lanes.join("\n")}
           shouldTransformImportCall,
           emitBuildInfo,
           fileExists,
-          readFile: readFile5,
+          readFile: readFile6,
           directoryExists,
           getSymlinkCache,
           realpath: (_o = host.realpath) == null ? void 0 : _o.bind(host),
@@ -238152,7 +238155,7 @@ ${options.prefix}` : "\n" : options.prefix
         walkUpParenthesizedTypesAndGetParentAndChild: () => walkUpParenthesizedTypesAndGetParentAndChild,
         whitespaceOrMapCommentRegExp: () => whitespaceOrMapCommentRegExp,
         writeCommentRange: () => writeCommentRange,
-        writeFile: () => writeFile4,
+        writeFile: () => writeFile5,
         writeFileEnsuringDirectories: () => writeFileEnsuringDirectories,
         zipWith: () => zipWith
       });
@@ -252965,6 +252968,7 @@ function asRunScriptFileArgs(args) {
 function asApplyAssetManifestArgs(args) {
   const record2 = parseToolArgs(args);
   assertRemovedArguments(record2, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_workspace_call_upstream_tool");
+  assertRemovedArguments(record2, ["batchCommit"], "figma_workspace_call_upstream_tool");
   assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record2, [
     "sessionId",
@@ -252997,10 +253001,13 @@ function asCaptureNodeArgs(args) {
   assertRemovedArguments(record2, ["resultFile"], "imageFile");
   assertRemovedArguments(record2, ["metadataFile"], "figma_workspace_call_upstream_tool");
   assertRemovedArguments(record2, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_workspace_call_upstream_tool");
+  assertRemovedArguments(record2, ["enableBase64Response"], "figma_workspace_call_upstream_tool");
   assertOptionalStringFields(record2, [
     "sessionId",
     "imageFile"
   ]);
+  assertOptionalIntegerRange(record2, "maxDimension", 1, 65536);
+  assertOptionalBooleanFields(record2, ["contentsOnly"]);
   assertOptionalCaptureTargetValue(record2.target, "target");
   return record2;
 }
@@ -253107,6 +253114,11 @@ function asGetDesignContextArgs(args) {
     "clientLanguages",
     "clientFrameworks"
   ]);
+  assertOptionalBooleanFields(record2, [
+    "forceCode",
+    "disableCodeConnect",
+    "excludeScreenshot"
+  ]);
   assertOptionalTargetValue(record2.target, "target");
   return record2;
 }
@@ -253118,7 +253130,9 @@ function asGetMotionContextArgs(args) {
     "sessionId",
     "file",
     "cwd",
-    "dirName"
+    "dirName",
+    "clientLanguages",
+    "clientFrameworks"
   ]);
   assertOptionalBooleanFields(record2, ["recursive"]);
   assertOptionalTargetValue(record2.target, "target");
@@ -253136,6 +253150,9 @@ function asExportVideoArgs(args) {
     "jobId"
   ]);
   assertOptionalEnum(record2, "quality", FIGMA_WORKSPACE_EXPORT_VIDEO_QUALITIES);
+  assertOptionalIntegerRange(record2, "fps", 1, 60);
+  assertOptionalIntegerRange(record2, "ttlSeconds", 30, 604800);
+  assertOptionalExportVideoConstraint(record2.constraint);
   assertOptionalTargetValue(record2.target, "target");
   return record2;
 }
@@ -253176,13 +253193,17 @@ function asGetVariableDefsArgs(args) {
   const record2 = parseToolArgs(args);
   assertRemovedFileReferenceFields(record2);
   assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
+  assertRemovedArguments(
+    record2,
+    ["clientLanguages", "clientFrameworks"],
+    "figma_workspace_get_design_context",
+    "clientLanguages/clientFrameworks"
+  );
   assertOptionalStringFields(record2, [
     "sessionId",
     "file",
     "cwd",
-    "dirName",
-    "clientLanguages",
-    "clientFrameworks"
+    "dirName"
   ]);
   assertOptionalTargetValue(record2.target, "target");
   return record2;
@@ -253197,7 +253218,7 @@ function parseToolArgs(value) {
   if (value === void 0) {
     return {};
   }
-  if (!isRecord3(value)) {
+  if (!isRecord4(value)) {
     throw new Error("Tool arguments must be an object.");
   }
   return { ...value };
@@ -253216,7 +253237,7 @@ function assertOptionalRecord(record2, key, displayName = key) {
   if (value === void 0) {
     return;
   }
-  if (!isRecord3(value)) {
+  if (!isRecord4(value)) {
     throw new Error(`Tool argument "${displayName}" must be an object.`);
   }
 }
@@ -253279,7 +253300,7 @@ function assertOptionalAssets(record2) {
   }
   assets.forEach((asset, index) => {
     const assetName = `assets[${index}]`;
-    if (!isRecord3(asset)) {
+    if (!isRecord4(asset)) {
       throw new Error(`Tool argument "${assetName}" must be an object.`);
     }
     assertOptionalStringFieldsWithPrefix(asset, assetName, [
@@ -253309,7 +253330,7 @@ function assertOptionalDownloadAssetTargets(record2) {
   }
   return targets.map((target, index) => {
     const targetName = `targets[${index}]`;
-    if (!isRecord3(target)) {
+    if (!isRecord4(target)) {
       throw new Error(`Tool argument "${targetName}" must be an object.`);
     }
     assertRemovedArguments(
@@ -253343,7 +253364,7 @@ function assertOptionalTargetValue(value, displayName) {
   if (typeof value === "string") {
     return;
   }
-  if (!isRecord3(value)) {
+  if (!isRecord4(value)) {
     throw new Error(`Tool argument "${displayName}" must be a string or object.`);
   }
   assertRemovedArguments(
@@ -253362,11 +253383,41 @@ function assertOptionalTargetValue(value, displayName) {
     "nodeUrl"
   ]);
 }
+function assertOptionalIntegerRange(record2, key, min, max) {
+  const value = record2[key];
+  if (value === void 0) {
+    return;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`Tool argument "${key}" must be an integer from ${min} to ${max}.`);
+  }
+}
+function assertOptionalExportVideoConstraint(value) {
+  if (value === void 0) {
+    return;
+  }
+  if (!isRecord4(value)) {
+    throw new Error('Tool argument "constraint" must be an object with type and value.');
+  }
+  const type = value.type;
+  const constraintValue = value.value;
+  if (type !== "SCALE" && type !== "WIDTH" && type !== "HEIGHT") {
+    throw new Error('Tool argument "constraint.type" must be one of: SCALE, WIDTH, HEIGHT.');
+  }
+  if (typeof constraintValue !== "number" || !Number.isFinite(constraintValue) || constraintValue <= 0) {
+    throw new Error('Tool argument "constraint.value" must be a positive number.');
+  }
+  const keys = Object.keys(value);
+  const extra = keys.filter((key) => key !== "type" && key !== "value");
+  if (extra.length > 0) {
+    throw new Error(`Tool argument "constraint" does not allow extra fields: ${extra.join(", ")}.`);
+  }
+}
 function assertOptionalCaptureTargetValue(value, displayName) {
   if (value === void 0 || typeof value === "string") {
     return;
   }
-  if (!isRecord3(value)) {
+  if (!isRecord4(value)) {
     throw new Error(`Tool argument "${displayName}" must be a string or object.`);
   }
   assertOptionalStringFieldsWithPrefix(value, displayName, [
@@ -253395,7 +253446,7 @@ function assertOptionalTaskPlanSteps(record2) {
   return asTaskPlanSteps(steps);
 }
 function asTaskPlanStep(value, displayName) {
-  if (!isRecord3(value)) {
+  if (!isRecord4(value)) {
     throw new Error(`Tool argument "${displayName}" must be an object.`);
   }
   assertRemovedArguments(value, ["tool"], "type", `${displayName}.tool`);
@@ -253433,11 +253484,11 @@ function assertOptionalStringFieldsWithPrefix(record2, prefix2, keys) {
     }
   }
 }
-function isRecord3(value) {
+function isRecord4(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function withDefaultTitle(args, _title) {
-  if (!isRecord3(args)) {
+  if (!isRecord4(args)) {
     throw new Error("Tool arguments must be an object.");
   }
   if (args.title !== void 0 && typeof args.title !== "string") {
@@ -253519,6 +253570,18 @@ var init_tool_registry = __esm({
 });
 
 // src/contract/wrapper-contracts.ts
+function parameterMatrix(matrix) {
+  return {
+    requiredUpstream: matrix.requiredUpstream ?? EMPTY_PARAMETER_MATRIX.requiredUpstream,
+    publicPassthrough: matrix.publicPassthrough ?? EMPTY_PARAMETER_MATRIX.publicPassthrough,
+    derivedUpstream: matrix.derivedUpstream ?? EMPTY_PARAMETER_MATRIX.derivedUpstream,
+    fixedUpstream: matrix.fixedUpstream ?? EMPTY_PARAMETER_MATRIX.fixedUpstream,
+    passthroughOptional: matrix.passthroughOptional ?? EMPTY_PARAMETER_MATRIX.passthroughOptional,
+    hiddenUpstreamOptional: matrix.hiddenUpstreamOptional ?? EMPTY_PARAMETER_MATRIX.hiddenUpstreamOptional,
+    localOnly: matrix.localOnly ?? EMPTY_PARAMETER_MATRIX.localOnly,
+    removedLegacy: matrix.removedLegacy ?? EMPTY_PARAMETER_MATRIX.removedLegacy
+  };
+}
 function getFigmaWorkspaceWrapperContract(toolName) {
   return WRAPPER_CONTRACTS_BY_TOOL.get(toolName);
 }
@@ -253532,11 +253595,21 @@ function requireFigmaWorkspaceWrapperContract(toolName) {
 function getFigmaWorkspaceCoveredUpstreamToolNames() {
   return [...FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES];
 }
-var UPSTREAM_INLINE_FIELDS, FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION, FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES, FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE, FIGMA_WORKSPACE_WRAPPER_CONTRACTS, WRAPPER_CONTRACTS_BY_TOOL;
+var UPSTREAM_INLINE_FIELDS, EMPTY_PARAMETER_MATRIX, FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION, FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES, FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE, FIGMA_WORKSPACE_WRAPPER_CONTRACTS, WRAPPER_CONTRACTS_BY_TOOL;
 var init_wrapper_contracts = __esm({
   "src/contract/wrapper-contracts.ts"() {
     "use strict";
     UPSTREAM_INLINE_FIELDS = ["upstream.result", "upstream.text"];
+    EMPTY_PARAMETER_MATRIX = {
+      requiredUpstream: [],
+      publicPassthrough: [],
+      derivedUpstream: [],
+      fixedUpstream: [],
+      passthroughOptional: [],
+      hiddenUpstreamOptional: [],
+      localOnly: [],
+      removedLegacy: []
+    };
     FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION = 'Accepts string raw node id, string node URL, string local handle like $hero, { handle:"$hero" }, or { fileKey, nodeId }. Raw node id and handle strings require an open/prepare file-context session; node URL and { fileKey, nodeId } can supply file context directly.';
     FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES = [
       "use_figma",
@@ -253558,7 +253631,17 @@ var init_wrapper_contracts = __esm({
         category: "fixed-execution",
         upstreamToolName: "use_figma",
         upstreamKind: "execution",
-        requiredUpstreamProperties: ["code"],
+        requiredUpstreamProperties: ["code", "description", "fileKey"],
+        optionalUpstreamProperties: ["skillNames"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["code", "description", "fileKey"],
+          publicPassthrough: ["code"],
+          derivedUpstream: ["fileKey"],
+          fixedUpstream: ["description"],
+          hiddenUpstreamOptional: ["skillNames"],
+          localOnly: ["title", "sessionId", "mode", "surface", "allowDangerousOperations", "handleUpdates", "inlineResultLimit"],
+          removedLegacy: ["outputFile", "resultFile", "upstreamTool", "upstreamArgument", "upstreamArguments"]
+        }),
         targetSupport: "none",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253571,7 +253654,16 @@ var init_wrapper_contracts = __esm({
         category: "fixed-execution",
         upstreamToolName: "use_figma",
         upstreamKind: "execution",
-        requiredUpstreamProperties: ["code"],
+        requiredUpstreamProperties: ["code", "description", "fileKey"],
+        optionalUpstreamProperties: ["skillNames"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["code", "description", "fileKey"],
+          derivedUpstream: ["code", "fileKey"],
+          fixedUpstream: ["description"],
+          hiddenUpstreamOptional: ["skillNames"],
+          localOnly: ["title", "sessionId", "scriptPath", "inputFile", "strict", "surface", "targetPageId", "allowDangerousOperations", "inlineResultLimit"],
+          removedLegacy: ["dryRun", "outputFile", "resultFile", "outputDir", "diagnosticsFile", "summaryFile", "upstreamTool", "upstreamArgument", "upstreamArguments"]
+        }),
         targetSupport: "none",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253584,7 +253676,16 @@ var init_wrapper_contracts = __esm({
         category: "fixed-execution",
         upstreamToolName: "use_figma",
         upstreamKind: "inspection",
-        requiredUpstreamProperties: ["code"],
+        requiredUpstreamProperties: ["code", "description", "fileKey"],
+        optionalUpstreamProperties: ["skillNames"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["code", "description", "fileKey"],
+          derivedUpstream: ["fileKey"],
+          fixedUpstream: ["code", "description"],
+          hiddenUpstreamOptional: ["skillNames"],
+          localOnly: ["title", "sessionId", "mode", "target", "depth", "handles"],
+          removedLegacy: ["upstreamTool", "upstreamArgument", "upstreamArguments"]
+        }),
         targetSupport: "string-only",
         outputPolicy: {
           inlineLimitFields: [],
@@ -253599,6 +253700,14 @@ var init_wrapper_contracts = __esm({
         upstreamKind: "metadata read",
         requiredUpstreamProperties: ["fileKey"],
         optionalUpstreamProperties: ["nodeId", "clientLanguages", "clientFrameworks"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey"],
+          publicPassthrough: ["nodeId", "clientLanguages", "clientFrameworks"],
+          derivedUpstream: ["fileKey"],
+          passthroughOptional: ["nodeId", "clientLanguages", "clientFrameworks"],
+          localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+          removedLegacy: ["outputFile", "resultFile", "metadataFile", "fileUrl", "fileKey"]
+        }),
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: ["metadata.json"],
@@ -253615,7 +253724,15 @@ var init_wrapper_contracts = __esm({
         upstreamToolName: "get_design_context",
         upstreamKind: "design context read",
         requiredUpstreamProperties: ["fileKey", "nodeId"],
-        optionalUpstreamProperties: ["clientLanguages", "clientFrameworks"],
+        optionalUpstreamProperties: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey", "nodeId"],
+          publicPassthrough: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+          derivedUpstream: ["fileKey", "nodeId"],
+          passthroughOptional: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+          localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+          removedLegacy: ["outputFile", "resultFile", "fileUrl", "fileKey"]
+        }),
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253632,7 +253749,15 @@ var init_wrapper_contracts = __esm({
         upstreamToolName: "get_motion_context",
         upstreamKind: "motion context read",
         requiredUpstreamProperties: ["fileKey", "nodeId"],
-        optionalUpstreamProperties: ["recursive"],
+        optionalUpstreamProperties: ["recursive", "clientLanguages", "clientFrameworks"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey", "nodeId"],
+          publicPassthrough: ["recursive", "clientLanguages", "clientFrameworks"],
+          derivedUpstream: ["fileKey", "nodeId"],
+          passthroughOptional: ["recursive", "clientLanguages", "clientFrameworks"],
+          localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+          removedLegacy: ["outputFile", "resultFile", "fileUrl", "fileKey"]
+        }),
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253649,7 +253774,15 @@ var init_wrapper_contracts = __esm({
         upstreamToolName: "export_video",
         upstreamKind: "video export",
         requiredUpstreamProperties: ["fileKey"],
-        optionalUpstreamProperties: ["nodeId", "jobId", "quality"],
+        optionalUpstreamProperties: ["nodeId", "jobId", "quality", "fps", "constraint", "ttlSeconds"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey"],
+          publicPassthrough: ["jobId", "quality", "fps", "constraint", "ttlSeconds"],
+          derivedUpstream: ["fileKey", "nodeId"],
+          passthroughOptional: ["jobId", "quality", "fps", "constraint", "ttlSeconds"],
+          localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+          removedLegacy: ["outputFile", "resultFile", "videoFile", "fileUrl", "fileKey"]
+        }),
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253673,6 +253806,14 @@ var init_wrapper_contracts = __esm({
           "includeStyles",
           "includeLibraryKeys"
         ],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey", "query"],
+          publicPassthrough: ["query", "disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"],
+          derivedUpstream: ["fileKey"],
+          passthroughOptional: ["disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"],
+          localOnly: ["title", "sessionId", "file", "cwd", "dirName", "refresh", "inlineResultLimit"],
+          removedLegacy: ["outputFile", "resultFile", "fileUrl", "fileKey"]
+        }),
         targetSupport: "none",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253690,6 +253831,14 @@ var init_wrapper_contracts = __esm({
         upstreamKind: "library read",
         requiredUpstreamProperties: ["fileKey"],
         optionalUpstreamProperties: ["offset"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey"],
+          publicPassthrough: ["offset"],
+          derivedUpstream: ["fileKey"],
+          passthroughOptional: ["offset"],
+          localOnly: ["title", "sessionId", "file", "cwd", "dirName", "refresh", "inlineResultLimit"],
+          removedLegacy: ["outputFile", "resultFile", "fileUrl", "fileKey"]
+        }),
         targetSupport: "none",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253706,7 +253855,12 @@ var init_wrapper_contracts = __esm({
         upstreamToolName: "get_variable_defs",
         upstreamKind: "variable definition read",
         requiredUpstreamProperties: ["fileKey", "nodeId"],
-        optionalUpstreamProperties: ["clientLanguages", "clientFrameworks"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey", "nodeId"],
+          derivedUpstream: ["fileKey", "nodeId"],
+          localOnly: ["title", "sessionId", "file", "cwd", "dirName", "target", "refresh", "inlineResultLimit"],
+          removedLegacy: ["clientLanguages", "clientFrameworks", "outputFile", "resultFile", "fileUrl", "fileKey"]
+        }),
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253723,6 +253877,15 @@ var init_wrapper_contracts = __esm({
         upstreamToolName: "upload_assets",
         upstreamKind: "asset upload/fill",
         requiredUpstreamProperties: ["fileKey", "count", "nodeId", "scaleMode"],
+        optionalUpstreamProperties: ["batchCommit"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey"],
+          derivedUpstream: ["fileKey", "nodeId", "scaleMode"],
+          fixedUpstream: ["count"],
+          hiddenUpstreamOptional: ["batchCommit"],
+          localOnly: ["title", "sessionId", "assets", "manifestPath", "validateTargets"],
+          removedLegacy: ["argumentsTemplate", "toolName", "arguments", "refresh", "outputFile", "resultFile"]
+        }),
         targetSupport: "node-scoped-list",
         outputPolicy: {
           inlineLimitFields: [],
@@ -253737,6 +253900,14 @@ var init_wrapper_contracts = __esm({
         upstreamKind: "asset download",
         requiredUpstreamProperties: ["fileKey", "nodeId"],
         optionalUpstreamProperties: ["defaultFormat", "defaultScale"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey", "nodeId"],
+          publicPassthrough: ["defaultFormat", "defaultScale"],
+          derivedUpstream: ["fileKey", "nodeId"],
+          passthroughOptional: ["defaultFormat", "defaultScale"],
+          localOnly: ["title", "sessionId", "targets", "manifestPath", "outputDir"],
+          removedLegacy: ["target", "assets", "toolName", "arguments", "refresh", "download", "outputFile", "resultFile"]
+        }),
         targetSupport: "node-scoped-list",
         outputPolicy: {
           inlineLimitFields: [],
@@ -253750,6 +253921,16 @@ var init_wrapper_contracts = __esm({
         upstreamToolName: "get_screenshot",
         upstreamKind: "node screenshot",
         requiredUpstreamProperties: ["fileKey", "nodeId"],
+        optionalUpstreamProperties: ["maxDimension", "contentsOnly", "enableBase64Response"],
+        parameterMatrix: parameterMatrix({
+          requiredUpstream: ["fileKey", "nodeId"],
+          publicPassthrough: ["maxDimension", "contentsOnly"],
+          derivedUpstream: ["fileKey", "nodeId"],
+          passthroughOptional: ["maxDimension", "contentsOnly"],
+          hiddenUpstreamOptional: ["enableBase64Response"],
+          localOnly: ["title", "sessionId", "target", "imageFile"],
+          removedLegacy: ["nodeId", "targetNodeId", "handle", "outputFile", "resultFile", "metadataFile", "argumentsTemplate", "toolName", "arguments", "refresh", "preview", "thumbnail", "thumbnailMaxSize"]
+        }),
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: [],
@@ -253760,6 +253941,10 @@ var init_wrapper_contracts = __esm({
       {
         toolName: "figma_workspace_run_task_plan",
         category: "asset-capture-workflow",
+        parameterMatrix: parameterMatrix({
+          localOnly: ["title", "sessionId", "planPath", "steps", "stopOnFailure"],
+          removedLegacy: ["outputFile", "resultFile"]
+        }),
         targetSupport: "none",
         outputPolicy: {
           inlineLimitFields: [],
@@ -253770,6 +253955,10 @@ var init_wrapper_contracts = __esm({
       {
         toolName: "figma_workspace_call_upstream_tool",
         category: "upstream-escape-hatch",
+        parameterMatrix: parameterMatrix({
+          localOnly: ["title", "sessionId", "toolName", "arguments", "refresh", "inlineResultLimit"],
+          removedLegacy: ["outputFile", "resultFile"]
+        }),
         targetSupport: "freeform-upstream",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
@@ -253872,7 +254061,9 @@ function createReplToolDescriptions(options) {
         target: {
           description: `Target node to capture. ${NODE_SCOPED_TARGET_SHAPES}`
         },
-        imageFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted imageFile auto-generates capture-<timestamp>.png.")
+        imageFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted imageFile auto-generates capture-<timestamp>.png."),
+        maxDimension: numberProperty("Optional official get_screenshot maxDimension forwarded upstream when explicitly supplied.", { type: "integer", minimum: 1, maximum: 65536 }),
+        contentsOnly: booleanProperty("Optional official get_screenshot contentsOnly flag forwarded upstream when explicitly supplied.")
       }, ["target"])
     },
     {
@@ -253972,6 +254163,9 @@ function createReplToolDescriptions(options) {
         },
         clientLanguages: stringProperty("Optional official get_design_context clientLanguages hint. Sent upstream only when explicitly supplied."),
         clientFrameworks: stringProperty("Optional official get_design_context clientFrameworks hint. Sent upstream only when explicitly supplied."),
+        forceCode: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
+        disableCodeConnect: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
+        excludeScreenshot: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
@@ -253989,6 +254183,8 @@ function createReplToolDescriptions(options) {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`
         },
         recursive: booleanProperty("Optional official get_motion_context flag for descendant motion data."),
+        clientLanguages: stringProperty("Optional official get_motion_context clientLanguages hint. Sent upstream only when explicitly supplied."),
+        clientFrameworks: stringProperty("Optional official get_motion_context clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
@@ -254007,6 +254203,9 @@ function createReplToolDescriptions(options) {
         },
         jobId: stringProperty("Optional official export_video job id used to poll an existing export."),
         quality: enumProperty(["low", "medium", "high"], "Optional official export_video quality hint."),
+        fps: numberProperty("Optional official export_video fps hint forwarded upstream when explicitly supplied.", { type: "integer", minimum: 1, maximum: 60 }),
+        constraint: exportVideoConstraintProperty("Optional official export_video constraint object forwarded upstream when explicitly supplied."),
+        ttlSeconds: numberProperty("Optional official export_video ttlSeconds hint forwarded upstream when explicitly supplied.", { type: "integer", minimum: 30, maximum: 604800 }),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file"), requiredBranch("jobId")] })
@@ -254056,8 +254255,6 @@ function createReplToolDescriptions(options) {
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`
         },
-        clientLanguages: stringProperty("Optional official get_variable_defs clientLanguages hint. Sent upstream only when explicitly supplied."),
-        clientFrameworks: stringProperty("Optional official get_variable_defs clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
@@ -254139,6 +254336,18 @@ function numberProperty(description, extra = {}) {
 }
 function objectProperty(description) {
   return { type: "object", description, additionalProperties: true };
+}
+function exportVideoConstraintProperty(description) {
+  return {
+    type: "object",
+    description,
+    properties: {
+      type: enumProperty(["SCALE", "WIDTH", "HEIGHT"], "Constraint mode."),
+      value: numberProperty("Constraint value. SCALE is a multiplier; WIDTH/HEIGHT are pixels.", { exclusiveMinimum: 0 })
+    },
+    required: ["type", "value"],
+    additionalProperties: false
+  };
 }
 function jsonProperty(description) {
   return { description };
@@ -254674,7 +254883,7 @@ var init_tool_metadata = __esm({
 });
 
 // src/runtime/workspace-files.ts
-import { mkdir as mkdir2, readFile as readFile3, unlink, writeFile as writeFile2 } from "node:fs/promises";
+import { mkdir as mkdir2, readFile as readFile4, unlink, writeFile as writeFile3 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename as basename2, dirname as dirname5, extname, isAbsolute, relative, resolve as resolve5 } from "node:path";
 function readProcessEnv(name) {
@@ -254748,7 +254957,7 @@ function resolveWorkspaceAwareFile(value, session, argumentName) {
 }
 async function writeCaptureOutputFile(outputFile, upstream, parsed) {
   const rawContent = asRecord(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord4) : [];
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord5) : [];
   const image = content.find((item) => item.type === "image" && typeof item.data === "string");
   if (image && typeof image.data === "string") {
     const buffer = Buffer.from(image.data, "base64");
@@ -254781,7 +254990,7 @@ async function writeCaptureImageOutputFile(outputFile, buffer, sourceMimeType) {
     );
   }
   const dimensions = readPngDimensions(buffer);
-  await writeFile2(output.path, buffer);
+  await writeFile3(output.path, buffer);
   return {
     path: output.path,
     bytes: buffer.byteLength,
@@ -254834,7 +255043,7 @@ function withFileExtension(path, extension) {
 }
 async function loadTaskPlan(args, session) {
   const planPath = resolveWorkspaceAwareFile(args.planPath, session, "planPath");
-  const planValue = planPath ? JSON.parse(await readFile3(planPath, "utf8")) : void 0;
+  const planValue = planPath ? JSON.parse(await readFile4(planPath, "utf8")) : void 0;
   const planRecord = asRecord(planValue);
   const steps = Array.isArray(args.steps) ? asTaskPlanSteps(args.steps) : Array.isArray(planValue) ? asTaskPlanSteps(planValue, "plan") : Array.isArray(planRecord.steps) ? asTaskPlanSteps(planRecord.steps, "plan.steps") : void 0;
   if (!steps || steps.length === 0) {
@@ -254892,7 +255101,7 @@ async function writeJsonFile(path, value) {
   await mkdir2(dirname5(path), { recursive: true });
   const content = `${JSON.stringify(removeUndefined2(value), null, 2)}
 `;
-  await writeFile2(path, content, "utf8");
+  await writeFile3(path, content, "utf8");
   return textFileMetadata(path, content);
 }
 function createSessionWorkspace(options) {
@@ -254978,7 +255187,7 @@ function resultFileNameForScript(scriptName) {
 async function writeTaskFile(path, content, overwrite) {
   if (!overwrite) {
     try {
-      await readFile3(path, "utf8");
+      await readFile4(path, "utf8");
       throw new Error(`Refusing to overwrite existing file without overwrite=true: ${path}`);
     } catch (error2) {
       if (error2 instanceof Error && error2.message.startsWith("Refusing to overwrite")) {
@@ -254986,7 +255195,7 @@ async function writeTaskFile(path, content, overwrite) {
       }
     }
   }
-  await writeFile2(path, content, "utf8");
+  await writeFile3(path, content, "utf8");
   return textFileMetadata(path, content);
 }
 function resolveScriptOutputFiles(args, session) {
@@ -255017,7 +255226,7 @@ function resolveWorkspaceOutputFile(value, baseDir, fallbackName, argumentName) 
 }
 async function writeTextFile(path, content) {
   await mkdir2(dirname5(path), { recursive: true });
-  await writeFile2(path, content, "utf8");
+  await writeFile3(path, content, "utf8");
   return textFileMetadata(path, content);
 }
 async function removeFileIfExists(path) {
@@ -255128,7 +255337,7 @@ function normalizeFileContextDirectory(fileKey, fileSlug) {
 }
 function extractCaptureImageUrl(upstream, parsed) {
   const rawContent = asRecord(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord4) : [];
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord5) : [];
   for (const item of content) {
     if (item.type === "image") {
       const imageUrl = firstHttpUrl([
@@ -255172,7 +255381,7 @@ function findCaptureImageUrlInValue(value, depth) {
     }
     return void 0;
   }
-  if (!isRecord4(value)) {
+  if (!isRecord5(value)) {
     return void 0;
   }
   const priorityKeys = [
@@ -255245,7 +255454,7 @@ function removeUndefined2(value) {
   if (Array.isArray(value)) {
     return value.map(removeUndefined2);
   }
-  if (!isRecord4(value)) {
+  if (!isRecord5(value)) {
     return value;
   }
   return Object.fromEntries(
@@ -255253,12 +255462,12 @@ function removeUndefined2(value) {
   );
 }
 function asRecord(value) {
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     return value;
   }
   return {};
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function asOptionalString(value) {
@@ -255291,7 +255500,7 @@ __export(workspace_mcp_server_exports, {
 });
 import { randomUUID } from "node:crypto";
 import { tmpdir as tmpdir2 } from "node:os";
-import { mkdir as mkdir3, readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
+import { mkdir as mkdir3, readFile as readFile5, writeFile as writeFile4 } from "node:fs/promises";
 import { dirname as dirname6, extname as extname2, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve6 } from "node:path";
 function readProcessEnv2(name) {
   return typeof process === "undefined" ? void 0 : process.env?.[name];
@@ -255319,6 +255528,23 @@ function requireWrapperUpstreamProperty(contract, property) {
     throw new Error(`Internal wrapper contract ${contract.toolName} is missing upstream property ${property}.`);
   }
   return property;
+}
+function collectContractPassthroughArguments(args, contract) {
+  return Object.fromEntries(
+    contract.parameterMatrix.passthroughOptional.filter((property) => args[property] !== void 0).map((property) => [property, args[property]])
+  );
+}
+function collectPresentPassthroughProperties(contract, upstreamArguments) {
+  const required2 = new Set(contract.parameterMatrix.requiredUpstream);
+  const handledUpstreamProperties = sortedUnique([
+    ...contract.parameterMatrix.publicPassthrough,
+    ...contract.parameterMatrix.derivedUpstream,
+    ...contract.parameterMatrix.fixedUpstream,
+    ...contract.parameterMatrix.passthroughOptional
+  ]);
+  return handledUpstreamProperties.filter(
+    (property) => !required2.has(property) && upstreamArguments[property] !== void 0
+  );
 }
 function createFigmaWorkspaceSessionStore(options = {}) {
   const defaultSessionId = sanitizeSessionId(
@@ -255907,7 +256133,7 @@ function createUpstreamBackedResultFilePayload(options) {
       ...options.fields,
       upstreamKind: asOptionalString2(options.upstream?.kind),
       upstreamOk: typeof options.upstream?.ok === "boolean" ? options.upstream.ok : void 0,
-      upstreamError: isRecord5(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : void 0
+      upstreamError: isRecord6(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : void 0
     }
   });
 }
@@ -255943,7 +256169,7 @@ async function executeRunScriptFile(args, runtime) {
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   let source;
   try {
-    source = await readFile4(scriptPath, "utf8");
+    source = await readFile5(scriptPath, "utf8");
   } catch (error2) {
     if (!isMissingFileError(error2)) {
       throw error2;
@@ -256147,7 +256373,7 @@ async function executeRunScriptFile(args, runtime) {
     inlineResultLimit,
     ["upstream.result", "upstream.text"]
   );
-  const needsOutputFile = diagnostics.length > 0 || isRecord5(limitedPayload.inlineResultLimit);
+  const needsOutputFile = diagnostics.length > 0 || isRecord6(limitedPayload.inlineResultLimit);
   const outputFiles = needsOutputFile ? await addUpstreamSidecar(await outputWriter.write({
     result: createRunScriptResultFilePayload({
       session,
@@ -256364,7 +256590,7 @@ function compactUploadSummary(upload) {
   });
 }
 function compactUploadResponse(response) {
-  if (!isRecord5(response)) {
+  if (!isRecord6(response)) {
     return response;
   }
   return removeUndefined3({
@@ -256524,7 +256750,7 @@ async function loadDownloadAssetsManifest(args, session) {
   if (inlineTargets && manifestPath) {
     throw new Error('Pass either "targets" or "manifestPath", not both.');
   }
-  const manifestValue = manifestPath ? JSON.parse(await readFile4(manifestPath, "utf8")) : void 0;
+  const manifestValue = manifestPath ? JSON.parse(await readFile5(manifestPath, "utf8")) : void 0;
   const manifestRecord = asRecord2(manifestValue);
   if (manifestRecord.assets !== void 0) {
     throw new Error('Download manifest field "assets" is not supported. Use "targets".');
@@ -256566,7 +256792,7 @@ function asOptionalDownloadAssetFormat(value) {
   return void 0;
 }
 function extractFigmaFileKeyFromTargetInput(input) {
-  if (isRecord5(input)) {
+  if (isRecord6(input)) {
     return extractFigmaFileKeyFromTargetInput(input.url) ?? extractFigmaFileKeyFromTargetInput(input.nodeUrl) ?? extractFigmaFileKeyFromTargetInput(input.target);
   }
   return extractFigmaFileKey(asOptionalString2(input));
@@ -256614,7 +256840,7 @@ function collectDownloadAssetLinks(value) {
       item.forEach((child, index) => visit(child, [...path, String(index)]));
       return;
     }
-    if (!isRecord5(item)) {
+    if (!isRecord6(item)) {
       return;
     }
     for (const [key, child] of Object.entries(item)) {
@@ -256684,7 +256910,7 @@ async function downloadAssetLinks(links, outputDir) {
         }));
         continue;
       }
-      await writeFile3(path, bytes);
+      await writeFile4(path, bytes);
       results.push(removeUndefined3({
         ok: true,
         kind: link.kind,
@@ -256787,9 +257013,15 @@ async function executeCaptureNodeForTool(args, runtime) {
     [...CAPTURE_NODE_CONTRACT.requiredUpstreamProperties ?? []],
     requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT)
   );
+  assertUpstreamToolHasProperties(
+    tool,
+    collectPresentPassthroughProperties(CAPTURE_NODE_CONTRACT, args),
+    requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT)
+  );
   const upstreamArguments = buildCaptureUpstreamArguments({
     fileKey,
     nodeId,
+    args,
     tool
   });
   await runtime.client.connect();
@@ -256994,7 +257226,7 @@ function compactTaskPlanFailure(step) {
     index: typeof step.index === "number" ? step.index : void 0,
     type: asOptionalString2(step.type) ?? "",
     status: asOptionalString2(step.status) ?? "failed",
-    error: isRecord5(step.error) ? step.error : void 0
+    error: isRecord6(step.error) ? step.error : void 0
   });
 }
 function compactTaskPlanStepDetail(step) {
@@ -257009,7 +257241,7 @@ function compactTaskPlanStepDetail(step) {
     finishedAt: asOptionalString2(step.finishedAt),
     diagnostics: typeof summary.diagnostics === "number" ? summary.diagnostics : void 0,
     failures: typeof summary.failures === "number" ? summary.failures : void 0,
-    error: isRecord5(step.error) ? step.error : void 0
+    error: isRecord6(step.error) ? step.error : void 0
   });
 }
 async function handlePrepareTask(args, runtime) {
@@ -257503,7 +257735,7 @@ async function executeGetMetadata(args, runtime) {
   });
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["metadata.json"]);
-  if (metadataOk && metadata && isRecord5(limitedPayload.inlineResultLimit)) {
+  if (metadataOk && metadata && isRecord6(limitedPayload.inlineResultLimit)) {
     const outputFiles = asRecord2(limitedPayload.outputFiles);
     outputFiles.metadataFile = await writeMetadataFile({ args, session, metadata });
     limitedPayload.outputFiles = outputFiles;
@@ -257583,8 +257815,7 @@ async function executeGetDesignContext(args, runtime) {
     upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages,
-      clientFrameworks: args.clientFrameworks
+      ...collectContractPassthroughArguments(args, GET_DESIGN_CONTEXT_CONTRACT)
     }),
     responseFields: {
       fileKey: requested.fileKey,
@@ -257605,11 +257836,10 @@ async function executeGetMotionContext(args, runtime) {
     contract: GET_MOTION_CONTEXT_CONTRACT,
     runtime,
     session,
-    optionalProperties: args.recursive === void 0 ? [] : ["recursive"],
     upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      recursive: args.recursive
+      ...collectContractPassthroughArguments(args, GET_MOTION_CONTEXT_CONTRACT)
     }),
     responseFields: {
       fileKey: requested.fileKey,
@@ -257630,16 +257860,10 @@ async function executeExportVideo(args, runtime) {
     contract: EXPORT_VIDEO_CONTRACT,
     runtime,
     session,
-    optionalProperties: [
-      requested.nodeId === void 0 ? void 0 : "nodeId",
-      args.jobId === void 0 ? void 0 : "jobId",
-      args.quality === void 0 ? void 0 : "quality"
-    ].filter((value) => typeof value === "string"),
     upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      jobId: args.jobId,
-      quality: args.quality
+      ...collectContractPassthroughArguments(args, EXPORT_VIDEO_CONTRACT)
     }),
     responseFields: removeUndefined3({
       fileKey: requested.fileKey,
@@ -257665,21 +257889,10 @@ async function executeSearchDesignSystem(args, runtime) {
     contract: SEARCH_DESIGN_SYSTEM_CONTRACT,
     runtime,
     session,
-    optionalProperties: [
-      args.disableCodeConnect === void 0 ? void 0 : "disableCodeConnect",
-      args.includeComponents === void 0 ? void 0 : "includeComponents",
-      args.includeVariables === void 0 ? void 0 : "includeVariables",
-      args.includeStyles === void 0 ? void 0 : "includeStyles",
-      args.includeLibraryKeys === void 0 ? void 0 : "includeLibraryKeys"
-    ].filter((value) => typeof value === "string"),
     upstreamArguments: removeUndefined3({
       fileKey,
       query,
-      disableCodeConnect: args.disableCodeConnect,
-      includeComponents: args.includeComponents,
-      includeVariables: args.includeVariables,
-      includeStyles: args.includeStyles,
-      includeLibraryKeys: args.includeLibraryKeys
+      ...collectContractPassthroughArguments(args, SEARCH_DESIGN_SYSTEM_CONTRACT)
     }),
     responseFields: { fileKey, query },
     historySummary: `Searched Figma design system for ${query}.`,
@@ -257697,8 +257910,10 @@ async function executeGetLibraries(args, runtime) {
     contract: GET_LIBRARIES_CONTRACT,
     runtime,
     session,
-    optionalProperties: args.offset === void 0 ? [] : ["offset"],
-    upstreamArguments: removeUndefined3({ fileKey, offset: args.offset }),
+    upstreamArguments: removeUndefined3({
+      fileKey,
+      ...collectContractPassthroughArguments(args, GET_LIBRARIES_CONTRACT)
+    }),
     responseFields: removeUndefined3({ fileKey, offset: args.offset }),
     historySummary: `Read Figma libraries for ${fileKey}.`,
     nodeIds: []
@@ -257717,9 +257932,7 @@ async function executeGetVariableDefs(args, runtime) {
     session,
     upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
-      nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages,
-      clientFrameworks: args.clientFrameworks
+      nodeId: requested.nodeId
     }),
     responseFields: {
       fileKey: requested.fileKey,
@@ -257780,7 +257993,10 @@ async function executeDedicatedUpstreamTool(options) {
   const upstreamKind = requireWrapperUpstreamKind(options.contract);
   const tools = await options.runtime.upstreamToolCache.list(Boolean(options.args.refresh));
   const tool = selectRequiredUpstreamTool(tools, upstreamToolName, upstreamKind);
-  const optionalProperties = options.optionalProperties ?? [];
+  const optionalProperties = sortedUnique([
+    ...options.optionalProperties ?? [],
+    ...collectPresentPassthroughProperties(options.contract, options.upstreamArguments)
+  ]);
   assertUpstreamToolHasProperties(
     tool,
     [...options.contract.requiredUpstreamProperties ?? [], ...optionalProperties],
@@ -257831,7 +258047,7 @@ async function executeCallUpstreamTool(args, runtime) {
       `Refusing to proxy local figma_workspace_mcp tool "${args.toolName}". Call it directly instead.`
     );
   }
-  const upstreamArgs = isRecord5(args.arguments) ? args.arguments : {};
+  const upstreamArgs = isRecord6(args.arguments) ? args.arguments : {};
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = tools.find((item) => item.name === args.toolName);
   if (!tool) {
@@ -257934,7 +258150,7 @@ function createUpstreamToolCache(client) {
       await client.connect();
       const result = asRecord2(await client.listTools());
       const tools = Array.isArray(result.tools) ? result.tools : [];
-      cached2 = tools.filter(isRecord5).map((tool) => ({
+      cached2 = tools.filter(isRecord6).map((tool) => ({
         name: String(tool.name ?? ""),
         description: asOptionalString2(tool.description),
         inputSchema: tool.inputSchema
@@ -257954,16 +258170,31 @@ async function resolveEvalSettings(session, args, runtime) {
   }
   const argumentName = DEFAULT_EVAL_ARGUMENT_NAME;
   assertUpstreamToolHasProperty(tool, argumentName, "execution");
+  const requiredUpstreamProperties = upstreamToolRequiredProperties(tool);
+  if (requiredUpstreamProperties.has("description")) {
+    assertUpstreamToolHasProperty(tool, "description", "execution");
+  }
+  if (requiredUpstreamProperties.has("fileKey")) {
+    assertUpstreamToolHasProperty(tool, "fileKey", "execution");
+  }
   const upstreamArguments = {};
   upstreamArguments.description = DEFAULT_EVAL_DESCRIPTION;
+  const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl);
   if (typeof upstreamArguments.fileKey !== "string" || upstreamArguments.fileKey.length === 0) {
-    const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl);
     if (fileKey) {
       upstreamArguments.fileKey = fileKey;
     }
   }
+  if (requiredUpstreamProperties.has("fileKey") && typeof upstreamArguments.fileKey !== "string") {
+    throw new Error('Required official upstream Figma MCP execution tool "use_figma" requires fileKey. Call figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task first.');
+  }
   touchSession(session);
   return { toolName, argumentName, upstreamArguments };
+}
+function upstreamToolRequiredProperties(tool) {
+  const schema = isRecord6(tool.inputSchema) ? tool.inputSchema : void 0;
+  const required2 = Array.isArray(schema?.required) ? schema.required : [];
+  return new Set(required2.filter((value) => typeof value === "string"));
 }
 function buildFigmaEvalScript(options) {
   const includeEvalHelpers = options.includeEvalHelpers !== false;
@@ -258854,7 +259085,7 @@ function replaceDelimitedSource(source, startMarker, endMarker, replacement, opt
 }
 async function loadAssetManifest(args, session) {
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
-  const manifestValue = manifestPath ? JSON.parse(await readFile4(manifestPath, "utf8")) : void 0;
+  const manifestValue = manifestPath ? JSON.parse(await readFile5(manifestPath, "utf8")) : void 0;
   const manifestRecord = asRecord2(manifestValue);
   const manifestAssets = Array.isArray(manifestValue) ? manifestValue : Array.isArray(manifestRecord.assets) ? manifestRecord.assets : void 0;
   const inlineAssets = Array.isArray(args.assets) ? args.assets : void 0;
@@ -258923,7 +259154,7 @@ function assertRemovedManifestAssetFields(record2, index) {
   if (targetAliases.length > 0) {
     throw new Error(`Asset manifest entry ${index} field "${targetAliases.join("/")}" was removed. Use "target".`);
   }
-  const targetRecord = isRecord5(record2.target) ? record2.target : void 0;
+  const targetRecord = isRecord6(record2.target) ? record2.target : void 0;
   if (targetRecord) {
     const nestedAliases = ["nodeId", "targetNodeId", "targetHandle", "targetId"].filter((field) => targetRecord[field] !== void 0);
     if (nestedAliases.length > 0) {
@@ -258952,8 +259183,8 @@ function assertUpstreamToolHasProperty(tool, propertyName, kind) {
   );
 }
 function upstreamToolHasProperty(tool, propertyName) {
-  const schema = isRecord5(tool.inputSchema) ? tool.inputSchema : void 0;
-  const properties = isRecord5(schema?.properties) ? schema.properties : void 0;
+  const schema = isRecord6(tool.inputSchema) ? tool.inputSchema : void 0;
+  const properties = isRecord6(schema?.properties) ? schema.properties : void 0;
   return Boolean(properties && propertyName in properties);
 }
 function assertUpstreamToolHasProperties(tool, propertyNames, kind) {
@@ -258985,7 +259216,11 @@ function buildUploadAssetsArguments(asset) {
 }
 function buildCaptureUpstreamArguments(options) {
   if (options.tool.name === "get_screenshot") {
-    return { fileKey: options.fileKey, nodeId: options.nodeId };
+    return removeUndefined3({
+      fileKey: options.fileKey,
+      nodeId: options.nodeId,
+      ...collectContractPassthroughArguments(options.args, CAPTURE_NODE_CONTRACT)
+    });
   }
   throw new Error(
     `Required official upstream Figma MCP node screenshot tool "${SCREENSHOT_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_workspace_call_upstream_tool" for explicit upstream debugging.`
@@ -258995,7 +259230,7 @@ function readTemplatePath(context, path) {
   const parts = path.split(".").filter(Boolean);
   let current2 = context;
   for (const part of parts) {
-    if (!isRecord5(current2)) {
+    if (!isRecord6(current2)) {
       return void 0;
     }
     current2 = current2[part];
@@ -259111,7 +259346,7 @@ return {
         applications: []
       };
     }
-    const applications = Array.isArray(applicationResult.result.applications) ? applicationResult.result.applications.filter(isRecord5) : [];
+    const applications = Array.isArray(applicationResult.result.applications) ? applicationResult.result.applications.filter(isRecord6) : [];
     const failedCount = Number(applicationResult.result.failedCount ?? applications.filter((item) => item.status !== "applied").length);
     const appliedTargetNodeIds = new Set(applications.map((item) => asOptionalString2(item.targetNodeId)).filter((nodeId) => nodeId !== void 0));
     const missingApplicationCount = candidates.filter((asset) => !appliedTargetNodeIds.has(asset.targetNodeId)).length;
@@ -259157,7 +259392,7 @@ function findAssetManifestApplicationResult(value, depth = 0, sourcePath = "pars
   }
   if (Array.isArray(value)) {
     if (value.some(isAssetManifestApplicationRecord)) {
-      return { result: { applications: value.filter(isRecord5) }, sourcePath };
+      return { result: { applications: value.filter(isRecord6) }, sourcePath };
     }
     for (let index = 0; index < value.length; index += 1) {
       const nested = findAssetManifestApplicationResult(value[index], depth + 1, `${sourcePath}[${index}]`);
@@ -259283,7 +259518,7 @@ return {
         validations: []
       };
     }
-    const validations = Array.isArray(validationResult.result.validations) ? validationResult.result.validations.filter(isRecord5) : [];
+    const validations = Array.isArray(validationResult.result.validations) ? validationResult.result.validations.filter(isRecord6) : [];
     const invalidCount = Number(validationResult.result.invalidCount ?? validations.filter((item) => item.status !== "valid").length);
     const validatedTargetNodeIds = new Set(validations.map((item) => asOptionalString2(item.targetNodeId)).filter((nodeId) => nodeId !== void 0));
     const missingValidationCount = targetNodeIds.filter((targetNodeId) => !validatedTargetNodeIds.has(targetNodeId)).length;
@@ -259324,7 +259559,7 @@ function findAssetManifestValidationResult(value, depth = 0, sourcePath = "parse
   }
   if (Array.isArray(value)) {
     if (value.some(isAssetManifestValidationRecord)) {
-      return { result: { validations: value.filter(isRecord5) }, sourcePath };
+      return { result: { validations: value.filter(isRecord6) }, sourcePath };
     }
     for (let index = 0; index < value.length; index += 1) {
       const nested = findAssetManifestValidationResult(value[index], depth + 1, `${sourcePath}[${index}]`);
@@ -259367,7 +259602,7 @@ async function submitLocalAssetUploadIfAvailable(asset, parsed) {
   if (!submitUrl) {
     return void 0;
   }
-  const bytes = await readFile4(asset.path);
+  const bytes = await readFile5(asset.path);
   const mimeType = mimeTypeForAssetPath(asset.path);
   const response = await fetch(submitUrl, {
     method: "POST",
@@ -259397,7 +259632,7 @@ async function submitLocalAssetUploadIfAvailable(asset, parsed) {
 }
 function extractAssetSubmitUrl(value) {
   const record2 = asRecord2(value);
-  if (isRecord5(record2.result)) {
+  if (isRecord6(record2.result)) {
     const nestedUrl = extractAssetSubmitUrl(record2.result);
     if (nestedUrl) {
       return nestedUrl;
@@ -259516,7 +259751,7 @@ function expandTaskPlanReferenceValue(value, context) {
   if (Array.isArray(value)) {
     return value.map((item) => expandTaskPlanReferenceValue(item, context));
   }
-  if (isRecord5(value)) {
+  if (isRecord6(value)) {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, expandTaskPlanReferenceValue(item, context)])
     );
@@ -259537,9 +259772,9 @@ function createTaskPlanStepReference(options) {
   const upstream = asRecord2(options.result.upstream);
   const upstreamPayload = runScriptUpstreamPayload(options.result);
   const result = asRecord2(upstreamPayload);
-  const nestedResult = isRecord5(result.result) ? asRecord2(result.result) : result;
+  const nestedResult = isRecord6(result.result) ? asRecord2(result.result) : result;
   const session = asRecord2(options.result.session);
-  const handles = isRecord5(session.handles) ? session.handles : isRecord5(result.handles) ? result.handles : isRecord5(nestedResult.handles) ? nestedResult.handles : void 0;
+  const handles = isRecord6(session.handles) ? session.handles : isRecord6(result.handles) ? result.handles : isRecord6(nestedResult.handles) ? nestedResult.handles : void 0;
   return {
     id: options.id,
     index: options.index,
@@ -259881,7 +260116,7 @@ function inlineResultLimitTarget(payload, field) {
   let parent = payload;
   for (const part of parts.slice(0, -1)) {
     const next = parent[part];
-    if (!isRecord5(next)) {
+    if (!isRecord6(next)) {
       return void 0;
     }
     const cloned = { ...next };
@@ -260528,7 +260763,7 @@ function normalizeOAuthUpstreamError(error2) {
   return publicOAuthUpstreamError(error2);
 }
 function publicOAuthUpstreamError(error2) {
-  const details = isRecord5(error2.details) ? {
+  const details = isRecord6(error2.details) ? {
     ...error2.details,
     loginCommand: error2.details.loginCommand ?? "npm run login:figma-http",
     oauthCacheFile: error2.details.oauthCacheFile ?? ".figma-workspace-oauth.json"
@@ -260576,7 +260811,7 @@ function primaryFixForUpstreamError(error2) {
     return "Restart the Figma Workspace MCP call or npm run login:figma-http, complete browser OAuth, then retry.";
   }
   if (error2.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE") {
-    const callbackPort = isRecord5(error2.details) && typeof error2.details.callbackPort === "number" ? ` ${error2.details.callbackPort}` : "";
+    const callbackPort = isRecord6(error2.details) && typeof error2.details.callbackPort === "number" ? ` ${error2.details.callbackPort}` : "";
     return `Free OAuth callback port${callbackPort} or configure this runtime with a different callback port, then rerun npm run login:figma-http.`;
   }
   if (error2.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED") {
@@ -260607,7 +260842,7 @@ function stringFromUnknown(value) {
   if (typeof value === "string" && value.length > 0) {
     return value;
   }
-  if (isRecord5(value)) {
+  if (isRecord6(value)) {
     const message = asOptionalString2(value.message);
     if (message) return message;
   }
@@ -260700,7 +260935,7 @@ function collectNodeIds(value) {
       item.forEach(visit);
       return;
     }
-    if (isRecord5(item)) {
+    if (isRecord6(item)) {
       if (typeof item.id === "string") ids.add(item.id);
       for (const child of Object.values(item)) visit(child);
     }
@@ -260711,7 +260946,7 @@ function collectNodeIds(value) {
 function summarizeParsedResult(parsed) {
   const record2 = asRecord2(parsed.json);
   const result = record2.result;
-  if (isRecord5(result)) {
+  if (isRecord6(result)) {
     if (typeof result.summary === "string") return result.summary;
     if (typeof result.opCount === "number") return `Returned opCount=${result.opCount}.`;
   }
@@ -260809,7 +261044,7 @@ async function shapeUpstreamBackedResponse(options) {
     inlineResultLimit,
     [...options.contract.outputPolicy.inlineLimitFields]
   );
-  const needsOutputFile = options.parsed.upstreamError || isRecord5(limitedPayload.inlineResultLimit);
+  const needsOutputFile = options.parsed.upstreamError || isRecord6(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
   }
@@ -260882,7 +261117,7 @@ function shapePublicUpstreamResult(value) {
   return { result: Object.keys(result).length > 0 ? result : void 0 };
 }
 function consumeTopLevelOk(value) {
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     return { result: value };
   }
   if (!Object.prototype.hasOwnProperty.call(value, "ok")) {
@@ -260895,7 +261130,7 @@ function consumeTopLevelOk(value) {
   };
 }
 function addFailureSourceToUpstreamResult(result, source) {
-  if (isRecord5(result)) {
+  if (isRecord6(result)) {
     return {
       ...result,
       source
@@ -260986,7 +261221,7 @@ function resolveWrapperNodeTarget(options) {
   return { fileKey, nodeId, handle: target.handle };
 }
 function resolveSessionTargetInput(input, session) {
-  if (isRecord5(input)) {
+  if (isRecord6(input)) {
     const explicitHandle = asOptionalString2(input.handle) ?? asOptionalString2(input.targetHandle);
     const explicitFileKey = asOptionalString2(input.fileKey) ?? extractFigmaFileKey(asOptionalString2(input.url)) ?? extractFigmaFileKey(asOptionalString2(input.nodeUrl)) ?? extractFigmaFileKey(asOptionalString2(input.target));
     const nodeValue = explicitHandle ?? asOptionalString2(input.nodeId) ?? asOptionalString2(input.targetNodeId) ?? asOptionalString2(input.target) ?? asOptionalString2(input.id) ?? asOptionalString2(input.url) ?? asOptionalString2(input.nodeUrl);
@@ -261076,7 +261311,7 @@ function removeUndefined3(value) {
   if (Array.isArray(value)) {
     return value.map(removeUndefined3);
   }
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     return value;
   }
   return Object.fromEntries(
@@ -261084,19 +261319,19 @@ function removeUndefined3(value) {
   );
 }
 function asRecord2(value) {
-  if (isRecord5(value)) {
+  if (isRecord6(value)) {
     return value;
   }
   return {};
 }
 function recordFromUnknown(value) {
-  return isRecord5(value) ? value : void 0;
+  return isRecord6(value) ? value : void 0;
 }
-function isRecord5(value) {
+function isRecord6(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function isStringRecord(value) {
-  return isRecord5(value) && Object.values(value).every((item) => typeof item === "string");
+  return isRecord6(value) && Object.values(value).every((item) => typeof item === "string");
 }
 function asOptionalString2(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
@@ -261366,6 +261601,159 @@ import {
 } from "node:stream/web";
 import { homedir } from "node:os";
 import { resolve as resolve7 } from "node:path";
+
+// src/upstream/upstream-contract-snapshot.ts
+import { readFile, writeFile } from "node:fs/promises";
+var FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION = 2;
+async function createFigmaUpstreamContractSnapshot(client, options = {}) {
+  await client.connect();
+  const [toolsResult, resourcesResult, resourceTemplatesResult] = await Promise.all([
+    client.listTools(),
+    client.listResources(),
+    client.listResourceTemplates()
+  ]);
+  return normalizeFigmaUpstreamContractSnapshot({
+    schemaVersion: FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION,
+    source: options.source ?? "Official Figma remote MCP live contract.",
+    generatedAt: options.generatedAt ?? (/* @__PURE__ */ new Date()).toISOString(),
+    tools: Object.fromEntries(
+      normalizeNamedEntries(toolsResult.tools ?? [], "name").map((tool) => [
+        stringKey(tool, "name"),
+        tool
+      ])
+    ),
+    resources: normalizeNamedEntries(resourcesResult.resources ?? [], "uri"),
+    resourceTemplates: normalizeNamedEntries(
+      resourceTemplatesResult.resourceTemplates ?? [],
+      "uriTemplate"
+    )
+  });
+}
+function normalizeFigmaUpstreamContractSnapshot(snapshot) {
+  return {
+    schemaVersion: FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION,
+    source: snapshot.source,
+    generatedAt: snapshot.generatedAt,
+    tools: sortRecordByKey(snapshot.tools),
+    resources: normalizeNamedEntries(snapshot.resources, "uri"),
+    resourceTemplates: normalizeNamedEntries(snapshot.resourceTemplates, "uriTemplate")
+  };
+}
+async function readFigmaUpstreamContractSnapshotFile(snapshotPath) {
+  const parsed = JSON.parse(await readFile(snapshotPath, "utf8"));
+  return normalizeFigmaUpstreamContractSnapshot(parsed);
+}
+async function writeFigmaUpstreamContractSnapshotFile(snapshotPath, snapshot) {
+  await writeFile(
+    snapshotPath,
+    `${JSON.stringify(normalizeFigmaUpstreamContractSnapshot(snapshot), null, 2)}
+`,
+    "utf8"
+  );
+}
+function diffFigmaUpstreamContractSnapshots(expected, actual) {
+  return diffJson(
+    normalizeFigmaUpstreamContractSnapshot(expected),
+    normalizeFigmaUpstreamContractSnapshot(actual),
+    "$"
+  );
+}
+function formatFigmaUpstreamContractDrift(drift, options) {
+  if (drift.length === 0) {
+    return `Official Figma MCP upstream contract matches ${options.snapshotPath}.`;
+  }
+  const maxDetails = options.maxDetails ?? 40;
+  const shown = drift.slice(0, maxDetails).map((entry) => {
+    return [
+      `- ${entry.path}`,
+      `  expected: ${compactJson(entry.expected)}`,
+      `  actual: ${compactJson(entry.actual)}`
+    ].join("\n");
+  });
+  const remaining = drift.length > shown.length ? `
+- ... ${drift.length - shown.length} more drift item(s) omitted.` : "";
+  return [
+    `Official Figma MCP upstream contract drift detected against ${options.snapshotPath}.`,
+    `Review wrapper coverage and refresh intentionally with \`${options.refreshCommand}\` if the live contract is accepted.`,
+    ...shown
+  ].join("\n") + remaining;
+}
+function formatFigmaUpstreamContractElapsedTime(elapsedMs) {
+  const roundedMs = Number.isFinite(elapsedMs) && elapsedMs > 0 ? Math.round(elapsedMs) : 0;
+  if (roundedMs < 1e3) {
+    return `${roundedMs} ms`;
+  }
+  if (roundedMs < 6e4) {
+    const seconds2 = roundedMs / 1e3;
+    return `${seconds2.toFixed(seconds2 < 10 ? 2 : 1)} s (${roundedMs} ms)`;
+  }
+  const minutes = Math.floor(roundedMs / 6e4);
+  const seconds = Math.round(roundedMs % 6e4 / 1e3);
+  return `${minutes} min ${seconds} s (${roundedMs} ms)`;
+}
+function normalizeNamedEntries(entries, key) {
+  return entries.map((entry) => stableJson(entry)).sort((left, right) => stringKey(left, key).localeCompare(stringKey(right, key)));
+}
+function stringKey(value, key) {
+  if (isRecord(value) && typeof value[key] === "string") {
+    return value[key];
+  }
+  return "";
+}
+function sortRecordByKey(record2) {
+  return Object.fromEntries(
+    Object.entries(record2).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => [key, stableJson(value)])
+  );
+}
+function stableJson(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => stableJson(item));
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).filter(([, entryValue]) => entryValue !== void 0).sort(([left], [right]) => left.localeCompare(right)).map(([key, entryValue]) => [key, stableJson(entryValue)])
+    );
+  }
+  return value;
+}
+function diffJson(expected, actual, path) {
+  if (Object.is(expected, actual)) {
+    return [];
+  }
+  if (Array.isArray(expected) || Array.isArray(actual)) {
+    if (!Array.isArray(expected) || !Array.isArray(actual)) {
+      return [{ path, expected, actual }];
+    }
+    const drift = [];
+    const maxLength = Math.max(expected.length, actual.length);
+    for (let index = 0; index < maxLength; index += 1) {
+      drift.push(...diffJson(expected[index], actual[index], `${path}[${index}]`));
+    }
+    return drift;
+  }
+  if (isRecord(expected) || isRecord(actual)) {
+    if (!isRecord(expected) || !isRecord(actual)) {
+      return [{ path, expected, actual }];
+    }
+    const keys = /* @__PURE__ */ new Set([...Object.keys(expected), ...Object.keys(actual)]);
+    return [...keys].sort().flatMap(
+      (key) => diffJson(expected[key], actual[key], `${path}.${key}`)
+    );
+  }
+  return [{ path, expected, actual }];
+}
+function compactJson(value) {
+  const json = JSON.stringify(value);
+  if (json === void 0) {
+    return "undefined";
+  }
+  return json.length > 500 ? `${json.slice(0, 497)}...` : json;
+}
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+// src/upstream/node-upstream-client.ts
 var BRIDGE_OAUTH_CACHE_FILENAME2 = ".figma-workspace-oauth.json";
 var NODE_WORKSPACE_DEFAULT_CLIENT_MESSAGE = [
   "The ./node-upstream-client createFigmaWorkspaceClient() default client does not connect to the official Figma remote MCP.",
@@ -261390,6 +261778,7 @@ var [
   Promise.resolve().then(() => (init_workspace_mcp_server(), workspace_mcp_server_exports))
 ]);
 var RemoteMcpClient2 = clientModule.RemoteMcpClient;
+var isRemoteMcpOAuthError2 = clientModule.isRemoteMcpOAuthError;
 function createRemoteMcpClient2(options = {}) {
   return clientModule.createRemoteMcpClient(withNodeReplRemoteDefaults(options));
 }
@@ -261438,16 +261827,28 @@ function createNodeReplDefaultUpstreamClient() {
     async listResources() {
       rejectUpstreamUse();
     },
+    async listResourceTemplates() {
+      rejectUpstreamUse();
+    },
     async readResource() {
       rejectUpstreamUse();
     }
   };
 }
 export {
+  FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION,
   RemoteMcpClient2 as RemoteMcpClient,
+  createFigmaUpstreamContractSnapshot,
   createFigmaWorkspaceClient2 as createFigmaWorkspaceClient,
   createRemoteMcpClient2 as createRemoteMcpClient,
-  installNodeReplWebStreamGlobals
+  diffFigmaUpstreamContractSnapshots,
+  formatFigmaUpstreamContractDrift,
+  formatFigmaUpstreamContractElapsedTime,
+  installNodeReplWebStreamGlobals,
+  isRemoteMcpOAuthError2 as isRemoteMcpOAuthError,
+  normalizeFigmaUpstreamContractSnapshot,
+  readFigmaUpstreamContractSnapshotFile,
+  writeFigmaUpstreamContractSnapshotFile
 };
 /*! Bundled license information:
 

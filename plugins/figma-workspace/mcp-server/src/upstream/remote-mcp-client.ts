@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type {
+  ListResourceTemplatesResult,
   ListResourcesResult,
   ListToolsResult,
   ReadResourceResult,
@@ -296,6 +297,10 @@ export class RemoteMcpClient {
 
   async listResources(): Promise<ListResourcesResult> {
     return this.requireClient().listResources();
+  }
+
+  async listResourceTemplates(): Promise<ListResourceTemplatesResult> {
+    return this.requireClient().listResourceTemplates();
   }
 
   async readResource(uri: string): Promise<ReadResourceResult> {

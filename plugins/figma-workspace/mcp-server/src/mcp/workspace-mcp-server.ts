@@ -303,6 +303,33 @@ function requireWrapperUpstreamProperty(
   }
   return property;
 }
+
+function collectContractPassthroughArguments(
+  args: Record<string, unknown>,
+  contract: FigmaWorkspaceWrapperContract,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    contract.parameterMatrix.passthroughOptional
+      .filter((property) => args[property] !== undefined)
+      .map((property) => [property, args[property]]),
+  );
+}
+
+function collectPresentPassthroughProperties(
+  contract: FigmaWorkspaceWrapperContract,
+  upstreamArguments: Record<string, unknown>,
+): string[] {
+  const required = new Set(contract.parameterMatrix.requiredUpstream);
+  const handledUpstreamProperties = sortedUnique([
+    ...contract.parameterMatrix.publicPassthrough,
+    ...contract.parameterMatrix.derivedUpstream,
+    ...contract.parameterMatrix.fixedUpstream,
+    ...contract.parameterMatrix.passthroughOptional,
+  ]);
+  return handledUpstreamProperties.filter((property) =>
+    !required.has(property) && upstreamArguments[property] !== undefined
+  );
+}
 export interface FigmaWorkspaceMcpServerOptions extends RemoteMcpClientOptions {
   client?: FigmaUpstreamMcpProxyClient;
   name?: string;
@@ -2613,9 +2640,15 @@ async function executeCaptureNodeForTool(
     [...(CAPTURE_NODE_CONTRACT.requiredUpstreamProperties ?? [])],
     requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT),
   );
+  assertUpstreamToolHasProperties(
+    tool,
+    collectPresentPassthroughProperties(CAPTURE_NODE_CONTRACT, args),
+    requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT),
+  );
   const upstreamArguments = buildCaptureUpstreamArguments({
     fileKey,
     nodeId,
+    args,
     tool,
   });
   await runtime.client.connect();
@@ -3574,8 +3607,7 @@ async function executeGetDesignContext(
     upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages,
-      clientFrameworks: args.clientFrameworks,
+      ...collectContractPassthroughArguments(args, GET_DESIGN_CONTEXT_CONTRACT),
     }) as Record<string, unknown>,
     responseFields: {
       fileKey: requested.fileKey,
@@ -3612,11 +3644,10 @@ async function executeGetMotionContext(
     contract: GET_MOTION_CONTEXT_CONTRACT,
     runtime,
     session,
-    optionalProperties: args.recursive === undefined ? [] : ["recursive"],
     upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      recursive: args.recursive,
+      ...collectContractPassthroughArguments(args, GET_MOTION_CONTEXT_CONTRACT),
     }) as Record<string, unknown>,
     responseFields: {
       fileKey: requested.fileKey,
@@ -3653,16 +3684,10 @@ async function executeExportVideo(
     contract: EXPORT_VIDEO_CONTRACT,
     runtime,
     session,
-    optionalProperties: [
-      requested.nodeId === undefined ? undefined : "nodeId",
-      args.jobId === undefined ? undefined : "jobId",
-      args.quality === undefined ? undefined : "quality",
-    ].filter((value): value is string => typeof value === "string"),
     upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      jobId: args.jobId,
-      quality: args.quality,
+      ...collectContractPassthroughArguments(args, EXPORT_VIDEO_CONTRACT),
     }) as Record<string, unknown>,
     responseFields: removeUndefined({
       fileKey: requested.fileKey,
@@ -3706,21 +3731,10 @@ async function executeSearchDesignSystem(
     contract: SEARCH_DESIGN_SYSTEM_CONTRACT,
     runtime,
     session,
-    optionalProperties: [
-      args.disableCodeConnect === undefined ? undefined : "disableCodeConnect",
-      args.includeComponents === undefined ? undefined : "includeComponents",
-      args.includeVariables === undefined ? undefined : "includeVariables",
-      args.includeStyles === undefined ? undefined : "includeStyles",
-      args.includeLibraryKeys === undefined ? undefined : "includeLibraryKeys",
-    ].filter((value): value is string => typeof value === "string"),
     upstreamArguments: removeUndefined({
       fileKey,
       query,
-      disableCodeConnect: args.disableCodeConnect,
-      includeComponents: args.includeComponents,
-      includeVariables: args.includeVariables,
-      includeStyles: args.includeStyles,
-      includeLibraryKeys: args.includeLibraryKeys,
+      ...collectContractPassthroughArguments(args, SEARCH_DESIGN_SYSTEM_CONTRACT),
     }) as Record<string, unknown>,
     responseFields: { fileKey, query },
     historySummary: `Searched Figma design system for ${query}.`,
@@ -3754,8 +3768,10 @@ async function executeGetLibraries(
     contract: GET_LIBRARIES_CONTRACT,
     runtime,
     session,
-    optionalProperties: args.offset === undefined ? [] : ["offset"],
-    upstreamArguments: removeUndefined({ fileKey, offset: args.offset }) as Record<string, unknown>,
+    upstreamArguments: removeUndefined({
+      fileKey,
+      ...collectContractPassthroughArguments(args, GET_LIBRARIES_CONTRACT),
+    }) as Record<string, unknown>,
     responseFields: removeUndefined({ fileKey, offset: args.offset }) as Record<string, unknown>,
     historySummary: `Read Figma libraries for ${fileKey}.`,
     nodeIds: [],
@@ -3791,8 +3807,6 @@ async function executeGetVariableDefs(
     upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages,
-      clientFrameworks: args.clientFrameworks,
     }) as Record<string, unknown>,
     responseFields: {
       fileKey: requested.fileKey,
@@ -3897,7 +3911,10 @@ async function executeDedicatedUpstreamTool(options: {
   const upstreamKind = requireWrapperUpstreamKind(options.contract);
   const tools = await options.runtime.upstreamToolCache.list(Boolean(options.args.refresh));
   const tool = selectRequiredUpstreamTool(tools, upstreamToolName, upstreamKind);
-  const optionalProperties = options.optionalProperties ?? [];
+  const optionalProperties = sortedUnique([
+    ...(options.optionalProperties ?? []),
+    ...collectPresentPassthroughProperties(options.contract, options.upstreamArguments),
+  ]);
   assertUpstreamToolHasProperties(
     tool,
     [...(options.contract.requiredUpstreamProperties ?? []), ...optionalProperties],
@@ -4097,19 +4114,35 @@ async function resolveEvalSettings(
   }
   const argumentName = DEFAULT_EVAL_ARGUMENT_NAME;
   assertUpstreamToolHasProperty(tool, argumentName, "execution");
+  const requiredUpstreamProperties = upstreamToolRequiredProperties(tool);
+  if (requiredUpstreamProperties.has("description")) {
+    assertUpstreamToolHasProperty(tool, "description", "execution");
+  }
+  if (requiredUpstreamProperties.has("fileKey")) {
+    assertUpstreamToolHasProperty(tool, "fileKey", "execution");
+  }
   const upstreamArguments: Record<string, unknown> = {};
   upstreamArguments.description = DEFAULT_EVAL_DESCRIPTION;
+  const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl);
   if (
     typeof upstreamArguments.fileKey !== "string" ||
     upstreamArguments.fileKey.length === 0
   ) {
-    const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl);
     if (fileKey) {
       upstreamArguments.fileKey = fileKey;
     }
   }
+  if (requiredUpstreamProperties.has("fileKey") && typeof upstreamArguments.fileKey !== "string") {
+    throw new Error('Required official upstream Figma MCP execution tool "use_figma" requires fileKey. Call figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task first.');
+  }
   touchSession(session);
   return { toolName, argumentName, upstreamArguments };
+}
+
+function upstreamToolRequiredProperties(tool: UpstreamToolInfo): Set<string> {
+  const schema = isRecord(tool.inputSchema) ? tool.inputSchema : undefined;
+  const required = Array.isArray(schema?.required) ? schema.required : [];
+  return new Set(required.filter((value): value is string => typeof value === "string"));
 }
 
 /**
@@ -5207,10 +5240,15 @@ function buildUploadAssetsArguments(asset: NormalizedAssetManifestAsset): Record
 function buildCaptureUpstreamArguments(options: {
   fileKey: string;
   nodeId: string;
+  args: FigmaWorkspaceCaptureNodeArguments;
   tool: UpstreamToolInfo;
 }): Record<string, unknown> {
   if (options.tool.name === "get_screenshot") {
-    return { fileKey: options.fileKey, nodeId: options.nodeId };
+    return removeUndefined({
+      fileKey: options.fileKey,
+      nodeId: options.nodeId,
+      ...collectContractPassthroughArguments(options.args, CAPTURE_NODE_CONTRACT),
+    }) as Record<string, unknown>;
   }
   throw new Error(
     `Required official upstream Figma MCP node screenshot tool "${SCREENSHOT_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_workspace_call_upstream_tool" for explicit upstream debugging.`,
@@ -6756,14 +6794,18 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       guidance: `Use for official design-to-code context when implementation, parity review, Code Connect, or SwiftUI handoff needs upstream generated structure. ${nodeScopedTargetGuidance} The bridge preserves the official payload inside the generic upstream envelope.`,
       recommendedCalls: {
         fromSession: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>" },
-        fromFile: { file: "<figma file URL or file key>", target: "<node id>", clientLanguages: "unknown", clientFrameworks: "unknown" },
+        fromFile: { file: "<figma file URL or file key>", target: "<node id>" },
+        fromKnownStack: { file: "<figma file URL or file key>", target: "<node id>", clientLanguages: "typescript", clientFrameworks: "react" },
         fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
         fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
       },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "clientLanguages", "clientFrameworks"],
+      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
       avoidUnless: {
         inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
         refresh: "Use only for upstream tool-cache debug.",
+        forceCode: "Use only when explicitly forcing upstream generated code output is useful for the task.",
+        disableCodeConnect: "Use only when Code Connect mappings are known to be irrelevant or misleading for this read.",
+        excludeScreenshot: "Use only when reducing upstream payload size matters more than screenshot context.",
       },
     },
     motionContext: {
@@ -6776,9 +6818,10 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
         fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" }, recursive: true },
         fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" }, recursive: true },
       },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "recursive"],
+      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "recursive", "clientLanguages", "clientFrameworks"],
       avoidUnless: {
         recursive: "Use when descendant motion is needed; omit for a single-node motion read.",
+        clientHints: "Pass clientLanguages/clientFrameworks only when the implementation target is known.",
         inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
         refresh: "Use only for upstream tool-cache debug.",
       },
@@ -6788,13 +6831,16 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       tier: "workflowAddOns",
       guidance: `Use for official motion video export when frame sampling is worth the upstream render cost. ${nodeScopedTargetGuidance} Start with a target, then poll with jobId; no local videoFile is claimed by the wrapper.`,
       recommendedCalls: {
-        start: { sessionId: "<session>", target: "<top-level timeline frame>", quality: "low" },
-        startFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<timeline node id>" }, quality: "low" },
+        start: { sessionId: "<session>", target: "<top-level timeline frame>", quality: "low", fps: 12 },
+        startFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<timeline node id>" }, quality: "low", ttlSeconds: 300 },
         poll: { sessionId: "<session>", file: "<figma file URL or file key>", jobId: "<job id>" },
       },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "quality"],
+      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "quality", "fps", "constraint", "ttlSeconds"],
       avoidUnless: {
         quality: "Start low unless fine visual details require a higher-quality render.",
+        fps: "Use only when frame sampling or motion fidelity requires a specific upstream frame rate.",
+        constraint: "Use only with an official export_video constraint object.",
+        ttlSeconds: "Use only when the render job lifetime needs to differ from upstream defaults.",
         inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
         refresh: "Use only for upstream tool-cache debug.",
       },
@@ -6848,8 +6894,9 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       recommendedCalls: {
         captureFromSession: { sessionId: "<session>", target: "$target", imageFile: "<capture>.png" },
         captureFromNodeUrl: { target: "<figma node URL>", imageFile: "<capture>.png" },
-        captureFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" }, imageFile: "<capture>.png" },
+        captureFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" }, imageFile: "<capture>.png", maxDimension: 1600, contentsOnly: true },
       },
+      advancedArguments: ["maxDimension", "contentsOnly"],
     },
     taskPlan: {
       tool: "figma_workspace_run_task_plan",

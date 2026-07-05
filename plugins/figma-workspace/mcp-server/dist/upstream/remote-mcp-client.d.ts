@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { ListResourcesResult, ListToolsResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
+import type { ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { type NodeReplConfig, type NodeReplConfigInput } from "../auth/config.js";
 import { PersistentOAuthProvider } from "../auth/oauth-provider.js";
 import { type OAuthCallbackServer, type OAuthCallbackServerOptions } from "../auth/oauth-callback.js";
@@ -47,6 +47,7 @@ export declare class RemoteMcpClient {
     listTools(): Promise<ListToolsResult>;
     callTool(name: string, args?: Record<string, unknown>): Promise<unknown>;
     listResources(): Promise<ListResourcesResult>;
+    listResourceTemplates(): Promise<ListResourceTemplatesResult>;
     readResource(uri: string): Promise<ReadResourceResult>;
     private setConnectedIfCurrent;
     private setConnected;

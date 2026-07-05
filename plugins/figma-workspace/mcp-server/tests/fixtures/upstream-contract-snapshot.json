@@ -1,0 +1,2463 @@
+{
+  "schemaVersion": 2,
+  "source": "Official Figma remote MCP live contract.",
+  "generatedAt": "2026-07-05T10:44:09.896Z",
+  "tools": {
+    "add_code_connect_map": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Map a Figma node to a code component in your codebase using Code Connect. Use the nodeId parameter to specify a node id. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id and file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "componentName": {
+            "description": "The name of the component to map to in the source code",
+            "type": "string"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "label": {
+            "description": "The framework or language label for this Code Connect mapping. Valid values: React, Web Components, Vue, Svelte, Storybook, Javascript, Swift, Swift UIKit, Objective-C UIKit, SwiftUI, Compose, Java, Kotlin, Android XML Layout, Flutter, Markdown",
+            "enum": [
+              "React",
+              "Web Components",
+              "Vue",
+              "Svelte",
+              "Storybook",
+              "Javascript",
+              "Swift",
+              "Swift UIKit",
+              "Objective-C UIKit",
+              "SwiftUI",
+              "Compose",
+              "Java",
+              "Kotlin",
+              "Android XML Layout",
+              "Flutter",
+              "Markdown"
+            ],
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          },
+          "source": {
+            "description": "The location of the component in the source code",
+            "type": "string"
+          },
+          "template": {
+            "description": "The executable JS template code for a Code Connect template. When provided, creates a figmadoc-type record (full template) instead of a component_browser mapping (simple mapping).",
+            "type": "string"
+          },
+          "templateDataJson": {
+            "description": "JSON string of template metadata. May include isParserless (boolean), imports, nestable, props fields. If omitted when template is provided, defaults to {}.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey",
+          "source",
+          "componentName",
+          "label"
+        ],
+        "type": "object"
+      },
+      "name": "add_code_connect_map",
+      "title": "Add Code Connect Mapping"
+    },
+    "create_new_file": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Create a new blank Figma file. IMPORTANT: You MUST load the /figma-create-new-file skill BEFORE every call to this tool, if it exists. NEVER call this tool without loading that skill first if it exists. By default the file is placed in the authenticated user's drafts folder; If specified it can be placed inside a project. Use this tool when you need a new file to work with before calling use_figma. Returns the new file key and URL. Requires a planKey. If the user already provided a planKey, use it directly. Otherwise, call the whoami tool first to get the list of plans. If the user has one plan, use its \"key\" field. If multiple, ask the user which team or organization to use. Optionally accepts a projectId. If the URL is of the format https://figma.com/files/project/:projectId, https://figma.com/files/:orgId/project/:projectId, or https://figma.com/files/team/:teamId/project/:projectId then use the :projectId as the projectId.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "editorType": {
+            "description": "The type of Figma file to create. \"design\" creates a Figma design file. \"figjam\" creates a FigJam whiteboard file. \"slides\" creates a Figma Slides presentation file.",
+            "enum": [
+              "design",
+              "figjam",
+              "slides"
+            ],
+            "type": "string"
+          },
+          "fileName": {
+            "description": "The name for the new Figma file.",
+            "type": "string"
+          },
+          "planKey": {
+            "description": "The team or organization key (e.g. \"team::1234567890\" or \"organization::1234567890\"). Use the `key` field verbatim from one of the user's plans. If the user has more than one plan, ask which one to use before calling.",
+            "minLength": 1,
+            "pattern": "^(team|organization)::\\d+$",
+            "type": "string"
+          },
+          "projectId": {
+            "description": "The id of the project (folder) in Figma. If the URL is provided, extract the project id from the URL. Common URL formats include https://figma.com/files/project/:projectId, https://figma.com/files/:orgId/project/:projectId, and https://figma.com/files/team/:teamId/project/:projectId. The extracted projectId would be `:projectId`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileName",
+          "planKey",
+          "editorType"
+        ],
+        "type": "object"
+      },
+      "name": "create_new_file",
+      "title": "Create New File"
+    },
+    "download_assets": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Download assets from a Figma file for a single node. Returns both an exported render and the original source images. The response contains: (1) an exported image of the node, and (2) a list of original uploaded source images (JPEG, PNG, GIF, WebP) found as fills anywhere in the node subtree (capped at 20). Each raw image carries a `format` field with its actual image format (e.g. \"png\", \"jpeg\", \"gif\", \"webp\") so you can save it with the correct file extension; if the format cannot be determined it is reported as \"original\". Export precedence: when you pass defaultFormat and/or defaultScale, those override the export settings configured on the node in Figma. When you omit them, the node-configured export settings are used if present, otherwise png at scale 1. Pass defaultFormat or defaultScale only when the user explicitly asks for a specific format, size, or resolution. For cross-file image transfer, use the raw image URLs with upload_assets. URLs are temporary — download promptly. Works on Figma design files (URL path `/design/`), Figma Slides (`/slides/`), and FigJam boards (`/board/`). Does NOT work on Figma Make files (`/make/`).",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "defaultFormat": {
+            "description": "Export format. When you provide this, it overrides any export settings configured on the node in Figma. When you omit it, the node-configured export format is used if present, otherwise png. Set this only when the user asks for a specific format.",
+            "enum": [
+              "png",
+              "jpg",
+              "svg",
+              "pdf"
+            ],
+            "type": "string"
+          },
+          "defaultScale": {
+            "description": "Export scale (resolution multiplier). When you provide this, it overrides any export settings configured on the node in Figma. When you omit it, the node-configured export scale is used if present, otherwise 1. Set this only when the user asks for a specific size or resolution.",
+            "maximum": 4,
+            "minimum": 0.01,
+            "type": "number"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileKey",
+          "nodeId"
+        ],
+        "type": "object"
+      },
+      "name": "download_assets",
+      "title": "Download Assets"
+    },
+    "export_video": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Export a Figma timeline node as an MP4 video. This tool only produces MP4 — GIF and animated SVG export are not supported yet. Renders the timeline server-side and returns a presigned download URL. The file stays available for `ttlSeconds` (defaults to 1 hour, clamped server-side to [30s, 7d]); use `availableUntil` in the response to know when it is deleted. Some renders finish in seconds, others take minutes; if the render hasn't finished within the handler budget, the response includes a `jobId` and `status: \"processing\"` — re-invoke `export_video` with `{ fileKey, jobId }` after 10–15s to poll. Required: `fileKey` and either `nodeId` (to start a new export) or `jobId` (to poll). The `nodeId` must be the top-level frame that owns the timeline — in a design file a frame placed directly on the page or in a section, and in Slides the slide itself (not a layer inside it) — not a nested layer or sub-clip. If you animated a descendant, pass its containing top-level frame (the slide, in Slides); if `get_motion_context` returns a `timelineCohorts` entry, its `rootNodeId` is that frame. Use the `quality` field (\"low\"/\"medium\"/\"high\") to control output size.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "constraint": {
+            "additionalProperties": false,
+            "description": "Output-size constraint. SCALE multiplies the node's natural size (value is the multiplier, e.g. 2 = 2x); WIDTH / HEIGHT pin that dimension to an absolute pixel count and scale the other to preserve aspect ratio. Optional; omit to render at the node's natural size (1x). Clamped server-side to a max 10x scale / 4096px per dimension. Ignored when polling with jobId.",
+            "properties": {
+              "type": {
+                "enum": [
+                  "SCALE",
+                  "WIDTH",
+                  "HEIGHT"
+                ],
+                "type": "string"
+              },
+              "value": {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "type": "object"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9]+$",
+            "type": "string"
+          },
+          "fps": {
+            "description": "Frames per second for the rendered MP4. Optional; the server picks a default.",
+            "exclusiveMinimum": 0,
+            "maximum": 60,
+            "type": "integer"
+          },
+          "jobId": {
+            "description": "Returned from a previous call when the export was still rendering. Pass this to poll. Provide nodeId OR jobId, never both — the call is rejected if both are set. When polling, fps/quality/ttlSeconds are ignored (they were fixed when the job was created).",
+            "format": "uuid",
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "The timeline node to export. Required when starting a new export. Provide nodeId OR jobId, never both — the call is rejected if both are set. Must be the top-level frame that owns the timeline — in a design file a frame placed directly on the page or in a section, and in Slides the slide itself (not a layer inside it) — not a nested layer or sub-clip. If you animated a descendant, pass its containing top-level frame (the slide, in Slides); if get_motion_context returns a `timelineCohorts` entry, its `rootNodeId` is that frame.",
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          },
+          "quality": {
+            "description": "Render quality preset. Higher quality means a larger file. Optional; the server picks a default.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "type": "string"
+          },
+          "ttlSeconds": {
+            "description": "How long (in seconds) the rendered MP4 is retained on the server. Each poll reissues a fresh presigned download URL; once this window elapses the file is deleted and the job is no longer reachable. Clamped server-side to [30, 7d].",
+            "maximum": 604800,
+            "minimum": 30,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "export_video",
+      "title": "Export Video"
+    },
+    "generate_diagram": {
+      "_meta": {
+        "openai/outputTemplate": "ui://widget/figjam-diagram.html",
+        "openai/toolInvocation/invoked": "Generated FigJam diagram",
+        "openai/toolInvocation/invoking": "Generating a FigJam diagram",
+        "securitySchemes": [
+          {
+            "type": "noauth"
+          },
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Create a flowchart, decision tree, gantt chart, sequence diagram, state diagram, or entity relationship diagram in FigJam, using Mermaid.js. Generated diagrams should be simple, unless a user asks for details. This tool also does not support generating Figma designs, class diagrams, timelines, venn diagrams, or other Mermaid.js diagram types. This tool also does not support font changes, or moving individual shapes around -- if a user asks for those changes to an existing diagram, encourage them to open the diagram in Figma. If the tool is unable to complete the user's task, reference the error that is passed back. Do not use the create_new_file tool prior to creating a diagram using this tool; generate_diagram creates its own files. IMPORTANT: After calling this tool, you MUST show the returned URL link to the user as a markdown link so they can view and edit the diagram.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "fileKey": {
+            "description": "Optional. The key of an existing FigJam file to add the diagram to. Extract from a Figma URL like figma.com/board/{fileKey}/... When provided, the diagram is placed directly in this file instead of creating a new one. The user must have edit access to the file.",
+            "type": "string"
+          },
+          "mermaidSyntax": {
+            "description": "Mermaid.js code for the diagram. Keep diagrams simple, unless the user has detailed requirements. Only the following diagram types are supported: graph, flowchart, sequenceDiagram, stateDiagram, stateDiagram-v2, gantt, and erDiagram. Make sure to use correct Mermaid.js syntax. For graph, flowchart, or entity relationship diagrams, use LR direction by default and put all shape and edge text in quotes (eg. [\"Text\"], -->|\"Edge Text\"|, --\"Edge Text\"-->). Do not use emojis in the Mermaid.js code. Do not use \n to represent new lines. Feel free to use the full range of shapes and connectors that Mermaid.js syntax offers. For graph and flowchart diagrams only, you can use color styling--but do so sparingly unless the user asks for it. In gantt charts, do not use color styling. In sequence diagrams, do not use notes. Do not use the word \"end\" in classNames.",
+            "type": "string"
+          },
+          "name": {
+            "description": "A human-readable title for the diagram. Keep it short, but descriptive.",
+            "type": "string"
+          },
+          "planKey": {
+            "description": "The team or organization key (e.g. \"team::1234567890\" or \"organization::1234567890\"). Use the `key` field verbatim from one of the user's plans. If the user has more than one plan, ask which one to use before calling. If the user is authenticated, you MUST provide this parameter. If the user already provided a planKey, use it directly. Otherwise, call the whoami tool first to get the list of plans. If the user has one plan, use its \"key\" field. If multiple, ask the user which team or organization to use.",
+            "minLength": 1,
+            "pattern": "^(team|organization)::\\d+$",
+            "type": "string"
+          },
+          "useArchitectureLayoutCode": {
+            "description": "Optional. To generate a diagram using the software architecture layout, pass the code from the architecture-diagram-instructions resource. Omit this parameter for standard diagrams.",
+            "type": "string"
+          },
+          "userIntent": {
+            "description": "A description of what the user is trying to accomplish with this tool call. Important: Do not add extraneous information other than what the user provides.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "mermaidSyntax"
+        ],
+        "type": "object"
+      },
+      "name": "generate_diagram",
+      "title": "Generate Diagram"
+    },
+    "generate_figma_design": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Capture, import, or convert a web page (by URL) or HTML into an *existing* Figma design file. Use this tool when the user wants to send, import, capture, screenshot, or push a webpage into Figma. REQUIRES an existing `fileKey` — if the user does not already have a Figma file, first call `create_new_file` (load the `figma-create-new-file` skill for the plan-resolution contract) and reuse the returned file_key here. Works with both local dev servers (localhost) and external websites. For LOCAL projects: explore the user's codebase to identify the page, dev server command, and URL before calling. For EXTERNAL URLs (not localhost): use Playwright MCP to capture — do NOT use 'open' with hash fragments on external sites. Call this tool with a fileKey (no captureId) to get the capture script + a captureId, then poll with the captureId every 5 seconds (up to 10 times) until status is 'completed'. Each capture ID is single-use. \n\nUSING generate_figma_design WITH use_figma:\n- For web apps, use BOTH tools in parallel: run this tool (generate_figma_design) to capture a pixel-perfect layout, and use use_figma with search_design_system to build the screen from design system components.\n- Once both complete, refine the use_figma output to match the pixel-perfect layout from this tool's capture, then delete this tool's output (it was used as a layout reference only).\n- For non-web apps (e.g. iOS), use use_figma only.\n- For updating/syncing a page already in Figma, use use_figma only.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "captureId": {
+            "description": "ID returned from the initial call. If provided, polls for capture completion. Each capture ID is single-use and captures exactly one page; call this tool once per page to capture multiple pages, all targeting the same fileKey.",
+            "type": "string"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "Optional node ID to append the capture under. If not provided, a new page is created in the file.",
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "generate_figma_design",
+      "title": "Generate Figma Design"
+    },
+    "get_code_connect_map": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Get a mapping of {[nodeId]: {codeConnectSrc: e.g. location of component in codebase, codeConnectName: e.g. name of component in codebase} E.g. {'1:2': { codeConnectSrc: 'https://github.com/foo/components/Button.tsx', codeConnectName: 'Button' } }. Use the nodeId parameter to specify a node id. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id and file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "codeConnectLabel": {
+            "description": "The label used to fetch Code Connect information for a particular language or framework when multiple Code Connect mappings exist.",
+            "type": "string"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "minLength": 1,
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_code_connect_map",
+      "title": "Get Code Connect Mapping"
+    },
+    "get_code_connect_suggestions": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Get AI-suggested strategy for linking a Figma node to code components via Code Connect. Workflow: call this tool → review suggestions with the user → call send_code_connect_mappings to save the approved mappings. \n\nUse the nodeId parameter to specify a node id. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id and file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "excludeMappingPrompt": {
+            "description": "Whether to exclude the prompt text and images from the response, returning only a lightweight list of unmapped components.",
+            "type": "boolean"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "minLength": 1,
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_code_connect_suggestions",
+      "title": "Get Code Connect Suggestions"
+    },
+    "get_context_for_code_connect": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Get structured component metadata including properties, variants, and descendant tree for a Figma component or component set. Returns property definitions with types and variant options, and a tree of descendant instances and text nodes with their property references. Designed for creating Code Connect template files. Use the nodeId parameter to specify a node id. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id and file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "minLength": 1,
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_context_for_code_connect",
+      "title": "Get Code Connect Context"
+    },
+    "get_design_context": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Get design context for a Figma node — the primary tool for design-to-code workflows. Returns reference code, a screenshot, and contextual metadata that should be adapted to the target project. See the server instructions for how to interpret and adapt the response. \n\nUse the nodeId parameter to specify a node id. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id and file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId. If the URL is of the format https://figma.com/design/:fileKey/branch/:branchKey/:fileName then use the branchKey as the fileKey. If the URL is of the format https://figma.com/make/:makeFileKey/:makeFileName then use the makeFileKey to identify the Figma Make file. Only for Figma Make files (URLs containing `/make/`), and only when calling get_design_context, assume the nodeId is `0:1`. The response will contain a code string and a JSON of download URLs for the assets referenced in the code. It will also include a screenshot of the node for context by default.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "clientFrameworks": {
+            "description": "A comma separated list of frameworks used by the client in the current context, e.g. `react`, `vue`, `django` etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which frameworks are being used. If you are unsure, it is better to list `unknown` than to make a guess",
+            "type": "string"
+          },
+          "clientLanguages": {
+            "description": "A comma separated list of programming languages used by the client in the current context in string form, e.g. `javascript`, `html,css,typescript`, etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which languages are being used. If you are unsure, it is better to list `unknown` than to make a guess.",
+            "type": "string"
+          },
+          "disableCodeConnect": {
+            "description": "Whether Code Connect should be used to get the design context. Only set this when the user directly requests to disable Code Connect.",
+            "type": "boolean"
+          },
+          "excludeScreenshot": {
+            "description": "Whether to exclude the screenshot of the design from the response. IMPORTANT: it is not recommended to exclude screenshots. Only set this to true if the user has explicitly requested it or you are trying to preserve context.",
+            "type": "boolean"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "forceCode": {
+            "description": "Whether code should always be returned, instead of returning just metadata if the output size is too large. Only set this when the user directly requests to force the code. ",
+            "type": "boolean"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "minLength": 1,
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_design_context",
+      "title": "Get Design Context"
+    },
+    "get_figjam": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Generate UI code for a given FigJam node in Figma. Use the nodeId parameter to specify a node id. If no node id is provided, use `0:1` which is the root node ID. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id from the URL, for example, if given the URL https://figma.com/board/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`. IMPORTANT: This tool only works for FigJam files (URL path `/board/`), not other Figma files.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "fileKey": {
+            "description": "The key of the FigJam (board) file to use. If a URL is provided, extract the file key from the FigJam board URL. The given URL must be in the format https://figma.com/board/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. A `/design/...` URL is NOT a FigJam file — do not call this tool with a design fileKey.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "includeImagesOfNodes": {
+            "default": true,
+            "description": "Whether to include images of nodes in the response",
+            "type": "boolean"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the FigJam board, eg. \"123:456\" or \"123-456\". If a URL is provided, extract the node id from the FigJam board URL, e.g. for https://figma.com/board/:fileKey/:fileName?node-id=1-2 the extracted nodeId would be `1:2`. Do not pass an empty string for node_id.",
+            "minLength": 1,
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_figjam",
+      "title": "Get FigJam Content"
+    },
+    "get_libraries": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Get the design libraries associated with a Figma file. Returns two lists: (1) libraries currently added to the file (subscribed), and (2) libraries available to add (community UI kits and organization libraries). Each library includes its name, library key, description, and source type. The organization libraries portion of libraries_available_to_add is paginated — when the response includes a libraries_available_to_add_next_offset value, pass it back via the offset parameter to fetch the next page. Use the library keys from the response to scope searches with search_design_system by passing them as includeLibraryKeys.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "fileKey": {
+            "description": "The key of the Figma file to get libraries for.",
+            "type": "string"
+          },
+          "offset": {
+            "description": "Pagination offset from a previous response (libraries_available_to_add_next_offset). Pass this to fetch the next page of organization libraries in libraries_available_to_add.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_libraries",
+      "title": "Get Libraries"
+    },
+    "get_metadata": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "IMPORTANT: Always prefer to use get_design_context tool. Get metadata for a node or page in the Figma desktop app in XML format. Useful only for getting an overview of the structure, it only includes node IDs, layer types, names, positions and sizes. You can call get_design_context on the node IDs contained in this response. Use the nodeId parameter to specify a node id, it can also be the page id (e.g. 0:1). IMPORTANT: This tool only works for Figma design files (URL path `/design/`). It is NOT supported for FigJam (`/board/`) or Slides (`/slides/`) files. This tool is not supported for Figma Make Files (URLs containing `/make/`). The nodeId parameter is optional: when omitted, the tool returns a list of the top-level pages (guid + name) in the document instead of an XML dump — use this when you don't yet know which page or node to drill into. If the URL includes `node-id`, extract it and pass it as nodeId; for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2`. If the URL does not include `node-id`, do not set nodeId; omit the field so the tool lists top-level pages. Do not pass an empty or guessed nodeId. If the URL is of the format https://figma.com/design/:fileKey/branch/:branchKey/:fileName then use the branchKey as the fileKey.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "clientFrameworks": {
+            "description": "A comma separated list of frameworks used by the client in the current context, e.g. `react`, `vue`, `django` etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which frameworks are being used. If you are unsure, it is better to list `unknown` than to make a guess",
+            "type": "string"
+          },
+          "clientLanguages": {
+            "description": "A comma separated list of programming languages used by the client in the current context in string form, e.g. `javascript`, `html,css,typescript`, etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which languages are being used. If you are unsure, it is better to list `unknown` than to make a guess.",
+            "type": "string"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "minLength": 1,
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_metadata",
+      "title": "Get Metadata"
+    },
+    "get_motion_context": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Get keyframe animation data for a Figma node. Returns animated-node inventory, keyframe tracks with easing curves, pre-computed CSS/@keyframes and motion.dev code snippets, and timeline coordination hints for recursive calls. Use after get_design_context for motion-aware code generation. Use the nodeId parameter to specify a node id. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id and file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "clientFrameworks": {
+            "description": "A comma separated list of frameworks used by the client in the current context, e.g. `react`, `vue`, `django` etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which frameworks are being used. If you are unsure, it is better to list `unknown` than to make a guess",
+            "type": "string"
+          },
+          "clientLanguages": {
+            "description": "A comma separated list of programming languages used by the client in the current context in string form, e.g. `javascript`, `html,css,typescript`, etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which languages are being used. If you are unsure, it is better to list `unknown` than to make a guess.",
+            "type": "string"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          },
+          "recursive": {
+            "default": false,
+            "description": "If true, traverses the subtree and returns motion data for all descendant nodes with animations.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_motion_context",
+      "title": "Get Motion Context"
+    },
+    "get_screenshot": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Generate a screenshot for a given node or the currently selected node in the Figma desktop app. Works on Figma design files (URL path `/design/`), FigJam boards (`/board/`), and Figma Slides (`/slides/`). The optional `maxDimension` parameter (positive integer, max 65536, default 1024) caps the longer edge of the rendered PNG in pixels — increase it when you need to inspect fine detail, decrease it for thumbnails or to save context. The JSON metadata entry in the response includes both `width`/`height` (the rendered PNG size) and `original_width`/`original_height` (the node's natural canvas size before any clamping), so callers can decide whether to re-request at a higher `maxDimension`. Use the nodeId parameter to specify a node id. nodeId parameter is REQUIRED. Use the fileKey parameter to specify the file key. fileKey parameter is REQUIRED. If a URL is provided, extract the file key and node id from the URL. For example, if given the URL https://figma.com/design/pqrs/ExampleFile?node-id=1-2 the extracted fileKey would be `pqrs` and the extracted nodeId would be `1:2`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId. This tool is not supported for Figma Make Files (URLs containing `/make/`). By default this tool returns a short-lived URL to the screenshot plus curl instructions for downloading the PNG — the URL+curl path is strongly preferred because it uses far fewer tokens than embedding the image inline. The `enableBase64Response` parameter defaults to `false`. Only set `enableBase64Response: true` when the agent cannot fetch URLs (no shell access, no HTTP client, or a sandboxed environment that blocks outbound requests); when set, an inline base64 image entry is appended to the response in addition to the URL and curl instructions. If the URL is of the format https://figma.com/design/:fileKey/branch/:branchKey/:fileName then use the branchKey as the fileKey.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "contentsOnly": {
+            "description": "When true, renders the node in isolation — floating/overlapping content (e.g. connectors parented to the page that visually sit above a section) is excluded. Defaults to false so screenshots match what the user sees on the canvas. Only set to true if the caller specifically needs the isolated render.",
+            "type": "boolean"
+          },
+          "enableBase64Response": {
+            "default": false,
+            "description": "When true, the response also includes the screenshot inline as a base64-encoded image entry, in addition to the short-lived URL and curl instructions. Defaults to false. Set to true ONLY if the agent cannot fetch URLs (no shell access, no HTTP client, or a sandboxed environment that blocks outbound requests)",
+            "type": "boolean"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxDimension": {
+            "default": 1024,
+            "description": "Optional. Maximum pixel size of the longer edge of the rendered screenshot — the server scales the node so that max(width, height) ≤ maxDimension while preserving aspect ratio. Defaults to 1024. Must be a positive integer; values above 65536 are rejected. Increase when the agent will visually inspect fine detail; decrease for thumbnails or to save context.",
+            "maximum": 65536,
+            "type": "integer"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "minLength": 1,
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_screenshot",
+      "title": "Get Screenshot"
+    },
+    "get_shader_effect": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Reads a shader effect from the account library by id (from list_shader_effects), returning its name, description, version, and a manifest of its source files as { filename, bytes, uri }. Read each file's contents from its uri as an MCP resource (contents are not inlined here). Pass an optional version (commit SHA) to read a specific build; defaults to the latest.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The id of the resource to read, taken from the matching list tool.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "description": "Optional 40-character commit SHA. Defaults to the latest built version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "get_shader_effect",
+      "title": "Get Shader Effect"
+    },
+    "get_shader_fill": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Reads a shader fill from the account library by id (from list_shader_fills), returning its name, description, version, and a manifest of its source files as { filename, bytes, uri }. Read each file's contents from its uri as an MCP resource (contents are not inlined here). Pass an optional version (commit SHA) to read a specific build; defaults to the latest.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The id of the resource to read, taken from the matching list tool.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "description": "Optional 40-character commit SHA. Defaults to the latest built version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "get_shader_fill",
+      "title": "Get Shader Fill"
+    },
+    "get_variable_defs": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Get variable definitions for a given node id. E.g. {'icon/default/secondary': #949494}Variables are reusable values that can be applied to all kinds of design properties, such as fonts, colors, sizes and spacings. Use the nodeId parameter to specify a node id. Extract the node id from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId. This remote tool requires a concrete node target. This tool is not supported for Figma Make Files (URLs containing `/make/`). If the URL is of the format https://figma.com/design/:fileKey/branch/:branchKey/:fileName then use the branchKey as the fileKey.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "minLength": 1,
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "get_variable_defs",
+      "title": "Get Variable Definitions"
+    },
+    "list_shader_effects": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Lists the shader effects in the authenticated user's account library. Returns each effect's id, name, and description (plus a nextCursor when more pages exist). Use the id with get_shader_effect to read an effect's source. Shader effects are post-effects that sample an input raster, distinct from custom tools and shader fills.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Pagination cursor returned as nextCursor by a previous call. Omit to fetch the first page.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_shader_effects",
+      "title": "List Shader Effects"
+    },
+    "list_shader_fills": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Lists the shader fills in the authenticated user's account library. Returns each fill's id, name, and description (plus a nextCursor when more pages exist). Use the id with get_shader_fill to read a fill's source. Shader fills generate pixels directly with no input raster, distinct from custom tools and shader effects.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Pagination cursor returned as nextCursor by a previous call. Omit to fetch the first page.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_shader_fills",
+      "title": "List Shader Fills"
+    },
+    "search_design_system": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Search for design system assets (components, variables, and styles) based on a text query. Returns matching assets from all design libraries. Use this when you need to find specific components, variables (e.g. colors, spacing tokens), or styles from design libraries.\nResults are stable within a turn — do not re-issue the same arguments, including when the result is empty.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "disableCodeConnect": {
+            "description": "Whether to disable Code Connect for search results.",
+            "type": "boolean"
+          },
+          "fileKey": {
+            "description": "The file key for context",
+            "type": "string"
+          },
+          "includeComponents": {
+            "default": true,
+            "description": "Whether to include components in the search results. Defaults to true.",
+            "type": "boolean"
+          },
+          "includeLibraryKeys": {
+            "description": "Optional list of library keys to restrict the search to. When provided, only results from these libraries are returned. Library keys are returned in previous search results.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "includeStyles": {
+            "default": true,
+            "description": "Whether to include styles in the search results. Defaults to true.",
+            "type": "boolean"
+          },
+          "includeVariables": {
+            "default": true,
+            "description": "Whether to include variables in the search results. Defaults to true.",
+            "type": "boolean"
+          },
+          "query": {
+            "description": "Text query to search for design system components",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "search_design_system",
+      "title": "Search Design System"
+    },
+    "send_code_connect_mappings": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Save multiple Code Connect mappings in bulk. Use after get_code_connect_suggestions to confirm and save approved mappings. \n\nUse the nodeId parameter to specify a node id. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id and file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "clientFrameworks": {
+            "description": "A comma separated list of frameworks used by the client in the current context, e.g. `react`, `vue`, `django` etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which frameworks are being used. If you are unsure, it is better to list `unknown` than to make a guess",
+            "type": "string"
+          },
+          "clientLanguages": {
+            "description": "A comma separated list of programming languages used by the client in the current context in string form, e.g. `javascript`, `html,css,typescript`, etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which languages are being used. If you are unsure, it is better to list `unknown` than to make a guess.",
+            "type": "string"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "mappings": {
+            "items": {
+              "additionalProperties": false,
+              "description": "An array of Code Connect mapping objects used to map nodes to code components",
+              "properties": {
+                "componentName": {
+                  "description": "The component name, e.g. \"Button/Primary\"",
+                  "type": "string"
+                },
+                "label": {
+                  "description": "The framework or language label for this Code Connect mapping",
+                  "enum": [
+                    "React",
+                    "Web Components",
+                    "Vue",
+                    "Svelte",
+                    "Storybook",
+                    "Javascript",
+                    "Swift",
+                    "Swift UIKit",
+                    "Objective-C UIKit",
+                    "SwiftUI",
+                    "Compose",
+                    "Java",
+                    "Kotlin",
+                    "Android XML Layout",
+                    "Flutter",
+                    "Markdown"
+                  ],
+                  "type": "string"
+                },
+                "nodeId": {
+                  "description": "The Figma node identifier",
+                  "type": "string"
+                },
+                "source": {
+                  "description": "The path to the component in the codebase",
+                  "type": "string"
+                },
+                "template": {
+                  "description": "The executable JS template code for a Code Connect template. When provided, creates a figmadoc-type record (full template) instead of a component_browser mapping (simple mapping).",
+                  "type": "string"
+                },
+                "templateDataJson": {
+                  "description": "JSON string of template metadata. May include isParserless (boolean), imports, nestable, props fields. If omitted when template is provided, defaults to {}.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "nodeId",
+                "componentName",
+                "source",
+                "label"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nodeId": {
+            "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodeId",
+          "fileKey",
+          "mappings"
+        ],
+        "type": "object"
+      },
+      "name": "send_code_connect_mappings",
+      "title": "Send Code Connect Mappings"
+    },
+    "upload_assets": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Upload assets (images, etc.) into a Figma file. Call with a \"count\" to get that many single-use upload URLs. POST raw asset bytes to each URL with the correct Content-Type header (e.g. image/png, image/jpeg). Each upload URL handles storage, BlobStore commit, and canvas placement automatically. For a single image with nodeId, sets it as a fill on that existing node. Without nodeId, creates new frames with image fills on the current page. Supports PNG, JPG, GIF, and WebP formats. Max 10MB per asset. SVGs are NOT supported here — to add an SVG, use the `use_figma` tool and call `figma.createNodeFromSvg()` instead. Works on Figma design files (URL path `/design/`), FigJam boards (`/board/`), and Figma Slides (`/slides/`).",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "batchCommit": {
+            "default": false,
+            "description": "Optional. Set to true only if you can call the returned commitUrl exactly once after all uploads complete. When enabled server-side, this commits and places all assets in one file operation. If omitted, each upload URL commits and places its asset automatically.",
+            "type": "boolean"
+          },
+          "count": {
+            "default": 1,
+            "description": "Number of assets to upload (default 1, no maximum). Returns that many single-use upload URLs. POST raw asset bytes to each URL with the correct Content-Type header (e.g. image/png, image/jpeg); the URLs can be POSTed in parallel. By default, each upload URL handles storage, BlobStore commit, and canvas placement automatically.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeId": {
+            "description": "Optional. If provided, sets the uploaded asset as a fill on this existing node. Can only be used when count is 1.",
+            "pattern": "^\\d+[:-]\\d+$",
+            "type": "string"
+          },
+          "scaleMode": {
+            "default": "FILL",
+            "description": "How the image fills the node. Default: FILL.",
+            "enum": [
+              "FILL",
+              "FIT",
+              "TILE"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "upload_assets",
+      "title": "Upload Assets"
+    },
+    "use_figma": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Create, edit, generate, or sync any design in Figma — UIs, screens, mockups, components, frames, variables, styles, text, images, layouts, and design systems. This is the general-purpose tool for writing to Figma; it works by running JavaScript via the Figma Plugin API. Works on Figma design files (URL path `/design/`), FigJam boards (`/board/`), and Figma Slides (`/slides/`).\n\nIMPORTANT: Before calling this tool, load figma-use guidance — prefer the /figma-use skill if available, otherwise read the skill://figma/figma-use/SKILL.md MCP resource if available. Skipping this causes common, hard-to-debug failures.\n\nUse this tool when the user wants to:\n- Create or generate a design, screen, UI, or mockup in Figma — from scratch, from intent, or from code\n- Update, edit, or sync an existing Figma design\n- Generate or sync Figma designs from source code\n- Set up or modify design tokens, variables, or styles\n- Build or extend a design system or component/variant library\n- Fix layout, spacing, auto-layout, or fill/hug issues\n- Add component descriptions, annotations and Code Connect metadata to nodes\n- Review or fix accessibility, contrast, typography, or visual polish\n- Inspect or query node properties programmatically\n\nCHOOSING BETWEEN use_figma AND generate_figma_design:\n- Default to this tool (use_figma) for all Figma write operations.\n- generate_figma_design is the exception: use it ONLY when capturing a web app page or view into Figma for the first time. For web apps, run both tools in parallel — generate_figma_design captures a pixel-perfect screenshot, use_figma builds the screen from imported design system components, then refine use_figma against the screenshot.\n- For non-web targets (iOS, Android, generic UI) and from-scratch designs, use this tool only.\n- For updating or syncing a Figma page already captured into Figma, use this tool — even if the source code has changed.\nGOTCHAS:\n- For the font \"Inter\", the style is \"Semi Bold\", not \"SemiBold\" and \"Extra Bold\" not \"ExtraBold\".\n",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "JavaScript code to execute. Has access to the `figma` global (Figma Plugin API)",
+            "maxLength": 50000,
+            "type": "string"
+          },
+          "description": {
+            "description": "A concise description of what the code aims to do",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "skillNames": {
+            "description": "A comma-separated list of Figma skill names being followed, if any (e.g. \"figma-use\", \"figma-use,figma-generate-design\"). Only pass this when explicitly instructed to by skill documentation. Used for logging purposes. If the skill was loaded via a skill-content MCP resource, prefix the skill name with \"resource:\". (e.g. \"resource:figma-use\", \"resource:figma-use,resource:figma-generate-design\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileKey",
+          "code",
+          "description"
+        ],
+        "type": "object"
+      },
+      "name": "use_figma",
+      "title": "Use Figma"
+    },
+    "whoami": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Returns information about the authenticated user. If you are experiencing permission issues with other tools, you can use this tool to get information about who is authenticated and validate the right user is logged in.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {},
+        "type": "object"
+      },
+      "name": "whoami",
+      "title": "Who Am I"
+    }
+  },
+  "resources": [
+    {
+      "description": "Figma MCP docs: add custom rules",
+      "mimeType": "text/markdown",
+      "name": "add-custom-rules",
+      "title": "add custom rules",
+      "uri": "file://figma/docs/add-custom-rules.md"
+    },
+    {
+      "name": "architecture-diagram-instructions",
+      "uri": "file://figma/docs/architecture-diagram-instructions.md"
+    },
+    {
+      "description": "Figma MCP docs: avoid large frames",
+      "mimeType": "text/markdown",
+      "name": "avoid-large-frames",
+      "title": "avoid large frames",
+      "uri": "file://figma/docs/avoid-large-frames.md"
+    },
+    {
+      "description": "Figma MCP docs: bringing make context to your agent",
+      "mimeType": "text/markdown",
+      "name": "bringing-make-context-to-your-agent",
+      "title": "bringing make context to your agent",
+      "uri": "file://figma/docs/bringing-make-context-to-your-agent.md"
+    },
+    {
+      "description": "Figma MCP docs: code connect integration",
+      "mimeType": "text/markdown",
+      "name": "code-connect-integration",
+      "title": "code connect integration",
+      "uri": "file://figma/docs/code-connect-integration.md"
+    },
+    {
+      "description": "Figma MCP docs: code to canvas",
+      "mimeType": "text/markdown",
+      "name": "code-to-canvas",
+      "title": "code to canvas",
+      "uri": "file://figma/docs/code-to-canvas.md"
+    },
+    {
+      "description": "Figma MCP docs: create skills",
+      "mimeType": "text/markdown",
+      "name": "create-skills",
+      "title": "create skills",
+      "uri": "file://figma/docs/create-skills.md"
+    },
+    {
+      "description": "Figma MCP docs: getting 500 error",
+      "mimeType": "text/markdown",
+      "name": "getting-500-error",
+      "title": "getting 500 error",
+      "uri": "file://figma/docs/getting-500-error.md"
+    },
+    {
+      "description": "Figma MCP docs: images stopped loading",
+      "mimeType": "text/markdown",
+      "name": "images-stopped-loading",
+      "title": "images stopped loading",
+      "uri": "file://figma/docs/images-stopped-loading.md"
+    },
+    {
+      "description": "Figma MCP docs: intro",
+      "mimeType": "text/markdown",
+      "name": "intro",
+      "title": "intro",
+      "uri": "file://figma/docs/intro.md"
+    },
+    {
+      "description": "Figma MCP docs: local server installation",
+      "mimeType": "text/markdown",
+      "name": "local-server-installation",
+      "title": "local server installation",
+      "uri": "file://figma/docs/local-server-installation.md"
+    },
+    {
+      "description": "Figma MCP docs: mcp clients issues",
+      "mimeType": "text/markdown",
+      "name": "mcp-clients-issues",
+      "title": "mcp clients issues",
+      "uri": "file://figma/docs/mcp-clients-issues.md"
+    },
+    {
+      "description": "Figma MCP docs: mcp vs agent",
+      "mimeType": "text/markdown",
+      "name": "mcp-vs-agent",
+      "title": "mcp vs agent",
+      "uri": "file://figma/docs/mcp-vs-agent.md"
+    },
+    {
+      "description": "Figma MCP docs: rate limits access",
+      "mimeType": "text/markdown",
+      "name": "rate-limits-access",
+      "title": "rate limits access",
+      "uri": "file://figma/docs/rate-limits-access.md"
+    },
+    {
+      "description": "Figma MCP docs: remote server installation",
+      "mimeType": "text/markdown",
+      "name": "remote-server-installation",
+      "title": "remote server installation",
+      "uri": "file://figma/docs/remote-server-installation.md"
+    },
+    {
+      "description": "Figma MCP docs: server returning web code",
+      "mimeType": "text/markdown",
+      "name": "server-returning-web-code",
+      "title": "server returning web code",
+      "uri": "file://figma/docs/server-returning-web-code.md"
+    },
+    {
+      "description": "Figma MCP docs: structure figma file",
+      "mimeType": "text/markdown",
+      "name": "structure-figma-file",
+      "title": "structure figma file",
+      "uri": "file://figma/docs/structure-figma-file.md"
+    },
+    {
+      "description": "Figma MCP docs: stuck or slow",
+      "mimeType": "text/markdown",
+      "name": "stuck-or-slow",
+      "title": "stuck or slow",
+      "uri": "file://figma/docs/stuck-or-slow.md"
+    },
+    {
+      "description": "Figma MCP docs: tools and prompts",
+      "mimeType": "text/markdown",
+      "name": "tools-and-prompts",
+      "title": "tools and prompts",
+      "uri": "file://figma/docs/tools-and-prompts.md"
+    },
+    {
+      "description": "Figma MCP docs: tools not loading",
+      "mimeType": "text/markdown",
+      "name": "tools-not-loading",
+      "title": "tools not loading",
+      "uri": "file://figma/docs/tools-not-loading.md"
+    },
+    {
+      "description": "Figma MCP docs: trigger specific tools",
+      "mimeType": "text/markdown",
+      "name": "trigger-specific-tools",
+      "title": "trigger specific tools",
+      "uri": "file://figma/docs/trigger-specific-tools.md"
+    },
+    {
+      "description": "Figma MCP docs: variables vs code",
+      "mimeType": "text/markdown",
+      "name": "variables-vs-code",
+      "title": "variables vs code",
+      "uri": "file://figma/docs/variables-vs-code.md"
+    },
+    {
+      "description": "Figma MCP docs: write effective prompts",
+      "mimeType": "text/markdown",
+      "name": "write-effective-prompts",
+      "title": "write effective prompts",
+      "uri": "file://figma/docs/write-effective-prompts.md"
+    },
+    {
+      "description": "Figma MCP docs: write to canvas",
+      "mimeType": "text/markdown",
+      "name": "write-to-canvas",
+      "title": "write to canvas",
+      "uri": "file://figma/docs/write-to-canvas.md"
+    },
+    {
+      "_meta": {
+        "size": 10069
+      },
+      "description": "Reference for figma-code-connect. You must read skill://figma/figma-code-connect/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-code-connect/references/advanced-patterns.md",
+      "size": 10069,
+      "title": "figma-code-connect reference: references/advanced-patterns.md",
+      "uri": "skill://figma/figma-code-connect/references/advanced-patterns.md"
+    },
+    {
+      "_meta": {
+        "size": 23396
+      },
+      "description": "Reference for figma-code-connect. You must read skill://figma/figma-code-connect/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-code-connect/references/api.md",
+      "size": 23396,
+      "title": "figma-code-connect reference: references/api.md",
+      "uri": "skill://figma/figma-code-connect/references/api.md"
+    },
+    {
+      "_meta": {
+        "size": 25658
+      },
+      "description": "Creates and maintains Figma Code Connect template files that map Figma components to code snippets. Use when the user mentions Code Connect, Figma component mapping, design-to-code translation, or asks to create/update .figma.ts or .figma.js files.",
+      "mimeType": "text/markdown",
+      "name": "figma-code-connect",
+      "size": 25658,
+      "title": "Skill: figma-code-connect",
+      "uri": "skill://figma/figma-code-connect/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 3946
+      },
+      "description": "**MANDATORY prerequisite** — you MUST invoke this skill BEFORE every `create_new_file` tool call. NEVER call `create_new_file` directly without loading this skill first. Trigger whenever the user wants a new blank Figma file — a new design, FigJam, or Slides file — or when you need a fresh file before calling `use_figma`. Usage — /figma-create-new-file [editorType] [fileName] (e.g. /figma-create-new-file figjam My Whiteboard, /figma-create-new-file slides Q3 Review)",
+      "mimeType": "text/markdown",
+      "name": "figma-create-new-file",
+      "size": 3946,
+      "title": "Skill: figma-create-new-file",
+      "uri": "skill://figma/figma-create-new-file/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 1764
+      },
+      "description": "Reference for figma-generate-design. You must read skill://figma/figma-generate-design/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-design/references/componentization.md",
+      "size": 1764,
+      "title": "figma-generate-design reference: references/componentization.md",
+      "uri": "skill://figma/figma-generate-design/references/componentization.md"
+    },
+    {
+      "_meta": {
+        "size": 4699
+      },
+      "description": "Reference for figma-generate-design. You must read skill://figma/figma-generate-design/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-design/references/discover-product-font.md",
+      "size": 4699,
+      "title": "figma-generate-design reference: references/discover-product-font.md",
+      "uri": "skill://figma/figma-generate-design/references/discover-product-font.md"
+    },
+    {
+      "_meta": {
+        "size": 33206
+      },
+      "description": "Use this skill alongside figma-use when the task involves translating an application page, view, or multi-section layout into Figma. Triggers: 'write to Figma', 'create in Figma from code', 'push page to Figma', 'take this app/page and build it in Figma', 'create a screen', 'build a landing page in Figma', 'update the Figma screen to match code', 'convert this modal/dialog/drawer/panel to Figma'. This is the preferred workflow skill whenever the user wants to build or update a full page, modal, dialog, drawer, sidebar, panel, or any composed multi-section view in Figma from code or a description. Discovers design system components, variables, and styles from Code Connect files, existing screens, and library search, then imports them and assembles views incrementally section-by-section using design system tokens instead of hardcoded values.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-design",
+      "size": 33206,
+      "title": "Skill: figma-generate-design",
+      "uri": "skill://figma/figma-generate-design/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 13551
+      },
+      "description": "Reference for figma-generate-diagram. You must read skill://figma/figma-generate-diagram/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-diagram/references/architecture.md",
+      "size": 13551,
+      "title": "figma-generate-diagram reference: references/architecture.md",
+      "uri": "skill://figma/figma-generate-diagram/references/architecture.md"
+    },
+    {
+      "_meta": {
+        "size": 13388
+      },
+      "description": "Reference for figma-generate-diagram. You must read skill://figma/figma-generate-diagram/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-diagram/references/erd.md",
+      "size": 13388,
+      "title": "figma-generate-diagram reference: references/erd.md",
+      "uri": "skill://figma/figma-generate-diagram/references/erd.md"
+    },
+    {
+      "_meta": {
+        "size": 19558
+      },
+      "description": "Reference for figma-generate-diagram. You must read skill://figma/figma-generate-diagram/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-diagram/references/flowchart.md",
+      "size": 19558,
+      "title": "figma-generate-diagram reference: references/flowchart.md",
+      "uri": "skill://figma/figma-generate-diagram/references/flowchart.md"
+    },
+    {
+      "_meta": {
+        "size": 13253
+      },
+      "description": "Reference for figma-generate-diagram. You must read skill://figma/figma-generate-diagram/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-diagram/references/gantt.md",
+      "size": 13253,
+      "title": "figma-generate-diagram reference: references/gantt.md",
+      "uri": "skill://figma/figma-generate-diagram/references/gantt.md"
+    },
+    {
+      "_meta": {
+        "size": 14982
+      },
+      "description": "Reference for figma-generate-diagram. You must read skill://figma/figma-generate-diagram/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-diagram/references/sequence.md",
+      "size": 14982,
+      "title": "figma-generate-diagram reference: references/sequence.md",
+      "uri": "skill://figma/figma-generate-diagram/references/sequence.md"
+    },
+    {
+      "_meta": {
+        "size": 14654
+      },
+      "description": "Reference for figma-generate-diagram. You must read skill://figma/figma-generate-diagram/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-diagram/references/state.md",
+      "size": 14654,
+      "title": "figma-generate-diagram reference: references/state.md",
+      "uri": "skill://figma/figma-generate-diagram/references/state.md"
+    },
+    {
+      "_meta": {
+        "size": 11141
+      },
+      "description": "Reference for figma-generate-diagram. You must read skill://figma/figma-generate-diagram/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-diagram/references/workflow.md",
+      "size": 11141,
+      "title": "figma-generate-diagram reference: references/workflow.md",
+      "uri": "skill://figma/figma-generate-diagram/references/workflow.md"
+    },
+    {
+      "_meta": {
+        "size": 10272
+      },
+      "description": "MANDATORY prerequisite — load this skill BEFORE every `generate_diagram` tool call. NEVER call `generate_diagram` directly without loading this skill first. Trigger whenever the user asks to create, generate, draw, render, sketch, or build a diagram — flowchart, architecture diagram, sequence diagram, ERD or entity-relationship diagram, state diagram or state machine, gantt chart, or timeline. Also trigger when the user mentions Mermaid syntax or wants a system architecture, decision tree, dependency graph, API call flow, auth handshake, schema, or pipeline visualized in FigJam. Routes to type-specific guidance, sets universal Mermaid constraints, and tells you when to use a different diagram type or skip the tool entirely (mindmaps, pie charts, class diagrams, etc.).",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-diagram",
+      "size": 10272,
+      "title": "Skill: figma-generate-diagram",
+      "uri": "skill://figma/figma-generate-diagram/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 12456
+      },
+      "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-library/references/code-connect-setup.md",
+      "size": 12456,
+      "title": "figma-generate-library reference: references/code-connect-setup.md",
+      "uri": "skill://figma/figma-generate-library/references/code-connect-setup.md"
+    },
+    {
+      "_meta": {
+        "size": 40574
+      },
+      "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-library/references/component-creation.md",
+      "size": 40574,
+      "title": "figma-generate-library reference: references/component-creation.md",
+      "uri": "skill://figma/figma-generate-library/references/component-creation.md"
+    },
+    {
+      "_meta": {
+        "size": 21440
+      },
+      "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-library/references/discovery-phase.md",
+      "size": 21440,
+      "title": "figma-generate-library reference: references/discovery-phase.md",
+      "uri": "skill://figma/figma-generate-library/references/discovery-phase.md"
+    },
+    {
+      "_meta": {
+        "size": 29037
+      },
+      "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-library/references/documentation-creation.md",
+      "size": 29037,
+      "title": "figma-generate-library reference: references/documentation-creation.md",
+      "uri": "skill://figma/figma-generate-library/references/documentation-creation.md"
+    },
+    {
+      "_meta": {
+        "size": 23032
+      },
+      "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-library/references/error-recovery.md",
+      "size": 23032,
+      "title": "figma-generate-library reference: references/error-recovery.md",
+      "uri": "skill://figma/figma-generate-library/references/error-recovery.md"
+    },
+    {
+      "_meta": {
+        "size": 19003
+      },
+      "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-library/references/naming-conventions.md",
+      "size": 19003,
+      "title": "figma-generate-library reference: references/naming-conventions.md",
+      "uri": "skill://figma/figma-generate-library/references/naming-conventions.md"
+    },
+    {
+      "_meta": {
+        "size": 35140
+      },
+      "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-library/references/token-creation.md",
+      "size": 35140,
+      "title": "figma-generate-library reference: references/token-creation.md",
+      "uri": "skill://figma/figma-generate-library/references/token-creation.md"
+    },
+    {
+      "_meta": {
+        "size": 22877
+      },
+      "description": "Build or update a professional-grade design system in Figma from a codebase. Use when the user wants to create variables/tokens, build component libraries, create individual components with proper variant sets and variable bindings, set up theming (light/dark modes), document foundations, or reconcile gaps between code and Figma. Also use when the user asks to create or generate any component in Figma — even a single one — since components require proper variable foundations, variant states, and design token bindings to be production-quality. This skill teaches WHAT to build and in WHAT ORDER — it complements the `figma-use` skill which teaches HOW to call the Plugin API. Both skills should be loaded together.",
+      "mimeType": "text/markdown",
+      "name": "figma-generate-library",
+      "size": 22877,
+      "title": "Skill: figma-generate-library",
+      "uri": "skill://figma/figma-generate-library/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 11705
+      },
+      "description": "Reference for figma-implement-motion. You must read skill://figma/figma-implement-motion/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-implement-motion/references/examples-and-anti-examples.md",
+      "size": 11705,
+      "title": "figma-implement-motion reference: references/examples-and-anti-examples.md",
+      "uri": "skill://figma/figma-implement-motion/references/examples-and-anti-examples.md"
+    },
+    {
+      "_meta": {
+        "size": 7003
+      },
+      "description": "Reference for figma-implement-motion. You must read skill://figma/figma-implement-motion/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-implement-motion/references/framework-recommendations.md",
+      "size": 7003,
+      "title": "figma-implement-motion reference: references/framework-recommendations.md",
+      "uri": "skill://figma/figma-implement-motion/references/framework-recommendations.md"
+    },
+    {
+      "_meta": {
+        "size": 9621
+      },
+      "description": "Reference for figma-implement-motion. You must read skill://figma/figma-implement-motion/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-implement-motion/references/gotchas.md",
+      "size": 9621,
+      "title": "figma-implement-motion reference: references/gotchas.md",
+      "uri": "skill://figma/figma-implement-motion/references/gotchas.md"
+    },
+    {
+      "_meta": {
+        "size": 2095
+      },
+      "description": "Reference for figma-implement-motion. You must read skill://figma/figma-implement-motion/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-implement-motion/references/motion-lint-rules.md",
+      "size": 2095,
+      "title": "figma-implement-motion reference: references/motion-lint-rules.md",
+      "uri": "skill://figma/figma-implement-motion/references/motion-lint-rules.md"
+    },
+    {
+      "_meta": {
+        "size": 8403
+      },
+      "description": "Reference for figma-implement-motion. You must read skill://figma/figma-implement-motion/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-implement-motion/references/svg-and-path-motion.md",
+      "size": 8403,
+      "title": "figma-implement-motion reference: references/svg-and-path-motion.md",
+      "uri": "skill://figma/figma-implement-motion/references/svg-and-path-motion.md"
+    },
+    {
+      "_meta": {
+        "size": 6164
+      },
+      "description": "Reference for figma-implement-motion. You must read skill://figma/figma-implement-motion/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-implement-motion/references/unsupported-and-fallbacks.md",
+      "size": 6164,
+      "title": "figma-implement-motion reference: references/unsupported-and-fallbacks.md",
+      "uri": "skill://figma/figma-implement-motion/references/unsupported-and-fallbacks.md"
+    },
+    {
+      "_meta": {
+        "size": 23279
+      },
+      "description": "Translates Figma motion and animations into production-ready application code. Use when implementing animation/motion from a Figma design — user mentions \"implement this motion\", \"add animation from Figma\", \"animate this component\", provides a Figma URL whose node is animated, or when `get_design_context` returns motion data or instructs you to call `get_motion_context`.",
+      "mimeType": "text/markdown",
+      "name": "figma-implement-motion",
+      "size": 23279,
+      "title": "Skill: figma-implement-motion",
+      "uri": "skill://figma/figma-implement-motion/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 18991
+      },
+      "description": "Reference for figma-swiftui. You must read skill://figma/figma-swiftui/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-swiftui/references/code-to-design.md",
+      "size": 18991,
+      "title": "figma-swiftui reference: references/code-to-design.md",
+      "uri": "skill://figma/figma-swiftui/references/code-to-design.md"
+    },
+    {
+      "_meta": {
+        "size": 37329
+      },
+      "description": "Reference for figma-swiftui. You must read skill://figma/figma-swiftui/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-swiftui/references/design-to-code.md",
+      "size": 37329,
+      "title": "figma-swiftui reference: references/design-to-code.md",
+      "uri": "skill://figma/figma-swiftui/references/design-to-code.md"
+    },
+    {
+      "_meta": {
+        "size": 4049
+      },
+      "description": "SwiftUI ↔ Figma translation. Use whenever the user mentions Swift, SwiftUI, iOS, iPhone, or iPad — in EITHER direction — translating a Figma design into SwiftUI (design → code), or pushing SwiftUI views / screens / tokens back into a Figma file (code → design). Triggers on phrases like 'implement this Figma design in SwiftUI', 'build this screen in Swift', 'push this SwiftUI view to Figma', 'mirror my Swift code in a Figma file', or whenever a Figma URL appears alongside `.swift` files / an `.xcodeproj`. Routes to a direction-specific reference doc; loads alongside `figma-use` for the code → design path.",
+      "mimeType": "text/markdown",
+      "name": "figma-swiftui",
+      "size": 4049,
+      "title": "Skill: figma-swiftui",
+      "uri": "skill://figma/figma-swiftui/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 7395
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/batch-modify.md",
+      "size": 7395,
+      "title": "figma-use-figjam reference: references/batch-modify.md",
+      "uri": "skill://figma/figma-use-figjam/references/batch-modify.md"
+    },
+    {
+      "_meta": {
+        "size": 2791
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/create-code-block.md",
+      "size": 2791,
+      "title": "figma-use-figjam reference: references/create-code-block.md",
+      "uri": "skill://figma/figma-use-figjam/references/create-code-block.md"
+    },
+    {
+      "_meta": {
+        "size": 11595
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/create-connector.md",
+      "size": 11595,
+      "title": "figma-use-figjam reference: references/create-connector.md",
+      "uri": "skill://figma/figma-use-figjam/references/create-connector.md"
+    },
+    {
+      "_meta": {
+        "size": 11831
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/create-label.md",
+      "size": 11831,
+      "title": "figma-use-figjam reference: references/create-label.md",
+      "uri": "skill://figma/figma-use-figjam/references/create-label.md"
+    },
+    {
+      "_meta": {
+        "size": 7695
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/create-section.md",
+      "size": 7695,
+      "title": "figma-use-figjam reference: references/create-section.md",
+      "uri": "skill://figma/figma-use-figjam/references/create-section.md"
+    },
+    {
+      "_meta": {
+        "size": 15946
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/create-shape-with-text.md",
+      "size": 15946,
+      "title": "figma-use-figjam reference: references/create-shape-with-text.md",
+      "uri": "skill://figma/figma-use-figjam/references/create-shape-with-text.md"
+    },
+    {
+      "_meta": {
+        "size": 10552
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/create-sticky.md",
+      "size": 10552,
+      "title": "figma-use-figjam reference: references/create-sticky.md",
+      "uri": "skill://figma/figma-use-figjam/references/create-sticky.md"
+    },
+    {
+      "_meta": {
+        "size": 13457
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/create-table.md",
+      "size": 13457,
+      "title": "figma-use-figjam reference: references/create-table.md",
+      "uri": "skill://figma/figma-use-figjam/references/create-table.md"
+    },
+    {
+      "_meta": {
+        "size": 18575
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/create-text.md",
+      "size": 18575,
+      "title": "figma-use-figjam reference: references/create-text.md",
+      "uri": "skill://figma/figma-use-figjam/references/create-text.md"
+    },
+    {
+      "_meta": {
+        "size": 12051
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/edit-text.md",
+      "size": 12051,
+      "title": "figma-use-figjam reference: references/edit-text.md",
+      "uri": "skill://figma/figma-use-figjam/references/edit-text.md"
+    },
+    {
+      "_meta": {
+        "size": 9228
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/figjam-colors.md",
+      "size": 9228,
+      "title": "figma-use-figjam reference: references/figjam-colors.md",
+      "uri": "skill://figma/figma-use-figjam/references/figjam-colors.md"
+    },
+    {
+      "_meta": {
+        "size": 17219
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/plan-board-content.md",
+      "size": 17219,
+      "title": "figma-use-figjam reference: references/plan-board-content.md",
+      "uri": "skill://figma/figma-use-figjam/references/plan-board-content.md"
+    },
+    {
+      "_meta": {
+        "size": 3920
+      },
+      "description": "Reference for figma-use-figjam. You must read skill://figma/figma-use-figjam/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam/references/position-figjam-nodes.md",
+      "size": 3920,
+      "title": "figma-use-figjam reference: references/position-figjam-nodes.md",
+      "uri": "skill://figma/figma-use-figjam/references/position-figjam-nodes.md"
+    },
+    {
+      "_meta": {
+        "size": 7089
+      },
+      "description": "This skill helps agents use Figma's use_figma MCP tool in the FigJam context. Can be used alongside figma-use which has foundational context for using the use_figma tool.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-figjam",
+      "size": 7089,
+      "title": "Skill: figma-use-figjam",
+      "uri": "skill://figma/figma-use-figjam/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 4591
+      },
+      "description": "Reference for figma-use-motion. You must read skill://figma/figma-use-motion/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-motion/references/motion-easing.md",
+      "size": 4591,
+      "title": "figma-use-motion reference: references/motion-easing.md",
+      "uri": "skill://figma/figma-use-motion/references/motion-easing.md"
+    },
+    {
+      "_meta": {
+        "size": 19966
+      },
+      "description": "Reference for figma-use-motion. You must read skill://figma/figma-use-motion/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-motion/references/motion-patterns.md",
+      "size": 19966,
+      "title": "figma-use-motion reference: references/motion-patterns.md",
+      "uri": "skill://figma/figma-use-motion/references/motion-patterns.md"
+    },
+    {
+      "_meta": {
+        "size": 6910
+      },
+      "description": "Motion / animation context for the `use_figma` MCP tool — animating Figma nodes via manual keyframes, animation styles, easing, and timeline duration. Load alongside figma-use whenever a task involves adding, editing, or inspecting animation on a node.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-motion",
+      "size": 6910,
+      "title": "Skill: figma-use-motion",
+      "uri": "skill://figma/figma-use-motion/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 6038
+      },
+      "description": "Reference for figma-use-slides. You must read skill://figma/figma-use-slides/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-slides/references/slide-content.md",
+      "size": 6038,
+      "title": "figma-use-slides reference: references/slide-content.md",
+      "uri": "skill://figma/figma-use-slides/references/slide-content.md"
+    },
+    {
+      "_meta": {
+        "size": 15827
+      },
+      "description": "Reference for figma-use-slides. You must read skill://figma/figma-use-slides/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-slides/references/slide-design.md",
+      "size": 15827,
+      "title": "figma-use-slides reference: references/slide-design.md",
+      "uri": "skill://figma/figma-use-slides/references/slide-design.md"
+    },
+    {
+      "_meta": {
+        "size": 16533
+      },
+      "description": "Reference for figma-use-slides. You must read skill://figma/figma-use-slides/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-slides/references/slide-gotchas.md",
+      "size": 16533,
+      "title": "figma-use-slides reference: references/slide-gotchas.md",
+      "uri": "skill://figma/figma-use-slides/references/slide-gotchas.md"
+    },
+    {
+      "_meta": {
+        "size": 3058
+      },
+      "description": "Reference for figma-use-slides. You must read skill://figma/figma-use-slides/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-slides/references/slide-grid.md",
+      "size": 3058,
+      "title": "figma-use-slides reference: references/slide-grid.md",
+      "uri": "skill://figma/figma-use-slides/references/slide-grid.md"
+    },
+    {
+      "_meta": {
+        "size": 2208
+      },
+      "description": "Reference for figma-use-slides. You must read skill://figma/figma-use-slides/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-slides/references/slide-lifecycle.md",
+      "size": 2208,
+      "title": "figma-use-slides reference: references/slide-lifecycle.md",
+      "uri": "skill://figma/figma-use-slides/references/slide-lifecycle.md"
+    },
+    {
+      "_meta": {
+        "size": 3801
+      },
+      "description": "Reference for figma-use-slides. You must read skill://figma/figma-use-slides/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-slides/references/slide-properties.md",
+      "size": 3801,
+      "title": "figma-use-slides reference: references/slide-properties.md",
+      "uri": "skill://figma/figma-use-slides/references/slide-properties.md"
+    },
+    {
+      "_meta": {
+        "size": 22033
+      },
+      "description": "This skill helps agents use Figma's use_figma MCP tool in the Slides context. Can be used alongside figma-use which has foundational context for using the use_figma tool.",
+      "mimeType": "text/markdown",
+      "name": "figma-use-slides",
+      "size": 22033,
+      "title": "Skill: figma-use-slides",
+      "uri": "skill://figma/figma-use-slides/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 16008
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/api-reference.md",
+      "size": 16008,
+      "title": "figma-use reference: references/api-reference.md",
+      "uri": "skill://figma/figma-use/references/api-reference.md"
+    },
+    {
+      "_meta": {
+        "size": 14410
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/common-patterns.md",
+      "size": 14410,
+      "title": "figma-use reference: references/common-patterns.md",
+      "uri": "skill://figma/figma-use/references/common-patterns.md"
+    },
+    {
+      "_meta": {
+        "size": 23630
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/component-patterns.md",
+      "size": 23630,
+      "title": "figma-use reference: references/component-patterns.md",
+      "uri": "skill://figma/figma-use/references/component-patterns.md"
+    },
+    {
+      "_meta": {
+        "size": 3182
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/effect-style-patterns.md",
+      "size": 3182,
+      "title": "figma-use reference: references/effect-style-patterns.md",
+      "uri": "skill://figma/figma-use/references/effect-style-patterns.md"
+    },
+    {
+      "_meta": {
+        "size": 54182
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/gotchas.md",
+      "size": 54182,
+      "title": "figma-use reference: references/gotchas.md",
+      "uri": "skill://figma/figma-use/references/gotchas.md"
+    },
+    {
+      "_meta": {
+        "size": 16014
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/plugin-api-patterns.md",
+      "size": 16014,
+      "title": "figma-use reference: references/plugin-api-patterns.md",
+      "uri": "skill://figma/figma-use/references/plugin-api-patterns.md"
+    },
+    {
+      "_meta": {
+        "size": 29972
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/plugin-api-standalone.index.md",
+      "size": 29972,
+      "title": "figma-use reference: references/plugin-api-standalone.index.md",
+      "uri": "skill://figma/figma-use/references/plugin-api-standalone.index.md"
+    },
+    {
+      "_meta": {
+        "size": 6914
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/text-style-patterns.md",
+      "size": 6914,
+      "title": "figma-use reference: references/text-style-patterns.md",
+      "uri": "skill://figma/figma-use/references/text-style-patterns.md"
+    },
+    {
+      "_meta": {
+        "size": 4553
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/validation-and-recovery.md",
+      "size": 4553,
+      "title": "figma-use reference: references/validation-and-recovery.md",
+      "uri": "skill://figma/figma-use/references/validation-and-recovery.md"
+    },
+    {
+      "_meta": {
+        "size": 13928
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/variable-patterns.md",
+      "size": 13928,
+      "title": "figma-use reference: references/variable-patterns.md",
+      "uri": "skill://figma/figma-use/references/variable-patterns.md"
+    },
+    {
+      "_meta": {
+        "size": 2199
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/working-with-design-systems/wwds-components--creating.md",
+      "size": 2199,
+      "title": "figma-use reference: references/working-with-design-systems/wwds-components--creating.md",
+      "uri": "skill://figma/figma-use/references/working-with-design-systems/wwds-components--creating.md"
+    },
+    {
+      "_meta": {
+        "size": 2062
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/working-with-design-systems/wwds-components--using.md",
+      "size": 2062,
+      "title": "figma-use reference: references/working-with-design-systems/wwds-components--using.md",
+      "uri": "skill://figma/figma-use/references/working-with-design-systems/wwds-components--using.md"
+    },
+    {
+      "_meta": {
+        "size": 4052
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/working-with-design-systems/wwds-components.md",
+      "size": 4052,
+      "title": "figma-use reference: references/working-with-design-systems/wwds-components.md",
+      "uri": "skill://figma/figma-use/references/working-with-design-systems/wwds-components.md"
+    },
+    {
+      "_meta": {
+        "size": 3268
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/working-with-design-systems/wwds-effect-styles.md",
+      "size": 3268,
+      "title": "figma-use reference: references/working-with-design-systems/wwds-effect-styles.md",
+      "uri": "skill://figma/figma-use/references/working-with-design-systems/wwds-effect-styles.md"
+    },
+    {
+      "_meta": {
+        "size": 5144
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/working-with-design-systems/wwds-text-styles.md",
+      "size": 5144,
+      "title": "figma-use reference: references/working-with-design-systems/wwds-text-styles.md",
+      "uri": "skill://figma/figma-use/references/working-with-design-systems/wwds-text-styles.md"
+    },
+    {
+      "_meta": {
+        "size": 1559
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/working-with-design-systems/wwds-variables--creating.md",
+      "size": 1559,
+      "title": "figma-use reference: references/working-with-design-systems/wwds-variables--creating.md",
+      "uri": "skill://figma/figma-use/references/working-with-design-systems/wwds-variables--creating.md"
+    },
+    {
+      "_meta": {
+        "size": 1908
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/working-with-design-systems/wwds-variables--using.md",
+      "size": 1908,
+      "title": "figma-use reference: references/working-with-design-systems/wwds-variables--using.md",
+      "uri": "skill://figma/figma-use/references/working-with-design-systems/wwds-variables--using.md"
+    },
+    {
+      "_meta": {
+        "size": 5183
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/working-with-design-systems/wwds-variables.md",
+      "size": 5183,
+      "title": "figma-use reference: references/working-with-design-systems/wwds-variables.md",
+      "uri": "skill://figma/figma-use/references/working-with-design-systems/wwds-variables.md"
+    },
+    {
+      "_meta": {
+        "size": 5220
+      },
+      "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
+      "mimeType": "text/markdown",
+      "name": "figma-use/references/working-with-design-systems/wwds.md",
+      "size": 5220,
+      "title": "figma-use reference: references/working-with-design-systems/wwds.md",
+      "uri": "skill://figma/figma-use/references/working-with-design-systems/wwds.md"
+    },
+    {
+      "_meta": {
+        "size": 34721
+      },
+      "description": "**MANDATORY prerequisite** — you MUST invoke this skill BEFORE every `use_figma` tool call. NEVER call `use_figma` directly without loading this skill first. Skipping it causes common, hard-to-debug failures. Trigger whenever the user wants to perform a write action or a unique read action that requires JavaScript execution in the Figma file context — e.g. create/edit/delete nodes, set up variables or tokens, build components and variants, modify auto-layout or fills, bind variables to properties, or inspect file structure programmatically.",
+      "mimeType": "text/markdown",
+      "name": "figma-use",
+      "size": 34721,
+      "title": "Skill: figma-use",
+      "uri": "skill://figma/figma-use/SKILL.md"
+    },
+    {
+      "name": "skill-index",
+      "uri": "skill://index.json"
+    }
+  ],
+  "resourceTemplates": [
+    {
+      "description": "Resources to fetch a single source file of a shader effect or shader fill from the authenticated user's account library. Each resource is one file; read the file URIs returned in the get_shader_effect / get_shader_fill manifest.",
+      "name": "custom-library-source-file",
+      "title": "Custom Tool Library Source",
+      "uriTemplate": "file://figma/custom-library/source/{tool_id}/{version}/{+file_path}"
+    },
+    {
+      "description": "Figma MCP documentation",
+      "name": "mcp-docs",
+      "title": "Figma MCP Documentation",
+      "uriTemplate": "file://figma/docs/{doc_name}.md"
+    },
+    {
+      "description": "Resources to fetch Images from a Figma Make. Each resource is an image used in the Figma Make.",
+      "name": "figma-make-images",
+      "title": "Figma Make Images",
+      "uriTemplate": "file://figma/make/image/{file_key}/{image_hash}.png"
+    },
+    {
+      "description": "Resources to fetch code from a Figma Make. Each resource is a source file used in the Figma Make.",
+      "name": "make-source-file",
+      "title": "Figma Make Code Resources",
+      "uriTemplate": "file://figma/make/source/{file_key}/{+file_path}"
+    },
+    {
+      "description": "Reference files cited by figma-plugin skills",
+      "name": "skill-references",
+      "title": "Figma MCP Skill Reference Files",
+      "uriTemplate": "skill://figma/{skill_name}/references/{+ref_path}"
+    },
+    {
+      "description": "Skill guidance for agents without the figma-plugin",
+      "name": "skill-content",
+      "title": "Figma MCP Skill Content",
+      "uriTemplate": "skill://figma/{skill_name}/SKILL.md"
+    }
+  ]
+}

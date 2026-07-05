@@ -1,10 +1,12 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
   type CallToolRequest,
+  type ListResourceTemplatesRequest,
   type ListResourcesRequest,
   type ListToolsRequest,
   type ReadResourceRequest,
@@ -29,6 +31,7 @@ export interface FigmaUpstreamMcpProxyClient {
   listTools(): Promise<unknown>;
   callTool(name: string, args?: Record<string, unknown>): Promise<unknown>;
   listResources(): Promise<unknown>;
+  listResourceTemplates(): Promise<unknown>;
   readResource(uri: string): Promise<unknown>;
 }
 
@@ -83,6 +86,14 @@ export function createFigmaWorkspaceUpstreamStdioServer(
     async (_request: ListResourcesRequest) => {
       await client.connect();
       return asMcpResult(await client.listResources());
+    },
+  );
+
+  server.setRequestHandler(
+    ListResourceTemplatesRequestSchema,
+    async (_request: ListResourceTemplatesRequest) => {
+      await client.connect();
+      return asMcpResult(await client.listResourceTemplates());
     },
   );
 

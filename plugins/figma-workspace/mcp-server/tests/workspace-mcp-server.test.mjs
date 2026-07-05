@@ -25,6 +25,9 @@ import {
 } from "../dist/mcp/workspace-mcp-server.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const upstreamContractSnapshot = JSON.parse(
+  await readFile(resolve(packageRoot, "tests/fixtures/upstream-contract-snapshot.json"), "utf8"),
+);
 const expectedStaticResourceUris = [
   "figma-workspace://capabilities",
   "figma-workspace://guide",
@@ -77,6 +80,37 @@ function requiredBranches(schema) {
   return (schema.anyOf ?? [])
     .map((branch) => branch.required ?? [])
     .map((required) => [...required].sort());
+}
+
+function inputSchemaProperties(schema) {
+  return Object.keys(schema?.properties ?? {}).sort();
+}
+
+function inputSchemaRequiredProperties(schema) {
+  return [...(schema?.required ?? [])].filter((property) => typeof property === "string").sort();
+}
+
+function inputSchemaHasProperty(schema, property) {
+  if (!schema || typeof schema !== "object") {
+    return false;
+  }
+  if (Object.hasOwn(schema.properties ?? {}, property)) {
+    return true;
+  }
+  if (schema.items && inputSchemaHasProperty(schema.items, property)) {
+    return true;
+  }
+  const nestedSchemas = [
+    ...Object.values(schema.properties ?? {}),
+    ...(schema.anyOf ?? []),
+    ...(schema.oneOf ?? []),
+    ...(schema.allOf ?? []),
+  ];
+  return nestedSchemas.some((item) => inputSchemaHasProperty(item, property));
+}
+
+function topLevelInputSchemaHasProperty(schema, property) {
+  return Object.hasOwn(schema?.properties ?? {}, property);
 }
 
 function assertFilePointer(pointer, expectedPath, options = {}) {
@@ -661,6 +695,54 @@ test("figma workspace eval requires official use_figma code schema", async () =>
       },
     }),
     /inputSchema\.properties\.code.*upstream contract drift/,
+  );
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
+  await mcpClient.close();
+});
+
+test("figma workspace eval fails fast when upstream use_figma requires fileKey without session context", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    () => {
+      throw new Error("unexpected upstream call");
+    },
+    {
+      tools: [
+        {
+          name: "use_figma",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              code: { type: "string" },
+              description: { type: "string" },
+            },
+            required: ["fileKey", "code", "description"],
+          },
+        },
+      ],
+    },
+  );
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_eval",
+      arguments: {
+        title: "Reject missing use_figma fileKey",
+        sessionId: "missing-file",
+        code: "return { ok: true };",
+      },
+    }),
+    /requires fileKey\. Call figma_workspace_open\(\{ sessionId, file \}\) or figma_workspace_prepare_task first\./,
   );
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools"]);
   await mcpClient.close();
@@ -1465,6 +1547,68 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   const toolsByName = new Map(tools.tools.map((tool) => [tool.name, tool]));
   const wrapperContracts = FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS;
   const wrapperContractsByTool = new Map(wrapperContracts.map((contract) => [contract.toolName, contract]));
+  const upstreamSnapshotTools = upstreamContractSnapshot.tools;
+  const upstreamSnapshotResources = upstreamContractSnapshot.resources;
+  const upstreamSnapshotResourceTemplates = upstreamContractSnapshot.resourceTemplates;
+  assert.equal(upstreamContractSnapshot.schemaVersion, 2);
+  assert.deepEqual(
+    Object.keys(upstreamSnapshotTools).sort(),
+    [
+      "add_code_connect_map",
+      "create_new_file",
+      "download_assets",
+      "export_video",
+      "generate_diagram",
+      "generate_figma_design",
+      "get_code_connect_map",
+      "get_code_connect_suggestions",
+      "get_context_for_code_connect",
+      "get_design_context",
+      "get_figjam",
+      "get_libraries",
+      "get_metadata",
+      "get_motion_context",
+      "get_screenshot",
+      "get_shader_effect",
+      "get_shader_fill",
+      "get_variable_defs",
+      "list_shader_effects",
+      "list_shader_fills",
+      "search_design_system",
+      "send_code_connect_mappings",
+      "upload_assets",
+      "use_figma",
+      "whoami",
+    ],
+    "official upstream contract snapshot pins all live upstream tools, not only local wrappers",
+  );
+  assert.ok(
+    upstreamSnapshotResources.some((resource) => resource.uri === "skill://index.json"),
+    "official upstream contract snapshot includes upstream resources",
+  );
+  assert.equal(
+    upstreamSnapshotResources.length,
+    102,
+    "official upstream contract snapshot pins the full upstream resource list",
+  );
+  assert.deepEqual(
+    upstreamSnapshotResourceTemplates.map((template) => template.uriTemplate),
+    [
+      "file://figma/custom-library/source/{tool_id}/{version}/{+file_path}",
+      "file://figma/docs/{doc_name}.md",
+      "file://figma/make/image/{file_key}/{image_hash}.png",
+      "file://figma/make/source/{file_key}/{+file_path}",
+      "skill://figma/{skill_name}/references/{+ref_path}",
+      "skill://figma/{skill_name}/SKILL.md",
+    ],
+    "official upstream contract snapshot pins the full upstream resource template list",
+  );
+  for (const upstreamToolName of new Set(wrapperContracts.map((contract) => contract.upstreamToolName).filter(Boolean))) {
+    assert.ok(
+      upstreamSnapshotTools[upstreamToolName],
+      `covered wrapper upstream tool ${upstreamToolName} is present in the full upstream contract snapshot`,
+    );
+  }
   assert.deepEqual(
     [...new Set(wrapperContracts.map((contract) => contract.category))].sort(),
     ["asset-capture-workflow", "enhanced-wrapper", "fixed-execution", "thin-wrapper", "upstream-escape-hatch"],
@@ -1472,6 +1616,111 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   for (const contract of wrapperContracts) {
     const tool = tools.tools.find((item) => item.name === contract.toolName);
     assert.ok(tool, `${contract.toolName} has public metadata for its internal wrapper contract`);
+    for (const property of contract.parameterMatrix.requiredUpstream) {
+      assert.ok(
+        (contract.requiredUpstreamProperties ?? []).includes(property),
+        `${contract.toolName} runtime property-presence guard includes required upstream field ${property}`,
+      );
+    }
+    for (const property of contract.parameterMatrix.passthroughOptional) {
+      assert.ok(
+        contract.parameterMatrix.publicPassthrough.includes(property),
+        `${contract.toolName} keeps runtime optional passthrough ${property} classified as public passthrough`,
+      );
+    }
+    for (const property of contract.optionalUpstreamProperties ?? []) {
+      const classifiedHandled =
+        contract.parameterMatrix.hiddenUpstreamOptional.includes(property) ||
+        contract.parameterMatrix.publicPassthrough.includes(property) ||
+        contract.parameterMatrix.derivedUpstream.includes(property) ||
+        contract.parameterMatrix.fixedUpstream.includes(property);
+      if (!classifiedHandled) {
+        assert.ok(
+          false,
+          `${contract.toolName} parameter matrix classifies optional upstream field ${property}`,
+        );
+      }
+    }
+    const publicInputSchema = tool.inputSchema;
+    for (const property of contract.parameterMatrix.publicPassthrough) {
+      assert.ok(
+        inputSchemaHasProperty(publicInputSchema, property),
+        `${contract.toolName} public inputSchema exposes passthrough upstream field ${property}`,
+      );
+    }
+    for (const property of contract.parameterMatrix.localOnly) {
+      assert.ok(
+        topLevelInputSchemaHasProperty(publicInputSchema, property),
+        `${contract.toolName} public inputSchema exposes local-only field ${property}`,
+      );
+    }
+    for (const property of contract.parameterMatrix.hiddenUpstreamOptional) {
+      assert.equal(
+        topLevelInputSchemaHasProperty(publicInputSchema, property),
+        false,
+        `${contract.toolName} hides upstream optional field ${property}`,
+      );
+    }
+    for (const property of contract.parameterMatrix.removedLegacy) {
+      assert.equal(
+        topLevelInputSchemaHasProperty(publicInputSchema, property),
+        false,
+        `${contract.toolName} does not expose removed legacy field ${property}`,
+      );
+    }
+    if (contract.upstreamToolName) {
+      const snapshotSchema = upstreamSnapshotTools[contract.upstreamToolName]?.inputSchema;
+      assert.ok(snapshotSchema, `${contract.toolName} has an offline upstream input-schema snapshot`);
+      const upstreamProperties = inputSchemaProperties(snapshotSchema);
+      const upstreamRequired = inputSchemaRequiredProperties(snapshotSchema);
+      assert.deepEqual(
+        [...contract.parameterMatrix.requiredUpstream].sort(),
+        upstreamRequired,
+        `${contract.toolName} required upstream matrix matches offline snapshot`,
+      );
+      for (const property of upstreamRequired) {
+        assert.ok(
+          [
+            ...contract.parameterMatrix.publicPassthrough,
+            ...contract.parameterMatrix.derivedUpstream,
+            ...contract.parameterMatrix.fixedUpstream,
+          ].includes(property),
+          `${contract.toolName} satisfies required upstream field ${property} through passthrough, derived, or fixed handling`,
+        );
+      }
+      for (const property of contract.parameterMatrix.localOnly) {
+        assert.equal(
+          upstreamProperties.includes(property),
+          false,
+          `${contract.toolName} local-only field ${property} is not an upstream snapshot field`,
+        );
+      }
+      const classifiedUpstreamProperties = [
+        ...contract.parameterMatrix.publicPassthrough,
+        ...contract.parameterMatrix.derivedUpstream,
+        ...contract.parameterMatrix.fixedUpstream,
+        ...contract.parameterMatrix.hiddenUpstreamOptional,
+      ];
+      for (const property of classifiedUpstreamProperties) {
+        assert.ok(
+          upstreamProperties.includes(property),
+          `${contract.toolName} upstream-classified field ${property} still exists in the offline upstream input-schema snapshot`,
+        );
+      }
+      for (const property of upstreamProperties) {
+        const classifications = [
+          contract.parameterMatrix.publicPassthrough.includes(property) ? "publicPassthrough" : undefined,
+          contract.parameterMatrix.derivedUpstream.includes(property) ? "derivedUpstream" : undefined,
+          contract.parameterMatrix.fixedUpstream.includes(property) ? "fixedUpstream" : undefined,
+          contract.parameterMatrix.hiddenUpstreamOptional.includes(property) ? "hiddenUpstreamOptional" : undefined,
+        ].filter(Boolean);
+        assert.deepEqual(
+          classifications,
+          [classifications[0]],
+          `${contract.toolName} classifies upstream snapshot field ${property} exactly once`,
+        );
+      }
+    }
     const outputFilesSchema = tool.outputSchema.properties.outputFiles?.properties ?? {};
     for (const debugFile of contract.outputPolicy.debugFiles) {
       assert.ok(outputFilesSchema[debugFile], `${contract.toolName} output policy advertises ${debugFile}`);
@@ -1678,6 +1927,11 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(captureNodeTool.inputSchema.properties.arguments, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.refresh, undefined);
   assert.equal(captureNodeTool.inputSchema.properties.inlineResultLimit, undefined);
+  assert.equal(captureNodeTool.inputSchema.properties.maxDimension.type, "integer");
+  assert.equal(captureNodeTool.inputSchema.properties.maxDimension.minimum, 1);
+  assert.equal(captureNodeTool.inputSchema.properties.maxDimension.maximum, 65536);
+  assert.ok(captureNodeTool.inputSchema.properties.contentsOnly);
+  assert.equal(captureNodeTool.inputSchema.properties.enableBase64Response, undefined);
   assert.equal(captureNodeTool.outputSchema.properties.preview, undefined);
   assert.equal(captureNodeTool.outputSchema.properties.thumbnail, undefined);
   assert.ok(captureNodeTool.outputSchema.properties.imageFile);
@@ -1790,6 +2044,9 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(getDesignContextTool.inputSchema.properties.target);
   assert.ok(getDesignContextTool.inputSchema.properties.clientLanguages);
   assert.ok(getDesignContextTool.inputSchema.properties.clientFrameworks);
+  assert.ok(getDesignContextTool.inputSchema.properties.forceCode);
+  assert.ok(getDesignContextTool.inputSchema.properties.disableCodeConnect);
+  assert.ok(getDesignContextTool.inputSchema.properties.excludeScreenshot);
   assert.ok(getDesignContextTool.inputSchema.properties.inlineResultLimit);
   assert.ok(getDesignContextTool.outputSchema.properties.nodeId);
   assert.ok(getDesignContextTool.outputSchema.properties.upstream);
@@ -1800,6 +2057,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.match(getMotionContextTool.description, /official upstream get_motion_context/);
   assert.match(getMotionContextTool.description, /\{ target:\{ fileKey, nodeId \}, recursive\? \}/);
   assert.ok(getMotionContextTool.inputSchema.properties.recursive);
+  assert.ok(getMotionContextTool.inputSchema.properties.clientLanguages);
+  assert.ok(getMotionContextTool.inputSchema.properties.clientFrameworks);
   assert.ok(getMotionContextTool.outputSchema.properties.nodeId);
   assert.ok(getMotionContextTool.outputSchema.properties.upstream);
   const exportVideoTool = tools.tools.find((tool) => tool.name === "figma_workspace_export_video");
@@ -1807,6 +2066,15 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.match(exportVideoTool.description, /official upstream export_video/);
   assert.match(exportVideoTool.description, /\{ target:\{ fileKey, nodeId \}, quality\? \}/);
   assert.deepEqual(exportVideoTool.inputSchema.properties.quality.enum, ["low", "medium", "high"]);
+  assert.equal(exportVideoTool.inputSchema.properties.fps.type, "integer");
+  assert.equal(exportVideoTool.inputSchema.properties.fps.minimum, 1);
+  assert.equal(exportVideoTool.inputSchema.properties.fps.maximum, 60);
+  assert.deepEqual(exportVideoTool.inputSchema.properties.constraint.properties.type.enum, ["SCALE", "WIDTH", "HEIGHT"]);
+  assert.deepEqual(exportVideoTool.inputSchema.properties.constraint.required, ["type", "value"]);
+  assert.equal(exportVideoTool.inputSchema.properties.constraint.additionalProperties, false);
+  assert.equal(exportVideoTool.inputSchema.properties.ttlSeconds.type, "integer");
+  assert.equal(exportVideoTool.inputSchema.properties.ttlSeconds.minimum, 30);
+  assert.equal(exportVideoTool.inputSchema.properties.ttlSeconds.maximum, 604800);
   assert.ok(exportVideoTool.inputSchema.properties.jobId);
   assert.ok(exportVideoTool.outputSchema.properties.jobId);
   assert.equal(exportVideoTool.outputSchema.properties.videoFile, undefined);
@@ -1834,7 +2102,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   const getVariableDefsTool = tools.tools.find((tool) => tool.name === "figma_workspace_get_variable_defs");
   assert.ok(getVariableDefsTool);
   assert.match(getVariableDefsTool.description, /\{ target:\{ fileKey, nodeId \} \}/);
-  assert.match(getVariableDefsTool.inputSchema.properties.clientLanguages.description, /explicitly supplied/);
+  assert.equal(getVariableDefsTool.inputSchema.properties.clientLanguages, undefined);
+  assert.equal(getVariableDefsTool.inputSchema.properties.clientFrameworks, undefined);
   assert.equal(getVariableDefsTool.inputSchema.properties.nodeId, undefined);
   assert.ok(getVariableDefsTool.outputSchema.properties.nodeId);
   assert.ok(getVariableDefsTool.outputSchema.properties.upstream);
@@ -2285,6 +2554,9 @@ test("figma public guidance text excludes legacy script and removed helper wordi
   for (const { path, text } of publicTexts) {
     assert.equal(path.replace(/\\/gu, "/").includes("/upstream-corpus/"), false);
     assert.equal(text.includes(".figma.js"), false, `${path} must not mention legacy .figma.js scripts`);
+    assert.equal(text.includes('clientLanguages: "unknown"'), false, `${path} must not recommend unknown clientLanguages hints`);
+    assert.equal(text.includes('clientFrameworks: "unknown"'), false, `${path} must not recommend unknown clientFrameworks hints`);
+    assert.equal(/get_variable_defs[\s\S]{0,240}client(?:Languages|Frameworks)/u.test(text), false, `${path} must not document client hints for get_variable_defs`);
     for (const helperTerm of removedDollarHelperTerms) {
       assert.equal(dollarHelperTermPattern(helperTerm).test(text), false, `${path} must not mention removed helper ${helperTerm}`);
     }
@@ -3080,19 +3352,10 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
         };
       }
       if (name === "get_variable_defs") {
-        if (args.clientLanguages !== undefined || args.clientFrameworks !== undefined) {
-          assert.deepEqual(args, {
-            fileKey: "ExampleFigmaFileKey012",
-            nodeId: "9:9",
-            clientLanguages: "typescript",
-            clientFrameworks: "react",
-          });
-        } else {
-          assert.deepEqual(args, {
-            fileKey: "ExampleFigmaFileKey012",
-            nodeId: "9:9",
-          });
-        }
+        assert.deepEqual(args, {
+          fileKey: "ExampleFigmaFileKey012",
+          nodeId: "9:9",
+        });
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: true, variables: [{ name: "color.bg" }] }) }],
         };
@@ -3171,14 +3434,15 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
     assert.equal(variableDefs.upstream.result.variables[0].name, "color.bg");
     assert.equal(variableDefs.toolName, undefined);
 
-    const variableDefsWithHints = await repl.getVariableDefs({
-      sessionId: "design-system",
-      target: "$button",
-      clientLanguages: "typescript",
-      clientFrameworks: "react",
-    });
-    assert.equal(variableDefsWithHints.ok, true);
-    assert.equal(variableDefsWithHints.nodeId, "9:9");
+    await assert.rejects(
+      repl.getVariableDefs({
+        sessionId: "design-system",
+        target: "$button",
+        clientLanguages: "typescript",
+        clientFrameworks: "react",
+      }),
+      /Tool argument "clientLanguages\/clientFrameworks" was removed\. Use "figma_workspace_get_design_context"\./,
+    );
 
     const large = await repl.searchDesignSystem({
       sessionId: "design-system",
@@ -3211,7 +3475,6 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
   assert.deepEqual(calls.filter((call) => call[0] !== "close").map((call) => call[0]), [
     "connect",
     "listTools",
-    "callTool",
     "callTool",
     "callTool",
     "callTool",
@@ -3250,13 +3513,26 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
           nodeId: "9:9",
           clientLanguages: "swift",
           clientFrameworks: "swiftui",
+          forceCode: true,
+          disableCodeConnect: true,
+          excludeScreenshot: true,
         });
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: true, code: "<div data-node-id=\"9:9\" />" }) }],
         };
       }
       if (name === "get_motion_context") {
-        assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", nodeId: "9:9", recursive: true });
+        if (args.clientLanguages !== undefined || args.clientFrameworks !== undefined) {
+          assert.deepEqual(args, {
+            fileKey: "ExampleFigmaFileKey012",
+            nodeId: "9:9",
+            recursive: true,
+            clientLanguages: "swift",
+            clientFrameworks: "swiftui",
+          });
+        } else {
+          assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", nodeId: "9:9", recursive: true });
+        }
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: true, nodes: [{ nodeId: "9:9" }] }) }],
         };
@@ -3268,7 +3544,14 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
             content: [{ type: "text", text: JSON.stringify({ ok: true, jobId: "job-123", status: "done" }) }],
           };
         }
-        assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", nodeId: "9:9", quality: "low" });
+        assert.deepEqual(args, {
+          fileKey: "ExampleFigmaFileKey012",
+          nodeId: "9:9",
+          quality: "low",
+          fps: 12,
+          constraint: { type: "SCALE", value: 1 },
+          ttlSeconds: 300,
+        });
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: true, jobId: "job-123", status: "processing" }) }],
         };
@@ -3284,9 +3567,9 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     },
     {
       tools: [
-        { name: "get_design_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
-        { name: "get_motion_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, recursive: { type: "boolean" } } } },
-        { name: "export_video", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, jobId: { type: "string" }, quality: { type: "string" } } } },
+        { name: "get_design_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" }, forceCode: { type: "boolean" }, disableCodeConnect: { type: "boolean" }, excludeScreenshot: { type: "boolean" } } } },
+        { name: "get_motion_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, recursive: { type: "boolean" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
+        { name: "export_video", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, jobId: { type: "string" }, quality: { type: "string" }, fps: { type: "number" }, constraint: { type: "object" }, ttlSeconds: { type: "number" } } } },
         { name: "get_shader_fill", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
       ],
     },
@@ -3306,6 +3589,9 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
       target: "$button",
       clientLanguages: "swift",
       clientFrameworks: "swiftui",
+      forceCode: true,
+      disableCodeConnect: true,
+      excludeScreenshot: true,
     });
     assert.equal(design.ok, true);
     assert.equal(design.fileKey, "ExampleFigmaFileKey012");
@@ -3330,7 +3616,13 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     assert.equal(designFromObjectTarget.nodeId, "9:9");
     assert.equal(designFromObjectTarget.upstream.result.code, "<div data-node-id=\"9:9\" data-hints=\"none\" />");
 
-    const motion = await repl.getMotionContext({ sessionId: "context-main", target: "$button", recursive: true });
+    const motion = await repl.getMotionContext({
+      sessionId: "context-main",
+      target: "$button",
+      recursive: true,
+      clientLanguages: "swift",
+      clientFrameworks: "swiftui",
+    });
     assert.equal(motion.ok, true);
     assert.equal(motion.upstream.result.nodes[0].nodeId, "9:9");
     assert.equal(motion.guidance, undefined);
@@ -3346,7 +3638,14 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     assert.equal(motionFromNodeUrl.fileKey, "ExampleFigmaFileKey012");
     assert.equal(motionFromNodeUrl.nodeId, "9:9");
 
-    const exportStart = await repl.exportVideo({ sessionId: "context-main", target: "$button", quality: "low" });
+    const exportStart = await repl.exportVideo({
+      sessionId: "context-main",
+      target: "$button",
+      quality: "low",
+      fps: 12,
+      constraint: { type: "SCALE", value: 1 },
+      ttlSeconds: 300,
+    });
     assert.equal(exportStart.ok, true);
     assert.equal(exportStart.nodeId, "9:9");
     assert.equal(exportStart.upstream.result.jobId, "job-123");
@@ -3548,6 +3847,50 @@ test("figma workspace runtime parsers reject malformed tool argument shapes", as
       },
     }),
     /Tool argument "target\.nodeId" must be a string\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_export_video",
+      arguments: {
+        title: "Reject export fps",
+        target: { fileKey: "file123", nodeId: "22:7" },
+        fps: 61,
+      },
+    }),
+    /Tool argument "fps" must be an integer from 1 to 60\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_export_video",
+      arguments: {
+        title: "Reject export ttl",
+        target: { fileKey: "file123", nodeId: "22:7" },
+        ttlSeconds: 29,
+      },
+    }),
+    /Tool argument "ttlSeconds" must be an integer from 30 to 604800\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_export_video",
+      arguments: {
+        title: "Reject export constraint type",
+        target: { fileKey: "file123", nodeId: "22:7" },
+        constraint: { type: "BAD", value: 1 },
+      },
+    }),
+    /Tool argument "constraint\.type" must be one of: SCALE, WIDTH, HEIGHT\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_export_video",
+      arguments: {
+        title: "Reject export constraint extra",
+        target: { fileKey: "file123", nodeId: "22:7" },
+        constraint: { type: "SCALE", value: 1, extra: true },
+      },
+    }),
+    /Tool argument "constraint" does not allow extra fields: extra\./,
   );
   await assert.rejects(
     mcpClient.callTool({
@@ -3896,11 +4239,54 @@ test("figma workspace runtime parsers reject malformed tool argument shapes", as
     mcpClient.callTool({
       name: "figma_workspace_capture_node",
       arguments: {
+        title: "Reject hidden screenshot base64",
+        target: { fileKey: "file123", nodeId: "22:7" },
+        enableBase64Response: true,
+      },
+    }),
+    /Tool argument "enableBase64Response" was removed\. Use "figma_workspace_call_upstream_tool"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_capture_node",
+      arguments: {
+        title: "Reject capture max dimension",
+        target: { fileKey: "file123", nodeId: "22:7" },
+        maxDimension: 65537,
+      },
+    }),
+    /Tool argument "maxDimension" must be an integer from 1 to 65536\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_capture_node",
+      arguments: {
         title: "Reject capture escape",
         toolName: "fake_screenshot",
       },
     }),
     /Tool argument "toolName" was removed\. Use "figma_workspace_call_upstream_tool"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_apply_asset_manifest",
+      arguments: {
+        title: "Reject hidden upload batch commit",
+        batchCommit: true,
+      },
+    }),
+    /Tool argument "batchCommit" was removed\. Use "figma_workspace_call_upstream_tool"\./,
+  );
+  await assert.rejects(
+    mcpClient.callTool({
+      name: "figma_workspace_get_variable_defs",
+      arguments: {
+        title: "Reject variable defs legacy client hints",
+        target: { fileKey: "file123", nodeId: "22:7" },
+        clientLanguages: "typescript",
+      },
+    }),
+    /Tool argument "clientLanguages\/clientFrameworks" was removed\. Use "figma_workspace_get_design_context"\./,
   );
   const badManifestDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-bad-assets-"));
   try {
@@ -5885,7 +6271,7 @@ test("figma workspace downloads node screenshot URL responses to a local file", 
     calls,
     ({ name, args }) => {
       assert.equal(name, "get_screenshot");
-      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:8" });
+      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:8", maxDimension: 1600, contentsOnly: true });
       return {
         content: [
           {
@@ -5905,7 +6291,7 @@ test("figma workspace downloads node screenshot URL responses to a local file", 
         {
           name: "get_screenshot",
           description: "Official screenshot tool.",
-          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] },
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, maxDimension: { type: "number" }, contentsOnly: { type: "boolean" } }, required: ["fileKey", "nodeId"] },
         },
       ],
     },
@@ -5927,6 +6313,8 @@ test("figma workspace downloads node screenshot URL responses to a local file", 
         title: "Capture node",
         target: { fileKey: "file123", nodeId: "22:8" },
         imageFile: outputFile,
+        maxDimension: 1600,
+        contentsOnly: true,
       },
     });
     const json = structuredToolResult(result);
@@ -9752,6 +10140,9 @@ test("node-upstream-client entrypoint exports workspace and remote clients in co
   const nodeRepl = await import("../dist/upstream/node-upstream-client.js");
   assert.equal(typeof nodeRepl.createRemoteMcpClient, "function");
   assert.equal(typeof nodeRepl.createFigmaWorkspaceClient, "function");
+  assert.equal(nodeRepl.formatFigmaUpstreamContractElapsedTime(42), "42 ms");
+  assert.equal(nodeRepl.formatFigmaUpstreamContractElapsedTime(1250), "1.25 s (1250 ms)");
+  assert.equal(nodeRepl.formatFigmaUpstreamContractElapsedTime(65_000), "1 min 5 s (65000 ms)");
 
   const fakeClient = createFakeFigmaClient([], () => {
     throw new Error("unexpected upstream call");
@@ -9817,6 +10208,7 @@ test("node-upstream-client entrypoint exports workspace and remote clients in co
       async listTools() { return { tools: [] }; },
       async callTool() { throw new Error("unexpected upstream call"); },
       async listResources() { return { resources: [] }; },
+      async listResourceTemplates() { return { resourceTemplates: [] }; },
       async readResource(uri) { return { contents: [{ uri, mimeType: "text/plain", text: "" }] }; },
     };
     const repl = mod.createFigmaWorkspaceClient({ client: fakeClient });
@@ -9907,6 +10299,9 @@ function createFakeFigmaClient(calls, callToolImpl, options = {}) {
     },
     async listResources() {
       return { resources: [] };
+    },
+    async listResourceTemplates() {
+      return { resourceTemplates: [] };
     },
     async readResource(uri) {
       return { contents: [{ uri, mimeType: "text/plain", text: "" }] };
