@@ -3,6 +3,11 @@ import {
   isLocalWorkspaceToolName,
   type LocalWorkspaceToolName,
 } from "./tool-registry.js";
+import {
+  FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION,
+  FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
+  getFigmaWorkspaceCoveredUpstreamToolNames,
+} from "./wrapper-contracts.js";
 
 export type ReplToolDescriptionOptions = {
   taskWorkspaceRootEnv: string;
@@ -15,7 +20,8 @@ export type ReplToolDescriptionOptions = {
 
 const DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4_000;
 const MAX_INLINE_RESULT_LIMIT_BYTES = 10_000;
-const NODE_SCOPED_TARGET_SHAPES = "Accepts string raw node id, string node URL, string local handle like $hero, { handle:\"$hero\" }, or { fileKey, nodeId }. Raw node id and handle strings require an open/prepare file-context session; node URL and { fileKey, nodeId } can supply file context directly.";
+const NODE_SCOPED_TARGET_SHAPES = FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION;
+const COVERED_UPSTREAM_TOOLS = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
 
 export function createReplToolDescriptions(
   options: ReplToolDescriptionOptions,
@@ -73,7 +79,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_apply_asset_manifest",
       description:
-        "Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { sessionId, manifestPath } after .figma.ts creates target rectangles. Debug JSON files are generated on demand for failures. Use figma_workspace_call_upstream_tool only for explicit uncovered upstream capabilities.",
+        `Workflow add-on for applying local generated assets to Figma target nodes through official upstream upload_assets. Recommended workspace call: { sessionId, manifestPath } after .figma.ts creates target rectangles. Debug JSON files are generated on demand for failures. ${FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE}`,
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for history. Defaults to 'default'."),
@@ -316,7 +322,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_call_upstream_tool",
       description:
-        "Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}. Use this for official capabilities without a local wrapper, including shader effect/fill tools. Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, or get_variable_defs because dedicated local workflow tools cover them.",
+        `Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}. Use this for official capabilities without a local wrapper, including shader effect/fill tools. Do not use for ${COVERED_UPSTREAM_TOOLS} because dedicated local workflow tools cover them.`,
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
