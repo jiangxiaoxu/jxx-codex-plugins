@@ -17,6 +17,214 @@ export { isFigmaWorkspaceMissingFileErrorForTesting };
  * This is not a stable MCP tool input contract, and callers cannot use it to configure helper injection.
  */
 export declare const resolveFigmaWorkspaceScriptHelperSelection: typeof resolveFigmaWorkspaceScriptHelperSelectionInternal;
+/**
+ * @internal Internal wrapper contract registry used by parity tests.
+ * This is not a stable MCP tool input or response contract.
+ */
+export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
+    readonly toolName: "figma_workspace_eval";
+    readonly category: "fixed-execution";
+    readonly upstreamToolName: "use_figma";
+    readonly upstreamKind: "execution";
+    readonly requiredUpstreamProperties: readonly ["code"];
+    readonly targetSupport: "none";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
+        readonly debugFiles: readonly ["debugFile", "upstreamFile"];
+        readonly upstreamEnvelope: true;
+    };
+}, {
+    readonly toolName: "figma_workspace_run_script_file";
+    readonly category: "fixed-execution";
+    readonly upstreamToolName: "use_figma";
+    readonly upstreamKind: "execution";
+    readonly requiredUpstreamProperties: readonly ["code"];
+    readonly targetSupport: "none";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
+        readonly debugFiles: readonly ["debugFile", "upstreamFile", "compiledScriptFile"];
+        readonly upstreamEnvelope: true;
+    };
+}, {
+    readonly toolName: "figma_workspace_inspect";
+    readonly category: "fixed-execution";
+    readonly upstreamToolName: "use_figma";
+    readonly upstreamKind: "inspection";
+    readonly requiredUpstreamProperties: readonly ["code"];
+    readonly targetSupport: "string-only";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly [];
+        readonly debugFiles: readonly [];
+        readonly upstreamEnvelope: false;
+    };
+}, {
+    readonly toolName: "figma_workspace_get_metadata";
+    readonly category: "enhanced-wrapper";
+    readonly upstreamToolName: "get_metadata";
+    readonly upstreamKind: "metadata read";
+    readonly requiredUpstreamProperties: readonly ["fileKey"];
+    readonly optionalUpstreamProperties: readonly ["nodeId", "clientLanguages", "clientFrameworks"];
+    readonly targetSupport: "node-scoped";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["metadata.json"];
+        readonly debugFiles: readonly ["metadataFile"];
+        readonly upstreamEnvelope: true;
+    };
+    readonly guidanceProfile: {
+        readonly workflowIds: readonly ["inspection-and-qa"];
+    };
+}, {
+    readonly toolName: "figma_workspace_get_design_context";
+    readonly category: "thin-wrapper";
+    readonly upstreamToolName: "get_design_context";
+    readonly upstreamKind: "design context read";
+    readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
+    readonly optionalUpstreamProperties: readonly ["clientLanguages", "clientFrameworks"];
+    readonly targetSupport: "node-scoped";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
+        readonly debugFiles: readonly ["debugFile", "upstreamFile"];
+        readonly upstreamEnvelope: true;
+    };
+    readonly guidanceProfile: {
+        readonly workflowIds: readonly ["implementation-context"];
+    };
+}, {
+    readonly toolName: "figma_workspace_get_motion_context";
+    readonly category: "thin-wrapper";
+    readonly upstreamToolName: "get_motion_context";
+    readonly upstreamKind: "motion context read";
+    readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
+    readonly optionalUpstreamProperties: readonly ["recursive"];
+    readonly targetSupport: "node-scoped";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
+        readonly debugFiles: readonly ["debugFile", "upstreamFile"];
+        readonly upstreamEnvelope: true;
+    };
+    readonly guidanceProfile: {
+        readonly workflowIds: readonly ["motion-implementation"];
+    };
+}, {
+    readonly toolName: "figma_workspace_export_video";
+    readonly category: "thin-wrapper";
+    readonly upstreamToolName: "export_video";
+    readonly upstreamKind: "video export";
+    readonly requiredUpstreamProperties: readonly ["fileKey"];
+    readonly optionalUpstreamProperties: readonly ["nodeId", "jobId", "quality"];
+    readonly targetSupport: "node-scoped";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
+        readonly debugFiles: readonly ["debugFile", "upstreamFile"];
+        readonly upstreamEnvelope: true;
+    };
+    readonly guidanceProfile: {
+        readonly workflowIds: readonly ["motion-implementation"];
+    };
+}, {
+    readonly toolName: "figma_workspace_search_design_system";
+    readonly category: "thin-wrapper";
+    readonly upstreamToolName: "search_design_system";
+    readonly upstreamKind: "design system search";
+    readonly requiredUpstreamProperties: readonly ["fileKey", "query"];
+    readonly optionalUpstreamProperties: readonly ["disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"];
+    readonly targetSupport: "none";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
+        readonly debugFiles: readonly ["debugFile", "upstreamFile"];
+        readonly upstreamEnvelope: true;
+    };
+    readonly guidanceProfile: {
+        readonly workflowIds: readonly ["design-system"];
+    };
+}, {
+    readonly toolName: "figma_workspace_get_libraries";
+    readonly category: "thin-wrapper";
+    readonly upstreamToolName: "get_libraries";
+    readonly upstreamKind: "library read";
+    readonly requiredUpstreamProperties: readonly ["fileKey"];
+    readonly optionalUpstreamProperties: readonly ["offset"];
+    readonly targetSupport: "none";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
+        readonly debugFiles: readonly ["debugFile", "upstreamFile"];
+        readonly upstreamEnvelope: true;
+    };
+    readonly guidanceProfile: {
+        readonly workflowIds: readonly ["design-system"];
+    };
+}, {
+    readonly toolName: "figma_workspace_get_variable_defs";
+    readonly category: "thin-wrapper";
+    readonly upstreamToolName: "get_variable_defs";
+    readonly upstreamKind: "variable definition read";
+    readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
+    readonly optionalUpstreamProperties: readonly ["clientLanguages", "clientFrameworks"];
+    readonly targetSupport: "node-scoped";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
+        readonly debugFiles: readonly ["debugFile", "upstreamFile"];
+        readonly upstreamEnvelope: true;
+    };
+    readonly guidanceProfile: {
+        readonly workflowIds: readonly ["design-system"];
+    };
+}, {
+    readonly toolName: "figma_workspace_apply_asset_manifest";
+    readonly category: "asset-capture-workflow";
+    readonly upstreamToolName: "upload_assets";
+    readonly upstreamKind: "asset upload/fill";
+    readonly requiredUpstreamProperties: readonly ["fileKey", "count", "nodeId", "scaleMode"];
+    readonly targetSupport: "node-scoped-list";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly [];
+        readonly debugFiles: readonly ["debugFile"];
+        readonly upstreamEnvelope: false;
+    };
+}, {
+    readonly toolName: "figma_workspace_download_assets";
+    readonly category: "asset-capture-workflow";
+    readonly upstreamToolName: "download_assets";
+    readonly upstreamKind: "asset download";
+    readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
+    readonly optionalUpstreamProperties: readonly ["defaultFormat", "defaultScale"];
+    readonly targetSupport: "node-scoped-list";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly [];
+        readonly debugFiles: readonly ["debugFile"];
+        readonly upstreamEnvelope: false;
+    };
+}, {
+    readonly toolName: "figma_workspace_capture_node";
+    readonly category: "asset-capture-workflow";
+    readonly upstreamToolName: "get_screenshot";
+    readonly upstreamKind: "node screenshot";
+    readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
+    readonly targetSupport: "node-scoped";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly [];
+        readonly debugFiles: readonly [];
+        readonly upstreamEnvelope: false;
+    };
+}, {
+    readonly toolName: "figma_workspace_run_task_plan";
+    readonly category: "asset-capture-workflow";
+    readonly targetSupport: "none";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly [];
+        readonly debugFiles: readonly ["debugFile"];
+        readonly upstreamEnvelope: false;
+    };
+}, {
+    readonly toolName: "figma_workspace_call_upstream_tool";
+    readonly category: "upstream-escape-hatch";
+    readonly targetSupport: "freeform-upstream";
+    readonly outputPolicy: {
+        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
+        readonly debugFiles: readonly ["debugFile", "upstreamFile"];
+        readonly upstreamEnvelope: true;
+    };
+}];
 export type { FigmaWorkspaceDiagnostic, FigmaWorkspaceDiagnosticsOptions, FigmaWorkspaceDiagnosticSeverity, FigmaWorkspaceFileDiagnostic, FigmaWorkspaceSurface, };
 export type { FigmaWorkspaceSessionWorkspace } from "../runtime/workspace-files.js";
 export type { FigmaWorkspaceApplyAssetManifestArguments, FigmaWorkspaceAssetManifestAsset, FigmaWorkspaceCallUpstreamToolArguments, FigmaWorkspaceCaptureNodeArguments, FigmaWorkspaceDownloadAssetsArguments, FigmaWorkspaceDownloadAssetsTarget, FigmaWorkspaceEvalArguments, FigmaWorkspaceExportVideoArguments, FigmaWorkspaceGetDesignContextArguments, FigmaWorkspaceGetLibrariesArguments, FigmaWorkspaceGetMetadataArguments, FigmaWorkspaceGetMotionContextArguments, FigmaWorkspaceGetVariableDefsArguments, FigmaWorkspaceGuidanceArguments, FigmaWorkspaceInspectArguments, FigmaWorkspaceLookupArguments, FigmaWorkspaceOpenArguments, FigmaWorkspacePrepareTaskArguments, FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceSearchDesignSystemArguments, FigmaWorkspaceTaskPlanStep, } from "../contract/tool-args.js";

@@ -124,7 +124,16 @@ import { createReplToolDescriptions } from "../contract/tool-metadata.js";
 import {
   isLocalWorkspaceToolName,
   normalizeTaskPlanStepType as normalizeTaskPlanStepTypeAlias,
+  type LocalWorkspaceToolName,
 } from "../contract/tool-registry.js";
+import {
+  FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION,
+  FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
+  FIGMA_WORKSPACE_WRAPPER_CONTRACTS,
+  getFigmaWorkspaceCoveredUpstreamToolNames,
+  requireFigmaWorkspaceWrapperContract,
+  type FigmaWorkspaceWrapperContract,
+} from "../contract/wrapper-contracts.js";
 import {
   DEFAULT_WORKSPACE_DIR_NAME,
   TASK_WORKSPACE_ROOT_ENV,
@@ -182,6 +191,11 @@ export { isFigmaWorkspaceMissingFileErrorForTesting };
  * This is not a stable MCP tool input contract, and callers cannot use it to configure helper injection.
  */
 export const resolveFigmaWorkspaceScriptHelperSelection = resolveFigmaWorkspaceScriptHelperSelectionInternal;
+/**
+ * @internal Internal wrapper contract registry used by parity tests.
+ * This is not a stable MCP tool input or response contract.
+ */
+export const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS = FIGMA_WORKSPACE_WRAPPER_CONTRACTS;
 export type {
   FigmaWorkspaceDiagnostic,
   FigmaWorkspaceDiagnosticsOptions,
@@ -215,8 +229,9 @@ export type {
   FigmaWorkspaceTaskPlanStep,
 } from "../contract/tool-args.js";
 
-const DEFAULT_EVAL_TOOL_NAME = "use_figma";
-const DEFAULT_EVAL_ARGUMENT_NAME = "code";
+const DEFAULT_EVAL_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_eval");
+const DEFAULT_EVAL_TOOL_NAME = requireWrapperUpstreamToolName(DEFAULT_EVAL_CONTRACT);
+const DEFAULT_EVAL_ARGUMENT_NAME = requireWrapperUpstreamProperty(DEFAULT_EVAL_CONTRACT, "code");
 const DEFAULT_EVAL_DESCRIPTION = "Figma Workspace Plugin API execution";
 export const FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES = [
   "remember",
@@ -241,16 +256,52 @@ type FigmaWorkspaceEvalHelperPath = "$" | `$.${FigmaWorkspaceEvalCommonHelperNam
 const DEFAULT_HISTORY_LIMIT = 50;
 const DEFAULT_INLINE_RESULT_LIMIT = 4_000;
 const MAX_INLINE_RESULT_LIMIT = 10_000;
-const UPLOAD_ASSETS_TOOL_NAME = "upload_assets";
-const DOWNLOAD_ASSETS_TOOL_NAME = "download_assets";
-const SCREENSHOT_TOOL_NAME = "get_screenshot";
-const GET_METADATA_TOOL_NAME = "get_metadata";
-const GET_DESIGN_CONTEXT_TOOL_NAME = "get_design_context";
-const GET_MOTION_CONTEXT_TOOL_NAME = "get_motion_context";
-const EXPORT_VIDEO_TOOL_NAME = "export_video";
-const SEARCH_DESIGN_SYSTEM_TOOL_NAME = "search_design_system";
-const GET_LIBRARIES_TOOL_NAME = "get_libraries";
-const GET_VARIABLE_DEFS_TOOL_NAME = "get_variable_defs";
+const APPLY_ASSET_MANIFEST_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_apply_asset_manifest");
+const DOWNLOAD_ASSETS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_download_assets");
+const CAPTURE_NODE_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_capture_node");
+const GET_METADATA_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_metadata");
+const GET_DESIGN_CONTEXT_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_design_context");
+const GET_MOTION_CONTEXT_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_motion_context");
+const EXPORT_VIDEO_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_export_video");
+const SEARCH_DESIGN_SYSTEM_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_search_design_system");
+const GET_LIBRARIES_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_libraries");
+const GET_VARIABLE_DEFS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_variable_defs");
+const CALL_UPSTREAM_TOOL_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_call_upstream_tool");
+const UPLOAD_ASSETS_TOOL_NAME = requireWrapperUpstreamToolName(APPLY_ASSET_MANIFEST_CONTRACT);
+const DOWNLOAD_ASSETS_TOOL_NAME = requireWrapperUpstreamToolName(DOWNLOAD_ASSETS_CONTRACT);
+const SCREENSHOT_TOOL_NAME = requireWrapperUpstreamToolName(CAPTURE_NODE_CONTRACT);
+const GET_METADATA_TOOL_NAME = requireWrapperUpstreamToolName(GET_METADATA_CONTRACT);
+const GET_DESIGN_CONTEXT_TOOL_NAME = requireWrapperUpstreamToolName(GET_DESIGN_CONTEXT_CONTRACT);
+const GET_MOTION_CONTEXT_TOOL_NAME = requireWrapperUpstreamToolName(GET_MOTION_CONTEXT_CONTRACT);
+const EXPORT_VIDEO_TOOL_NAME = requireWrapperUpstreamToolName(EXPORT_VIDEO_CONTRACT);
+const SEARCH_DESIGN_SYSTEM_TOOL_NAME = requireWrapperUpstreamToolName(SEARCH_DESIGN_SYSTEM_CONTRACT);
+const GET_LIBRARIES_TOOL_NAME = requireWrapperUpstreamToolName(GET_LIBRARIES_CONTRACT);
+const GET_VARIABLE_DEFS_TOOL_NAME = requireWrapperUpstreamToolName(GET_VARIABLE_DEFS_CONTRACT);
+const COVERED_UPSTREAM_TOOL_NAMES_TEXT = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
+
+function requireWrapperUpstreamToolName(contract: FigmaWorkspaceWrapperContract): string {
+  if (!contract.upstreamToolName) {
+    throw new Error(`Internal wrapper contract ${contract.toolName} is missing an upstream tool name.`);
+  }
+  return contract.upstreamToolName;
+}
+
+function requireWrapperUpstreamKind(contract: FigmaWorkspaceWrapperContract): string {
+  if (!contract.upstreamKind) {
+    throw new Error(`Internal wrapper contract ${contract.toolName} is missing an upstream kind.`);
+  }
+  return contract.upstreamKind;
+}
+
+function requireWrapperUpstreamProperty(
+  contract: FigmaWorkspaceWrapperContract,
+  property: string,
+): string {
+  if (![...(contract.requiredUpstreamProperties ?? []), ...(contract.optionalUpstreamProperties ?? [])].includes(property)) {
+    throw new Error(`Internal wrapper contract ${contract.toolName} is missing upstream property ${property}.`);
+  }
+  return property;
+}
 export interface FigmaWorkspaceMcpServerOptions extends RemoteMcpClientOptions {
   client?: FigmaUpstreamMcpProxyClient;
   name?: string;
@@ -1373,21 +1424,17 @@ async function handleEval(
     ...upstreamFailureFields(parsed),
   };
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
-  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
-  const needsOutputFile = parsed.upstreamError || isRecord(limitedPayload.inlineResultLimit);
-  if (!needsOutputFile) {
-    return makeJsonToolResult(limitedPayload);
-  }
-  const outputFiles = await writeEvalResultFiles({
-    session,
+  return makeJsonToolResult(await shapeUpstreamBackedResponse({
+    contract: DEFAULT_EVAL_CONTRACT,
+    parsed,
     resultPayload,
-    upstream: upstreamEnvelope(parsed),
-  });
-  const payloadWithFiles = {
-    ...limitedPayload,
-    outputFiles,
-  };
-  return makeJsonToolResult(payloadWithFiles);
+    inlineResultLimit: args.inlineResultLimit,
+    writeOutputFiles: (upstreamEnvelopePayload) => writeEvalResultFiles({
+      session,
+      resultPayload,
+      upstream: upstreamEnvelopePayload,
+    }),
+  }));
 }
 
 async function handleRunScriptFile(
@@ -1861,8 +1908,9 @@ async function executeApplyAssetManifest(
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const manifest = await loadAssetManifest(args, session);
   const tools = await runtime.upstreamToolCache.list(false);
-  const tool = selectRequiredUpstreamTool(tools, UPLOAD_ASSETS_TOOL_NAME, "asset upload/fill");
-  assertUpstreamToolHasProperties(tool, ["fileKey", "count", "nodeId", "scaleMode"], "asset upload/fill");
+  const uploadKind = requireWrapperUpstreamKind(APPLY_ASSET_MANIFEST_CONTRACT);
+  const tool = selectRequiredUpstreamTool(tools, UPLOAD_ASSETS_TOOL_NAME, uploadKind);
+  assertUpstreamToolHasProperties(tool, [...(APPLY_ASSET_MANIFEST_CONTRACT.requiredUpstreamProperties ?? [])], uploadKind);
   const failures: Array<Record<string, unknown>> = [];
   const assetResults: Array<Record<string, unknown>> = [];
   const assetDetails: Array<Record<string, unknown>> = [];
@@ -2083,18 +2131,14 @@ async function executeDownloadAssets(
   const manifest = await loadDownloadAssetsManifest(args, session);
   const paths = resolveDownloadAssetsOutputPaths(args, session);
   const tools = await runtime.upstreamToolCache.list(false);
-  const tool = tools.find((item) => item.name === DOWNLOAD_ASSETS_TOOL_NAME);
-  if (!tool) {
-    throw new Error(
-      `Upstream Figma MCP tool "${DOWNLOAD_ASSETS_TOOL_NAME}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`,
-    );
-  }
-  assertUpstreamToolHasProperties(tool, ["fileKey", "nodeId"], "asset download");
+  const downloadKind = requireWrapperUpstreamKind(DOWNLOAD_ASSETS_CONTRACT);
+  const tool = selectRequiredUpstreamTool(tools, DOWNLOAD_ASSETS_TOOL_NAME, downloadKind);
+  assertUpstreamToolHasProperties(tool, [...(DOWNLOAD_ASSETS_CONTRACT.requiredUpstreamProperties ?? [])], downloadKind);
   if (manifest.targets.some((target) => target.defaultFormat !== undefined)) {
-    assertUpstreamToolHasProperty(tool, "defaultFormat", "asset download");
+    assertUpstreamToolHasProperty(tool, "defaultFormat", downloadKind);
   }
   if (manifest.targets.some((target) => target.defaultScale !== undefined)) {
-    assertUpstreamToolHasProperty(tool, "defaultScale", "asset download");
+    assertUpstreamToolHasProperty(tool, "defaultScale", downloadKind);
   }
   const targetResults: Array<Record<string, unknown>> = [];
   const targetDetails: Array<Record<string, unknown>> = [];
@@ -2543,19 +2587,26 @@ async function executeCaptureNodeForTool(
 ): Promise<Record<string, unknown>> {
   rejectRemovedCaptureMediaArguments(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
-  const targetResolution = resolveSessionTargetInput(args.target, session);
-  const nodeId = targetResolution.nodeId;
+  const requested = resolveWrapperNodeTarget({
+    args: { target: args.target },
+    session,
+    toolName: "figma_workspace_capture_node",
+    requireNode: true,
+    targetError: 'Tool argument "target" is required.',
+    fileKeyError: 'Tool argument "target" requires a fileKey for official get_screenshot. Pass a node URL, target:{ fileKey, nodeId }, or open the session with a Figma file URL first.',
+  });
+  const { fileKey, nodeId } = requested;
   if (!nodeId) {
     throw new Error('Tool argument "target" is required.');
   }
-  const fileKey = targetResolution.fileKey ?? session.fileKey ?? extractFigmaFileKey(session.fileUrl);
-  if (!fileKey) {
-    throw new Error('Tool argument "target" requires a fileKey for official get_screenshot. Pass a node URL, target:{ fileKey, nodeId }, or open the session with a Figma file URL first.');
-  }
   const requestedOutputFile = resolveCaptureOutputFile(args, session);
   const tools = await runtime.upstreamToolCache.list(false);
-  const tool = selectRequiredUpstreamTool(tools, SCREENSHOT_TOOL_NAME, "node screenshot");
-  assertUpstreamToolHasProperties(tool, ["fileKey", "nodeId"], "node screenshot");
+  const tool = selectRequiredUpstreamTool(tools, SCREENSHOT_TOOL_NAME, requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT));
+  assertUpstreamToolHasProperties(
+    tool,
+    [...(CAPTURE_NODE_CONTRACT.requiredUpstreamProperties ?? [])],
+    requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT),
+  );
   const upstreamArguments = buildCaptureUpstreamArguments({
     fileKey,
     nodeId,
@@ -3343,8 +3394,15 @@ async function executeGetMetadata(
   touchSession(session);
   const requested = await resolveGetMetadataRequest(args, session, runtime);
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
-  const tool = selectRequiredUpstreamTool(tools, GET_METADATA_TOOL_NAME, "metadata read");
-  assertUpstreamToolHasProperty(tool, "fileKey", "metadata read");
+  const tool = selectRequiredUpstreamTool(tools, GET_METADATA_TOOL_NAME, requireWrapperUpstreamKind(GET_METADATA_CONTRACT));
+  assertUpstreamToolHasProperties(
+    tool,
+    [
+      ...(GET_METADATA_CONTRACT.requiredUpstreamProperties ?? []),
+      ...(GET_METADATA_CONTRACT.optionalUpstreamProperties ?? []),
+    ],
+    requireWrapperUpstreamKind(GET_METADATA_CONTRACT),
+  );
   await runtime.client.connect();
   const upstreamArgs = removeUndefined({
     fileKey: requested.fileKey,
@@ -3416,17 +3474,15 @@ async function resolveGetMetadataRequest(
     upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
   },
 ): Promise<{ fileKey: string; nodeId?: string }> {
-  const fileReference = parseFigmaFileReference(args.file);
-  const target = resolveSessionTargetInput(args.target ?? args.nodeId ?? extractFigmaNodeId(args.file), session);
-  const fileKey =
-    fileReference.fileKey ??
-    target.fileKey ??
-    session.fileKey ??
-    extractFigmaFileKey(session.fileUrl);
-  if (!fileKey) {
-    throw new Error('figma_workspace_get_metadata requires a Figma file key. Pass "file" or open a session with file context first.');
-  }
-  const nodeId = target.nodeId;
+  const requested = resolveWrapperNodeTarget({
+    args,
+    session,
+    toolName: "figma_workspace_get_metadata",
+    targetFallback: args.nodeId ?? extractFigmaNodeId(args.file),
+    fileKeyError: 'figma_workspace_get_metadata requires a Figma file key. Pass "file" or open a session with file context first.',
+    allowDynamicSelectors: ["$currentPage", "$selection"],
+  });
+  const { fileKey, nodeId } = requested;
   if (nodeId?.startsWith("$")) {
     return resolveGetMetadataDynamicSelector({ fileKey, selector: nodeId, session, runtime });
   }
@@ -3509,12 +3565,9 @@ async function executeGetDesignContext(
   const requested = resolveRequiredNodeScopedRequest(args, session, "figma_workspace_get_design_context");
   return executeDedicatedUpstreamTool({
     args,
+    contract: GET_DESIGN_CONTEXT_CONTRACT,
     runtime,
     session,
-    wrapperToolName: "figma_workspace_get_design_context",
-    upstreamToolName: GET_DESIGN_CONTEXT_TOOL_NAME,
-    upstreamKind: "design context read",
-    requiredProperties: ["fileKey", "nodeId"],
     upstreamArguments: {
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
@@ -3553,12 +3606,9 @@ async function executeGetMotionContext(
   const requested = resolveRequiredNodeScopedRequest(args, session, "figma_workspace_get_motion_context");
   return executeDedicatedUpstreamTool({
     args,
+    contract: GET_MOTION_CONTEXT_CONTRACT,
     runtime,
     session,
-    wrapperToolName: "figma_workspace_get_motion_context",
-    upstreamToolName: GET_MOTION_CONTEXT_TOOL_NAME,
-    upstreamKind: "motion context read",
-    requiredProperties: ["fileKey", "nodeId"],
     optionalProperties: args.recursive === undefined ? [] : ["recursive"],
     upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
@@ -3597,12 +3647,9 @@ async function executeExportVideo(
   const requested = resolveExportVideoRequest(args, session);
   return executeDedicatedUpstreamTool({
     args,
+    contract: EXPORT_VIDEO_CONTRACT,
     runtime,
     session,
-    wrapperToolName: "figma_workspace_export_video",
-    upstreamToolName: EXPORT_VIDEO_TOOL_NAME,
-    upstreamKind: "video export",
-    requiredProperties: ["fileKey"],
     optionalProperties: [
       requested.nodeId === undefined ? undefined : "nodeId",
       args.jobId === undefined ? undefined : "jobId",
@@ -3653,12 +3700,9 @@ async function executeSearchDesignSystem(
   const query = args.query.trim();
   return executeDedicatedUpstreamTool({
     args,
+    contract: SEARCH_DESIGN_SYSTEM_CONTRACT,
     runtime,
     session,
-    wrapperToolName: "figma_workspace_search_design_system",
-    upstreamToolName: SEARCH_DESIGN_SYSTEM_TOOL_NAME,
-    upstreamKind: "design system search",
-    requiredProperties: ["fileKey", "query"],
     optionalProperties: [
       args.disableCodeConnect === undefined ? undefined : "disableCodeConnect",
       args.includeComponents === undefined ? undefined : "includeComponents",
@@ -3704,12 +3748,9 @@ async function executeGetLibraries(
   const fileKey = resolveRequiredFileKey(args, session, "figma_workspace_get_libraries");
   return executeDedicatedUpstreamTool({
     args,
+    contract: GET_LIBRARIES_CONTRACT,
     runtime,
     session,
-    wrapperToolName: "figma_workspace_get_libraries",
-    upstreamToolName: GET_LIBRARIES_TOOL_NAME,
-    upstreamKind: "library read",
-    requiredProperties: ["fileKey"],
     optionalProperties: args.offset === undefined ? [] : ["offset"],
     upstreamArguments: removeUndefined({ fileKey, offset: args.offset }) as Record<string, unknown>,
     responseFields: removeUndefined({ fileKey, offset: args.offset }) as Record<string, unknown>,
@@ -3741,12 +3782,9 @@ async function executeGetVariableDefs(
   const requested = resolveGetVariableDefsRequest(args, session);
   return executeDedicatedUpstreamTool({
     args,
+    contract: GET_VARIABLE_DEFS_CONTRACT,
     runtime,
     session,
-    wrapperToolName: "figma_workspace_get_variable_defs",
-    upstreamToolName: GET_VARIABLE_DEFS_TOOL_NAME,
-    upstreamKind: "variable definition read",
-    requiredProperties: ["fileKey", "nodeId"],
     upstreamArguments: {
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
@@ -3791,50 +3829,36 @@ function resolveRequiredFileKey(
 function resolveRequiredNodeScopedRequest(
   args: { file?: string; target?: unknown },
   session: FigmaWorkspaceSession,
-  toolName: string,
+  toolName: LocalWorkspaceToolName,
 ): { fileKey: string; nodeId: string } {
-  const fileReference = parseFigmaFileReference(args.file);
-  const target = resolveSessionTargetInput(args.target ?? extractFigmaNodeId(args.file), session);
-  const fileKey =
-    fileReference.fileKey ??
-    target.fileKey ??
-    session.fileKey ??
-    extractFigmaFileKey(session.fileUrl);
-  if (!fileKey) {
-    throw new Error(`${toolName} requires a Figma file key. Pass "file" or open a session with file context first.`);
-  }
-  const nodeId = target.nodeId;
+  const requested = resolveWrapperNodeTarget({
+    args,
+    session,
+    toolName,
+    requireNode: true,
+  });
+  const nodeId = requested.nodeId;
   if (!nodeId) {
     throw new Error(`${toolName} requires "target". Pass a raw node id, node URL, or cached handle.`);
   }
-  if (nodeId.startsWith("$")) {
-    throw new Error(`${toolName} cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, or cached handle.`);
-  }
-  return { fileKey, nodeId };
+  return { fileKey: requested.fileKey, nodeId };
 }
 
 function resolveExportVideoRequest(
   args: FigmaWorkspaceExportVideoArguments,
   session: FigmaWorkspaceSession,
 ): { fileKey: string; nodeId?: string } {
-  const target = resolveSessionTargetInput(args.target ?? extractFigmaNodeId(args.file), session);
-  const fileReference = parseFigmaFileReference(args.file);
-  const fileKey =
-    fileReference.fileKey ??
-    target.fileKey ??
-    session.fileKey ??
-    extractFigmaFileKey(session.fileUrl);
-  if (!fileKey) {
-    throw new Error('figma_workspace_export_video requires a Figma file key. Pass "file" or open a session with file context first.');
-  }
-  const nodeId = target.nodeId;
-  if (nodeId?.startsWith("$")) {
-    throw new Error(`figma_workspace_export_video cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, cached handle, or jobId.`);
-  }
+  const requested = resolveWrapperNodeTarget({
+    args,
+    session,
+    toolName: "figma_workspace_export_video",
+    fileKeyError: 'figma_workspace_export_video requires a Figma file key. Pass "file" or open a session with file context first.',
+  });
+  const nodeId = requested.nodeId;
   if (!nodeId && !args.jobId) {
     throw new Error('figma_workspace_export_video requires "target" to start an export, or "jobId" to poll an existing export.');
   }
-  return { fileKey, nodeId };
+  return { fileKey: requested.fileKey, nodeId };
 }
 
 function normalizeRequiredString(value: unknown, field: string, toolName: string): string {
@@ -3853,36 +3877,37 @@ function resolveGetVariableDefsRequest(
 
 async function executeDedicatedUpstreamTool(options: {
   args: { refresh?: boolean; inlineResultLimit?: number };
+  contract: FigmaWorkspaceWrapperContract;
   runtime: {
     client: FigmaUpstreamMcpProxyClient;
     sessions: FigmaWorkspaceSessionStore;
     upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
   };
   session: FigmaWorkspaceSession;
-  wrapperToolName: string;
-  upstreamToolName: string;
-  upstreamKind: string;
-  requiredProperties: string[];
   optionalProperties?: string[];
   upstreamArguments: Record<string, unknown>;
   responseFields: Record<string, unknown>;
   historySummary: string;
   nodeIds: string[];
 }): Promise<Record<string, unknown>> {
+  const upstreamToolName = requireWrapperUpstreamToolName(options.contract);
+  const upstreamKind = requireWrapperUpstreamKind(options.contract);
   const tools = await options.runtime.upstreamToolCache.list(Boolean(options.args.refresh));
-  const tool = selectRequiredUpstreamTool(tools, options.upstreamToolName, options.upstreamKind);
+  const tool = selectRequiredUpstreamTool(tools, upstreamToolName, upstreamKind);
+  const optionalProperties = options.optionalProperties ?? (options.contract.optionalUpstreamProperties ?? [])
+    .filter((property) => Object.prototype.hasOwnProperty.call(options.upstreamArguments, property));
   assertUpstreamToolHasProperties(
     tool,
-    [...options.requiredProperties, ...(options.optionalProperties ?? [])],
-    options.upstreamKind,
+    [...(options.contract.requiredUpstreamProperties ?? []), ...optionalProperties],
+    upstreamKind,
   );
   await options.runtime.client.connect();
-  const upstream = await options.runtime.client.callTool(options.upstreamToolName, options.upstreamArguments);
+  const upstream = await options.runtime.client.callTool(upstreamToolName, options.upstreamArguments);
   const parsed = parseUpstreamToolResult(upstream);
   options.runtime.sessions.rememberHistory(options.session, {
     id: randomUUID(),
     at: new Date().toISOString(),
-    tool: options.wrapperToolName,
+    tool: options.contract.toolName,
     mode: "upstream",
     summary: options.historySummary,
     nodeIds: options.nodeIds,
@@ -3891,29 +3916,26 @@ async function executeDedicatedUpstreamTool(options: {
     ok: !parsed.upstreamError,
     session: responseSession(options.session),
     ...options.responseFields,
-    guidanceRef: createWrapperGuidanceRef(options.wrapperToolName),
+    guidanceRef: createWrapperGuidanceRef(options.contract.toolName),
     ...upstreamResultFields({
       parsed,
       upstream,
     }),
     ...upstreamFailureFields(parsed),
   }) as Record<string, unknown>;
-  const inlineResultLimit = normalizeInlineResultLimit(options.args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
-  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
-  const needsOutputFile = parsed.upstreamError || isRecord(limitedPayload.inlineResultLimit);
-  if (!needsOutputFile) {
-    return limitedPayload;
-  }
-  return {
-    ...limitedPayload,
-    outputFiles: await writeCallUpstreamResultFiles({
-      toolName: options.upstreamToolName,
-      wrapperToolName: options.wrapperToolName,
+  return shapeUpstreamBackedResponse({
+    contract: options.contract,
+    parsed,
+    resultPayload,
+    inlineResultLimit: options.args.inlineResultLimit,
+    writeOutputFiles: (upstreamEnvelopePayload) => writeCallUpstreamResultFiles({
+      toolName: upstreamToolName,
+      wrapperToolName: options.contract.toolName,
       session: options.session,
       resultPayload,
-      upstream: upstreamEnvelope(parsed),
+      upstream: upstreamEnvelopePayload,
     }),
-  };
+  });
 }
 
 async function executeCallUpstreamTool(
@@ -3962,24 +3984,19 @@ async function executeCallUpstreamTool(
     }),
     ...upstreamFailureFields(parsed),
   };
-  const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
-  const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["upstream.result", "upstream.text"]);
-  const needsOutputFile = parsed.upstreamError || isRecord(limitedPayload.inlineResultLimit);
-  if (!needsOutputFile) {
-    return limitedPayload;
-  }
-  const outputFiles = await writeCallUpstreamResultFiles({
-    toolName: args.toolName,
-    wrapperToolName: "figma_workspace_call_upstream_tool",
-    session,
+  return shapeUpstreamBackedResponse({
+    contract: CALL_UPSTREAM_TOOL_CONTRACT,
+    parsed,
     resultPayload,
-    upstream: upstreamEnvelope(parsed),
+    inlineResultLimit: args.inlineResultLimit,
+    writeOutputFiles: (upstreamEnvelopePayload) => writeCallUpstreamResultFiles({
+      toolName: args.toolName,
+      wrapperToolName: "figma_workspace_call_upstream_tool",
+      session,
+      resultPayload,
+      upstream: upstreamEnvelopePayload,
+    }),
   });
-  const payload = {
-    ...limitedPayload,
-    outputFiles,
-  };
-  return payload;
 }
 
 async function handleLookup(
@@ -6641,7 +6658,7 @@ function createToolTierPayload(): Record<string, unknown> {
 }
 
 function createToolArgumentGuidancePayload(): Record<string, unknown> {
-  const nodeScopedTargetGuidance = "Targets accept a string raw node id, string node URL, string $handle, { handle:\"$hero\" }, or { fileKey, nodeId }. Raw node id / $handle strings require open/prepare file context; node URL and { fileKey, nodeId } can supply file context directly.";
+  const nodeScopedTargetGuidance = FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION;
   return {
     title: {
       optional: true,
@@ -6791,7 +6808,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       },
       advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName"],
       avoidUnless: {
-        callUpstreamTool: "Use figma_workspace_call_upstream_tool only for official upstream tools not covered by a dedicated figma_workspace_* wrapper.",
+        callUpstreamTool: FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
         inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
         refresh: "Use only for upstream tool-cache debug.",
       },
@@ -6856,7 +6873,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     callUpstreamTool: {
       tool: "figma_workspace_call_upstream_tool",
       tier: "advancedEscapeHatches",
-      guidance: "Explicit upstream escape hatch for official Figma MCP capabilities without local wrappers, including shader effect/fill reads. Read figma-workspace://upstream-tools, then figma-workspace://upstream-tools/{name}, and do not use for use_figma/get_metadata/get_screenshot/upload_assets/download_assets/get_design_context/get_motion_context/export_video/search_design_system/get_libraries/get_variable_defs.",
+      guidance: `Explicit upstream escape hatch for official Figma MCP capabilities without local wrappers, including shader effect/fill reads. Read figma-workspace://upstream-tools, then figma-workspace://upstream-tools/{name}, and do not use for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
       recommendedCalls: {
         explicit: { sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} },
       },
@@ -6957,9 +6974,9 @@ function createGuidePayload(): Record<string, unknown> {
     ],
     wrapperWorkflowGraph: createPublicWrapperWorkflowPayloads(FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH),
     upstreamEscapeHatch: [
-      "Use figma_workspace_call_upstream_tool only for explicit uncovered official upstream tools.",
+      FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
       "Examples currently exposed through upstream discovery but not covered by dedicated wrappers include file generation, FigJam diagram generation, account checks, and Code Connect mutation/suggestion helpers.",
-      "Before using it, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}; dedicated wrappers cover use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, and get_variable_defs.",
+      `Before using it, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}; dedicated wrappers cover ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
     ],
     responseContract: [
       "Top-level ok reports local wrapper completion. upstream.ok reports effective upstream/business success when an upstream envelope is present.",
@@ -7063,7 +7080,7 @@ async function readReplResource(
             categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
             upstreamError: upstreamError ? responseUpstreamError(upstreamError) : undefined,
             primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : undefined,
-            guidance: "Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool for official capabilities without local wrappers, including shader effect/fill tools; use dedicated figma_workspace_* workflow tools for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video, search_design_system, get_libraries, and get_variable_defs.",
+            guidance: `Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool for official capabilities without local wrappers, including shader effect/fill tools; use dedicated figma_workspace_* workflow tools for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
           }, null, 2),
         },
       ],
@@ -7108,7 +7125,7 @@ async function readReplResource(
             description: tool.description,
             inputSchema: tool.inputSchema,
             callTool: "figma_workspace_call_upstream_tool",
-            guidance: "Full upstream tool contract. Use figma_workspace_call_upstream_tool for official upstream capabilities without local wrappers; prefer dedicated figma_workspace_* workflow tools when available.",
+            guidance: `Full upstream tool contract. Use figma_workspace_call_upstream_tool for official upstream capabilities without local wrappers; prefer dedicated figma_workspace_* workflow tools when available. Covered upstream tools: ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
           }, null, 2),
         },
       ],
@@ -7703,6 +7720,29 @@ function runScriptUpstreamFailureFields(parsed: ParsedUpstreamToolResult): Recor
   };
 }
 
+async function shapeUpstreamBackedResponse(options: {
+  contract: FigmaWorkspaceWrapperContract;
+  parsed: ParsedUpstreamToolResult;
+  resultPayload: Record<string, unknown>;
+  inlineResultLimit: unknown;
+  writeOutputFiles: (upstream: Record<string, unknown>) => Promise<FigmaWorkspaceOutputFiles>;
+}): Promise<Record<string, unknown>> {
+  const inlineResultLimit = normalizeInlineResultLimit(options.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
+  const limitedPayload = limitInlineScriptResult(
+    options.resultPayload,
+    inlineResultLimit,
+    [...options.contract.outputPolicy.inlineLimitFields],
+  );
+  const needsOutputFile = options.parsed.upstreamError || isRecord(limitedPayload.inlineResultLimit);
+  if (!needsOutputFile) {
+    return limitedPayload;
+  }
+  return {
+    ...limitedPayload,
+    outputFiles: await options.writeOutputFiles(upstreamEnvelope(options.parsed)),
+  };
+}
+
 function responseUpstreamError(error: FigmaWorkspaceUpstreamError): Record<string, unknown> {
   return {
     message: error.message,
@@ -7915,6 +7955,37 @@ function normalizeLocalHandleName(name: string): string {
 
 function resolveSessionNodeInput(input: string | undefined, session: FigmaWorkspaceSession): string | undefined {
   return resolveSessionTargetInput(input, session).nodeId;
+}
+
+function resolveWrapperNodeTarget(options: {
+  args: { file?: string; target?: unknown };
+  session: FigmaWorkspaceSession;
+  toolName: LocalWorkspaceToolName;
+  targetFallback?: unknown;
+  requireNode?: boolean;
+  allowDynamicSelectors?: readonly string[];
+  fileKeyError?: string;
+  targetError?: string;
+}): { fileKey: string; nodeId?: string; handle?: string } {
+  const fileReference = parseFigmaFileReference(options.args.file);
+  const targetInput = options.args.target ?? options.targetFallback ?? extractFigmaNodeId(options.args.file);
+  const target = resolveSessionTargetInput(targetInput, options.session);
+  const fileKey =
+    fileReference.fileKey ??
+    target.fileKey ??
+    options.session.fileKey ??
+    extractFigmaFileKey(options.session.fileUrl);
+  if (!fileKey) {
+    throw new Error(options.fileKeyError ?? `${options.toolName} requires a Figma file key. Pass "file" or open a session with file context first.`);
+  }
+  const nodeId = target.nodeId;
+  if (options.requireNode && !nodeId) {
+    throw new Error(options.targetError ?? `${options.toolName} requires "target". Pass a raw node id, node URL, or cached handle.`);
+  }
+  if (nodeId?.startsWith("$") && !options.allowDynamicSelectors?.includes(nodeId)) {
+    throw new Error(`${options.toolName} cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, or cached handle.`);
+  }
+  return { fileKey, nodeId, handle: target.handle };
 }
 
 function resolveSessionTargetInput(input: unknown, session: FigmaWorkspaceSession): { nodeId?: string; handle?: string; fileKey?: string } {

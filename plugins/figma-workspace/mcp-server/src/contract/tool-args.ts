@@ -773,11 +773,19 @@ function assertOptionalTargetValue(value: unknown, displayName: string): void {
   }
   assertRemovedArguments(
     value,
-    ["nodeId", "targetNodeId", "targetHandle", "targetId"],
-    "handle",
-    `${displayName}.nodeId/targetNodeId/targetHandle/targetId`,
+    ["targetNodeId", "targetHandle", "targetId"],
+    "{ fileKey, nodeId } or handle",
+    `${displayName}.targetNodeId/targetHandle/targetId`,
   );
-  assertOptionalStringFieldsWithPrefix(value, displayName, ["handle"]);
+  assertOptionalStringFieldsWithPrefix(value, displayName, [
+    "fileKey",
+    "handle",
+    "nodeId",
+    "target",
+    "id",
+    "url",
+    "nodeUrl",
+  ]);
 }
 
 function assertOptionalCaptureTargetValue(value: unknown, displayName: string): void {
