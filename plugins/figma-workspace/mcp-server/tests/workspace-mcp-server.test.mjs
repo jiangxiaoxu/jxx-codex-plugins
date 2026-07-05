@@ -73,6 +73,12 @@ function structuredToolResult(result) {
   return result.structuredContent;
 }
 
+function requiredBranches(schema) {
+  return (schema.anyOf ?? [])
+    .map((branch) => branch.required ?? [])
+    .map((required) => [...required].sort());
+}
+
 function assertFilePointer(pointer, expectedPath, options = {}) {
   assert.equal(pointer?.path, expectedPath);
   assert.equal(typeof pointer.bytes, "number");
@@ -1456,6 +1462,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
     "figma_workspace_search_design_system",
   ]);
   assert.equal(tools.tools.length, 19);
+  const toolsByName = new Map(tools.tools.map((tool) => [tool.name, tool]));
   const wrapperContracts = FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS;
   const wrapperContractsByTool = new Map(wrapperContracts.map((contract) => [contract.toolName, contract]));
   assert.deepEqual(
@@ -1477,6 +1484,19 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(wrapperContractsByTool.get("figma_workspace_call_upstream_tool").category, "upstream-escape-hatch");
   assert.equal(wrapperContractsByTool.get("figma_workspace_get_design_context").upstreamToolName, "get_design_context");
   assert.deepEqual(wrapperContractsByTool.get("figma_workspace_get_metadata").outputPolicy.debugFiles, ["metadataFile"]);
+  assert.deepEqual(toolsByName.get("figma_workspace_eval").inputSchema.required, ["code"]);
+  assert.deepEqual(toolsByName.get("figma_workspace_capture_node").inputSchema.required, ["target"]);
+  assert.deepEqual(toolsByName.get("figma_workspace_search_design_system").inputSchema.required, ["query"]);
+  assert.deepEqual(toolsByName.get("figma_workspace_lookup").inputSchema.required, ["kind"]);
+  assert.deepEqual(toolsByName.get("figma_workspace_prepare_task").inputSchema.required, ["taskName"]);
+  assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_run_script_file").inputSchema), [["scriptPath"], ["inputFile"]]);
+  assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_apply_asset_manifest").inputSchema), [["manifestPath"], ["assets"]]);
+  assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_download_assets").inputSchema), [["targets"], ["manifestPath"]]);
+  assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_run_task_plan").inputSchema), [["planPath"], ["steps"]]);
+  assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_get_design_context").inputSchema), [["target"], ["file"]]);
+  assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_get_motion_context").inputSchema), [["target"], ["file"]]);
+  assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_get_variable_defs").inputSchema), [["target"], ["file"]]);
+  assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_export_video").inputSchema), [["target"], ["file"], ["jobId"]]);
   for (const tool of tools.tools) {
     assert.equal(
       tool.inputSchema.properties.title.description,
@@ -1986,6 +2006,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(aggregateGuide.assetWorkflow.some((step) => /figma_workspace_apply_asset_manifest/.test(step)));
   assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /figma-workspace:\/\/upstream-tools\/\{name\}/.test(step)));
   assert.ok(aggregateGuide.inspectionAndQa.some((step) => /figma_workspace_get_motion_context/.test(step)));
+  assert.ok(aggregateGuide.inspectionAndQa.some((step) => /\$currentPage/.test(step) && /single-node \$selection/.test(step)));
   assert.ok(aggregateGuide.motionAndShaders.some((step) => /figma_workspace_export_video/.test(step)));
   assert.ok(aggregateGuide.motionAndShaders.some((step) => /shader library reads/.test(step)));
   assert.equal(aggregateLookupIndex.guidance.tool, "figma_workspace_guidance");
@@ -8741,6 +8762,11 @@ test("figma workspace guidance returns compact cards and intent routing without 
   assert.match(serverSource, /fromHandleObject: \{ sessionId: "<session>", target: \{ handle: "\$hero" \} \}/);
   assert.match(serverSource, /fromObjectTarget: \{ target: \{ fileKey: "<figma file key>", nodeId: "<node id>" \} \}/);
   assert.match(serverSource, /variableDefsFromObjectTarget: \{ target: \{ fileKey: "<figma file key>", nodeId: "<node id>" \} \}/);
+  assert.match(serverSource, /fromCurrentPage: \{ sessionId: "<session>", target: "\$currentPage" \}/);
+  assert.match(serverSource, /fromSingleSelection: \{ sessionId: "<session>", target: "\$selection" \}/);
+  assert.doesNotMatch(serverSource, /Do not pass \$selection here/);
+  assert.match(JSON.stringify(planJson.workflow.guidance), /\$currentPage/);
+  assert.match(JSON.stringify(planJson.workflow.guidance), /single-node \$selection/);
 
   const longPlanResult = await mcpClient.callTool({
     name: "figma_workspace_guidance",
