@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -193,9 +196,140 @@ test("build output serves guidance and lookup from staged upstream corpus", asyn
   }
 });
 
+test("packaged dist starts and typechecks without package node_modules", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-installed-dist-"));
+  try {
+    await cp(new URL("../package.json", import.meta.url), join(tempDir, "package.json"));
+    await cp(new URL("../dist/", import.meta.url), join(tempDir, "dist"), { recursive: true });
+    await writeFile(join(tempDir, "smoke.mjs"), installedDistSmokeScript, "utf8");
+
+    const result = await runNodeScript(join(tempDir, "smoke.mjs"), tempDir);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stderr, "");
+
+    const smoke = JSON.parse(result.stdout);
+    assert.deepEqual(smoke, {
+      ok: true,
+      diagnostics: 0,
+      upstreamCalls: 1,
+      upstreamName: "use_figma",
+      hasCode: true,
+      upstreamOk: true,
+      smoke: true,
+    });
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 function structuredToolResult(result) {
   assert.ok(result.structuredContent);
   const content = Array.isArray(result.content) ? result.content : [];
   assert.equal(content.some((item) => item?.type === "text"), false);
   return result.structuredContent;
+}
+
+const installedDistSmokeScript = String.raw`
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { createFigmaWorkspaceClient } from "./dist/mcp/index.js";
+
+await import("./dist/mcp/workspace-mcp-stdio-bin.js");
+
+const calls = [];
+const fakeUpstream = {
+  async connect() {
+    calls.push(["connect"]);
+  },
+  async close() {
+    calls.push(["close"]);
+  },
+  async callTool(name, args) {
+    calls.push(["callTool", name, args]);
+    if (name !== "use_figma") {
+      throw new Error("unexpected upstream tool " + name);
+    }
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            __figmaRepl: { sessionId: "main", handles: {} },
+            result: { smoke: true },
+          }),
+        },
+      ],
+    };
+  },
+  async listTools() {
+    calls.push(["listTools"]);
+    return {
+      tools: [
+        {
+          name: "use_figma",
+          inputSchema: {
+            type: "object",
+            properties: { code: { type: "string" } },
+            required: ["code"],
+          },
+        },
+      ],
+    };
+  },
+  async listResources() {
+    return { resources: [] };
+  },
+  async readResource() {
+    return { contents: [] };
+  },
+};
+
+const client = createFigmaWorkspaceClient({ client: fakeUpstream });
+const workspaceDir = join(process.cwd(), "workspace");
+await mkdir(workspaceDir, { recursive: true });
+const inputFile = join(workspaceDir, "smoke.figma.ts");
+await writeFile(
+  inputFile,
+  "const frame = figma.createFrame();\nframe.name = 'Smoke';\nreturn { id: frame.id };\n",
+  "utf8",
+);
+
+const result = await client.runScriptFile({
+  file: "FILE123",
+  scriptPath: inputFile,
+  strict: true,
+  cwd: workspaceDir,
+});
+const callTool = calls.find((entry) => entry[0] === "callTool") ?? [];
+console.log(JSON.stringify({
+  ok: result.ok,
+  diagnostics: result.diagnostics.length,
+  upstreamCalls: calls.filter((entry) => entry[0] === "callTool").length,
+  upstreamName: callTool[1],
+  hasCode: typeof callTool[2]?.code === "string",
+  upstreamOk: result.upstream?.ok,
+  smoke: result.upstream?.result?.smoke === true,
+}));
+`;
+
+function runNodeScript(scriptPath, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [scriptPath], {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (data) => {
+      stdout += data;
+    });
+    child.stderr.on("data", (data) => {
+      stderr += data;
+    });
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      resolve({ code, signal, stdout: stdout.trim(), stderr: stderr.trim() });
+    });
+  });
 }
