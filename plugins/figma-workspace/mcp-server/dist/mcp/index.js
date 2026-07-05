@@ -42324,7 +42324,7 @@ function createReplToolDescriptions(options) {
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
         inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.result/upstream.text only. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
-      })
+      }, { anyOf: [requiredBranch("scriptPath"), requiredBranch("inputFile")] })
     },
     {
       name: "figma_workspace_apply_asset_manifest",
@@ -42339,7 +42339,7 @@ function createReplToolDescriptions(options) {
           items: { type: "object", additionalProperties: true }
         },
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload. Missing or incomplete validation records make the workflow fail with outputFiles.debugFile instead of silently succeeding.", { default: true })
-      })
+      }, { anyOf: [requiredBranch("manifestPath"), requiredBranch("assets")] })
     },
     {
       name: "figma_workspace_download_assets",
@@ -42354,7 +42354,7 @@ function createReplToolDescriptions(options) {
         },
         manifestPath: stringProperty("Optional batch manifest path. Accepts an absolute path or a file name inside the initialized file-context workspace. Manifest shape is exactly { targets: [...] }; assets aliases are rejected."),
         outputDir: stringProperty("Optional output directory. Relative paths require an initialized workspace. Defaults to <slug>.downloads in the workspace, or a temp download-results directory without a workspace.")
-      })
+      }, { anyOf: [requiredBranch("targets"), requiredBranch("manifestPath")] })
     },
     {
       name: "figma_workspace_capture_node",
@@ -42381,7 +42381,7 @@ function createReplToolDescriptions(options) {
           items: taskPlanStepProperty("One task-plan step. Put tool-specific inputs under args.")
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true.", { default: true })
-      })
+      }, { anyOf: [requiredBranch("planPath"), requiredBranch("steps")] })
     },
     {
       name: "figma_workspace_prepare_task",
@@ -42401,7 +42401,7 @@ function createReplToolDescriptions(options) {
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
         template: stringProperty("Template hint copied into the generated .figma.ts comments. V1 templates are curated guidance only."),
         overwrite: booleanProperty("Advanced destructive overwrite of an existing script/result pair. Defaults false.")
-      })
+      }, ["taskName"])
     },
     {
       name: "figma_workspace_guidance",
@@ -42467,7 +42467,7 @@ function createReplToolDescriptions(options) {
         clientFrameworks: stringProperty("Optional official get_design_context clientFrameworks hint. Defaults to unknown."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
-      })
+      }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
     },
     {
       name: "figma_workspace_get_motion_context",
@@ -42484,7 +42484,7 @@ function createReplToolDescriptions(options) {
         recursive: booleanProperty("Optional official get_motion_context flag for descendant motion data."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
-      })
+      }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
     },
     {
       name: "figma_workspace_export_video",
@@ -42502,7 +42502,7 @@ function createReplToolDescriptions(options) {
         quality: enumProperty(["low", "medium", "high"], "Optional official export_video quality hint."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
-      })
+      }, { anyOf: [requiredBranch("target"), requiredBranch("file"), requiredBranch("jobId")] })
     },
     {
       name: "figma_workspace_search_design_system",
@@ -42553,7 +42553,7 @@ function createReplToolDescriptions(options) {
         clientFrameworks: stringProperty("Optional official get_variable_defs clientFrameworks hint. Defaults to unknown."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
-      })
+      }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
     },
     {
       name: "figma_workspace_call_upstream_tool",
@@ -42818,13 +42818,18 @@ function assertLocalWorkspaceToolDescriptions(tools) {
   }
   return describedTools;
 }
-function objectSchema(properties, required2 = []) {
+function objectSchema(properties, optionsOrRequired = []) {
+  const options = Array.isArray(optionsOrRequired) ? { required: optionsOrRequired } : optionsOrRequired;
   return {
     type: "object",
     properties,
-    required: required2,
+    required: [...options.required ?? []],
+    ...options.anyOf ? { anyOf: [...options.anyOf] } : {},
     additionalProperties: false
   };
+}
+function requiredBranch(...fields) {
+  return { required: fields };
 }
 function titleProperty() {
   return stringProperty("Optional MCP call display label for Codex/UI only; validated as a string but not saved, defaulted, or used for task/file naming.");
@@ -48540,7 +48545,7 @@ function createFileWorkflowPayload() {
       "Use figma_workspace_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
       "Use figma_workspace_capture_node to write final visual QA captures to local PNG files. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
       "Use figma_workspace_run_task_plan for sequential file-plan workflows that combine preflighted script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
-      "Use figma_workspace_get_metadata for broad layer-tree discovery: it calls official get_metadata, converts XML to a compact JSON node tree, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
+      "Use figma_workspace_get_metadata for broad layer-tree discovery: target can be a raw node id, node URL, cached handle, $currentPage, single-node $selection, or target:{ fileKey, nodeId }. It calls official get_metadata, converts XML to compact JSON, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
       "Use figma_workspace_inspect only after the session has file context from figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task. It executes upstream use_figma; target must be a string such as $selection, $currentPage, a handle, raw node id, or node URL, not { fileKey, nodeId }.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
@@ -48727,7 +48732,7 @@ function createGuidePayload() {
       "Use figma_workspace_download_assets when official download_assets should export renders or raw/source images to local folders."
     ],
     inspectionAndQa: [
-      "Use figma_workspace_get_metadata for broad recursive layer-tree discovery with compact lock/layout-state enrichment, then figma_workspace_inspect for targeted node/style/handle validation.",
+      "Use figma_workspace_get_metadata for broad recursive layer-tree discovery with compact lock/layout-state enrichment; targets may be raw ids, node URLs, cached handles, $currentPage, single-node $selection, or target:{ fileKey, nodeId }. Then use figma_workspace_inspect for targeted node/style/handle validation.",
       "Use figma_workspace_get_design_context when implementation or parity review needs official design-to-code context, and figma_workspace_get_motion_context when animation data is needed.",
       "Use figma_workspace_capture_node for final visual QA because it writes a local PNG path in structuredContent. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly.",
       "For visible audit markers or temporary verification labels, use metadata/inspect or $.findFreeSlot to place them outside the target frame or in a confirmed free slot, then capture to confirm they do not occlude the design under review."

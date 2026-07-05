@@ -74,7 +74,7 @@ export function createReplToolDescriptions(
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
         inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.result/upstream.text only. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }),
+      }, { anyOf: [requiredBranch("scriptPath"), requiredBranch("inputFile")] }),
     },
     {
       name: "figma_workspace_apply_asset_manifest",
@@ -90,7 +90,7 @@ export function createReplToolDescriptions(
           items: { type: "object", additionalProperties: true },
         },
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload. Missing or incomplete validation records make the workflow fail with outputFiles.debugFile instead of silently succeeding.", { default: true }),
-      }),
+      }, { anyOf: [requiredBranch("manifestPath"), requiredBranch("assets")] }),
     },
     {
       name: "figma_workspace_download_assets",
@@ -106,7 +106,7 @@ export function createReplToolDescriptions(
         },
         manifestPath: stringProperty("Optional batch manifest path. Accepts an absolute path or a file name inside the initialized file-context workspace. Manifest shape is exactly { targets: [...] }; assets aliases are rejected."),
         outputDir: stringProperty("Optional output directory. Relative paths require an initialized workspace. Defaults to <slug>.downloads in the workspace, or a temp download-results directory without a workspace."),
-      }),
+      }, { anyOf: [requiredBranch("targets"), requiredBranch("manifestPath")] }),
     },
     {
       name: "figma_workspace_capture_node",
@@ -135,7 +135,7 @@ export function createReplToolDescriptions(
           items: taskPlanStepProperty("One task-plan step. Put tool-specific inputs under args."),
         },
         stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true.", { default: true }),
-      }),
+      }, { anyOf: [requiredBranch("planPath"), requiredBranch("steps")] }),
     },
     {
       name: "figma_workspace_prepare_task",
@@ -156,7 +156,7 @@ export function createReplToolDescriptions(
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
         template: stringProperty("Template hint copied into the generated .figma.ts comments. V1 templates are curated guidance only."),
         overwrite: booleanProperty("Advanced destructive overwrite of an existing script/result pair. Defaults false."),
-      }),
+      }, ["taskName"]),
     },
     {
       name: "figma_workspace_guidance",
@@ -226,7 +226,7 @@ export function createReplToolDescriptions(
         clientFrameworks: stringProperty("Optional official get_design_context clientFrameworks hint. Defaults to unknown."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }),
+      }, { anyOf: [requiredBranch("target"), requiredBranch("file")] }),
     },
     {
       name: "figma_workspace_get_motion_context",
@@ -244,7 +244,7 @@ export function createReplToolDescriptions(
         recursive: booleanProperty("Optional official get_motion_context flag for descendant motion data."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }),
+      }, { anyOf: [requiredBranch("target"), requiredBranch("file")] }),
     },
     {
       name: "figma_workspace_export_video",
@@ -263,7 +263,7 @@ export function createReplToolDescriptions(
         quality: enumProperty(["low", "medium", "high"], "Optional official export_video quality hint."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }),
+      }, { anyOf: [requiredBranch("target"), requiredBranch("file"), requiredBranch("jobId")] }),
     },
     {
       name: "figma_workspace_search_design_system",
@@ -317,7 +317,7 @@ export function createReplToolDescriptions(
         clientFrameworks: stringProperty("Optional official get_variable_defs clientFrameworks hint. Defaults to unknown."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }),
+      }, { anyOf: [requiredBranch("target"), requiredBranch("file")] }),
     },
     {
       name: "figma_workspace_call_upstream_tool",
@@ -587,16 +587,29 @@ function assertLocalWorkspaceToolDescriptions(tools: Record<string, unknown>[]):
   return describedTools;
 }
 
+type ObjectSchemaOptions = {
+  required?: readonly string[];
+  anyOf?: readonly Record<string, unknown>[];
+};
+
 function objectSchema(
   properties: Record<string, unknown>,
-  required: string[] = [],
+  optionsOrRequired: readonly string[] | ObjectSchemaOptions = [],
 ): Record<string, unknown> {
+  const options: ObjectSchemaOptions = Array.isArray(optionsOrRequired)
+    ? { required: optionsOrRequired as readonly string[] }
+    : optionsOrRequired as ObjectSchemaOptions;
   return {
     type: "object",
     properties,
-    required,
+    required: [...(options.required ?? [])],
+    ...(options.anyOf ? { anyOf: [...options.anyOf] } : {}),
     additionalProperties: false,
   };
+}
+
+function requiredBranch(...fields: string[]): Record<string, unknown> {
+  return { required: fields };
 }
 
 function titleProperty(): Record<string, unknown> {
