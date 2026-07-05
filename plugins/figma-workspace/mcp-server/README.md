@@ -2,7 +2,7 @@
 
 Node package for two Figma MCP frontends:
 
-- `figma_workspace_mcp`: agent-friendly facade for local `.figma.js` workflows, output files, compact lookup, asset manifests, capture, and task plans;
+- `figma_workspace_mcp`: agent-friendly facade for local `.figma.ts` workflows, output files, compact lookup, asset manifests, capture, and task plans;
 - `figma_workspace_upstream_stdio`: optional transparent bridge CLI/server name for `https://mcp.figma.com/mcp` parity checks and Node/node_repl debugging.
 
 Both reuse the OAuth cache created by `figma-workspace`.
@@ -108,24 +108,26 @@ await figma.prepareTask({
 });
 await figma.runScriptFile({
   sessionId: "settings workspace",
-  inputFile: "settings-panel-polish.figma.js",
+  inputFile: "settings-panel-polish.figma.ts",
   strict: true,
 });
 ```
 
-`figma_workspace_prepare_task` creates `<cwd>/figma-workspace/<fileKey-or-fileSlug>/` when `file` is supplied. `cwd` is optional and defaults to the MCP server process cwd. A task normally uses slug-style `taskName` such as `settings-panel-polish` and `<taskName>.figma.js` in that folder, then calls `runScriptFile` with `inputFile`. `runScriptFile` always runs diagnostics and compiled payload preflight before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. JSON debug/result files are generated on demand and returned through `outputFiles.debugFile`; script upstream sidecars use `outputFiles.upstreamFile`, and failure-only compiled wrappers use `outputFiles.compiledScriptFile`. Absolute `scriptPath`, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
+`figma_workspace_prepare_task` creates `<cwd>/figma-workspace/<fileKey-or-fileSlug>/` when `file` is supplied. `cwd` is optional and defaults to the MCP server process cwd. A task normally uses slug-style `taskName` such as `settings-panel-polish` and `<taskName>.figma.ts` in that folder, then calls `runScriptFile` with `inputFile`. `runScriptFile` strict-checks TypeScript with Figma Plugin API typings, compiles the upstream payload internally, and runs diagnostics before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. JSON debug/result files are generated on demand and returned through `outputFiles.debugFile`; script upstream sidecars use `outputFiles.upstreamFile`, and failure-only compiled payload files use `outputFiles.compiledScriptFile`. Absolute `scriptPath`, upstream overrides, and `run_script_file` `inlineResultLimit` remain advanced/debug escape hatches.
 
-Write ordinary async JavaScript in `.figma.js` files. Use native Figma Plugin API calls for advanced work and injected `$` helpers for common agent tasks:
+Write ordinary async TypeScript script bodies in `.figma.ts` files. Use native Figma Plugin API calls for creation, querying, and layout; injected `$` helpers are a small workflow layer for handles, text/font loading, checkpoints, inspection, assets, placement, guarded replacement, and cloning:
 
-```js
-await $.create({
-  type: "FRAME",
-  as: "$section",
-  name: "Settings section",
-  size: { width: 360, height: 160 },
-  layout: { layoutMode: "VERTICAL", itemSpacing: 12 },
-  appearance: { fills: "#FFFFFF", cornerRadius: 12 },
-});
+```ts
+const section: FrameNode = figma.createFrame();
+section.name = "Settings section";
+section.resize(360, 160);
+section.layoutMode = "VERTICAL";
+section.itemSpacing = 12;
+section.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+section.cornerRadius = 12;
+figma.currentPage.appendChild(section);
+$.remember("$section", section);
+
 await $.text({
   parent: "$section",
   as: "$sectionTitle",
@@ -135,7 +137,7 @@ await $.text({
 return await $.checkpoint("section-created", ["$section"], { depth: 1 });
 ```
 
-Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, and `$.cloneNodeTree`. Script files and eval wrapper calls are parsed with AST analysis, and the runner injects only referenced `$` helpers plus required dependencies. Use static references such as `$.text(...)`, `$["text"](...)`, or `const { text } = $`; dynamic `$[name]`, `$` aliasing, object rest destructuring, and local `$` declarations are rejected. Read `figma-workspace://guide` for compact helper categories and hard rules, then call `figma_workspace_guidance({ query })` for on-demand `helperProfiles` with allowed patterns, avoid notes, lookup hints, and examples.
+Common helpers include `$`, `$.handles`, `$.remember`, `$.forget`, `$.resolveId`, `$.node`, `$.select`, `$.text`, `$.checkpoint`, `$.inspect`, `$.imageAsset`, `$.screenshot`, `$.findFreeSlot`, `$.placeNode`, `$.replaceGeneratedFrame`, and `$.cloneNodeTree`. Script files and eval wrapper calls are parsed with AST analysis, and the runner injects only referenced `$` helpers plus required dependencies. Use static references such as `$.text(...)`, `$["text"](...)`, or `const { text } = $`; dynamic `$[name]`, `$` aliasing, object rest destructuring, and local `$` declarations are rejected. Read `figma-workspace://guide` for compact helper categories and hard rules, then call `figma_workspace_guidance({ query })` for on-demand `helperProfiles` with allowed patterns, avoid notes, lookup hints, and examples.
 
 ## Assets, Capture, and Plans
 
@@ -143,7 +145,7 @@ Common helpers include `$.find`, `$.findAll`, `$.create`, `$.text`, `$.layout`, 
 - `figma_workspace_capture_node`: recommended call is `{ sessionId, target, imageFile }`; `imageFile` is the PNG path and no `outputFiles` are returned.
 - `figma_workspace_run_task_plan`: recommended call is `{ sessionId, planPath }`; inline `steps` are advanced fields and each step must be `{ type, args }`.
 
-Keep `.figma.js` transactions small enough for upstream `use_figma` payload limits. Split dense work into skeleton, asset targets, upload fills, and visual fixes when payload diagnostics appear.
+Keep `.figma.ts` transactions small enough for upstream `use_figma` payload limits. Split dense work into skeleton, asset targets, upload fills, and visual fixes when payload diagnostics appear.
 
 ## Guidance and Lookup
 
