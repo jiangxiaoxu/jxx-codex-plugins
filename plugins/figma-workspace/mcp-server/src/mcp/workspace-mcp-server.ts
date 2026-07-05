@@ -60,6 +60,7 @@ import {
 } from "../runtime/guidance-catalog.js";
 import {
   assertSafeFigmaWorkspaceCode,
+  compileFigmaWorkspaceEvalCode,
   compileFigmaWorkspaceScriptFile,
   createFigmaWorkspaceRepairPlan,
   diagnoseFigmaWorkspaceCode,
@@ -1377,12 +1378,17 @@ async function handleEval(
     mode,
     expectedSurface,
   };
-  const diagnostics = toFigmaWorkspaceFileDiagnostics(
-    "<inline eval>",
-    args.code,
-    diagnoseFigmaWorkspaceCode(args.code, diagnosticOptions),
-    diagnosticOptions,
-  );
+  const compiled = compileFigmaWorkspaceEvalCode({ code: args.code });
+  const hasTypescriptParseError = compiled.diagnostics.some((diagnostic) => diagnostic.code === "FIGMA_WORKSPACE_PARSE_ERROR");
+  const runtimeDiagnostics = hasTypescriptParseError
+    ? []
+    : toFigmaWorkspaceFileDiagnostics(
+      "<inline eval>",
+      compiled.code,
+      diagnoseFigmaWorkspaceCode(compiled.code, diagnosticOptions),
+      diagnosticOptions,
+    );
+  const diagnostics = [...compiled.diagnostics, ...runtimeDiagnostics];
   session.lastDiagnostics = diagnostics;
   const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
   if (fatalDiagnostics.length > 0) {
@@ -1398,7 +1404,7 @@ async function handleEval(
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
   const script = buildFigmaEvalScript({
     session,
-    code: args.code,
+    code: compiled.code,
     mode,
   });
   const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
@@ -3404,8 +3410,8 @@ async function executeGetMetadata(
   const upstreamArgs = removeUndefined({
     fileKey: requested.fileKey,
     nodeId: requested.nodeId,
-    clientLanguages: args.clientLanguages ?? "unknown",
-    clientFrameworks: args.clientFrameworks ?? "unknown",
+    clientLanguages: args.clientLanguages,
+    clientFrameworks: args.clientFrameworks,
   }) as Record<string, unknown>;
   const upstream = await runtime.client.callTool(GET_METADATA_TOOL_NAME, upstreamArgs);
   const parsed = parseUpstreamToolResult(upstream);
@@ -3565,12 +3571,12 @@ async function executeGetDesignContext(
     contract: GET_DESIGN_CONTEXT_CONTRACT,
     runtime,
     session,
-    upstreamArguments: {
+    upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages ?? "unknown",
-      clientFrameworks: args.clientFrameworks ?? "unknown",
-    },
+      clientLanguages: args.clientLanguages,
+      clientFrameworks: args.clientFrameworks,
+    }) as Record<string, unknown>,
     responseFields: {
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
@@ -3782,12 +3788,12 @@ async function executeGetVariableDefs(
     contract: GET_VARIABLE_DEFS_CONTRACT,
     runtime,
     session,
-    upstreamArguments: {
+    upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages ?? "unknown",
-      clientFrameworks: args.clientFrameworks ?? "unknown",
-    },
+      clientLanguages: args.clientLanguages,
+      clientFrameworks: args.clientFrameworks,
+    }) as Record<string, unknown>,
     responseFields: {
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
@@ -3891,8 +3897,7 @@ async function executeDedicatedUpstreamTool(options: {
   const upstreamKind = requireWrapperUpstreamKind(options.contract);
   const tools = await options.runtime.upstreamToolCache.list(Boolean(options.args.refresh));
   const tool = selectRequiredUpstreamTool(tools, upstreamToolName, upstreamKind);
-  const optionalProperties = options.optionalProperties ?? (options.contract.optionalUpstreamProperties ?? [])
-    .filter((property) => Object.prototype.hasOwnProperty.call(options.upstreamArguments, property));
+  const optionalProperties = options.optionalProperties ?? [];
   assertUpstreamToolHasProperties(
     tool,
     [...(options.contract.requiredUpstreamProperties ?? []), ...optionalProperties],

@@ -250392,13 +250392,35 @@ function compileFigmaWorkspaceScriptFile(options) {
     }
   };
 }
+function compileFigmaWorkspaceEvalCode(options) {
+  const compiled = compileFigmaWorkspaceTypescriptSource(
+    "__figma_workspace_inline_eval.figma.ts",
+    options.code,
+    true,
+    [
+      "declare function remember(name: string, nodeOrId: string | { readonly id: string }): string;",
+      "declare function forget(name: string): void;",
+      "declare function summarizeNode(node: unknown, depth?: number): FigmaWorkspaceNodeSummary | readonly FigmaWorkspaceNodeSummary[] | null;"
+    ].join("\n")
+  );
+  return {
+    code: compiled.source,
+    diagnostics: compiled.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      source: {
+        ...diagnostic.source,
+        scriptPath: "<inline eval>"
+      }
+    }))
+  };
+}
 function prepareFigmaWorkspaceScriptSource(options) {
   if (!options.scriptPath.endsWith(FIGMA_TYPESCRIPT_EXTENSION)) {
     return { source: options.source, diagnostics: [] };
   }
   return compileFigmaWorkspaceTypescriptSource(options.scriptPath, options.source, Boolean(options.strict));
 }
-function compileFigmaWorkspaceTypescriptSource(scriptPath, source, strict) {
+function compileFigmaWorkspaceTypescriptSource(scriptPath, source, strict, extraDeclarations) {
   const wrappedSource = `${TYPESCRIPT_WRAPPER_PREFIX}${source}${TYPESCRIPT_WRAPPER_SUFFIX}`;
   const compilerOptions = createFigmaWorkspaceTypescriptCompilerOptions(strict);
   const typescriptScriptPath = normalizeTypescriptFileName(scriptPath);
@@ -250410,7 +250432,7 @@ function compileFigmaWorkspaceTypescriptSource(scriptPath, source, strict) {
   host.readFile = (fileName) => {
     const normalizedFileName = normalizeTypescriptFileName(fileName);
     if (normalizedFileName === typescriptScriptPath) return wrappedSource;
-    if (normalizedFileName === helperTypesPath) return readFigmaWorkspaceHelperDeclarations();
+    if (normalizedFileName === helperTypesPath) return [readFigmaWorkspaceHelperDeclarations(), extraDeclarations].filter((item) => typeof item === "string" && item.length > 0).join("\n");
     const bundledLibPath = resolveBundledTypescriptLibPath(fileName);
     if (bundledLibPath) return readFileSync(bundledLibPath, "utf8");
     return originalReadFile(fileName);
@@ -251447,11 +251469,31 @@ var READ_MODE_WRITE_DIAGNOSTICS = [
 ];
 var READ_MODE_ASSIGNMENT_PROPERTIES = /* @__PURE__ */ new Set([
   "name",
+  "x",
+  "y",
+  "width",
+  "height",
+  "visible",
+  "locked",
+  "opacity",
+  "rotation",
   "fills",
   "strokes",
+  "effects",
+  "blendMode",
+  "cornerRadius",
   "characters",
+  "fontName",
+  "fontSize",
+  "lineHeight",
   "layoutMode",
+  "layoutPositioning",
+  "primaryAxisSizingMode",
+  "counterAxisSizingMode",
+  "primaryAxisAlignItems",
+  "counterAxisAlignItems",
   "itemSpacing",
+  "counterAxisSpacing",
   "paddingLeft",
   "paddingRight",
   "paddingTop",
@@ -251883,7 +251925,7 @@ var DIAGNOSTIC_SOURCE_PATTERNS = [
   { code: "FIGMA_WORKSPACE_READ_MODE_CREATE", re: /figma\.create[A-Z]/u },
   { code: "FIGMA_WORKSPACE_READ_MODE_APPEND", re: /\.(?:appendChild|insertChild)\s*\(/u },
   { code: "FIGMA_WORKSPACE_READ_MODE_REMOVE", re: /\.remove\s*\(/u },
-  { code: "FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT", re: /\.(?:name|fills|strokes|characters|layoutMode|itemSpacing|paddingLeft|paddingRight|paddingTop|paddingBottom)\s*(?:=|\+\+|--)/u },
+  { code: "FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT", re: /\.(?:name|x|y|width|height|visible|locked|opacity|rotation|fills|strokes|effects|blendMode|cornerRadius|characters|fontName|fontSize|lineHeight|layoutMode|layoutPositioning|primaryAxisSizingMode|counterAxisSizingMode|primaryAxisAlignItems|counterAxisAlignItems|itemSpacing|counterAxisSpacing|paddingLeft|paddingRight|paddingTop|paddingBottom)\s*(?:=|\+\+|--)/u },
   { code: "FIGMA_WORKSPACE_READ_MODE_RESIZE", re: /\.resize(?:WithoutConstraints)?\s*\(/u },
   { code: "FIGMA_WORKSPACE_CURRENT_PAGE_ASSIGNMENT", re: /\bfigma\.currentPage\s*=/u },
   { code: "FIGMA_WORKSPACE_ROOT_FIND_ALL", re: /\bfigma\.root\.findAll\s*\(/u },
@@ -253096,8 +253138,8 @@ function createReplToolDescriptions(options) {
           description: `Optional metadata root. ${NODE_SCOPED_TARGET_SHAPES} Also accepts $currentPage or a single-node $selection, which are resolved with a read-only use_figma call before official get_metadata. Other dynamic selectors are rejected.`
         },
         nodeId: stringProperty("Optional raw Figma node id. Prefer target for handles, node URLs, $currentPage, or $selection."),
-        clientLanguages: stringProperty("Optional official get_metadata clientLanguages hint. Defaults to unknown."),
-        clientFrameworks: stringProperty("Optional official get_metadata clientFrameworks hint. Defaults to unknown."),
+        clientLanguages: stringProperty("Optional official get_metadata clientLanguages hint. Sent upstream only when explicitly supplied."),
+        clientFrameworks: stringProperty("Optional official get_metadata clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for converted metadata.json. Defaults to 4 KB and is capped at 10 KB; 0 forces metadata.json to outputFiles.metadataFile only.")
       })
@@ -253114,8 +253156,8 @@ function createReplToolDescriptions(options) {
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`
         },
-        clientLanguages: stringProperty("Optional official get_design_context clientLanguages hint. Defaults to unknown."),
-        clientFrameworks: stringProperty("Optional official get_design_context clientFrameworks hint. Defaults to unknown."),
+        clientLanguages: stringProperty("Optional official get_design_context clientLanguages hint. Sent upstream only when explicitly supplied."),
+        clientFrameworks: stringProperty("Optional official get_design_context clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
@@ -253200,8 +253242,8 @@ function createReplToolDescriptions(options) {
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`
         },
-        clientLanguages: stringProperty("Optional official get_variable_defs clientLanguages hint. Defaults to unknown."),
-        clientFrameworks: stringProperty("Optional official get_variable_defs clientFrameworks hint. Defaults to unknown."),
+        clientLanguages: stringProperty("Optional official get_variable_defs clientLanguages hint. Sent upstream only when explicitly supplied."),
+        clientFrameworks: stringProperty("Optional official get_variable_defs clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] })
@@ -254893,12 +254935,15 @@ async function handleEval(args, runtime) {
     mode,
     expectedSurface
   };
-  const diagnostics = toFigmaWorkspaceFileDiagnostics(
+  const compiled = compileFigmaWorkspaceEvalCode({ code: args.code });
+  const hasTypescriptParseError = compiled.diagnostics.some((diagnostic) => diagnostic.code === "FIGMA_WORKSPACE_PARSE_ERROR");
+  const runtimeDiagnostics = hasTypescriptParseError ? [] : toFigmaWorkspaceFileDiagnostics(
     "<inline eval>",
-    args.code,
-    diagnoseFigmaWorkspaceCode(args.code, diagnosticOptions),
+    compiled.code,
+    diagnoseFigmaWorkspaceCode(compiled.code, diagnosticOptions),
     diagnosticOptions
   );
+  const diagnostics = [...compiled.diagnostics, ...runtimeDiagnostics];
   session.lastDiagnostics = diagnostics;
   const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
   if (fatalDiagnostics.length > 0) {
@@ -254913,7 +254958,7 @@ async function handleEval(args, runtime) {
   const evalSettings = await resolveEvalSettings(session, args, runtime);
   const script = buildFigmaEvalScript({
     session,
-    code: args.code,
+    code: compiled.code,
     mode
   });
   const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
@@ -256627,8 +256672,8 @@ async function executeGetMetadata(args, runtime) {
   const upstreamArgs = removeUndefined3({
     fileKey: requested.fileKey,
     nodeId: requested.nodeId,
-    clientLanguages: args.clientLanguages ?? "unknown",
-    clientFrameworks: args.clientFrameworks ?? "unknown"
+    clientLanguages: args.clientLanguages,
+    clientFrameworks: args.clientFrameworks
   });
   const upstream = await runtime.client.callTool(GET_METADATA_TOOL_NAME, upstreamArgs);
   const parsed = parseUpstreamToolResult(upstream);
@@ -256749,12 +256794,12 @@ async function executeGetDesignContext(args, runtime) {
     contract: GET_DESIGN_CONTEXT_CONTRACT,
     runtime,
     session,
-    upstreamArguments: {
+    upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages ?? "unknown",
-      clientFrameworks: args.clientFrameworks ?? "unknown"
-    },
+      clientLanguages: args.clientLanguages,
+      clientFrameworks: args.clientFrameworks
+    }),
     responseFields: {
       fileKey: requested.fileKey,
       nodeId: requested.nodeId
@@ -256884,12 +256929,12 @@ async function executeGetVariableDefs(args, runtime) {
     contract: GET_VARIABLE_DEFS_CONTRACT,
     runtime,
     session,
-    upstreamArguments: {
+    upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
       nodeId: requested.nodeId,
-      clientLanguages: args.clientLanguages ?? "unknown",
-      clientFrameworks: args.clientFrameworks ?? "unknown"
-    },
+      clientLanguages: args.clientLanguages,
+      clientFrameworks: args.clientFrameworks
+    }),
     responseFields: {
       fileKey: requested.fileKey,
       nodeId: requested.nodeId
@@ -256949,7 +256994,7 @@ async function executeDedicatedUpstreamTool(options) {
   const upstreamKind = requireWrapperUpstreamKind(options.contract);
   const tools = await options.runtime.upstreamToolCache.list(Boolean(options.args.refresh));
   const tool = selectRequiredUpstreamTool(tools, upstreamToolName, upstreamKind);
-  const optionalProperties = options.optionalProperties ?? (options.contract.optionalUpstreamProperties ?? []).filter((property) => Object.prototype.hasOwnProperty.call(options.upstreamArguments, property));
+  const optionalProperties = options.optionalProperties ?? [];
   assertUpstreamToolHasProperties(
     tool,
     [...options.contract.requiredUpstreamProperties ?? [], ...optionalProperties],

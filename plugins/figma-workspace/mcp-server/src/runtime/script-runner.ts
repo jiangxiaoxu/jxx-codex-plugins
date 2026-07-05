@@ -102,6 +102,11 @@ export interface CompiledFigmaWorkspaceScriptFile {
   };
 }
 
+export interface CompiledFigmaWorkspaceEvalCode {
+  code: string;
+  diagnostics: FigmaWorkspaceFileDiagnostic[];
+}
+
 const nodeRequire = createRequire(import.meta.url);
 const runtimeDirname = dirname(fileURLToPath(import.meta.url));
 const FIGMA_TYPESCRIPT_EXTENSION = ".figma.ts";
@@ -163,6 +168,31 @@ export function compileFigmaWorkspaceScriptFile(options: {
   };
 }
 
+export function compileFigmaWorkspaceEvalCode(options: {
+  code: string;
+}): CompiledFigmaWorkspaceEvalCode {
+  const compiled = compileFigmaWorkspaceTypescriptSource(
+    "__figma_workspace_inline_eval.figma.ts",
+    options.code,
+    true,
+    [
+      "declare function remember(name: string, nodeOrId: string | { readonly id: string }): string;",
+      "declare function forget(name: string): void;",
+      "declare function summarizeNode(node: unknown, depth?: number): FigmaWorkspaceNodeSummary | readonly FigmaWorkspaceNodeSummary[] | null;",
+    ].join("\n"),
+  );
+  return {
+    code: compiled.source,
+    diagnostics: compiled.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      source: {
+        ...diagnostic.source,
+        scriptPath: "<inline eval>",
+      },
+    })),
+  };
+}
+
 function prepareFigmaWorkspaceScriptSource(options: {
   scriptPath: string;
   source: string;
@@ -178,6 +208,7 @@ function compileFigmaWorkspaceTypescriptSource(
   scriptPath: string,
   source: string,
   strict: boolean,
+  extraDeclarations?: string,
 ): { source: string; diagnostics: FigmaWorkspaceFileDiagnostic[] } {
   const wrappedSource = `${TYPESCRIPT_WRAPPER_PREFIX}${source}${TYPESCRIPT_WRAPPER_SUFFIX}`;
   const compilerOptions = createFigmaWorkspaceTypescriptCompilerOptions(strict);
@@ -190,7 +221,9 @@ function compileFigmaWorkspaceTypescriptSource(
   host.readFile = (fileName) => {
     const normalizedFileName = normalizeTypescriptFileName(fileName);
     if (normalizedFileName === typescriptScriptPath) return wrappedSource;
-    if (normalizedFileName === helperTypesPath) return readFigmaWorkspaceHelperDeclarations();
+    if (normalizedFileName === helperTypesPath) return [readFigmaWorkspaceHelperDeclarations(), extraDeclarations]
+      .filter((item): item is string => typeof item === "string" && item.length > 0)
+      .join("\n");
     const bundledLibPath = resolveBundledTypescriptLibPath(fileName);
     if (bundledLibPath) return readFileSync(bundledLibPath, "utf8");
     return originalReadFile(fileName);
@@ -1338,11 +1371,31 @@ const READ_MODE_WRITE_DIAGNOSTICS = [
 
 const READ_MODE_ASSIGNMENT_PROPERTIES = new Set([
   "name",
+  "x",
+  "y",
+  "width",
+  "height",
+  "visible",
+  "locked",
+  "opacity",
+  "rotation",
   "fills",
   "strokes",
+  "effects",
+  "blendMode",
+  "cornerRadius",
   "characters",
+  "fontName",
+  "fontSize",
+  "lineHeight",
   "layoutMode",
+  "layoutPositioning",
+  "primaryAxisSizingMode",
+  "counterAxisSizingMode",
+  "primaryAxisAlignItems",
+  "counterAxisAlignItems",
   "itemSpacing",
+  "counterAxisSpacing",
   "paddingLeft",
   "paddingRight",
   "paddingTop",
@@ -1840,7 +1893,7 @@ const DIAGNOSTIC_SOURCE_PATTERNS = [
   { code: "FIGMA_WORKSPACE_READ_MODE_CREATE", re: /figma\.create[A-Z]/u },
   { code: "FIGMA_WORKSPACE_READ_MODE_APPEND", re: /\.(?:appendChild|insertChild)\s*\(/u },
   { code: "FIGMA_WORKSPACE_READ_MODE_REMOVE", re: /\.remove\s*\(/u },
-  { code: "FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT", re: /\.(?:name|fills|strokes|characters|layoutMode|itemSpacing|paddingLeft|paddingRight|paddingTop|paddingBottom)\s*(?:=|\+\+|--)/u },
+  { code: "FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT", re: /\.(?:name|x|y|width|height|visible|locked|opacity|rotation|fills|strokes|effects|blendMode|cornerRadius|characters|fontName|fontSize|lineHeight|layoutMode|layoutPositioning|primaryAxisSizingMode|counterAxisSizingMode|primaryAxisAlignItems|counterAxisAlignItems|itemSpacing|counterAxisSpacing|paddingLeft|paddingRight|paddingTop|paddingBottom)\s*(?:=|\+\+|--)/u },
   { code: "FIGMA_WORKSPACE_READ_MODE_RESIZE", re: /\.resize(?:WithoutConstraints)?\s*\(/u },
   { code: "FIGMA_WORKSPACE_CURRENT_PAGE_ASSIGNMENT", re: /\bfigma\.currentPage\s*=/u },
   { code: "FIGMA_WORKSPACE_ROOT_FIND_ALL", re: /\bfigma\.root\.findAll\s*\(/u },

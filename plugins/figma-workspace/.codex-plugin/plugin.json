@@ -1,6 +1,6 @@
 {
   "name": "figma-workspace",
-  "version": "0.1.80",
+  "version": "0.1.81",
   "description": "Figma Workspace MCP frontend with local Figma MCP login support.",
   "author": {
     "name": "Local developer"
