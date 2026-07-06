@@ -442,7 +442,7 @@ function typescriptRuntimeAssetFailureDiagnostic(
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`,
     ].join("; "),
     suggestion: "Reload the figma-workspace plugin/MCP server so it starts from the current installed cache, or rebuild the plugin package if bundled declaration files are missing.",
-    docsHint: "figma-workspace://capabilities#runtime",
+    docsHint: "figma-workspace://diagnostics",
     source: { scriptPath },
   };
 }

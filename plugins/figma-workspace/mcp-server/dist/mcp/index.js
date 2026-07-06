@@ -251590,7 +251590,7 @@ function typescriptRuntimeAssetFailureDiagnostic(scriptPath, failure) {
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`
     ].join("; "),
     suggestion: "Reload the figma-workspace plugin/MCP server so it starts from the current installed cache, or rebuild the plugin package if bundled declaration files are missing.",
-    docsHint: "figma-workspace://capabilities#runtime",
+    docsHint: "figma-workspace://diagnostics",
     source: { scriptPath }
   };
 }
@@ -256035,6 +256035,12 @@ function createFigmaWorkspaceMcpServer(options = {}) {
           mimeType: "application/json"
         },
         {
+          uri: "figma-workspace://diagnostics",
+          name: "Figma Workspace diagnostics",
+          description: "Read only when developing/debugging figma_workspace_mcp or identifying MCP runtime-resource, reload, lookup-corpus, or installed-cache faults.",
+          mimeType: "application/json"
+        },
+        {
           uri: "figma-workspace://upstream-tools",
           name: "Figma upstream MCP tools",
           description: "Read only when you need the compact directory of explicit uncovered official upstream Figma MCP capabilities.",
@@ -256052,7 +256058,7 @@ function createFigmaWorkspaceMcpServer(options = {}) {
             {
               uri: `figma-workspace://sessions/${encodedSessionId}`,
               name: `Figma Workspace session ${session.id}`,
-              description: "Read when you need compact state, remembered handles, and workspace file context for this specific active workspace session.",
+              description: "Read when you need compact state, handle counts/previews, and workspace file context for this specific active workspace session.",
               mimeType: "application/json"
             },
             {
@@ -258698,7 +258704,7 @@ function lookupCorpusDiagnostic(error2) {
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`
     ].join("; "),
     suggestion: "Reload the figma-workspace plugin/MCP server so it starts from the current installed cache, or rebuild the plugin package if bundled corpus files are missing.",
-    docsHint: "figma-workspace://capabilities#runtime"
+    docsHint: "figma-workspace://diagnostics"
   };
 }
 async function callUpstreamEval(client, evalSettings, script) {
@@ -259698,16 +259704,6 @@ function assetManifestLoadDiagnostic(error2) {
 }
 function errorMessage3(error2) {
   return error2 instanceof Error ? error2.message : String(error2);
-}
-function safeProcessCwd3() {
-  try {
-    return typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : "";
-  } catch {
-    return "";
-  }
-}
-function safeProcessArgv13() {
-  return typeof process !== "undefined" && Array.isArray(process.argv) ? process.argv[1] : void 0;
 }
 function normalizeManifestAsset(value, index, baseDir, session) {
   const record2 = asRecord3(value);
@@ -261147,14 +261143,6 @@ function slugifyTaskName2(value) {
 function createCapabilitiesPayload() {
   return {
     purpose: "Routing manifest for the Figma Workspace MCP facade. Stay on figma_workspace_mcp for normal work; it keeps local sessions, handles, workspace files, diagnostics, and structured tool results while upstream execution still goes through official Figma MCP tools.",
-    runtime: {
-      lookup: getFigmaWorkspaceLookupRuntimeInfo(),
-      typescript: getFigmaWorkspaceTypescriptRuntimeInfo(),
-      argv: {
-        cwd: safeProcessCwd3(),
-        argv1: safeProcessArgv13()
-      }
-    },
     defaultFlow: [
       "Use figma_workspace_prepare_task with file, taskName, workspaceDir, and surface for repairable .figma.ts work.",
       "Use figma_workspace_guidance with compact keywords before writing scripts; use figma_workspace_lookup only for exact docs/API snippets.",
@@ -261180,6 +261168,7 @@ function createCapabilitiesPayload() {
       profileSource: "figma_workspace_guidance.helperProfiles"
     },
     resources: {
+      diagnostics: "figma-workspace://diagnostics",
       guide: "figma-workspace://guide",
       lookupIndex: "figma-workspace://lookup-index",
       sessions: "figma-workspace://sessions",
@@ -261196,6 +261185,20 @@ function createCapabilitiesPayload() {
       workflowIds: FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
       resultField: "guidanceRef"
     }
+  };
+}
+function createDiagnosticsPayload() {
+  return {
+    purpose: "Development/debugging payload for identifying Figma Workspace MCP faults: reload, installed-cache, lookup corpus, and bundled runtime-resource loading issues. Do not read for normal Figma work or script preflight repair.",
+    runtime: {
+      lookup: getFigmaWorkspaceLookupRuntimeInfo(),
+      typescript: getFigmaWorkspaceTypescriptRuntimeInfo()
+    },
+    guidance: [
+      "For normal routing, read figma-workspace://capabilities first; this diagnostics resource intentionally includes path details.",
+      "If lookup.ok or typescript.ok is false, compare attemptedPaths with the installed plugin cache and reload the Figma Workspace MCP/plugin after reinstalling or rebuilding.",
+      "Existing MCP processes keep startup-loaded runtime resources in memory; reload the process to pick up a newly installed plugin cache."
+    ]
   };
 }
 function createGuidePayload() {
@@ -261293,6 +261296,7 @@ function createLookupIndexPayload() {
 function readStaticReplResource(uri) {
   const resources = {
     "figma-workspace://capabilities": createCapabilitiesPayload(),
+    "figma-workspace://diagnostics": createDiagnosticsPayload(),
     "figma-workspace://guide": createGuidePayload(),
     "figma-workspace://lookup-index": createLookupIndexPayload()
   };
@@ -261859,7 +261863,8 @@ function sessionResourceSummary(session) {
     id: session.id,
     fileKey: session.fileKey,
     surface: session.surface,
-    sessionDir: session.workspace?.sessionDir
+    sessionDir: session.workspace?.sessionDir,
+    handleCount: Object.keys(session.handles).length
   });
 }
 function sessionResourceDetail(session) {
@@ -261867,10 +261872,16 @@ function sessionResourceDetail(session) {
     id: session.id,
     fileKey: session.fileKey,
     surface: session.surface,
-    handles: session.handles,
+    handleCount: Object.keys(session.handles).length,
+    handlePreview: previewSessionHandles(session.handles),
     page: responseResourcePage(session),
     workspace: session.workspace ? responseResourceWorkspace(session.workspace) : void 0
   });
+}
+function previewSessionHandles(handles) {
+  return Object.fromEntries(
+    Object.entries(handles).sort(([left], [right]) => left.localeCompare(right)).slice(0, 5)
+  );
 }
 function responseScriptMetadata(metadata) {
   return removeUndefined3({

@@ -30,6 +30,7 @@ const upstreamContractSnapshot = JSON.parse(
 );
 const expectedStaticResourceUris = [
   "figma-workspace://capabilities",
+  "figma-workspace://diagnostics",
   "figma-workspace://guide",
   "figma-workspace://lookup-index",
   "figma-workspace://sessions",
@@ -42,6 +43,7 @@ const removedStaticResourceUris = [
   "figma-workspace://file-workflow",
   "figma-workspace://intents",
   "figma-workspace://patterns",
+  "figma-workspace://runtime",
   "figma-workspace://safety",
   "figma-workspace://scripts",
   "figma-workspace://workflow-tools",
@@ -339,7 +341,7 @@ test("figma workspace eval wraps code and persists returned handles", async () =
 
   const sessionResources = await mcpClient.listResources();
   const sessionListEntry = sessionResources.resources.find((resource) => resource.uri === "figma-workspace://sessions/main");
-  assert.equal(sessionListEntry?.description, "Read when you need compact state, remembered handles, and workspace file context for this specific active workspace session.");
+  assert.equal(sessionListEntry?.description, "Read when you need compact state, handle counts/previews, and workspace file context for this specific active workspace session.");
   assert.equal(sessionListEntry?.mimeType, "application/json");
   const sessionHandlesEntry = sessionResources.resources.find((resource) => resource.uri === "figma-workspace://sessions/main/handles");
   assert.equal(sessionHandlesEntry?.description, "Read when you need the full remembered handle map for this specific active workspace session.");
@@ -347,13 +349,14 @@ test("figma workspace eval wraps code and persists returned handles", async () =
 
   const sessionsResource = await mcpClient.readResource({ uri: "figma-workspace://sessions" });
   const sessionsJson = JSON.parse(sessionsResource.contents[0].text);
-  assert.deepEqual(sessionsJson, { sessions: [{ id: "main" }] });
+  assert.deepEqual(sessionsJson, { sessions: [{ id: "main", handleCount: 1 }] });
 
   const sessionResource = await mcpClient.readResource({ uri: "figma-workspace://sessions/main" });
   const sessionJson = JSON.parse(sessionResource.contents[0].text);
   assert.deepEqual(sessionJson, {
     id: "main",
-    handles: { "$card": "12:34" },
+    handleCount: 1,
+    handlePreview: { "$card": "12:34" },
     page: {
       currentPageId: "1:2",
       currentPageName: "Homepage",
@@ -367,9 +370,54 @@ test("figma workspace eval wraps code and persists returned handles", async () =
   assert.equal(sessionJson.evalToolArgument, undefined);
   assert.equal(sessionJson.upstreamArguments, undefined);
   assert.equal(sessionJson.history, undefined);
+  assert.equal(sessionJson.handles, undefined);
   const handlesResource = await mcpClient.readResource({ uri: "figma-workspace://sessions/main/handles" });
   const handlesJson = JSON.parse(handlesResource.contents[0].text);
   assert.deepEqual(handlesJson, { sessionId: "main", handles: { "$card": "12:34" } });
+
+  await mcpClient.callTool({
+    name: "figma_workspace_open",
+    arguments: {
+      title: "Import many handles",
+      sessionId: "many-handles",
+      connect: false,
+      handles: {
+        "$zeta": "1:6",
+        "$alpha": "1:1",
+        "$gamma": "1:3",
+        "$beta": "1:2",
+        "$epsilon": "1:5",
+        "$delta": "1:4",
+      },
+    },
+  });
+  const manySessionResource = await mcpClient.readResource({ uri: "figma-workspace://sessions/many-handles" });
+  const manySessionJson = JSON.parse(manySessionResource.contents[0].text);
+  assert.deepEqual(manySessionJson, {
+    id: "many-handles",
+    handleCount: 6,
+    handlePreview: {
+      "$alpha": "1:1",
+      "$beta": "1:2",
+      "$delta": "1:4",
+      "$epsilon": "1:5",
+      "$gamma": "1:3",
+    },
+  });
+  assert.equal(manySessionJson.handles, undefined);
+  const manyHandlesResource = await mcpClient.readResource({ uri: "figma-workspace://sessions/many-handles/handles" });
+  const manyHandlesJson = JSON.parse(manyHandlesResource.contents[0].text);
+  assert.deepEqual(manyHandlesJson, {
+    sessionId: "many-handles",
+    handles: {
+      "$alpha": "1:1",
+      "$beta": "1:2",
+      "$delta": "1:4",
+      "$epsilon": "1:5",
+      "$gamma": "1:3",
+      "$zeta": "1:6",
+    },
+  });
 
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
   await mcpClient.close();
@@ -1442,13 +1490,16 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   await mcpClient.connect(clientTransport);
 
   const capabilitiesResource = await mcpClient.readResource({ uri: "figma-workspace://capabilities" });
+  const diagnosticsResource = await mcpClient.readResource({ uri: "figma-workspace://diagnostics" });
   const guideResource = await mcpClient.readResource({ uri: "figma-workspace://guide" });
   const lookupIndexResource = await mcpClient.readResource({ uri: "figma-workspace://lookup-index" });
   const capabilities = JSON.parse(capabilitiesResource.contents[0].text);
+  const diagnostics = JSON.parse(diagnosticsResource.contents[0].text);
   const guide = JSON.parse(guideResource.contents[0].text);
   const lookupIndex = JSON.parse(lookupIndexResource.contents[0].text);
 
   assert.equal(capabilitiesResource.contents[0].mimeType, "application/json");
+  assert.equal(diagnosticsResource.contents[0].mimeType, "application/json");
   assert.equal(guideResource.contents[0].mimeType, "application/json");
   assert.equal(lookupIndexResource.contents[0].mimeType, "application/json");
   assert.ok(Buffer.byteLength(capabilitiesResource.contents[0].text, "utf8") <= 10240);
@@ -1457,9 +1508,24 @@ test("figma workspace exposes self-explaining capabilities and resources", async
 
   assert.match(capabilities.purpose, /Routing manifest/);
   assert.ok(capabilities.defaultFlow.some((step) => /figma_workspace_prepare_task/.test(step) && /workspaceDir/.test(step)));
-  assert.equal(typeof capabilities.runtime.lookup.ok, "boolean");
-  assert.equal(typeof capabilities.runtime.typescript.ok, "boolean");
-  assert.equal(typeof capabilities.runtime.argv.cwd, "string");
+  assert.equal(capabilities.runtime, undefined);
+  assert.equal(capabilities.resources.diagnostics, "figma-workspace://diagnostics");
+  assert.match(diagnostics.purpose, /Development\/debugging payload/);
+  assert.match(diagnostics.purpose, /MCP faults/);
+  assert.match(diagnostics.purpose, /Do not read for normal Figma work/);
+  assert.equal(typeof diagnostics.runtime.lookup.ok, "boolean");
+  assert.equal(typeof diagnostics.runtime.typescript.ok, "boolean");
+  assert.equal(typeof diagnostics.runtime.lookup.packageVersion, "string");
+  assert.equal(typeof diagnostics.runtime.lookup.recordCount, "number");
+  assert.equal(typeof diagnostics.runtime.lookup.root, "string");
+  assert.equal(typeof diagnostics.runtime.lookup.moduleDir, "string");
+  assert.equal(typeof diagnostics.runtime.lookup.cwd, "string");
+  assert.equal(typeof diagnostics.runtime.typescript.packageVersion, "string");
+  assert.equal(typeof diagnostics.runtime.typescript.typescriptLibCount, "number");
+  assert.equal(typeof diagnostics.runtime.typescript.moduleDir, "string");
+  assert.equal(typeof diagnostics.runtime.typescript.cwd, "string");
+  assert.equal(typeof diagnostics.runtime.typescript.helperDeclarationsPath, "string");
+  assert.ok(diagnostics.guidance.some((step) => /reload/i.test(step)));
   assert.ok(capabilities.toolSelection.normalPath.includes("figma_workspace_run_script_file"));
   assert.ok(capabilities.toolSelection.contextAndLookup.includes("figma_workspace_lookup"));
   assert.ok(capabilities.toolSelection.advancedEscapeHatches.includes("figma_workspace_call_upstream_tool"));
@@ -2259,12 +2325,18 @@ test("figma workspace exposes self-explaining capabilities and resources", async
 
   const aggregateResource = await mcpClient.readResource({ uri: "figma-workspace://capabilities" });
   const aggregateCapabilities = JSON.parse(aggregateResource.contents[0].text);
+  const aggregateDiagnosticsResource = await mcpClient.readResource({ uri: "figma-workspace://diagnostics" });
   const aggregateGuideResource = await mcpClient.readResource({ uri: "figma-workspace://guide" });
   const aggregateLookupIndexResource = await mcpClient.readResource({ uri: "figma-workspace://lookup-index" });
+  const aggregateDiagnostics = JSON.parse(aggregateDiagnosticsResource.contents[0].text);
   const aggregateGuide = JSON.parse(aggregateGuideResource.contents[0].text);
   const aggregateLookupIndex = JSON.parse(aggregateLookupIndexResource.contents[0].text);
+  assert.equal(aggregateCapabilities.resources.diagnostics, "figma-workspace://diagnostics");
   assert.equal(aggregateCapabilities.resources.guide, "figma-workspace://guide");
   assert.equal(aggregateCapabilities.resources.lookupIndex, "figma-workspace://lookup-index");
+  assert.match(aggregateDiagnostics.purpose, /Development\/debugging payload/);
+  assert.match(aggregateDiagnostics.purpose, /MCP faults/);
+  assert.ok(aggregateDiagnostics.guidance.some((step) => /installed plugin cache/.test(step)));
   assert.ok(aggregateCapabilities.toolSelection.contextAndLookup.includes("figma_workspace_get_motion_context"));
   assert.ok(!aggregateCapabilities.toolSelection.workflowAddOns.includes("figma_workspace_export_video"));
   assert.ok(!aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("get_motion_context"));
@@ -7706,6 +7778,7 @@ test("figma workspace diagnostics return stable codes and strict promotes warnin
   ).map((item) => item.docsHint);
   assert.ok(diagnosticHints.length > 0);
   assert.ok(diagnosticHints.every((hint) => !hint.includes("figma-workspace://capabilities#")));
+  assert.ok(diagnosticHints.every((hint) => !hint.includes("figma-workspace://runtime")));
 });
 
 test("figma workspace run_script_file returns preflight diagnostics without upstream execution", async () => {
@@ -9447,6 +9520,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
         fileKey: "ExampleFigmaFileKey012",
         surface: "design",
         sessionDir: initJson.task.workspace.sessionDir,
+        handleCount: 0,
       },
     ]);
 
@@ -9456,11 +9530,13 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
       id: "settings-workspace",
       fileKey: "ExampleFigmaFileKey012",
       surface: "design",
-      handles: {},
+      handleCount: 0,
+      handlePreview: {},
       workspace: {
         sessionDir: initJson.task.workspace.sessionDir,
       },
     });
+    assert.equal(sessionJson.handles, undefined);
     assert.equal(sessionJson.workspace.taskSlug, undefined);
     assert.equal(sessionJson.workspace.inputFile, undefined);
     assert.equal(sessionJson.workspace.root, undefined);
