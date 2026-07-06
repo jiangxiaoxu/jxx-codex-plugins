@@ -7757,8 +7757,8 @@ var init_protocol = __esm({
                       if (queuedMessage.type === "response") {
                         resolver(message);
                       } else {
-                        const errorMessage = message;
-                        const error2 = new McpError(errorMessage.error.code, errorMessage.error.message, errorMessage.error.data);
+                        const errorMessage4 = message;
+                        const error2 = new McpError(errorMessage4.error.code, errorMessage4.error.message, errorMessage4.error.data);
                         resolver(error2);
                       }
                     } else {
@@ -15916,8 +15916,8 @@ var init_client2 = __esm({
           const wrappedHandler = async (request, extra) => {
             const validatedRequest = safeParse2(ElicitRequestSchema, request);
             if (!validatedRequest.success) {
-              const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-              throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation request: ${errorMessage}`);
+              const errorMessage4 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+              throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation request: ${errorMessage4}`);
             }
             const { params } = validatedRequest.data;
             params.mode = params.mode ?? "form";
@@ -15932,15 +15932,15 @@ var init_client2 = __esm({
             if (params.task) {
               const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
               if (!taskValidationResult.success) {
-                const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-                throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+                const errorMessage4 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+                throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage4}`);
               }
               return taskValidationResult.data;
             }
             const validationResult = safeParse2(ElicitResultSchema, result);
             if (!validationResult.success) {
-              const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-              throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation result: ${errorMessage}`);
+              const errorMessage4 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+              throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation result: ${errorMessage4}`);
             }
             const validatedResult = validationResult.data;
             const requestedSchema = params.mode === "form" ? params.requestedSchema : void 0;
@@ -15960,16 +15960,16 @@ var init_client2 = __esm({
           const wrappedHandler = async (request, extra) => {
             const validatedRequest = safeParse2(CreateMessageRequestSchema, request);
             if (!validatedRequest.success) {
-              const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-              throw new McpError(ErrorCode.InvalidParams, `Invalid sampling request: ${errorMessage}`);
+              const errorMessage4 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+              throw new McpError(ErrorCode.InvalidParams, `Invalid sampling request: ${errorMessage4}`);
             }
             const { params } = validatedRequest.data;
             const result = await Promise.resolve(handler(request, extra));
             if (params.task) {
               const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
               if (!taskValidationResult.success) {
-                const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-                throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+                const errorMessage4 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+                throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage4}`);
               }
               return taskValidationResult.data;
             }
@@ -15977,8 +15977,8 @@ var init_client2 = __esm({
             const resultSchema = hasTools ? CreateMessageResultWithToolsSchema : CreateMessageResultSchema;
             const validationResult = safeParse2(resultSchema, result);
             if (!validationResult.success) {
-              const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-              throw new McpError(ErrorCode.InvalidParams, `Invalid sampling result: ${errorMessage}`);
+              const errorMessage4 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+              throw new McpError(ErrorCode.InvalidParams, `Invalid sampling result: ${errorMessage4}`);
             }
             return validationResult.data;
           };
@@ -16685,8 +16685,8 @@ async function parseErrorResponse(input) {
     const errorClass = OAUTH_ERRORS[error2] || ServerError;
     return new errorClass(error_description || "", error_uri);
   } catch (error2) {
-    const errorMessage = `${statusCode ? `HTTP ${statusCode}: ` : ""}Invalid OAuth error response: ${error2}. Raw body: ${body}`;
-    return new ServerError(errorMessage);
+    const errorMessage4 = `${statusCode ? `HTTP ${statusCode}: ` : ""}Invalid OAuth error response: ${error2}. Raw body: ${body}`;
+    return new ServerError(errorMessage4);
   }
 }
 async function auth(provider, options) {
@@ -19149,23 +19149,23 @@ var init_server2 = __esm({
           const wrappedHandler = async (request, extra) => {
             const validatedRequest = safeParse2(CallToolRequestSchema, request);
             if (!validatedRequest.success) {
-              const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-              throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage}`);
+              const errorMessage4 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+              throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${errorMessage4}`);
             }
             const { params } = validatedRequest.data;
             const result = await Promise.resolve(handler(request, extra));
             if (params.task) {
               const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
               if (!taskValidationResult.success) {
-                const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-                throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+                const errorMessage4 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+                throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage4}`);
               }
               return taskValidationResult.data;
             }
             const validationResult = safeParse2(CallToolResultSchema, result);
             if (!validationResult.success) {
-              const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-              throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage}`);
+              const errorMessage4 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+              throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call result: ${errorMessage4}`);
             }
             return validationResult.data;
           };
@@ -19448,9 +19448,23 @@ var init_server2 = __esm({
 });
 
 // src/runtime/doc-search.ts
-import { readFile as readFile3 } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { dirname as dirname3, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
+function getFigmaWorkspaceLookupRuntimeInfo() {
+  if (!upstreamCorpusState.ok) {
+    return { ...upstreamCorpusState.failure };
+  }
+  return {
+    ok: true,
+    root: upstreamCorpusState.corpus.root,
+    moduleDir: upstreamCorpusState.moduleDir,
+    cwd: upstreamCorpusState.cwd,
+    argv1: upstreamCorpusState.argv1,
+    packageVersion: upstreamCorpusState.packageVersion,
+    recordCount: upstreamCorpusState.corpus.records.size
+  };
+}
 async function searchReferenceFiles(options) {
   const corpus = await loadUpstreamCorpus();
   const queryTokens = tokenizeQuery(options.query);
@@ -19820,13 +19834,39 @@ function countTokens(tokens) {
   return counts;
 }
 function loadUpstreamCorpus() {
-  upstreamCorpusCache ??= readUpstreamCorpus();
-  return upstreamCorpusCache;
+  if (!upstreamCorpusState.ok) {
+    throw new FigmaWorkspaceLookupCorpusUnavailableError(upstreamCorpusState.failure);
+  }
+  return upstreamCorpusState.corpus;
 }
-async function readUpstreamCorpus() {
-  const root = await resolveUpstreamCorpusRoot();
-  const manifest = parseUpstreamCorpusManifest(await readFile3(resolve3(root, "manifest.json"), "utf8"));
-  const corpusText = await readFile3(resolve3(root, manifest.corpus.file), "utf8");
+function readUpstreamCorpusState() {
+  const moduleDir = dirname3(fileURLToPath2(import.meta.url));
+  const cwd = safeProcessCwd(moduleDir);
+  const argv1 = safeProcessArgv1();
+  const packageVersion = readNearestPackageVersion(moduleDir);
+  const candidates = upstreamCorpusRootCandidates(moduleDir, cwd);
+  try {
+    const root = resolveUpstreamCorpusRoot(candidates);
+    const manifest = parseUpstreamCorpusManifest(readFileSync(resolve3(root, "manifest.json"), "utf8"));
+    const corpus = readUpstreamCorpus(root, manifest);
+    return { ok: true, corpus, moduleDir, cwd, argv1, packageVersion };
+  } catch (error2) {
+    return {
+      ok: false,
+      failure: {
+        ok: false,
+        message: `Unable to locate internal Figma corpus for figma_workspace_mcp docs/API lookup: ${errorMessage(error2)}`,
+        moduleDir,
+        cwd,
+        argv1,
+        packageVersion,
+        attemptedPaths: candidates
+      }
+    };
+  }
+}
+function readUpstreamCorpus(root, manifest) {
+  const corpusText = readFileSync(resolve3(root, manifest.corpus.file), "utf8");
   const records = /* @__PURE__ */ new Map();
   for (const line of corpusText.split(/\r?\n/u)) {
     if (!line.trim()) {
@@ -19837,10 +19877,8 @@ async function readUpstreamCorpus() {
   }
   return { root, manifest, records };
 }
-async function resolveUpstreamCorpusRoot() {
-  const moduleDir = dirname3(fileURLToPath2(import.meta.url));
-  const cwd = typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : moduleDir;
-  const candidates = [
+function upstreamCorpusRootCandidates(moduleDir, cwd) {
+  return [
     resolve3(moduleDir, "../skills/figma-workspace/references/upstream-corpus"),
     resolve3(moduleDir, "../../skills/figma-workspace/references/upstream-corpus"),
     resolve3(moduleDir, "../../../skills/figma-workspace/references/upstream-corpus"),
@@ -19848,16 +19886,18 @@ async function resolveUpstreamCorpusRoot() {
     resolve3(cwd, "plugins/figma-workspace/skills/figma-workspace/references/upstream-corpus"),
     resolve3(cwd, "../skills/figma-workspace/references/upstream-corpus")
   ];
+}
+function resolveUpstreamCorpusRoot(candidates) {
   for (const candidate of candidates) {
     try {
-      await readFile3(resolve3(candidate, "manifest.json"), "utf8");
-      await readFile3(resolve3(candidate, "corpus.jsonl"), "utf8");
+      readFileSync(resolve3(candidate, "manifest.json"), "utf8");
+      readFileSync(resolve3(candidate, "corpus.jsonl"), "utf8");
       return candidate;
     } catch {
     }
   }
   throw new Error(
-    "Unable to locate internal Figma corpus for figma_workspace_mcp docs/API lookup."
+    "no candidate contained manifest.json and corpus.jsonl"
   );
 }
 function parseUpstreamCorpusManifest(text) {
@@ -19904,7 +19944,40 @@ function isObject2(value) {
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
-var DEFAULT_DOCS_SEARCH_MAX_RESULTS, DEFAULT_DOCS_SEARCH_SNIPPET_LINES, MAX_DOCS_SEARCH_RESULTS, MAX_DOCS_SEARCH_SNIPPET_LINES, DEFAULT_REFERENCE_CONTEXT_SNIPPETS, MAX_LOOKUP_QUERY_LENGTH, MAX_REFERENCE_CHUNK_LINES, REFERENCE_CHUNK_OVERLAP_LINES, BRIDGE_DOCS_SEARCH_FILES, DOCS_SEARCH_ALLOWLIST, API_LOOKUP_FILES, BRIDGE_DOCS_RECORDS, upstreamCorpusCache;
+function readNearestPackageVersion(startDir) {
+  for (const candidate of packageJsonCandidates(startDir)) {
+    try {
+      const value = JSON.parse(readFileSync(candidate, "utf8"));
+      if (isObject2(value) && typeof value.version === "string") {
+        return value.version;
+      }
+    } catch {
+    }
+  }
+  return void 0;
+}
+function packageJsonCandidates(startDir) {
+  return [
+    resolve3(startDir, "../package.json"),
+    resolve3(startDir, "../../package.json"),
+    resolve3(startDir, "../../../package.json"),
+    resolve3(startDir, "../../../../package.json")
+  ];
+}
+function safeProcessCwd(fallback) {
+  try {
+    return typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function safeProcessArgv1() {
+  return typeof process !== "undefined" && Array.isArray(process.argv) ? process.argv[1] : void 0;
+}
+function errorMessage(error2) {
+  return error2 instanceof Error ? error2.message : String(error2);
+}
+var DEFAULT_DOCS_SEARCH_MAX_RESULTS, DEFAULT_DOCS_SEARCH_SNIPPET_LINES, MAX_DOCS_SEARCH_RESULTS, MAX_DOCS_SEARCH_SNIPPET_LINES, DEFAULT_REFERENCE_CONTEXT_SNIPPETS, MAX_LOOKUP_QUERY_LENGTH, MAX_REFERENCE_CHUNK_LINES, REFERENCE_CHUNK_OVERLAP_LINES, BRIDGE_DOCS_SEARCH_FILES, DOCS_SEARCH_ALLOWLIST, API_LOOKUP_FILES, FigmaWorkspaceLookupCorpusUnavailableError, upstreamCorpusState, BRIDGE_DOCS_RECORDS;
 var init_doc_search = __esm({
   "src/runtime/doc-search.ts"() {
     "use strict";
@@ -19961,6 +20034,15 @@ var init_doc_search = __esm({
       "figma-use/references/api-reference.md",
       "figma-use/references/plugin-api-standalone.d.ts"
     ];
+    FigmaWorkspaceLookupCorpusUnavailableError = class extends Error {
+      failure;
+      constructor(failure) {
+        super(failure.message);
+        this.name = "FigmaWorkspaceLookupCorpusUnavailableError";
+        this.failure = failure;
+      }
+    };
+    upstreamCorpusState = readUpstreamCorpusState();
     BRIDGE_DOCS_RECORDS = createBridgeDocsRecords();
   }
 });
@@ -48982,7 +49064,7 @@ ${lanes.join("\n")}
             writeOutputIsTTY() {
               return process.stdout.isTTY;
             },
-            readFile: readFile6,
+            readFile: readFile5,
             writeFile: writeFile22,
             watchFile: watchFile2,
             watchDirectory,
@@ -49188,7 +49270,7 @@ ${lanes.join("\n")}
               callback
             );
           }
-          function readFile6(fileName, _encoding) {
+          function readFile5(fileName, _encoding) {
             let buffer;
             try {
               buffer = _fs.readFileSync(fileName);
@@ -85871,7 +85953,7 @@ ${lanes.join("\n")}
         const possibleOption = getSpellingSuggestion(unknownOption, diagnostics.optionDeclarations, getOptionName);
         return possibleOption ? createDiagnosticForNodeInSourceFileOrCompilerDiagnostic(sourceFile, node, diagnostics.unknownDidYouMeanDiagnostic, unknownOptionErrorText || unknownOption, possibleOption.name) : createDiagnosticForNodeInSourceFileOrCompilerDiagnostic(sourceFile, node, diagnostics.unknownOptionDiagnostic, unknownOptionErrorText || unknownOption);
       }
-      function parseCommandLineWorker(diagnostics, commandLine, readFile6) {
+      function parseCommandLineWorker(diagnostics, commandLine, readFile5) {
         const options = {};
         let watchOptions;
         const fileNames = [];
@@ -85919,7 +86001,7 @@ ${lanes.join("\n")}
           }
         }
         function parseResponseFile(fileName) {
-          const text = tryReadFile(fileName, readFile6 || ((fileName2) => sys2.readFile(fileName2)));
+          const text = tryReadFile(fileName, readFile5 || ((fileName2) => sys2.readFile(fileName2)));
           if (!isString(text)) {
             errors.push(text);
             return;
@@ -86022,8 +86104,8 @@ ${lanes.join("\n")}
         unknownDidYouMeanDiagnostic: Diagnostics.Unknown_compiler_option_0_Did_you_mean_1,
         optionTypeMismatchDiagnostic: Diagnostics.Compiler_option_0_expects_an_argument
       };
-      function parseCommandLine(commandLine, readFile6) {
-        return parseCommandLineWorker(compilerOptionsDidYouMeanDiagnostics, commandLine, readFile6);
+      function parseCommandLine(commandLine, readFile5) {
+        return parseCommandLineWorker(compilerOptionsDidYouMeanDiagnostics, commandLine, readFile5);
       }
       function getOptionFromName(optionName, allowShort) {
         return getOptionDeclarationFromName(getOptionsNameMap, optionName, allowShort);
@@ -86105,8 +86187,8 @@ ${lanes.join("\n")}
           watchOptionsToExtend
         );
       }
-      function readConfigFile(fileName, readFile6) {
-        const textOrDiagnostic = tryReadFile(fileName, readFile6);
+      function readConfigFile(fileName, readFile5) {
+        const textOrDiagnostic = tryReadFile(fileName, readFile5);
         return isString(textOrDiagnostic) ? parseConfigFileTextToJson(fileName, textOrDiagnostic) : { config: {}, error: textOrDiagnostic };
       }
       function parseConfigFileTextToJson(fileName, jsonText) {
@@ -86121,14 +86203,14 @@ ${lanes.join("\n")}
           error: jsonSourceFile.parseDiagnostics.length ? jsonSourceFile.parseDiagnostics[0] : void 0
         };
       }
-      function readJsonConfigFile(fileName, readFile6) {
-        const textOrDiagnostic = tryReadFile(fileName, readFile6);
+      function readJsonConfigFile(fileName, readFile5) {
+        const textOrDiagnostic = tryReadFile(fileName, readFile5);
         return isString(textOrDiagnostic) ? parseJsonText(fileName, textOrDiagnostic) : { fileName, parseDiagnostics: [textOrDiagnostic] };
       }
-      function tryReadFile(fileName, readFile6) {
+      function tryReadFile(fileName, readFile5) {
         let text;
         try {
-          text = readFile6(fileName);
+          text = readFile5(fileName);
         } catch (e) {
           return createCompilerDiagnostic(Diagnostics.Cannot_read_file_0_Colon_1, fileName, e.message);
         }
@@ -98300,10 +98382,10 @@ ${lanes.join("\n")}
             }
           }
         }
-        function resolveExternalModuleName(location, moduleReferenceExpression, ignoreErrors, errorMessage) {
+        function resolveExternalModuleName(location, moduleReferenceExpression, ignoreErrors, errorMessage4) {
           const isClassic = getEmitModuleResolutionKind(compilerOptions) === 1;
-          errorMessage ?? (errorMessage = getCannotResolveModuleNameErrorForSpecificModule(moduleReferenceExpression) ?? (isClassic ? Diagnostics.Cannot_find_module_0_Did_you_mean_to_set_the_moduleResolution_option_to_nodenext_or_to_add_aliases_to_the_paths_option : Diagnostics.Cannot_find_module_0_or_its_corresponding_type_declarations));
-          return resolveExternalModuleNameWorker(location, moduleReferenceExpression, ignoreErrors ? void 0 : errorMessage, ignoreErrors);
+          errorMessage4 ?? (errorMessage4 = getCannotResolveModuleNameErrorForSpecificModule(moduleReferenceExpression) ?? (isClassic ? Diagnostics.Cannot_find_module_0_Did_you_mean_to_set_the_moduleResolution_option_to_nodenext_or_to_add_aliases_to_the_paths_option : Diagnostics.Cannot_find_module_0_or_its_corresponding_type_declarations));
+          return resolveExternalModuleNameWorker(location, moduleReferenceExpression, ignoreErrors ? void 0 : errorMessage4, ignoreErrors);
         }
         function resolveExternalModuleNameWorker(location, moduleReferenceExpression, moduleNotFoundError, ignoreErrors = false, isForAugmentation = false) {
           return isStringLiteralLike(moduleReferenceExpression) ? resolveExternalModule(location, moduleReferenceExpression.text, moduleNotFoundError, !ignoreErrors ? moduleReferenceExpression : void 0, isForAugmentation) : void 0;
@@ -112709,8 +112791,8 @@ ${lanes.join("\n")}
               if (moduleSymbol.flags & targetMeaning) {
                 links.resolvedType = resolveImportSymbolType(node, links, moduleSymbol, targetMeaning);
               } else {
-                const errorMessage = targetMeaning === 111551 ? Diagnostics.Module_0_does_not_refer_to_a_value_but_is_used_as_a_value_here : Diagnostics.Module_0_does_not_refer_to_a_type_but_is_used_as_a_type_here_Did_you_mean_typeof_import_0;
-                error22(node, errorMessage, node.argument.literal.text);
+                const errorMessage4 = targetMeaning === 111551 ? Diagnostics.Module_0_does_not_refer_to_a_value_but_is_used_as_a_value_here : Diagnostics.Module_0_does_not_refer_to_a_type_but_is_used_as_a_type_here_Did_you_mean_typeof_import_0;
+                error22(node, errorMessage4, node.argument.literal.text);
                 links.resolvedSymbol = unknownSymbol;
                 links.resolvedType = errorType;
               }
@@ -113999,7 +114081,7 @@ ${lanes.join("\n")}
         function elaborateElementwise(iterator, source, target, relation, containingMessageChain, errorOutputContainer) {
           let reportedError = false;
           for (const value of iterator) {
-            const { errorNode: prop, innerExpression: next, nameType, errorMessage } = value;
+            const { errorNode: prop, innerExpression: next, nameType, errorMessage: errorMessage4 } = value;
             let targetPropType = getBestMatchIndexedAccessTypeOrUndefined(source, target, nameType);
             if (!targetPropType || targetPropType.flags & 33554432) continue;
             let sourcePropType = getIndexedAccessTypeOrUndefined(source, nameType);
@@ -114039,9 +114121,9 @@ ${lanes.join("\n")}
                   const sourceIsOptional = !!(propName && (getPropertyOfType(source, propName) || unknownSymbol).flags & 16777216);
                   targetPropType = removeMissingType(targetPropType, targetIsOptional);
                   sourcePropType = removeMissingType(sourcePropType, targetIsOptional && sourceIsOptional);
-                  const result = checkTypeRelatedTo(specificSource, targetPropType, relation, prop, errorMessage, containingMessageChain, resultObj);
+                  const result = checkTypeRelatedTo(specificSource, targetPropType, relation, prop, errorMessage4, containingMessageChain, resultObj);
                   if (result && specificSource !== sourcePropType) {
-                    checkTypeRelatedTo(sourcePropType, targetPropType, relation, prop, errorMessage, containingMessageChain, resultObj);
+                    checkTypeRelatedTo(sourcePropType, targetPropType, relation, prop, errorMessage4, containingMessageChain, resultObj);
                   }
                 }
                 if (resultObj.errors) {
@@ -114088,7 +114170,7 @@ ${lanes.join("\n")}
           ) : void 0;
           let reportedError = false;
           for (let status = iterator.next(); !status.done; status = iterator.next()) {
-            const { errorNode: prop, innerExpression: next, nameType, errorMessage } = status.value;
+            const { errorNode: prop, innerExpression: next, nameType, errorMessage: errorMessage4 } = status.value;
             let targetPropType = iterationType;
             const targetIndexedPropType = tupleOrArrayLikeTargetParts !== neverType ? getBestMatchIndexedAccessTypeOrUndefined(source, tupleOrArrayLikeTargetParts, nameType) : void 0;
             if (targetIndexedPropType && !(targetIndexedPropType.flags & 33554432)) {
@@ -114132,9 +114214,9 @@ ${lanes.join("\n")}
                   const sourceIsOptional = !!(propName && (getPropertyOfType(source, propName) || unknownSymbol).flags & 16777216);
                   targetPropType = removeMissingType(targetPropType, targetIsOptional);
                   sourcePropType = removeMissingType(sourcePropType, targetIsOptional && sourceIsOptional);
-                  const result = checkTypeRelatedTo(specificSource, targetPropType, relation, prop, errorMessage, containingMessageChain, resultObj);
+                  const result = checkTypeRelatedTo(specificSource, targetPropType, relation, prop, errorMessage4, containingMessageChain, resultObj);
                   if (result && specificSource !== sourcePropType) {
-                    checkTypeRelatedTo(sourcePropType, targetPropType, relation, prop, errorMessage, containingMessageChain, resultObj);
+                    checkTypeRelatedTo(sourcePropType, targetPropType, relation, prop, errorMessage4, containingMessageChain, resultObj);
                   }
                 }
               }
@@ -125159,9 +125241,9 @@ ${lanes.join("\n")}
             return void 0;
           }
           const isClassic = getEmitModuleResolutionKind(compilerOptions) === 1;
-          const errorMessage = isClassic ? Diagnostics.Cannot_find_module_0_Did_you_mean_to_set_the_moduleResolution_option_to_nodenext_or_to_add_aliases_to_the_paths_option : Diagnostics.This_JSX_tag_requires_the_module_path_0_to_exist_but_none_could_be_found_Make_sure_you_have_types_for_the_appropriate_package_installed;
+          const errorMessage4 = isClassic ? Diagnostics.Cannot_find_module_0_Did_you_mean_to_set_the_moduleResolution_option_to_nodenext_or_to_add_aliases_to_the_paths_option : Diagnostics.This_JSX_tag_requires_the_module_path_0_to_exist_but_none_could_be_found_Make_sure_you_have_types_for_the_appropriate_package_installed;
           const specifier = getJSXRuntimeImportSpecifier(file, runtimeImportSpecifier);
-          const mod = resolveExternalModule(specifier || location, runtimeImportSpecifier, errorMessage, location);
+          const mod = resolveExternalModule(specifier || location, runtimeImportSpecifier, errorMessage4, location);
           const result = mod && mod !== unknownSymbol ? getMergedSymbol(resolveSymbol(mod)) : void 0;
           if (links) {
             links.jsxImplicitImportContainer = result || false;
@@ -136865,7 +136947,7 @@ ${lanes.join("\n")}
               if (baseDeclarationFlags & 2 || derivedDeclarationFlags & 2) {
                 continue;
               }
-              let errorMessage;
+              let errorMessage4;
               const basePropertyFlags = base.flags & 98308;
               const derivedPropertyFlags = derived.flags & 98308;
               if (basePropertyFlags && derivedPropertyFlags) {
@@ -136875,16 +136957,16 @@ ${lanes.join("\n")}
                 const overriddenInstanceProperty = basePropertyFlags !== 4 && derivedPropertyFlags === 4;
                 const overriddenInstanceAccessor = basePropertyFlags === 4 && derivedPropertyFlags !== 4;
                 if (overriddenInstanceProperty || overriddenInstanceAccessor) {
-                  const errorMessage2 = overriddenInstanceProperty ? Diagnostics._0_is_defined_as_an_accessor_in_class_1_but_is_overridden_here_in_2_as_an_instance_property : Diagnostics._0_is_defined_as_a_property_in_class_1_but_is_overridden_here_in_2_as_an_accessor;
-                  error22(getNameOfDeclaration(derived.valueDeclaration) || derived.valueDeclaration, errorMessage2, symbolToString(base), typeToString(baseType), typeToString(type));
+                  const errorMessage22 = overriddenInstanceProperty ? Diagnostics._0_is_defined_as_an_accessor_in_class_1_but_is_overridden_here_in_2_as_an_instance_property : Diagnostics._0_is_defined_as_a_property_in_class_1_but_is_overridden_here_in_2_as_an_accessor;
+                  error22(getNameOfDeclaration(derived.valueDeclaration) || derived.valueDeclaration, errorMessage22, symbolToString(base), typeToString(baseType), typeToString(type));
                 } else if (useDefineForClassFields) {
                   const uninitialized = (_d = derived.declarations) == null ? void 0 : _d.find((d) => d.kind === 173 && !d.initializer);
                   if (uninitialized && !(derived.flags & 33554432) && !(baseDeclarationFlags & 64) && !(derivedDeclarationFlags & 64) && !((_e = derived.declarations) == null ? void 0 : _e.some((d) => !!(d.flags & 33554432)))) {
                     const constructor = findConstructorDeclaration(getClassLikeDeclarationOfSymbol(type.symbol));
                     const propName = uninitialized.name;
                     if (uninitialized.exclamationToken || !constructor || !isIdentifier(propName) || !strictNullChecks || !isPropertyInitializedInConstructor(propName, type, constructor)) {
-                      const errorMessage2 = Diagnostics.Property_0_will_overwrite_the_base_property_in_1_If_this_is_intentional_add_an_initializer_Otherwise_add_a_declare_modifier_or_remove_the_redundant_declaration;
-                      error22(getNameOfDeclaration(derived.valueDeclaration) || derived.valueDeclaration, errorMessage2, symbolToString(base), typeToString(baseType));
+                      const errorMessage22 = Diagnostics.Property_0_will_overwrite_the_base_property_in_1_If_this_is_intentional_add_an_initializer_Otherwise_add_a_declare_modifier_or_remove_the_redundant_declaration;
+                      error22(getNameOfDeclaration(derived.valueDeclaration) || derived.valueDeclaration, errorMessage22, symbolToString(base), typeToString(baseType));
                     }
                   }
                 }
@@ -136894,14 +136976,14 @@ ${lanes.join("\n")}
                   continue;
                 } else {
                   Debug.assert(!!(derived.flags & 98304));
-                  errorMessage = Diagnostics.Class_0_defines_instance_member_function_1_but_extended_class_2_defines_it_as_instance_member_accessor;
+                  errorMessage4 = Diagnostics.Class_0_defines_instance_member_function_1_but_extended_class_2_defines_it_as_instance_member_accessor;
                 }
               } else if (base.flags & 98304) {
-                errorMessage = Diagnostics.Class_0_defines_instance_member_accessor_1_but_extended_class_2_defines_it_as_instance_member_function;
+                errorMessage4 = Diagnostics.Class_0_defines_instance_member_accessor_1_but_extended_class_2_defines_it_as_instance_member_function;
               } else {
-                errorMessage = Diagnostics.Class_0_defines_instance_member_property_1_but_extended_class_2_defines_it_as_instance_member_function;
+                errorMessage4 = Diagnostics.Class_0_defines_instance_member_property_1_but_extended_class_2_defines_it_as_instance_member_function;
               }
-              error22(getNameOfDeclaration(derived.valueDeclaration) || derived.valueDeclaration, errorMessage, typeToString(baseType), symbolToString(base), typeToString(type));
+              error22(getNameOfDeclaration(derived.valueDeclaration) || derived.valueDeclaration, errorMessage4, typeToString(baseType), symbolToString(base), typeToString(type));
             }
           }
           for (const [errorNode, memberInfo] of notImplementedInfo) {
@@ -137908,10 +137990,10 @@ ${lanes.join("\n")}
           }
           return false;
         }
-        function checkGrammarModuleElementContext(node, errorMessage) {
+        function checkGrammarModuleElementContext(node, errorMessage4) {
           const isInAppropriateContext = node.parent.kind === 308 || node.parent.kind === 269 || node.parent.kind === 268;
           if (!isInAppropriateContext) {
-            grammarErrorOnFirstToken(node, errorMessage);
+            grammarErrorOnFirstToken(node, errorMessage4);
           }
           return !isInAppropriateContext;
         }
@@ -176232,12 +176314,12 @@ ${lanes.join("\n")}
       function createCompilerHost2(options, setParentNodes) {
         return createCompilerHostWorker(options, setParentNodes);
       }
-      function createGetSourceFile(readFile6, setParentNodes) {
+      function createGetSourceFile(readFile5, setParentNodes) {
         return (fileName, languageVersionOrOptions, onError) => {
           let text;
           try {
             mark("beforeIORead");
-            text = readFile6(fileName);
+            text = readFile5(fileName);
             mark("afterIORead");
             measure("I/O Read", "beforeIORead", "afterIORead");
           } catch (e) {
@@ -176438,14 +176520,14 @@ ${lanes.join("\n")}
         return output;
       }
       function formatDiagnostic(diagnostic, host) {
-        const errorMessage = `${diagnosticCategoryName(diagnostic)} TS${diagnostic.code}: ${flattenDiagnosticMessageText2(diagnostic.messageText, host.getNewLine())}${host.getNewLine()}`;
+        const errorMessage4 = `${diagnosticCategoryName(diagnostic)} TS${diagnostic.code}: ${flattenDiagnosticMessageText2(diagnostic.messageText, host.getNewLine())}${host.getNewLine()}`;
         if (diagnostic.file) {
           const { line, character } = getLineAndCharacterOfPosition(diagnostic.file, diagnostic.start);
           const fileName = diagnostic.file.fileName;
           const relativeFileName = convertToRelativePath(fileName, host.getCurrentDirectory(), (fileName2) => host.getCanonicalFileName(fileName2));
-          return `${relativeFileName}(${line + 1},${character + 1}): ` + errorMessage;
+          return `${relativeFileName}(${line + 1},${character + 1}): ` + errorMessage4;
         }
-        return errorMessage;
+        return errorMessage4;
       }
       var ForegroundColorEscapeSequences = /* @__PURE__ */ ((ForegroundColorEscapeSequences2) => {
         ForegroundColorEscapeSequences2["Grey"] = "\x1B[90m";
@@ -177141,7 +177223,7 @@ ${lanes.join("\n")}
           getRedirectFromOutput,
           forEachResolvedProjectReference: forEachResolvedProjectReference2
         });
-        const readFile6 = host.readFile.bind(host);
+        const readFile5 = host.readFile.bind(host);
         (_e = tracing) == null ? void 0 : _e.push(tracing.Phase.Program, "shouldProgramCreateNewSourceFiles", { hasOldProgram: !!oldProgram });
         const shouldCreateNewSourceFile = shouldProgramCreateNewSourceFiles(oldProgram, options);
         (_f = tracing) == null ? void 0 : _f.pop();
@@ -177362,7 +177444,7 @@ ${lanes.join("\n")}
           shouldTransformImportCall,
           emitBuildInfo,
           fileExists,
-          readFile: readFile6,
+          readFile: readFile5,
           directoryExists,
           getSymlinkCache,
           realpath: (_o = host.realpath) == null ? void 0 : _o.bind(host),
@@ -251914,9 +251996,25 @@ var require_typescript2 = __commonJS({
 
 // src/runtime/script-runner.ts
 import { createRequire } from "node:module";
-import { existsSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync as readFileSync2 } from "node:fs";
 import { basename, dirname as dirname4, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
+function getFigmaWorkspaceTypescriptRuntimeInfo() {
+  if (!typescriptRuntimeAssets.ok) {
+    return { ...typescriptRuntimeAssets };
+  }
+  return {
+    ok: true,
+    moduleDir: typescriptRuntimeAssets.moduleDir,
+    cwd: typescriptRuntimeAssets.cwd,
+    argv1: typescriptRuntimeAssets.argv1,
+    packageVersion: typescriptRuntimeAssets.packageVersion,
+    helperDeclarationsPath: typescriptRuntimeAssets.helperDeclarationsPath,
+    figmaPluginTypingsPath: typescriptRuntimeAssets.figmaPluginTypingsPath,
+    typescriptLibDir: typescriptRuntimeAssets.typescriptLibDir,
+    typescriptLibCount: typescriptRuntimeAssets.typescriptLibs.size
+  };
+}
 function compileFigmaWorkspaceScriptFile(options) {
   const preparedSource = prepareFigmaWorkspaceScriptSource(options);
   const helperSelection = resolveFigmaWorkspaceScriptHelperSelection(preparedSource.source);
@@ -251984,25 +252082,32 @@ function prepareFigmaWorkspaceScriptSource(options) {
   return compileFigmaWorkspaceTypescriptSource(options.scriptPath, options.source, Boolean(options.strict));
 }
 function compileFigmaWorkspaceTypescriptSource(scriptPath, source, strict, extraDeclarations) {
+  if (!typescriptRuntimeAssets.ok) {
+    return {
+      source,
+      diagnostics: [typescriptRuntimeAssetFailureDiagnostic(scriptPath, typescriptRuntimeAssets)]
+    };
+  }
   const wrappedSource = `${TYPESCRIPT_WRAPPER_PREFIX}${source}${TYPESCRIPT_WRAPPER_SUFFIX}`;
   const compilerOptions = createFigmaWorkspaceTypescriptCompilerOptions(strict);
   const typescriptScriptPath = normalizeTypescriptFileName(scriptPath);
   const helperTypesPath = normalizeTypescriptFileName(`${scriptPath}.${TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH}`);
-  const figmaTypingsPath = resolveFigmaPluginTypingsPath();
+  const figmaTypingsPath = typescriptRuntimeAssets.figmaPluginTypingsPath;
   const host = ts.createCompilerHost(compilerOptions, true);
   const originalReadFile = host.readFile.bind(host);
   const originalFileExists = host.fileExists.bind(host);
   host.readFile = (fileName) => {
     const normalizedFileName = normalizeTypescriptFileName(fileName);
     if (normalizedFileName === typescriptScriptPath) return wrappedSource;
-    if (normalizedFileName === helperTypesPath) return [readFigmaWorkspaceHelperDeclarations(), extraDeclarations].filter((item) => typeof item === "string" && item.length > 0).join("\n");
-    const bundledLibPath = resolveBundledTypescriptLibPath(fileName);
-    if (bundledLibPath) return readFileSync(bundledLibPath, "utf8");
+    if (normalizedFileName === helperTypesPath) return [typescriptRuntimeAssets.helperDeclarations, extraDeclarations].filter((item) => typeof item === "string" && item.length > 0).join("\n");
+    const bundledLib = resolveBundledTypescriptLib(fileName);
+    if (bundledLib !== void 0) return bundledLib;
+    if (normalizedFileName === normalizeTypescriptFileName(figmaTypingsPath)) return typescriptRuntimeAssets.figmaPluginTypings;
     return originalReadFile(fileName);
   };
   host.fileExists = (fileName) => {
     const normalizedFileName = normalizeTypescriptFileName(fileName);
-    return normalizedFileName === typescriptScriptPath || normalizedFileName === helperTypesPath || resolveBundledTypescriptLibPath(fileName) !== void 0 || originalFileExists(fileName);
+    return normalizedFileName === typescriptScriptPath || normalizedFileName === helperTypesPath || resolveBundledTypescriptLib(fileName) !== void 0 || normalizedFileName === normalizeTypescriptFileName(figmaTypingsPath) || originalFileExists(fileName);
   };
   const program = ts.createProgram({
     rootNames: [figmaTypingsPath, helperTypesPath, typescriptScriptPath],
@@ -252058,23 +252163,122 @@ function createFigmaWorkspaceTypescriptCompilerOptions(strict) {
     removeComments: false
   };
 }
-function resolveFigmaPluginTypingsPath() {
+function resolveExternalFigmaPluginTypingsPath() {
   try {
     return nodeRequire.resolve("@figma/plugin-typings/index.d.ts");
   } catch {
-    return FIGMA_PLUGIN_TYPINGS_PATH;
+    return void 0;
   }
 }
-function resolveBundledTypescriptLibPath(fileName) {
+function resolveBundledTypescriptLib(fileName) {
   const file = basename(fileName);
   if (!/^lib\..*\.d\.ts$/u.test(file)) {
     return void 0;
   }
-  const bundledPath = resolve4(TYPESCRIPT_LIB_DIR, file);
-  return existsSync(bundledPath) ? bundledPath : void 0;
+  return typescriptRuntimeAssets.ok ? typescriptRuntimeAssets.typescriptLibs.get(file) : void 0;
 }
-function readFigmaWorkspaceHelperDeclarations() {
-  return readFileSync(FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, "utf8");
+function loadFigmaWorkspaceTypescriptRuntimeAssets() {
+  const cwd = safeProcessCwd2();
+  const argv1 = safeProcessArgv12();
+  const packageVersion = readNearestPackageVersion2(runtimeDirname);
+  const externalFigmaTypingsPath = resolveExternalFigmaPluginTypingsPath();
+  const attemptedPaths = [
+    FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH,
+    externalFigmaTypingsPath ?? FIGMA_PLUGIN_TYPINGS_PATH,
+    TYPESCRIPT_LIB_DIR,
+    ...packageJsonCandidates2(runtimeDirname)
+  ];
+  try {
+    const helperDeclarations = readFileSync2(FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, "utf8");
+    const figmaPluginTypingsPath = externalFigmaTypingsPath ?? FIGMA_PLUGIN_TYPINGS_PATH;
+    const figmaPluginTypings = readFileSync2(figmaPluginTypingsPath, "utf8");
+    const typescriptLibs = /* @__PURE__ */ new Map();
+    for (const entry of readdirSync(TYPESCRIPT_LIB_DIR, { withFileTypes: true })) {
+      if (!entry.isFile() || !/^lib\..*\.d\.ts$/u.test(entry.name)) {
+        continue;
+      }
+      typescriptLibs.set(entry.name, readFileSync2(resolve4(TYPESCRIPT_LIB_DIR, entry.name), "utf8"));
+    }
+    if (typescriptLibs.size === 0) {
+      throw new Error(`No bundled TypeScript lib declarations found in ${TYPESCRIPT_LIB_DIR}.`);
+    }
+    return {
+      ok: true,
+      moduleDir: runtimeDirname,
+      cwd,
+      argv1,
+      packageVersion,
+      helperDeclarationsPath: FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH,
+      figmaPluginTypingsPath,
+      typescriptLibDir: TYPESCRIPT_LIB_DIR,
+      helperDeclarations,
+      figmaPluginTypings,
+      typescriptLibs
+    };
+  } catch (error2) {
+    return {
+      ok: false,
+      moduleDir: runtimeDirname,
+      cwd,
+      argv1,
+      packageVersion,
+      attemptedPaths,
+      message: `Unable to preload Figma Workspace TypeScript runtime assets: ${errorMessage2(error2)}`
+    };
+  }
+}
+function typescriptRuntimeAssetFailureDiagnostic(scriptPath, failure) {
+  return {
+    code: "FIGMA_WORKSPACE_TS_RUNTIME_ASSETS_MISSING",
+    severity: "fatal",
+    message: [
+      failure.message,
+      `moduleDir=${failure.moduleDir}`,
+      `cwd=${failure.cwd}`,
+      `argv1=${failure.argv1 ?? "<unset>"}`,
+      `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
+      `attemptedPaths=${failure.attemptedPaths.join(" | ")}`
+    ].join("; "),
+    suggestion: "Reload the figma-workspace plugin/MCP server so it starts from the current installed cache, or rebuild the plugin package if bundled declaration files are missing.",
+    docsHint: "figma-workspace://capabilities#runtime",
+    source: { scriptPath }
+  };
+}
+function readNearestPackageVersion2(startDir) {
+  for (const candidate of packageJsonCandidates2(startDir)) {
+    try {
+      const value = JSON.parse(readFileSync2(candidate, "utf8"));
+      if (isRecord4(value) && typeof value.version === "string") {
+        return value.version;
+      }
+    } catch {
+    }
+  }
+  return void 0;
+}
+function packageJsonCandidates2(startDir) {
+  return [
+    resolve4(startDir, "../package.json"),
+    resolve4(startDir, "../../package.json"),
+    resolve4(startDir, "../../../package.json"),
+    resolve4(startDir, "../../../../package.json")
+  ];
+}
+function safeProcessCwd2() {
+  try {
+    return typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : runtimeDirname;
+  } catch {
+    return runtimeDirname;
+  }
+}
+function safeProcessArgv12() {
+  return typeof process !== "undefined" && Array.isArray(process.argv) ? process.argv[1] : void 0;
+}
+function errorMessage2(error2) {
+  return error2 instanceof Error ? error2.message : String(error2);
+}
+function isRecord4(value) {
+  return typeof value === "object" && value !== null;
 }
 function normalizeTypescriptFileName(fileName) {
   const normalized = fileName.replace(/\\/gu, "/");
@@ -253474,7 +253678,7 @@ function removeUndefined(record2) {
 function literal3(value) {
   return JSON.stringify(value);
 }
-var ts, nodeRequire, runtimeDirname, FIGMA_TYPESCRIPT_EXTENSION, TYPESCRIPT_WRAPPER_START, TYPESCRIPT_WRAPPER_END, TYPESCRIPT_WRAPPER_PREFIX, TYPESCRIPT_WRAPPER_SUFFIX, TYPESCRIPT_SOURCE_LINE_OFFSET, TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH, FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, FIGMA_PLUGIN_TYPINGS_PATH, TYPESCRIPT_LIB_DIR, FIGMA_WORKSPACE_SCRIPT_HELPERS, FIGMA_WORKSPACE_SCRIPT_HELPER_SET, FIGMA_WORKSPACE_BASE_HELPER_PROPERTIES, DANGEROUS_DIAGNOSTICS, READ_MODE_WRITE_DIAGNOSTICS, READ_MODE_ASSIGNMENT_PROPERTIES, DIAGNOSTIC_PROBE_PREFIX, API_CONTRACT_DIAGNOSTICS, FIGJAM_CREATION_METHODS, DESIGN_CREATION_METHODS, SLIDES_BLOCKED_CREATION_METHODS, MAX_INLINE_IMAGE_ASSET_BASE64_CHARS, UPSTREAM_EVAL_CODE_LIMIT_BYTES, UPSTREAM_EVAL_CODE_WARNING_BYTES, DIAGNOSTIC_SOURCE_PATTERNS;
+var ts, nodeRequire, runtimeDirname, FIGMA_TYPESCRIPT_EXTENSION, TYPESCRIPT_WRAPPER_START, TYPESCRIPT_WRAPPER_END, TYPESCRIPT_WRAPPER_PREFIX, TYPESCRIPT_WRAPPER_SUFFIX, TYPESCRIPT_SOURCE_LINE_OFFSET, TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH, FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, FIGMA_PLUGIN_TYPINGS_PATH, TYPESCRIPT_LIB_DIR, typescriptRuntimeAssets, FIGMA_WORKSPACE_SCRIPT_HELPERS, FIGMA_WORKSPACE_SCRIPT_HELPER_SET, FIGMA_WORKSPACE_BASE_HELPER_PROPERTIES, DANGEROUS_DIAGNOSTICS, READ_MODE_WRITE_DIAGNOSTICS, READ_MODE_ASSIGNMENT_PROPERTIES, DIAGNOSTIC_PROBE_PREFIX, API_CONTRACT_DIAGNOSTICS, FIGJAM_CREATION_METHODS, DESIGN_CREATION_METHODS, SLIDES_BLOCKED_CREATION_METHODS, MAX_INLINE_IMAGE_ASSET_BASE64_CHARS, UPSTREAM_EVAL_CODE_LIMIT_BYTES, UPSTREAM_EVAL_CODE_WARNING_BYTES, DIAGNOSTIC_SOURCE_PATTERNS;
 var init_script_runner = __esm({
   "src/runtime/script-runner.ts"() {
     "use strict";
@@ -253497,6 +253701,7 @@ ${TYPESCRIPT_WRAPPER_END}
     FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH = resolve4(runtimeDirname, "figma-workspace-helpers.d.ts");
     FIGMA_PLUGIN_TYPINGS_PATH = resolve4(runtimeDirname, "figma-plugin-typings/index.d.ts");
     TYPESCRIPT_LIB_DIR = resolve4(runtimeDirname, "typescript-lib");
+    typescriptRuntimeAssets = loadFigmaWorkspaceTypescriptRuntimeAssets();
     FIGMA_WORKSPACE_SCRIPT_HELPERS = [
       "select",
       "text",
@@ -253985,7 +254190,7 @@ function parseToolArgs(value) {
   if (value === void 0) {
     return {};
   }
-  if (!isRecord4(value)) {
+  if (!isRecord5(value)) {
     throw new Error("Tool arguments must be an object.");
   }
   return { ...value };
@@ -254004,7 +254209,7 @@ function assertOptionalRecord(record2, key, displayName = key) {
   if (value === void 0) {
     return;
   }
-  if (!isRecord4(value)) {
+  if (!isRecord5(value)) {
     throw new Error(`Tool argument "${displayName}" must be an object.`);
   }
 }
@@ -254067,7 +254272,7 @@ function assertOptionalAssets(record2) {
   }
   assets.forEach((asset, index) => {
     const assetName = `assets[${index}]`;
-    if (!isRecord4(asset)) {
+    if (!isRecord5(asset)) {
       throw new Error(`Tool argument "${assetName}" must be an object.`);
     }
     assertOptionalStringFieldsWithPrefix(asset, assetName, [
@@ -254097,7 +254302,7 @@ function assertOptionalDownloadAssetTargets(record2) {
   }
   return targets.map((target, index) => {
     const targetName = `targets[${index}]`;
-    if (!isRecord4(target)) {
+    if (!isRecord5(target)) {
       throw new Error(`Tool argument "${targetName}" must be an object.`);
     }
     assertRemovedArguments(
@@ -254131,7 +254336,7 @@ function assertOptionalTargetValue(value, displayName) {
   if (typeof value === "string") {
     return;
   }
-  if (!isRecord4(value)) {
+  if (!isRecord5(value)) {
     throw new Error(`Tool argument "${displayName}" must be a string or object.`);
   }
   assertRemovedArguments(
@@ -254163,7 +254368,7 @@ function assertOptionalCaptureTargetValue(value, displayName) {
   if (value === void 0 || typeof value === "string") {
     return;
   }
-  if (!isRecord4(value)) {
+  if (!isRecord5(value)) {
     throw new Error(`Tool argument "${displayName}" must be a string or object.`);
   }
   assertOptionalStringFieldsWithPrefix(value, displayName, [
@@ -254192,7 +254397,7 @@ function assertOptionalTaskPlanSteps(record2) {
   return asTaskPlanSteps(steps);
 }
 function asTaskPlanStep(value, displayName) {
-  if (!isRecord4(value)) {
+  if (!isRecord5(value)) {
     throw new Error(`Tool argument "${displayName}" must be an object.`);
   }
   assertRemovedArguments(value, ["tool"], "type", `${displayName}.tool`);
@@ -254230,11 +254435,11 @@ function assertOptionalStringFieldsWithPrefix(record2, prefix2, keys) {
     }
   }
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function withDefaultTitle(args, _title) {
-  if (!isRecord4(args)) {
+  if (!isRecord5(args)) {
     throw new Error("Tool arguments must be an object.");
   }
   if (args.title !== void 0 && typeof args.title !== "string") {
@@ -255377,6 +255582,7 @@ var init_tool_metadata = __esm({
       figma_workspace_apply_asset_manifest: toolOutputSchema({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
         assets: compactAssetResultsProperty("Compact per-asset upload/fill results. Successful submitUrl POSTs expose compact upload evidence without raw submit URLs."),
+        diagnostics: arrayProperty("Manifest loading, upload, application, or validation diagnostics."),
         validation: objectProperty("Optional target validation result."),
         outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
         failures: arrayProperty("Per-asset or validation failures.")
@@ -255543,14 +255749,16 @@ var init_tool_metadata = __esm({
       }),
       figma_workspace_lookup: toolOutputSchema({
         results: arrayProperty("Ranked compact corpus snippets."),
-        guidance: stringProperty("Compact follow-up guidance.")
+        diagnostics: arrayProperty("Lookup corpus diagnostics when local reference assets are unavailable."),
+        guidance: stringProperty("Compact follow-up guidance."),
+        runtime: objectProperty("Runtime lookup corpus metadata when lookup assets are unavailable.")
       })
     };
   }
 });
 
 // src/runtime/workspace-files.ts
-import { mkdir as mkdir2, readFile as readFile4, unlink, writeFile as writeFile3 } from "node:fs/promises";
+import { mkdir as mkdir2, readFile as readFile3, unlink, writeFile as writeFile3 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename as basename2, dirname as dirname5, extname, isAbsolute, relative, resolve as resolve5 } from "node:path";
 function readProcessEnv(name) {
@@ -255624,7 +255832,7 @@ function resolveWorkspaceAwareFile(value, session, argumentName) {
 }
 async function writeCaptureOutputFile(outputFile, upstream, parsed) {
   const rawContent = asRecord(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord5) : [];
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord6) : [];
   const image = content.find((item) => item.type === "image" && typeof item.data === "string");
   if (image && typeof image.data === "string") {
     const buffer = Buffer.from(image.data, "base64");
@@ -255710,7 +255918,7 @@ function withFileExtension(path, extension) {
 }
 async function loadTaskPlan(args, session) {
   const planPath = resolveWorkspaceAwareFile(args.planPath, session, "planPath");
-  const planValue = planPath ? JSON.parse(await readFile4(planPath, "utf8")) : void 0;
+  const planValue = planPath ? JSON.parse(await readFile3(planPath, "utf8")) : void 0;
   const planRecord = asRecord(planValue);
   const steps = Array.isArray(args.steps) ? asTaskPlanSteps(args.steps) : Array.isArray(planValue) ? asTaskPlanSteps(planValue, "plan") : Array.isArray(planRecord.steps) ? asTaskPlanSteps(planRecord.steps, "plan.steps") : void 0;
   if (!steps || steps.length === 0) {
@@ -255848,7 +256056,7 @@ function resultFileNameForScript(scriptName) {
 async function writeTaskFile(path, content, overwrite) {
   if (!overwrite) {
     try {
-      await readFile4(path, "utf8");
+      await readFile3(path, "utf8");
       throw new Error(`Refusing to overwrite existing file without overwrite=true: ${path}`);
     } catch (error2) {
       if (error2 instanceof Error && error2.message.startsWith("Refusing to overwrite")) {
@@ -255983,7 +256191,7 @@ function normalizeFileContextDirectory(fileKey, fileSlug) {
 }
 function extractCaptureImageUrl(upstream, parsed) {
   const rawContent = asRecord(upstream).content;
-  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord5) : [];
+  const content = Array.isArray(rawContent) ? rawContent.filter(isRecord6) : [];
   for (const item of content) {
     if (item.type === "image") {
       const imageUrl = firstHttpUrl([
@@ -256027,7 +256235,7 @@ function findCaptureImageUrlInValue(value, depth) {
     }
     return void 0;
   }
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     return void 0;
   }
   const priorityKeys = [
@@ -256100,7 +256308,7 @@ function removeUndefined2(value) {
   if (Array.isArray(value)) {
     return value.map(removeUndefined2);
   }
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     return value;
   }
   return Object.fromEntries(
@@ -256108,12 +256316,12 @@ function removeUndefined2(value) {
   );
 }
 function asRecord(value) {
-  if (isRecord5(value)) {
+  if (isRecord6(value)) {
     return value;
   }
   return {};
 }
-function isRecord5(value) {
+function isRecord6(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function asOptionalString(value) {
@@ -256145,7 +256353,7 @@ __export(workspace_mcp_server_exports, {
 });
 import { randomUUID } from "node:crypto";
 import { tmpdir as tmpdir2 } from "node:os";
-import { mkdir as mkdir3, readFile as readFile5, writeFile as writeFile4 } from "node:fs/promises";
+import { mkdir as mkdir3, readFile as readFile4, writeFile as writeFile4 } from "node:fs/promises";
 import { dirname as dirname6, extname as extname2, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve6 } from "node:path";
 function readProcessEnv2(name) {
   return typeof process === "undefined" ? void 0 : process.env?.[name];
@@ -256789,7 +256997,7 @@ function createUpstreamBackedResultFilePayload(options) {
       ...options.fields,
       upstreamKind: asOptionalString2(options.upstream?.kind),
       upstreamOk: typeof options.upstream?.ok === "boolean" ? options.upstream.ok : void 0,
-      upstreamError: isRecord6(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : void 0
+      upstreamError: isRecord7(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : void 0
     }
   });
 }
@@ -256825,7 +257033,7 @@ async function executeRunScriptFile(args, runtime) {
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   let source;
   try {
-    source = await readFile5(scriptPath, "utf8");
+    source = await readFile4(scriptPath, "utf8");
   } catch (error2) {
     if (!isMissingFileError(error2)) {
       throw error2;
@@ -257029,7 +257237,7 @@ async function executeRunScriptFile(args, runtime) {
     inlineResultLimit,
     ["upstream.result", "upstream.text"]
   );
-  const needsOutputFile = diagnostics.length > 0 || isRecord6(limitedPayload.inlineResultLimit);
+  const needsOutputFile = diagnostics.length > 0 || isRecord7(limitedPayload.inlineResultLimit);
   const outputFiles = needsOutputFile ? await addUpstreamSidecar(await outputWriter.write({
     result: createRunScriptResultFilePayload({
       session,
@@ -257060,7 +257268,27 @@ async function handleApplyAssetManifest(args, runtime) {
 }
 async function executeApplyAssetManifest(args, runtime) {
   const session = runtime.sessions.getOrCreate(args.sessionId);
-  const manifest = await loadAssetManifest(args, session);
+  let manifest;
+  try {
+    manifest = await loadAssetManifest(args, session);
+  } catch (error2) {
+    if (error2 instanceof AssetManifestLoadError) {
+      const diagnostics = [assetManifestLoadDiagnostic(error2)];
+      session.lastDiagnostics = diagnostics;
+      return {
+        ok: false,
+        session: responseSession(session),
+        assets: [],
+        diagnostics: diagnosticsForResponse(diagnostics),
+        failures: [{
+          reason: "manifest-load-failed",
+          manifestPath: error2.manifestPath,
+          message: error2.message
+        }]
+      };
+    }
+    throw error2;
+  }
   const tools = await runtime.upstreamToolCache.list(false);
   const uploadKind = requireWrapperUpstreamKind(APPLY_ASSET_MANIFEST_CONTRACT);
   const tool = selectRequiredUpstreamTool(tools, UPLOAD_ASSETS_TOOL_NAME, uploadKind);
@@ -257246,7 +257474,7 @@ function compactUploadSummary(upload) {
   });
 }
 function compactUploadResponse(response) {
-  if (!isRecord6(response)) {
+  if (!isRecord7(response)) {
     return response;
   }
   return removeUndefined3({
@@ -257413,7 +257641,7 @@ async function loadDownloadAssetsManifest(args, session) {
   if (inlineTargets && manifestPath) {
     throw new Error('Pass either "targets" or "manifestPath", not both.');
   }
-  const manifestValue = manifestPath ? JSON.parse(await readFile5(manifestPath, "utf8")) : void 0;
+  const manifestValue = manifestPath ? JSON.parse(await readFile4(manifestPath, "utf8")) : void 0;
   const manifestRecord = asRecord2(manifestValue);
   if (manifestRecord.assets !== void 0) {
     throw new Error('Download manifest field "assets" is not supported. Use "targets".');
@@ -257455,7 +257683,7 @@ function asOptionalDownloadAssetFormat(value) {
   return void 0;
 }
 function extractFigmaFileKeyFromTargetInput(input) {
-  if (isRecord6(input)) {
+  if (isRecord7(input)) {
     return extractFigmaFileKeyFromTargetInput(input.url) ?? extractFigmaFileKeyFromTargetInput(input.nodeUrl) ?? extractFigmaFileKeyFromTargetInput(input.target);
   }
   return extractFigmaFileKey(asOptionalString2(input));
@@ -257502,7 +257730,7 @@ function collectDownloadAssetLinks(value) {
       item.forEach((child, index) => visit(child, [...path, String(index)]));
       return;
     }
-    if (!isRecord6(item)) {
+    if (!isRecord7(item)) {
       return;
     }
     for (const [key, child] of Object.entries(item)) {
@@ -257896,7 +258124,7 @@ function compactTaskPlanFailure(step) {
     index: typeof step.index === "number" ? step.index : void 0,
     type: asOptionalString2(step.type) ?? "",
     status: asOptionalString2(step.status) ?? "failed",
-    error: isRecord6(step.error) ? step.error : void 0
+    error: isRecord7(step.error) ? step.error : void 0
   });
 }
 function compactTaskPlanStepDetail(step) {
@@ -257911,7 +258139,7 @@ function compactTaskPlanStepDetail(step) {
     finishedAt: asOptionalString2(step.finishedAt),
     diagnostics: typeof summary.diagnostics === "number" ? summary.diagnostics : void 0,
     failures: typeof summary.failures === "number" ? summary.failures : void 0,
-    error: isRecord6(step.error) ? step.error : void 0
+    error: isRecord7(step.error) ? step.error : void 0
   });
 }
 async function handlePrepareTask(args, runtime) {
@@ -258417,7 +258645,7 @@ function mergeInspectStyleChunks(target, chunks) {
       summary = chunk.summary;
     }
     const style = asRecord2(chunk.style);
-    for (const color of Array.isArray(style.topColors) ? style.topColors.filter(isRecord6) : []) {
+    for (const color of Array.isArray(style.topColors) ? style.topColors.filter(isRecord7) : []) {
       const name = asOptionalString2(color.color);
       const count = finiteNonNegativeNumber(color.count) ?? 0;
       if (name) {
@@ -258459,7 +258687,7 @@ function appendCappedRecords(target, value, cap) {
     if (target.length >= cap) {
       return;
     }
-    if (isRecord6(item)) {
+    if (isRecord7(item)) {
       target.push(item);
     }
   }
@@ -258548,7 +258776,7 @@ async function readInspectHandleValidationChunk(options) {
     return { parsedJson: parsed.json, validations: [], validatedNodeIds: [], upstreamError: parsed.upstreamError };
   }
   const result = asRecord2(asRecord2(parsed.json).result);
-  const validations = Array.isArray(result.validations) ? result.validations.filter(isRecord6) : [];
+  const validations = Array.isArray(result.validations) ? result.validations.filter(isRecord7) : [];
   const validatedNodeIds = Array.isArray(result.validatedNodeIds) ? result.validatedNodeIds.filter((item) => typeof item === "string") : validations.map((item) => asOptionalString2(item.id)).filter((item) => item !== void 0);
   return { parsedJson: parsed.json, validations, validatedNodeIds };
 }
@@ -258660,7 +258888,7 @@ async function executeGetMetadata(args, runtime) {
   });
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["metadata.json"]);
-  if (metadataOk && metadata && isRecord6(limitedPayload.inlineResultLimit)) {
+  if (metadataOk && metadata && isRecord7(limitedPayload.inlineResultLimit)) {
     const outputFiles = asRecord2(limitedPayload.outputFiles);
     outputFiles.metadataFile = await writeMetadataFile({ args, session, metadata });
     limitedPayload.outputFiles = outputFiles;
@@ -259017,7 +259245,7 @@ async function executeCallUpstreamTool(args, runtime) {
       `Refusing to proxy local figma_workspace_mcp tool "${args.toolName}". Call it directly instead.`
     );
   }
-  const upstreamArgs = isRecord6(args.arguments) ? args.arguments : {};
+  const upstreamArgs = isRecord7(args.arguments) ? args.arguments : {};
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = tools.find((item) => item.name === args.toolName);
   if (!tool) {
@@ -259062,46 +259290,76 @@ async function executeCallUpstreamTool(args, runtime) {
   });
 }
 async function handleLookup(args) {
-  if (args.kind === "docs") {
-    const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
-    const matches2 = await searchReferenceFiles({
-      query,
-      files: DOCS_SEARCH_ALLOWLIST,
-      maxResults: normalizeBoundedInteger(
-        args.maxResults,
-        DEFAULT_DOCS_SEARCH_MAX_RESULTS,
-        MAX_DOCS_SEARCH_RESULTS
-      ),
-      maxSnippetLines: normalizeBoundedInteger(
-        args.maxSnippetLines,
-        DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
-        MAX_DOCS_SEARCH_SNIPPET_LINES
-      )
+  try {
+    if (args.kind === "docs") {
+      const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
+      const matches2 = await searchReferenceFiles({
+        query,
+        files: DOCS_SEARCH_ALLOWLIST,
+        maxResults: normalizeBoundedInteger(
+          args.maxResults,
+          DEFAULT_DOCS_SEARCH_MAX_RESULTS,
+          MAX_DOCS_SEARCH_RESULTS
+        ),
+        maxSnippetLines: normalizeBoundedInteger(
+          args.maxSnippetLines,
+          DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
+          MAX_DOCS_SEARCH_SNIPPET_LINES
+        )
+      });
+      const payload2 = {
+        ok: true,
+        results: matches2.results,
+        guidance: "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_workspace_lookup query or kind=api lookup when more detail is needed."
+      };
+      return makeJsonToolResult(payload2);
+    }
+    if (args.kind !== "api") {
+      throw new Error('Tool argument "kind" must be one of: docs, api.');
+    }
+    const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
+    const matches = await searchReferenceFiles({
+      query: symbol,
+      files: API_LOOKUP_FILES,
+      maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
+      maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
+      exactSymbol: true
     });
-    const payload2 = {
+    const payload = {
       ok: true,
-      results: matches2.results,
-      guidance: "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_workspace_lookup query or kind=api lookup when more detail is needed."
+      results: matches.results,
+      guidance: "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents."
     };
-    return makeJsonToolResult(payload2);
+    return makeJsonToolResult(payload);
+  } catch (error2) {
+    if (error2 instanceof FigmaWorkspaceLookupCorpusUnavailableError) {
+      return makeJsonToolResult({
+        ok: false,
+        results: [],
+        diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error2)]),
+        guidance: "Lookup corpus is unavailable in this MCP process. Reload the figma-workspace plugin/MCP server after confirming the installed plugin cache contains bundled corpus files.",
+        runtime: error2.failure
+      });
+    }
+    throw error2;
   }
-  if (args.kind !== "api") {
-    throw new Error('Tool argument "kind" must be one of: docs, api.');
-  }
-  const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
-  const matches = await searchReferenceFiles({
-    query: symbol,
-    files: API_LOOKUP_FILES,
-    maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
-    maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
-    exactSymbol: true
-  });
-  const payload = {
-    ok: true,
-    results: matches.results,
-    guidance: "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents."
+}
+function lookupCorpusDiagnostic(error2) {
+  const failure = error2.failure;
+  return {
+    code: "FIGMA_WORKSPACE_LOOKUP_CORPUS_UNAVAILABLE",
+    severity: "fatal",
+    message: [
+      failure.message,
+      `moduleDir=${failure.moduleDir}`,
+      `cwd=${failure.cwd}`,
+      `argv1=${failure.argv1 ?? "<unset>"}`,
+      `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
+      `attemptedPaths=${failure.attemptedPaths.join(" | ")}`
+    ].join("; "),
+    suggestion: "Reload the figma-workspace plugin/MCP server so it starts from the current installed cache, or rebuild the plugin package if bundled corpus files are missing.",
+    docsHint: "figma-workspace://capabilities#runtime"
   };
-  return makeJsonToolResult(payload);
 }
 async function callUpstreamEval(client, evalSettings, script) {
   await client.connect();
@@ -259120,7 +259378,7 @@ function createUpstreamToolCache(client) {
       await client.connect();
       const result = asRecord2(await client.listTools());
       const tools = Array.isArray(result.tools) ? result.tools : [];
-      cached2 = tools.filter(isRecord6).map((tool) => ({
+      cached2 = tools.filter(isRecord7).map((tool) => ({
         name: String(tool.name ?? ""),
         description: asOptionalString2(tool.description),
         inputSchema: tool.inputSchema
@@ -259162,7 +259420,7 @@ async function resolveEvalSettings(session, args, runtime) {
   return { toolName, argumentName, upstreamArguments };
 }
 function upstreamToolRequiredProperties(tool) {
-  const schema = isRecord6(tool.inputSchema) ? tool.inputSchema : void 0;
+  const schema = isRecord7(tool.inputSchema) ? tool.inputSchema : void 0;
   const required2 = Array.isArray(schema?.required) ? schema.required : [];
   return new Set(required2.filter((value) => typeof value === "string"));
 }
@@ -260055,7 +260313,7 @@ function replaceDelimitedSource(source, startMarker, endMarker, replacement, opt
 }
 async function loadAssetManifest(args, session) {
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
-  const manifestValue = manifestPath ? JSON.parse(await readFile5(manifestPath, "utf8")) : void 0;
+  const manifestValue = manifestPath ? await readAssetManifestValue(manifestPath) : void 0;
   const manifestRecord = asRecord2(manifestValue);
   const manifestAssets = Array.isArray(manifestValue) ? manifestValue : Array.isArray(manifestRecord.assets) ? manifestRecord.assets : void 0;
   const inlineAssets = Array.isArray(args.assets) ? args.assets : void 0;
@@ -260073,6 +260331,35 @@ async function loadAssetManifest(args, session) {
   return {
     assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir, session))
   };
+}
+async function readAssetManifestValue(manifestPath) {
+  try {
+    return JSON.parse(await readFile4(manifestPath, "utf8"));
+  } catch (error2) {
+    throw new AssetManifestLoadError(manifestPath, error2);
+  }
+}
+function assetManifestLoadDiagnostic(error2) {
+  return {
+    code: "FIGMA_WORKSPACE_ASSET_MANIFEST_LOAD_FAILED",
+    severity: "fatal",
+    message: error2.message,
+    suggestion: "Create the manifest file at the reported path or pass inline assets for one-off uploads; relative manifestPath values are resolved inside the initialized workspace.",
+    docsHint: "figma-workspace://guide#assetWorkflow"
+  };
+}
+function errorMessage3(error2) {
+  return error2 instanceof Error ? error2.message : String(error2);
+}
+function safeProcessCwd3() {
+  try {
+    return typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : "";
+  } catch {
+    return "";
+  }
+}
+function safeProcessArgv13() {
+  return typeof process !== "undefined" && Array.isArray(process.argv) ? process.argv[1] : void 0;
 }
 function normalizeManifestAsset(value, index, baseDir, session) {
   const record2 = asRecord2(value);
@@ -260124,7 +260411,7 @@ function assertRemovedManifestAssetFields(record2, index) {
   if (targetAliases.length > 0) {
     throw new Error(`Asset manifest entry ${index} field "${targetAliases.join("/")}" was removed. Use "target".`);
   }
-  const targetRecord = isRecord6(record2.target) ? record2.target : void 0;
+  const targetRecord = isRecord7(record2.target) ? record2.target : void 0;
   if (targetRecord) {
     const nestedAliases = ["nodeId", "targetNodeId", "targetHandle", "targetId"].filter((field) => targetRecord[field] !== void 0);
     if (nestedAliases.length > 0) {
@@ -260153,8 +260440,8 @@ function assertUpstreamToolHasProperty(tool, propertyName, kind) {
   );
 }
 function upstreamToolHasProperty(tool, propertyName) {
-  const schema = isRecord6(tool.inputSchema) ? tool.inputSchema : void 0;
-  const properties = isRecord6(schema?.properties) ? schema.properties : void 0;
+  const schema = isRecord7(tool.inputSchema) ? tool.inputSchema : void 0;
+  const properties = isRecord7(schema?.properties) ? schema.properties : void 0;
   return Boolean(properties && propertyName in properties);
 }
 function assertUpstreamToolHasProperties(tool, propertyNames, kind) {
@@ -260200,7 +260487,7 @@ function readTemplatePath(context, path) {
   const parts = path.split(".").filter(Boolean);
   let current2 = context;
   for (const part of parts) {
-    if (!isRecord6(current2)) {
+    if (!isRecord7(current2)) {
       return void 0;
     }
     current2 = current2[part];
@@ -260348,7 +260635,7 @@ async function applyAssetManifestApplicationChunk(options) {
   if (!applicationResult) {
     return { found: false, applicationSource: "not-found", applications: [] };
   }
-  const applications = Array.isArray(applicationResult.result.applications) ? applicationResult.result.applications.filter(isRecord6) : [];
+  const applications = Array.isArray(applicationResult.result.applications) ? applicationResult.result.applications.filter(isRecord7) : [];
   return { found: true, applicationSource: applicationResult.sourcePath, applications };
 }
 function buildAssetManifestApplicationCode(candidates) {
@@ -260425,7 +260712,7 @@ function findAssetManifestApplicationResult(value, depth = 0, sourcePath = "pars
   }
   if (Array.isArray(value)) {
     if (value.some(isAssetManifestApplicationRecord)) {
-      return { result: { applications: value.filter(isRecord6) }, sourcePath };
+      return { result: { applications: value.filter(isRecord7) }, sourcePath };
     }
     for (let index = 0; index < value.length; index += 1) {
       const nested = findAssetManifestApplicationResult(value[index], depth + 1, `${sourcePath}[${index}]`);
@@ -260586,7 +260873,7 @@ async function readAssetManifestTargetValidationChunk(options) {
   if (!validationResult) {
     return { found: false, validationSource: "not-found", validations: [] };
   }
-  const validations = Array.isArray(validationResult.result.validations) ? validationResult.result.validations.filter(isRecord6) : [];
+  const validations = Array.isArray(validationResult.result.validations) ? validationResult.result.validations.filter(isRecord7) : [];
   return { found: true, validationSource: validationResult.sourcePath, validations };
 }
 function buildAssetManifestTargetValidationCode(targetNodeIds) {
@@ -260641,7 +260928,7 @@ function findAssetManifestValidationResult(value, depth = 0, sourcePath = "parse
   }
   if (Array.isArray(value)) {
     if (value.some(isAssetManifestValidationRecord)) {
-      return { result: { validations: value.filter(isRecord6) }, sourcePath };
+      return { result: { validations: value.filter(isRecord7) }, sourcePath };
     }
     for (let index = 0; index < value.length; index += 1) {
       const nested = findAssetManifestValidationResult(value[index], depth + 1, `${sourcePath}[${index}]`);
@@ -260684,7 +260971,7 @@ async function submitLocalAssetUploadIfAvailable(asset, parsed) {
   if (!submitUrl) {
     return void 0;
   }
-  const bytes = await readFile5(asset.path);
+  const bytes = await readFile4(asset.path);
   const mimeType = mimeTypeForAssetPath(asset.path);
   const response = await fetch(submitUrl, {
     method: "POST",
@@ -260714,7 +261001,7 @@ async function submitLocalAssetUploadIfAvailable(asset, parsed) {
 }
 function extractAssetSubmitUrl(value) {
   const record2 = asRecord2(value);
-  if (isRecord6(record2.result)) {
+  if (isRecord7(record2.result)) {
     const nestedUrl = extractAssetSubmitUrl(record2.result);
     if (nestedUrl) {
       return nestedUrl;
@@ -260833,7 +261120,7 @@ function expandTaskPlanReferenceValue(value, context) {
   if (Array.isArray(value)) {
     return value.map((item) => expandTaskPlanReferenceValue(item, context));
   }
-  if (isRecord6(value)) {
+  if (isRecord7(value)) {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, expandTaskPlanReferenceValue(item, context)])
     );
@@ -260854,9 +261141,9 @@ function createTaskPlanStepReference(options) {
   const upstream = asRecord2(options.result.upstream);
   const upstreamPayload = runScriptUpstreamPayload(options.result);
   const result = asRecord2(upstreamPayload);
-  const nestedResult = isRecord6(result.result) ? asRecord2(result.result) : result;
+  const nestedResult = isRecord7(result.result) ? asRecord2(result.result) : result;
   const session = asRecord2(options.result.session);
-  const handles = isRecord6(session.handles) ? session.handles : isRecord6(result.handles) ? result.handles : isRecord6(nestedResult.handles) ? nestedResult.handles : void 0;
+  const handles = isRecord7(session.handles) ? session.handles : isRecord7(result.handles) ? result.handles : isRecord7(nestedResult.handles) ? nestedResult.handles : void 0;
   return {
     id: options.id,
     index: options.index,
@@ -260957,7 +261244,7 @@ async function enrichMetadataJson(metadata, session, runtime) {
   }
 }
 function isFigmaWorkspaceUpstreamErrorLike(value) {
-  return isRecord6(value) && typeof value.message === "string";
+  return isRecord7(value) && typeof value.message === "string";
 }
 function emptyMetadataEnrichment() {
   return { diagnostics: [] };
@@ -261246,7 +261533,7 @@ function inlineResultLimitTarget(payload, field) {
   let parent = payload;
   for (const part of parts.slice(0, -1)) {
     const next = parent[part];
-    if (!isRecord6(next)) {
+    if (!isRecord7(next)) {
       return void 0;
     }
     const cloned = { ...next };
@@ -261512,8 +261799,16 @@ function slugifyTaskName2(value) {
 function createCapabilitiesPayload() {
   return {
     purpose: "Routing manifest for the Figma Workspace MCP facade. Stay on figma_workspace_mcp for normal work; it keeps local sessions, handles, workspace files, diagnostics, and structured tool results while upstream execution still goes through official Figma MCP tools.",
+    runtime: {
+      lookup: getFigmaWorkspaceLookupRuntimeInfo(),
+      typescript: getFigmaWorkspaceTypescriptRuntimeInfo(),
+      argv: {
+        cwd: safeProcessCwd3(),
+        argv1: safeProcessArgv13()
+      }
+    },
     defaultFlow: [
-      "Use figma_workspace_prepare_task with file, taskName, and surface for repairable .figma.ts work.",
+      "Use figma_workspace_prepare_task with file, taskName, workspaceDir, and surface for repairable .figma.ts work.",
       "Use figma_workspace_guidance with compact keywords before writing scripts; use figma_workspace_lookup only for exact docs/API snippets.",
       "Run figma_workspace_run_script_file with inputFile and strict=true; repair every repairPlan.steps item and rerun the same file.",
       "Use inspect/metadata/capture/design-system/asset tools as workflow add-ons, not as replacements for the file-script path."
@@ -261893,7 +262188,7 @@ function normalizeOAuthUpstreamError(error2) {
   return publicOAuthUpstreamError(error2);
 }
 function publicOAuthUpstreamError(error2) {
-  const details = isRecord6(error2.details) ? {
+  const details = isRecord7(error2.details) ? {
     ...error2.details,
     loginCommand: error2.details.loginCommand ?? "npm run login:figma-http",
     oauthCacheFile: error2.details.oauthCacheFile ?? ".figma-workspace-oauth.json"
@@ -261941,7 +262236,7 @@ function primaryFixForUpstreamError(error2) {
     return "Restart the Figma Workspace MCP call or npm run login:figma-http, complete browser OAuth, then retry.";
   }
   if (error2.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_PORT_IN_USE") {
-    const callbackPort = isRecord6(error2.details) && typeof error2.details.callbackPort === "number" ? ` ${error2.details.callbackPort}` : "";
+    const callbackPort = isRecord7(error2.details) && typeof error2.details.callbackPort === "number" ? ` ${error2.details.callbackPort}` : "";
     return `Free OAuth callback port${callbackPort} or configure this runtime with a different callback port, then rerun npm run login:figma-http.`;
   }
   if (error2.code === "FIGMA_UPSTREAM_OAUTH_CALLBACK_STARTUP_FAILED") {
@@ -261972,7 +262267,7 @@ function stringFromUnknown(value) {
   if (typeof value === "string" && value.length > 0) {
     return value;
   }
-  if (isRecord6(value)) {
+  if (isRecord7(value)) {
     const message = asOptionalString2(value.message);
     if (message) return message;
   }
@@ -262065,7 +262360,7 @@ function collectNodeIds(value) {
       item.forEach(visit);
       return;
     }
-    if (isRecord6(item)) {
+    if (isRecord7(item)) {
       if (typeof item.id === "string") ids.add(item.id);
       for (const child of Object.values(item)) visit(child);
     }
@@ -262076,7 +262371,7 @@ function collectNodeIds(value) {
 function summarizeParsedResult(parsed) {
   const record2 = asRecord2(parsed.json);
   const result = record2.result;
-  if (isRecord6(result)) {
+  if (isRecord7(result)) {
     if (typeof result.summary === "string") return result.summary;
     if (typeof result.opCount === "number") return `Returned opCount=${result.opCount}.`;
   }
@@ -262188,7 +262483,7 @@ async function shapeUpstreamBackedResponse(options) {
     inlineResultLimit,
     [...options.contract.outputPolicy.inlineLimitFields]
   );
-  const needsOutputFile = options.parsed.upstreamError || isRecord6(limitedPayload.inlineResultLimit);
+  const needsOutputFile = options.parsed.upstreamError || isRecord7(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
   }
@@ -262261,7 +262556,7 @@ function shapePublicUpstreamResult(value) {
   return { result: Object.keys(result).length > 0 ? result : void 0 };
 }
 function consumeTopLevelOk(value) {
-  if (!isRecord6(value)) {
+  if (!isRecord7(value)) {
     return { result: value };
   }
   if (!Object.prototype.hasOwnProperty.call(value, "ok")) {
@@ -262274,7 +262569,7 @@ function consumeTopLevelOk(value) {
   };
 }
 function addFailureSourceToUpstreamResult(result, source) {
-  if (isRecord6(result)) {
+  if (isRecord7(result)) {
     return {
       ...result,
       source
@@ -262365,7 +262660,7 @@ function resolveWrapperNodeTarget(options) {
   return { fileKey, nodeId, handle: target.handle };
 }
 function resolveSessionTargetInput(input, session) {
-  if (isRecord6(input)) {
+  if (isRecord7(input)) {
     const explicitHandle = asOptionalString2(input.handle) ?? asOptionalString2(input.targetHandle);
     const explicitFileKey = asOptionalString2(input.fileKey) ?? extractFigmaFileKey(asOptionalString2(input.url)) ?? extractFigmaFileKey(asOptionalString2(input.nodeUrl)) ?? extractFigmaFileKey(asOptionalString2(input.target));
     const nodeValue = explicitHandle ?? asOptionalString2(input.nodeId) ?? asOptionalString2(input.targetNodeId) ?? asOptionalString2(input.target) ?? asOptionalString2(input.id) ?? asOptionalString2(input.url) ?? asOptionalString2(input.nodeUrl);
@@ -262455,7 +262750,7 @@ function removeUndefined3(value) {
   if (Array.isArray(value)) {
     return value.map(removeUndefined3);
   }
-  if (!isRecord6(value)) {
+  if (!isRecord7(value)) {
     return value;
   }
   return Object.fromEntries(
@@ -262463,19 +262758,19 @@ function removeUndefined3(value) {
   );
 }
 function asRecord2(value) {
-  if (isRecord6(value)) {
+  if (isRecord7(value)) {
     return value;
   }
   return {};
 }
 function recordFromUnknown(value) {
-  return isRecord6(value) ? value : void 0;
+  return isRecord7(value) ? value : void 0;
 }
-function isRecord6(value) {
+function isRecord7(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function isStringRecord(value) {
-  return isRecord6(value) && Object.values(value).every((item) => typeof item === "string");
+  return isRecord7(value) && Object.values(value).every((item) => typeof item === "string");
 }
 function asOptionalString2(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
@@ -262584,7 +262879,7 @@ function normalizeBoundedInteger(value, fallback, max) {
 function literal4(value) {
   return JSON.stringify(value);
 }
-var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, resolveFigmaWorkspaceScriptHelperSelection2, FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_INSPECT_VALIDATE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS, FIGMA_FILE_URL_KINDS;
+var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, resolveFigmaWorkspaceScriptHelperSelection2, FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_INSPECT_VALIDATE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, AssetManifestLoadError, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS, FIGMA_FILE_URL_KINDS;
 var init_workspace_mcp_server = __esm({
   "src/mcp/workspace-mcp-server.ts"() {
     "use strict";
@@ -262667,6 +262962,14 @@ var init_workspace_mcp_server = __esm({
     FIGMA_INSPECT_VALIDATE_BATCH_SIZE = 80;
     FIGMA_ASSET_APPLICATION_BATCH_SIZE = 80;
     FIGMA_ASSET_VALIDATION_BATCH_SIZE = 80;
+    AssetManifestLoadError = class extends Error {
+      manifestPath;
+      constructor(manifestPath, cause) {
+        super(`Unable to read asset manifest "${manifestPath}": ${errorMessage3(cause)}`);
+        this.name = "AssetManifestLoadError";
+        this.manifestPath = manifestPath;
+      }
+    };
     UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER = [
       "capture",
       "design-context",

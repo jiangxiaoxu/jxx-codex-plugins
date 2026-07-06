@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -111,11 +111,60 @@ interface UpstreamCorpus {
   records: Map<string, UpstreamCorpusRecord>;
 }
 
+export interface FigmaWorkspaceLookupCorpusFailure {
+  ok: false;
+  message: string;
+  moduleDir: string;
+  cwd: string;
+  argv1?: string;
+  packageVersion?: string;
+  attemptedPaths: string[];
+}
+
+export type FigmaWorkspaceLookupRuntimeInfo =
+  | {
+    ok: true;
+    root: string;
+    moduleDir: string;
+    cwd: string;
+    argv1?: string;
+    packageVersion?: string;
+    recordCount: number;
+  }
+  | FigmaWorkspaceLookupCorpusFailure;
+
+export class FigmaWorkspaceLookupCorpusUnavailableError extends Error {
+  readonly failure: FigmaWorkspaceLookupCorpusFailure;
+
+  constructor(failure: FigmaWorkspaceLookupCorpusFailure) {
+    super(failure.message);
+    this.name = "FigmaWorkspaceLookupCorpusUnavailableError";
+    this.failure = failure;
+  }
+}
+
 interface ScoredReferenceChunk {
   chunk: ReferenceChunk;
   score: number;
   matchType: "exact-symbol" | "phrase" | "token";
   confidence: "high" | "medium" | "low";
+}
+
+const upstreamCorpusState = readUpstreamCorpusState();
+
+export function getFigmaWorkspaceLookupRuntimeInfo(): FigmaWorkspaceLookupRuntimeInfo {
+  if (!upstreamCorpusState.ok) {
+    return { ...upstreamCorpusState.failure };
+  }
+  return {
+    ok: true,
+    root: upstreamCorpusState.corpus.root,
+    moduleDir: upstreamCorpusState.moduleDir,
+    cwd: upstreamCorpusState.cwd,
+    argv1: upstreamCorpusState.argv1,
+    packageVersion: upstreamCorpusState.packageVersion,
+    recordCount: upstreamCorpusState.corpus.records.size,
+  };
 }
 
 export async function searchReferenceFiles(options: {
@@ -578,17 +627,54 @@ function countTokens(tokens: string[]): Map<string, number> {
   return counts;
 }
 
-let upstreamCorpusCache: Promise<UpstreamCorpus> | undefined;
-
-function loadUpstreamCorpus(): Promise<UpstreamCorpus> {
-  upstreamCorpusCache ??= readUpstreamCorpus();
-  return upstreamCorpusCache;
+function loadUpstreamCorpus(): UpstreamCorpus {
+  if (!upstreamCorpusState.ok) {
+    throw new FigmaWorkspaceLookupCorpusUnavailableError(upstreamCorpusState.failure);
+  }
+  return upstreamCorpusState.corpus;
 }
 
-async function readUpstreamCorpus(): Promise<UpstreamCorpus> {
-  const root = await resolveUpstreamCorpusRoot();
-  const manifest = parseUpstreamCorpusManifest(await readFile(resolve(root, "manifest.json"), "utf8"));
-  const corpusText = await readFile(resolve(root, manifest.corpus.file), "utf8");
+function readUpstreamCorpusState():
+  | {
+    ok: true;
+    corpus: UpstreamCorpus;
+    moduleDir: string;
+    cwd: string;
+    argv1?: string;
+    packageVersion?: string;
+  }
+  | {
+    ok: false;
+    failure: FigmaWorkspaceLookupCorpusFailure;
+  } {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const cwd = safeProcessCwd(moduleDir);
+  const argv1 = safeProcessArgv1();
+  const packageVersion = readNearestPackageVersion(moduleDir);
+  const candidates = upstreamCorpusRootCandidates(moduleDir, cwd);
+  try {
+    const root = resolveUpstreamCorpusRoot(candidates);
+    const manifest = parseUpstreamCorpusManifest(readFileSync(resolve(root, "manifest.json"), "utf8"));
+    const corpus = readUpstreamCorpus(root, manifest);
+    return { ok: true, corpus, moduleDir, cwd, argv1, packageVersion };
+  } catch (error) {
+    return {
+      ok: false,
+      failure: {
+        ok: false,
+        message: `Unable to locate internal Figma corpus for figma_workspace_mcp docs/API lookup: ${errorMessage(error)}`,
+        moduleDir,
+        cwd,
+        argv1,
+        packageVersion,
+        attemptedPaths: candidates,
+      },
+    };
+  }
+}
+
+function readUpstreamCorpus(root: string, manifest: UpstreamCorpusManifest): UpstreamCorpus {
+  const corpusText = readFileSync(resolve(root, manifest.corpus.file), "utf8");
   const records = new Map<string, UpstreamCorpusRecord>();
   for (const line of corpusText.split(/\r?\n/u)) {
     if (!line.trim()) {
@@ -600,12 +686,8 @@ async function readUpstreamCorpus(): Promise<UpstreamCorpus> {
   return { root, manifest, records };
 }
 
-async function resolveUpstreamCorpusRoot(): Promise<string> {
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
-  const cwd = typeof process !== "undefined" && typeof process.cwd === "function"
-    ? process.cwd()
-    : moduleDir;
-  const candidates = [
+function upstreamCorpusRootCandidates(moduleDir: string, cwd: string): string[] {
+  return [
     resolve(moduleDir, "../skills/figma-workspace/references/upstream-corpus"),
     resolve(moduleDir, "../../skills/figma-workspace/references/upstream-corpus"),
     resolve(moduleDir, "../../../skills/figma-workspace/references/upstream-corpus"),
@@ -613,17 +695,20 @@ async function resolveUpstreamCorpusRoot(): Promise<string> {
     resolve(cwd, "plugins/figma-workspace/skills/figma-workspace/references/upstream-corpus"),
     resolve(cwd, "../skills/figma-workspace/references/upstream-corpus"),
   ];
+}
+
+function resolveUpstreamCorpusRoot(candidates: string[]): string {
   for (const candidate of candidates) {
     try {
-      await readFile(resolve(candidate, "manifest.json"), "utf8");
-      await readFile(resolve(candidate, "corpus.jsonl"), "utf8");
+      readFileSync(resolve(candidate, "manifest.json"), "utf8");
+      readFileSync(resolve(candidate, "corpus.jsonl"), "utf8");
       return candidate;
     } catch {
       // Try the next runtime layout.
     }
   }
   throw new Error(
-    "Unable to locate internal Figma corpus for figma_workspace_mcp docs/API lookup.",
+    "no candidate contained manifest.json and corpus.jsonl",
   );
 }
 
@@ -688,4 +773,45 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function readNearestPackageVersion(startDir: string): string | undefined {
+  for (const candidate of packageJsonCandidates(startDir)) {
+    try {
+      const value: unknown = JSON.parse(readFileSync(candidate, "utf8"));
+      if (isObject(value) && typeof value.version === "string") {
+        return value.version;
+      }
+    } catch {
+      // Try the next package.json candidate.
+    }
+  }
+  return undefined;
+}
+
+function packageJsonCandidates(startDir: string): string[] {
+  return [
+    resolve(startDir, "../package.json"),
+    resolve(startDir, "../../package.json"),
+    resolve(startDir, "../../../package.json"),
+    resolve(startDir, "../../../../package.json"),
+  ];
+}
+
+function safeProcessCwd(fallback: string): string {
+  try {
+    return typeof process !== "undefined" && typeof process.cwd === "function"
+      ? process.cwd()
+      : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeProcessArgv1(): string | undefined {
+  return typeof process !== "undefined" && Array.isArray(process.argv) ? process.argv[1] : undefined;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

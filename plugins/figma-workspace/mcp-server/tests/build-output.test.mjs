@@ -222,6 +222,50 @@ test("packaged dist starts and typechecks without package node_modules", async (
   }
 });
 
+test("packaged dist keeps preloaded runtime assets after installed files are removed", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-preloaded-assets-"));
+  try {
+    await cp(new URL("../package.json", import.meta.url), join(tempDir, "package.json"));
+    await cp(new URL("../dist/", import.meta.url), join(tempDir, "dist"), { recursive: true });
+    await writeFile(join(tempDir, "preloaded-assets.mjs"), preloadedAssetsSmokeScript, "utf8");
+
+    const result = await runNodeScript(join(tempDir, "preloaded-assets.mjs"), tempDir);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stderr, "");
+
+    const smoke = JSON.parse(result.stdout);
+    assert.equal(smoke.lookupOk, true);
+    assert.equal(smoke.lookupResults, true);
+    assert.equal(smoke.evalBlocked, true);
+    assert.equal(smoke.scriptBlocked, true);
+    assert.equal(smoke.noMissingAssetDiagnostics, true);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("packaged dist returns structured lookup diagnostics when corpus is missing at startup", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-missing-corpus-"));
+  try {
+    await cp(new URL("../package.json", import.meta.url), join(tempDir, "package.json"));
+    await cp(new URL("../dist/", import.meta.url), join(tempDir, "dist"), { recursive: true });
+    await rm(join(tempDir, "dist/skills/figma-workspace/references/upstream-corpus"), { recursive: true, force: true });
+    await writeFile(join(tempDir, "missing-corpus.mjs"), missingCorpusSmokeScript, "utf8");
+
+    const result = await runNodeScript(join(tempDir, "missing-corpus.mjs"), tempDir);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stderr, "");
+
+    const smoke = JSON.parse(result.stdout);
+    assert.equal(smoke.ok, false);
+    assert.equal(smoke.diagnosticCode, "FIGMA_WORKSPACE_LOOKUP_CORPUS_UNAVAILABLE");
+    assert.equal(smoke.hasRuntime, true);
+    assert.equal(smoke.hasAttemptedPaths, true);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 function structuredToolResult(result) {
   assert.ok(result.structuredContent);
   const content = Array.isArray(result.content) ? result.content : [];
@@ -313,6 +357,110 @@ console.log(JSON.stringify({
   hasCode: typeof callTool[2]?.code === "string",
   upstreamOk: result.upstream?.ok,
   smoke: result.upstream?.result?.smoke === true,
+}));
+`;
+
+const preloadedAssetsSmokeScript = String.raw`
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { createFigmaWorkspaceClient } from "./dist/mcp/index.js";
+
+const fakeUpstream = {
+  async connect() {},
+  async close() {},
+  async callTool(name) {
+    throw new Error("unexpected upstream tool " + name);
+  },
+  async listTools() {
+    return { tools: [] };
+  },
+  async listResources() {
+    return { resources: [] };
+  },
+  async listResourceTemplates() {
+    return { resourceTemplates: [] };
+  },
+  async readResource() {
+    return { contents: [] };
+  },
+};
+
+const client = createFigmaWorkspaceClient({ client: fakeUpstream });
+await rm(join(process.cwd(), "dist/skills/figma-workspace/references/upstream-corpus"), { recursive: true, force: true });
+await rm(join(process.cwd(), "dist/mcp/figma-workspace-helpers.d.ts"), { force: true });
+await rm(join(process.cwd(), "dist/mcp/figma-plugin-typings"), { recursive: true, force: true });
+await rm(join(process.cwd(), "dist/mcp/typescript-lib"), { recursive: true, force: true });
+
+const lookup = await client.lookup({ kind: "api", symbol: "createFrame", maxResults: 1 });
+const evalResult = await client.eval({
+  mode: "read",
+  typescript: true,
+  code: "const rect: RectangleNode = figma.createRectangle();\nrect.appendChild(figma.createFrame());\nreturn { id: rect.id };",
+});
+const workspaceDir = join(process.cwd(), "workspace");
+await mkdir(workspaceDir, { recursive: true });
+const prepared = await client.prepareTask({
+  sessionId: "preloaded",
+  file: "FILE123",
+  taskName: "post-delete",
+  workspaceDir,
+  overwrite: true,
+});
+await writeFile(
+  prepared.task.scriptPath,
+  "const rect: RectangleNode = figma.createRectangle();\nrect.appendChild(figma.createFrame());\nreturn { id: rect.id };\n",
+  "utf8",
+);
+const scriptResult = await client.runScriptFile({
+  sessionId: "preloaded",
+  inputFile: prepared.task.inputFile,
+  strict: true,
+});
+const diagnosticsText = JSON.stringify([
+  ...(evalResult.diagnostics ?? []),
+  ...(scriptResult.diagnostics ?? []),
+]);
+
+console.log(JSON.stringify({
+  lookupOk: lookup.ok === true,
+  lookupResults: lookup.results.length > 0,
+  evalBlocked: evalResult.ok === false && evalResult.diagnostics.length > 0,
+  scriptBlocked: scriptResult.ok === false && scriptResult.diagnostics.length > 0,
+  noMissingAssetDiagnostics: !/ENOENT|no such file|Cannot find global type|figma-workspace-helpers|figma-plugin-typings|typescript-lib/u.test(diagnosticsText),
+}));
+`;
+
+const missingCorpusSmokeScript = String.raw`
+import { createFigmaWorkspaceClient } from "./dist/mcp/index.js";
+
+const client = createFigmaWorkspaceClient({
+  client: {
+    async connect() {},
+    async close() {},
+    async callTool(name) {
+      throw new Error("unexpected upstream tool " + name);
+    },
+    async listTools() {
+      return { tools: [] };
+    },
+    async listResources() {
+      return { resources: [] };
+    },
+    async listResourceTemplates() {
+      return { resourceTemplates: [] };
+    },
+    async readResource() {
+      return { contents: [] };
+    },
+  },
+});
+
+const result = await client.lookup({ kind: "docs", query: "text font", maxResults: 1 });
+console.log(JSON.stringify({
+  ok: result.ok,
+  diagnosticCode: result.diagnostics?.[0]?.code,
+  hasRuntime: result.runtime?.ok === false,
+  hasAttemptedPaths: Array.isArray(result.runtime?.attemptedPaths) && result.runtime.attemptedPaths.length > 0,
 }));
 `;
 

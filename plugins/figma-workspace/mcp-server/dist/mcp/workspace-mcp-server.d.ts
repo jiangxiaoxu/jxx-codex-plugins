@@ -413,6 +413,7 @@ export interface FigmaWorkspaceAssetManifestItem {
 export interface FigmaWorkspaceApplyAssetManifestResult extends FigmaWorkspaceToolResultBase {
     session: FigmaWorkspaceCompactSession;
     assets: FigmaWorkspaceAssetManifestItem[];
+    diagnostics?: FigmaWorkspaceDiagnostic[];
     validation?: unknown;
     failures?: Array<Record<string, unknown>>;
     outputFiles?: FigmaWorkspaceOutputFiles;
@@ -614,7 +615,9 @@ export interface FigmaWorkspaceGetMetadataResult extends FigmaWorkspaceToolResul
 }
 export interface FigmaWorkspaceLookupResult extends FigmaWorkspaceToolResultBase {
     results: ReferenceSearchResult[];
+    diagnostics?: FigmaWorkspaceDiagnostic[];
     guidance: string;
+    runtime?: Record<string, unknown>;
 }
 export interface FigmaWorkspaceClient {
     readonly client: FigmaUpstreamMcpProxyClient;

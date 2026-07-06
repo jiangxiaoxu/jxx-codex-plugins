@@ -1,7 +1,7 @@
 import { parse } from "acorn";
 import { parse as parseBabel } from "@babel/parser";
 import { createRequire } from "node:module";
-import { existsSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as ts from "@typescript/typescript6";
@@ -119,6 +119,62 @@ const TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH = "__figma_workspace_helpers.d.ts";
 const FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH = resolve(runtimeDirname, "figma-workspace-helpers.d.ts");
 const FIGMA_PLUGIN_TYPINGS_PATH = resolve(runtimeDirname, "figma-plugin-typings/index.d.ts");
 const TYPESCRIPT_LIB_DIR = resolve(runtimeDirname, "typescript-lib");
+const typescriptRuntimeAssets = loadFigmaWorkspaceTypescriptRuntimeAssets();
+
+interface FigmaWorkspaceTypescriptRuntimeAssets {
+  ok: true;
+  moduleDir: string;
+  cwd: string;
+  argv1?: string;
+  packageVersion?: string;
+  helperDeclarationsPath: string;
+  figmaPluginTypingsPath: string;
+  typescriptLibDir: string;
+  helperDeclarations: string;
+  figmaPluginTypings: string;
+  typescriptLibs: Map<string, string>;
+}
+
+interface FigmaWorkspaceTypescriptRuntimeAssetFailure {
+  ok: false;
+  moduleDir: string;
+  cwd: string;
+  argv1?: string;
+  packageVersion?: string;
+  attemptedPaths: string[];
+  message: string;
+}
+
+export type FigmaWorkspaceTypescriptRuntimeInfo =
+  | {
+    ok: true;
+    moduleDir: string;
+    cwd: string;
+    argv1?: string;
+    packageVersion?: string;
+    helperDeclarationsPath: string;
+    figmaPluginTypingsPath: string;
+    typescriptLibDir: string;
+    typescriptLibCount: number;
+  }
+  | FigmaWorkspaceTypescriptRuntimeAssetFailure;
+
+export function getFigmaWorkspaceTypescriptRuntimeInfo(): FigmaWorkspaceTypescriptRuntimeInfo {
+  if (!typescriptRuntimeAssets.ok) {
+    return { ...typescriptRuntimeAssets };
+  }
+  return {
+    ok: true,
+    moduleDir: typescriptRuntimeAssets.moduleDir,
+    cwd: typescriptRuntimeAssets.cwd,
+    argv1: typescriptRuntimeAssets.argv1,
+    packageVersion: typescriptRuntimeAssets.packageVersion,
+    helperDeclarationsPath: typescriptRuntimeAssets.helperDeclarationsPath,
+    figmaPluginTypingsPath: typescriptRuntimeAssets.figmaPluginTypingsPath,
+    typescriptLibDir: typescriptRuntimeAssets.typescriptLibDir,
+    typescriptLibCount: typescriptRuntimeAssets.typescriptLibs.size,
+  };
+}
 
 export function compileFigmaWorkspaceScriptFile(options: {
   scriptPath: string;
@@ -210,29 +266,37 @@ function compileFigmaWorkspaceTypescriptSource(
   strict: boolean,
   extraDeclarations?: string,
 ): { source: string; diagnostics: FigmaWorkspaceFileDiagnostic[] } {
+  if (!typescriptRuntimeAssets.ok) {
+    return {
+      source,
+      diagnostics: [typescriptRuntimeAssetFailureDiagnostic(scriptPath, typescriptRuntimeAssets)],
+    };
+  }
   const wrappedSource = `${TYPESCRIPT_WRAPPER_PREFIX}${source}${TYPESCRIPT_WRAPPER_SUFFIX}`;
   const compilerOptions = createFigmaWorkspaceTypescriptCompilerOptions(strict);
   const typescriptScriptPath = normalizeTypescriptFileName(scriptPath);
   const helperTypesPath = normalizeTypescriptFileName(`${scriptPath}.${TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH}`);
-  const figmaTypingsPath = resolveFigmaPluginTypingsPath();
+  const figmaTypingsPath = typescriptRuntimeAssets.figmaPluginTypingsPath;
   const host = ts.createCompilerHost(compilerOptions, true);
   const originalReadFile = host.readFile.bind(host);
   const originalFileExists = host.fileExists.bind(host);
   host.readFile = (fileName) => {
     const normalizedFileName = normalizeTypescriptFileName(fileName);
     if (normalizedFileName === typescriptScriptPath) return wrappedSource;
-    if (normalizedFileName === helperTypesPath) return [readFigmaWorkspaceHelperDeclarations(), extraDeclarations]
+    if (normalizedFileName === helperTypesPath) return [typescriptRuntimeAssets.helperDeclarations, extraDeclarations]
       .filter((item): item is string => typeof item === "string" && item.length > 0)
       .join("\n");
-    const bundledLibPath = resolveBundledTypescriptLibPath(fileName);
-    if (bundledLibPath) return readFileSync(bundledLibPath, "utf8");
+    const bundledLib = resolveBundledTypescriptLib(fileName);
+    if (bundledLib !== undefined) return bundledLib;
+    if (normalizedFileName === normalizeTypescriptFileName(figmaTypingsPath)) return typescriptRuntimeAssets.figmaPluginTypings;
     return originalReadFile(fileName);
   };
   host.fileExists = (fileName) => {
     const normalizedFileName = normalizeTypescriptFileName(fileName);
     return normalizedFileName === typescriptScriptPath ||
       normalizedFileName === helperTypesPath ||
-      resolveBundledTypescriptLibPath(fileName) !== undefined ||
+      resolveBundledTypescriptLib(fileName) !== undefined ||
+      normalizedFileName === normalizeTypescriptFileName(figmaTypingsPath) ||
       originalFileExists(fileName);
   };
   const program = ts.createProgram({
@@ -295,25 +359,137 @@ function createFigmaWorkspaceTypescriptCompilerOptions(strict: boolean): ts.Comp
   };
 }
 
-function resolveFigmaPluginTypingsPath(): string {
+function resolveExternalFigmaPluginTypingsPath(): string | undefined {
   try {
     return nodeRequire.resolve("@figma/plugin-typings/index.d.ts");
   } catch {
-    return FIGMA_PLUGIN_TYPINGS_PATH;
+    return undefined;
   }
 }
 
-function resolveBundledTypescriptLibPath(fileName: string): string | undefined {
+function resolveBundledTypescriptLib(fileName: string): string | undefined {
   const file = basename(fileName);
   if (!/^lib\..*\.d\.ts$/u.test(file)) {
     return undefined;
   }
-  const bundledPath = resolve(TYPESCRIPT_LIB_DIR, file);
-  return existsSync(bundledPath) ? bundledPath : undefined;
+  return typescriptRuntimeAssets.ok ? typescriptRuntimeAssets.typescriptLibs.get(file) : undefined;
 }
 
-function readFigmaWorkspaceHelperDeclarations(): string {
-  return readFileSync(FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, "utf8");
+function loadFigmaWorkspaceTypescriptRuntimeAssets(): FigmaWorkspaceTypescriptRuntimeAssets | FigmaWorkspaceTypescriptRuntimeAssetFailure {
+  const cwd = safeProcessCwd();
+  const argv1 = safeProcessArgv1();
+  const packageVersion = readNearestPackageVersion(runtimeDirname);
+  const externalFigmaTypingsPath = resolveExternalFigmaPluginTypingsPath();
+  const attemptedPaths = [
+    FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH,
+    externalFigmaTypingsPath ?? FIGMA_PLUGIN_TYPINGS_PATH,
+    TYPESCRIPT_LIB_DIR,
+    ...packageJsonCandidates(runtimeDirname),
+  ];
+  try {
+    const helperDeclarations = readFileSync(FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, "utf8");
+    const figmaPluginTypingsPath = externalFigmaTypingsPath ?? FIGMA_PLUGIN_TYPINGS_PATH;
+    const figmaPluginTypings = readFileSync(figmaPluginTypingsPath, "utf8");
+    const typescriptLibs = new Map<string, string>();
+    for (const entry of readdirSync(TYPESCRIPT_LIB_DIR, { withFileTypes: true })) {
+      if (!entry.isFile() || !/^lib\..*\.d\.ts$/u.test(entry.name)) {
+        continue;
+      }
+      typescriptLibs.set(entry.name, readFileSync(resolve(TYPESCRIPT_LIB_DIR, entry.name), "utf8"));
+    }
+    if (typescriptLibs.size === 0) {
+      throw new Error(`No bundled TypeScript lib declarations found in ${TYPESCRIPT_LIB_DIR}.`);
+    }
+    return {
+      ok: true,
+      moduleDir: runtimeDirname,
+      cwd,
+      argv1,
+      packageVersion,
+      helperDeclarationsPath: FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH,
+      figmaPluginTypingsPath,
+      typescriptLibDir: TYPESCRIPT_LIB_DIR,
+      helperDeclarations,
+      figmaPluginTypings,
+      typescriptLibs,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      moduleDir: runtimeDirname,
+      cwd,
+      argv1,
+      packageVersion,
+      attemptedPaths,
+      message: `Unable to preload Figma Workspace TypeScript runtime assets: ${errorMessage(error)}`,
+    };
+  }
+}
+
+function typescriptRuntimeAssetFailureDiagnostic(
+  scriptPath: string,
+  failure: FigmaWorkspaceTypescriptRuntimeAssetFailure,
+): FigmaWorkspaceFileDiagnostic {
+  return {
+    code: "FIGMA_WORKSPACE_TS_RUNTIME_ASSETS_MISSING",
+    severity: "fatal",
+    message: [
+      failure.message,
+      `moduleDir=${failure.moduleDir}`,
+      `cwd=${failure.cwd}`,
+      `argv1=${failure.argv1 ?? "<unset>"}`,
+      `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
+      `attemptedPaths=${failure.attemptedPaths.join(" | ")}`,
+    ].join("; "),
+    suggestion: "Reload the figma-workspace plugin/MCP server so it starts from the current installed cache, or rebuild the plugin package if bundled declaration files are missing.",
+    docsHint: "figma-workspace://capabilities#runtime",
+    source: { scriptPath },
+  };
+}
+
+function readNearestPackageVersion(startDir: string): string | undefined {
+  for (const candidate of packageJsonCandidates(startDir)) {
+    try {
+      const value: unknown = JSON.parse(readFileSync(candidate, "utf8"));
+      if (isRecord(value) && typeof value.version === "string") {
+        return value.version;
+      }
+    } catch {
+      // Try the next package.json candidate.
+    }
+  }
+  return undefined;
+}
+
+function packageJsonCandidates(startDir: string): string[] {
+  return [
+    resolve(startDir, "../package.json"),
+    resolve(startDir, "../../package.json"),
+    resolve(startDir, "../../../package.json"),
+    resolve(startDir, "../../../../package.json"),
+  ];
+}
+
+function safeProcessCwd(): string {
+  try {
+    return typeof process !== "undefined" && typeof process.cwd === "function"
+      ? process.cwd()
+      : runtimeDirname;
+  } catch {
+    return runtimeDirname;
+  }
+}
+
+function safeProcessArgv1(): string | undefined {
+  return typeof process !== "undefined" && Array.isArray(process.argv) ? process.argv[1] : undefined;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function normalizeTypescriptFileName(fileName: string): string {

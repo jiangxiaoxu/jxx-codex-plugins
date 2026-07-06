@@ -30,7 +30,9 @@ import {
   MAX_DOCS_SEARCH_RESULTS,
   MAX_DOCS_SEARCH_SNIPPET_LINES,
   MAX_LOOKUP_QUERY_LENGTH,
+  FigmaWorkspaceLookupCorpusUnavailableError,
   type ReferenceSearchResult,
+  getFigmaWorkspaceLookupRuntimeInfo,
   normalizeLookupQuery,
   normalizeLookupRankingQuery,
   searchReferenceFiles,
@@ -66,6 +68,7 @@ import {
   diagnoseFigmaWorkspaceCode,
   diagnoseFigmaWorkspaceContext,
   diagnoseWrappedScriptSize,
+  getFigmaWorkspaceTypescriptRuntimeInfo,
   resolveFigmaWorkspaceScriptHelperSelection as resolveFigmaWorkspaceScriptHelperSelectionInternal,
   throwIfFatalDiagnostics,
   toFigmaWorkspaceFileDiagnostics,
@@ -553,6 +556,7 @@ export interface FigmaWorkspaceAssetManifestItem {
 export interface FigmaWorkspaceApplyAssetManifestResult extends FigmaWorkspaceToolResultBase {
   session: FigmaWorkspaceCompactSession;
   assets: FigmaWorkspaceAssetManifestItem[];
+  diagnostics?: FigmaWorkspaceDiagnostic[];
   validation?: unknown;
   failures?: Array<Record<string, unknown>>;
   outputFiles?: FigmaWorkspaceOutputFiles;
@@ -809,7 +813,9 @@ export interface FigmaWorkspaceGetMetadataResult extends FigmaWorkspaceToolResul
 
 export interface FigmaWorkspaceLookupResult extends FigmaWorkspaceToolResultBase {
   results: ReferenceSearchResult[];
+  diagnostics?: FigmaWorkspaceDiagnostic[];
   guidance: string;
+  runtime?: Record<string, unknown>;
 }
 
 export interface FigmaWorkspaceClient {
@@ -1950,7 +1956,27 @@ async function executeApplyAssetManifest(
   runtime: FigmaWorkspaceRuntime,
 ): Promise<Record<string, unknown>> {
   const session = runtime.sessions.getOrCreate(args.sessionId);
-  const manifest = await loadAssetManifest(args, session);
+  let manifest: NormalizedAssetManifest;
+  try {
+    manifest = await loadAssetManifest(args, session);
+  } catch (error) {
+    if (error instanceof AssetManifestLoadError) {
+      const diagnostics = [assetManifestLoadDiagnostic(error)];
+      session.lastDiagnostics = diagnostics;
+      return {
+        ok: false,
+        session: responseSession(session),
+        assets: [],
+        diagnostics: diagnosticsForResponse(diagnostics),
+        failures: [{
+          reason: "manifest-load-failed",
+          manifestPath: error.manifestPath,
+          message: error.message,
+        }],
+      };
+    }
+    throw error;
+  }
   const tools = await runtime.upstreamToolCache.list(false);
   const uploadKind = requireWrapperUpstreamKind(APPLY_ASSET_MANIFEST_CONTRACT);
   const tool = selectRequiredUpstreamTool(tools, UPLOAD_ASSETS_TOOL_NAME, uploadKind);
@@ -4416,48 +4442,79 @@ async function executeCallUpstreamTool(
 async function handleLookup(
   args: FigmaWorkspaceLookupArguments,
 ): Promise<Record<string, unknown>> {
-  if (args.kind === "docs") {
-    const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
+  try {
+    if (args.kind === "docs") {
+      const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
+      const matches = await searchReferenceFiles({
+        query,
+        files: DOCS_SEARCH_ALLOWLIST,
+        maxResults: normalizeBoundedInteger(
+          args.maxResults,
+          DEFAULT_DOCS_SEARCH_MAX_RESULTS,
+          MAX_DOCS_SEARCH_RESULTS,
+        ),
+        maxSnippetLines: normalizeBoundedInteger(
+          args.maxSnippetLines,
+          DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
+          MAX_DOCS_SEARCH_SNIPPET_LINES,
+        ),
+      });
+      const payload = {
+        ok: true,
+        results: matches.results,
+        guidance:
+          "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_workspace_lookup query or kind=api lookup when more detail is needed.",
+      };
+      return makeJsonToolResult(payload);
+    }
+    if (args.kind !== "api") {
+      throw new Error('Tool argument "kind" must be one of: docs, api.');
+    }
+    const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
     const matches = await searchReferenceFiles({
-      query,
-      files: DOCS_SEARCH_ALLOWLIST,
-      maxResults: normalizeBoundedInteger(
-        args.maxResults,
-        DEFAULT_DOCS_SEARCH_MAX_RESULTS,
-        MAX_DOCS_SEARCH_RESULTS,
-      ),
-      maxSnippetLines: normalizeBoundedInteger(
-        args.maxSnippetLines,
-        DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
-        MAX_DOCS_SEARCH_SNIPPET_LINES,
-      ),
+      query: symbol,
+      files: API_LOOKUP_FILES,
+      maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
+      maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
+      exactSymbol: true,
     });
     const payload = {
       ok: true,
       results: matches.results,
       guidance:
-        "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_workspace_lookup query or kind=api lookup when more detail is needed.",
+        "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents.",
     };
     return makeJsonToolResult(payload);
+  } catch (error) {
+    if (error instanceof FigmaWorkspaceLookupCorpusUnavailableError) {
+      return makeJsonToolResult({
+        ok: false,
+        results: [],
+        diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error)]),
+        guidance: "Lookup corpus is unavailable in this MCP process. Reload the figma-workspace plugin/MCP server after confirming the installed plugin cache contains bundled corpus files.",
+        runtime: error.failure,
+      });
+    }
+    throw error;
   }
-  if (args.kind !== "api") {
-    throw new Error('Tool argument "kind" must be one of: docs, api.');
-  }
-  const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
-  const matches = await searchReferenceFiles({
-    query: symbol,
-    files: API_LOOKUP_FILES,
-    maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
-    maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
-    exactSymbol: true,
-  });
-  const payload = {
-    ok: true,
-    results: matches.results,
-    guidance:
-      "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents.",
+}
+
+function lookupCorpusDiagnostic(error: FigmaWorkspaceLookupCorpusUnavailableError): FigmaWorkspaceDiagnostic {
+  const failure = error.failure;
+  return {
+    code: "FIGMA_WORKSPACE_LOOKUP_CORPUS_UNAVAILABLE",
+    severity: "fatal",
+    message: [
+      failure.message,
+      `moduleDir=${failure.moduleDir}`,
+      `cwd=${failure.cwd}`,
+      `argv1=${failure.argv1 ?? "<unset>"}`,
+      `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
+      `attemptedPaths=${failure.attemptedPaths.join(" | ")}`,
+    ].join("; "),
+    suggestion: "Reload the figma-workspace plugin/MCP server so it starts from the current installed cache, or rebuild the plugin package if bundled corpus files are missing.",
+    docsHint: "figma-workspace://capabilities#runtime",
   };
-  return makeJsonToolResult(payload);
 }
 
 async function callUpstreamEval(
@@ -5464,9 +5521,7 @@ async function loadAssetManifest(
   session: FigmaWorkspaceSession,
 ): Promise<NormalizedAssetManifest> {
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
-  const manifestValue = manifestPath
-    ? JSON.parse(await readFile(manifestPath, "utf8"))
-    : undefined;
+  const manifestValue = manifestPath ? await readAssetManifestValue(manifestPath) : undefined;
   const manifestRecord = asRecord(manifestValue);
   const manifestAssets = Array.isArray(manifestValue)
     ? manifestValue
@@ -5488,6 +5543,50 @@ async function loadAssetManifest(
   return {
     assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir, session)),
   };
+}
+
+class AssetManifestLoadError extends Error {
+  readonly manifestPath: string;
+
+  constructor(manifestPath: string, cause: unknown) {
+    super(`Unable to read asset manifest "${manifestPath}": ${errorMessage(cause)}`);
+    this.name = "AssetManifestLoadError";
+    this.manifestPath = manifestPath;
+  }
+}
+
+async function readAssetManifestValue(manifestPath: string): Promise<unknown> {
+  try {
+    return JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+  } catch (error) {
+    throw new AssetManifestLoadError(manifestPath, error);
+  }
+}
+
+function assetManifestLoadDiagnostic(error: AssetManifestLoadError): FigmaWorkspaceDiagnostic {
+  return {
+    code: "FIGMA_WORKSPACE_ASSET_MANIFEST_LOAD_FAILED",
+    severity: "fatal",
+    message: error.message,
+    suggestion: "Create the manifest file at the reported path or pass inline assets for one-off uploads; relative manifestPath values are resolved inside the initialized workspace.",
+    docsHint: "figma-workspace://guide#assetWorkflow",
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function safeProcessCwd(): string {
+  try {
+    return typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : "";
+  } catch {
+    return "";
+  }
+}
+
+function safeProcessArgv1(): string | undefined {
+  return typeof process !== "undefined" && Array.isArray(process.argv) ? process.argv[1] : undefined;
 }
 
 function normalizeManifestAsset(
@@ -7538,8 +7637,16 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
 function createCapabilitiesPayload(): Record<string, unknown> {
   return {
     purpose: "Routing manifest for the Figma Workspace MCP facade. Stay on figma_workspace_mcp for normal work; it keeps local sessions, handles, workspace files, diagnostics, and structured tool results while upstream execution still goes through official Figma MCP tools.",
+    runtime: {
+      lookup: getFigmaWorkspaceLookupRuntimeInfo(),
+      typescript: getFigmaWorkspaceTypescriptRuntimeInfo(),
+      argv: {
+        cwd: safeProcessCwd(),
+        argv1: safeProcessArgv1(),
+      },
+    },
     defaultFlow: [
-      "Use figma_workspace_prepare_task with file, taskName, and surface for repairable .figma.ts work.",
+      "Use figma_workspace_prepare_task with file, taskName, workspaceDir, and surface for repairable .figma.ts work.",
       "Use figma_workspace_guidance with compact keywords before writing scripts; use figma_workspace_lookup only for exact docs/API snippets.",
       "Run figma_workspace_run_script_file with inputFile and strict=true; repair every repairPlan.steps item and rerun the same file.",
       "Use inspect/metadata/capture/design-system/asset tools as workflow add-ons, not as replacements for the file-script path.",
