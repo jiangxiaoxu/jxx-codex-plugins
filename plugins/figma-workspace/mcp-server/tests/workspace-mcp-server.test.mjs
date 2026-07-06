@@ -1451,12 +1451,15 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(capabilitiesResource.contents[0].mimeType, "application/json");
   assert.equal(guideResource.contents[0].mimeType, "application/json");
   assert.equal(lookupIndexResource.contents[0].mimeType, "application/json");
-  assert.ok(Buffer.byteLength(capabilitiesResource.contents[0].text, "utf8") <= 6144);
+  assert.ok(Buffer.byteLength(capabilitiesResource.contents[0].text, "utf8") <= 8192);
   assert.ok(Buffer.byteLength(guideResource.contents[0].text, "utf8") <= 15360);
   assert.ok(Buffer.byteLength(lookupIndexResource.contents[0].text, "utf8") <= 3072);
 
   assert.match(capabilities.purpose, /Routing manifest/);
-  assert.ok(capabilities.defaultFlow.some((step) => /figma_workspace_prepare_task/.test(step)));
+  assert.ok(capabilities.defaultFlow.some((step) => /figma_workspace_prepare_task/.test(step) && /workspaceDir/.test(step)));
+  assert.equal(typeof capabilities.runtime.lookup.ok, "boolean");
+  assert.equal(typeof capabilities.runtime.typescript.ok, "boolean");
+  assert.equal(typeof capabilities.runtime.argv.cwd, "string");
   assert.ok(capabilities.toolSelection.normalPath.includes("figma_workspace_run_script_file"));
   assert.ok(capabilities.toolSelection.contextAndLookup.includes("figma_workspace_lookup"));
   assert.ok(capabilities.toolSelection.advancedEscapeHatches.includes("figma_workspace_call_upstream_tool"));
@@ -4358,6 +4361,17 @@ test("figma workspace runtime parsers reject malformed tool argument shapes", as
     }),
     /Tool argument "manifestPath" must be a string\./,
   );
+  const missingManifestResult = await mcpClient.callTool({
+    name: "figma_workspace_apply_asset_manifest",
+    arguments: {
+      title: "Missing manifest is structured",
+      manifestPath: resolve(tmpdir(), `figma-workspace-missing-${Date.now()}.json`),
+    },
+  });
+  const missingManifestJson = structuredToolResult(missingManifestResult);
+  assert.equal(missingManifestJson.ok, false);
+  assert.equal(missingManifestJson.diagnostics[0].code, "FIGMA_WORKSPACE_ASSET_MANIFEST_LOAD_FAILED");
+  assert.match(missingManifestJson.failures[0].message, /Unable to read asset manifest/u);
   await assert.rejects(
     mcpClient.callTool({
       name: "figma_workspace_apply_asset_manifest",
@@ -7841,7 +7855,8 @@ test("figma workspace run_script_file reads canonical helper declarations and re
   assert.match(helperDeclarations, /interface FigmaWorkspaceDollar/);
   assert.match(helperDeclarations, /readonly handles: Readonly<Record<string, string>>;/);
   assert.doesNotMatch(scriptRunnerSource, /interface FigmaWorkspaceDollar/);
-  assert.match(scriptRunnerSource, /readFileSync\(FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, "utf8"\)/);
+  assert.match(scriptRunnerSource, /loadFigmaWorkspaceTypescriptRuntimeAssets/);
+  assert.match(scriptRunnerSource, /typescriptRuntimeAssets\.helperDeclarations/);
   for (const helperTerm of removedDollarHelperTerms) {
     assert.equal(helperDeclarations.includes(helperTerm), false, `canonical helper declaration must not include ${helperTerm}`);
   }

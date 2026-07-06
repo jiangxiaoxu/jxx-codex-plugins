@@ -17,6 +17,29 @@ export interface ReferenceSearchResult {
     chunkTitle?: string;
     snippet: string;
 }
+export interface FigmaWorkspaceLookupCorpusFailure {
+    ok: false;
+    message: string;
+    moduleDir: string;
+    cwd: string;
+    argv1?: string;
+    packageVersion?: string;
+    attemptedPaths: string[];
+}
+export type FigmaWorkspaceLookupRuntimeInfo = {
+    ok: true;
+    root: string;
+    moduleDir: string;
+    cwd: string;
+    argv1?: string;
+    packageVersion?: string;
+    recordCount: number;
+} | FigmaWorkspaceLookupCorpusFailure;
+export declare class FigmaWorkspaceLookupCorpusUnavailableError extends Error {
+    readonly failure: FigmaWorkspaceLookupCorpusFailure;
+    constructor(failure: FigmaWorkspaceLookupCorpusFailure);
+}
+export declare function getFigmaWorkspaceLookupRuntimeInfo(): FigmaWorkspaceLookupRuntimeInfo;
 export declare function searchReferenceFiles(options: {
     query: string;
     files: string[];

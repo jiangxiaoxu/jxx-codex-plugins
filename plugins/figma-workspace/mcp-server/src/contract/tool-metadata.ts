@@ -361,6 +361,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   figma_workspace_apply_asset_manifest: toolOutputSchema({
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     assets: compactAssetResultsProperty("Compact per-asset upload/fill results. Successful submitUrl POSTs expose compact upload evidence without raw submit URLs."),
+    diagnostics: arrayProperty("Manifest loading, upload, application, or validation diagnostics."),
     validation: objectProperty("Optional target validation result."),
     outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
     failures: arrayProperty("Per-asset or validation failures."),
@@ -527,7 +528,9 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_workspace_lookup: toolOutputSchema({
     results: arrayProperty("Ranked compact corpus snippets."),
+    diagnostics: arrayProperty("Lookup corpus diagnostics when local reference assets are unavailable."),
     guidance: stringProperty("Compact follow-up guidance."),
+    runtime: objectProperty("Runtime lookup corpus metadata when lookup assets are unavailable."),
   }),
 } satisfies Record<LocalWorkspaceToolName, Record<string, unknown>>;
 
