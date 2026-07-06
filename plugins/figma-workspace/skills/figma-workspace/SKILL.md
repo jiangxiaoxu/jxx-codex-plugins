@@ -16,7 +16,7 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.ts` script, then run it with automatic strict TypeScript preflight and write results to local files.
 6. Use `figma_workspace_guidance` and `figma_workspace_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
 7. Local `figma_workspace_*` tools return structured results; use each tool schema and `figma-workspace://guide` for response details.
-8. Use local first-class wrappers for official upstream capabilities they already cover, including metadata, design context, motion context, video export, and design-system reads. Use the Upstream Tool Discovery section for official capabilities that are hidden behind upstream resources instead of exposed as local tools.
+8. Use local first-class wrappers for official upstream capabilities they already cover, including metadata, design context, motion context, and design-system reads. Use the Upstream Tool Discovery section for official capabilities that are hidden behind upstream resources instead of exposed as local tools.
 9. `createFigmaWorkspaceClient` mirrors the same result shape in Node: read `result.upstream.result`, compact asset entries, generated debug files, and capture `imageFile` on success.
 
 ## Node Tool Route
@@ -44,7 +44,7 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 
 ## Primary File Workflow
 
-- Prepare a repairable workspace and task file: `figma_workspace_prepare_task({ file, taskName, surface })`. Use slug-style `taskName` values such as `settings-panel-polish`. The `file` value accepts a Figma URL or raw file key; `cwd` is optional and defaults to the MCP server process cwd.
+- Prepare a repairable workspace and task file: `figma_workspace_prepare_task({ file, taskName, workspaceDir, surface })`. Use slug-style `taskName` values such as `settings-panel-polish`. The `file` value accepts a Figma URL or raw file key; `workspaceDir` is a required absolute local directory chosen by the agent inside the current project, worktree, or task artifacts, such as `<project>/figma-workspace` or `<project>/task-memory/<task-id>/artifacts/figma-workspace`.
 - Edit the generated `<task>.figma.ts`; use native Figma Plugin API plus the injected `$` helpers.
 - Execute: `figma_workspace_run_script_file({ sessionId, inputFile, strict: true, surface })`; diagnostics and compiled payload preflight run before upstream execution.
 - For generated image assets, create target rectangles in the script, then call `figma_workspace_apply_asset_manifest({ sessionId, manifestPath })`. Read `assets[].upload.response.imageHash` / `placedOnNodeId` for upload POST evidence, and read `validation` for canvas-side IMAGE fill confirmation. Default target validation checks IMAGE fills when upstream eval is available; incomplete validation records fail the workflow and point to `outputFiles.debugFile`.
@@ -55,7 +55,7 @@ Figma MCP tools may be deferred and unavailable until discovered. Do not assume 
 - For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot so they do not cover primary controls, text, or content being captured.
 - For repeatable multi-step workflows, use `figma_workspace_run_task_plan({ sessionId, planPath })`.
 
-Workspace files live under `<cwd>/figma-workspace/<fileKey-or-fileSlug>/`. The `figma-workspace/` folder is a temporary local workspace for Figma work; do not commit it to the git repository by default. Calls should use simple `file`, `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath` defaults after workspace initialization. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, absolute `scriptPath`, and upstream overrides are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Use tool input schemas for argument details.
+Workspace files live under `<workspaceDir>/<fileKey-or-fileSlug>/`. `workspaceDir` is used as supplied; the MCP server does not append another `figma-workspace` segment. The workspace folder is temporary local Figma work; do not commit it to the git repository by default. Calls should use simple `file`, `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath` defaults after workspace initialization. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, absolute `scriptPath`, and upstream overrides are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Use tool input schemas for argument details.
 
 ## Script Contract
 
@@ -80,7 +80,7 @@ Workspace files live under `<cwd>/figma-workspace/<fileKey-or-fileSlug>/`. The `
 - Use `figma_workspace_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 - For deeper static workflow, lookup, or safety notes, read `references/figma-workspace-workflow.md`, `references/figma-workspace-guidance-and-lookup.md`, or `references/figma-workspace-safety.md`.
 
-Use `figma_workspace_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers, including official shader effect/fill reads. Read `figma-workspace://upstream-tools` first when an uncovered upstream-only debug task depends on it. Prefer first-class wrappers for metadata, design context, motion context, video export, and design-system reads. Keep local workspace handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
+Use `figma_workspace_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers, including official shader effect/fill reads and official `export_video`. Read `figma-workspace://upstream-tools` first when an uncovered upstream-only debug task depends on it. Prefer first-class wrappers for metadata, design context, motion context, and design-system reads. Keep local workspace handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
 
 ## Upstream Tool Discovery
 
@@ -99,7 +99,7 @@ For any listed tool below, read `figma-workspace://upstream-tools/{name}` direct
 | Code Connect writes | `add_code_connect_map`, `send_code_connect_mappings` | The user explicitly asks to create, update, or publish mappings. |
 | Shader library reads | `list_shader_effects`, `get_shader_effect`, `list_shader_fills`, `get_shader_fill` | The task explicitly needs shader effect/fill library entries or source manifests. |
 
-Do not route covered official capabilities through this list just because they also appear upstream. Use local tools for Plugin API execution, screenshots/capture, metadata, asset upload/download workflows, design context, motion context, video export, library search, libraries, and variable definitions.
+Do not route covered official capabilities through this list just because they also appear upstream. Use local tools for Plugin API execution, screenshots/capture, metadata, asset upload/download workflows, design context, motion context, library search, libraries, and variable definitions. Use `figma_workspace_call_upstream_tool` for official `export_video`.
 
 ## Query Strategy
 
