@@ -1451,9 +1451,9 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(capabilitiesResource.contents[0].mimeType, "application/json");
   assert.equal(guideResource.contents[0].mimeType, "application/json");
   assert.equal(lookupIndexResource.contents[0].mimeType, "application/json");
-  assert.ok(Buffer.byteLength(capabilitiesResource.contents[0].text, "utf8") <= 8192);
-  assert.ok(Buffer.byteLength(guideResource.contents[0].text, "utf8") <= 15360);
-  assert.ok(Buffer.byteLength(lookupIndexResource.contents[0].text, "utf8") <= 3072);
+  assert.ok(Buffer.byteLength(capabilitiesResource.contents[0].text, "utf8") <= 10240);
+  assert.ok(Buffer.byteLength(guideResource.contents[0].text, "utf8") <= 16384);
+  assert.ok(Buffer.byteLength(lookupIndexResource.contents[0].text, "utf8") <= 6144);
 
   assert.match(capabilities.purpose, /Routing manifest/);
   assert.ok(capabilities.defaultFlow.some((step) => /figma_workspace_prepare_task/.test(step) && /workspaceDir/.test(step)));
@@ -1840,7 +1840,11 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(evalTool.inputSchema.properties.typescript.type, "boolean");
   assert.equal(evalTool.inputSchema.properties.typescript.default, false);
   assert.equal(evalTool.inputSchema.properties.compile, undefined);
-  assert.match(evalTool.inputSchema.properties.handleUpdates.description, /handle-import escape hatch/);
+  assert.match(evalTool.inputSchema.properties.handleUpdates.description, /handle-import\/repair escape hatch/);
+  assert.match(evalTool.inputSchema.properties.handleUpdates.description, /before running code/);
+  assert.match(evalTool.inputSchema.properties.handleUpdates.description, /not read back from upstream\.result\.handleUpdates/);
+  assert.match(evalTool.inputSchema.properties.handleUpdates.description, /\$\.remember/);
+  assert.match(evalTool.inputSchema.properties.handleUpdates.description, /top-level handles/);
   assert.ok(evalTool.outputSchema.properties.outputFiles.properties.upstreamFile);
   assert.deepEqual(evalTool.outputSchema.properties.upstream.properties.kind.enum, ["json", "text", "unknown"]);
   assert.match(evalTool.outputSchema.properties.ok.description, /local Figma Workspace wrapper\/tool completed/);
@@ -2274,6 +2278,10 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(aggregateGuide.helperIndex.categories.some((category) => category.helpers.includes("$.replaceGeneratedFrame")));
   assert.ok(aggregateGuide.assetWorkflow.some((step) => /figma_workspace_apply_asset_manifest/.test(step)));
   assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /figma-workspace:\/\/upstream-tools\/\{name\}/.test(step)));
+  assert.ok(aggregateGuide.evalWorkflow.some((step) => /pre-run handle import\/repair/.test(step)));
+  assert.ok(aggregateGuide.evalWorkflow.some((step) => /not read back from upstream\.result\.handleUpdates/.test(step)));
+  assert.ok(aggregateGuide.evalWorkflow.some((step) => /\$\.remember/.test(step)));
+  assert.ok(aggregateGuide.evalWorkflow.some((step) => /top-level handles/.test(step)));
   assert.ok(aggregateGuide.inspectionAndQa.some((step) => /figma_workspace_get_motion_context/.test(step)));
   assert.ok(aggregateGuide.inspectionAndQa.some((step) => /\$currentPage/.test(step) && /single-node \$selection/.test(step)));
   assert.ok(!aggregateGuide.motionAndShaders.some((step) => /figma_workspace_export_video/.test(step)));

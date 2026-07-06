@@ -57,7 +57,7 @@ export function createReplToolDescriptions(
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-        handleUpdates: objectProperty("Advanced handle-import escape hatch merged before running code; prefer returning handles or using $.remember in code."),
+        handleUpdates: objectProperty("Advanced handle-import/repair escape hatch merged into the local session before running code. It is not read back from upstream.result.handleUpdates; persist script-created handles with $.remember(...) or by returning a top-level handles object."),
       }, ["code"]),
     },
     {

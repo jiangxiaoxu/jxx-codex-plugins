@@ -7467,7 +7467,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
         debugFiles: "Do not request JSON result files; debug files are generated on demand for failures and inline omissions.",
         inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits.",
         allowDangerousOperations: "Use only after reviewing the exact code; it does not bypass API contract, surface, or read-mode guards.",
-        handleUpdates: "Use only for handle import/repair; prefer $.remember inside code.",
+        handleUpdates: "Use only for pre-run handle import/repair. It is not read back from upstream.result.handleUpdates; persist script-created handles with $.remember(...) or by returning top-level handles.",
       },
     },
     inspect: {
@@ -7707,6 +7707,7 @@ function createGuidePayload(): Record<string, unknown> {
     evalWorkflow: [
       "Use figma_workspace_eval only for small ephemeral JavaScript calls where a local file would add overhead; pass typescript:true only when inline TypeScript annotations should be compiled first.",
       "Move repairable, multi-step, asset-heavy, or user-visible mutations into .figma.ts files so diagnostics and reruns remain stable.",
+      "Use handleUpdates only for pre-run handle import/repair; it is not read back from upstream.result.handleUpdates. Persist script-created handles with $.remember(...) or by returning top-level handles.",
     ],
     assetWorkflow: [
       "For small generated PNG/JPEG payloads, $.imageAsset can create or update image-fill rectangles from base64 or byte arrays.",
