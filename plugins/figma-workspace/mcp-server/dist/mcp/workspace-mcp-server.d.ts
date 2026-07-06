@@ -2,7 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type RemoteMcpClientOptions } from "../upstream/remote-mcp-client.js";
 import { type ReferenceSearchResult } from "../runtime/doc-search.js";
 import { assertSafeFigmaWorkspaceCode, diagnoseFigmaWorkspaceCode, resolveFigmaWorkspaceScriptHelperSelection as resolveFigmaWorkspaceScriptHelperSelectionInternal, type FigmaWorkspaceDiagnostic, type FigmaWorkspaceDiagnosticsOptions, type FigmaWorkspaceDiagnosticSeverity, type FigmaWorkspaceFileDiagnostic, type FigmaWorkspaceRepairPlan, type FigmaWorkspaceSurface } from "../runtime/script-runner.js";
-import type { FigmaWorkspaceApplyAssetManifestArguments, FigmaWorkspaceCallUpstreamToolArguments, FigmaWorkspaceCaptureNodeArguments, FigmaWorkspaceDownloadAssetsArguments, FigmaWorkspaceEvalArguments, FigmaWorkspaceExportVideoArguments, FigmaWorkspaceGetDesignContextArguments, FigmaWorkspaceGetLibrariesArguments, FigmaWorkspaceGetMetadataArguments, FigmaWorkspaceGetMotionContextArguments, FigmaWorkspaceGetVariableDefsArguments, FigmaWorkspaceGuidanceArguments, FigmaWorkspaceInspectArguments, FigmaWorkspaceLookupArguments, FigmaWorkspaceOpenArguments, FigmaWorkspacePrepareTaskArguments, FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceSearchDesignSystemArguments } from "../contract/tool-args.js";
+import type { FigmaWorkspaceApplyAssetManifestArguments, FigmaWorkspaceCallUpstreamToolArguments, FigmaWorkspaceCaptureNodeArguments, FigmaWorkspaceDownloadAssetsArguments, FigmaWorkspaceEvalArguments, FigmaWorkspaceGetDesignContextArguments, FigmaWorkspaceGetLibrariesArguments, FigmaWorkspaceGetMetadataArguments, FigmaWorkspaceGetMotionContextArguments, FigmaWorkspaceGetVariableDefsArguments, FigmaWorkspaceGuidanceArguments, FigmaWorkspaceInspectArguments, FigmaWorkspaceLookupArguments, FigmaWorkspaceOpenArguments, FigmaWorkspacePrepareTaskArguments, FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceSearchDesignSystemArguments } from "../contract/tool-args.js";
 import { isMissingFileError as isFigmaWorkspaceMissingFileErrorForTesting, type FigmaWorkspaceSessionWorkspace } from "../runtime/workspace-files.js";
 import type { FigmaUpstreamMcpProxyClient } from "../upstream/upstream-stdio-server.js";
 export declare const FIGMA_WORKSPACE_DEFAULT_SESSION_ID = "default";
@@ -104,23 +104,6 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
     readonly upstreamKind: "motion context read";
     readonly requiredUpstreamProperties: readonly ["fileKey", "nodeId"];
     readonly optionalUpstreamProperties: readonly ["recursive", "clientLanguages", "clientFrameworks"];
-    readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
-    readonly targetSupport: "node-scoped";
-    readonly outputPolicy: {
-        readonly inlineLimitFields: readonly ["upstream.result", "upstream.text"];
-        readonly debugFiles: readonly ["debugFile", "upstreamFile"];
-        readonly upstreamEnvelope: true;
-    };
-    readonly guidanceProfile: {
-        readonly workflowIds: readonly ["motion-implementation"];
-    };
-}, {
-    readonly toolName: "figma_workspace_export_video";
-    readonly category: "thin-wrapper";
-    readonly upstreamToolName: "export_video";
-    readonly upstreamKind: "video export";
-    readonly requiredUpstreamProperties: readonly ["fileKey"];
-    readonly optionalUpstreamProperties: readonly ["nodeId", "jobId", "quality", "fps", "constraint", "ttlSeconds"];
     readonly parameterMatrix: import("../contract/wrapper-contracts.js").FigmaWorkspaceWrapperParameterMatrix;
     readonly targetSupport: "node-scoped";
     readonly outputPolicy: {
@@ -246,7 +229,7 @@ export declare const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: readonly [{
 }];
 export type { FigmaWorkspaceDiagnostic, FigmaWorkspaceDiagnosticsOptions, FigmaWorkspaceDiagnosticSeverity, FigmaWorkspaceFileDiagnostic, FigmaWorkspaceSurface, };
 export type { FigmaWorkspaceSessionWorkspace } from "../runtime/workspace-files.js";
-export type { FigmaWorkspaceApplyAssetManifestArguments, FigmaWorkspaceAssetManifestAsset, FigmaWorkspaceCallUpstreamToolArguments, FigmaWorkspaceCaptureNodeArguments, FigmaWorkspaceDownloadAssetsArguments, FigmaWorkspaceDownloadAssetsTarget, FigmaWorkspaceEvalArguments, FigmaWorkspaceExportVideoArguments, FigmaWorkspaceGetDesignContextArguments, FigmaWorkspaceGetLibrariesArguments, FigmaWorkspaceGetMetadataArguments, FigmaWorkspaceGetMotionContextArguments, FigmaWorkspaceGetVariableDefsArguments, FigmaWorkspaceGuidanceArguments, FigmaWorkspaceInspectArguments, FigmaWorkspaceLookupArguments, FigmaWorkspaceOpenArguments, FigmaWorkspacePrepareTaskArguments, FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceSearchDesignSystemArguments, FigmaWorkspaceTaskPlanStep, } from "../contract/tool-args.js";
+export type { FigmaWorkspaceApplyAssetManifestArguments, FigmaWorkspaceAssetManifestAsset, FigmaWorkspaceCallUpstreamToolArguments, FigmaWorkspaceCaptureNodeArguments, FigmaWorkspaceDownloadAssetsArguments, FigmaWorkspaceDownloadAssetsTarget, FigmaWorkspaceEvalArguments, FigmaWorkspaceGetDesignContextArguments, FigmaWorkspaceGetLibrariesArguments, FigmaWorkspaceGetMetadataArguments, FigmaWorkspaceGetMotionContextArguments, FigmaWorkspaceGetVariableDefsArguments, FigmaWorkspaceGuidanceArguments, FigmaWorkspaceInspectArguments, FigmaWorkspaceLookupArguments, FigmaWorkspaceOpenArguments, FigmaWorkspacePrepareTaskArguments, FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceSearchDesignSystemArguments, FigmaWorkspaceTaskPlanStep, } from "../contract/tool-args.js";
 export declare const FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES: readonly ["remember", "forget", "resolveId", "node", "select", "cloneNodeTree", "text", "findFreeSlot", "placeNode", "replaceGeneratedFrame", "inspect", "screenshot", "imageAsset", "checkpoint"];
 export interface FigmaWorkspaceMcpServerOptions extends RemoteMcpClientOptions {
     client?: FigmaUpstreamMcpProxyClient;
@@ -565,15 +548,6 @@ export interface FigmaWorkspaceGetMotionContextResult extends FigmaWorkspaceUpst
     outputFiles?: FigmaWorkspaceOutputFiles;
     inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
-export interface FigmaWorkspaceExportVideoResult extends FigmaWorkspaceUpstreamBackedResult {
-    session: FigmaWorkspaceCompactSession;
-    fileKey: string;
-    nodeId?: string;
-    jobId?: string;
-    guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-    outputFiles?: FigmaWorkspaceOutputFiles;
-    inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
 export interface FigmaWorkspaceGetLibrariesResult extends FigmaWorkspaceUpstreamBackedResult {
     session: FigmaWorkspaceCompactSession;
     fileKey: string;
@@ -660,7 +634,6 @@ export interface FigmaWorkspaceClient {
     getMetadata(args: FigmaWorkspaceGetMetadataArguments): Promise<FigmaWorkspaceGetMetadataResult>;
     getDesignContext(args: FigmaWorkspaceGetDesignContextArguments): Promise<FigmaWorkspaceGetDesignContextResult>;
     getMotionContext(args: FigmaWorkspaceGetMotionContextArguments): Promise<FigmaWorkspaceGetMotionContextResult>;
-    exportVideo(args: FigmaWorkspaceExportVideoArguments): Promise<FigmaWorkspaceExportVideoResult>;
     searchDesignSystem(args: FigmaWorkspaceSearchDesignSystemArguments): Promise<FigmaWorkspaceSearchDesignSystemResult>;
     getLibraries(args?: FigmaWorkspaceGetLibrariesArguments): Promise<FigmaWorkspaceGetLibrariesResult>;
     getVariableDefs(args: FigmaWorkspaceGetVariableDefsArguments): Promise<FigmaWorkspaceGetVariableDefsResult>;

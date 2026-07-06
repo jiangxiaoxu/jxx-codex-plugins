@@ -82,7 +82,6 @@ import {
   asCaptureNodeArgs,
   asDownloadAssetsArgs,
   asEvalArgs,
-  asExportVideoArgs,
   asGetDesignContextArgs,
   asGetLibrariesArgs,
   asGetMetadataArgs,
@@ -105,7 +104,6 @@ import type {
   FigmaWorkspaceDownloadAssetsArguments,
   FigmaWorkspaceDownloadAssetsTarget,
   FigmaWorkspaceEvalArguments,
-  FigmaWorkspaceExportVideoArguments,
   FigmaWorkspaceGetDesignContextArguments,
   FigmaWorkspaceGetLibrariesArguments,
   FigmaWorkspaceGetMetadataArguments,
@@ -136,7 +134,6 @@ import {
   type FigmaWorkspaceWrapperContract,
 } from "../contract/wrapper-contracts.js";
 import {
-  DEFAULT_WORKSPACE_DIR_NAME,
   TASK_WORKSPACE_ROOT_ENV,
   captureImageOutputFilePath,
   createScriptOutputWriter,
@@ -165,12 +162,6 @@ export const FIGMA_WORKSPACE_DEFAULT_SESSION_ID = "default";
 
 function readProcessEnv(name: string): string | undefined {
   return typeof process === "undefined" ? undefined : process.env?.[name];
-}
-
-function currentWorkingDirectory(): string {
-  return typeof process !== "undefined" && typeof process.cwd === "function"
-    ? process.cwd()
-    : tmpdir();
 }
 
 function defaultTaskWorkspaceRoot(): string {
@@ -213,7 +204,6 @@ export type {
   FigmaWorkspaceDownloadAssetsArguments,
   FigmaWorkspaceDownloadAssetsTarget,
   FigmaWorkspaceEvalArguments,
-  FigmaWorkspaceExportVideoArguments,
   FigmaWorkspaceGetDesignContextArguments,
   FigmaWorkspaceGetLibrariesArguments,
   FigmaWorkspaceGetMetadataArguments,
@@ -263,7 +253,6 @@ const CAPTURE_NODE_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_worksp
 const GET_METADATA_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_metadata");
 const GET_DESIGN_CONTEXT_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_design_context");
 const GET_MOTION_CONTEXT_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_motion_context");
-const EXPORT_VIDEO_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_export_video");
 const SEARCH_DESIGN_SYSTEM_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_search_design_system");
 const GET_LIBRARIES_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_libraries");
 const GET_VARIABLE_DEFS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_variable_defs");
@@ -274,7 +263,6 @@ const SCREENSHOT_TOOL_NAME = requireWrapperUpstreamToolName(CAPTURE_NODE_CONTRAC
 const GET_METADATA_TOOL_NAME = requireWrapperUpstreamToolName(GET_METADATA_CONTRACT);
 const GET_DESIGN_CONTEXT_TOOL_NAME = requireWrapperUpstreamToolName(GET_DESIGN_CONTEXT_CONTRACT);
 const GET_MOTION_CONTEXT_TOOL_NAME = requireWrapperUpstreamToolName(GET_MOTION_CONTEXT_CONTRACT);
-const EXPORT_VIDEO_TOOL_NAME = requireWrapperUpstreamToolName(EXPORT_VIDEO_CONTRACT);
 const SEARCH_DESIGN_SYSTEM_TOOL_NAME = requireWrapperUpstreamToolName(SEARCH_DESIGN_SYSTEM_CONTRACT);
 const GET_LIBRARIES_TOOL_NAME = requireWrapperUpstreamToolName(GET_LIBRARIES_CONTRACT);
 const GET_VARIABLE_DEFS_TOOL_NAME = requireWrapperUpstreamToolName(GET_VARIABLE_DEFS_CONTRACT);
@@ -717,15 +705,6 @@ export interface FigmaWorkspaceGetMotionContextResult extends FigmaWorkspaceUpst
   inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
 
-export interface FigmaWorkspaceExportVideoResult extends FigmaWorkspaceUpstreamBackedResult {
-  session: FigmaWorkspaceCompactSession;
-  fileKey: string;
-  nodeId?: string;
-  jobId?: string;
-  guidanceRef?: FigmaWorkspaceWrapperGuidanceRef;
-  outputFiles?: FigmaWorkspaceOutputFiles;
-  inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
-}
 
 export interface FigmaWorkspaceGetLibrariesResult extends FigmaWorkspaceUpstreamBackedResult {
   session: FigmaWorkspaceCompactSession;
@@ -776,6 +755,12 @@ const FIGMA_METADATA_ENRICHMENT_FIELDS = [
 type FigmaWorkspaceMetadataEnrichmentField = typeof FIGMA_METADATA_ENRICHMENT_FIELDS[number];
 type FigmaWorkspaceMetadataEnrichmentValue = string | number | boolean | null;
 type FigmaWorkspaceMetadataNativeFields = Partial<Record<FigmaWorkspaceMetadataEnrichmentField, FigmaWorkspaceMetadataEnrichmentValue>>;
+
+const FIGMA_METADATA_ENRICHMENT_BATCH_SIZE = 80;
+const FIGMA_INSPECT_STYLE_BATCH_SIZE = 80;
+const FIGMA_INSPECT_VALIDATE_BATCH_SIZE = 80;
+const FIGMA_ASSET_APPLICATION_BATCH_SIZE = 80;
+const FIGMA_ASSET_VALIDATION_BATCH_SIZE = 80;
 
 interface FigmaWorkspaceMetadataEnrichmentSummary {
   ok: boolean;
@@ -845,7 +830,6 @@ export interface FigmaWorkspaceClient {
   getMetadata(args: FigmaWorkspaceGetMetadataArguments): Promise<FigmaWorkspaceGetMetadataResult>;
   getDesignContext(args: FigmaWorkspaceGetDesignContextArguments): Promise<FigmaWorkspaceGetDesignContextResult>;
   getMotionContext(args: FigmaWorkspaceGetMotionContextArguments): Promise<FigmaWorkspaceGetMotionContextResult>;
-  exportVideo(args: FigmaWorkspaceExportVideoArguments): Promise<FigmaWorkspaceExportVideoResult>;
   searchDesignSystem(args: FigmaWorkspaceSearchDesignSystemArguments): Promise<FigmaWorkspaceSearchDesignSystemResult>;
   getLibraries(args?: FigmaWorkspaceGetLibrariesArguments): Promise<FigmaWorkspaceGetLibrariesResult>;
   getVariableDefs(args: FigmaWorkspaceGetVariableDefsArguments): Promise<FigmaWorkspaceGetVariableDefsResult>;
@@ -1118,11 +1102,6 @@ export function createFigmaWorkspaceClient(
         asGetMotionContextArgs(withDefaultTitle(args, "Get Figma motion context")),
         runtime,
       ) as Promise<FigmaWorkspaceGetMotionContextResult>,
-    exportVideo: async (args) =>
-      executeExportVideo(
-        asExportVideoArgs(withDefaultTitle(args, "Export Figma motion video")),
-        runtime,
-      ) as Promise<FigmaWorkspaceExportVideoResult>,
     searchDesignSystem: async (args) =>
       executeSearchDesignSystem(
         asSearchDesignSystemArgs(withDefaultTitle(args, "Search Figma design system")),
@@ -1181,7 +1160,7 @@ export function createFigmaWorkspaceMcpServer(
         "Stateful workspace MCP proxy for the official Figma MCP server.",
         "Use figma_workspace_prepare_task and figma_workspace_run_script_file for repairable .figma.ts workflows, figma_workspace_eval for small batched Plugin API calls, and figma-workspace://sessions resources to inspect local state.",
         "The proxy stores only local session metadata and node-id handles; Figma execution still happens through the upstream use_figma tool.",
-      ].join(" "),
+      ].join("\n"),
     },
   );
 
@@ -1244,11 +1223,6 @@ export function createFigmaWorkspaceMcpServer(
       case "figma_workspace_get_motion_context":
         return handleGetMotionContext(
           asGetMotionContextArgs(withMcpDefaultTitle(rawArgs, "Get Figma motion context")),
-          runtime,
-        );
-      case "figma_workspace_export_video":
-        return handleExportVideo(
-          asExportVideoArgs(withMcpDefaultTitle(rawArgs, "Export Figma motion video")),
           runtime,
         );
       case "figma_workspace_search_design_system":
@@ -1440,17 +1414,19 @@ async function handleEval(
     mode,
     expectedSurface,
   };
-  const compiled = compileFigmaWorkspaceEvalCode({ code: args.code });
-  const hasTypescriptParseError = compiled.diagnostics.some((diagnostic) => diagnostic.code === "FIGMA_WORKSPACE_PARSE_ERROR");
-  const runtimeDiagnostics = hasTypescriptParseError
+  const preparedCode = args.typescript === true
+    ? compileFigmaWorkspaceEvalCode({ code: args.code })
+    : { code: args.code, diagnostics: [] };
+  const hasParseError = preparedCode.diagnostics.some((diagnostic) => diagnostic.code === "FIGMA_WORKSPACE_PARSE_ERROR");
+  const runtimeDiagnostics = hasParseError
     ? []
     : toFigmaWorkspaceFileDiagnostics(
       "<inline eval>",
-      compiled.code,
-      diagnoseFigmaWorkspaceCode(compiled.code, diagnosticOptions),
+      preparedCode.code,
+      diagnoseFigmaWorkspaceCode(preparedCode.code, diagnosticOptions),
       diagnosticOptions,
     );
-  const diagnostics = [...compiled.diagnostics, ...runtimeDiagnostics];
+  const diagnostics = [...preparedCode.diagnostics, ...runtimeDiagnostics];
   session.lastDiagnostics = diagnostics;
   const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
   if (fatalDiagnostics.length > 0) {
@@ -1466,7 +1442,7 @@ async function handleEval(
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
   const script = buildFigmaEvalScript({
     session,
-    code: compiled.code,
+    code: preparedCode.code,
     mode,
   });
   const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
@@ -3053,24 +3029,10 @@ function resolvePrepareTaskWorkspace(
 ): FigmaWorkspaceSessionWorkspace {
   const parsedFile = parseFigmaFileReference(args.file);
   const fileKey = session?.fileKey ?? parsedFile.fileKey;
-  if (typeof args.cwd === "string" && args.cwd.length > 0) {
-    if (!isAbsolute(args.cwd)) {
-      throw new Error('Tool argument "cwd" must be an absolute path.');
-    }
+  const workspaceDir = asOptionalString(args.workspaceDir);
+  if (workspaceDir && (args.file !== undefined || args.fileSlug !== undefined || fileKey !== undefined)) {
     return createSessionWorkspace({
-      cwd: args.cwd,
-      dirName: args.dirName,
-      fileKey,
-      fileSlug,
-      intentSlug: taskName,
-    });
-  }
-  const hasFileContext = Boolean(args.file || args.fileSlug || args.dirName);
-  const hasExplicitTaskWorkspace = Boolean(args.workspaceDir || args.taskRoot);
-  if (hasFileContext && !session?.workspace && !hasExplicitTaskWorkspace) {
-    return createSessionWorkspace({
-      cwd: currentWorkingDirectory(),
-      dirName: args.dirName,
+      workspaceDir,
       fileKey,
       fileSlug,
       intentSlug: taskName,
@@ -3263,9 +3225,61 @@ async function executeInspectStyle(
   assertInspectFileContext(session);
   const target = asOptionalString(args.target) ?? "$selection";
   const depth = normalizePositiveInteger(args.depth, 1);
-  const code = [
-    `const __target = ${literal(target)};`,
-    `const __depth = ${literal(depth)};`,
+  const code = buildInspectStyleCode({
+    target,
+    depth,
+    includeSummary: true,
+    includeHandles: true,
+  });
+  const diagnostics = diagnoseFigmaWorkspaceCode(code, {
+    mode: "read",
+    generatedCode: true,
+    expectedSurface: session.surface,
+  });
+  session.lastDiagnostics = diagnostics;
+  throwIfFatalDiagnostics(diagnostics);
+  const evalSettings = await resolveEvalSettings(session, args, runtime);
+  const parsed = await readInspectStyleWithAdaptiveBatches({
+    target,
+    depth,
+    session,
+    client: runtime.client,
+    evalSettings,
+  });
+  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: new Date().toISOString(),
+    tool: "figma_workspace_inspect",
+    mode: "style",
+    summary: `Inspected style tokens for ${target}.`,
+    nodeIds: collectNodeIds(parsed.json),
+  });
+  const payload = {
+    ok: !parsed.upstreamError,
+    session: responseSession(session, handleChanges),
+    diagnostics: diagnosticsForResponse(diagnostics),
+    ...inspectInlineResultFields(parsed),
+  };
+  return payload;
+}
+
+function buildInspectStyleCode(options: {
+  target: string;
+  depth: number;
+  offset?: number;
+  limit?: number;
+  includeSummary: boolean;
+  includeHandles: boolean;
+}): string {
+  const limitLiteral = options.limit === undefined ? "undefined" : literal(options.limit);
+  return [
+    `const __target = ${literal(options.target)};`,
+    `const __depth = ${literal(options.depth)};`,
+    `const __offset = ${literal(options.offset ?? 0)};`,
+    `const __limit = ${limitLiteral};`,
+    `const __includeSummary = ${literal(options.includeSummary)};`,
+    `const __includeHandles = ${literal(options.includeHandles)};`,
     "let __value;",
     "if (__target === '$selection') {",
     "  __value = figma.currentPage.selection;",
@@ -3279,6 +3293,12 @@ async function executeInspectStyle(
     "  const __g = Math.max(0, Math.min(255, Math.round((__color.g || 0) * 255)));",
     "  const __b = Math.max(0, Math.min(255, Math.round((__color.b || 0) * 255)));",
     "  return '#' + [__r, __g, __b].map((__v) => __v.toString(16).padStart(2, '0')).join('');",
+    "}",
+    "function __compactName(__name) {",
+    "  return typeof __name === 'string' && __name.length > 120 ? __name.slice(0, 117) + '...' : __name;",
+    "}",
+    "function __compactText(__text) {",
+    "  return typeof __text === 'string' && __text.length > 240 ? __text.slice(0, 237) + '...' : __text;",
     "}",
     "function __paint(__paint) {",
     "  if (!__paint) return undefined;",
@@ -3305,12 +3325,13 @@ async function executeInspectStyle(
     "} else {",
     "  __walk(__value);",
     "}",
+    "const __scanNodes = typeof __limit === 'number' ? __nodes.slice(__offset, __offset + __limit) : __nodes;",
     "const __colorCounts = {};",
     "const __imageNodes = [];",
     "const __textStyles = [];",
     "const __strokes = [];",
     "const __effects = [];",
-    "for (const __node of __nodes) {",
+    "for (const __node of __scanNodes) {",
     "  if ('fills' in __node && Array.isArray(__node.fills)) {",
     "    for (const __fill of __node.fills) {",
     "      const __summary = __paint(__fill);",
@@ -3318,60 +3339,251 @@ async function executeInspectStyle(
     "      if (__summary && __summary.stops) {",
     "        for (const __stop of __summary.stops) __colorCounts[__stop.color] = (__colorCounts[__stop.color] || 0) + 1;",
     "      }",
-    "      if (__summary && __summary.image && __imageNodes.length < 20) __imageNodes.push({ id: __node.id, name: __node.name, type: __node.type, x: __node.x, y: __node.y, width: __node.width, height: __node.height });",
+    "      if (__summary && __summary.image && __imageNodes.length < 20) __imageNodes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, x: __node.x, y: __node.y, width: __node.width, height: __node.height });",
     "    }",
     "  }",
     "  if (__node.type === 'TEXT' && __textStyles.length < 24) {",
     "    const __fills = Array.isArray(__node.fills) ? __node.fills.map(__paint).filter(Boolean).slice(0, 3) : [];",
-    "    __textStyles.push({ id: __node.id, name: __node.name, characters: __node.characters, font: __fontName(__node), fontSize: __node.fontSize, fills: __fills });",
+    "    __textStyles.push({ id: __node.id, name: __compactName(__node.name), characters: __compactText(__node.characters), font: __fontName(__node), fontSize: __node.fontSize, fills: __fills });",
     "  }",
     "  if ('strokes' in __node && Array.isArray(__node.strokes) && __node.strokes.length && __strokes.length < 24) {",
-    "    __strokes.push({ id: __node.id, name: __node.name, type: __node.type, strokes: __node.strokes.map(__paint).filter(Boolean).slice(0, 3), strokeWeight: __node.strokeWeight });",
+    "    __strokes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, strokes: __node.strokes.map(__paint).filter(Boolean).slice(0, 3), strokeWeight: __node.strokeWeight });",
     "  }",
     "  if ('effects' in __node && Array.isArray(__node.effects) && __node.effects.length && __effects.length < 16) {",
-    "    __effects.push({ id: __node.id, name: __node.name, type: __node.type, effects: __node.effects.slice(0, 4).map((__effect) => ({ type: __effect.type, visible: __effect.visible !== false, radius: __effect.radius, color: __effect.color ? __hex(__effect.color) : undefined })) });",
+    "    __effects.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, effects: __node.effects.slice(0, 4).map((__effect) => ({ type: __effect.type, visible: __effect.visible !== false, radius: __effect.radius, color: __effect.color ? __hex(__effect.color) : undefined })) });",
     "  }",
     "}",
     "const __topColors = Object.entries(__colorCounts).sort((__a, __b) => __b[1] - __a[1]).slice(0, 16).map(([color, count]) => ({ color, count }));",
-    "return {",
+    "const __result = {",
     "  target: __target,",
     "  mode: 'style',",
     "  nodeCount: __nodes.length,",
-    "  summary: Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth),",
+    "  scannedNodeCount: __scanNodes.length,",
+    "  offset: __offset,",
+    "  limit: __limit,",
     "  style: { topColors: __topColors, textStyles: __textStyles, imageNodes: __imageNodes, strokes: __strokes, effects: __effects, caps: { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 } },",
-    "  handles: __figmaRepl.handles,",
     "};",
+    "if (__includeSummary) __result.summary = Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth);",
+    "if (__includeHandles) __result.handles = __figmaRepl.handles;",
+    "return __result;",
   ].join("\n");
-  const diagnostics = diagnoseFigmaWorkspaceCode(code, {
-    mode: "read",
-    generatedCode: true,
-    expectedSurface: session.surface,
-  });
-  session.lastDiagnostics = diagnostics;
-  throwIfFatalDiagnostics(diagnostics);
-  const evalSettings = await resolveEvalSettings(session, args, runtime);
+}
+
+async function readInspectStyleWithAdaptiveBatches(options: {
+  target: string;
+  depth: number;
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+}): Promise<ParsedUpstreamToolResult> {
   const upstream = await callUpstreamEval(
-    runtime.client,
-    evalSettings,
-    buildFigmaEvalScript({ session, code, mode: "read" }),
+    options.client,
+    options.evalSettings,
+    buildFigmaEvalScript({
+      session: options.session,
+      code: buildInspectStyleCode({
+        target: options.target,
+        depth: options.depth,
+        includeSummary: true,
+        includeHandles: true,
+      }),
+      mode: "read",
+    }),
   );
   const parsed = parseUpstreamToolResult(upstream);
-  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
-  runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
-    at: new Date().toISOString(),
-    tool: "figma_workspace_inspect",
-    mode: "style",
-    summary: `Inspected style tokens for ${target}.`,
-    nodeIds: collectNodeIds(parsed.json),
-  });
-  const payload = {
-    ok: !parsed.upstreamError,
-    session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(diagnostics),
-    ...inspectInlineResultFields(parsed),
+  if (!parsed.upstreamError || parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED") {
+    return parsed;
+  }
+
+  const chunks: Record<string, unknown>[] = [];
+  let offset = 0;
+  let expectedNodeCount: number | undefined;
+  while (expectedNodeCount === undefined || offset < expectedNodeCount) {
+    const limit = expectedNodeCount === undefined
+      ? FIGMA_INSPECT_STYLE_BATCH_SIZE
+      : Math.min(FIGMA_INSPECT_STYLE_BATCH_SIZE, expectedNodeCount - offset);
+    const chunkResult = await readInspectStyleChunk({
+      ...options,
+      offset,
+      limit,
+      includeSummary: offset === 0,
+    });
+    if (chunkResult.upstreamError) {
+      return {
+        text: chunkResult.text ?? "",
+        upstreamError: chunkResult.upstreamError,
+        primaryFix: chunkResult.primaryFix,
+      };
+    }
+    chunks.push(...chunkResult.chunks);
+    expectedNodeCount = expectedNodeCount ?? inspectStyleNodeCount(chunkResult.chunks);
+    if (expectedNodeCount === undefined) {
+      const scannedCount = chunkResult.chunks.reduce((sum, chunk) => sum + (finiteNonNegativeNumber(asRecord(chunk).scannedNodeCount) ?? 0), 0);
+      if (scannedCount === 0) {
+        break;
+      }
+    }
+    offset += limit;
+  }
+
+  const result = mergeInspectStyleChunks(options.target, chunks);
+  const json = { result };
+  return {
+    text: JSON.stringify({ ok: true, result }),
+    json,
   };
-  return payload;
+}
+
+interface InspectStyleChunkResult {
+  chunks: Record<string, unknown>[];
+  upstreamError?: FigmaWorkspaceUpstreamError;
+  primaryFix?: string;
+  text?: string;
+}
+
+async function readInspectStyleChunk(options: {
+  target: string;
+  depth: number;
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+  offset: number;
+  limit: number;
+  includeSummary: boolean;
+}): Promise<InspectStyleChunkResult> {
+  const upstream = await callUpstreamEval(
+    options.client,
+    options.evalSettings,
+    buildFigmaEvalScript({
+      session: options.session,
+      code: buildInspectStyleCode({
+        target: options.target,
+        depth: options.depth,
+        offset: options.offset,
+        limit: options.limit,
+        includeSummary: options.includeSummary,
+        includeHandles: false,
+      }),
+      mode: "read",
+    }),
+  );
+  const parsed = parseUpstreamToolResult(upstream);
+  if (parsed.upstreamError) {
+    if (parsed.upstreamError.code === "FIGMA_UPSTREAM_TRUNCATED" && options.limit > 1) {
+      const leftLimit = Math.ceil(options.limit / 2);
+      const rightLimit = options.limit - leftLimit;
+      const left = await readInspectStyleChunk({
+        ...options,
+        limit: leftLimit,
+      });
+      if (left.upstreamError) return left;
+      const right = rightLimit > 0
+        ? await readInspectStyleChunk({
+          ...options,
+          offset: options.offset + leftLimit,
+          limit: rightLimit,
+          includeSummary: false,
+        })
+        : { chunks: [] };
+      if (right.upstreamError) return right;
+      return { chunks: [...left.chunks, ...right.chunks] };
+    }
+    if (parsed.upstreamError.code === "FIGMA_UPSTREAM_TRUNCATED" && options.includeSummary) {
+      return readInspectStyleChunk({ ...options, includeSummary: false });
+    }
+    return {
+      chunks: [],
+      upstreamError: parsed.upstreamError,
+      primaryFix: parsed.primaryFix,
+      text: parsed.text,
+    };
+  }
+  const result = asRecord(asRecord(parsed.json).result);
+  return { chunks: [result] };
+}
+
+function inspectStyleNodeCount(chunks: Record<string, unknown>[]): number | undefined {
+  for (const chunk of chunks) {
+    const nodeCount = finiteNonNegativeNumber(chunk.nodeCount);
+    if (nodeCount !== undefined) {
+      return nodeCount;
+    }
+  }
+  return undefined;
+}
+
+function finiteNonNegativeNumber(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function mergeInspectStyleChunks(target: string, chunks: Record<string, unknown>[]): Record<string, unknown> {
+  const caps = { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 };
+  const colorCounts = new Map<string, number>();
+  const textStyles: Record<string, unknown>[] = [];
+  const imageNodes: Record<string, unknown>[] = [];
+  const strokes: Record<string, unknown>[] = [];
+  const effects: Record<string, unknown>[] = [];
+  let nodeCount = 0;
+  let scannedNodeCount = 0;
+  let summary: unknown;
+  for (const chunk of chunks) {
+    nodeCount = Math.max(nodeCount, inspectStyleNodeCount([chunk]) ?? 0);
+    scannedNodeCount += finiteNonNegativeNumber(chunk.scannedNodeCount) ?? 0;
+    if (summary === undefined && chunk.summary !== undefined) {
+      summary = chunk.summary;
+    }
+    const style = asRecord(chunk.style);
+    for (const color of Array.isArray(style.topColors) ? style.topColors.filter(isRecord) : []) {
+      const name = asOptionalString(color.color);
+      const count = finiteNonNegativeNumber(color.count) ?? 0;
+      if (name) {
+        colorCounts.set(name, (colorCounts.get(name) ?? 0) + count);
+      }
+    }
+    appendCappedRecords(textStyles, style.textStyles, caps.textStyles);
+    appendCappedRecords(imageNodes, style.imageNodes, caps.imageNodes);
+    appendCappedRecords(strokes, style.strokes, caps.strokes);
+    appendCappedRecords(effects, style.effects, caps.effects);
+  }
+  const topColors = [...colorCounts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, caps.topColors)
+    .map(([color, count]) => ({ color, count }));
+  return removeUndefined({
+    target,
+    mode: "style",
+    nodeCount,
+    scannedNodeCount,
+    summary,
+    style: {
+      topColors,
+      textStyles,
+      imageNodes,
+      strokes,
+      effects,
+      caps,
+    },
+    batching: {
+      source: "adaptive",
+      chunkCount: chunks.length,
+      batchSize: FIGMA_INSPECT_STYLE_BATCH_SIZE,
+    },
+  }) as Record<string, unknown>;
+}
+
+function appendCappedRecords(target: Record<string, unknown>[], value: unknown, cap: number): void {
+  if (target.length >= cap || !Array.isArray(value)) {
+    return;
+  }
+  for (const item of value) {
+    if (target.length >= cap) {
+      return;
+    }
+    if (isRecord(item)) {
+      target.push(item);
+    }
+  }
 }
 
 async function executeValidateHandles(
@@ -3387,9 +3599,120 @@ async function executeValidateHandles(
   const requested = Array.isArray(args.handles)
     ? args.handles.filter((item): item is string => typeof item === "string" && item.length > 0)
     : Object.keys(session.handles);
-  const code = [
+  const diagnostics = diagnoseFigmaWorkspaceCode(buildInspectValidateHandlesCode(requested, session.handles), {
+    mode: "read",
+    generatedCode: true,
+    expectedSurface: session.surface,
+  });
+  session.lastDiagnostics = diagnostics;
+  throwIfFatalDiagnostics(diagnostics);
+  const evalSettings = await resolveEvalSettings(session, args, runtime);
+  const validationResult = await readInspectHandleValidationsInBatches({
+    requested,
+    knownHandles: session.handles,
+    session,
+    client: runtime.client,
+    evalSettings,
+  });
+  const handleChanges = updateSessionFromParsedResult(session, validationResult.parsedJson);
+  runtime.sessions.rememberHistory(session, {
+    id: randomUUID(),
+    at: new Date().toISOString(),
+    tool: "figma_workspace_inspect",
+    mode: "validate",
+    summary: `Validated ${requested.length} Figma Workspace handle(s).`,
+    nodeIds: collectNodeIds(validationResult.parsedJson),
+  });
+  const payload = validationResult.upstreamError
+    ? {
+        ok: false,
+        session: responseSession(session, handleChanges),
+        diagnostics: diagnosticsForResponse(diagnostics),
+        upstreamError: responseUpstreamError(validationResult.upstreamError),
+      }
+    : {
+        ok: true,
+        session: responseSession(session, handleChanges),
+        diagnostics: diagnosticsForResponse(diagnostics),
+        validations: validationResult.validations,
+        validatedNodeIds: validationResult.validatedNodeIds,
+      };
+  return payload;
+}
+
+interface InspectHandleValidationBatchResult {
+  parsedJson: unknown;
+  validations: Record<string, unknown>[];
+  validatedNodeIds: string[];
+  upstreamError?: FigmaWorkspaceUpstreamError;
+}
+
+async function readInspectHandleValidationsInBatches(options: {
+  requested: string[];
+  knownHandles: Record<string, string>;
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+}): Promise<InspectHandleValidationBatchResult> {
+  const validations: Record<string, unknown>[] = [];
+  const validatedNodeIds: string[] = [];
+  for (const chunk of chunkArray(options.requested, FIGMA_INSPECT_VALIDATE_BATCH_SIZE)) {
+    const chunkResult = await readInspectHandleValidationChunk({
+      ...options,
+      requested: chunk,
+    });
+    if (chunkResult.upstreamError) {
+      return chunkResult;
+    }
+    validations.push(...chunkResult.validations);
+    validatedNodeIds.push(...chunkResult.validatedNodeIds);
+  }
+  const parsedJson = { result: { validations, validatedNodeIds } };
+  return { parsedJson, validations, validatedNodeIds };
+}
+
+async function readInspectHandleValidationChunk(options: {
+  requested: string[];
+  knownHandles: Record<string, string>;
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+}): Promise<InspectHandleValidationBatchResult> {
+  const upstream = await callUpstreamEval(
+    options.client,
+    options.evalSettings,
+    buildFigmaEvalScript({
+      session: options.session,
+      code: buildInspectValidateHandlesCode(options.requested, options.knownHandles),
+      mode: "read",
+    }),
+  );
+  const parsed = parseUpstreamToolResult(upstream);
+  if (parsed.upstreamError) {
+    if (parsed.upstreamError.code === "FIGMA_UPSTREAM_TRUNCATED" && options.requested.length > 1) {
+      const midpoint = Math.ceil(options.requested.length / 2);
+      const left = await readInspectHandleValidationChunk({ ...options, requested: options.requested.slice(0, midpoint) });
+      if (left.upstreamError) return left;
+      const right = await readInspectHandleValidationChunk({ ...options, requested: options.requested.slice(midpoint) });
+      if (right.upstreamError) return right;
+      const validations = [...left.validations, ...right.validations];
+      const validatedNodeIds = [...left.validatedNodeIds, ...right.validatedNodeIds];
+      return { parsedJson: { result: { validations, validatedNodeIds } }, validations, validatedNodeIds };
+    }
+    return { parsedJson: parsed.json, validations: [], validatedNodeIds: [], upstreamError: parsed.upstreamError };
+  }
+  const result = asRecord(asRecord(parsed.json).result);
+  const validations = Array.isArray(result.validations) ? result.validations.filter(isRecord) : [];
+  const validatedNodeIds = Array.isArray(result.validatedNodeIds)
+    ? result.validatedNodeIds.filter((item): item is string => typeof item === "string")
+    : validations.map((item) => asOptionalString(item.id)).filter((item): item is string => item !== undefined);
+  return { parsedJson: parsed.json, validations, validatedNodeIds };
+}
+
+function buildInspectValidateHandlesCode(requested: string[], knownHandles: Record<string, string>): string {
+  return [
     `const __requestedHandles = ${literal(requested)};`,
-    `const __knownHandles = ${literal(session.handles)};`,
+    `const __knownHandles = ${literal(knownHandles)};`,
     "const __validations = [];",
     "for (const __name of __requestedHandles) {",
     "  const __isHandle = typeof __name === 'string' && __name.startsWith('$');",
@@ -3406,36 +3729,6 @@ async function executeValidateHandles(
     "}",
     "return { validations: __validations, validatedNodeIds: __validations.filter((item) => item.status === 'valid').map((item) => item.id) };",
   ].join("\n");
-  const diagnostics = diagnoseFigmaWorkspaceCode(code, {
-    mode: "read",
-    generatedCode: true,
-    expectedSurface: session.surface,
-  });
-  session.lastDiagnostics = diagnostics;
-  throwIfFatalDiagnostics(diagnostics);
-  const evalSettings = await resolveEvalSettings(session, args, runtime);
-  const upstream = await callUpstreamEval(
-    runtime.client,
-    evalSettings,
-    buildFigmaEvalScript({ session, code, mode: "read" }),
-  );
-  const parsed = parseUpstreamToolResult(upstream);
-  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
-  runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
-    at: new Date().toISOString(),
-    tool: "figma_workspace_inspect",
-    mode: "validate",
-    summary: `Validated ${requested.length} Figma Workspace handle(s).`,
-    nodeIds: collectNodeIds(parsed.json),
-  });
-  const payload = {
-    ok: !parsed.upstreamError,
-    session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(diagnostics),
-    ...inspectInlineResultFields(parsed),
-  };
-  return payload;
 }
 
 function assertInspectFileContext(session: FigmaWorkspaceSession): void {
@@ -3479,7 +3772,7 @@ async function executeGetMetadata(
 ): Promise<Record<string, unknown>> {
   const session = runtime.sessions.getOrCreate(args.sessionId);
   applySessionFileReference(session, args.file);
-  if (args.cwd !== undefined || args.dirName !== undefined || (args.file !== undefined && !session.workspace)) {
+  if (args.workspaceDir !== undefined || (args.file !== undefined && !session.workspace)) {
     bindOpenWorkspaceIfAvailable(session, args);
   }
   touchSession(session);
@@ -3717,48 +4010,6 @@ async function executeGetMotionContext(
   });
 }
 
-async function handleExportVideo(
-  args: FigmaWorkspaceExportVideoArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  return makeJsonToolResult(await executeExportVideo(args, runtime));
-}
-
-async function executeExportVideo(
-  args: FigmaWorkspaceExportVideoArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  const session = prepareFileScopedSession(args, runtime.sessions);
-  const requested = resolveExportVideoRequest(args, session);
-  return executeDedicatedUpstreamTool({
-    args,
-    contract: EXPORT_VIDEO_CONTRACT,
-    runtime,
-    session,
-    upstreamArguments: removeUndefined({
-      fileKey: requested.fileKey,
-      nodeId: requested.nodeId,
-    }) as Record<string, unknown>,
-    responseFields: removeUndefined({
-      fileKey: requested.fileKey,
-      nodeId: requested.nodeId,
-      jobId: args.jobId,
-    }) as Record<string, unknown>,
-    historySummary: args.jobId
-      ? `Polled Figma video export job ${args.jobId}.`
-      : `Started Figma video export for ${requested.nodeId}.`,
-    nodeIds: requested.nodeId ? [requested.nodeId] : [],
-  });
-}
-
 async function handleSearchDesignSystem(
   args: FigmaWorkspaceSearchDesignSystemArguments,
   runtime: {
@@ -3874,12 +4125,12 @@ async function executeGetVariableDefs(
 }
 
 function prepareFileScopedSession(
-  args: { sessionId?: string; file?: string; cwd?: string; dirName?: string },
+  args: { sessionId?: string; file?: string; workspaceDir?: string },
   sessions: FigmaWorkspaceSessionStore,
 ): FigmaWorkspaceSession {
   const session = sessions.getOrCreate(args.sessionId);
   applySessionFileReference(session, args.file);
-  if (args.cwd !== undefined || args.dirName !== undefined || (args.file !== undefined && !session.workspace)) {
+  if (args.workspaceDir !== undefined || (args.file !== undefined && !session.workspace)) {
     bindOpenWorkspaceIfAvailable(session, args);
   }
   touchSession(session);
@@ -3913,23 +4164,6 @@ function resolveRequiredNodeScopedRequest(
   const nodeId = requested.nodeId;
   if (!nodeId) {
     throw new Error(`${toolName} requires "target". Pass a raw node id, node URL, or cached handle.`);
-  }
-  return { fileKey: requested.fileKey, nodeId };
-}
-
-function resolveExportVideoRequest(
-  args: FigmaWorkspaceExportVideoArguments,
-  session: FigmaWorkspaceSession,
-): { fileKey: string; nodeId?: string } {
-  const requested = resolveWrapperNodeTarget({
-    args,
-    session,
-    toolName: "figma_workspace_export_video",
-    fileKeyError: 'figma_workspace_export_video requires a Figma file key. Pass "file" or open a session with file context first.',
-  });
-  const nodeId = requested.nodeId;
-  if (!nodeId && !args.jobId) {
-    throw new Error('figma_workspace_export_video requires "target" to start an export, or "jobId" to poll an existing export.');
   }
   return { fileKey: requested.fileKey, nodeId };
 }
@@ -3986,8 +4220,21 @@ async function executeDedicatedUpstreamTool(options: {
   });
   const upstreamArguments = filtered.arguments;
   await options.runtime.client.connect();
-  const upstream = await options.runtime.client.callTool(upstreamToolName, upstreamArguments);
-  const parsed = parseUpstreamToolResult(upstream);
+  let upstream = await options.runtime.client.callTool(upstreamToolName, upstreamArguments);
+  let parsed = parseUpstreamToolResult(upstream);
+  const recoveryDiagnostics: FigmaWorkspaceDiagnostic[] = [];
+  if (shouldRetrySelectionDependentWrapper(options.contract, parsed, options.nodeIds)) {
+    const recovery = await selectNodeForSelectionDependentWrapper({
+      runtime: options.runtime,
+      session: options.session,
+      nodeId: options.nodeIds[0],
+    });
+    recoveryDiagnostics.push(...recovery.diagnostics);
+    if (recovery.selected) {
+      upstream = await options.runtime.client.callTool(upstreamToolName, upstreamArguments);
+      parsed = parseUpstreamToolResult(upstream);
+    }
+  }
   options.runtime.sessions.rememberHistory(options.session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -4000,7 +4247,9 @@ async function executeDedicatedUpstreamTool(options: {
     ok: !parsed.upstreamError,
     session: responseSession(options.session),
     ...options.responseFields,
-    diagnostics: filtered.diagnostics.length > 0 ? diagnosticsForResponse(filtered.diagnostics) : undefined,
+    diagnostics: filtered.diagnostics.length > 0 || recoveryDiagnostics.length > 0
+      ? diagnosticsForResponse([...filtered.diagnostics, ...recoveryDiagnostics])
+      : undefined,
     guidanceRef: createWrapperGuidanceRef(options.contract.toolName),
     ...upstreamResultFields({
       parsed,
@@ -4021,6 +4270,86 @@ async function executeDedicatedUpstreamTool(options: {
       upstream: upstreamEnvelopePayload,
     }),
   });
+}
+
+function shouldRetrySelectionDependentWrapper(
+  contract: FigmaWorkspaceWrapperContract,
+  parsed: ParsedUpstreamToolResult,
+  nodeIds: string[],
+): boolean {
+  if (!parsed.upstreamError || nodeIds.length !== 1) {
+    return false;
+  }
+  if (
+    contract.toolName !== "figma_workspace_get_design_context" &&
+    contract.toolName !== "figma_workspace_get_motion_context" &&
+    contract.toolName !== "figma_workspace_get_variable_defs"
+  ) {
+    return false;
+  }
+  const message = `${parsed.upstreamError.message}
+${parsed.upstreamError.text ?? ""}`;
+  return /you currently have nothing selected/iu.test(message);
+}
+
+async function selectNodeForSelectionDependentWrapper(options: {
+  runtime: {
+    client: FigmaUpstreamMcpProxyClient;
+    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
+  };
+  session: FigmaWorkspaceSession;
+  nodeId: string;
+}): Promise<{ selected: boolean; diagnostics: FigmaWorkspaceDiagnostic[] }> {
+  const evalSettings = await resolveEvalSettings(options.session, {}, options.runtime);
+  const script = buildFigmaEvalScript({
+    session: options.session,
+    mode: "write",
+    includeEvalHelpers: false,
+    code: [
+      `const __nodeId = ${literal(options.nodeId)};`,
+      "const __node = await getNodeById(__nodeId);",
+      "const __nodeType = __node && __node.type;",
+      "if (__nodeType === 'PAGE' || __nodeType === 'DOCUMENT') {",
+      "  return { selected: false, reason: 'unsupported-container-target', nodeId: __nodeId, nodeType: __nodeType, name: __node.name, childCount: Array.isArray(__node.children) ? __node.children.length : undefined };",
+      "}",
+      "let __page = __node.parent;",
+      "while (__page && __page.type !== 'PAGE') __page = __page.parent;",
+      "if (__page && figma.currentPage && figma.currentPage.id !== __page.id) {",
+      "  await figma.setCurrentPageAsync(__page);",
+      "}",
+      "figma.currentPage.selection = [__node];",
+      "return { selected: true, nodeId: __nodeId, nodeType: __nodeType, name: __node.name, pageId: figma.currentPage && figma.currentPage.id };",
+    ].join("\n"),
+  });
+  const upstream = await callUpstreamEval(options.runtime.client, evalSettings, script);
+  const parsed = parseUpstreamToolResult(upstream);
+  if (parsed.upstreamError) {
+    return {
+      selected: false,
+      diagnostics: [{
+        code: "FIGMA_WORKSPACE_SELECTION_RECOVERY_FAILED",
+        severity: "warning",
+        message: `Could not select target ${options.nodeId} before retrying the official context wrapper.`,
+        suggestion: "Use a smaller child node target, or call figma_workspace_get_metadata first to discover a selectable frame/component node.",
+        docsHint: "figma-workspace://guide#contextAndLookup",
+      }],
+    };
+  }
+  const result = asRecord(asRecord(parsed.json).result);
+  if (result.selected === true) {
+    return { selected: true, diagnostics: [] };
+  }
+  const nodeType = asOptionalString(result.nodeType) ?? "unknown";
+  return {
+    selected: false,
+    diagnostics: [{
+      code: "FIGMA_WORKSPACE_CONTEXT_TARGET_NOT_SELECTABLE",
+      severity: "fatal",
+      message: `Official context wrapper target ${options.nodeId} resolved to non-selectable ${nodeType}.`,
+      suggestion: "Pass a smaller selectable child node, such as a frame/component inside the page, or call figma_workspace_get_metadata on the page first and choose a child target.",
+      docsHint: "figma-workspace://guide#contextAndLookup",
+    }],
+  };
 }
 
 async function executeCallUpstreamTool(
@@ -5359,7 +5688,7 @@ async function applyUploadedAssetFillsIfAvailable(options: {
         scaleMode: normalizeImageScaleMode(asOptionalString(args.scaleMode) ?? "FILL", "scaleMode"),
       };
     })
-    .filter((asset): asset is { targetNodeId: string; imageHash: string; scaleMode: string } => asset !== undefined);
+    .filter((asset): asset is AssetManifestApplicationCandidate => asset !== undefined);
 
   if (candidates.length === 0) {
     return { ok: undefined, skipped: true, reason: "no uploaded imageHash" };
@@ -5374,8 +5703,157 @@ async function applyUploadedAssetFillsIfAvailable(options: {
   }
   try {
     const evalSettings = await resolveEvalSettings(options.session, {}, options.runtime);
-    const code = `const assetFills = ${literal(candidates)};
+    const applicationResult = await applyAssetManifestApplicationsInBatches({
+      candidates,
+      session: options.session,
+      client: options.runtime.client,
+      evalSettings,
+    });
+    if (applicationResult.upstreamError) {
+      return {
+        ok: false,
+        error: responseUpstreamError(applicationResult.upstreamError),
+        primaryFix: applicationResult.primaryFix,
+      };
+    }
+    if (!applicationResult.found) {
+      return {
+        ok: undefined,
+        reason: "application result did not include target records",
+        applicationSource: "not-found",
+        expectedCount: candidates.length,
+        appliedCount: 0,
+        failedCount: 0,
+        missingApplicationCount: candidates.length,
+        applications: [],
+      };
+    }
+    const applications = applicationResult.applications;
+    const failedCount = applications.filter((item) => item.status !== "applied").length;
+    const appliedTargetNodeIds = new Set(applications.map((item) => asOptionalString(item.targetNodeId)).filter((nodeId): nodeId is string => nodeId !== undefined));
+    const missingApplicationCount = candidates.filter((asset) => !appliedTargetNodeIds.has(asset.targetNodeId)).length;
+    for (const asset of options.assetResults) {
+      const targetNodeId = asOptionalString(asset.targetNodeId);
+      const application = applications.find((item) => item.targetNodeId === targetNodeId);
+      if (application) {
+        asset.application = application;
+      }
+    }
+    return {
+      ok: missingApplicationCount === 0 ? failedCount === 0 : failedCount > 0 ? false : undefined,
+      reason: missingApplicationCount > 0 ? "application result did not include every target record" : undefined,
+      applicationSource: applicationResult.applicationSource,
+      expectedCount: candidates.length,
+      appliedCount: applications.length - failedCount,
+      failedCount,
+      missingApplicationCount,
+      applications,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: responseUpstreamError(normalizeCaughtUpstreamError(error)),
+    };
+  }
+}
+
+interface AssetManifestApplicationCandidate {
+  targetNodeId: string;
+  imageHash: string;
+  scaleMode: string;
+}
+
+interface AssetManifestApplicationBatchResult {
+  found: boolean;
+  applicationSource?: string;
+  applications: Record<string, unknown>[];
+  upstreamError?: FigmaWorkspaceUpstreamError;
+  primaryFix?: string;
+}
+
+async function applyAssetManifestApplicationsInBatches(options: {
+  candidates: AssetManifestApplicationCandidate[];
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+}): Promise<AssetManifestApplicationBatchResult> {
+  const applications: Record<string, unknown>[] = [];
+  let found = true;
+  let applicationSource = "batched";
+  for (const chunk of chunkArray(options.candidates, FIGMA_ASSET_APPLICATION_BATCH_SIZE)) {
+    const chunkResult = await applyAssetManifestApplicationChunk({ ...options, candidates: chunk });
+    if (chunkResult.upstreamError) {
+      return chunkResult;
+    }
+    if (!chunkResult.found) {
+      found = false;
+      applicationSource = chunkResult.applicationSource ?? "not-found";
+      continue;
+    }
+    applications.push(...chunkResult.applications);
+    applicationSource = chunkResult.applicationSource ?? applicationSource;
+  }
+  return { found, applicationSource, applications };
+}
+
+async function applyAssetManifestApplicationChunk(options: {
+  candidates: AssetManifestApplicationCandidate[];
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+}): Promise<AssetManifestApplicationBatchResult> {
+  const upstream = await callUpstreamEval(
+    options.client,
+    options.evalSettings,
+    buildFigmaEvalScript({
+      session: options.session,
+      code: buildAssetManifestApplicationCode(options.candidates),
+      mode: "write",
+    }),
+  );
+  const parsed = parseUpstreamToolResult(upstream);
+  if (parsed.upstreamError) {
+    if (parsed.upstreamError.code === "FIGMA_UPSTREAM_TRUNCATED" && options.candidates.length > 1) {
+      const midpoint = Math.ceil(options.candidates.length / 2);
+      const left = await applyAssetManifestApplicationChunk({
+        ...options,
+        candidates: options.candidates.slice(0, midpoint),
+      });
+      if (left.upstreamError) return left;
+      const right = await applyAssetManifestApplicationChunk({
+        ...options,
+        candidates: options.candidates.slice(midpoint),
+      });
+      if (right.upstreamError) return right;
+      return {
+        found: left.found && right.found,
+        applicationSource: "batched",
+        applications: [...left.applications, ...right.applications],
+      };
+    }
+    return {
+      found: false,
+      applications: [],
+      upstreamError: parsed.upstreamError,
+      primaryFix: parsed.primaryFix,
+    };
+  }
+  const applicationResult = findAssetManifestApplicationResult(parsed.json);
+  if (!applicationResult) {
+    return { found: false, applicationSource: "not-found", applications: [] };
+  }
+  const applications = Array.isArray(applicationResult.result.applications)
+    ? applicationResult.result.applications.filter(isRecord)
+    : [];
+  return { found: true, applicationSource: applicationResult.sourcePath, applications };
+}
+
+function buildAssetManifestApplicationCode(candidates: AssetManifestApplicationCandidate[]): string {
+  return `const assetFills = ${literal(candidates)};
 const applications = [];
+function compactName(name) {
+  return typeof name === "string" && name.length > 120 ? name.slice(0, 117) + "..." : name;
+}
 for (const asset of assetFills) {
   try {
     const node = await getNodeById(asset.targetNodeId);
@@ -5393,7 +5871,7 @@ for (const asset of assetFills) {
         status: "unsupported",
         nodeId: node.id,
         nodeType: node.type,
-        name: node.name,
+        name: compactName(node.name),
         message: "Node does not support fills"
       });
       continue;
@@ -5408,7 +5886,7 @@ for (const asset of assetFills) {
       status: "applied",
       nodeId: node.id,
       nodeType: node.type,
-      name: node.name,
+      name: compactName(node.name),
       imageHash: asset.imageHash,
       scaleMode: asset.scaleMode || "FILL"
     });
@@ -5425,65 +5903,6 @@ return {
   appliedCount: applications.filter((item) => item.status === "applied").length,
   failedCount: applications.filter((item) => item.status !== "applied").length
 };`;
-    const upstream = await callUpstreamEval(
-      options.runtime.client,
-      evalSettings,
-      buildFigmaEvalScript({
-        session: options.session,
-        code,
-        mode: "write",
-      }),
-    );
-    const parsed = parseUpstreamToolResult(upstream);
-    if (parsed.upstreamError) {
-      return {
-        ok: false,
-        error: responseUpstreamError(parsed.upstreamError),
-        primaryFix: parsed.primaryFix,
-      };
-    }
-    const applicationResult = findAssetManifestApplicationResult(parsed.json);
-    if (!applicationResult) {
-      return {
-        ok: undefined,
-        reason: "application result did not include target records",
-        applicationSource: "not-found",
-        expectedCount: candidates.length,
-        appliedCount: 0,
-        failedCount: 0,
-        missingApplicationCount: candidates.length,
-        applications: [],
-      };
-    }
-    const applications = Array.isArray(applicationResult.result.applications)
-      ? applicationResult.result.applications.filter(isRecord)
-      : [];
-    const failedCount = Number(applicationResult.result.failedCount ?? applications.filter((item) => item.status !== "applied").length);
-    const appliedTargetNodeIds = new Set(applications.map((item) => asOptionalString(item.targetNodeId)).filter((nodeId): nodeId is string => nodeId !== undefined));
-    const missingApplicationCount = candidates.filter((asset) => !appliedTargetNodeIds.has(asset.targetNodeId)).length;
-    for (const asset of options.assetResults) {
-      const targetNodeId = asOptionalString(asset.targetNodeId);
-      const application = applications.find((item) => item.targetNodeId === targetNodeId);
-      if (application) {
-        asset.application = application;
-      }
-    }
-    return {
-      ok: missingApplicationCount === 0 ? failedCount === 0 : failedCount > 0 ? false : undefined,
-      reason: missingApplicationCount > 0 ? "application result did not include every target record" : undefined,
-      applicationSource: applicationResult.sourcePath,
-      expectedCount: candidates.length,
-      appliedCount: Number(applicationResult.result.appliedCount ?? applications.length - failedCount),
-      failedCount,
-      missingApplicationCount,
-      applications,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: responseUpstreamError(normalizeCaughtUpstreamError(error)),
-    };
-  }
 }
 
 function extractAssetUploadImageHash(upload: unknown): string | undefined {
@@ -5585,7 +6004,137 @@ async function validateAssetManifestTargetsIfAvailable(options: {
   }
   try {
     const evalSettings = await resolveEvalSettings(options.session, {}, options.runtime);
-    const code = `const targetNodeIds = ${literal(targetNodeIds)};
+    const validationResult = await readAssetManifestTargetValidationsInBatches({
+      targetNodeIds,
+      session: options.session,
+      client: options.runtime.client,
+      evalSettings,
+    });
+    if (validationResult.upstreamError) {
+      return {
+        ok: false,
+        error: responseUpstreamError(validationResult.upstreamError),
+        primaryFix: validationResult.primaryFix,
+      };
+    }
+    if (!validationResult.found) {
+      return {
+        ok: undefined,
+        skipped: true,
+        reason: "validation result did not include target records",
+        validationSource: "not-found",
+        expectedCount: targetNodeIds.length,
+        validCount: 0,
+        invalidCount: 0,
+        missingValidationCount: targetNodeIds.length,
+        validations: [],
+      };
+    }
+    const validations = validationResult.validations;
+    const invalidCount = validations.filter((item) => item.status !== "valid").length;
+    const validatedTargetNodeIds = new Set(validations.map((item) => asOptionalString(item.targetNodeId)).filter((nodeId): nodeId is string => nodeId !== undefined));
+    const missingValidationCount = targetNodeIds.filter((targetNodeId) => !validatedTargetNodeIds.has(targetNodeId)).length;
+    for (const asset of options.assetResults) {
+      const targetNodeId = asOptionalString(asset.targetNodeId);
+      const validation = validations.find((item) => item.targetNodeId === targetNodeId);
+      if (validation) {
+        asset.validation = validation;
+      }
+    }
+    return {
+      ok: missingValidationCount === 0 ? invalidCount === 0 : invalidCount > 0 ? false : undefined,
+      reason: missingValidationCount > 0 ? "validation result did not include every target record" : undefined,
+      validationSource: validationResult.validationSource,
+      expectedCount: targetNodeIds.length,
+      validCount: validations.length - invalidCount,
+      invalidCount,
+      missingValidationCount,
+      validations,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: responseUpstreamError(normalizeCaughtUpstreamError(error)),
+    };
+  }
+}
+
+interface AssetManifestTargetValidationBatchResult {
+  found: boolean;
+  validationSource?: string;
+  validations: Record<string, unknown>[];
+  upstreamError?: FigmaWorkspaceUpstreamError;
+  primaryFix?: string;
+}
+
+async function readAssetManifestTargetValidationsInBatches(options: {
+  targetNodeIds: string[];
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+}): Promise<AssetManifestTargetValidationBatchResult> {
+  const validations: Record<string, unknown>[] = [];
+  let found = true;
+  let validationSource = "batched";
+  for (const chunk of chunkArray(options.targetNodeIds, FIGMA_ASSET_VALIDATION_BATCH_SIZE)) {
+    const chunkResult = await readAssetManifestTargetValidationChunk({ ...options, targetNodeIds: chunk });
+    if (chunkResult.upstreamError) {
+      return chunkResult;
+    }
+    if (!chunkResult.found) {
+      found = false;
+      validationSource = chunkResult.validationSource ?? "not-found";
+      continue;
+    }
+    validations.push(...chunkResult.validations);
+    validationSource = chunkResult.validationSource ?? validationSource;
+  }
+  return { found, validationSource, validations };
+}
+
+async function readAssetManifestTargetValidationChunk(options: {
+  targetNodeIds: string[];
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+}): Promise<AssetManifestTargetValidationBatchResult> {
+  const upstream = await callUpstreamEval(
+    options.client,
+    options.evalSettings,
+    buildFigmaEvalScript({
+      session: options.session,
+      code: buildAssetManifestTargetValidationCode(options.targetNodeIds),
+      mode: "read",
+    }),
+  );
+  const parsed = parseUpstreamToolResult(upstream);
+  if (parsed.upstreamError) {
+    if (parsed.upstreamError.code === "FIGMA_UPSTREAM_TRUNCATED" && options.targetNodeIds.length > 1) {
+      const midpoint = Math.ceil(options.targetNodeIds.length / 2);
+      const left = await readAssetManifestTargetValidationChunk({ ...options, targetNodeIds: options.targetNodeIds.slice(0, midpoint) });
+      if (left.upstreamError) return left;
+      const right = await readAssetManifestTargetValidationChunk({ ...options, targetNodeIds: options.targetNodeIds.slice(midpoint) });
+      if (right.upstreamError) return right;
+      return {
+        found: left.found && right.found,
+        validationSource: "batched",
+        validations: [...left.validations, ...right.validations],
+      };
+    }
+    return { found: false, validations: [], upstreamError: parsed.upstreamError, primaryFix: parsed.primaryFix };
+  }
+  const validationResult = findAssetManifestValidationResult(parsed.json);
+  if (!validationResult) {
+    return { found: false, validationSource: "not-found", validations: [] };
+  }
+  const validations = Array.isArray(validationResult.result.validations)
+    ? validationResult.result.validations.filter(isRecord)
+    : [];
+  return { found: true, validationSource: validationResult.sourcePath, validations };
+}
+
+function buildAssetManifestTargetValidationCode(targetNodeIds: string[]): string {
+  return `const targetNodeIds = ${literal(targetNodeIds)};
 const validations = [];
 for (const targetNodeId of targetNodeIds) {
   try {
@@ -5622,66 +6171,6 @@ return {
   validCount: validations.filter((item) => item.status === "valid").length,
   invalidCount: validations.filter((item) => item.status !== "valid").length
 };`;
-    const upstream = await callUpstreamEval(
-      options.runtime.client,
-      evalSettings,
-      buildFigmaEvalScript({
-        session: options.session,
-        code,
-        mode: "read",
-      }),
-    );
-    const parsed = parseUpstreamToolResult(upstream);
-    if (parsed.upstreamError) {
-      return {
-        ok: false,
-        error: responseUpstreamError(parsed.upstreamError),
-        primaryFix: parsed.primaryFix,
-      };
-    }
-    const validationResult = findAssetManifestValidationResult(parsed.json);
-    if (!validationResult) {
-      return {
-        ok: undefined,
-        skipped: true,
-        reason: "validation result did not include target records",
-        validationSource: "not-found",
-        expectedCount: targetNodeIds.length,
-        validCount: 0,
-        invalidCount: 0,
-        missingValidationCount: targetNodeIds.length,
-        validations: [],
-      };
-    }
-    const validations = Array.isArray(validationResult.result.validations)
-      ? validationResult.result.validations.filter(isRecord)
-      : [];
-    const invalidCount = Number(validationResult.result.invalidCount ?? validations.filter((item) => item.status !== "valid").length);
-    const validatedTargetNodeIds = new Set(validations.map((item) => asOptionalString(item.targetNodeId)).filter((nodeId): nodeId is string => nodeId !== undefined));
-    const missingValidationCount = targetNodeIds.filter((targetNodeId) => !validatedTargetNodeIds.has(targetNodeId)).length;
-    for (const asset of options.assetResults) {
-      const targetNodeId = asOptionalString(asset.targetNodeId);
-      const validation = validations.find((item) => item.targetNodeId === targetNodeId);
-      if (validation) {
-        asset.validation = validation;
-      }
-    }
-    return {
-      ok: missingValidationCount === 0 ? invalidCount === 0 : invalidCount > 0 ? false : undefined,
-      reason: missingValidationCount > 0 ? "validation result did not include every target record" : undefined,
-      validationSource: validationResult.sourcePath,
-      expectedCount: targetNodeIds.length,
-      validCount: Number(validationResult.result.validCount ?? validations.length - invalidCount),
-      invalidCount,
-      missingValidationCount,
-      validations,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: responseUpstreamError(normalizeCaughtUpstreamError(error)),
-    };
-  }
 }
 
 function findAssetManifestValidationResult(
@@ -6049,26 +6538,12 @@ async function enrichMetadataJson(
   }
   try {
     const evalSettings = await resolveEvalSettings(session, {}, runtime);
-    const upstream = await callUpstreamEval(
-      runtime.client,
+    const nativeFieldsByNodeId = await readMetadataNativeFieldsInBatches({
+      nodeIds,
+      session,
+      client: runtime.client,
       evalSettings,
-      buildFigmaEvalScript({
-        session,
-        mode: "read",
-        includeEvalHelpers: false,
-        code: buildMetadataEnrichmentReadbackCode(nodeIds),
-      }),
-    );
-    const parsed = parseUpstreamToolResult(upstream);
-    if (parsed.upstreamError) {
-      return failedMetadataEnrichment(
-        nodeIds.length,
-        parsed.upstreamError.message,
-        parsed.upstreamError.code ?? "FIGMA_METADATA_ENRICHMENT_FAILED",
-        responseUpstreamError(parsed.upstreamError),
-      );
-    }
-    const nativeFieldsByNodeId = metadataNativeFieldsByNodeId(parsed.json);
+    });
     const enrichedNodeCount = metadata.root
       ? mergeMetadataNativeFields(metadata.root, nativeFieldsByNodeId)
       : 0;
@@ -6083,9 +6558,21 @@ async function enrichMetadataJson(
       diagnostics: [],
     };
   } catch (error) {
+    if (isFigmaWorkspaceUpstreamErrorLike(error)) {
+      return failedMetadataEnrichment(
+        nodeIds.length,
+        error.message,
+        error.code ?? "FIGMA_METADATA_ENRICHMENT_FAILED",
+        responseUpstreamError(error),
+      );
+    }
     const message = error instanceof Error ? error.message : String(error);
     return failedMetadataEnrichment(nodeIds.length, message, "FIGMA_METADATA_ENRICHMENT_FAILED");
   }
+}
+
+function isFigmaWorkspaceUpstreamErrorLike(value: unknown): value is FigmaWorkspaceUpstreamError {
+  return isRecord(value) && typeof value.message === "string";
 }
 
 function emptyMetadataEnrichment(): FigmaWorkspaceMetadataEnrichmentResult {
@@ -6122,6 +6609,70 @@ function failedMetadataEnrichment(
       },
     ],
   };
+}
+
+async function readMetadataNativeFieldsInBatches(options: {
+  nodeIds: string[];
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+}): Promise<Map<string, FigmaWorkspaceMetadataNativeFields>> {
+  const fieldsByNodeId = new Map<string, FigmaWorkspaceMetadataNativeFields>();
+  for (const chunk of chunkArray(options.nodeIds, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE)) {
+    const chunkFields = await readMetadataNativeFieldsChunk({
+      nodeIds: chunk,
+      session: options.session,
+      client: options.client,
+      evalSettings: options.evalSettings,
+    });
+    for (const [nodeId, fields] of chunkFields) {
+      fieldsByNodeId.set(nodeId, fields);
+    }
+  }
+  return fieldsByNodeId;
+}
+
+async function readMetadataNativeFieldsChunk(options: {
+  nodeIds: string[];
+  session: FigmaWorkspaceSession;
+  client: FigmaUpstreamMcpProxyClient;
+  evalSettings: EvalSettings;
+}): Promise<Map<string, FigmaWorkspaceMetadataNativeFields>> {
+  const upstream = await callUpstreamEval(
+    options.client,
+    options.evalSettings,
+    buildFigmaEvalScript({
+      session: options.session,
+      mode: "read",
+      includeEvalHelpers: false,
+      code: buildMetadataEnrichmentReadbackCode(options.nodeIds),
+    }),
+  );
+  const parsed = parseUpstreamToolResult(upstream);
+  if (!parsed.upstreamError) {
+    return metadataNativeFieldsByNodeId(parsed.json);
+  }
+  if (parsed.upstreamError.code === "FIGMA_UPSTREAM_TRUNCATED" && options.nodeIds.length > 1) {
+    const midpoint = Math.ceil(options.nodeIds.length / 2);
+    const left = await readMetadataNativeFieldsChunk({
+      ...options,
+      nodeIds: options.nodeIds.slice(0, midpoint),
+    });
+    const right = await readMetadataNativeFieldsChunk({
+      ...options,
+      nodeIds: options.nodeIds.slice(midpoint),
+    });
+    return new Map([...left, ...right]);
+  }
+  throw parsed.upstreamError;
+}
+
+function chunkArray<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function buildMetadataEnrichmentReadbackCode(nodeIds: string[]): string {
@@ -6456,13 +7007,14 @@ function applySessionFileReference(session: FigmaWorkspaceSession, file: unknown
 
 function bindOpenWorkspaceIfAvailable(
   session: FigmaWorkspaceSession,
-  args: { cwd?: string; dirName?: string },
+  args: { workspaceDir?: string },
 ): void {
   if (!session.fileKey && !session.fileUrl) {
     return;
   }
-  if (typeof args.cwd === "string" && args.cwd.length > 0 && !isAbsolute(args.cwd)) {
-    throw new Error('Tool argument "cwd" must be an absolute path.');
+  const workspaceDir = asOptionalString(args.workspaceDir);
+  if (!workspaceDir) {
+    throw new Error('Tool argument "workspaceDir" is required when binding a file-context workspace. Pass an absolute workspace directory inside the current project, worktree, or task artifacts.');
   }
   const fileSlug = slugifyTaskName(
     session.fileKey ??
@@ -6471,8 +7023,7 @@ function bindOpenWorkspaceIfAvailable(
     "figma-file",
   );
   session.workspace = createSessionWorkspace({
-    cwd: typeof args.cwd === "string" && args.cwd.length > 0 ? args.cwd : currentWorkingDirectory(),
-    dirName: args.dirName,
+    workspaceDir,
     fileKey: session.fileKey,
     fileSlug,
     intentSlug: session.slug,
@@ -6552,17 +7103,17 @@ function createFileWorkflowPayload(): Record<string, unknown> {
     supportedFileExtensions: [".figma.ts"],
     prepareTool: "figma_workspace_prepare_task",
     planTool: "figma_workspace_guidance",
-    workspaceLayout: "<cwd>/figma-workspace/<fileKey-or-fileSlug>/<taskName>.figma.ts; debug JSON files are generated on demand",
+    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts for file-context work; workspaceDir is an explicit absolute directory chosen by the agent inside the project/worktree/task artifacts, and the MCP server does not append another figma-workspace segment",
     outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
     workflowTools: ["figma_workspace_get_metadata", "figma_workspace_inspect", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan"],
     helpers: createEvalHelperPathList(),
-    defaultTaskRoot: `${TASK_WORKSPACE_ROOT_ENV}, then OS temp figma-workspace/tasks/<slug>`,
+    workspaceDirGuidance: "Always pass an explicit absolute workspaceDir for prepare/open/file-scoped calls that need local workspace files. Choose a suitable path in the current project, worktree, or task artifacts, such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace.",
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.ts files.",
-      "Initialize a file workspace once, then keep task scripts in that file-context folder.",
+      "Initialize a file workspace once with an explicit workspaceDir selected by the agent inside the current project/worktree/task artifacts, then keep task scripts in that file-context folder.",
       "Run figma_workspace_run_script_file directly; it strict-checks .figma.ts files with Figma Plugin API typings, compiles the upstream payload internally, and preflights file-aware diagnostics before upstream calls.",
       "Keep each .figma.ts transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The runner and eval wrapper parse script ASTs and inject only referenced $ helpers plus required dependencies; scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; compact session state and workspace file context are available through figma-workspace://sessions/{id}, and the full handle map is available through figma-workspace://sessions/{id}/handles.",
+      "The file runner and eval wrapper parse script ASTs and inject only referenced $ helpers plus required dependencies; eval defaults to JavaScript and compiles TypeScript only when typescript:true is supplied. Scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; compact session state and workspace file context are available through figma-workspace://sessions/{id}, and the full handle map is available through figma-workspace://sessions/{id}/handles.",
       "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.ts and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
@@ -6731,7 +7282,7 @@ function createToolTierPayload(): Record<string, unknown> {
   return {
     normalPath: {
       summary: "Default path for non-trivial Figma work.",
-      tools: ["figma_workspace_prepare_task", "figma_workspace_run_script_file", "figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_export_video", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_inspect", "figma_workspace_capture_node"],
+      tools: ["figma_workspace_prepare_task", "figma_workspace_run_script_file", "figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_inspect", "figma_workspace_capture_node"],
       order: [
         "figma_workspace_prepare_task",
         "figma_workspace_guidance",
@@ -6739,7 +7290,6 @@ function createToolTierPayload(): Record<string, unknown> {
         "figma_workspace_get_metadata",
         "figma_workspace_get_design_context",
         "figma_workspace_get_motion_context",
-        "figma_workspace_export_video",
         "figma_workspace_search_design_system",
         "figma_workspace_get_libraries",
         "figma_workspace_get_variable_defs",
@@ -6781,12 +7331,12 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       tool: "figma_workspace_prepare_task",
       tier: "normalPath",
       recommendedCalls: {
-        workspaceFromFile: { file: "<figma file URL or file key>", taskName: "<task-name>", surface: "design" },
+        workspaceFromFile: { file: "<figma file URL or file key>", taskName: "<task-name>", workspaceDir: "<absolute project/worktree/task-artifact figma-workspace dir>", surface: "design" },
       },
-      advancedArguments: ["cwd", "fileSlug", "dirName", "workspaceDir", "fileName", "taskRoot", "template", "overwrite"],
+      advancedArguments: ["fileSlug", "fileName", "template", "overwrite"],
+      requiredArguments: ["taskName", "workspaceDir"],
       avoidUnless: {
-        cwd: "Omit cwd for the MCP server process cwd; pass it only when the server cwd is not the intended project directory.",
-        workspaceOverrides: "Use workspaceDir/taskRoot only when deliberately bypassing the default <cwd>/figma-workspace/<fileKey-or-fileSlug> layout.",
+        workspaceDir: "Do not use the plugin install/cache path. Choose an absolute directory inside the active project, worktree, or task artifacts; include the figma-workspace segment yourself when desired.",
         fileName: "Use fileName only when the generated <task>.figma.ts name is unsuitable.",
         overwrite: "Use only after deciding that replacing an existing script/result pair is intended.",
       },
@@ -6795,12 +7345,12 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       tool: "figma_workspace_open",
       tier: "contextAndLookup",
       recommendedCalls: {
-        session: { sessionId: "<session>", file: "<figma file URL or file key>", surface: "design" },
+        session: { sessionId: "<session>", file: "<figma file URL or file key>", workspaceDir: "<absolute project/worktree/task-artifact figma-workspace dir>", surface: "design" },
       },
-      advancedArguments: ["cwd", "dirName", "connect", "handles"],
+      advancedArguments: ["connect", "handles"],
+      requiredArguments: ["workspaceDir when file is present"],
       avoidUnless: {
-        cwd: "Omit cwd for the MCP server process cwd; pass it only when the server cwd is not the intended project directory.",
-        dirName: "Omit dirName for the default figma-workspace workspace directory.",
+        workspaceDir: "Do not use the plugin install/cache path. Choose an absolute directory inside the active project, worktree, or task artifacts; include the figma-workspace segment yourself when desired.",
         connect: "Leave at the default true unless intentionally updating only local metadata; open connects without listing tools, and upstream tool discovery uses figma-workspace://upstream-tools.",
         handles: "Use only when importing known node ids into a new session; prefer $.remember from scripts.",
       },
@@ -6843,7 +7393,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
         fromSession: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>" },
         fromCurrentPage: { sessionId: "<session>", target: "$currentPage" },
         fromSingleSelection: { sessionId: "<session>", target: "$selection" },
-        fromFile: { file: "<figma file URL or file key>", target: "<node id>" },
+        fromFile: { file: "<figma file URL or file key>", workspaceDir: "<absolute workspace dir>", target: "<node id>" },
         fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
         fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
       },
@@ -6860,12 +7410,12 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       guidance: `Use for official design-to-code context when implementation, parity review, Code Connect, or SwiftUI handoff needs upstream generated structure. ${nodeScopedTargetGuidance} The bridge preserves the official payload inside the generic upstream envelope.`,
       recommendedCalls: {
         fromSession: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>" },
-        fromFile: { file: "<figma file URL or file key>", target: "<node id>" },
-        fromKnownStack: { file: "<figma file URL or file key>", target: "<node id>", clientLanguages: "typescript", clientFrameworks: "react" },
+        fromFile: { file: "<figma file URL or file key>", workspaceDir: "<absolute workspace dir>", target: "<node id>" },
+        fromKnownStack: { file: "<figma file URL or file key>", workspaceDir: "<absolute workspace dir>", target: "<node id>", clientLanguages: "typescript", clientFrameworks: "react" },
         fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
         fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
       },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+      advancedArguments: ["inlineResultLimit", "refresh", "file", "workspaceDir", "clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
       avoidUnless: {
         inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
         refresh: "Use only for upstream tool-cache debug.",
@@ -6884,29 +7434,10 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
         fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" }, recursive: true },
         fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" }, recursive: true },
       },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "recursive", "clientLanguages", "clientFrameworks"],
+      advancedArguments: ["inlineResultLimit", "refresh", "file", "workspaceDir", "recursive", "clientLanguages", "clientFrameworks"],
       avoidUnless: {
         recursive: "Use when descendant motion is needed; omit for a single-node motion read.",
         clientHints: "Pass clientLanguages/clientFrameworks only when the implementation target is known.",
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
-        refresh: "Use only for upstream tool-cache debug.",
-      },
-    },
-    exportVideo: {
-      tool: "figma_workspace_export_video",
-      tier: "workflowAddOns",
-      guidance: `Use for official motion video export when frame sampling is worth the upstream render cost. ${nodeScopedTargetGuidance} Start with a target, then poll with jobId; no local videoFile is claimed by the wrapper.`,
-      recommendedCalls: {
-        start: { sessionId: "<session>", target: "<top-level timeline frame>", quality: "low", fps: 12 },
-        startFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<timeline node id>" }, quality: "low", ttlSeconds: 300 },
-        poll: { sessionId: "<session>", file: "<figma file URL or file key>", jobId: "<job id>" },
-      },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName", "quality", "fps", "constraint", "ttlSeconds"],
-      avoidUnless: {
-        quality: "Start low unless fine visual details require a higher-quality render.",
-        fps: "Use only when frame sampling or motion fidelity requires a specific upstream frame rate.",
-        constraint: "Use only with an official export_video constraint object.",
-        ttlSeconds: "Use only when the render job lifetime needs to differ from upstream defaults.",
         inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
         refresh: "Use only for upstream tool-cache debug.",
       },
@@ -6922,7 +7453,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
         variableDefsFromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
         variableDefsFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
       },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "cwd", "dirName"],
+      advancedArguments: ["inlineResultLimit", "refresh", "file", "workspaceDir"],
       avoidUnless: {
         callUpstreamTool: FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
         inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
@@ -7016,7 +7547,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     toolSelection: {
       normalPath: ["figma_workspace_prepare_task", "figma_workspace_guidance", "figma_workspace_run_script_file", "figma_workspace_inspect", "figma_workspace_capture_node"],
       contextAndLookup: ["figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_lookup"],
-      workflowAddOns: ["figma_workspace_export_video", "figma_workspace_run_task_plan"],
+      workflowAddOns: ["figma_workspace_run_task_plan"],
       advancedEscapeHatches: ["figma_workspace_eval", "figma_workspace_call_upstream_tool"],
       upstreamEscapeHatchExamples: ["generate_figma_design", "generate_diagram", "create_new_file", "whoami", "add_code_connect_map", "get_code_connect_suggestions", "send_code_connect_mappings", "get_context_for_code_connect"],
     },
@@ -7067,7 +7598,7 @@ function createGuidePayload(): Record<string, unknown> {
       profileSource: "Call figma_workspace_guidance with helper/category keywords for helperProfiles.",
     },
     evalWorkflow: [
-      "Use figma_workspace_eval only for small ephemeral calls where a local file would add overhead.",
+      "Use figma_workspace_eval only for small ephemeral JavaScript calls where a local file would add overhead; pass typescript:true only when inline TypeScript annotations should be compiled first.",
       "Move repairable, multi-step, asset-heavy, or user-visible mutations into .figma.ts files so diagnostics and reruns remain stable.",
     ],
     assetWorkflow: [
@@ -7086,7 +7617,7 @@ function createGuidePayload(): Record<string, unknown> {
       "Use figma_workspace_search_design_system, figma_workspace_get_libraries, and figma_workspace_get_variable_defs when official design-system context is needed through first-class wrappers.",
     ],
     motionAndShaders: [
-      "Use figma_workspace_export_video to start/poll official motion video exports only when frame sampling is worth the upstream render cost.",
+      "Use figma_workspace_call_upstream_tool with official export_video only when frame sampling is worth the upstream render cost.",
       "Use figma-workspace://upstream-tools/{name} plus figma_workspace_call_upstream_tool for explicit official shader library reads; payloads remain upstream-shaped.",
     ],
     wrapperWorkflowGraph: createPublicWrapperWorkflowPayloads(FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH),

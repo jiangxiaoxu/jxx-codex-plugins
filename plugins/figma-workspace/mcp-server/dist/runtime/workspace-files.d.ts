@@ -1,6 +1,5 @@
 import type { FigmaWorkspaceRunScriptFileArguments, FigmaWorkspaceRunTaskPlanArguments, FigmaWorkspaceTaskPlanStep } from "../contract/tool-args.js";
 export declare const TASK_WORKSPACE_ROOT_ENV = "FIGMA_WORKSPACE_TASK_ROOT";
-export declare const DEFAULT_WORKSPACE_DIR_NAME = "figma-workspace";
 export interface FigmaWorkspaceSessionWorkspace {
     root: string;
     fileDir: string;
@@ -69,8 +68,7 @@ export declare function withTaskPlanDefaultFiles(stepArgs: Record<string, unknow
 export declare function effectiveInlineResultLimit(value: unknown, files: ScriptOutputFilePaths, defaultInlineResultLimit: number): unknown;
 export declare function writeJsonFile(path: string, value: unknown): Promise<FilePointerMetadata>;
 export declare function createSessionWorkspace(options: {
-    cwd: string;
-    dirName?: unknown;
+    workspaceDir: string;
     fileKey?: string;
     fileSlug: string;
     intentSlug: string;
@@ -79,7 +77,6 @@ export declare function ensureWorkspaceDirectories(workspace: FigmaWorkspaceSess
 export declare function resolvePreparedTaskWorkspace(options: {
     args: {
         workspaceDir?: unknown;
-        taskRoot?: unknown;
     };
     taskName: string;
     fileSlug: string;

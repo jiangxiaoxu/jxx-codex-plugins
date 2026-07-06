@@ -5,8 +5,7 @@ export interface FigmaWorkspaceOpenArguments {
     sessionId?: string;
     label?: string;
     file?: string;
-    cwd?: string;
-    dirName?: string;
+    workspaceDir?: string;
     surface?: FigmaWorkspaceSurface;
     currentPageId?: string;
     reset?: boolean;
@@ -18,6 +17,7 @@ export interface FigmaWorkspaceEvalArguments {
     title?: string;
     sessionId?: string;
     code: string;
+    typescript?: boolean;
     mode?: "read" | "write";
     surface?: FigmaWorkspaceSurface;
     allowDangerousOperations?: boolean;
@@ -104,8 +104,7 @@ export interface FigmaWorkspaceGetMetadataArguments {
     title?: string;
     sessionId?: string;
     file?: string;
-    cwd?: string;
-    dirName?: string;
+    workspaceDir?: string;
     target?: unknown;
     nodeId?: string;
     refresh?: boolean;
@@ -118,8 +117,7 @@ export interface FigmaWorkspaceGetDesignContextArguments {
     title?: string;
     sessionId?: string;
     file?: string;
-    cwd?: string;
-    dirName?: string;
+    workspaceDir?: string;
     target?: unknown;
     refresh?: boolean;
     inlineResultLimit?: number;
@@ -134,8 +132,7 @@ export interface FigmaWorkspaceGetMotionContextArguments {
     title?: string;
     sessionId?: string;
     file?: string;
-    cwd?: string;
-    dirName?: string;
+    workspaceDir?: string;
     target?: unknown;
     recursive?: boolean;
     clientLanguages?: string;
@@ -143,33 +140,12 @@ export interface FigmaWorkspaceGetMotionContextArguments {
     refresh?: boolean;
     inlineResultLimit?: number;
 }
-export interface FigmaWorkspaceExportVideoArguments {
-    [key: string]: unknown;
-    title?: string;
-    sessionId?: string;
-    file?: string;
-    cwd?: string;
-    dirName?: string;
-    target?: unknown;
-    jobId?: string;
-    quality?: "low" | "medium" | "high";
-    fps?: number;
-    constraint?: FigmaWorkspaceExportVideoConstraint;
-    ttlSeconds?: number;
-    refresh?: boolean;
-    inlineResultLimit?: number;
-}
-export interface FigmaWorkspaceExportVideoConstraint {
-    type: "SCALE" | "WIDTH" | "HEIGHT";
-    value: number;
-}
 export interface FigmaWorkspaceSearchDesignSystemArguments {
     [key: string]: unknown;
     title?: string;
     sessionId?: string;
     file?: string;
-    cwd?: string;
-    dirName?: string;
+    workspaceDir?: string;
     query: string;
     disableCodeConnect?: boolean;
     includeComponents?: boolean;
@@ -184,8 +160,7 @@ export interface FigmaWorkspaceGetLibrariesArguments {
     title?: string;
     sessionId?: string;
     file?: string;
-    cwd?: string;
-    dirName?: string;
+    workspaceDir?: string;
     offset?: number;
     refresh?: boolean;
     inlineResultLimit?: number;
@@ -195,8 +170,7 @@ export interface FigmaWorkspaceGetVariableDefsArguments {
     title?: string;
     sessionId?: string;
     file?: string;
-    cwd?: string;
-    dirName?: string;
+    workspaceDir?: string;
     target?: unknown;
     refresh?: boolean;
     inlineResultLimit?: number;
@@ -214,14 +188,11 @@ export interface FigmaWorkspacePrepareTaskArguments {
     [key: string]: unknown;
     title?: string;
     sessionId?: string;
-    taskName?: string;
+    taskName: string;
     file?: string;
     fileSlug?: string;
-    cwd?: string;
-    dirName?: string;
     fileName?: string;
-    taskRoot?: string;
-    workspaceDir?: string;
+    workspaceDir: string;
     surface?: FigmaWorkspaceSurface;
     targetPageId?: string;
     template?: string;
@@ -260,7 +231,6 @@ export declare function asCallUpstreamToolArgs(args: unknown): FigmaWorkspaceCal
 export declare function asGetMetadataArgs(args: unknown): FigmaWorkspaceGetMetadataArguments;
 export declare function asGetDesignContextArgs(args: unknown): FigmaWorkspaceGetDesignContextArguments;
 export declare function asGetMotionContextArgs(args: unknown): FigmaWorkspaceGetMotionContextArguments;
-export declare function asExportVideoArgs(args: unknown): FigmaWorkspaceExportVideoArguments;
 export declare function asSearchDesignSystemArgs(args: unknown): FigmaWorkspaceSearchDesignSystemArguments;
 export declare function asGetLibrariesArgs(args: unknown): FigmaWorkspaceGetLibrariesArguments;
 export declare function asGetVariableDefsArgs(args: unknown): FigmaWorkspaceGetVariableDefsArguments;

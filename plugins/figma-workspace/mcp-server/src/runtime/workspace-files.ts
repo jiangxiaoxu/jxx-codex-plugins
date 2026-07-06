@@ -9,7 +9,6 @@ import type {
 import { asTaskPlanSteps } from "../contract/tool-args.js";
 
 export const TASK_WORKSPACE_ROOT_ENV = "FIGMA_WORKSPACE_TASK_ROOT";
-export const DEFAULT_WORKSPACE_DIR_NAME = "figma-workspace";
 
 type CaptureImageMimeType = "image/png";
 
@@ -380,17 +379,15 @@ export async function writeJsonFile(path: string, value: unknown): Promise<FileP
 }
 
 export function createSessionWorkspace(options: {
-  cwd: string;
-  dirName?: unknown;
+  workspaceDir: string;
   fileKey?: string;
   fileSlug: string;
   intentSlug: string;
 }): FigmaWorkspaceSessionWorkspace {
-  const dirName = asOptionalString(options.dirName) ?? DEFAULT_WORKSPACE_DIR_NAME;
-  if (isAbsolute(dirName) || dirName.includes("/") || dirName.includes("\\") || dirName.includes("..")) {
-    throw new Error('Tool argument "dirName" must be a simple directory name.');
+  if (!isAbsolute(options.workspaceDir)) {
+    throw new Error('Tool argument "workspaceDir" must be an absolute path.');
   }
-  const root = resolve(options.cwd, dirName);
+  const root = resolve(options.workspaceDir);
   const fileContext = normalizeFileContextDirectory(options.fileKey, options.fileSlug);
   const fileDir = resolve(root, fileContext);
   if (!isPathInside(root, fileDir)) {
@@ -420,12 +417,12 @@ export async function ensureWorkspaceDirectories(workspace: FigmaWorkspaceSessio
 }
 
 export function resolvePreparedTaskWorkspace(options: {
-  args: { workspaceDir?: unknown; taskRoot?: unknown };
+  args: { workspaceDir?: unknown };
   taskName: string;
   fileSlug: string;
   session?: FigmaWorkspaceWorkspaceFileSession;
 }): FigmaWorkspaceSessionWorkspace {
-  if (options.session?.workspace && !options.args.workspaceDir && !options.args.taskRoot) {
+  if (options.session?.workspace && !options.args.workspaceDir) {
     return createWorkspaceFromFileDir({
       root: options.session.workspace.root,
       fileDir: resolve(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
@@ -435,18 +432,13 @@ export function resolvePreparedTaskWorkspace(options: {
     });
   }
   const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
-  if (explicitWorkspaceDir) {
-    if (!isAbsolute(explicitWorkspaceDir)) {
-      throw new Error('Tool argument "workspaceDir" must be an absolute path.');
-    }
-    return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskName);
+  if (!explicitWorkspaceDir) {
+    throw new Error('Tool argument "workspaceDir" is required. Pass an absolute workspace directory inside the current project, worktree, or task artifacts.');
   }
-  const workspaceDir = resolveTaskWorkspace({
-    taskName: options.taskName,
-    taskRoot: options.args.taskRoot,
-    workspaceDir: undefined,
-  });
-  return createWorkspaceFromSessionDir(workspaceDir, options.taskName);
+  if (!isAbsolute(explicitWorkspaceDir)) {
+    throw new Error('Tool argument "workspaceDir" must be an absolute path.');
+  }
+  return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskName);
 }
 
 export function resolveWorkspaceFile(baseDir: string, fileName: string, argumentName: string): string {
@@ -598,26 +590,6 @@ function countTextLines(content: string): number {
   }
   const newlineCount = content.match(/\n/gu)?.length ?? 0;
   return content.endsWith("\n") ? newlineCount : newlineCount + 1;
-}
-
-function resolveTaskWorkspace(options: {
-  taskName: string;
-  taskRoot?: unknown;
-  workspaceDir?: unknown;
-}): string {
-  const explicitWorkspace = asOptionalString(options.workspaceDir);
-  if (explicitWorkspace) {
-    if (!isAbsolute(explicitWorkspace)) {
-      throw new Error('Tool argument "workspaceDir" must be an absolute path.');
-    }
-    return explicitWorkspace;
-  }
-  const explicitRoot = asOptionalString(options.taskRoot);
-  const root = explicitRoot ?? defaultTaskWorkspaceRoot();
-  if (!isAbsolute(root)) {
-    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
-  }
-  return resolve(root, options.taskName);
 }
 
 function createWorkspaceFromSessionDir(sessionDir: string, taskName: string): FigmaWorkspaceSessionWorkspace {

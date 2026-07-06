@@ -35,9 +35,8 @@ export function createReplToolDescriptions(
         title: titleProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
         label: stringProperty("Human-readable session label."),
-        file: stringProperty("Optional Figma file URL or raw file key stored in local session metadata. When present, open auto-binds a file-context workspace."),
-        cwd: stringProperty("Optional absolute project directory for the auto-bound workspace. Defaults to the MCP server process cwd."),
-        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
+        file: stringProperty("Optional Figma file URL or raw file key stored in local session metadata. When present, workspaceDir is required to bind a file-context workspace."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is present. The agent must choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface; blocks mismatched Design/FigJam/Slides usage later."),
         currentPageId: stringProperty("Optional current Figma page id stored in local session metadata."),
         reset: booleanProperty("Reset local handles and history for this session before opening."),
@@ -48,11 +47,12 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_eval",
       description:
-        "Small ephemeral Plugin API call for quick reads or tightly scoped updates only. Recommended call: { sessionId, code, mode, surface }. Use prepare_task + run_script_file for repairable TypeScript scripts, multi-step work, and large structured results.",
+        "Small ephemeral JavaScript Plugin API call for quick reads or tightly scoped updates only. Recommended call: { sessionId, code, mode, surface }. By default code is parsed and executed as JavaScript; pass typescript:true only when inline TypeScript annotations should be compiled first. Use prepare_task + run_script_file for repairable TypeScript scripts, multi-step work, and large structured results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id. Defaults to 'default'."),
-        code: stringProperty("Plugin API body executed inside an async function in the Figma context. Use return to send structured output."),
+        code: stringProperty("JavaScript Plugin API body executed inside an async function in the Figma context. Use return to send structured output. TypeScript-only syntax requires typescript:true."),
+        typescript: booleanProperty("Compile inline code as TypeScript before execution. Defaults false; leave unset for JavaScript eval.", { default: false }),
         mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
         allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
@@ -142,23 +142,20 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_prepare_task",
       description:
-        "Core workflow entrypoint for creating or reusing a task-specific .figma.ts script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, surface }. Follow with guidance/lookup, run_script_file, inspect, and capture.",
+        "Core workflow entrypoint for creating or reusing a task-specific .figma.ts script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, workspaceDir, surface }. Follow with guidance/lookup, run_script_file, inspect, and capture.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id. If initialized, files are created under that session file-context workspace."),
         taskName: stringProperty("Required slug-style task/workspace name such as settings-panel-polish; used to derive <taskName>.figma.ts by default."),
         file: stringProperty("Recommended Figma file URL or raw file key used to derive the file context when preparing a workspace."),
         fileSlug: stringProperty("Advanced file-context slug override to use when file cannot derive a key."),
-        cwd: stringProperty("Optional absolute project directory where the figma-workspace workspace directory will be created. Defaults to the MCP server process cwd when file context is present."),
-        dirName: stringProperty("Advanced workspace directory name under cwd. Defaults to figma-workspace."),
+        workspaceDir: stringProperty("Required absolute local workspace directory selected by the agent inside the current project, worktree, or task artifacts, such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace. The MCP server uses this exact root and does not append another figma-workspace segment; file-context tasks live under <workspaceDir>/<fileKey-or-fileSlug>."),
         fileName: stringProperty("Advanced script file-name override ending in .figma.ts."),
-        taskRoot: stringProperty(`Advanced absolute task root for temp task workspaces. Defaults to ${options.taskWorkspaceRootEnv}, then OS temp figma-workspace/tasks.`),
-        workspaceDir: stringProperty("Advanced absolute workspace directory override."),
         surface: enumProperty(["design", "figjam", "slides"], "Recommended expected Figma surface persisted on the session and copied into generated guidance."),
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
         template: stringProperty("Template hint copied into the generated .figma.ts comments. V1 templates are curated guidance only."),
         overwrite: booleanProperty("Advanced destructive overwrite of an existing script/result pair. Defaults false."),
-      }, ["taskName"]),
+      }, ["taskName", "workspaceDir"]),
     },
     {
       name: "figma_workspace_guidance",
@@ -199,8 +196,7 @@ export function createReplToolDescriptions(
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
-        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
-        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         target: {
           description: `Optional metadata root. ${NODE_SCOPED_TARGET_SHAPES} Also accepts $currentPage or a single-node $selection, which are resolved with a read-only use_figma call before official get_metadata. Other dynamic selectors are rejected.`,
         },
@@ -219,8 +215,7 @@ export function createReplToolDescriptions(
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target is omitted."),
-        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
-        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
@@ -241,8 +236,7 @@ export function createReplToolDescriptions(
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target is omitted."),
-        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
-        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
@@ -254,28 +248,6 @@ export function createReplToolDescriptions(
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] }),
     },
     {
-      name: "figma_workspace_export_video",
-      description:
-        "Thin first-class wrapper for official upstream export_video. Recommended calls: { sessionId, target, quality? } after opening/preparing file context, { target:{ fileKey, nodeId }, quality? } to start a render, then { sessionId, file, jobId } to poll. Returns the generic upstream envelope; it does not claim a local videoFile path.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
-        file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target is omitted."),
-        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
-        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
-        target: {
-          description: `Target node for starting an export. ${NODE_SCOPED_TARGET_SHAPES} Omit when polling with jobId.`,
-        },
-        jobId: stringProperty("Optional official export_video job id used to poll an existing export."),
-        quality: enumProperty(["low", "medium", "high"], "Optional official export_video quality hint."),
-        fps: numberProperty("Optional official export_video fps hint forwarded upstream when explicitly supplied.", { type: "integer", minimum: 1, maximum: 60 }),
-        constraint: exportVideoConstraintProperty("Optional official export_video constraint object forwarded upstream when explicitly supplied."),
-        ttlSeconds: numberProperty("Optional official export_video ttlSeconds hint forwarded upstream when explicitly supplied.", { type: "integer", minimum: 30, maximum: 604800 }),
-        refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
-        inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-      }, { anyOf: [requiredBranch("target"), requiredBranch("file"), requiredBranch("jobId")] }),
-    },
-    {
       name: "figma_workspace_search_design_system",
       description:
         "Thin first-class wrapper for official upstream search_design_system. Recommended call: { sessionId, query } after opening or preparing a session with file context. Returns the generic upstream envelope in upstream.result/upstream.text plus a minimal session summary.",
@@ -283,8 +255,7 @@ export function createReplToolDescriptions(
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. Used when the session does not already have file context."),
-        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
-        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         query: stringProperty("Required official search_design_system query."),
         disableCodeConnect: booleanProperty("Optional official search_design_system flag to disable Code Connect for search results."),
         includeComponents: booleanProperty("Optional official search_design_system flag. Defaults upstream to true."),
@@ -303,8 +274,7 @@ export function createReplToolDescriptions(
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. Used when the session does not already have file context."),
-        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
-        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         offset: numberProperty("Optional official get_libraries pagination offset."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
@@ -318,8 +288,7 @@ export function createReplToolDescriptions(
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
-        cwd: stringProperty("Optional absolute project directory for auto-bound file workspace when file is supplied. Defaults to MCP server cwd."),
-        dirName: stringProperty("Optional workspace directory name under cwd. Defaults to figma-workspace."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
         },
@@ -503,22 +472,6 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     ),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
-  figma_workspace_export_video: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-    fileKey: stringProperty("Figma file key sent to official export_video."),
-    nodeId: stringProperty("Optional Figma node id sent to official export_video when starting an export."),
-    jobId: stringProperty("Optional official export_video job id sent when polling an export."),
-    diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
-    upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
-    primaryFix: stringProperty("Suggested primary repair when execution failed."),
-    outputFiles: outputFilesProperty(
-      "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
-      ["debugFile", "upstreamFile"],
-    ),
-    inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
-  }),
   figma_workspace_search_design_system: toolOutputSchema({
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     fileKey: stringProperty("Figma file key sent to official search_design_system."),
@@ -645,19 +598,6 @@ function numberProperty(description: string, extra: Record<string, unknown> = {}
 
 function objectProperty(description: string): Record<string, unknown> {
   return { type: "object", description, additionalProperties: true };
-}
-
-function exportVideoConstraintProperty(description: string): Record<string, unknown> {
-  return {
-    type: "object",
-    description,
-    properties: {
-      type: enumProperty(["SCALE", "WIDTH", "HEIGHT"], "Constraint mode."),
-      value: numberProperty("Constraint value. SCALE is a multiplier; WIDTH/HEIGHT are pixels.", { exclusiveMinimum: 0 }),
-    },
-    required: ["type", "value"],
-    additionalProperties: false,
-  };
 }
 
 function jsonProperty(description: string): Record<string, unknown> {
