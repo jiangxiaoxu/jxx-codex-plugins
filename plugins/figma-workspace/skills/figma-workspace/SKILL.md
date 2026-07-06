@@ -13,11 +13,12 @@ Use this skill as the lightweight router for Figma MCP work. After OAuth registr
 2. Before any Figma MCP action, expose deferred Figma tools through `tool_search` with a query such as `figma_workspace_mcp figma_workspace_ figma`.
 3. After Figma tools are available, read `figma-workspace://capabilities`, then `figma-workspace://guide` when workflow sequencing is needed.
 4. If direct `figma_workspace_*` tools are not installed in the active Codex environment, do not use the `./node-upstream-client` no-client default for live Figma work; use `figma_workspace_mcp` after plugin reload, or use package-local `createFigmaWorkspaceClient` only with an explicit custom upstream `client`.
-5. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.ts` script, then run it with automatic strict TypeScript preflight and write results to local files.
-6. Use `figma_workspace_guidance` and `figma_workspace_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-7. Local `figma_workspace_*` tools return structured results; use each tool schema and `figma-workspace://guide` for response details.
-8. Use local first-class wrappers for official upstream capabilities they already cover, including metadata, design context, motion context, and design-system reads. Use the Upstream Tool Discovery section for official capabilities that are hidden behind upstream resources instead of exposed as local tools.
-9. `createFigmaWorkspaceClient` mirrors the same result shape in Node: read `result.upstream.result`, compact asset entries, generated debug files, and capture `imageFile` on success.
+5. Read `figma-workspace://diagnostics` only when developing/debugging `figma_workspace_mcp` or identifying MCP runtime-resource, reload, lookup-corpus, or installed-cache faults; do not read it for normal Figma work or script preflight repair.
+6. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.ts` script, then run it with automatic strict TypeScript preflight and write results to local files.
+7. Use `figma_workspace_guidance` and `figma_workspace_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
+8. Local `figma_workspace_*` tools return structured results; use each tool schema and `figma-workspace://guide` for response details.
+9. Use local first-class wrappers for official upstream capabilities they already cover, including metadata, design context, motion context, and design-system reads. Use the Upstream Tool Discovery section for official capabilities that are hidden behind upstream resources instead of exposed as local tools.
+10. `createFigmaWorkspaceClient` mirrors the same result shape in Node: read `result.upstream.result`, compact asset entries, generated debug files, and capture `imageFile` on success.
 
 ## Node Tool Route
 
@@ -63,7 +64,7 @@ Workspace files live under `<workspaceDir>/<fileKey-or-fileSlug>/`. `workspaceDi
 - Keep each transaction small and repairable. If preflight diagnostics fail, fix diagnostics by file line and rerun the same script.
 - Return compact JSON with changed node ids, handles, and validation notes. Use generated `outputFiles.debugFile` pointers for failure or omitted-payload debug JSON instead of relying on inline MCP output.
 - Read parsed upstream JSON from `upstream.result`; if upstream output is not JSON, read `upstream.text`. Debug file pointers are reported in `outputFiles.debugFile`.
-- Ordinary tool responses return only a minimal `session` summary with `handleChanges` and optional `session.sessionDir`; read `figma-workspace://sessions` for the compact list, `figma-workspace://sessions/{id}` for compact detail with handles, and `figma-workspace://sessions/{id}/handles` when only the remembered handle map is needed.
+- Ordinary tool responses return only a minimal `session` summary with `handleChanges` and optional `session.sessionDir`; read `figma-workspace://sessions` for the compact list, `figma-workspace://sessions/{id}` for compact detail with handle counts/previews, and `figma-workspace://sessions/{id}/handles` when the full remembered handle map is needed.
 - Common helpers: `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`. Use native Figma Plugin API for node creation, querying, and auto layout.
 - Prefer `$.select` over direct selection mutation. Use `figma_workspace_inspect({ mode: "validate" })` before reusing old handles.
 - For generated assets, use `$.imageAsset` only for small inline PNG/JPEG data; for larger local assets, create target rectangles and use `figma_workspace_apply_asset_manifest`.
@@ -73,6 +74,7 @@ Workspace files live under `<workspaceDir>/<fileKey-or-fileSlug>/`. `workspaceDi
 ## Lookup Order
 
 - Use `figma-workspace://capabilities` as the short routing manifest.
+- Use `figma-workspace://diagnostics` only for MCP development/debugging and MCP fault identification, such as runtime-resource, reload, lookup-corpus, or installed-cache failures.
 - Use `figma-workspace://guide` for continuous workflow sequencing.
 - Use `figma-workspace://lookup-index` to choose between `figma_workspace_guidance` and `figma_workspace_lookup`.
 - Use `figma_workspace_guidance` for BM25-style query-to-helper routing and curated short cards.

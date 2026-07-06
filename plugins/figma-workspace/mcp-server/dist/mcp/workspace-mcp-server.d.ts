@@ -308,13 +308,15 @@ export interface FigmaWorkspaceResourceSessionSummary {
     fileKey?: string;
     surface?: FigmaWorkspaceSurface;
     sessionDir?: string;
+    handleCount: number;
 }
 export interface FigmaWorkspaceResourceSessionDetail {
     [key: string]: unknown;
     id: string;
     fileKey?: string;
     surface?: FigmaWorkspaceSurface;
-    handles: Record<string, string>;
+    handleCount: number;
+    handlePreview: Record<string, string>;
     page?: FigmaWorkspaceResourcePageState;
     workspace?: FigmaWorkspaceResourceWorkspace;
 }
