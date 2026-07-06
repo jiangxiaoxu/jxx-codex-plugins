@@ -187,11 +187,11 @@ async function openTestWorkspace(mcpClient, { tempDir, sessionId = "default" }) 
       title: "Open test workspace",
       sessionId,
       file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
-      cwd: tempDir,
+      workspaceDir: tempDir,
       connect: false,
     },
   });
-  const fileDir = resolve(tempDir, "figma-workspace", "ExampleFigmaFileKey012");
+  const fileDir = resolve(tempDir, "ExampleFigmaFileKey012");
   await mkdir(fileDir, { recursive: true });
   return fileDir;
 }
@@ -411,6 +411,7 @@ test("figma workspace eval and run_script_file pass raw session fileKey to upstr
         title: "Open raw file key",
         sessionId: "raw-key",
         file: "RawFileKey012",
+        workspaceDir: tempDir,
         connect: false,
       },
     });
@@ -569,6 +570,7 @@ test("figma workspace eval keeps wrapper success when nested business ok is fals
 });
 
 test("figma workspace open connects without listing upstream tools", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-open-only-"));
   const calls = [];
   const { server } = createFigmaWorkspaceMcpServer({
     client: createFakeFigmaClient(calls, () => {
@@ -590,6 +592,7 @@ test("figma workspace open connects without listing upstream tools", async () =>
       title: "Open without discovery",
       sessionId: "open-only",
       file: "https://www.figma.com/design/file123/Test",
+      workspaceDir: tempDir,
     },
   });
   const json = structuredToolResult(result);
@@ -935,7 +938,7 @@ test("figma workspace eval rejects dynamic helper access before upstream executi
     arguments: {
       title: "Reject dynamic helper access",
       sessionId: "main",
-      code: "const helperName = 'findFreeSlot';\nreturn await ($ as unknown as Record<string, (input: { gap: number }) => Promise<unknown>>)[helperName]({ gap: 8 });",
+      code: "const helperName = 'findFreeSlot';\nreturn await $[helperName]({ gap: 8 });",
     },
   });
   const blockedJson = structuredToolResult(blockedEval);
@@ -1528,7 +1531,6 @@ test("figma workspace exposes self-explaining capabilities and resources", async
     "figma_workspace_capture_node",
     "figma_workspace_download_assets",
     "figma_workspace_eval",
-    "figma_workspace_export_video",
     "figma_workspace_get_design_context",
     "figma_workspace_get_libraries",
     "figma_workspace_get_metadata",
@@ -1543,7 +1545,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
     "figma_workspace_run_task_plan",
     "figma_workspace_search_design_system",
   ]);
-  assert.equal(tools.tools.length, 19);
+  assert.equal(tools.tools.length, 18);
   const toolsByName = new Map(tools.tools.map((tool) => [tool.name, tool]));
   const wrapperContracts = FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS;
   const wrapperContractsByTool = new Map(wrapperContracts.map((contract) => [contract.toolName, contract]));
@@ -1654,6 +1656,16 @@ test("figma workspace exposes self-explaining capabilities and resources", async
         `${contract.toolName} public inputSchema exposes local-only field ${property}`,
       );
     }
+    const classifiedPublicProperties = new Set([
+      ...contract.parameterMatrix.publicPassthrough,
+      ...contract.parameterMatrix.localOnly,
+    ]);
+    for (const property of inputSchemaProperties(publicInputSchema)) {
+      assert.ok(
+        classifiedPublicProperties.has(property),
+        `${contract.toolName} public inputSchema field ${property} is classified as passthrough or local-only`,
+      );
+    }
     for (const property of contract.parameterMatrix.hiddenUpstreamOptional) {
       assert.equal(
         topLevelInputSchemaHasProperty(publicInputSchema, property),
@@ -1737,7 +1749,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.deepEqual(toolsByName.get("figma_workspace_capture_node").inputSchema.required, ["target"]);
   assert.deepEqual(toolsByName.get("figma_workspace_search_design_system").inputSchema.required, ["query"]);
   assert.deepEqual(toolsByName.get("figma_workspace_lookup").inputSchema.required, ["kind"]);
-  assert.deepEqual(toolsByName.get("figma_workspace_prepare_task").inputSchema.required, ["taskName"]);
+  assert.deepEqual(toolsByName.get("figma_workspace_prepare_task").inputSchema.required, ["taskName", "workspaceDir"]);
   assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_run_script_file").inputSchema), [["scriptPath"], ["inputFile"]]);
   assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_apply_asset_manifest").inputSchema), [["manifestPath"], ["assets"]]);
   assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_download_assets").inputSchema), [["targets"], ["manifestPath"]]);
@@ -1745,7 +1757,6 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_get_design_context").inputSchema), [["target"], ["file"]]);
   assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_get_motion_context").inputSchema), [["target"], ["file"]]);
   assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_get_variable_defs").inputSchema), [["target"], ["file"]]);
-  assert.deepEqual(requiredBranches(toolsByName.get("figma_workspace_export_video").inputSchema), [["target"], ["file"], ["jobId"]]);
   for (const tool of tools.tools) {
     assert.equal(
       tool.inputSchema.properties.title.description,
@@ -1809,7 +1820,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   );
   const evalTool = tools.tools.find((tool) => tool.name === "figma_workspace_eval");
   assert.ok(evalTool);
-  assert.match(evalTool.description, /Small ephemeral Plugin API call/);
+  assert.match(evalTool.description, /Small ephemeral JavaScript Plugin API call/);
   assert.match(evalTool.description, /prepare_task \+ run_script_file/);
   assert.doesNotMatch(evalTool.description, /\$\[name\]/);
   assert.equal(evalTool.inputSchema.properties.outputFile, undefined);
@@ -1823,7 +1834,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(evalTool.inputSchema.properties.upstreamArgument, undefined);
   assert.equal(evalTool.inputSchema.properties.upstreamArguments, undefined);
   assert.equal(evalTool.inputSchema.properties.strict, undefined);
-  assert.equal(evalTool.inputSchema.properties.typescript, undefined);
+  assert.equal(evalTool.inputSchema.properties.typescript.type, "boolean");
+  assert.equal(evalTool.inputSchema.properties.typescript.default, false);
   assert.equal(evalTool.inputSchema.properties.compile, undefined);
   assert.match(evalTool.inputSchema.properties.handleUpdates.description, /handle-import escape hatch/);
   assert.ok(evalTool.outputSchema.properties.outputFiles.properties.upstreamFile);
@@ -1967,7 +1979,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   const prepareTaskTool = tools.tools.find((tool) => tool.name === "figma_workspace_prepare_task");
   assert.ok(prepareTaskTool);
   assert.match(prepareTaskTool.description, /\.figma\.ts/);
-  assert.match(prepareTaskTool.description, /Recommended workspace call: \{ file, taskName, surface \}/);
+  assert.match(prepareTaskTool.description, /Recommended workspace call: \{ file, taskName, workspaceDir, surface \}/);
   assert.match(prepareTaskTool.inputSchema.properties.file.description, /Figma file URL or raw file key/);
   assert.equal(prepareTaskTool.inputSchema.properties.fileUrl, undefined);
   assert.equal(prepareTaskTool.inputSchema.properties.fileKey, undefined);
@@ -1979,9 +1991,9 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(prepareTaskTool.inputSchema.properties.taskDir, undefined);
   assert.equal(prepareTaskTool.inputSchema.properties.scriptName, undefined);
   assert.equal(prepareTaskTool.inputSchema.properties.expectedSurface, undefined);
-  assert.match(prepareTaskTool.inputSchema.properties.workspaceDir.description, /Advanced absolute workspace/);
+  assert.match(prepareTaskTool.inputSchema.properties.workspaceDir.description, /Required absolute local workspace directory/);
   assert.match(prepareTaskTool.inputSchema.properties.surface.description, /Recommended expected Figma surface/);
-  assert.match(prepareTaskTool.inputSchema.properties.taskRoot.description, /Advanced absolute task root/);
+  assert.equal(prepareTaskTool.inputSchema.properties.taskRoot, undefined);
   assert.match(prepareTaskTool.inputSchema.properties.overwrite.description, /Advanced destructive/);
   assert.ok(prepareTaskTool.outputSchema.properties.taskChange);
   assert.ok(prepareTaskTool.outputSchema.properties.taskChange.properties.previous);
@@ -2061,23 +2073,6 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(getMotionContextTool.inputSchema.properties.clientFrameworks);
   assert.ok(getMotionContextTool.outputSchema.properties.nodeId);
   assert.ok(getMotionContextTool.outputSchema.properties.upstream);
-  const exportVideoTool = tools.tools.find((tool) => tool.name === "figma_workspace_export_video");
-  assert.ok(exportVideoTool);
-  assert.match(exportVideoTool.description, /official upstream export_video/);
-  assert.match(exportVideoTool.description, /\{ target:\{ fileKey, nodeId \}, quality\? \}/);
-  assert.deepEqual(exportVideoTool.inputSchema.properties.quality.enum, ["low", "medium", "high"]);
-  assert.equal(exportVideoTool.inputSchema.properties.fps.type, "integer");
-  assert.equal(exportVideoTool.inputSchema.properties.fps.minimum, 1);
-  assert.equal(exportVideoTool.inputSchema.properties.fps.maximum, 60);
-  assert.deepEqual(exportVideoTool.inputSchema.properties.constraint.properties.type.enum, ["SCALE", "WIDTH", "HEIGHT"]);
-  assert.deepEqual(exportVideoTool.inputSchema.properties.constraint.required, ["type", "value"]);
-  assert.equal(exportVideoTool.inputSchema.properties.constraint.additionalProperties, false);
-  assert.equal(exportVideoTool.inputSchema.properties.ttlSeconds.type, "integer");
-  assert.equal(exportVideoTool.inputSchema.properties.ttlSeconds.minimum, 30);
-  assert.equal(exportVideoTool.inputSchema.properties.ttlSeconds.maximum, 604800);
-  assert.ok(exportVideoTool.inputSchema.properties.jobId);
-  assert.ok(exportVideoTool.outputSchema.properties.jobId);
-  assert.equal(exportVideoTool.outputSchema.properties.videoFile, undefined);
   const searchDesignSystemTool = tools.tools.find((tool) => tool.name === "figma_workspace_search_design_system");
   assert.ok(searchDesignSystemTool);
   assert.deepEqual(searchDesignSystemTool.inputSchema.required, ["query"]);
@@ -2113,7 +2108,6 @@ test("figma workspace exposes self-explaining capabilities and resources", async
     getMetadataTool,
     getDesignContextTool,
     getMotionContextTool,
-    exportVideoTool,
     getVariableDefsTool,
   ]) {
     assert.match(wrapperTool.inputSchema.properties.target.description, /string raw node id/);
@@ -2124,7 +2118,6 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   for (const wrapperTool of [
     getDesignContextTool,
     getMotionContextTool,
-    exportVideoTool,
   ]) {
     assert.ok(wrapperTool.outputSchema.properties.guidanceRef, `${wrapperTool.name} advertises guidanceRef`);
     assert.equal(wrapperTool.outputSchema.properties.guidance, undefined, `${wrapperTool.name} does not advertise guidance`);
@@ -2160,7 +2153,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.match(callUpstreamTool.description, /Explicit upstream-only escape hatch/);
   assert.match(callUpstreamTool.description, /figma-workspace:\/\/upstream-tools\/\{name\}/);
   assert.match(callUpstreamTool.description, /including shader effect\/fill tools/);
-  assert.match(callUpstreamTool.description, /Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context, export_video/);
+  assert.match(callUpstreamTool.description, /Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context/);
+  assert.doesNotMatch(callUpstreamTool.description, /Do not use[^.]*export_video/);
   for (const upstreamToolName of wrapperContracts
     .map((contract) => contract.upstreamToolName)
     .filter((value) => typeof value === "string")) {
@@ -2265,10 +2259,10 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(aggregateCapabilities.resources.guide, "figma-workspace://guide");
   assert.equal(aggregateCapabilities.resources.lookupIndex, "figma-workspace://lookup-index");
   assert.ok(aggregateCapabilities.toolSelection.contextAndLookup.includes("figma_workspace_get_motion_context"));
-  assert.ok(aggregateCapabilities.toolSelection.workflowAddOns.includes("figma_workspace_export_video"));
+  assert.ok(!aggregateCapabilities.toolSelection.workflowAddOns.includes("figma_workspace_export_video"));
   assert.ok(!aggregateCapabilities.toolSelection.upstreamEscapeHatchExamples.includes("get_motion_context"));
   assert.deepEqual(aggregateCapabilities.lookupStrategy.outputFields, queryOutputFields);
-  assert.ok(aggregateCapabilities.wrapperGuidance.profileTools.includes("figma_workspace_export_video"));
+  assert.ok(!aggregateCapabilities.wrapperGuidance.profileTools.includes("figma_workspace_export_video"));
   assert.ok(Object.hasOwn(aggregateCapabilities.helperGuidance.categories, "layout"));
   assert.ok(aggregateCapabilities.helperGuidance.hardRules.some((rule) => /Forbid dynamic/.test(rule)));
   assert.equal(aggregateCapabilities.apiCards, undefined);
@@ -2279,7 +2273,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(aggregateGuide.upstreamEscapeHatch.some((step) => /figma-workspace:\/\/upstream-tools\/\{name\}/.test(step)));
   assert.ok(aggregateGuide.inspectionAndQa.some((step) => /figma_workspace_get_motion_context/.test(step)));
   assert.ok(aggregateGuide.inspectionAndQa.some((step) => /\$currentPage/.test(step) && /single-node \$selection/.test(step)));
-  assert.ok(aggregateGuide.motionAndShaders.some((step) => /figma_workspace_export_video/.test(step)));
+  assert.ok(!aggregateGuide.motionAndShaders.some((step) => /figma_workspace_export_video/.test(step)));
+  assert.ok(aggregateGuide.motionAndShaders.some((step) => /figma_workspace_call_upstream_tool/.test(step) && /export_video/.test(step)));
   assert.ok(aggregateGuide.motionAndShaders.some((step) => /shader library reads/.test(step)));
   assert.equal(aggregateLookupIndex.guidance.tool, "figma_workspace_guidance");
   assert.equal(aggregateLookupIndex.lookup.tool, "figma_workspace_lookup");
@@ -3004,7 +2999,7 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
       title: "Read metadata",
       sessionId: "metadata-main",
       file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
-      cwd: tempDir,
+      workspaceDir: tempDir,
     });
     assert.equal(result.ok, true);
     assert.equal(result.fileKey, "ExampleFigmaFileKey012");
@@ -3114,6 +3109,73 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
   ]);
 });
 
+test("figma workspace get_metadata splits native enrichment readback when upstream truncates a large batch", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-get-metadata-chunk-"));
+  const childIds = Array.from({ length: 81 }, (_, index) => `2:${index + 1}`);
+  const xml = `<frame id="1:1" name="Large Page" width="100" height="80">\n${childIds.map((id) => `  <frame id="${id}" name="Node ${id}" width="10" height="10" />`).join("\n")}\n</frame>`;
+  const enrichmentBatchSizes = [];
+  const fakeClient = createFakeFigmaClient(
+    [],
+    ({ name, args }) => {
+      if (name === "get_metadata") {
+        assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", nodeId: "1:1" });
+        return { content: [{ type: "text", text: xml }] };
+      }
+      assert.equal(name, "use_figma");
+      const idsMatch = /const __metadataNodeIds = (\[[^;]+\]);/u.exec(args.code);
+      assert.ok(idsMatch);
+      const ids = JSON.parse(idsMatch[1]);
+      enrichmentBatchSizes.push(ids.length);
+      if (ids.length > 40) {
+        return { content: [{ type: "text", text: `${JSON.stringify({ ok: true })}\n// truncated to 20kb` }] };
+      }
+      const nodes = Object.fromEntries(ids.map((id) => [id, { visible: true, layoutMode: "NONE" }]));
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ ok: true, result: { enrichment: { nodes } } }),
+        }],
+      };
+    },
+    {
+      tools: [
+        {
+          name: "use_figma",
+          description: "Execute JavaScript in the active Figma file.",
+          inputSchema: { type: "object", properties: { code: { type: "string" }, fileKey: { type: "string" } } },
+        },
+        {
+          name: "get_metadata",
+          description: "Read XML metadata.",
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } },
+        },
+      ],
+    },
+  );
+  const repl = createFigmaWorkspaceClient({ client: fakeClient });
+
+  try {
+    const result = await repl.getMetadata({
+      sessionId: "metadata-chunk",
+      file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-1",
+      workspaceDir: tempDir,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.metadata.nodeCount, 82);
+    assert.equal(result.metadata.enrichment.ok, true);
+    assert.equal(result.metadata.enrichment.requestedNodeCount, 82);
+    assert.equal(result.metadata.enrichment.enrichedNodeCount, 82);
+    const metadataJson = result.metadata.json ?? await readPrettyJsonPointer(result.outputFiles.metadataFile, result.outputFiles.metadataFile.path);
+    assert.equal(metadataJson.root.visible, true);
+    assert.equal(metadataJson.root.children[80].visible, true);
+    assert.deepEqual(enrichmentBatchSizes, [80, 40, 40, 2]);
+    assert.deepEqual(result.diagnostics, []);
+  } finally {
+    await repl.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("figma workspace get_metadata warns and omits derived optional nodeId missing from live upstream schema", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(
@@ -3188,6 +3250,7 @@ test("figma workspace get_metadata warns and omits derived optional nodeId missi
 });
 
 test("figma workspace get_metadata resolves supported dynamic selectors before upstream metadata read", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-metadata-dynamic-"));
   const calls = [];
   const metadataNodeIds = [];
   const fakeClient = createFakeFigmaClient(
@@ -3263,6 +3326,7 @@ test("figma workspace get_metadata resolves supported dynamic selectors before u
     const currentPage = await repl.getMetadata({
       sessionId: "metadata-dynamic",
       file: "ExampleFigmaFileKey012",
+      workspaceDir: tempDir,
       target: "$currentPage",
     });
     assert.equal(currentPage.ok, true);
@@ -3272,6 +3336,7 @@ test("figma workspace get_metadata resolves supported dynamic selectors before u
     const selection = await repl.getMetadata({
       sessionId: "metadata-dynamic",
       file: "ExampleFigmaFileKey012",
+      workspaceDir: tempDir,
       target: "$selection",
     });
     assert.equal(selection.ok, true);
@@ -3334,6 +3399,7 @@ test("figma workspace get_metadata rejects missing file context before upstream 
 });
 
 test("figma workspace get_metadata returns nonfatal warning when enrichment fails", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-metadata-warning-"));
   const calls = [];
   const xml = `<frame id="1:2" name="Root" width="300" height="200" />`;
   const fakeClient = createFakeFigmaClient(
@@ -3376,6 +3442,7 @@ test("figma workspace get_metadata returns nonfatal warning when enrichment fail
     const result = await repl.getMetadata({
       sessionId: "metadata-warning",
       file: "ExampleFigmaFileKey012",
+      workspaceDir: tempDir,
       target: "1:2",
     });
     assert.equal(result.ok, true);
@@ -3467,6 +3534,7 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
     await repl.open({
       sessionId: "design-system",
       file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI",
+      workspaceDir: tempDir,
       handles: { "$button": "9:9" },
       connect: false,
     });
@@ -3558,7 +3626,8 @@ test("figma workspace design system wrappers call dedicated upstream tools", asy
   ]);
 });
 
-test("figma workspace context motion video wrappers and shader upstream proxy call official tools", async () => {
+test("figma workspace context motion wrappers and shader upstream proxy call official tools", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-context-wrappers-"));
   const calls = [];
   const fakeClient = createFakeFigmaClient(
     calls,
@@ -3613,25 +3682,6 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
           content: [{ type: "text", text: JSON.stringify({ ok: true, nodes: [{ nodeId: "9:9" }] }) }],
         };
       }
-      if (name === "export_video") {
-        if (args.jobId) {
-          assert.deepEqual(args, { fileKey: "ExampleFigmaFileKey012", jobId: "job-123" });
-          return {
-            content: [{ type: "text", text: JSON.stringify({ ok: true, jobId: "job-123", status: "done" }) }],
-          };
-        }
-        assert.deepEqual(args, {
-          fileKey: "ExampleFigmaFileKey012",
-          nodeId: "9:9",
-          quality: "low",
-          fps: 12,
-          constraint: { type: "SCALE", value: 1 },
-          ttlSeconds: 300,
-        });
-        return {
-          content: [{ type: "text", text: JSON.stringify({ ok: true, jobId: "job-123", status: "processing" }) }],
-        };
-      }
       if (name === "get_shader_fill") {
         assert.deepEqual(args, { id: "fill-1" });
         return {
@@ -3645,7 +3695,6 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
       tools: [
         { name: "get_design_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" }, forceCode: { type: "boolean" }, disableCodeConnect: { type: "boolean" }, excludeScreenshot: { type: "boolean" } } } },
         { name: "get_motion_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, recursive: { type: "boolean" }, clientLanguages: { type: "string" }, clientFrameworks: { type: "string" } } } },
-        { name: "export_video", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, jobId: { type: "string" }, quality: { type: "string" }, fps: { type: "number" }, constraint: { type: "object" }, ttlSeconds: { type: "number" } } } },
         { name: "get_shader_fill", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
       ],
     },
@@ -3656,6 +3705,7 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     await repl.open({
       sessionId: "context-main",
       file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI",
+      workspaceDir: tempDir,
       handles: { "$button": "9:9" },
       connect: false,
     });
@@ -3714,30 +3764,6 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     assert.equal(motionFromNodeUrl.fileKey, "ExampleFigmaFileKey012");
     assert.equal(motionFromNodeUrl.nodeId, "9:9");
 
-    const exportStart = await repl.exportVideo({
-      sessionId: "context-main",
-      target: "$button",
-      quality: "low",
-      fps: 12,
-      constraint: { type: "SCALE", value: 1 },
-      ttlSeconds: 300,
-    });
-    assert.equal(exportStart.ok, true);
-    assert.equal(exportStart.nodeId, "9:9");
-    assert.equal(exportStart.upstream.result.jobId, "job-123");
-    assert.equal(exportStart.videoFile, undefined);
-    assert.equal(exportStart.guidance, undefined);
-    assert.equal(exportStart.guidanceRef.source, "figma_workspace_guidance");
-    assert.equal(exportStart.guidanceRef.query, "figma_workspace_export_video export_video motion-implementation video-export");
-    assert.deepEqual(exportStart.guidanceRef.workflowIds, ["motion-implementation", "video-export"]);
-
-    const exportPoll = await repl.exportVideo({ sessionId: "context-main", file: "ExampleFigmaFileKey012", jobId: "job-123" });
-    assert.equal(exportPoll.ok, true);
-    assert.equal(exportPoll.jobId, "job-123");
-    assert.equal(exportPoll.nodeId, undefined);
-    assert.equal(exportPoll.guidance, undefined);
-    assert.equal(exportPoll.guidanceRef.query, "figma_workspace_export_video export_video motion-implementation video-export");
-
     const fill = await repl.callUpstreamTool({
       sessionId: "context-main",
       toolName: "get_shader_fill",
@@ -3757,10 +3783,6 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     assert.equal(failedDesign.upstreamError.code, "DESIGN_CONTEXT_FAILED");
     assert.match(failedDesign.primaryFix, /repair the upstream Plugin API error/);
 
-    await assert.rejects(
-      repl.exportVideo({ sessionId: "context-main" }),
-      /requires "target" to start an export, or "jobId" to poll/,
-    );
   } finally {
     await repl.close();
   }
@@ -3769,9 +3791,201 @@ test("figma workspace context motion video wrappers and shader upstream proxy ca
     "get_design_context",
     "get_motion_context",
     "get_motion_context",
-    "export_video",
-    "export_video",
     "get_shader_fill",
+    "get_design_context",
+  ]);
+});
+
+test("figma workspace design context retries selection-dependent upstream failures", async () => {
+  const calls = [];
+  let designContextCalls = 0;
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "get_design_context") {
+        designContextCalls += 1;
+        assert.deepEqual(args, { fileKey: "file123", nodeId: "22:7" });
+        if (designContextCalls === 1) {
+          return { content: [{ type: "text", text: "Error: You currently have nothing selected" }] };
+        }
+        return { content: [{ type: "text", text: JSON.stringify({ ok: true, code: "<div data-node-id=\"22:7\" />" }) }] };
+      }
+      if (name === "use_figma") {
+        assert.match(args.code, /figma\.currentPage\.selection = \[__node\]/u);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              result: { selected: true, nodeId: "22:7", nodeType: "FRAME" },
+            }),
+          }],
+        };
+      }
+      assert.fail(`unexpected tool ${name}`);
+      return { content: [] };
+    },
+    {
+      tools: [
+        { name: "get_design_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
+        { name: "use_figma", inputSchema: { type: "object", properties: { code: { type: "string" } }, required: ["code"] } },
+      ],
+    },
+  );
+  const repl = createFigmaWorkspaceClient({ client: fakeClient });
+  try {
+    const result = await repl.getDesignContext({
+      target: { fileKey: "file123", nodeId: "22:7" },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.upstream.result.code, "<div data-node-id=\"22:7\" />");
+    assert.equal(result.diagnostics, undefined);
+  } finally {
+    await repl.close();
+  }
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), [
+    "get_design_context",
+    "use_figma",
+    "get_design_context",
+  ]);
+});
+
+test("figma workspace variable defs reports page targets as non-selectable after selection-dependent upstream failures", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "get_variable_defs") {
+        assert.deepEqual(args, { fileKey: "file123", nodeId: "670:1337" });
+        return { content: [{ type: "text", text: "Error: You currently have nothing selected" }] };
+      }
+      if (name === "use_figma") {
+        assert.match(args.code, /unsupported-container-target/u);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              result: { selected: false, reason: "unsupported-container-target", nodeId: "670:1337", nodeType: "PAGE", name: "re mean", childCount: 42 },
+            }),
+          }],
+        };
+      }
+      assert.fail(`unexpected tool ${name}`);
+      return { content: [] };
+    },
+    {
+      tools: [
+        { name: "get_variable_defs", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
+        { name: "use_figma", inputSchema: { type: "object", properties: { code: { type: "string" } }, required: ["code"] } },
+      ],
+    },
+  );
+  const repl = createFigmaWorkspaceClient({ client: fakeClient });
+  try {
+    const result = await repl.getVariableDefs({
+      target: { fileKey: "file123", nodeId: "670:1337" },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.upstreamError.code, "FIGMA_UPSTREAM_TEXT_ERROR");
+    assert.equal(result.diagnostics[0].code, "FIGMA_WORKSPACE_CONTEXT_TARGET_NOT_SELECTABLE");
+    assert.equal(result.diagnostics[0].severity, "fatal");
+    assert.match(result.diagnostics[0].message, /PAGE/u);
+    assert.match(result.diagnostics[0].suggestion, /smaller selectable child node/u);
+  } finally {
+    await repl.close();
+  }
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), [
+    "get_variable_defs",
+    "use_figma",
+  ]);
+});
+
+test("figma workspace motion context retries selection-dependent upstream failures", async () => {
+  const calls = [];
+  let motionContextCalls = 0;
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "get_motion_context") {
+        motionContextCalls += 1;
+        assert.deepEqual(args, { fileKey: "file123", nodeId: "22:8", recursive: true });
+        if (motionContextCalls === 1) {
+          return { content: [{ type: "text", text: "Error: You currently have nothing selected" }] };
+        }
+        return { content: [{ type: "text", text: JSON.stringify({ ok: true, nodes: [{ nodeId: "22:8" }] }) }] };
+      }
+      if (name === "use_figma") {
+        assert.match(args.code, /figma\.currentPage\.selection = \[__node\]/u);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ok: true,
+              result: { selected: true, nodeType: "FRAME" },
+            }),
+          }],
+        };
+      }
+      assert.fail(`unexpected tool ${name}`);
+      return { content: [] };
+    },
+    {
+      tools: [
+        { name: "get_motion_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" }, recursive: { type: "boolean" } } } },
+        { name: "use_figma", inputSchema: { type: "object", properties: { code: { type: "string" } }, required: ["code"] } },
+      ],
+    },
+  );
+  const repl = createFigmaWorkspaceClient({ client: fakeClient });
+  try {
+    const motion = await repl.getMotionContext({
+      target: { fileKey: "file123", nodeId: "22:8" },
+      recursive: true,
+    });
+    assert.equal(motion.ok, true);
+    assert.equal(motion.upstream.result.nodes[0].nodeId, "22:8");
+  } finally {
+    await repl.close();
+  }
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), [
+    "get_motion_context",
+    "use_figma",
+    "get_motion_context",
+  ]);
+});
+
+test("figma workspace selection-dependent retry only matches official nothing-selected wording", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(
+    calls,
+    ({ name, args }) => {
+      if (name === "get_design_context") {
+        assert.deepEqual(args, { fileKey: "file123", nodeId: "22:7" });
+        return { content: [{ type: "text", text: "Error: Selection is empty for this operation" }] };
+      }
+      assert.fail(`unexpected retry tool ${name}`);
+      return { content: [] };
+    },
+    {
+      tools: [
+        { name: "get_design_context", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } } },
+        { name: "use_figma", inputSchema: { type: "object", properties: { code: { type: "string" } }, required: ["code"] } },
+      ],
+    },
+  );
+  const repl = createFigmaWorkspaceClient({ client: fakeClient });
+  try {
+    const result = await repl.getDesignContext({
+      target: { fileKey: "file123", nodeId: "22:7" },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.upstreamError.code, "FIGMA_UPSTREAM_TEXT_ERROR");
+    assert.equal(result.diagnostics, undefined);
+  } finally {
+    await repl.close();
+  }
+  assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), [
     "get_design_context",
   ]);
 });
@@ -3980,50 +4194,6 @@ test("figma workspace runtime parsers reject malformed tool argument shapes", as
       },
     }),
     /Tool argument "target\.nodeId" must be a string\./,
-  );
-  await assert.rejects(
-    mcpClient.callTool({
-      name: "figma_workspace_export_video",
-      arguments: {
-        title: "Reject export fps",
-        target: { fileKey: "file123", nodeId: "22:7" },
-        fps: 61,
-      },
-    }),
-    /Tool argument "fps" must be an integer from 1 to 60\./,
-  );
-  await assert.rejects(
-    mcpClient.callTool({
-      name: "figma_workspace_export_video",
-      arguments: {
-        title: "Reject export ttl",
-        target: { fileKey: "file123", nodeId: "22:7" },
-        ttlSeconds: 29,
-      },
-    }),
-    /Tool argument "ttlSeconds" must be an integer from 30 to 604800\./,
-  );
-  await assert.rejects(
-    mcpClient.callTool({
-      name: "figma_workspace_export_video",
-      arguments: {
-        title: "Reject export constraint type",
-        target: { fileKey: "file123", nodeId: "22:7" },
-        constraint: { type: "BAD", value: 1 },
-      },
-    }),
-    /Tool argument "constraint\.type" must be one of: SCALE, WIDTH, HEIGHT\./,
-  );
-  await assert.rejects(
-    mcpClient.callTool({
-      name: "figma_workspace_export_video",
-      arguments: {
-        title: "Reject export constraint extra",
-        target: { fileKey: "file123", nodeId: "22:7" },
-        constraint: { type: "SCALE", value: 1, extra: true },
-      },
-    }),
-    /Tool argument "constraint" does not allow extra fields: extra\./,
   );
   await assert.rejects(
     mcpClient.callTool({
@@ -4498,6 +4668,23 @@ test("figma workspace runtime parsers reject malformed tool argument shapes", as
     }),
     /Tool argument "taskDir" was removed\. Use "workspaceDir"\./,
   );
+  for (const [field, value] of [
+    ["cwd", "/tmp/project"],
+    ["workspaceCwd", "/tmp/project"],
+    ["dirName", "figma-workspace"],
+    ["taskRoot", "/tmp/tasks"],
+  ]) {
+    await assert.rejects(
+      mcpClient.callTool({
+        name: "figma_workspace_prepare_task",
+        arguments: {
+          title: `Reject prepare ${field}`,
+          [field]: value,
+        },
+      }),
+      /Tool argument ".*" was removed\. Use "workspaceDir"\./,
+    );
+  }
   await assert.rejects(
     mcpClient.callTool({
       name: "figma_workspace_prepare_task",
@@ -4622,6 +4809,7 @@ test("figma workspace applies asset manifests through official upload_assets", a
         sessionId: "asset-output",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
 
@@ -4731,6 +4919,7 @@ test("figma workspace applies same-directory relative asset manifest paths", asy
         sessionId: "asset-relative",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
 
@@ -4750,6 +4939,83 @@ test("figma workspace applies same-directory relative asset manifest paths", asy
     assert.equal(json.failures, undefined);
     assert.equal(json.outputFiles, undefined);
     assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+    await mcpClient.close();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma workspace asset manifest validation splits readback when upstream truncates a large target batch", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-assets-validate-batch-"));
+  const assetPath = resolve(tempDir, "hero.png");
+  await writeFile(assetPath, "fake image bytes", "utf8");
+  const targetIds = Array.from({ length: 81 }, (_, index) => `12:${index + 1}`);
+  const batchSizes = [];
+  const fakeClient = createFakeFigmaClient(
+    [],
+    ({ name, args }) => {
+      if (name === "upload_assets") {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: true, result: { id: args.nodeId } }) }] };
+      }
+      assert.equal(name, "use_figma");
+      const idsMatch = /const targetNodeIds = (\[[^;]+\]);/u.exec(args.code);
+      assert.ok(idsMatch);
+      const ids = JSON.parse(idsMatch[1]);
+      batchSizes.push(ids.length);
+      if (ids.length > 40) {
+        return { content: [{ type: "text", text: `${JSON.stringify({ ok: true })}\n// truncated to 20kb` }] };
+      }
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            result: {
+              validations: ids.map((targetNodeId) => ({ targetNodeId, status: "valid", nodeId: targetNodeId, nodeType: "RECTANGLE", fillCount: 1, imageFillCount: 1 })),
+              validCount: ids.length,
+              invalidCount: 0,
+            },
+          }),
+        }],
+      };
+    },
+    {
+      tools: [
+        { name: "upload_assets", description: "Official upload tool.", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
+        { name: "use_figma", description: "Fake eval tool.", inputSchema: { type: "object", properties: { code: { type: "string" } } } },
+      ],
+    },
+  );
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client({ name: "test-client", version: "0.1.0" }, { capabilities: {} });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_workspace_open",
+      arguments: {
+        sessionId: "asset-validate-batch",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
+      },
+    });
+    const result = await mcpClient.callTool({
+      name: "figma_workspace_apply_asset_manifest",
+      arguments: {
+        sessionId: "asset-validate-batch",
+        assets: targetIds.map((target) => ({ path: assetPath, target })),
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.validation.ok, true);
+    assert.equal(json.validation.validCount, 81);
+    assert.equal(json.validation.validations.length, 81);
+    assert.equal(json.assets[80].validation.status, "valid");
+    assert.deepEqual(batchSizes, [80, 40, 40, 1]);
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -4832,6 +5098,7 @@ test("figma workspace validates asset manifest targets when upstream eval is ava
         sessionId: "asset-validate",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
 
@@ -4925,6 +5192,7 @@ test("figma workspace asset manifest validation handles nested upstream eval res
         sessionId: "asset-nested-validate",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
 
@@ -5006,6 +5274,7 @@ test("figma workspace asset manifest validation is indeterminate when upstream e
         sessionId: "asset-empty-validate",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
 
@@ -5100,6 +5369,7 @@ test("figma workspace asset manifest validation parses stringified array wrapper
         sessionId: "asset-string-validate",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
 
@@ -5159,8 +5429,9 @@ test("figma workspace asset manifest upstream failures use upstreamError inline 
         title: "Open failure file context",
         sessionId: "asset-upstream-error",
         connect: false,
-        cwd: tempDir,
+        workspaceDir: tempDir,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
     const result = await mcpClient.callTool({
@@ -5265,6 +5536,7 @@ test("figma workspace submits local bytes when upload_assets returns a submit UR
         sessionId: "upload",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
         handles: { "$iconTarget": "12:34" },
       },
     });
@@ -5392,6 +5664,7 @@ test("figma workspace applies submitted upload imageHash to target node fills", 
         sessionId: "upload-apply",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
         handles: { "$iconTarget": "12:34" },
       },
     });
@@ -5413,6 +5686,99 @@ test("figma workspace applies submitted upload imageHash to target node fills", 
     assert.equal(json.validation.skipped, true);
     assert.equal(json.outputFiles, undefined);
     assert.deepEqual(calls.filter((call) => call[0] === "callTool").map((call) => call[1]), ["upload_assets", "use_figma"]);
+    await mcpClient.close();
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("figma workspace asset manifest application splits writeback when upstream truncates a large target batch", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-assets-apply-batch-"));
+  const assetPath = resolve(tempDir, "hero.png");
+  await writeFile(assetPath, "fake image bytes", "utf8");
+  const targetIds = Array.from({ length: 81 }, (_, index) => `12:${index + 1}`);
+  const applicationBatchSizes = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({ success: true, imageHash: "abc", sizeBytes: 16, contentType: "image/png" }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+  const fakeClient = createFakeFigmaClient(
+    [],
+    ({ name, args }) => {
+      if (name === "upload_assets") {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ uploads: [{ submitUrl: "https://example.test/upload" }] }) }],
+        };
+      }
+      assert.equal(name, "use_figma");
+      const assetsMatch = /const assetFills = (\[[\s\S]*?\]);\nconst applications/u.exec(args.code);
+      assert.ok(assetsMatch);
+      const assets = JSON.parse(assetsMatch[1]);
+      applicationBatchSizes.push(assets.length);
+      if (assets.length > 40) {
+        return { content: [{ type: "text", text: `${JSON.stringify({ ok: true })}\n// truncated to 20kb` }] };
+      }
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            result: {
+              applications: assets.map((asset) => ({
+                targetNodeId: asset.targetNodeId,
+                status: "applied",
+                nodeId: asset.targetNodeId,
+                nodeType: "RECTANGLE",
+                imageHash: asset.imageHash,
+                scaleMode: asset.scaleMode,
+              })),
+              appliedCount: assets.length,
+              failedCount: 0,
+            },
+          }),
+        }],
+      };
+    },
+    {
+      tools: [
+        { name: "upload_assets", description: "Official upload tool.", inputSchema: { type: "object", properties: { fileKey: { type: "string" }, count: { type: "number" }, nodeId: { type: "string" }, scaleMode: { type: "string" } } } },
+        { name: "use_figma", description: "Fake eval tool.", inputSchema: { type: "object", properties: { code: { type: "string" } } } },
+      ],
+    },
+  );
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client({ name: "test-client", version: "0.1.0" }, { capabilities: {} });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_workspace_open",
+      arguments: {
+        sessionId: "asset-apply-batch",
+        connect: false,
+        file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
+      },
+    });
+    const result = await mcpClient.callTool({
+      name: "figma_workspace_apply_asset_manifest",
+      arguments: {
+        sessionId: "asset-apply-batch",
+        assets: targetIds.map((target) => ({ path: assetPath, target })),
+        validateTargets: false,
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.application.ok, true);
+    assert.equal(json.application.appliedCount, 81);
+    assert.equal(json.application.applications.length, 81);
+    assert.equal(json.assets[80].application.status, "applied");
+    assert.deepEqual(applicationBatchSizes, [80, 40, 40, 1]);
     await mcpClient.close();
   } finally {
     globalThis.fetch = originalFetch;
@@ -5494,6 +5860,7 @@ test("figma workspace uses the stable official upload_assets schema without over
         sessionId: "official-upload",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
         handles: { "$heroTarget": "12:34" },
       },
     });
@@ -5565,6 +5932,7 @@ test("figma workspace asset manifest requires official upload_assets", async () 
         sessionId: "missing-upload",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
     await assert.rejects(
@@ -5629,6 +5997,7 @@ test("figma workspace asset manifest rejects drifted upload_assets schema", asyn
         sessionId: "drifted-upload",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
     await assert.rejects(
@@ -5725,6 +6094,7 @@ test("figma workspace downloads official exported and raw asset URLs per target"
         sessionId: "download",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
         handles: { "$hero": "22:8" },
       },
     });
@@ -5831,8 +6201,9 @@ test("figma workspace download_assets manifest batches targets and continues aft
         title: "Open manifest download file context",
         sessionId: "download-manifest",
         connect: false,
-        cwd: tempDir,
+        workspaceDir: tempDir,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
         handles: { "$hero": "22:8" },
       },
     });
@@ -5929,8 +6300,9 @@ test("figma workspace download_assets local download failures use downloadError,
         title: "Open local download failure context",
         sessionId: "download-local-error",
         connect: false,
-        cwd: tempDir,
+        workspaceDir: tempDir,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
     const result = await mcpClient.callTool({
@@ -6017,6 +6389,7 @@ test("figma workspace download_assets warns and omits supplied optional args mis
         sessionId: "drifted-download",
         connect: false,
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
       },
     });
     const result = await mcpClient.callTool({
@@ -6170,6 +6543,7 @@ test("figma workspace uses the stable official get_screenshot schema without ove
       arguments: {
         sessionId: "official-capture",
         file: "https://www.figma.com/design/file123/Test",
+        workspaceDir: tempDir,
         connect: false,
       },
     });
@@ -6736,7 +7110,7 @@ test("figma workspace task plans route download_assets aliases with workspace de
     ({ name, args }) => {
       if (name === "fake_upstream_check") {
         assert.deepEqual(args, {
-          dir: resolve(tempDir, "download-step.downloads"),
+          dir: resolve(tempDir, "file123", "download-step.downloads"),
         });
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: true, result: { checked: true } }) }],
@@ -6840,7 +7214,7 @@ test("figma workspace task plans route download_assets aliases with workspace de
     assert.equal(json.outputReferences, undefined);
     assertFilePointer(json.outputFiles.debugFile, planOutputFile);
     assert.deepEqual(
-      await readFile(resolve(tempDir, "download-step.downloads", "hero", "exported.png")),
+      await readFile(resolve(tempDir, "file123", "download-step.downloads", "hero", "exported.png")),
       Buffer.from("downloaded"),
     );
     assert.equal(preparedJson.session.fileKey, "file123");
@@ -6934,7 +7308,7 @@ test("figma workspace task plans resolve workspace-relative step files consisten
       arguments: {
         title: "Initialize workspace",
         sessionId: "workspace-plan",
-        cwd: tempDir,
+        workspaceDir: tempDir,
         file: "file123",
         taskName: "workspace-plan",
         surface: "design",
@@ -7775,14 +8149,54 @@ test("figma workspace eval returns structured repairPlan for blocked diagnostics
   assert.deepEqual(json.repairPlan.steps[0].occurrences, [{
     scriptPath: "<inline eval>",
     line: 1,
-    column: 5,
-    label: "1:5",
+    column: 1,
+    label: "1:1",
   }]);
   assert.deepEqual(calls.map((call) => call[0]), []);
   await mcpClient.close();
 });
 
-test("figma workspace eval strict-checks TypeScript before upstream execution", async () => {
+test("figma workspace eval defaults to JavaScript without TypeScript preflight", async () => {
+  const calls = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
+    assert.equal(name, "use_figma");
+    assert.match(args.code, /const rectangle = figma\.createFrame\(\);/u);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          __figmaRepl: { sessionId: "eval-js", handles: {} },
+          result: { nodeType: "FRAME" },
+        }),
+      }],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  const result = await mcpClient.callTool({
+    name: "figma_workspace_eval",
+    arguments: {
+      sessionId: "eval-js",
+      code: "const rectangle = figma.createFrame();\nreturn { nodeType: rectangle.type };",
+    },
+  });
+  const json = structuredToolResult(result);
+  assert.equal(json.ok, true);
+  assert.deepEqual(json.diagnostics, []);
+  assert.equal(json.upstream.result.nodeType, "FRAME");
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
+  await mcpClient.close();
+});
+
+test("figma workspace eval compiles TypeScript when explicitly enabled", async () => {
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ name, args }) => {
     assert.equal(name, "use_figma");
@@ -7812,6 +8226,7 @@ test("figma workspace eval strict-checks TypeScript before upstream execution", 
     name: "figma_workspace_eval",
     arguments: {
       sessionId: "eval-ts",
+      typescript: true,
       code: "const frame: FrameNode = figma.createFrame();\nreturn { nodeType: frame.type };",
     },
   });
@@ -7825,7 +8240,38 @@ test("figma workspace eval strict-checks TypeScript before upstream execution", 
   await mcpClient.close();
 });
 
-test("figma workspace eval blocks TypeScript diagnostics without upstream calls", async () => {
+test("figma workspace eval treats TypeScript syntax as JavaScript unless enabled", async () => {
+  const calls = [];
+  const { server } = createFigmaWorkspaceMcpServer({
+    client: createFakeFigmaClient(calls, () => {
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  const mcpClient = new Client(
+    { name: "test-client", version: "0.1.0" },
+    { capabilities: {} },
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  const result = await mcpClient.callTool({
+    name: "figma_workspace_eval",
+    arguments: {
+      sessionId: "eval-js-default",
+      code: "const frame: FrameNode = figma.createFrame();\nreturn frame.id;",
+    },
+  });
+  const json = structuredToolResult(result);
+  assert.equal(json.ok, false);
+  assert.equal(json.diagnostics[0].code, "FIGMA_WORKSPACE_PARSE_ERROR");
+  assert.equal(json.repairPlan.status, "parse_error");
+  assert.equal(json.upstream, undefined);
+  assert.deepEqual(calls.map((call) => call[0]), []);
+  await mcpClient.close();
+});
+
+test("figma workspace eval blocks TypeScript diagnostics only when TypeScript is enabled", async () => {
   const calls = [];
   const { server } = createFigmaWorkspaceMcpServer({
     client: createFakeFigmaClient(calls, () => {
@@ -7844,6 +8290,7 @@ test("figma workspace eval blocks TypeScript diagnostics without upstream calls"
     name: "figma_workspace_eval",
     arguments: {
       sessionId: "eval-ts-blocked",
+      typescript: true,
       code: "const frame: RectangleNode = figma.createFrame();\nreturn frame.id;",
     },
   });
@@ -7857,7 +8304,7 @@ test("figma workspace eval blocks TypeScript diagnostics without upstream calls"
   await mcpClient.close();
 });
 
-test("figma workspace eval keeps read-mode AST guardrails after TypeScript compilation", async () => {
+test("figma workspace eval keeps read-mode AST guardrails for JavaScript", async () => {
   const calls = [];
   const { server } = createFigmaWorkspaceMcpServer({
     client: createFakeFigmaClient(calls, () => {
@@ -7877,7 +8324,7 @@ test("figma workspace eval keeps read-mode AST guardrails after TypeScript compi
     arguments: {
       sessionId: "eval-read-blocked",
       mode: "read",
-      code: "const nodes = await $('$selection') as SceneNode[];\nconst node = nodes[0];\nnode.x = node.x + 1;\nreturn node.id;",
+      code: "const nodes = await $('$selection');\nconst node = nodes[0];\nnode.x = node.x + 1;\nreturn node.id;",
     },
   });
   const json = structuredToolResult(result);
@@ -8933,7 +9380,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
         sessionId: "settings-workspace",
         taskName: "settings-panel-polish",
         file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
-        cwd: tempDir,
+        workspaceDir: tempDir,
         overwrite: true,
       },
     });
@@ -8952,7 +9399,7 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
     assert.equal(initJson.task.fileDir, undefined);
     assert.equal(initJson.task.workspaceDir, undefined);
     assert.equal(initJson.task.taskDir, undefined);
-    assert.equal(initJson.task.workspace.fileDir, resolve(tempDir, "figma-workspace", "ExampleFigmaFileKey012"));
+    assert.equal(initJson.task.workspace.fileDir, resolve(tempDir, "ExampleFigmaFileKey012"));
     assert.equal(initJson.task.workspace.sessionDir, initJson.task.workspace.fileDir);
     assert.equal(initJson.task.workspace.taskName, "settings-panel-polish");
     assert.equal(initJson.task.workspace.taskSlug, undefined);
@@ -9005,9 +9452,9 @@ test("figma workspace prepare_task uses file context and intent file pairs", asy
         arguments: {
           title: "Rollback failed prepare",
           sessionId: "settings-workspace",
-          file: "OtherFigmaFileKey34567",
+          file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
           surface: "figjam",
-          workspaceDir: initJson.task.workspace.sessionDir,
+          workspaceDir: tempDir,
           fileName: "settings-panel-polish.figma.ts",
           taskName: "settings-panel-polish",
         },
@@ -9264,6 +9711,7 @@ test("figma workspace run_script_file rejects relative script paths", async () =
 });
 
 test("figma workspace open accepts unified file input and auto-binds a workspace", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-open-file-"));
   const repl = createFigmaWorkspaceClient({
     client: createFakeFigmaClient([], () => {
       throw new Error("unexpected upstream call");
@@ -9272,6 +9720,7 @@ test("figma workspace open accepts unified file input and auto-binds a workspace
   const result = await repl.open({
     sessionId: "open-file-workspace",
     file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
+    workspaceDir: tempDir,
     connect: false,
   });
   assert.equal(result.ok, true);
@@ -9641,6 +10090,7 @@ test("figma workspace guidance returns compact cards and intent routing without 
 });
 
 test("figma workspace inspect returns compact lock and layout operation state", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-inspect-state-"));
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.equal(args.fileKey, "InspectFileKey012");
@@ -9683,6 +10133,7 @@ test("figma workspace inspect returns compact lock and layout operation state", 
       title: "Open inspect file context",
       sessionId: "inspect-state",
       file: "InspectFileKey012",
+      workspaceDir: tempDir,
       connect: false,
     },
   });
@@ -9733,6 +10184,7 @@ test("figma workspace inspect requires local file context before upstream execut
 });
 
 test("figma workspace inspect mode=style returns compact visual token audit", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-inspect-style-"));
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.equal(args.fileKey, "StyleFileKey012");
@@ -9780,6 +10232,7 @@ test("figma workspace inspect mode=style returns compact visual token audit", as
       title: "Open style file context",
       sessionId: "style",
       file: "StyleFileKey012",
+      workspaceDir: tempDir,
       connect: false,
     },
   });
@@ -9804,7 +10257,94 @@ test("figma workspace inspect mode=style returns compact visual token audit", as
   await mcpClient.close();
 });
 
+test("figma workspace inspect mode=style splits style audit when upstream truncates a large batch", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-inspect-style-batch-"));
+  const styleBatchSizes = [];
+  const fakeClient = createFakeFigmaClient([], ({ args }) => {
+    assert.equal(args.fileKey, "StyleBatchFileKey012");
+    assert.match(args.code, /__colorCounts/);
+    const limitMatch = /const __limit = (undefined|\d+);/u.exec(args.code);
+    assert.ok(limitMatch);
+    if (limitMatch[1] === "undefined") {
+      return { content: [{ type: "text", text: `${JSON.stringify({ ok: true })}\n// truncated to 20kb` }] };
+    }
+    const limit = Number(limitMatch[1]);
+    styleBatchSizes.push(limit);
+    if (limit > 40) {
+      return { content: [{ type: "text", text: `${JSON.stringify({ ok: true })}\n// truncated to 20kb` }] };
+    }
+    const offsetMatch = /const __offset = (\d+);/u.exec(args.code);
+    assert.ok(offsetMatch);
+    const offset = Number(offsetMatch[1]);
+    const count = Math.max(0, Math.min(limit, 81 - offset));
+    const includeSummary = /const __includeSummary = true;/u.test(args.code);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          result: {
+            target: "94:2",
+            mode: "style",
+            nodeCount: 81,
+            scannedNodeCount: count,
+            offset,
+            limit,
+            summary: includeSummary ? { id: "94:2", type: "FRAME", name: "Panel" } : undefined,
+            style: {
+              topColors: [{ color: "#101820", count }],
+              textStyles: count > 0 ? [{ id: `94:${offset + 6}`, name: "Title", fontSize: 32 }] : [],
+              imageNodes: [],
+              strokes: [],
+              effects: [],
+              caps: { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 },
+            },
+          },
+        }),
+      }],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client({ name: "test-client", version: "0.1.0" }, { capabilities: {} });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await mcpClient.connect(clientTransport);
+    await mcpClient.callTool({
+      name: "figma_workspace_open",
+      arguments: {
+        sessionId: "style-batch",
+        file: "StyleBatchFileKey012",
+        workspaceDir: tempDir,
+        connect: false,
+      },
+    });
+    const result = await mcpClient.callTool({
+      name: "figma_workspace_inspect",
+      arguments: {
+        sessionId: "style-batch",
+        mode: "style",
+        target: "94:2",
+      },
+    });
+    const json = structuredToolResult(result);
+    assert.equal(json.ok, true);
+    assert.equal(json.mode, "style");
+    assert.equal(json.nodeCount, 81);
+    assert.equal(json.scannedNodeCount, 81);
+    assert.equal(json.style.topColors[0].count, 81);
+    assert.equal(json.style.textStyles.length, 3);
+    assert.equal(json.batching.source, "adaptive");
+    assert.deepEqual(styleBatchSizes, [80, 40, 40, 1]);
+  } finally {
+    await mcpClient.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("figma workspace inspect failures return upstreamError without upstream wrapper fields", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-inspect-failure-"));
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.equal(args.fileKey, "InspectFailureFileKey012");
@@ -9831,6 +10371,7 @@ test("figma workspace inspect failures return upstreamError without upstream wra
       title: "Open inspect failure file context",
       sessionId: "inspect-failure",
       file: "InspectFailureFileKey012",
+      workspaceDir: tempDir,
       connect: false,
     },
   });
@@ -9851,7 +10392,68 @@ test("figma workspace inspect failures return upstreamError without upstream wra
   await mcpClient.close();
 });
 
+test("figma workspace inspect mode=validate splits handle validation when upstream truncates a large batch", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-inspect-validate-batch-"));
+  const handles = Object.fromEntries(Array.from({ length: 81 }, (_, index) => [`$node${index + 1}`, `10:${index + 1}`]));
+  const calls = [];
+  const batchSizes = [];
+  const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
+    assert.equal(args.fileKey, "ValidateBatchFileKey012");
+    const handlesMatch = /const __requestedHandles = (\[[^;]+\]);/u.exec(args.code);
+    assert.ok(handlesMatch);
+    const requested = JSON.parse(handlesMatch[1]);
+    batchSizes.push(requested.length);
+    if (requested.length > 40) {
+      return { content: [{ type: "text", text: `${JSON.stringify({ ok: true })}\n// truncated to 20kb` }] };
+    }
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          result: {
+            validations: requested.map((handle) => ({ handle, status: "valid", id: handles[handle], type: "FRAME", name: handle, locked: false })),
+            validatedNodeIds: requested.map((handle) => handles[handle]),
+          },
+        }),
+      }],
+    };
+  });
+  const { server } = createFigmaWorkspaceMcpServer({ client: fakeClient });
+  const mcpClient = new Client({ name: "test-client", version: "0.1.0" }, { capabilities: {} });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+  await mcpClient.callTool({
+    name: "figma_workspace_open",
+    arguments: {
+      sessionId: "validate-batch",
+      connect: false,
+      file: "ValidateBatchFileKey012",
+      workspaceDir: tempDir,
+      handles,
+    },
+  });
+  const result = await mcpClient.callTool({
+    name: "figma_workspace_inspect",
+    arguments: {
+      sessionId: "validate-batch",
+      mode: "validate",
+      handles: Object.keys(handles),
+    },
+  });
+  const json = structuredToolResult(result);
+  assert.equal(json.ok, true);
+  assert.equal(json.validations.length, 81);
+  assert.equal(json.validatedNodeIds.length, 81);
+  assert.deepEqual(batchSizes, [80, 40, 40, 1]);
+  await mcpClient.close();
+  await rm(tempDir, { recursive: true, force: true });
+});
+
 test("figma workspace inspect mode=validate reports valid, missing, and stale", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-inspect-validate-"));
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.equal(args.fileKey, "ValidateFileKey012");
@@ -9894,6 +10496,7 @@ test("figma workspace inspect mode=validate reports valid, missing, and stale", 
       sessionId: "main",
       connect: false,
       file: "ValidateFileKey012",
+      workspaceDir: tempDir,
       handles: {
         "$valid": "10:1",
         "$stale": "10:2",
@@ -9942,6 +10545,7 @@ test("figma workspace programmatic client accepts an absolute OAuth cache path",
 });
 
 test("figma workspace programmatic client sends fixed eval description without MCP transport", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-eval-"));
   const calls = [];
   const fakeClient = createFakeFigmaClient(calls, ({ args }) => {
     assert.equal(typeof args.code, "string");
@@ -9967,6 +10571,7 @@ test("figma workspace programmatic client sends fixed eval description without M
   await repl.open({
     sessionId: "main",
     file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
+    workspaceDir: tempDir,
     connect: false,
   });
   const result = await repl.eval({
@@ -9987,6 +10592,7 @@ test("figma workspace programmatic client sends fixed eval description without M
 });
 
 test("figma workspace eval sends fixed upstream description when official schema requires it", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-desc-"));
   const calls = [];
   const fakeClient = createFakeFigmaClient(
     calls,
@@ -10032,6 +10638,7 @@ test("figma workspace eval sends fixed upstream description when official schema
   await repl.open({
     sessionId: "main",
     file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
+    workspaceDir: tempDir,
     connect: false,
   });
   const result = await repl.eval({
@@ -10195,6 +10802,7 @@ test("figma workspace programmatic client returns typed output contracts", async
       sessionId: "typed",
       connect: false,
       file: "https://www.figma.com/design/file123/Test",
+      workspaceDir: tempDir,
     });
     assert.equal(openResult.session.slug, undefined);
     assert.equal(openResult.session.label, undefined);
@@ -10297,6 +10905,7 @@ test("figma workspace programmatic client returns typed output contracts", async
 });
 
 test("node-upstream-client entrypoint exports workspace and remote clients in constrained globals", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-node-upstream-"));
   const nodeRepl = await import("../dist/upstream/node-upstream-client.js");
   assert.equal(typeof nodeRepl.createRemoteMcpClient, "function");
   assert.equal(typeof nodeRepl.createFigmaWorkspaceClient, "function");
@@ -10313,6 +10922,7 @@ test("node-upstream-client entrypoint exports workspace and remote clients in co
   await repl.open({
     sessionId: "node-upstream-client-fake",
     file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
+    workspaceDir: tempDir,
     connect: false,
   });
   await repl.close();
@@ -10349,6 +10959,7 @@ test("node-upstream-client entrypoint exports workspace and remote clients in co
     await defaultRepl.open({
       sessionId: "node-upstream-client-default",
       file: "https://www.figma.com/design/ExampleFigmaFileKey012/UI?node-id=1-2",
+      workspaceDir: "C:/Users/example/AppData/Local/Temp/figma-workspace-node-upstream-default",
       connect: false,
     });
     let rejected = false;
@@ -10499,7 +11110,6 @@ function runCliWithClosedStdin(script) {
     child.stdin.end();
   });
 }
-
 function runNodeScript(script) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["--input-type=module", "-e", script], {

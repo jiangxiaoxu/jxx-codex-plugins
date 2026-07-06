@@ -6,8 +6,7 @@ export interface FigmaWorkspaceOpenArguments {
   sessionId?: string;
   label?: string;
   file?: string;
-  cwd?: string;
-  dirName?: string;
+  workspaceDir?: string;
   surface?: FigmaWorkspaceSurface;
   currentPageId?: string;
   reset?: boolean;
@@ -20,6 +19,7 @@ export interface FigmaWorkspaceEvalArguments {
   title?: string;
   sessionId?: string;
   code: string;
+  typescript?: boolean;
   mode?: "read" | "write";
   surface?: FigmaWorkspaceSurface;
   allowDangerousOperations?: boolean;
@@ -116,8 +116,7 @@ export interface FigmaWorkspaceGetMetadataArguments {
   title?: string;
   sessionId?: string;
   file?: string;
-  cwd?: string;
-  dirName?: string;
+  workspaceDir?: string;
   target?: unknown;
   nodeId?: string;
   refresh?: boolean;
@@ -131,8 +130,7 @@ export interface FigmaWorkspaceGetDesignContextArguments {
   title?: string;
   sessionId?: string;
   file?: string;
-  cwd?: string;
-  dirName?: string;
+  workspaceDir?: string;
   target?: unknown;
   refresh?: boolean;
   inlineResultLimit?: number;
@@ -148,8 +146,7 @@ export interface FigmaWorkspaceGetMotionContextArguments {
   title?: string;
   sessionId?: string;
   file?: string;
-  cwd?: string;
-  dirName?: string;
+  workspaceDir?: string;
   target?: unknown;
   recursive?: boolean;
   clientLanguages?: string;
@@ -158,35 +155,14 @@ export interface FigmaWorkspaceGetMotionContextArguments {
   inlineResultLimit?: number;
 }
 
-export interface FigmaWorkspaceExportVideoArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  file?: string;
-  cwd?: string;
-  dirName?: string;
-  target?: unknown;
-  jobId?: string;
-  quality?: "low" | "medium" | "high";
-  fps?: number;
-  constraint?: FigmaWorkspaceExportVideoConstraint;
-  ttlSeconds?: number;
-  refresh?: boolean;
-  inlineResultLimit?: number;
-}
 
-export interface FigmaWorkspaceExportVideoConstraint {
-  type: "SCALE" | "WIDTH" | "HEIGHT";
-  value: number;
-}
 
 export interface FigmaWorkspaceSearchDesignSystemArguments {
   [key: string]: unknown;
   title?: string;
   sessionId?: string;
   file?: string;
-  cwd?: string;
-  dirName?: string;
+  workspaceDir?: string;
   query: string;
   disableCodeConnect?: boolean;
   includeComponents?: boolean;
@@ -202,8 +178,7 @@ export interface FigmaWorkspaceGetLibrariesArguments {
   title?: string;
   sessionId?: string;
   file?: string;
-  cwd?: string;
-  dirName?: string;
+  workspaceDir?: string;
   offset?: number;
   refresh?: boolean;
   inlineResultLimit?: number;
@@ -214,8 +189,7 @@ export interface FigmaWorkspaceGetVariableDefsArguments {
   title?: string;
   sessionId?: string;
   file?: string;
-  cwd?: string;
-  dirName?: string;
+  workspaceDir?: string;
   target?: unknown;
   refresh?: boolean;
   inlineResultLimit?: number;
@@ -235,14 +209,11 @@ export interface FigmaWorkspacePrepareTaskArguments {
   [key: string]: unknown;
   title?: string;
   sessionId?: string;
-  taskName?: string;
+  taskName: string;
   file?: string;
   fileSlug?: string;
-  cwd?: string;
-  dirName?: string;
   fileName?: string;
-  taskRoot?: string;
-  workspaceDir?: string;
+  workspaceDir: string;
   surface?: FigmaWorkspaceSurface;
   targetPageId?: string;
   template?: string;
@@ -276,7 +247,6 @@ const FIGMA_WORKSPACE_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] a
 const FIGMA_WORKSPACE_INSPECT_MODES = ["inspect", "validate", "style"] as const;
 const FIGMA_WORKSPACE_LOOKUP_KINDS = ["docs", "api"] as const;
 const FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"] as const;
-const FIGMA_WORKSPACE_EXPORT_VIDEO_QUALITIES = ["low", "medium", "high"] as const;
 
 function assertRemovedFileReferenceFields(record: Record<string, unknown>): void {
   const removed = ["fileUrl", "fileKey"].filter((field) => record[field] !== undefined);
@@ -321,12 +291,12 @@ export function asOpenArgs(args: unknown): FigmaWorkspaceOpenArguments {
   assertRemovedArguments(record, ["expectedSurface"], "surface");
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
   assertRemovedArguments(record, ["refresh"], "figma-workspace://upstream-tools");
+  assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertOptionalStringFields(record, [
     "sessionId",
     "label",
     "file",
-    "cwd",
-    "dirName",
+    "workspaceDir",
     "currentPageId",
   ]);
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
@@ -345,6 +315,7 @@ export function asEvalArgs(args: unknown): FigmaWorkspaceEvalArguments {
   ]);
   assertOptionalEnum(record, "mode", FIGMA_WORKSPACE_EVAL_MODES);
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalBooleanFields(record, ["typescript"]);
   assertOptionalRecord(record, "handleUpdates");
   return record;
 }
@@ -434,7 +405,8 @@ export function asPrepareTaskArgs(args: unknown): FigmaWorkspacePrepareTaskArgum
   assertRemovedFileReferenceFields(record);
   assertRemovedArguments(record, ["intent", "goal", "task"], "taskName");
   assertRemovedArguments(record, ["taskSlug"], "taskName");
-  assertRemovedArguments(record, ["taskDir"], "workspaceDir");
+  assertRemovedArguments(record, ["taskDir", "taskRoot"], "workspaceDir");
+  assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertRemovedArguments(record, ["scriptName"], "fileName");
   assertRemovedArguments(record, ["expectedSurface"], "surface");
   assertOptionalStringFields(record, [
@@ -442,11 +414,8 @@ export function asPrepareTaskArgs(args: unknown): FigmaWorkspacePrepareTaskArgum
     "taskName",
     "file",
     "fileSlug",
-    "cwd",
-    "dirName",
     "workspaceDir",
     "fileName",
-    "taskRoot",
     "targetPageId",
     "template",
   ]);
@@ -500,11 +469,11 @@ export function asGetMetadataArgs(args: unknown): FigmaWorkspaceGetMetadataArgum
   const record = parseToolArgs<FigmaWorkspaceGetMetadataArguments>(args);
   assertRemovedFileReferenceFields(record);
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile", "metadataFile"]);
+  assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertOptionalStringFields(record, [
     "sessionId",
     "file",
-    "cwd",
-    "dirName",
+    "workspaceDir",
     "nodeId",
     "clientLanguages",
     "clientFrameworks",
@@ -517,11 +486,11 @@ export function asGetDesignContextArgs(args: unknown): FigmaWorkspaceGetDesignCo
   const record = parseToolArgs<FigmaWorkspaceGetDesignContextArguments>(args);
   assertRemovedFileReferenceFields(record);
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertOptionalStringFields(record, [
     "sessionId",
     "file",
-    "cwd",
-    "dirName",
+    "workspaceDir",
     "clientLanguages",
     "clientFrameworks",
   ]);
@@ -538,11 +507,11 @@ export function asGetMotionContextArgs(args: unknown): FigmaWorkspaceGetMotionCo
   const record = parseToolArgs<FigmaWorkspaceGetMotionContextArguments>(args);
   assertRemovedFileReferenceFields(record);
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertOptionalStringFields(record, [
     "sessionId",
     "file",
-    "cwd",
-    "dirName",
+    "workspaceDir",
     "clientLanguages",
     "clientFrameworks",
   ]);
@@ -551,34 +520,15 @@ export function asGetMotionContextArgs(args: unknown): FigmaWorkspaceGetMotionCo
   return record;
 }
 
-export function asExportVideoArgs(args: unknown): FigmaWorkspaceExportVideoArguments {
-  const record = parseToolArgs<FigmaWorkspaceExportVideoArguments>(args);
-  assertRemovedFileReferenceFields(record);
-  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile", "videoFile"]);
-  assertOptionalStringFields(record, [
-    "sessionId",
-    "file",
-    "cwd",
-    "dirName",
-    "jobId",
-  ]);
-  assertOptionalEnum(record, "quality", FIGMA_WORKSPACE_EXPORT_VIDEO_QUALITIES);
-  assertOptionalIntegerRange(record, "fps", 1, 60);
-  assertOptionalIntegerRange(record, "ttlSeconds", 30, 604800);
-  assertOptionalExportVideoConstraint(record.constraint);
-  assertOptionalTargetValue(record.target, "target");
-  return record;
-}
-
 export function asSearchDesignSystemArgs(args: unknown): FigmaWorkspaceSearchDesignSystemArguments {
   const record = parseToolArgs<FigmaWorkspaceSearchDesignSystemArguments>(args);
   assertRemovedFileReferenceFields(record);
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertOptionalStringFields(record, [
     "sessionId",
     "file",
-    "cwd",
-    "dirName",
+    "workspaceDir",
     "query",
   ]);
   assertOptionalBooleanFields(record, [
@@ -595,11 +545,11 @@ export function asGetLibrariesArgs(args: unknown): FigmaWorkspaceGetLibrariesArg
   const record = parseToolArgs<FigmaWorkspaceGetLibrariesArguments>(args);
   assertRemovedFileReferenceFields(record);
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertOptionalStringFields(record, [
     "sessionId",
     "file",
-    "cwd",
-    "dirName",
+    "workspaceDir",
   ]);
   assertOptionalNonNegativeInteger(record, "offset");
   return record;
@@ -609,6 +559,7 @@ export function asGetVariableDefsArgs(args: unknown): FigmaWorkspaceGetVariableD
   const record = parseToolArgs<FigmaWorkspaceGetVariableDefsArguments>(args);
   assertRemovedFileReferenceFields(record);
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
+  assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertRemovedArguments(
     record,
     ["clientLanguages", "clientFrameworks"],
@@ -618,8 +569,7 @@ export function asGetVariableDefsArgs(args: unknown): FigmaWorkspaceGetVariableD
   assertOptionalStringFields(record, [
     "sessionId",
     "file",
-    "cwd",
-    "dirName",
+    "workspaceDir",
   ]);
   assertOptionalTargetValue(record.target, "target");
   return record;

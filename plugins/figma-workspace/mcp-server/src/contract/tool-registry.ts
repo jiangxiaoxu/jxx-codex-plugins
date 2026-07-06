@@ -12,7 +12,6 @@ export const LOCAL_WORKSPACE_TOOL_NAMES = [
   "figma_workspace_get_metadata",
   "figma_workspace_get_design_context",
   "figma_workspace_get_motion_context",
-  "figma_workspace_export_video",
   "figma_workspace_search_design_system",
   "figma_workspace_get_libraries",
   "figma_workspace_get_variable_defs",

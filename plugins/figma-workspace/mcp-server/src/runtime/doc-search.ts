@@ -187,7 +187,7 @@ export function normalizeLookupRankingQuery(value: unknown, name: string): strin
 const BRIDGE_DOCS_RECORDS = createBridgeDocsRecords();
 
 function createBridgeDocsRecords(): Map<string, { id: string; text: string }> {
-  const wrapperTools = "figma_workspace_get_design_context, figma_workspace_get_motion_context, figma_workspace_export_video";
+  const wrapperTools = "figma_workspace_get_design_context, figma_workspace_get_motion_context";
   const upstreamTools = "get_design_context, get_motion_context, export_video, list_shader_effects, get_shader_effect, list_shader_fills, get_shader_fill";
   const workflowIds = "design-implementation-context, motion-implementation, video-export";
   const helperCategories = "selection: $.select, $.inspect; text: $.text; placement: $.placeNode, $.findFreeSlot; assets: $.imageAsset; capture: $.screenshot; repair: $.checkpoint, $.remember, $.forget; clone: $.cloneNodeTree, $.replaceGeneratedFrame";
@@ -216,7 +216,7 @@ function createBridgeDocsRecords(): Map<string, { id: string; text: string }> {
           "Profiles include local tool, upstream tool, workflow ids, intents, suggested docs/API lookups, suggested tools, and next steps.",
           `Local wrapper tools: ${wrapperTools}.`,
           `Upstream tools: ${upstreamTools}.`,
-          "Use wrapper profiles to choose design context, motion context, or video export sequencing before falling back to upstream tools without local wrappers.",
+          "Use wrapper profiles to choose design context, motion context, or official export_video upstream sequencing before falling back to upstream tools without local wrappers.",
         ].join("\n"),
       },
     ],
