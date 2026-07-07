@@ -26,6 +26,8 @@ The shared cache must already contain valid OAuth state. Use the bridge login he
 
 If upgrading from old hyphenated persistent server ids, reload or reinstall the plugin, or restart the MCP server, before schema checks. Otherwise the old cached server id can still expose stale tool schemas.
 
+Build output keeps public entry paths as thin wrappers and places the bundled runtime in `dist/runtime/workspace-runtime.js`, so large dependencies such as the TypeScript compiler are not repeated across each CLI/API entry.
+
 ## Package API
 
 ```ts

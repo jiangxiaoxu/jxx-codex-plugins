@@ -24,59 +24,110 @@ const bundledEsmRequireBanner =
     "const __dirname = __figmaWorkspacePathDirname(__filename);",
   ].join("\n");
 
-const outputs = [
+const sharedRuntimeOutput = {
+  entryPoint: resolve(root, "src/runtime/workspace-runtime.ts"),
+  outfile: resolve(dist, "runtime/workspace-runtime.js"),
+};
+const publicWrappers = [
   {
-    entryPoint: resolve(root, "src/mcp/index.ts"),
     outfile: resolve(dist, "mcp/index.js"),
-    bundle: true,
+    source: [
+      'export * from "../runtime/workspace-runtime.js";',
+    ].join("\n"),
   },
   {
-    entryPoint: resolve(root, "src/upstream/upstream-stdio-cli.ts"),
     outfile: resolve(dist, "upstream/upstream-stdio-cli.js"),
-    bundle: true,
+    source: [
+      "export {",
+      "  isFigmaWorkspaceUpstreamDirectRun as isDirectRun,",
+      "  runFigmaWorkspaceUpstreamStdioCli,",
+      '} from "../runtime/workspace-runtime.js";',
+    ].join("\n"),
   },
   {
-    entryPoint: resolve(root, "src/mcp/workspace-mcp-server.ts"),
     outfile: resolve(dist, "mcp/workspace-mcp-server.js"),
-    bundle: true,
+    source: [
+      'export * from "../runtime/workspace-runtime.js";',
+    ].join("\n"),
   },
   {
-    entryPoint: resolve(root, "src/upstream/node-upstream-client.ts"),
     outfile: resolve(dist, "upstream/node-upstream-client.js"),
-    bundle: true,
+    source: [
+      "export {",
+      "  FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION,",
+      "  NodeUpstreamRemoteMcpClient as RemoteMcpClient,",
+      "  createFigmaUpstreamContractSnapshot,",
+      "  createNodeUpstreamFigmaWorkspaceClient as createFigmaWorkspaceClient,",
+      "  createNodeUpstreamRemoteMcpClient as createRemoteMcpClient,",
+      "  diffFigmaUpstreamContractSnapshots,",
+      "  formatFigmaUpstreamContractDrift,",
+      "  formatFigmaUpstreamContractElapsedTime,",
+      "  installNodeReplWebStreamGlobals,",
+      "  isNodeUpstreamRemoteMcpOAuthError as isRemoteMcpOAuthError,",
+      "  normalizeFigmaUpstreamContractSnapshot,",
+      "  readFigmaUpstreamContractSnapshotFile,",
+      "  writeFigmaUpstreamContractSnapshotFile,",
+      '} from "../runtime/workspace-runtime.js";',
+    ].join("\n"),
   },
   {
-    entryPoint: resolve(root, "src/mcp/workspace-mcp-cli.ts"),
     outfile: resolve(dist, "mcp/workspace-mcp-cli.js"),
-    bundle: true,
+    source: [
+      "export {",
+      "  isFigmaWorkspaceMcpDirectRun as isDirectRun,",
+      "  runFigmaWorkspaceMcpCli,",
+      '} from "../runtime/workspace-runtime.js";',
+    ].join("\n"),
   },
   {
-    entryPoint: resolve(root, "src/upstream/upstream-stdio-bin.ts"),
     outfile: resolve(dist, "upstream/upstream-stdio-bin.js"),
-    bundle: false,
     executable: true,
+    source: [
+      "#!/usr/bin/env node",
+      "import {",
+      "  isFigmaWorkspaceUpstreamDirectRun as isDirectRun,",
+      "  runFigmaWorkspaceUpstreamStdioCli,",
+      '} from "../runtime/workspace-runtime.js";',
+      "",
+      "if (isDirectRun(import.meta.url)) {",
+      "  await runFigmaWorkspaceUpstreamStdioCli({",
+      "    useBridgeOAuthCache: true,",
+      "    openBrowser: false,",
+      "  });",
+      "}",
+    ].join("\n"),
   },
   {
-    entryPoint: resolve(root, "src/mcp/workspace-mcp-stdio-bin.ts"),
     outfile: resolve(dist, "mcp/workspace-mcp-stdio-bin.js"),
-    bundle: false,
     executable: true,
+    source: [
+      "#!/usr/bin/env node",
+      "import {",
+      "  isFigmaWorkspaceMcpDirectRun as isDirectRun,",
+      "  runFigmaWorkspaceMcpCli,",
+      '} from "../runtime/workspace-runtime.js";',
+      "",
+      "if (isDirectRun(import.meta.url)) {",
+      "  await runFigmaWorkspaceMcpCli({",
+      "    useBridgeOAuthCache: true,",
+      "    openBrowser: false,",
+      "  });",
+      "}",
+    ].join("\n"),
   },
 ];
 
-for (const output of outputs) {
-  await build({
-    ...sharedBuildOptions,
-    bundle: output.bundle,
-    banner: output.bundle ? { js: bundledEsmRequireBanner } : undefined,
-    entryPoints: [output.entryPoint],
-    outfile: output.outfile,
-  });
-  const source = await readFile(output.outfile, "utf8");
-  await writeFile(output.outfile, stripTrailingWhitespace(source), "utf8");
-  if (output.executable) {
-    await chmod(output.outfile, 0o755);
-  }
+await build({
+  ...sharedBuildOptions,
+  bundle: true,
+  banner: { js: bundledEsmRequireBanner },
+  entryPoints: [sharedRuntimeOutput.entryPoint],
+  outfile: sharedRuntimeOutput.outfile,
+});
+await rewriteBuiltFile(sharedRuntimeOutput.outfile);
+
+for (const output of publicWrappers) {
+  await writeWrapper(output.outfile, output.source, output.executable === true);
 }
 
 await stageUpstreamCorpus();
@@ -84,6 +135,19 @@ await stageHelperDeclarations();
 
 function stripTrailingWhitespace(value) {
   return value.replace(/[ \t]+$/gm, "");
+}
+
+async function rewriteBuiltFile(file) {
+  const source = await readFile(file, "utf8");
+  await writeFile(file, stripTrailingWhitespace(source), "utf8");
+}
+
+async function writeWrapper(file, source, executable) {
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, `${stripTrailingWhitespace(source)}\n`, "utf8");
+  if (executable) {
+    await chmod(file, 0o755);
+  }
 }
 
 async function stageUpstreamCorpus() {

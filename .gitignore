@@ -19,6 +19,10 @@ plugins/figma-workspace/mcp-server/dist/upstream/*
 !plugins/figma-workspace/mcp-server/dist/upstream/figma-plugin-typings/plugin-api.d.ts
 !plugins/figma-workspace/mcp-server/dist/upstream/typescript-lib/
 !plugins/figma-workspace/mcp-server/dist/upstream/typescript-lib/lib.*.d.ts
+!plugins/figma-workspace/mcp-server/dist/runtime/
+plugins/figma-workspace/mcp-server/dist/runtime/*
+!plugins/figma-workspace/mcp-server/dist/runtime/*.d.ts
+!plugins/figma-workspace/mcp-server/dist/runtime/workspace-runtime.js
 !plugins/figma-workspace/mcp-server/dist/skills/
 plugins/figma-workspace/mcp-server/dist/skills/*
 !plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/

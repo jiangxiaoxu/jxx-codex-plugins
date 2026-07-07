@@ -50,6 +50,7 @@ Pin these facts when changing the router surface:
 - `mcp-server/src/upstream/remote-mcp-client.ts`: remote official Figma MCP client.
 - `mcp-server/src/upstream/node-upstream-client.ts`: Node smoke/debug entrypoint with Web Streams guards.
 - `mcp-server/src/auth/*.ts`: browser, config, OAuth callback/provider/state, and auth constants.
+- `mcp-server/src/runtime/workspace-runtime.ts`: shared bundled runtime entry used by thin public `dist/mcp/*` and `dist/upstream/*` wrappers to avoid duplicating TypeScript compiler and MCP dependencies across entry bundles.
 - `mcp-server/src/runtime/script-runner.ts`: `.figma.ts` typecheck/compilation, helper bootstrap, helper profiles, preflight diagnostics, context diagnostics, and payload-size diagnostics.
 - `mcp-server/src/runtime/workspace-files.ts`: workspace/path/script-output/capture-output/task-plan file helpers and `FigmaWorkspaceSessionWorkspace`.
 - `mcp-server/src/runtime/guidance-catalog.ts`: API cards, task buckets, query anchors, and pure guidance helpers.

@@ -22,6 +22,8 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
     mcpFigmaPluginTypings,
     upstreamFigmaPluginTypings,
     mcpFigmaPluginApiTypings,
+    sharedRuntimeSource,
+    apiSource,
     workspaceServerSource,
   ] =
     await Promise.all([
@@ -37,6 +39,8 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
     readFile(new URL("../dist/mcp/figma-plugin-typings/index.d.ts", import.meta.url), "utf8"),
     readFile(new URL("../dist/upstream/figma-plugin-typings/index.d.ts", import.meta.url), "utf8"),
     readFile(new URL("../dist/mcp/figma-plugin-typings/plugin-api.d.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dist/runtime/workspace-runtime.js", import.meta.url), "utf8"),
+    readFile(new URL("../dist/mcp/index.js", import.meta.url), "utf8"),
     readFile(new URL("../dist/mcp/workspace-mcp-server.js", import.meta.url), "utf8"),
   ]);
   const distFiles = (await readdir(new URL("../dist/", import.meta.url), {
@@ -98,7 +102,10 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.equal(mcpFigmaPluginTypings, upstreamFigmaPluginTypings);
   assert.match(mcpFigmaPluginTypings, /plugin-api\.d\.ts/);
   assert.match(mcpFigmaPluginApiTypings, /interface PluginAPI/);
+  assert.match(sharedRuntimeSource, /node_modules\/@typescript\/typescript6\/node_modules\/typescript\/lib\/typescript\.js/);
+  assert.doesNotMatch(apiSource, /node_modules\/@typescript\/typescript6\/node_modules\/typescript\/lib\/typescript\.js/);
   assert.doesNotMatch(workspaceServerSource, /from "typescript"|require\("typescript"\)/);
+  assert.doesNotMatch(workspaceServerSource, /node_modules\/@typescript\/typescript6\/node_modules\/typescript\/lib\/typescript\.js/);
   assert.match(workspaceDeclarations, /eval\(args: FigmaWorkspaceEvalArguments\): Promise<FigmaWorkspaceEvalResult>/);
   assert.match(workspaceDeclarations, /runScriptFile\(args: FigmaWorkspaceRunScriptFileArguments\): Promise<FigmaWorkspaceRunScriptFileResult>/);
   assert.match(workspaceDeclarations, /applyAssetManifest\(args: FigmaWorkspaceApplyAssetManifestArguments\): Promise<FigmaWorkspaceApplyAssetManifestResult>/);
@@ -128,6 +135,7 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.match(workspaceDeclarations, /@internal[\s\S]*Internal wrapper builder[\s\S]*buildFigmaEvalScript/);
   assert.match(workspaceDeclarations, /@internal[\s\S]*Internal-facing helper-selection utility[\s\S]*resolveFigmaWorkspaceScriptHelperSelection/);
   assert.equal(distFiles.includes("upstream/node-upstream-client.js"), true);
+  assert.equal(distFiles.includes("runtime/workspace-runtime.js"), true);
   assert.equal(distFiles.includes("mcp/workspace-mcp-cli.js"), true);
   assert.equal(distFiles.includes("mcp/workspace-mcp-server.js"), true);
   assert.equal(distFiles.includes("mcp/workspace-mcp-stdio-bin.js"), true);

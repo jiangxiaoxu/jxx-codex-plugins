@@ -116,9 +116,9 @@ const TYPESCRIPT_WRAPPER_PREFIX = `async function __figmaWorkspaceTypescriptBody
 const TYPESCRIPT_WRAPPER_SUFFIX = `\n${TYPESCRIPT_WRAPPER_END}\n}`;
 const TYPESCRIPT_SOURCE_LINE_OFFSET = countLines(TYPESCRIPT_WRAPPER_PREFIX) - 1;
 const TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH = "__figma_workspace_helpers.d.ts";
-const FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH = resolve(runtimeDirname, "figma-workspace-helpers.d.ts");
-const FIGMA_PLUGIN_TYPINGS_PATH = resolve(runtimeDirname, "figma-plugin-typings/index.d.ts");
-const TYPESCRIPT_LIB_DIR = resolve(runtimeDirname, "typescript-lib");
+const FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATHS = runtimeAssetCandidates("figma-workspace-helpers.d.ts");
+const FIGMA_PLUGIN_TYPINGS_PATHS = runtimeAssetCandidates("figma-plugin-typings/index.d.ts");
+const TYPESCRIPT_LIB_DIRS = runtimeAssetCandidates("typescript-lib");
 const typescriptRuntimeAssets = loadFigmaWorkspaceTypescriptRuntimeAssets();
 
 interface FigmaWorkspaceTypescriptRuntimeAssets {
@@ -380,25 +380,30 @@ function loadFigmaWorkspaceTypescriptRuntimeAssets(): FigmaWorkspaceTypescriptRu
   const argv1 = safeProcessArgv1();
   const packageVersion = readNearestPackageVersion(runtimeDirname);
   const externalFigmaTypingsPath = resolveExternalFigmaPluginTypingsPath();
+  const figmaPluginTypingsPaths = externalFigmaTypingsPath
+    ? [externalFigmaTypingsPath, ...FIGMA_PLUGIN_TYPINGS_PATHS]
+    : FIGMA_PLUGIN_TYPINGS_PATHS;
   const attemptedPaths = [
-    FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH,
-    externalFigmaTypingsPath ?? FIGMA_PLUGIN_TYPINGS_PATH,
-    TYPESCRIPT_LIB_DIR,
+    ...FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATHS,
+    ...figmaPluginTypingsPaths,
+    ...TYPESCRIPT_LIB_DIRS,
     ...packageJsonCandidates(runtimeDirname),
   ];
   try {
-    const helperDeclarations = readFileSync(FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH, "utf8");
-    const figmaPluginTypingsPath = externalFigmaTypingsPath ?? FIGMA_PLUGIN_TYPINGS_PATH;
+    const helperDeclarationsPath = resolveReadableFile(FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATHS);
+    const helperDeclarations = readFileSync(helperDeclarationsPath, "utf8");
+    const figmaPluginTypingsPath = resolveReadableFile(figmaPluginTypingsPaths);
     const figmaPluginTypings = readFileSync(figmaPluginTypingsPath, "utf8");
+    const typescriptLibDir = resolveReadableTypescriptLibDir(TYPESCRIPT_LIB_DIRS);
     const typescriptLibs = new Map<string, string>();
-    for (const entry of readdirSync(TYPESCRIPT_LIB_DIR, { withFileTypes: true })) {
+    for (const entry of readdirSync(typescriptLibDir, { withFileTypes: true })) {
       if (!entry.isFile() || !/^lib\..*\.d\.ts$/u.test(entry.name)) {
         continue;
       }
-      typescriptLibs.set(entry.name, readFileSync(resolve(TYPESCRIPT_LIB_DIR, entry.name), "utf8"));
+      typescriptLibs.set(entry.name, readFileSync(resolve(typescriptLibDir, entry.name), "utf8"));
     }
     if (typescriptLibs.size === 0) {
-      throw new Error(`No bundled TypeScript lib declarations found in ${TYPESCRIPT_LIB_DIR}.`);
+      throw new Error(`No bundled TypeScript lib declarations found in ${typescriptLibDir}.`);
     }
     return {
       ok: true,
@@ -406,9 +411,9 @@ function loadFigmaWorkspaceTypescriptRuntimeAssets(): FigmaWorkspaceTypescriptRu
       cwd,
       argv1,
       packageVersion,
-      helperDeclarationsPath: FIGMA_WORKSPACE_HELPER_DECLARATIONS_PATH,
+      helperDeclarationsPath,
       figmaPluginTypingsPath,
-      typescriptLibDir: TYPESCRIPT_LIB_DIR,
+      typescriptLibDir,
       helperDeclarations,
       figmaPluginTypings,
       typescriptLibs,
@@ -424,6 +429,40 @@ function loadFigmaWorkspaceTypescriptRuntimeAssets(): FigmaWorkspaceTypescriptRu
       message: `Unable to preload Figma Workspace TypeScript runtime assets: ${errorMessage(error)}`,
     };
   }
+}
+
+function runtimeAssetCandidates(relativePath: string): string[] {
+  return [
+    resolve(runtimeDirname, relativePath),
+    resolve(runtimeDirname, "../mcp", relativePath),
+    resolve(runtimeDirname, "../upstream", relativePath),
+  ];
+}
+
+function resolveReadableFile(candidates: string[]): string {
+  for (const candidate of candidates) {
+    try {
+      readFileSync(candidate, "utf8");
+      return candidate;
+    } catch {
+      // Try the next runtime layout.
+    }
+  }
+  throw new Error(`No candidate file was readable: ${candidates.join(" | ")}`);
+}
+
+function resolveReadableTypescriptLibDir(candidates: string[]): string {
+  for (const candidate of candidates) {
+    try {
+      const entries = readdirSync(candidate, { withFileTypes: true });
+      if (entries.some((entry) => entry.isFile() && /^lib\..*\.d\.ts$/u.test(entry.name))) {
+        return candidate;
+      }
+    } catch {
+      // Try the next runtime layout.
+    }
+  }
+  throw new Error(`No candidate TypeScript lib directory was readable: ${candidates.join(" | ")}`);
 }
 
 function typescriptRuntimeAssetFailureDiagnostic(
