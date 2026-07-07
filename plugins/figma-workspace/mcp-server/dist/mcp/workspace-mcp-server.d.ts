@@ -355,7 +355,7 @@ export interface FigmaWorkspaceToolResultBase {
 }
 export interface FigmaWorkspaceOpenResult extends FigmaWorkspaceToolResultBase {
     session: FigmaWorkspaceCompactSession;
-    diagnostics: FigmaWorkspaceDiagnostic[];
+    diagnostics?: FigmaWorkspaceDiagnostic[];
 }
 export interface FigmaWorkspaceUpstreamBackedResult extends FigmaWorkspaceToolResultBase {
     upstream: FigmaWorkspaceUpstreamEnvelope;
@@ -363,30 +363,26 @@ export interface FigmaWorkspaceUpstreamBackedResult extends FigmaWorkspaceToolRe
 }
 export interface FigmaWorkspaceEvalResult extends FigmaWorkspaceUpstreamBackedResult {
     session: FigmaWorkspaceCompactSession;
-    diagnostics: FigmaWorkspaceDiagnostic[];
+    diagnostics?: FigmaWorkspaceDiagnostic[];
     repairPlan?: FigmaWorkspaceRepairPlan;
     outputFiles?: FigmaWorkspaceOutputFiles;
     inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
 export interface FigmaWorkspaceCompactScriptMetadata {
     [key: string]: unknown;
-    scriptPath: string;
+    scriptPath?: string;
+    inputFile?: string;
     expectedSurface?: FigmaWorkspaceSurface;
-    compiledScriptBytes: number;
+    compiledScriptBytes?: number;
 }
 /** @deprecated Use FigmaWorkspaceCompactScriptMetadata. */
 export type FigmaWorkspaceScriptMetadata = FigmaWorkspaceCompactScriptMetadata;
 export interface FigmaWorkspaceInlineResultLimit {
     [key: string]: unknown;
-    limit: number;
     limitBytes: number;
-    limitHuman: string;
     omitted: Array<{
         field: string;
         bytes: number;
-        limit: number;
-        bytesHuman: string;
-        limitHuman: string;
     }>;
     guidance?: string;
 }
@@ -394,12 +390,12 @@ export interface FigmaWorkspaceRunScriptFileResult extends FigmaWorkspaceToolRes
     phase: "preflight" | "execute";
     executed: boolean;
     session: FigmaWorkspaceCompactSession;
-    diagnostics: FigmaWorkspaceDiagnostic[];
-    script: FigmaWorkspaceCompactScriptMetadata;
+    diagnostics?: FigmaWorkspaceDiagnostic[];
+    script?: FigmaWorkspaceCompactScriptMetadata;
     outputFiles?: FigmaWorkspaceOutputFiles;
     upstream?: FigmaWorkspaceUpstreamEnvelope;
     upstreamError?: FigmaWorkspacePublicUpstreamError;
-    repairPlan: FigmaWorkspaceRepairPlan;
+    repairPlan?: FigmaWorkspaceRepairPlan;
     inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
 export interface FigmaWorkspaceAssetManifestItem {
@@ -464,8 +460,6 @@ export interface FigmaWorkspaceTaskPlanStepResult {
     summary?: Record<string, unknown>;
     outputReferences?: Record<string, unknown>;
     error?: FigmaWorkspacePublicUpstreamError;
-    startedAt?: string;
-    finishedAt?: string;
 }
 export interface FigmaWorkspaceTaskPlanFailure {
     [key: string]: unknown;
@@ -479,7 +473,6 @@ export interface FigmaWorkspaceRunTaskPlanResult extends FigmaWorkspaceToolResul
     session: FigmaWorkspaceCompactSession;
     stopped: boolean;
     steps: FigmaWorkspaceTaskPlanStepResult[];
-    outputReferences?: Record<string, unknown>;
     outputFiles: FigmaWorkspaceOutputFiles;
     failures?: FigmaWorkspaceTaskPlanFailure[];
 }
@@ -514,7 +507,7 @@ export interface FigmaWorkspaceGuidanceResult extends FigmaWorkspaceToolResultBa
 }
 export interface FigmaWorkspaceInspectResult extends FigmaWorkspaceToolResultBase {
     session: FigmaWorkspaceCompactSession;
-    diagnostics: FigmaWorkspaceDiagnostic[];
+    diagnostics?: FigmaWorkspaceDiagnostic[];
     upstreamError?: FigmaWorkspacePublicUpstreamError;
 }
 export interface FigmaWorkspaceCallUpstreamToolResult extends FigmaWorkspaceUpstreamBackedResult {

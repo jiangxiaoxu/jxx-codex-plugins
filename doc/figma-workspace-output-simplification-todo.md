@@ -127,31 +127,31 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 - Update clean eval/script success tests to assert `repairPlan === undefined`.
 - Keep all blocked/preflight tests asserting repair plan status, steps, and occurrences.
 
-## TODO 5: Omit Empty `diagnostics` Outside Inspect
+## TODO 5: Omit Empty `diagnostics` Globally
 
 ### Current
 
-- Many tools return `diagnostics: []` on clean success.
-- Some wrappers already omit diagnostics when there are no warnings.
-- The mixed behavior adds response noise and makes success payloads larger.
+- Empty `diagnostics` is now omitted globally from public structured responses.
+- Warnings, fatal preflight diagnostics, lookup corpus diagnostics, and other non-empty diagnostic arrays are still returned.
+- Debug/result files still record diagnostic counts and include diagnostic arrays when present.
 
 ### Expected Handling
 
-- Defer global diagnostics cleanup.
-- For the inspect compaction batch only, omit empty `diagnostics` from `figma_workspace_inspect` clean success responses.
-- Keep other tools' current diagnostics behavior until a dedicated global pass.
+- Treat `diagnostics` as optional public output.
+- Return `diagnostics` only when the array is non-empty.
+- Keep internal diagnostic arrays for preflight, repair planning, result-file counts, and debug/audit output.
 
 ### Expected After
 
-- Inspect clean success omits `diagnostics`.
-- Other tools keep their current behavior for now.
-- Any warning/fatal inspect result includes `diagnostics`.
+- Clean success omits `diagnostics`.
+- Any warning/fatal diagnostic result includes `diagnostics`.
+- Callers should use `diagnostics === undefined` as the clean inline state.
 
 ### Tests
 
-- Update inspect clean success tests to assert `diagnostics === undefined`.
-- Keep inspect warning/failure tests asserting exact diagnostic codes.
-- Leave global tool output schema wording unchanged until the dedicated global pass.
+- Update clean success tests across eval, script, metadata, inspect, wrappers, and resources to assert `diagnostics === undefined`.
+- Keep warning/failure tests asserting exact diagnostic codes.
+- Update output schema/resource wording to avoid implying `diagnostics` is always present.
 
 ## TODO 6: Omit Empty `session.handleChanges` Outside Inspect
 
@@ -273,7 +273,7 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 2. Remove `validatedNodeIds`.
 3. Trim `run_script_file.script` on success.
 4. Omit successful `repairPlan`.
-5. Omit empty inspect `diagnostics`; defer global diagnostics cleanup.
+5. Omit empty `diagnostics` globally.
 6. Omit empty inspect `session.handleChanges`; defer global handleChanges cleanup.
 7. Keep routine `guidanceRef` for now; revisit later.
 8. Compact `inlineResultLimit`.
