@@ -352,7 +352,7 @@ function createSkippedOptionalUpstreamDiagnostic(options: {
     severity: "warning",
     message: `${options.toolName} skipped optional upstream argument "${options.property}" because live official ${options.upstreamKind} tool "${options.upstreamToolName}" does not advertise inputSchema.properties.${options.property}.`,
     suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/mcp-server to audit official schema drift.",
-    docsHint: "Use figma_workspace_call_upstream_tool only for explicit uncovered upstream capability debugging; first-class wrappers tolerate missing optional upstream passthrough fields.",
+    docsHint: "Prefer first-class wrappers for covered workflows; use figma_workspace_call_upstream_tool when raw upstream behavior or uncovered capability debugging is needed.",
   };
 }
 
@@ -3872,7 +3872,6 @@ async function executeGetMetadata(
       source: "get_metadata",
       nodeCount: metadata?.nodeCount ?? 0,
       jsonBytes,
-      enrichment: enrichment.summary,
       json: metadata,
     },
     diagnostics: [...filtered.diagnostics, ...enrichment.diagnostics],
@@ -7402,7 +7401,7 @@ function createToolTierPayload(): Record<string, unknown> {
       tools: ["figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_run_task_plan"],
     },
     advancedEscapeHatches: {
-      summary: "Use only for short ephemeral calls or explicit uncovered upstream-only capabilities.",
+      summary: "Use for short ephemeral calls, raw upstream behavior checks, or explicit upstream-only capabilities.",
       tools: ["figma_workspace_eval", "figma_workspace_call_upstream_tool"],
     },
   };
@@ -7616,7 +7615,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     callUpstreamTool: {
       tool: "figma_workspace_call_upstream_tool",
       tier: "advancedEscapeHatches",
-      guidance: `Explicit upstream escape hatch for official Figma MCP capabilities without local wrappers, including shader effect/fill reads. Read figma-workspace://upstream-tools, then figma-workspace://upstream-tools/{name}, and do not use for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
+      guidance: `Explicit upstream escape hatch for official Figma MCP capabilities, including shader effect/fill reads and raw upstream behavior checks. Read figma-workspace://upstream-tools, then figma-workspace://upstream-tools/{name}; prefer dedicated wrappers for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
       recommendedCalls: {
         explicit: { sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} },
       },
@@ -7736,7 +7735,7 @@ function createGuidePayload(): Record<string, unknown> {
     upstreamEscapeHatch: [
       FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
       "Examples currently exposed through upstream discovery but not covered by dedicated wrappers include file generation, FigJam diagram generation, account checks, and Code Connect mutation/suggestion helpers.",
-      `Before using it, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}; dedicated wrappers cover ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
+      `Before using it, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}; prefer dedicated wrappers for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT} unless raw upstream behavior is needed.`,
     ],
     responseContract: [
       "Top-level ok reports local wrapper completion. upstream.ok reports effective upstream/business success when an upstream envelope is present.",
@@ -7841,7 +7840,7 @@ async function readReplResource(
             categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
             upstreamError: upstreamError ? responseUpstreamError(upstreamError) : undefined,
             primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : undefined,
-            guidance: `Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Call figma_workspace_call_upstream_tool for official capabilities without local wrappers, including shader effect/fill tools; use dedicated figma_workspace_* workflow tools for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
+            guidance: `Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Prefer dedicated figma_workspace_* workflow tools for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}; call figma_workspace_call_upstream_tool when raw upstream behavior or an uncovered capability is needed, including shader effect/fill tools.`,
           }, null, 2),
         },
       ],
@@ -7886,7 +7885,7 @@ async function readReplResource(
             description: tool.description,
             inputSchema: tool.inputSchema,
             callTool: "figma_workspace_call_upstream_tool",
-            guidance: `Full upstream tool contract. Use figma_workspace_call_upstream_tool for official upstream capabilities without local wrappers; prefer dedicated figma_workspace_* workflow tools when available. Covered upstream tools: ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
+            guidance: `Full upstream tool contract. Prefer dedicated figma_workspace_* workflow tools when available; use figma_workspace_call_upstream_tool when raw upstream behavior or an uncovered capability is needed. Covered upstream tools: ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
           }, null, 2),
         },
       ],

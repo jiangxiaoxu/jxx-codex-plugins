@@ -299,11 +299,11 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_call_upstream_tool",
       description:
-        `Explicit upstream-only escape hatch for one official Figma MCP tool call. Before calling, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}. Use this for official capabilities without a local wrapper, including shader effect/fill tools. Do not use for ${COVERED_UPSTREAM_TOOLS} because dedicated local workflow tools cover them.`,
+        `Explicit upstream escape hatch for one official Figma MCP tool call. Before calling, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}. Prefer dedicated local workflow tools for ${COVERED_UPSTREAM_TOOLS}; use this escape hatch when raw upstream behavior or an uncovered capability is needed.`,
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
-        toolName: stringProperty("Official upstream Figma MCP tool name to call for an uncovered capability. Local figma_workspace_* tools are rejected."),
+        toolName: stringProperty("Official upstream Figma MCP tool name to call. Local figma_workspace_* tools are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
@@ -432,7 +432,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
     fileKey: stringProperty("Figma file key sent to official get_metadata."),
     nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
-    metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree plus any supported lock/layout-state enrichment when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
+    metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree with supported lock/layout-state fields merged when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
     diagnostics: arrayProperty("Nonfatal metadata enrichment and optional upstream passthrough warnings."),
     upstream: upstreamEnvelopeProperty("Compact upstream status envelope. Raw XML text is not returned inline by this wrapper."),
     upstreamError: objectProperty("Normalized upstream or XML parse failure details when metadata conversion failed."),

@@ -57,7 +57,7 @@ The plugin's `.mcp.json` installs:
 }
 ```
 
-`figma_workspace_mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.ts` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, metadata XML-to-JSON conversion, thin first-class official upstream wrappers, screenshot/capture output, task plans, process-local handles, and explicit delegated upstream official tools for uncovered capabilities.
+`figma_workspace_mcp` is the primary agent workflow after OAuth registration. It supports local `.figma.ts` script execution, workspace file pairs, output files, compact docs/API lookup, generated-asset manifests, metadata XML-to-JSON conversion, thin first-class official upstream wrappers, screenshot/capture output, task plans, process-local handles, and explicit delegated upstream official tools for raw upstream behavior checks or uncovered capabilities.
 
 Upgrade note: the persistent MCP server id is `figma_workspace_mcp`. Reload or reinstall the plugin, or restart the MCP server, so old cached hyphenated tool schemas are not exposed.
 

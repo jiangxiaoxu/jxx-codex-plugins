@@ -90,7 +90,7 @@ export const FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES = [
 ] as const;
 
 export const FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE =
-  "Use figma_workspace_call_upstream_tool only for explicit official upstream capabilities without a local wrapper.";
+  "Prefer first-class figma_workspace_* wrappers when available; use figma_workspace_call_upstream_tool for raw upstream behavior or uncovered official capabilities.";
 
 export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
   {
