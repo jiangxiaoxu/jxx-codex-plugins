@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import {
-  isDirectRun,
-  runFigmaWorkspaceUpstreamStdioCli
-} from "./upstream-stdio-cli.js";
+  isFigmaWorkspaceUpstreamDirectRun as isDirectRun,
+  runFigmaWorkspaceUpstreamStdioCli,
+} from "../runtime/workspace-runtime.js";
+
 if (isDirectRun(import.meta.url)) {
   await runFigmaWorkspaceUpstreamStdioCli({
     useBridgeOAuthCache: true,
-    openBrowser: false
+    openBrowser: false,
   });
 }
