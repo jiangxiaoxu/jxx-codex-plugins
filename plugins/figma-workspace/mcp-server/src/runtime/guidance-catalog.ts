@@ -347,7 +347,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     apiSymbols: ["get_design_context", "get_screenshot", "figma_workspace_get_design_context", "figma_workspace_capture_node"],
     queryHints: ["get design context before implementation", "capture node screenshot before coding", "reuse project tokens and components"],
     avoid: ["Implementing from memory without design context and screenshot evidence", "Copying generated Tailwind/code output without adapting to project conventions"],
-    pitfalls: ["Use first-class context wrappers before falling back to uncovered upstream tools.", "Treat upstream code output as a reference, then map to local components, tokens, a11y, and framework conventions.", "Record visible or technical deviations explicitly."],
+    pitfalls: ["Prefer first-class context wrappers; use upstream escape hatches when raw upstream behavior or uncovered tools are needed.", "Treat upstream code output as a reference, then map to local components, tokens, a11y, and framework conventions.", "Record visible or technical deviations explicitly."],
   },
   {
     id: "implementation.motion",

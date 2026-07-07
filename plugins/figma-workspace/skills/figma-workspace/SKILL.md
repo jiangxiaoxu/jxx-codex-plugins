@@ -82,7 +82,7 @@ Workspace files live under `<workspaceDir>/<fileKey-or-fileSlug>/`. `workspaceDi
 - Use `figma_workspace_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
 - For deeper static workflow, lookup, or safety notes, read `references/figma-workspace-workflow.md`, `references/figma-workspace-guidance-and-lookup.md`, or `references/figma-workspace-safety.md`.
 
-Use `figma_workspace_call_upstream_tool` only when a required official capability is explicitly not covered by the file workflow or dedicated wrappers, including official shader effect/fill reads and official `export_video`. Read `figma-workspace://upstream-tools` first when an uncovered upstream-only debug task depends on it. Prefer first-class wrappers for metadata, design context, motion context, and design-system reads. Keep local workspace handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
+Prefer first-class wrappers for metadata, design context, motion context, and design-system reads. Use `figma_workspace_call_upstream_tool` when raw upstream behavior or an uncovered official capability is needed, including official shader effect/fill reads and official `export_video`. Read `figma-workspace://upstream-tools` first for upstream escape-hatch calls. Keep local workspace handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
 
 ## Upstream Tool Discovery
 
@@ -101,7 +101,7 @@ For any listed tool below, read `figma-workspace://upstream-tools/{name}` direct
 | Code Connect writes | `add_code_connect_map`, `send_code_connect_mappings` | The user explicitly asks to create, update, or publish mappings. |
 | Shader library reads | `list_shader_effects`, `get_shader_effect`, `list_shader_fills`, `get_shader_fill` | The task explicitly needs shader effect/fill library entries or source manifests. |
 
-Do not route covered official capabilities through this list just because they also appear upstream. Use local tools for Plugin API execution, screenshots/capture, metadata, asset upload/download workflows, design context, motion context, library search, libraries, and variable definitions. Use `figma_workspace_call_upstream_tool` for official `export_video`.
+Prefer local tools for Plugin API execution, screenshots/capture, metadata, asset upload/download workflows, design context, motion context, library search, libraries, and variable definitions. Use `figma_workspace_call_upstream_tool` when you need the raw official upstream contract or an uncovered capability such as official `export_video`.
 
 ## Query Strategy
 

@@ -2223,10 +2223,10 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.equal(lookupMetadataTool.outputSchema.properties.maxSnippetLines, undefined);
   const callUpstreamTool = tools.tools.find((tool) => tool.name === "figma_workspace_call_upstream_tool");
   assert.ok(callUpstreamTool);
-  assert.match(callUpstreamTool.description, /Explicit upstream-only escape hatch/);
+  assert.match(callUpstreamTool.description, /Explicit upstream escape hatch/);
   assert.match(callUpstreamTool.description, /figma-workspace:\/\/upstream-tools\/\{name\}/);
-  assert.match(callUpstreamTool.description, /including shader effect\/fill tools/);
-  assert.match(callUpstreamTool.description, /Do not use for use_figma, get_metadata, get_screenshot, upload_assets, download_assets, get_design_context, get_motion_context/);
+  assert.match(callUpstreamTool.description, /Prefer dedicated local workflow tools/);
+  assert.match(callUpstreamTool.description, /raw upstream behavior or an uncovered capability/);
   assert.doesNotMatch(callUpstreamTool.description, /Do not use[^.]*export_video/);
   for (const upstreamToolName of wrapperContracts
     .map((contract) => contract.upstreamToolName)
@@ -2408,7 +2408,8 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.match(upstreamTool.description, /Execute JavaScript/);
   assert.deepEqual(upstreamTool.inputSchema.required, ["code"]);
   assert.equal(upstreamTool.callTool, "figma_workspace_call_upstream_tool");
-  assert.match(upstreamTool.guidance, /official upstream capabilities without local wrappers/);
+  assert.match(upstreamTool.guidance, /Prefer dedicated figma_workspace_\* workflow tools/);
+  assert.match(upstreamTool.guidance, /raw upstream behavior or an uncovered capability/);
 
   const motionToolResource = await mcpClient.readResource({ uri: "figma-workspace://upstream-tools/get_motion_context" });
   const motionTool = JSON.parse(motionToolResource.contents[0].text);
@@ -2616,9 +2617,9 @@ test("figma router docs preserve runtime-owned contract wording", async () => {
   assert.match(pluginReadme, /`upstream-corpus\/manifest\.json` and `upstream-corpus\/corpus\.jsonl` files are internal lookup corpus/);
   assert.match(stdioReadme, /old hyphenated persistent server ids/);
   assert.match(stdioReadme, /bundled JSONL corpus files are internal and are not an agent-facing documentation path/);
-  assert.match(stdioReadme, /explicit uncovered upstream capability/);
-  assert.match(docsText, /Use `figma_workspace_call_upstream_tool` only when a required official capability is explicitly not covered/);
-  assert.match(docsText, /Do not route covered official capabilities through this list/);
+  assert.match(stdioReadme, /raw upstream behavior or uncovered capabilities/);
+  assert.match(docsText, /Prefer first-class wrappers/);
+  assert.match(docsText, /raw upstream behavior or an uncovered official capability/);
   assert.match(openaiText, /figma_workspace_mcp/);
   assert.match(openaiText, /\$figma-workspace\b/);
   for (const term of forbiddenRouterContractTerms) {
@@ -2670,6 +2671,17 @@ test("figma workspace proxies a fake upstream official tool and rejects local to
   const fakeClient = createFakeFigmaClient(
     calls,
     ({ name, args }) => {
+      if (name === "get_metadata") {
+        assert.deepEqual(args, { fileKey: "file123", nodeId: "1:2" });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ ok: true, xml: "<node />" }),
+            },
+          ],
+        };
+      }
       assert.equal(name, "generate_diagram");
       if (args.prompt === "Fail") {
         return {
@@ -2713,6 +2725,11 @@ test("figma workspace proxies a fake upstream official tool and rejects local to
           description: "Generate a diagram.",
           inputSchema: { type: "object", properties: { prompt: { type: "string" } } },
         },
+        {
+          name: "get_metadata",
+          description: "Read node metadata.",
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } } },
+        },
       ],
     },
   );
@@ -2745,6 +2762,21 @@ test("figma workspace proxies a fake upstream official tool and rejects local to
   assert.equal(json.result, undefined);
   assert.equal(json.text, undefined);
   assert.equal(json.raw, undefined);
+
+  const coveredUpstreamResult = await mcpClient.callTool({
+    name: "figma_workspace_call_upstream_tool",
+    arguments: {
+      title: "Covered upstream passthrough",
+      toolName: "get_metadata",
+      arguments: { fileKey: "file123", nodeId: "1:2" },
+    },
+  });
+  const coveredUpstreamJson = structuredToolResult(coveredUpstreamResult);
+  assert.equal(coveredUpstreamJson.ok, true);
+  assert.equal(coveredUpstreamJson.toolName, "get_metadata");
+  assert.equal(coveredUpstreamJson.upstream.kind, "json");
+  assert.equal(coveredUpstreamJson.upstream.ok, true);
+  assert.equal(coveredUpstreamJson.upstream.result.xml, "<node />");
 
   const failureResult = await mcpClient.callTool({
     name: "figma_workspace_call_upstream_tool",
@@ -2801,7 +2833,7 @@ test("figma workspace proxies a fake upstream official tool and rejects local to
     }),
     /Refusing to proxy local figma_workspace_mcp tool/,
   );
-  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool", "callTool"]);
+  assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool", "callTool", "callTool", "callTool"]);
   await mcpClient.close();
 });
 
@@ -3097,9 +3129,7 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     assert.equal(result.metadata.json.root.nodeId, "1:2");
     assert.equal(result.metadata.json.root.type, "frame");
     assert.equal(result.metadata.json.root.name, "Root & Frame");
-    assert.equal(result.metadata.enrichment.ok, true);
-    assert.equal(result.metadata.enrichment.requestedNodeCount, 3);
-    assert.equal(result.metadata.enrichment.enrichedNodeCount, 2);
+    assert.equal(result.metadata.enrichment, undefined);
     assert.equal(result.metadata.json.root.locked, true);
     assert.equal(result.metadata.json.root.visible, false);
     assert.equal(result.metadata.json.root.layoutPositioning, "AUTO");
@@ -3245,9 +3275,7 @@ test("figma workspace get_metadata splits native enrichment readback when upstre
     });
     assert.equal(result.ok, true);
     assert.equal(result.metadata.nodeCount, 82);
-    assert.equal(result.metadata.enrichment.ok, true);
-    assert.equal(result.metadata.enrichment.requestedNodeCount, 82);
-    assert.equal(result.metadata.enrichment.enrichedNodeCount, 82);
+    assert.equal(result.metadata.enrichment, undefined);
     const metadataJson = result.metadata.json ?? await readPrettyJsonPointer(result.outputFiles.metadataFile, result.outputFiles.metadataFile.path);
     assert.equal(metadataJson.root.visible, true);
     assert.equal(metadataJson.root.children[80].visible, true);
@@ -3531,8 +3559,7 @@ test("figma workspace get_metadata returns nonfatal warning when enrichment fail
     assert.equal(result.ok, true);
     assert.equal(result.metadata.json.root.nodeId, "1:2");
     assert.equal(result.metadata.json.root.locked, undefined);
-    assert.equal(result.metadata.enrichment.ok, false);
-    assert.equal(result.metadata.enrichment.warning.code, "READBACK_DENIED");
+    assert.equal(result.metadata.enrichment, undefined);
     assert.equal(result.diagnostics[0].severity, "warning");
     assert.equal(result.diagnostics[0].code, "FIGMA_METADATA_ENRICHMENT_FAILED");
     assert.equal(result.upstream.ok, true);
