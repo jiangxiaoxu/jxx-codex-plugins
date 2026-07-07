@@ -496,7 +496,7 @@ export interface FigmaWorkspaceToolResultBase {
 
 export interface FigmaWorkspaceOpenResult extends FigmaWorkspaceToolResultBase {
   session: FigmaWorkspaceCompactSession;
-  diagnostics: FigmaWorkspaceDiagnostic[];
+  diagnostics?: FigmaWorkspaceDiagnostic[];
 }
 
 export interface FigmaWorkspaceUpstreamBackedResult extends FigmaWorkspaceToolResultBase {
@@ -506,7 +506,7 @@ export interface FigmaWorkspaceUpstreamBackedResult extends FigmaWorkspaceToolRe
 
 export interface FigmaWorkspaceEvalResult extends FigmaWorkspaceUpstreamBackedResult {
   session: FigmaWorkspaceCompactSession;
-  diagnostics: FigmaWorkspaceDiagnostic[];
+  diagnostics?: FigmaWorkspaceDiagnostic[];
   repairPlan?: FigmaWorkspaceRepairPlan;
   outputFiles?: FigmaWorkspaceOutputFiles;
   inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
@@ -514,9 +514,10 @@ export interface FigmaWorkspaceEvalResult extends FigmaWorkspaceUpstreamBackedRe
 
 export interface FigmaWorkspaceCompactScriptMetadata {
   [key: string]: unknown;
-  scriptPath: string;
+  scriptPath?: string;
+  inputFile?: string;
   expectedSurface?: FigmaWorkspaceSurface;
-  compiledScriptBytes: number;
+  compiledScriptBytes?: number;
 }
 
 /** @deprecated Use FigmaWorkspaceCompactScriptMetadata. */
@@ -524,10 +525,8 @@ export type FigmaWorkspaceScriptMetadata = FigmaWorkspaceCompactScriptMetadata;
 
 export interface FigmaWorkspaceInlineResultLimit {
   [key: string]: unknown;
-  limit: number;
   limitBytes: number;
-  limitHuman: string;
-  omitted: Array<{ field: string; bytes: number; limit: number; bytesHuman: string; limitHuman: string }>;
+  omitted: Array<{ field: string; bytes: number }>;
   guidance?: string;
 }
 
@@ -535,12 +534,12 @@ export interface FigmaWorkspaceRunScriptFileResult extends FigmaWorkspaceToolRes
   phase: "preflight" | "execute";
   executed: boolean;
   session: FigmaWorkspaceCompactSession;
-  diagnostics: FigmaWorkspaceDiagnostic[];
-  script: FigmaWorkspaceCompactScriptMetadata;
+  diagnostics?: FigmaWorkspaceDiagnostic[];
+  script?: FigmaWorkspaceCompactScriptMetadata;
   outputFiles?: FigmaWorkspaceOutputFiles;
   upstream?: FigmaWorkspaceUpstreamEnvelope;
   upstreamError?: FigmaWorkspacePublicUpstreamError;
-  repairPlan: FigmaWorkspaceRepairPlan;
+  repairPlan?: FigmaWorkspaceRepairPlan;
   inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
 
@@ -612,8 +611,6 @@ export interface FigmaWorkspaceTaskPlanStepResult {
   summary?: Record<string, unknown>;
   outputReferences?: Record<string, unknown>;
   error?: FigmaWorkspacePublicUpstreamError;
-  startedAt?: string;
-  finishedAt?: string;
 }
 
 export interface FigmaWorkspaceTaskPlanFailure {
@@ -629,7 +626,6 @@ export interface FigmaWorkspaceRunTaskPlanResult extends FigmaWorkspaceToolResul
   session: FigmaWorkspaceCompactSession;
   stopped: boolean;
   steps: FigmaWorkspaceTaskPlanStepResult[];
-  outputReferences?: Record<string, unknown>;
   outputFiles: FigmaWorkspaceOutputFiles;
   failures?: FigmaWorkspaceTaskPlanFailure[];
 }
@@ -668,7 +664,7 @@ export interface FigmaWorkspaceGuidanceResult extends FigmaWorkspaceToolResultBa
 
 export interface FigmaWorkspaceInspectResult extends FigmaWorkspaceToolResultBase {
   session: FigmaWorkspaceCompactSession;
-  diagnostics: FigmaWorkspaceDiagnostic[];
+  diagnostics?: FigmaWorkspaceDiagnostic[];
   upstreamError?: FigmaWorkspacePublicUpstreamError;
 }
 
@@ -1395,11 +1391,11 @@ async function handleOpen(
   if (args.connect !== false) {
     await runtime.client?.connect();
   }
-  const payload = {
+  const payload = removeUndefined({
     ok: true,
     session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics),
-  };
+  }) as Record<string, unknown>;
   return makeJsonToolResult(payload);
 }
 
@@ -1470,17 +1466,17 @@ async function handleEval(
     summary: summarizeParsedResult(parsed),
     nodeIds: collectNodeIds(parsed.json),
   });
-  const resultPayload = {
+  const resultPayload = removeUndefined({
     ok: !parsed.upstreamError,
     session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
-    repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+    repairPlan: repairPlanForResponse(diagnostics),
     ...upstreamResultFields({
       parsed,
       upstream,
     }),
     ...upstreamFailureFields(parsed),
-  };
+  }) as Record<string, unknown>;
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   return makeJsonToolResult(await shapeUpstreamBackedResponse({
     contract: DEFAULT_EVAL_CONTRACT,
@@ -1696,8 +1692,8 @@ function createRunScriptResultFilePayload(options: {
   });
 }
 
-function countArrayField(value: unknown): number | undefined {
-  return Array.isArray(value) ? value.length : undefined;
+function countArrayField(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 async function executeRunScriptFile(
@@ -1732,15 +1728,15 @@ async function executeRunScriptFile(
     ];
     session.lastDiagnostics = diagnostics;
     touchSession(session);
-    const resultPayload = {
+    const resultPayload = removeUndefined({
       ok: false,
       phase: "preflight",
       executed: false,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
-      repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
       script: responseScriptMetadata({ scriptPath }),
-    };
+    }) as Record<string, unknown>;
     const outputFiles = await outputWriter.write({
       result: createRunScriptResultFilePayload({
         session,
@@ -1787,19 +1783,20 @@ async function executeRunScriptFile(
     compiledScriptBytes: Buffer.byteLength(wrappedScript, "utf8"),
   };
   const responseScript = responseScriptMetadata(scriptMetadata);
+  const successScript = responseRunScriptSuccessMetadata(args);
   const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
 
   if (fatalDiagnostics.length > 0) {
     touchSession(session);
-    const resultPayload = {
+    const resultPayload = removeUndefined({
       ok: false,
       phase: "preflight",
       executed: false,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
-      repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
-    };
+    }) as Record<string, unknown>;
     const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, []);
     const outputFiles = await outputWriter.write({
       result: createRunScriptResultFilePayload({
@@ -1824,16 +1821,16 @@ async function executeRunScriptFile(
     parsed = parseUpstreamToolResult(upstream);
   } catch (error) {
     const upstreamError = normalizeCaughtUpstreamError(error);
-    const resultPayload = {
+    const resultPayload = removeUndefined({
       ok: false,
       phase: "execute",
       executed: true,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
-      repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
       upstreamError: responseUpstreamError(upstreamError),
-    };
+    }) as Record<string, unknown>;
     const outputFiles = await outputWriter.write({
       result: createRunScriptResultFilePayload({
         session,
@@ -1858,17 +1855,17 @@ async function executeRunScriptFile(
   }
   if (parsed.upstreamError) {
     const upstreamResult = upstreamEnvelope(parsed);
-    const resultPayload = {
+    const resultPayload = removeUndefined({
       ok: false,
       phase: "execute",
       executed: true,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
-      repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
       ...runScriptUpstreamFields(parsed),
       ...runScriptUpstreamFailureFields(parsed),
-    };
+    }) as Record<string, unknown>;
     const outputFiles = await addUpstreamSidecar(
       await outputWriter.write({
         result: createRunScriptResultFilePayload({
@@ -1907,16 +1904,16 @@ async function executeRunScriptFile(
     nodeIds: collectNodeIds(parsed.json),
   });
 
-  const resultPayload = {
+  const resultPayload = removeUndefined({
     ok: true,
     phase: "execute",
     executed: true,
     session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(diagnostics),
-    repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
-    script: responseScript,
+    diagnostics: optionalDiagnosticsForResponse(diagnostics),
+    repairPlan: repairPlanForResponse(diagnostics),
+    script: successScript,
     ...runScriptUpstreamFields(parsed),
-  };
+  }) as Record<string, unknown>;
   const upstreamResult = upstreamEnvelope(parsed);
   const limitedPayload = limitInlineScriptResult(
     resultPayload,
@@ -2804,7 +2801,6 @@ async function executeRunTaskPlan(
   const resultFile = resolveTaskPlanResultFile(args, plan.planPath, session);
   const stopOnFailure = args.stopOnFailure !== false;
   const steps: Array<Record<string, unknown>> = [];
-  const outputReferences: Record<string, unknown> = {};
   const references: TaskPlanReferenceContext = { steps: {}, outputs: {} };
   let stopped = false;
 
@@ -2835,9 +2831,6 @@ async function executeRunTaskPlan(
       const referenceOutputs = taskPlanStepOutputReferences(reference);
       references.outputs[id] = referenceOutputs ?? {};
       references.last = reference;
-      if (referenceOutputs !== undefined) {
-        outputReferences[id] = referenceOutputs;
-      }
       steps.push({
         id,
         index,
@@ -2888,8 +2881,7 @@ async function executeRunTaskPlan(
     ok: failedSteps.length === 0,
     session: responseSession(session),
     stopped,
-    steps,
-    outputReferences: Object.keys(outputReferences).length > 0 ? outputReferences : undefined,
+    steps: steps.map(compactTaskPlanInlineStep),
     failures: failures.length > 0 ? failures : undefined,
   };
   const outputFiles = {
@@ -2920,6 +2912,19 @@ async function executeRunTaskPlan(
     outputFiles,
   };
   return response;
+}
+
+function compactTaskPlanInlineStep(step: Record<string, unknown>): Record<string, unknown> {
+  return removeUndefined({
+    id: asOptionalString(step.id) ?? "",
+    index: typeof step.index === "number" ? step.index : undefined,
+    type: asOptionalString(step.type) ?? "",
+    status: asOptionalString(step.status) ?? "",
+    ok: step.ok !== false,
+    summary: isRecord(step.summary) ? step.summary : undefined,
+    outputReferences: isRecord(step.outputReferences) ? step.outputReferences : undefined,
+    error: isRecord(step.error) ? step.error : undefined,
+  }) as Record<string, unknown>;
 }
 
 function compactTaskPlanFailure(step: Record<string, unknown>): Record<string, unknown> {
@@ -3218,8 +3223,8 @@ async function handleInspect(
     "}",
     "return {",
     "  target: __target,",
+    "  mode: 'inspect',",
     "  summary: Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth),",
-    "  handles: __figmaRepl.handles,",
     "};",
   ].join("\n");
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
@@ -3229,7 +3234,7 @@ async function handleInspect(
     buildFigmaEvalScript({ session, code, mode: "read" }),
   );
   const parsed = parseUpstreamToolResult(upstream);
-  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
+  updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -3240,9 +3245,9 @@ async function handleInspect(
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(session.lastDiagnostics),
-    ...inspectInlineResultFields(parsed),
+    session: responseReadOnlySession(session),
+    diagnostics: optionalDiagnosticsForResponse(session.lastDiagnostics),
+    ...inspectInlineResultFields(parsed, "inspect"),
   };
   return makeJsonToolResult(payload);
 }
@@ -3263,7 +3268,7 @@ async function executeInspectStyle(
     target,
     depth,
     includeSummary: true,
-    includeHandles: true,
+    includeHandles: false,
   });
   const diagnostics = diagnoseFigmaWorkspaceCode(code, {
     mode: "read",
@@ -3280,7 +3285,7 @@ async function executeInspectStyle(
     client: runtime.client,
     evalSettings,
   });
-  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
+  updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -3291,9 +3296,9 @@ async function executeInspectStyle(
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(diagnostics),
-    ...inspectInlineResultFields(parsed),
+    session: responseReadOnlySession(session),
+    diagnostics: optionalDiagnosticsForResponse(diagnostics),
+    ...inspectInlineResultFields(parsed, "style"),
   };
   return payload;
 }
@@ -3334,6 +3339,10 @@ function buildInspectStyleCode(options: {
     "function __compactText(__text) {",
     "  return typeof __text === 'string' && __text.length > 240 ? __text.slice(0, 237) + '...' : __text;",
     "}",
+    "function __targetSummary(__node) {",
+    "  if (!__node || Array.isArray(__node)) return undefined;",
+    "  return { id: __node.id, type: __node.type, name: __compactName(__node.name), visible: __node.visible !== false, x: __node.x, y: __node.y, width: __node.width, height: __node.height };",
+    "}",
     "function __paint(__paint) {",
     "  if (!__paint) return undefined;",
     "  const __out = { type: __paint.type, visible: __paint.visible !== false, opacity: __paint.opacity == null ? 1 : Math.round(__paint.opacity * 1000) / 1000 };",
@@ -3365,6 +3374,10 @@ function buildInspectStyleCode(options: {
     "const __textStyles = [];",
     "const __strokes = [];",
     "const __effects = [];",
+    "let __imageNodeCount = 0;",
+    "let __textStyleCount = 0;",
+    "let __strokeCount = 0;",
+    "let __effectCount = 0;",
     "for (const __node of __scanNodes) {",
     "  if ('fills' in __node && Array.isArray(__node.fills)) {",
     "    for (const __fill of __node.fills) {",
@@ -3373,18 +3386,24 @@ function buildInspectStyleCode(options: {
     "      if (__summary && __summary.stops) {",
     "        for (const __stop of __summary.stops) __colorCounts[__stop.color] = (__colorCounts[__stop.color] || 0) + 1;",
     "      }",
-    "      if (__summary && __summary.image && __imageNodes.length < 20) __imageNodes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, x: __node.x, y: __node.y, width: __node.width, height: __node.height });",
+    "      if (__summary && __summary.image) {",
+    "        __imageNodeCount += 1;",
+    "        if (__imageNodes.length < 20) __imageNodes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, x: __node.x, y: __node.y, width: __node.width, height: __node.height });",
+    "      }",
     "    }",
     "  }",
-    "  if (__node.type === 'TEXT' && __textStyles.length < 24) {",
+    "  if (__node.type === 'TEXT') {",
+    "    __textStyleCount += 1;",
     "    const __fills = Array.isArray(__node.fills) ? __node.fills.map(__paint).filter(Boolean).slice(0, 3) : [];",
-    "    __textStyles.push({ id: __node.id, name: __compactName(__node.name), characters: __compactText(__node.characters), font: __fontName(__node), fontSize: __node.fontSize, fills: __fills });",
+    "    if (__textStyles.length < 24) __textStyles.push({ id: __node.id, name: __compactName(__node.name), characters: __compactText(__node.characters), font: __fontName(__node), fontSize: __node.fontSize, fills: __fills });",
     "  }",
-    "  if ('strokes' in __node && Array.isArray(__node.strokes) && __node.strokes.length && __strokes.length < 24) {",
-    "    __strokes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, strokes: __node.strokes.map(__paint).filter(Boolean).slice(0, 3), strokeWeight: __node.strokeWeight });",
+    "  if ('strokes' in __node && Array.isArray(__node.strokes) && __node.strokes.length) {",
+    "    __strokeCount += 1;",
+    "    if (__strokes.length < 24) __strokes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, strokes: __node.strokes.map(__paint).filter(Boolean).slice(0, 3), strokeWeight: __node.strokeWeight });",
     "  }",
-    "  if ('effects' in __node && Array.isArray(__node.effects) && __node.effects.length && __effects.length < 16) {",
-    "    __effects.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, effects: __node.effects.slice(0, 4).map((__effect) => ({ type: __effect.type, visible: __effect.visible !== false, radius: __effect.radius, color: __effect.color ? __hex(__effect.color) : undefined })) });",
+    "  if ('effects' in __node && Array.isArray(__node.effects) && __node.effects.length) {",
+    "    __effectCount += 1;",
+    "    if (__effects.length < 16) __effects.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, effects: __node.effects.slice(0, 4).map((__effect) => ({ type: __effect.type, visible: __effect.visible !== false, radius: __effect.radius, color: __effect.color ? __hex(__effect.color) : undefined })) });",
     "  }",
     "}",
     "const __topColors = Object.entries(__colorCounts).sort((__a, __b) => __b[1] - __a[1]).slice(0, 16).map(([color, count]) => ({ color, count }));",
@@ -3395,7 +3414,9 @@ function buildInspectStyleCode(options: {
     "  scannedNodeCount: __scanNodes.length,",
     "  offset: __offset,",
     "  limit: __limit,",
-    "  style: { topColors: __topColors, textStyles: __textStyles, imageNodes: __imageNodes, strokes: __strokes, effects: __effects, caps: { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 } },",
+    "  targetSummary: __targetSummary(Array.isArray(__value) ? undefined : __value),",
+    "  styleCounts: { topColors: Object.keys(__colorCounts).length, textStyles: __textStyleCount, imageNodes: __imageNodeCount, strokes: __strokeCount, effects: __effectCount },",
+    "  style: { topColors: __topColors, textStyles: __textStyles, imageNodes: __imageNodes, strokes: __strokes, effects: __effects },",
     "};",
     "if (__includeSummary) __result.summary = Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth);",
     "if (__includeHandles) __result.handles = __figmaRepl.handles;",
@@ -3551,6 +3572,11 @@ function finiteNonNegativeNumber(value: unknown): number | undefined {
   return Number.isFinite(number) && number >= 0 ? number : undefined;
 }
 
+function finiteNumber(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
 function mergeInspectStyleChunks(target: string, chunks: Record<string, unknown>[]): Record<string, unknown> {
   const caps = { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 };
   const colorCounts = new Map<string, number>();
@@ -3558,16 +3584,22 @@ function mergeInspectStyleChunks(target: string, chunks: Record<string, unknown>
   const imageNodes: Record<string, unknown>[] = [];
   const strokes: Record<string, unknown>[] = [];
   const effects: Record<string, unknown>[] = [];
+  const styleCounts = { topColors: 0, textStyles: 0, imageNodes: 0, strokes: 0, effects: 0 };
   let nodeCount = 0;
   let scannedNodeCount = 0;
-  let summary: unknown;
+  let targetSummary: unknown;
   for (const chunk of chunks) {
     nodeCount = Math.max(nodeCount, inspectStyleNodeCount([chunk]) ?? 0);
     scannedNodeCount += finiteNonNegativeNumber(chunk.scannedNodeCount) ?? 0;
-    if (summary === undefined && chunk.summary !== undefined) {
-      summary = chunk.summary;
+    if (targetSummary === undefined) {
+      targetSummary = chunk.targetSummary ?? targetSummaryFromSummary(chunk.summary);
     }
     const style = asRecord(chunk.style);
+    const counts = asRecord(chunk.styleCounts);
+    styleCounts.textStyles += finiteNonNegativeNumber(counts.textStyles) ?? countRecords(style.textStyles);
+    styleCounts.imageNodes += finiteNonNegativeNumber(counts.imageNodes) ?? countRecords(style.imageNodes);
+    styleCounts.strokes += finiteNonNegativeNumber(counts.strokes) ?? countRecords(style.strokes);
+    styleCounts.effects += finiteNonNegativeNumber(counts.effects) ?? countRecords(style.effects);
     for (const color of Array.isArray(style.topColors) ? style.topColors.filter(isRecord) : []) {
       const name = asOptionalString(color.color);
       const count = finiteNonNegativeNumber(color.count) ?? 0;
@@ -3584,19 +3616,20 @@ function mergeInspectStyleChunks(target: string, chunks: Record<string, unknown>
     .sort((left, right) => right[1] - left[1])
     .slice(0, caps.topColors)
     .map(([color, count]) => ({ color, count }));
+  styleCounts.topColors = colorCounts.size;
   return removeUndefined({
     target,
     mode: "style",
     nodeCount,
     scannedNodeCount,
-    summary,
+    targetSummary,
+    styleCounts,
     style: {
       topColors,
       textStyles,
       imageNodes,
       strokes,
       effects,
-      caps,
     },
     batching: {
       source: "adaptive",
@@ -3648,7 +3681,7 @@ async function executeValidateHandles(
     client: runtime.client,
     evalSettings,
   });
-  const handleChanges = updateSessionFromParsedResult(session, validationResult.parsedJson);
+  updateSessionFromParsedResult(session, validationResult.parsedJson);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -3660,16 +3693,17 @@ async function executeValidateHandles(
   const payload = validationResult.upstreamError
     ? {
         ok: false,
-        session: responseSession(session, handleChanges),
-        diagnostics: diagnosticsForResponse(diagnostics),
+        session: responseReadOnlySession(session),
+        mode: "validate",
+        diagnostics: optionalDiagnosticsForResponse(diagnostics),
         upstreamError: responseUpstreamError(validationResult.upstreamError),
       }
     : {
         ok: true,
-        session: responseSession(session, handleChanges),
-        diagnostics: diagnosticsForResponse(diagnostics),
+        session: responseReadOnlySession(session),
+        mode: "validate",
+        diagnostics: optionalDiagnosticsForResponse(diagnostics),
         validations: validationResult.validations,
-        validatedNodeIds: validationResult.validatedNodeIds,
       };
   return payload;
 }
@@ -3874,7 +3908,7 @@ async function executeGetMetadata(
       jsonBytes,
       json: metadata,
     },
-    diagnostics: [...filtered.diagnostics, ...enrichment.diagnostics],
+    diagnostics: diagnosticsForResponse([...filtered.diagnostics, ...enrichment.diagnostics]),
     upstream: upstreamResult,
     ...upstreamFailureFields(parsed),
     upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError,
@@ -4504,6 +4538,10 @@ async function handleLookup(
     }
     throw error;
   }
+}
+
+function countRecords(value: unknown): number {
+  return Array.isArray(value) ? value.filter(isRecord).length : 0;
 }
 
 function lookupCorpusDiagnostic(error: FigmaWorkspaceLookupCorpusUnavailableError): FigmaWorkspaceDiagnostic {
@@ -6970,7 +7008,7 @@ function limitInlineScriptResult(
     return payload;
   }
   const result: Record<string, unknown> = { ...payload };
-  const omitted: Array<{ field: string; bytes: number; limit: number; bytesHuman: string; limitHuman: string }> = [];
+  const omitted: Array<{ field: string; bytes: number }> = [];
   for (const field of fields) {
     const target = inlineResultLimitTarget(result, field);
     if (!target || target.value === undefined) {
@@ -6982,17 +7020,12 @@ function limitInlineScriptResult(
       omitted.push({
         field,
         bytes,
-        limit,
-        bytesHuman: formatBytesHuman(bytes),
-        limitHuman: formatBytesHuman(limit),
       });
     }
   }
   if (omitted.length > 0) {
     result.inlineResultLimit = {
-      limit,
       limitBytes: limit,
-      limitHuman: formatBytesHuman(limit),
       omitted,
       guidance: "Read the corresponding outputFiles pointer when inline fields are omitted.",
     };
@@ -7221,7 +7254,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot; avoid covering primary controls, text, or content that visual QA must inspect.",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
-      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
+      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are returned only when non-empty, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
       "When upstream execution fails after preflight, outputFiles.compiledScriptFile points to a *.failure.compiled.txt payload with a failure header for line-aware repair; preflight failures and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
     ],
   };
@@ -7647,7 +7680,7 @@ function createCapabilitiesPayload(): Record<string, unknown> {
     },
     contractNotes: {
       scriptPreflight: "figma_workspace_run_script_file always runs local diagnostics/compile/strict checks first; phase=preflight means executed=false and upstream was not called, phase=execute means upstream execution was attempted. Parse errors return repairPlan.status=parse_error and no guardrail scan.",
-      responseShape: "Tools return structuredContent-first JSON with empty content, minimal session summaries, diagnostics arrays, repairPlan steps, and outputFiles pointers for generated debug/sidecar files.",
+      responseShape: "Tools return structuredContent-first JSON with empty content, minimal session summaries, non-empty diagnostics, repairPlan steps, and outputFiles pointers for generated debug/sidecar files.",
       upstreamEnvelope: "upstream.ok is the effective upstream/business status; consumed top-level ok fields are removed from upstream.result and bridge-internal metadata is not public.",
       referenceOwnership: "Static resources are routing/workflow docs only. Helper, API, pattern, safety, and example details belong to figma_workspace_guidance, figma_workspace_lookup, and BM25 snippets.",
     },
@@ -8375,8 +8408,20 @@ function summarizeParsedResult(parsed: ParsedUpstreamToolResult): string {
 
 function diagnosticsForResponse(
   diagnostics: FigmaWorkspaceDiagnostic[] | undefined,
-): FigmaWorkspaceDiagnostic[] {
-  return diagnostics ?? [];
+): FigmaWorkspaceDiagnostic[] | undefined {
+  return diagnostics && diagnostics.length > 0 ? diagnostics : undefined;
+}
+
+function optionalDiagnosticsForResponse(
+  diagnostics: FigmaWorkspaceDiagnostic[] | undefined,
+): FigmaWorkspaceDiagnostic[] | undefined {
+  return diagnosticsForResponse(diagnostics);
+}
+
+function repairPlanForResponse(
+  diagnostics: FigmaWorkspaceFileDiagnostic[] | undefined,
+): FigmaWorkspaceRepairPlan | undefined {
+  return diagnostics && diagnostics.length > 0 ? createFigmaWorkspaceRepairPlan(diagnostics) : undefined;
 }
 
 function dedupeDiagnostics(diagnostics: FigmaWorkspaceDiagnostic[]): FigmaWorkspaceDiagnostic[] {
@@ -8403,6 +8448,15 @@ function responseSession(
     surface: session.surface,
     sessionDir: session.workspace?.sessionDir,
     handleChanges,
+  }) as Record<string, unknown>;
+}
+
+function responseReadOnlySession(session: FigmaWorkspaceSession): Record<string, unknown> {
+  return removeUndefined({
+    id: session.id,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    sessionDir: session.workspace?.sessionDir,
   }) as Record<string, unknown>;
 }
 
@@ -8478,9 +8532,17 @@ function responseScriptMetadata(
 ): FigmaWorkspaceCompactScriptMetadata {
   return removeUndefined({
     scriptPath: metadata.scriptPath,
+    inputFile: metadata.inputFile,
     expectedSurface: metadata.expectedSurface,
     compiledScriptBytes: metadata.compiledScriptBytes,
   }) as FigmaWorkspaceCompactScriptMetadata;
+}
+
+function responseRunScriptSuccessMetadata(
+  args: FigmaWorkspaceRunScriptFileArguments,
+): FigmaWorkspaceCompactScriptMetadata | undefined {
+  const inputFile = asOptionalString(args.inputFile);
+  return inputFile ? responseScriptMetadata({ inputFile }) : undefined;
 }
 
 function upstreamResultFields(options: {
@@ -8542,15 +8604,71 @@ function upstreamFailureFields(parsed: ParsedUpstreamToolResult): Record<string,
   };
 }
 
-function inspectInlineResultFields(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
+function inspectInlineResultFields(parsed: ParsedUpstreamToolResult, fallbackMode: "inspect" | "style"): Record<string, unknown> {
   if (parsed.upstreamError) {
     return {
       upstreamError: responseUpstreamError(parsed.upstreamError),
     };
   }
-  return {
+  const result = {
     ...asRecord(asRecord(parsed.json).result),
   };
+  delete result.handles;
+  if (fallbackMode === "inspect") {
+    return removeUndefined({
+      ...result,
+      mode: asOptionalString(result.mode) ?? "inspect",
+    }) as Record<string, unknown>;
+  }
+  const style = { ...asRecord(result.style) };
+  delete style.caps;
+  delete style.limits;
+  const targetSummary = targetSummaryFromSummary(result.targetSummary ?? result.summary);
+  const truncated = inspectStyleTruncated(style, asRecord(result.styleCounts));
+  return removeUndefined({
+    ...result,
+    mode: "style",
+    summary: undefined,
+    handles: undefined,
+    limit: undefined,
+    styleCounts: undefined,
+    targetSummary,
+    style,
+    truncated,
+  }) as Record<string, unknown>;
+}
+
+function targetSummaryFromSummary(value: unknown): Record<string, unknown> | undefined {
+  const source = Array.isArray(value) ? asRecord(value[0]) : asRecord(value);
+  const result = removeUndefined({
+    id: asOptionalString(source.id),
+    type: asOptionalString(source.type),
+    name: asOptionalString(source.name),
+    visible: typeof source.visible === "boolean" ? source.visible : undefined,
+    x: finiteNumber(source.x),
+    y: finiteNumber(source.y),
+    width: finiteNumber(source.width),
+    height: finiteNumber(source.height),
+  }) as Record<string, unknown>;
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function inspectStyleTruncated(
+  style: Record<string, unknown>,
+  counts: Record<string, unknown>,
+): Record<string, number> | undefined {
+  const result: Record<string, number> = {};
+  for (const key of ["topColors", "textStyles", "imageNodes", "strokes", "effects"]) {
+    const total = finiteNonNegativeNumber(counts[key]);
+    if (total === undefined) {
+      continue;
+    }
+    const returned = Array.isArray(style[key]) ? style[key].length : 0;
+    if (total > returned) {
+      result[key] = total - returned;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function upstreamEnvelope(

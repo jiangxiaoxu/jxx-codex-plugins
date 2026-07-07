@@ -255373,9 +255373,7 @@ function inlineResultLimitProperty(description) {
     type: "object",
     description,
     properties: {
-      limit: numberProperty("Effective inline byte limit."),
       limitBytes: numberProperty("Effective inline byte limit."),
-      limitHuman: stringProperty("Human-readable inline byte limit, for example 4 KB."),
       omitted: {
         type: "array",
         description: "Inline fields omitted because they exceeded the effective byte limit.",
@@ -255383,10 +255381,7 @@ function inlineResultLimitProperty(description) {
           type: "object",
           properties: {
             field: stringProperty("Omitted result field path, for example upstream.result."),
-            bytes: numberProperty("Omitted field size in bytes."),
-            limit: numberProperty("Effective inline byte limit."),
-            bytesHuman: stringProperty("Human-readable omitted field size."),
-            limitHuman: stringProperty("Human-readable inline byte limit.")
+            bytes: numberProperty("Omitted field size in bytes.")
           },
           additionalProperties: true
         }
@@ -255401,6 +255396,7 @@ function scriptMetadataProperty(description) {
     description,
     properties: {
       scriptPath: stringProperty("Absolute script path used by the runner."),
+      inputFile: stringProperty("Workspace-relative input file name used by the runner."),
       expectedSurface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface used for diagnostics and execution."),
       compiledScriptBytes: numberProperty("Compiled wrapper size in bytes.")
     },
@@ -255529,8 +255525,7 @@ function inspectStyleAuditProperty(description) {
       textStyles: arrayProperty("Compact text style samples."),
       imageNodes: arrayProperty("Compact image node samples."),
       strokes: arrayProperty("Compact stroke samples."),
-      effects: arrayProperty("Compact effect samples."),
-      caps: objectProperty("Returned list caps.")
+      effects: arrayProperty("Compact effect samples.")
     },
     additionalProperties: true
   };
@@ -255592,11 +255587,11 @@ var init_tool_metadata = __esm({
     LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
       figma_workspace_open: toolOutputSchema({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-        diagnostics: arrayProperty("Session diagnostics.")
+        diagnostics: arrayProperty("Session diagnostics when warnings or failures are present.")
       }),
       figma_workspace_eval: toolOutputSchema({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-        diagnostics: arrayProperty("Preflight diagnostics."),
+        diagnostics: arrayProperty("Preflight diagnostics when warnings or failures are present."),
         repairPlan: jsonProperty("Agent-facing repair plan with status, summary, and deduplicated steps containing occurrences with line:column labels."),
         upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
         upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -255610,9 +255605,9 @@ var init_tool_metadata = __esm({
         phase: enumProperty(["preflight", "execute"], "Execution phase represented by this result. preflight means diagnostics blocked upstream execution; execute means upstream Figma was called."),
         executed: booleanProperty("Whether upstream Figma execution was attempted."),
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-        diagnostics: arrayProperty("Script and wrapper diagnostics."),
-        repairPlan: jsonProperty("Agent-facing repair plan with status, summary, and deduplicated steps containing occurrences with line:column labels."),
-        script: scriptMetadataProperty("Compiled script metadata."),
+        diagnostics: arrayProperty("Script and wrapper diagnostics when warnings or failures are present."),
+        repairPlan: jsonProperty("Agent-facing repair plan returned only when diagnostics or preflight blockers are actionable."),
+        script: scriptMetadataProperty("Compact script metadata. Clean inputFile success returns only inputFile; preflight/failure keeps repair details."),
         outputFiles: outputFilesProperty(
           "Debug files written on demand for failures, diagnostics, inline omissions, or failure-only compiled script.",
           ["debugFile", "upstreamFile", "compiledScriptFile"]
@@ -255624,7 +255619,7 @@ var init_tool_metadata = __esm({
       figma_workspace_apply_asset_manifest: toolOutputSchema({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
         assets: compactAssetResultsProperty("Compact per-asset upload/fill results. Successful submitUrl POSTs expose compact upload evidence without raw submit URLs."),
-        diagnostics: arrayProperty("Manifest loading, upload, application, or validation diagnostics."),
+        diagnostics: arrayProperty("Manifest loading, upload, application, or validation diagnostics when present."),
         validation: objectProperty("Optional target validation result."),
         outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
         failures: arrayProperty("Per-asset or validation failures.")
@@ -255633,7 +255628,7 @@ var init_tool_metadata = __esm({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
         outputDir: stringProperty("Local directory containing per-target download folders."),
         targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
-        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings."),
+        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
         failures: arrayProperty("Per-target download or upstream failures."),
         outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"])
       }),
@@ -255644,14 +255639,13 @@ var init_tool_metadata = __esm({
         bytes: numberProperty("Saved PNG file size in bytes."),
         width: numberProperty("Saved PNG width in pixels."),
         height: numberProperty("Saved PNG height in pixels."),
-        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings."),
+        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
         upstreamError: objectProperty("Normalized upstream failure details when capture failed.")
       }),
       figma_workspace_run_task_plan: toolOutputSchema({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
         stopped: booleanProperty("Whether execution stopped before remaining steps."),
-        steps: arrayProperty("Compact per-step execution summaries."),
-        outputReferences: objectProperty("Plan-level map of step id to output file pointers for later workflow references."),
+        steps: arrayProperty("Compact per-step execution summaries with per-step outputReferences when a step produced files for later references."),
         outputFiles: outputFilesProperty("Files written for plan result output.", ["debugFile"]),
         failures: compactTaskPlanFailuresProperty("Compact failed task-plan step summaries.")
       }),
@@ -255679,16 +255673,18 @@ var init_tool_metadata = __esm({
         suggestions: guidanceSuggestionsProperty("Ranked task/card suggestions with compact context.")
       }),
       figma_workspace_inspect: toolOutputSchema({
-        session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
-        diagnostics: arrayProperty("Read-mode diagnostics."),
+        session: objectProperty("Read-only local workspace session summary: id, fileKey, surface, and optional sessionDir; handleChanges is omitted."),
+        diagnostics: arrayProperty("Read-mode diagnostics when warnings or failures are present."),
         target: stringProperty("Inspected target selector or node id when returned by the inspect mode."),
         summary: jsonProperty("Compact inspected node or selection summary when returned by the inspect mode."),
-        handles: objectProperty("Known handle map returned by read-side inspection when available."),
-        mode: stringProperty("Inspect mode marker when returned by the inspect mode."),
+        targetSummary: objectProperty("Compact target identity and bounds for mode=style."),
+        mode: stringProperty("Inspect mode marker. Default inspect returns mode=inspect."),
         nodeCount: numberProperty("Inspected node count for style audits."),
+        scannedNodeCount: numberProperty("Number of nodes scanned for style audits."),
+        offset: numberProperty("Style audit batch offset when returned by upstream."),
         style: inspectStyleAuditProperty("Compact visual-token/style audit for mode=style."),
+        truncated: objectProperty("Style audit omitted counts keyed by clipped category, returned only when inline style samples were clipped."),
         validations: inspectHandleValidationsProperty("Handle validation results for mode=validate."),
-        validatedNodeIds: stringArrayProperty("Validated node ids for mode=validate."),
         upstreamError: objectProperty("Normalized upstream failure details when inspection failed.")
       }),
       figma_workspace_get_metadata: toolOutputSchema({
@@ -255696,7 +255692,7 @@ var init_tool_metadata = __esm({
         fileKey: stringProperty("Figma file key sent to official get_metadata."),
         nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
         metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree with supported lock/layout-state fields merged when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
-        diagnostics: arrayProperty("Nonfatal metadata enrichment and optional upstream passthrough warnings."),
+        diagnostics: arrayProperty("Nonfatal metadata enrichment and optional upstream passthrough warnings when present."),
         upstream: upstreamEnvelopeProperty("Compact upstream status envelope. Raw XML text is not returned inline by this wrapper."),
         upstreamError: objectProperty("Normalized upstream or XML parse failure details when metadata conversion failed."),
         primaryFix: stringProperty("Suggested primary repair when upstream execution failed."),
@@ -255710,7 +255706,7 @@ var init_tool_metadata = __esm({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
         fileKey: stringProperty("Figma file key sent to official get_design_context."),
         nodeId: stringProperty("Figma node id sent to official get_design_context."),
-        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings."),
+        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
         upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
         guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
         upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -255725,7 +255721,7 @@ var init_tool_metadata = __esm({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
         fileKey: stringProperty("Figma file key sent to official get_motion_context."),
         nodeId: stringProperty("Figma node id sent to official get_motion_context."),
-        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings."),
+        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
         upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
         guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
         upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -255740,7 +255736,7 @@ var init_tool_metadata = __esm({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
         fileKey: stringProperty("Figma file key sent to official search_design_system."),
         query: stringProperty("Search query sent upstream."),
-        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings."),
+        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
         upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
         upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
         primaryFix: stringProperty("Suggested primary repair when execution failed."),
@@ -255754,7 +255750,7 @@ var init_tool_metadata = __esm({
         session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
         fileKey: stringProperty("Figma file key sent to official get_libraries."),
         offset: numberProperty("Pagination offset sent upstream when supplied."),
-        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings."),
+        diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
         upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
         upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
         primaryFix: stringProperty("Suggested primary repair when execution failed."),
@@ -256836,11 +256832,11 @@ async function handleOpen(args, runtime) {
   if (args.connect !== false) {
     await runtime.client?.connect();
   }
-  const payload = {
+  const payload = removeUndefined3({
     ok: true,
     session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics)
-  };
+  });
   return makeJsonToolResult(payload);
 }
 async function handleEval(args, runtime) {
@@ -256896,17 +256892,17 @@ async function handleEval(args, runtime) {
     summary: summarizeParsedResult(parsed),
     nodeIds: collectNodeIds(parsed.json)
   });
-  const resultPayload = {
+  const resultPayload = removeUndefined3({
     ok: !parsed.upstreamError,
     session: responseSession(session, handleChanges),
     diagnostics: diagnosticsForResponse(diagnostics),
-    repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+    repairPlan: repairPlanForResponse(diagnostics),
     ...upstreamResultFields({
       parsed,
       upstream
     }),
     ...upstreamFailureFields(parsed)
-  };
+  });
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   return makeJsonToolResult(await shapeUpstreamBackedResponse({
     contract: DEFAULT_EVAL_CONTRACT,
@@ -257071,7 +257067,7 @@ function createRunScriptResultFilePayload(options) {
   });
 }
 function countArrayField(value) {
-  return Array.isArray(value) ? value.length : void 0;
+  return Array.isArray(value) ? value.length : 0;
 }
 async function executeRunScriptFile(args, runtime) {
   const session = runtime.sessions.getOrCreate(args.sessionId);
@@ -257098,15 +257094,15 @@ async function executeRunScriptFile(args, runtime) {
     ];
     session.lastDiagnostics = diagnostics2;
     touchSession(session);
-    const resultPayload2 = {
+    const resultPayload2 = removeUndefined3({
       ok: false,
       phase: "preflight",
       executed: false,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics2),
-      repairPlan: createFigmaWorkspaceRepairPlan(diagnostics2),
+      repairPlan: repairPlanForResponse(diagnostics2),
       script: responseScriptMetadata({ scriptPath })
-    };
+    });
     const outputFiles2 = await outputWriter.write({
       result: createRunScriptResultFilePayload({
         session,
@@ -257152,18 +257148,19 @@ async function executeRunScriptFile(args, runtime) {
     compiledScriptBytes: Buffer.byteLength(wrappedScript, "utf8")
   };
   const responseScript = responseScriptMetadata(scriptMetadata);
+  const successScript = responseRunScriptSuccessMetadata(args);
   const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
   if (fatalDiagnostics.length > 0) {
     touchSession(session);
-    const resultPayload2 = {
+    const resultPayload2 = removeUndefined3({
       ok: false,
       phase: "preflight",
       executed: false,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
-      repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript
-    };
+    });
     const limitedPayload2 = limitInlineScriptResult(resultPayload2, inlineResultLimit, []);
     const outputFiles2 = await outputWriter.write({
       result: createRunScriptResultFilePayload({
@@ -257187,16 +257184,16 @@ async function executeRunScriptFile(args, runtime) {
     parsed = parseUpstreamToolResult(upstream);
   } catch (error2) {
     const upstreamError = normalizeCaughtUpstreamError(error2);
-    const resultPayload2 = {
+    const resultPayload2 = removeUndefined3({
       ok: false,
       phase: "execute",
       executed: true,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
-      repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
       upstreamError: responseUpstreamError(upstreamError)
-    };
+    });
     const outputFiles2 = await outputWriter.write({
       result: createRunScriptResultFilePayload({
         session,
@@ -257221,17 +257218,17 @@ async function executeRunScriptFile(args, runtime) {
   }
   if (parsed.upstreamError) {
     const upstreamResult2 = upstreamEnvelope(parsed);
-    const resultPayload2 = {
+    const resultPayload2 = removeUndefined3({
       ok: false,
       phase: "execute",
       executed: true,
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
-      repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
       ...runScriptUpstreamFields(parsed),
       ...runScriptUpstreamFailureFields(parsed)
-    };
+    });
     const outputFiles2 = await addUpstreamSidecar(
       await outputWriter.write({
         result: createRunScriptResultFilePayload({
@@ -257269,16 +257266,16 @@ async function executeRunScriptFile(args, runtime) {
     summary: `Ran Figma script file ${scriptPath}.`,
     nodeIds: collectNodeIds(parsed.json)
   });
-  const resultPayload = {
+  const resultPayload = removeUndefined3({
     ok: true,
     phase: "execute",
     executed: true,
     session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(diagnostics),
-    repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
-    script: responseScript,
+    diagnostics: optionalDiagnosticsForResponse(diagnostics),
+    repairPlan: repairPlanForResponse(diagnostics),
+    script: successScript,
     ...runScriptUpstreamFields(parsed)
-  };
+  });
   const upstreamResult = upstreamEnvelope(parsed);
   const limitedPayload = limitInlineScriptResult(
     resultPayload,
@@ -258051,7 +258048,6 @@ async function executeRunTaskPlan(args, runtime) {
   const resultFile = resolveTaskPlanResultFile(args, plan.planPath, session);
   const stopOnFailure = args.stopOnFailure !== false;
   const steps = [];
-  const outputReferences = {};
   const references = { steps: {}, outputs: {} };
   let stopped = false;
   for (const [index, step] of plan.steps.entries()) {
@@ -258081,9 +258077,6 @@ async function executeRunTaskPlan(args, runtime) {
       const referenceOutputs = taskPlanStepOutputReferences(reference);
       references.outputs[id] = referenceOutputs ?? {};
       references.last = reference;
-      if (referenceOutputs !== void 0) {
-        outputReferences[id] = referenceOutputs;
-      }
       steps.push({
         id,
         index,
@@ -258133,8 +258126,7 @@ async function executeRunTaskPlan(args, runtime) {
     ok: failedSteps.length === 0,
     session: responseSession(session),
     stopped,
-    steps,
-    outputReferences: Object.keys(outputReferences).length > 0 ? outputReferences : void 0,
+    steps: steps.map(compactTaskPlanInlineStep),
     failures: failures.length > 0 ? failures : void 0
   };
   const outputFiles = {
@@ -258165,6 +258157,18 @@ async function executeRunTaskPlan(args, runtime) {
     outputFiles
   };
   return response;
+}
+function compactTaskPlanInlineStep(step) {
+  return removeUndefined3({
+    id: asOptionalString2(step.id) ?? "",
+    index: typeof step.index === "number" ? step.index : void 0,
+    type: asOptionalString2(step.type) ?? "",
+    status: asOptionalString2(step.status) ?? "",
+    ok: step.ok !== false,
+    summary: isRecord7(step.summary) ? step.summary : void 0,
+    outputReferences: isRecord7(step.outputReferences) ? step.outputReferences : void 0,
+    error: isRecord7(step.error) ? step.error : void 0
+  });
 }
 function compactTaskPlanFailure(step) {
   return removeUndefined3({
@@ -258392,8 +258396,8 @@ async function handleInspect(args, runtime) {
     "}",
     "return {",
     "  target: __target,",
+    "  mode: 'inspect',",
     "  summary: Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth),",
-    "  handles: __figmaRepl.handles,",
     "};"
   ].join("\n");
   const evalSettings = await resolveEvalSettings(session, args, runtime);
@@ -258403,7 +258407,7 @@ async function handleInspect(args, runtime) {
     buildFigmaEvalScript({ session, code: code2, mode: "read" })
   );
   const parsed = parseUpstreamToolResult(upstream);
-  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
+  updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -258414,9 +258418,9 @@ async function handleInspect(args, runtime) {
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(session.lastDiagnostics),
-    ...inspectInlineResultFields(parsed)
+    session: responseReadOnlySession(session),
+    diagnostics: optionalDiagnosticsForResponse(session.lastDiagnostics),
+    ...inspectInlineResultFields(parsed, "inspect")
   };
   return makeJsonToolResult(payload);
 }
@@ -258429,7 +258433,7 @@ async function executeInspectStyle(args, runtime) {
     target,
     depth,
     includeSummary: true,
-    includeHandles: true
+    includeHandles: false
   });
   const diagnostics = diagnoseFigmaWorkspaceCode(code2, {
     mode: "read",
@@ -258446,7 +258450,7 @@ async function executeInspectStyle(args, runtime) {
     client: runtime.client,
     evalSettings
   });
-  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
+  updateSessionFromParsedResult(session, parsed.json);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -258457,9 +258461,9 @@ async function executeInspectStyle(args, runtime) {
   });
   const payload = {
     ok: !parsed.upstreamError,
-    session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(diagnostics),
-    ...inspectInlineResultFields(parsed)
+    session: responseReadOnlySession(session),
+    diagnostics: optionalDiagnosticsForResponse(diagnostics),
+    ...inspectInlineResultFields(parsed, "style")
   };
   return payload;
 }
@@ -258492,6 +258496,10 @@ function buildInspectStyleCode(options) {
     "function __compactText(__text) {",
     "  return typeof __text === 'string' && __text.length > 240 ? __text.slice(0, 237) + '...' : __text;",
     "}",
+    "function __targetSummary(__node) {",
+    "  if (!__node || Array.isArray(__node)) return undefined;",
+    "  return { id: __node.id, type: __node.type, name: __compactName(__node.name), visible: __node.visible !== false, x: __node.x, y: __node.y, width: __node.width, height: __node.height };",
+    "}",
     "function __paint(__paint) {",
     "  if (!__paint) return undefined;",
     "  const __out = { type: __paint.type, visible: __paint.visible !== false, opacity: __paint.opacity == null ? 1 : Math.round(__paint.opacity * 1000) / 1000 };",
@@ -258523,6 +258531,10 @@ function buildInspectStyleCode(options) {
     "const __textStyles = [];",
     "const __strokes = [];",
     "const __effects = [];",
+    "let __imageNodeCount = 0;",
+    "let __textStyleCount = 0;",
+    "let __strokeCount = 0;",
+    "let __effectCount = 0;",
     "for (const __node of __scanNodes) {",
     "  if ('fills' in __node && Array.isArray(__node.fills)) {",
     "    for (const __fill of __node.fills) {",
@@ -258531,18 +258543,24 @@ function buildInspectStyleCode(options) {
     "      if (__summary && __summary.stops) {",
     "        for (const __stop of __summary.stops) __colorCounts[__stop.color] = (__colorCounts[__stop.color] || 0) + 1;",
     "      }",
-    "      if (__summary && __summary.image && __imageNodes.length < 20) __imageNodes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, x: __node.x, y: __node.y, width: __node.width, height: __node.height });",
+    "      if (__summary && __summary.image) {",
+    "        __imageNodeCount += 1;",
+    "        if (__imageNodes.length < 20) __imageNodes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, x: __node.x, y: __node.y, width: __node.width, height: __node.height });",
+    "      }",
     "    }",
     "  }",
-    "  if (__node.type === 'TEXT' && __textStyles.length < 24) {",
+    "  if (__node.type === 'TEXT') {",
+    "    __textStyleCount += 1;",
     "    const __fills = Array.isArray(__node.fills) ? __node.fills.map(__paint).filter(Boolean).slice(0, 3) : [];",
-    "    __textStyles.push({ id: __node.id, name: __compactName(__node.name), characters: __compactText(__node.characters), font: __fontName(__node), fontSize: __node.fontSize, fills: __fills });",
+    "    if (__textStyles.length < 24) __textStyles.push({ id: __node.id, name: __compactName(__node.name), characters: __compactText(__node.characters), font: __fontName(__node), fontSize: __node.fontSize, fills: __fills });",
     "  }",
-    "  if ('strokes' in __node && Array.isArray(__node.strokes) && __node.strokes.length && __strokes.length < 24) {",
-    "    __strokes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, strokes: __node.strokes.map(__paint).filter(Boolean).slice(0, 3), strokeWeight: __node.strokeWeight });",
+    "  if ('strokes' in __node && Array.isArray(__node.strokes) && __node.strokes.length) {",
+    "    __strokeCount += 1;",
+    "    if (__strokes.length < 24) __strokes.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, strokes: __node.strokes.map(__paint).filter(Boolean).slice(0, 3), strokeWeight: __node.strokeWeight });",
     "  }",
-    "  if ('effects' in __node && Array.isArray(__node.effects) && __node.effects.length && __effects.length < 16) {",
-    "    __effects.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, effects: __node.effects.slice(0, 4).map((__effect) => ({ type: __effect.type, visible: __effect.visible !== false, radius: __effect.radius, color: __effect.color ? __hex(__effect.color) : undefined })) });",
+    "  if ('effects' in __node && Array.isArray(__node.effects) && __node.effects.length) {",
+    "    __effectCount += 1;",
+    "    if (__effects.length < 16) __effects.push({ id: __node.id, name: __compactName(__node.name), type: __node.type, effects: __node.effects.slice(0, 4).map((__effect) => ({ type: __effect.type, visible: __effect.visible !== false, radius: __effect.radius, color: __effect.color ? __hex(__effect.color) : undefined })) });",
     "  }",
     "}",
     "const __topColors = Object.entries(__colorCounts).sort((__a, __b) => __b[1] - __a[1]).slice(0, 16).map(([color, count]) => ({ color, count }));",
@@ -258553,7 +258571,9 @@ function buildInspectStyleCode(options) {
     "  scannedNodeCount: __scanNodes.length,",
     "  offset: __offset,",
     "  limit: __limit,",
-    "  style: { topColors: __topColors, textStyles: __textStyles, imageNodes: __imageNodes, strokes: __strokes, effects: __effects, caps: { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 } },",
+    "  targetSummary: __targetSummary(Array.isArray(__value) ? undefined : __value),",
+    "  styleCounts: { topColors: Object.keys(__colorCounts).length, textStyles: __textStyleCount, imageNodes: __imageNodeCount, strokes: __strokeCount, effects: __effectCount },",
+    "  style: { topColors: __topColors, textStyles: __textStyles, imageNodes: __imageNodes, strokes: __strokes, effects: __effects },",
     "};",
     "if (__includeSummary) __result.summary = Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth);",
     "if (__includeHandles) __result.handles = __figmaRepl.handles;",
@@ -258676,6 +258696,10 @@ function finiteNonNegativeNumber(value) {
   const number4 = Number(value);
   return Number.isFinite(number4) && number4 >= 0 ? number4 : void 0;
 }
+function finiteNumber(value) {
+  const number4 = Number(value);
+  return Number.isFinite(number4) ? number4 : void 0;
+}
 function mergeInspectStyleChunks(target, chunks) {
   const caps = { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 };
   const colorCounts = /* @__PURE__ */ new Map();
@@ -258683,16 +258707,22 @@ function mergeInspectStyleChunks(target, chunks) {
   const imageNodes = [];
   const strokes = [];
   const effects = [];
+  const styleCounts = { topColors: 0, textStyles: 0, imageNodes: 0, strokes: 0, effects: 0 };
   let nodeCount = 0;
   let scannedNodeCount = 0;
-  let summary;
+  let targetSummary;
   for (const chunk of chunks) {
     nodeCount = Math.max(nodeCount, inspectStyleNodeCount([chunk]) ?? 0);
     scannedNodeCount += finiteNonNegativeNumber(chunk.scannedNodeCount) ?? 0;
-    if (summary === void 0 && chunk.summary !== void 0) {
-      summary = chunk.summary;
+    if (targetSummary === void 0) {
+      targetSummary = chunk.targetSummary ?? targetSummaryFromSummary(chunk.summary);
     }
     const style = asRecord3(chunk.style);
+    const counts = asRecord3(chunk.styleCounts);
+    styleCounts.textStyles += finiteNonNegativeNumber(counts.textStyles) ?? countRecords(style.textStyles);
+    styleCounts.imageNodes += finiteNonNegativeNumber(counts.imageNodes) ?? countRecords(style.imageNodes);
+    styleCounts.strokes += finiteNonNegativeNumber(counts.strokes) ?? countRecords(style.strokes);
+    styleCounts.effects += finiteNonNegativeNumber(counts.effects) ?? countRecords(style.effects);
     for (const color of Array.isArray(style.topColors) ? style.topColors.filter(isRecord7) : []) {
       const name = asOptionalString2(color.color);
       const count = finiteNonNegativeNumber(color.count) ?? 0;
@@ -258706,19 +258736,20 @@ function mergeInspectStyleChunks(target, chunks) {
     appendCappedRecords(effects, style.effects, caps.effects);
   }
   const topColors = [...colorCounts.entries()].sort((left, right) => right[1] - left[1]).slice(0, caps.topColors).map(([color, count]) => ({ color, count }));
+  styleCounts.topColors = colorCounts.size;
   return removeUndefined3({
     target,
     mode: "style",
     nodeCount,
     scannedNodeCount,
-    summary,
+    targetSummary,
+    styleCounts,
     style: {
       topColors,
       textStyles,
       imageNodes,
       strokes,
-      effects,
-      caps
+      effects
     },
     batching: {
       source: "adaptive",
@@ -258759,7 +258790,7 @@ async function executeValidateHandles(args, runtime) {
     client: runtime.client,
     evalSettings
   });
-  const handleChanges = updateSessionFromParsedResult(session, validationResult.parsedJson);
+  updateSessionFromParsedResult(session, validationResult.parsedJson);
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -258770,15 +258801,16 @@ async function executeValidateHandles(args, runtime) {
   });
   const payload = validationResult.upstreamError ? {
     ok: false,
-    session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(diagnostics),
+    session: responseReadOnlySession(session),
+    mode: "validate",
+    diagnostics: optionalDiagnosticsForResponse(diagnostics),
     upstreamError: responseUpstreamError(validationResult.upstreamError)
   } : {
     ok: true,
-    session: responseSession(session, handleChanges),
-    diagnostics: diagnosticsForResponse(diagnostics),
-    validations: validationResult.validations,
-    validatedNodeIds: validationResult.validatedNodeIds
+    session: responseReadOnlySession(session),
+    mode: "validate",
+    diagnostics: optionalDiagnosticsForResponse(diagnostics),
+    validations: validationResult.validations
   };
   return payload;
 }
@@ -258928,7 +258960,7 @@ async function executeGetMetadata(args, runtime) {
       jsonBytes,
       json: metadata
     },
-    diagnostics: [...filtered.diagnostics, ...enrichment.diagnostics],
+    diagnostics: diagnosticsForResponse([...filtered.diagnostics, ...enrichment.diagnostics]),
     upstream: upstreamResult,
     ...upstreamFailureFields(parsed),
     upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : xmlParseError
@@ -259390,6 +259422,9 @@ async function handleLookup(args) {
     }
     throw error2;
   }
+}
+function countRecords(value) {
+  return Array.isArray(value) ? value.filter(isRecord7).length : 0;
 }
 function lookupCorpusDiagnostic(error2) {
   const failure = error2.failure;
@@ -261547,18 +261582,13 @@ function limitInlineScriptResult(payload, limitValue, fields) {
       delete target.parent[target.key];
       omitted.push({
         field,
-        bytes,
-        limit,
-        bytesHuman: formatBytesHuman(bytes),
-        limitHuman: formatBytesHuman(limit)
+        bytes
       });
     }
   }
   if (omitted.length > 0) {
     result.inlineResultLimit = {
-      limit,
       limitBytes: limit,
-      limitHuman: formatBytesHuman(limit),
       omitted,
       guidance: "Read the corresponding outputFiles pointer when inline fields are omitted."
     };
@@ -261723,7 +261753,7 @@ function createFileWorkflowPayload() {
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot; avoid covering primary controls, text, or content that visual QA must inspect.",
       "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
-      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are arrays, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
+      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are returned only when non-empty, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
       "When upstream execution fails after preflight, outputFiles.compiledScriptFile points to a *.failure.compiled.txt payload with a failure header for line-aware repair; preflight failures and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing."
     ]
   };
@@ -261851,7 +261881,7 @@ function createCapabilitiesPayload() {
     },
     contractNotes: {
       scriptPreflight: "figma_workspace_run_script_file always runs local diagnostics/compile/strict checks first; phase=preflight means executed=false and upstream was not called, phase=execute means upstream execution was attempted. Parse errors return repairPlan.status=parse_error and no guardrail scan.",
-      responseShape: "Tools return structuredContent-first JSON with empty content, minimal session summaries, diagnostics arrays, repairPlan steps, and outputFiles pointers for generated debug/sidecar files.",
+      responseShape: "Tools return structuredContent-first JSON with empty content, minimal session summaries, non-empty diagnostics, repairPlan steps, and outputFiles pointers for generated debug/sidecar files.",
       upstreamEnvelope: "upstream.ok is the effective upstream/business status; consumed top-level ok fields are removed from upstream.result and bridge-internal metadata is not public.",
       referenceOwnership: "Static resources are routing/workflow docs only. Helper, API, pattern, safety, and example details belong to figma_workspace_guidance, figma_workspace_lookup, and BM25 snippets."
     },
@@ -262426,7 +262456,13 @@ function summarizeParsedResult(parsed) {
   return "Figma Workspace command completed.";
 }
 function diagnosticsForResponse(diagnostics) {
-  return diagnostics ?? [];
+  return diagnostics && diagnostics.length > 0 ? diagnostics : void 0;
+}
+function optionalDiagnosticsForResponse(diagnostics) {
+  return diagnosticsForResponse(diagnostics);
+}
+function repairPlanForResponse(diagnostics) {
+  return diagnostics && diagnostics.length > 0 ? createFigmaWorkspaceRepairPlan(diagnostics) : void 0;
 }
 function dedupeDiagnostics2(diagnostics) {
   const seen = /* @__PURE__ */ new Set();
@@ -262449,6 +262485,14 @@ function responseSession(session, handleChanges = emptyHandleChanges()) {
     surface: session.surface,
     sessionDir: session.workspace?.sessionDir,
     handleChanges
+  });
+}
+function responseReadOnlySession(session) {
+  return removeUndefined3({
+    id: session.id,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    sessionDir: session.workspace?.sessionDir
   });
 }
 function responseWorkspace(workspace) {
@@ -262510,9 +262554,14 @@ function previewSessionHandles(handles) {
 function responseScriptMetadata(metadata) {
   return removeUndefined3({
     scriptPath: metadata.scriptPath,
+    inputFile: metadata.inputFile,
     expectedSurface: metadata.expectedSurface,
     compiledScriptBytes: metadata.compiledScriptBytes
   });
+}
+function responseRunScriptSuccessMetadata(args) {
+  const inputFile = asOptionalString2(args.inputFile);
+  return inputFile ? responseScriptMetadata({ inputFile }) : void 0;
 }
 function upstreamResultFields(options) {
   return {
@@ -262558,15 +262607,66 @@ function upstreamFailureFields(parsed) {
     primaryFix: parsed.primaryFix
   };
 }
-function inspectInlineResultFields(parsed) {
+function inspectInlineResultFields(parsed, fallbackMode) {
   if (parsed.upstreamError) {
     return {
       upstreamError: responseUpstreamError(parsed.upstreamError)
     };
   }
-  return {
+  const result = {
     ...asRecord3(asRecord3(parsed.json).result)
   };
+  delete result.handles;
+  if (fallbackMode === "inspect") {
+    return removeUndefined3({
+      ...result,
+      mode: asOptionalString2(result.mode) ?? "inspect"
+    });
+  }
+  const style = { ...asRecord3(result.style) };
+  delete style.caps;
+  delete style.limits;
+  const targetSummary = targetSummaryFromSummary(result.targetSummary ?? result.summary);
+  const truncated = inspectStyleTruncated(style, asRecord3(result.styleCounts));
+  return removeUndefined3({
+    ...result,
+    mode: "style",
+    summary: void 0,
+    handles: void 0,
+    limit: void 0,
+    styleCounts: void 0,
+    targetSummary,
+    style,
+    truncated
+  });
+}
+function targetSummaryFromSummary(value) {
+  const source = Array.isArray(value) ? asRecord3(value[0]) : asRecord3(value);
+  const result = removeUndefined3({
+    id: asOptionalString2(source.id),
+    type: asOptionalString2(source.type),
+    name: asOptionalString2(source.name),
+    visible: typeof source.visible === "boolean" ? source.visible : void 0,
+    x: finiteNumber(source.x),
+    y: finiteNumber(source.y),
+    width: finiteNumber(source.width),
+    height: finiteNumber(source.height)
+  });
+  return Object.keys(result).length > 0 ? result : void 0;
+}
+function inspectStyleTruncated(style, counts) {
+  const result = {};
+  for (const key of ["topColors", "textStyles", "imageNodes", "strokes", "effects"]) {
+    const total = finiteNonNegativeNumber(counts[key]);
+    if (total === void 0) {
+      continue;
+    }
+    const returned = Array.isArray(style[key]) ? style[key].length : 0;
+    if (total > returned) {
+      result[key] = total - returned;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : void 0;
 }
 function upstreamEnvelope(parsed, options = {}) {
   const includePayload = options.includePayload ?? true;

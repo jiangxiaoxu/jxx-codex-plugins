@@ -852,12 +852,12 @@ test("figma workspace eval writes debug result and upstream sidecar for large ou
     const largeJson = structuredToolResult(largeResult);
     assert.equal(largeJson.ok, true);
     assert.equal(largeJson.upstream.result, undefined);
-    assert.equal(largeJson.inlineResultLimit.limit, 40);
     assert.equal(largeJson.inlineResultLimit.limitBytes, 40);
-    assert.equal(largeJson.inlineResultLimit.limitHuman, "40 bytes");
-    assert.deepEqual(largeJson.inlineResultLimit.omitted.map((item) => item.field), ["upstream.result"]);
-    assert.equal(typeof largeJson.inlineResultLimit.omitted[0].bytesHuman, "string");
-    assert.equal(largeJson.inlineResultLimit.omitted[0].limitHuman, "40 bytes");
+    assert.deepEqual(largeJson.inlineResultLimit.omitted, [{ field: "upstream.result", bytes: largeJson.inlineResultLimit.omitted[0].bytes }]);
+    assert.equal(typeof largeJson.inlineResultLimit.omitted[0].bytes, "number");
+    assert.equal(largeJson.inlineResultLimit.omitted[0].limit, undefined);
+    assert.equal(largeJson.inlineResultLimit.omitted[0].bytesHuman, undefined);
+    assert.equal(largeJson.inlineResultLimit.omitted[0].limitHuman, undefined);
     assertFilePointer(largeJson.outputFiles.debugFile, largeJson.outputFiles.debugFile.path);
     assert.match(largeJson.outputFiles.debugFile.path, /eval-results/u);
     assert.match(largeJson.outputFiles.debugFile.path, /eval-main/u);
@@ -895,7 +895,7 @@ test("figma workspace eval writes debug result and upstream sidecar for large ou
     assert.equal(fileOnlyJson.ok, true);
     assert.equal(fileOnlyJson.upstream.result, undefined);
     assert.equal(fileOnlyJson.inlineResultLimit.limitBytes, 0);
-    assert.equal(fileOnlyJson.inlineResultLimit.limitHuman, "0 bytes");
+    assert.equal(fileOnlyJson.inlineResultLimit.limitHuman, undefined);
     assert.deepEqual(fileOnlyJson.inlineResultLimit.omitted.map((item) => item.field), ["upstream.result"]);
     assertFilePointer(fileOnlyJson.outputFiles.debugFile, fileOnlyJson.outputFiles.debugFile.path);
     const fileOnlyUpstream = await readPrettyJsonPointer(fileOnlyJson.outputFiles.upstreamFile, fileOnlyJson.outputFiles.upstreamFile.path);
@@ -914,7 +914,7 @@ test("figma workspace eval writes debug result and upstream sidecar for large ou
     const cappedJson = structuredToolResult(cappedResult);
     assert.equal(cappedJson.upstream.result, undefined);
     assert.equal(cappedJson.inlineResultLimit.limitBytes, 10_000);
-    assert.equal(cappedJson.inlineResultLimit.limitHuman, "10 KB");
+    assert.equal(cappedJson.inlineResultLimit.limitHuman, undefined);
     assert.deepEqual(cappedJson.inlineResultLimit.omitted.map((item) => item.field), ["upstream.result"]);
     const cappedUpstream = await readPrettyJsonPointer(cappedJson.outputFiles.upstreamFile, cappedJson.outputFiles.upstreamFile.path);
     assert.equal(cappedUpstream.result.payload.length, 20_000);
@@ -1885,7 +1885,7 @@ test("figma workspace exposes self-explaining capabilities and resources", async
   assert.ok(runScriptFileTool.outputSchema.properties.inlineResultLimit.properties.omitted.items.properties.field);
   assert.deepEqual(
     Object.keys(runScriptFileTool.outputSchema.properties.script.properties).sort(),
-    ["compiledScriptBytes", "expectedSurface", "scriptPath"],
+    ["compiledScriptBytes", "expectedSurface", "inputFile", "scriptPath"],
   );
   const evalTool = tools.tools.find((tool) => tool.name === "figma_workspace_eval");
   assert.ok(evalTool);
@@ -2274,7 +2274,11 @@ test("figma workspace exposes self-explaining capabilities and resources", async
     assert.equal(tool.outputSchema?.properties?.raw, undefined, `${tool.name} does not advertise raw inline output`);
     assert.deepEqual(tool.outputSchema?.required, ["ok"], `${tool.name} requires ok in outputSchema`);
     assert.equal(tool.outputSchema?.additionalProperties, true, `${tool.name} keeps outputSchema forward-compatible`);
-    const outputPropertyLimit = tool.name === "figma_workspace_guidance" ? 17 : 13;
+    const outputPropertyLimit = tool.name === "figma_workspace_guidance"
+      ? 17
+      : tool.name === "figma_workspace_inspect"
+        ? 14
+        : 13;
     assert.ok(
       Object.keys(tool.outputSchema?.properties ?? {}).length <= outputPropertyLimit,
       `${tool.name} outputSchema stays concise`,
@@ -2926,7 +2930,8 @@ test("figma workspace call_upstream_tool writes debug result and upstream sideca
     assert.equal(largeResult.upstream.ok, true);
     assert.equal(largeResult.upstream.result, undefined);
     assert.equal(largeResult.inlineResultLimit.limitBytes, 40);
-    assert.equal(largeResult.inlineResultLimit.limitHuman, "40 bytes");
+    assert.equal(largeResult.inlineResultLimit.limitHuman, undefined);
+    assert.equal(typeof largeResult.inlineResultLimit.omitted[0].bytes, "number");
     assert.deepEqual(largeResult.inlineResultLimit.omitted.map((item) => item.field), ["upstream.result"]);
     assert.match(largeResult.outputFiles.debugFile.path, /upstream-results.*upstream-main.*upstream-generate_diagram.*\.result\.json$/u);
     assert.match(largeResult.outputFiles.upstreamFile.path, /\.upstream\.json$/u);
@@ -3148,7 +3153,7 @@ IMPORTANT: After you call this tool, you MUST call get_design_context if trying 
     assert.equal(result.metadata.json.root.children[1].type, "rounded-rectangle");
     assert.equal(result.metadata.json.root.children[1].locked, false);
     assert.equal(result.metadata.json.root.children[1].layoutPositioning, "ABSOLUTE");
-    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.diagnostics, undefined);
     assert.equal(result.inlineResultLimit, undefined);
     assert.equal(result.outputFiles, undefined);
 
@@ -3280,7 +3285,7 @@ test("figma workspace get_metadata splits native enrichment readback when upstre
     assert.equal(metadataJson.root.visible, true);
     assert.equal(metadataJson.root.children[80].visible, true);
     assert.deepEqual(enrichmentBatchSizes, [80, 40, 40, 2]);
-    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.diagnostics, undefined);
   } finally {
     await repl.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -7499,8 +7504,9 @@ test("figma workspace task plans resolve workspace-relative step files consisten
     assert.equal(planFile.outputReferences, undefined);
     assert.deepEqual(planFile.stepDetails.map((step) => step.id), ["script", "asset", "capture", "reference"]);
     assert.deepEqual(json.steps.map((step) => step.status), ["completed", "completed", "completed", "completed"]);
-    assert.equal(json.outputReferences.asset, undefined);
-    assert.match(json.outputReferences.capture.imageFile, /capture\.png$/u);
+    assert.equal(json.outputReferences, undefined);
+    assert.equal(json.steps[1].outputReferences, undefined);
+    assert.match(json.steps[2].outputReferences.imageFile, /capture\.png$/u);
     assertPngBuffer(await readFile(resolve(fileDir, "capture.png")));
     await mcpClient.close();
   } finally {
@@ -8313,7 +8319,7 @@ test("figma workspace eval defaults to JavaScript without TypeScript preflight",
   });
   const json = structuredToolResult(result);
   assert.equal(json.ok, true);
-  assert.deepEqual(json.diagnostics, []);
+  assert.equal(json.diagnostics, undefined);
   assert.equal(json.upstream.result.nodeType, "FRAME");
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
   await mcpClient.close();
@@ -8355,7 +8361,7 @@ test("figma workspace eval compiles TypeScript when explicitly enabled", async (
   });
   const json = structuredToolResult(result);
   assert.equal(json.ok, true);
-  assert.deepEqual(json.diagnostics, []);
+  assert.equal(json.diagnostics, undefined);
   assert.equal(json.upstream.result.nodeType, "FRAME");
   assert.equal(json.script, undefined);
   assert.equal(json.outputFiles, undefined);
@@ -8596,14 +8602,8 @@ test("figma workspace run_script_file executes helper-backed scripts through ups
     assert.equal(json.ok, true);
     assert.equal(json.phase, "execute");
     assert.equal(json.executed, true);
-    assert.equal(json.script.executed, undefined);
-    assert.equal(json.script.dryRun, undefined);
-    assert.equal(json.script.diagnosticsCount, undefined);
-    assert.equal(json.script.targetPageId, undefined);
-    assert.equal(json.script.injectedHelpers, undefined);
-    assert.equal(json.script.helperUsage, undefined);
-    assert.equal(json.script.expectedSurface, "design");
-    assert.ok(json.script.compiledScriptBytes > 0);
+    assert.equal(json.script, undefined);
+    assert.equal(json.repairPlan, undefined);
     assert.equal(json.verbose, undefined);
     assert.equal(json.upstream.kind, "json");
     assert.equal(json.upstream.ok, true);
@@ -8692,10 +8692,9 @@ test("figma workspace run_script_file transpiles valid .figma.ts before upstream
     assert.equal(json.ok, true);
     assert.equal(json.phase, "execute");
     assert.equal(json.executed, true);
-    assert.equal(json.script.scriptPath, scriptPath);
-    assert.equal(json.script.expectedSurface, "design");
-    assert.ok(json.script.compiledScriptBytes > 0);
-    assert.deepEqual(json.diagnostics, []);
+    assert.equal(json.script, undefined);
+    assert.equal(json.repairPlan, undefined);
+    assert.equal(json.diagnostics, undefined);
     assert.equal(json.upstream.result.frameId, "30:1");
     assert.equal(json.outputFiles, undefined);
     await mcpClient.close();
@@ -8827,9 +8826,8 @@ test("figma workspace run_script_file avoids helper injection for native Plugin 
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.script.injectedHelpers, undefined);
-    assert.equal(json.script.helperUsage, undefined);
-    assert.ok(json.script.compiledScriptBytes < 15_000);
+    assert.equal(json.script, undefined);
+    assert.equal(json.repairPlan, undefined);
     assert.equal(json.upstream.result.name, "Native frame");
     assert.equal(json.upstream.result.__figmaRepl, undefined);
     assert.equal(json.result, undefined);
@@ -8885,9 +8883,7 @@ test("figma workspace run_script_file injects helper dependencies from AST usage
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.script.injectedHelpers, undefined);
-    assert.equal(json.script.helperUsage, undefined);
-    assert.ok(json.script.compiledScriptBytes > 0);
+    assert.equal(json.script, undefined);
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -9096,9 +9092,7 @@ test("figma workspace run_script_file allows literal computed helper access", as
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.equal(json.script.injectedHelpers, undefined);
-    assert.equal(json.script.helperUsage, undefined);
-    assert.ok(json.script.compiledScriptBytes > 0);
+    assert.equal(json.script, undefined);
     await mcpClient.close();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -9168,9 +9162,8 @@ test("figma workspace run_script_file supports generated image asset helper with
     });
     const json = structuredToolResult(result);
     assert.equal(json.ok, true);
-    assert.deepEqual(json.diagnostics, []);
-    assert.equal(json.script.injectedHelpers, undefined);
-    assert.equal(json.script.helperUsage, undefined);
+    assert.equal(json.diagnostics, undefined);
+    assert.equal(json.script, undefined);
     assert.deepEqual(json.session.handleChanges, { updated: ["$icon", "$root"], removed: [] });
     assert.equal(json.session.handles, undefined);
     await mcpClient.close();
@@ -9292,6 +9285,8 @@ test("figma workspace run_script_file structures upstream call failure errors", 
     });
     const successJson = structuredToolResult(successResult);
     assert.equal(successJson.ok, true);
+    assert.deepEqual(successJson.script, { inputFile: scriptName });
+    assert.equal(successJson.repairPlan, undefined);
     assert.equal(successJson.outputFiles, undefined);
     await assert.rejects(
       readFile(compiledFilePath, "utf8"),
@@ -10273,6 +10268,10 @@ test("figma workspace inspect returns compact lock and layout operation state", 
   });
   const json = structuredToolResult(result);
   assert.equal(json.ok, true);
+  assert.equal(json.mode, "inspect");
+  assert.equal(json.handles, undefined);
+  assert.equal(json.session.handleChanges, undefined);
+  assert.equal(json.diagnostics, undefined);
   assert.equal(json.summary.locked, true);
   assert.equal(json.summary.layoutMode, "VERTICAL");
   assert.equal(json.summary.layoutPositioning, "AUTO");
@@ -10328,14 +10327,14 @@ test("figma workspace inspect mode=style returns compact visual token audit", as
               target: "94:2",
               mode: "style",
               nodeCount: 12,
-              summary: { id: "94:2", type: "FRAME", name: "Panel" },
+              summary: { id: "94:2", type: "FRAME", name: "Panel", visible: true, x: -4, y: 8, width: 320, height: 200, children: [{ id: "94:3" }] },
+              styleCounts: { topColors: 1, textStyles: 1, imageNodes: 1, strokes: 1, effects: 0 },
               style: {
                 topColors: [{ color: "#101820", count: 4 }],
                 textStyles: [{ id: "94:6", name: "Title", fontSize: 32 }],
                 imageNodes: [{ id: "94:45", name: "Asset", type: "RECTANGLE" }],
                 strokes: [{ id: "94:12", name: "Panel", strokeWeight: 1 }],
                 effects: [],
-                caps: { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 },
               },
             },
           }),
@@ -10376,9 +10375,17 @@ test("figma workspace inspect mode=style returns compact visual token audit", as
   assert.equal(json.upstream, undefined);
   assert.equal(json.primaryFix, undefined);
   assert.equal(json.mode, "style");
+  assert.equal(json.handles, undefined);
+  assert.equal(json.summary, undefined);
+  assert.equal(json.session.handleChanges, undefined);
+  assert.equal(json.diagnostics, undefined);
+  assert.deepEqual(json.targetSummary, { id: "94:2", type: "FRAME", name: "Panel", visible: true, x: -4, y: 8, width: 320, height: 200 });
   assert.equal(json.style.topColors[0].color, "#101820");
   assert.equal(json.style.textStyles.length, 1);
   assert.equal(json.style.imageNodes.length, 1);
+  assert.equal(json.style.caps, undefined);
+  assert.equal(json.style.limits, undefined);
+  assert.equal(json.truncated, undefined);
   assert.deepEqual(calls.map((call) => call[0]), ["connect", "listTools", "callTool"]);
   await mcpClient.close();
 });
@@ -10416,14 +10423,20 @@ test("figma workspace inspect mode=style splits style audit when upstream trunca
             scannedNodeCount: count,
             offset,
             limit,
-            summary: includeSummary ? { id: "94:2", type: "FRAME", name: "Panel" } : undefined,
+            summary: includeSummary ? { id: "94:2", type: "FRAME", name: "Panel", visible: true, x: 0, y: 0, width: 100, height: 80 } : undefined,
+            styleCounts: {
+              topColors: 1,
+              textStyles: count > 0 ? count : 0,
+              imageNodes: 0,
+              strokes: 0,
+              effects: 0,
+            },
             style: {
               topColors: [{ color: "#101820", count }],
               textStyles: count > 0 ? [{ id: `94:${offset + 6}`, name: "Title", fontSize: 32 }] : [],
               imageNodes: [],
               strokes: [],
               effects: [],
-              caps: { topColors: 16, textStyles: 24, imageNodes: 20, strokes: 24, effects: 16 },
             },
           },
         }),
@@ -10461,6 +10474,10 @@ test("figma workspace inspect mode=style splits style audit when upstream trunca
     assert.equal(json.scannedNodeCount, 81);
     assert.equal(json.style.topColors[0].count, 81);
     assert.equal(json.style.textStyles.length, 3);
+    assert.equal(json.summary, undefined);
+    assert.deepEqual(json.targetSummary, { id: "94:2", type: "FRAME", name: "Panel", visible: true, x: 0, y: 0, width: 100, height: 80 });
+    assert.deepEqual(json.truncated, { textStyles: 78 });
+    assert.equal(json.style.caps, undefined);
     assert.equal(json.batching.source, "adaptive");
     assert.deepEqual(styleBatchSizes, [80, 40, 40, 1]);
   } finally {
@@ -10511,6 +10528,8 @@ test("figma workspace inspect failures return upstreamError without upstream wra
   });
   const json = structuredToolResult(result);
   assert.equal(json.ok, false);
+  assert.equal(json.mode, undefined);
+  assert.equal(json.handles, undefined);
   assert.equal(json.upstream, undefined);
   assert.equal(json.primaryFix, undefined);
   assert.equal(json.upstreamError.code, "INSPECT_FAILED");
@@ -10571,8 +10590,13 @@ test("figma workspace inspect mode=validate splits handle validation when upstre
   });
   const json = structuredToolResult(result);
   assert.equal(json.ok, true);
+  assert.equal(json.mode, "validate");
   assert.equal(json.validations.length, 81);
-  assert.equal(json.validatedNodeIds.length, 81);
+  assert.equal(json.validatedNodeIds, undefined);
+  assert.equal(json.handles, undefined);
+  assert.equal(json.session.handleChanges, undefined);
+  assert.equal(json.diagnostics, undefined);
+  assert.equal(json.validations.filter((item) => item.status === "valid").map((item) => item.id).length, 81);
   assert.deepEqual(batchSizes, [80, 40, 40, 1]);
   await mcpClient.close();
   await rm(tempDir, { recursive: true, force: true });
@@ -10643,6 +10667,11 @@ test("figma workspace inspect mode=validate reports valid, missing, and stale", 
     json.validations.map((item) => item.status),
     ["valid", "missing", "stale"],
   );
+  assert.equal(json.mode, "validate");
+  assert.equal(json.validatedNodeIds, undefined);
+  assert.equal(json.handles, undefined);
+  assert.equal(json.session.handleChanges, undefined);
+  assert.equal(json.diagnostics, undefined);
   assert.equal(json.validations[0].locked, false);
   assert.equal(json.validations[0].layoutMode, "HORIZONTAL");
   assert.equal(json.validations[0].layoutPositioning, "AUTO");
@@ -10910,7 +10939,7 @@ test("figma workspace programmatic client returns typed output contracts", async
     assert.equal(scriptResult.phase, "execute");
     assert.equal(scriptResult.executed, true);
     assert.equal("content" in scriptResult, false);
-    assert.equal(scriptResult.script.injectedHelpers, undefined);
+    assert.equal(scriptResult.script, undefined);
     assert.equal(scriptResult.verbose, undefined);
 
     const upstreamResult = await repl.callUpstreamTool({
