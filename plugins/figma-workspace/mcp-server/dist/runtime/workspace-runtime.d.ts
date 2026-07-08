@@ -1,4 +1,5 @@
 import "./web-stream-globals.js";
+import "./typescript-compiler-runtime.js";
 export * from "../mcp/index.js";
 export * from "../mcp/workspace-mcp-server.js";
 export { isDirectRun as isFigmaWorkspaceMcpDirectRun, runFigmaWorkspaceMcpCli, } from "../mcp/workspace-mcp-cli.js";
