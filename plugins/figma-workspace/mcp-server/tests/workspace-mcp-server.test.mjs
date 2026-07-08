@@ -7966,11 +7966,12 @@ test("figma workspace run_script_file type-checks .figma.ts before upstream exec
 test("figma workspace run_script_file reads canonical helper declarations and rejects removed helpers", async () => {
   const helperDeclarations = await readFile(resolve(packageRoot, "src/runtime/figma-workspace-helpers.d.ts"), "utf8");
   const scriptRunnerSource = await readFile(resolve(packageRoot, "src/runtime/script-runner.ts"), "utf8");
+  const compilerRuntimeSource = await readFile(resolve(packageRoot, "src/runtime/typescript-compiler-runtime.ts"), "utf8");
   assert.match(helperDeclarations, /interface FigmaWorkspaceDollar/);
   assert.match(helperDeclarations, /readonly handles: Readonly<Record<string, string>>;/);
   assert.doesNotMatch(scriptRunnerSource, /interface FigmaWorkspaceDollar/);
-  assert.match(scriptRunnerSource, /loadFigmaWorkspaceTypescriptRuntimeAssets/);
-  assert.match(scriptRunnerSource, /typescriptRuntimeAssets\.helperDeclarations/);
+  assert.match(compilerRuntimeSource, /loadFigmaWorkspaceTypescriptRuntimeAssets/);
+  assert.match(compilerRuntimeSource, /typescriptRuntimeAssets\.helperDeclarations/);
   for (const helperTerm of removedDollarHelperTerms) {
     assert.equal(helperDeclarations.includes(helperTerm), false, `canonical helper declaration must not include ${helperTerm}`);
   }

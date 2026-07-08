@@ -1,3 +1,6 @@
+import { getFigmaWorkspaceTypescriptRuntimeInfo, type FigmaWorkspaceTypescriptRuntimeInfo } from "./typescript-compiler-runtime.js";
+export { getFigmaWorkspaceTypescriptRuntimeInfo };
+export type { FigmaWorkspaceTypescriptRuntimeInfo };
 export type FigmaWorkspaceSurface = "design" | "figjam" | "slides";
 export type FigmaWorkspaceDiagnosticSeverity = "fatal" | "warning";
 export interface FigmaWorkspaceDiagnostic {
@@ -79,27 +82,6 @@ export interface CompiledFigmaWorkspaceEvalCode {
     code: string;
     diagnostics: FigmaWorkspaceFileDiagnostic[];
 }
-interface FigmaWorkspaceTypescriptRuntimeAssetFailure {
-    ok: false;
-    moduleDir: string;
-    cwd: string;
-    argv1?: string;
-    packageVersion?: string;
-    attemptedPaths: string[];
-    message: string;
-}
-export type FigmaWorkspaceTypescriptRuntimeInfo = {
-    ok: true;
-    moduleDir: string;
-    cwd: string;
-    argv1?: string;
-    packageVersion?: string;
-    helperDeclarationsPath: string;
-    figmaPluginTypingsPath: string;
-    typescriptLibDir: string;
-    typescriptLibCount: number;
-} | FigmaWorkspaceTypescriptRuntimeAssetFailure;
-export declare function getFigmaWorkspaceTypescriptRuntimeInfo(): FigmaWorkspaceTypescriptRuntimeInfo;
 export declare function compileFigmaWorkspaceScriptFile(options: {
     scriptPath: string;
     source: string;
@@ -127,4 +109,3 @@ export declare function diagnoseFigmaWorkspaceContext(options: {
     derivedSurface?: FigmaWorkspaceSurface;
     fileUrl?: string;
 }): FigmaWorkspaceDiagnostic[];
-export {};

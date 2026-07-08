@@ -17,12 +17,11 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
     upstreamCliDeclarations,
     workspaceDeclarations,
     nodeWorkspaceDeclarations,
-    mcpHelperDeclarations,
-    upstreamHelperDeclarations,
-    mcpFigmaPluginTypings,
-    upstreamFigmaPluginTypings,
-    mcpFigmaPluginApiTypings,
+    runtimeHelperDeclarations,
+    runtimeFigmaPluginTypings,
+    runtimeFigmaPluginApiTypings,
     sharedRuntimeSource,
+    compilerRuntimeSource,
     apiSource,
     workspaceServerSource,
   ] =
@@ -34,12 +33,11 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
     readFile(new URL("../dist/upstream/upstream-stdio-cli.d.ts", import.meta.url), "utf8"),
     readFile(new URL("../dist/mcp/workspace-mcp-server.d.ts", import.meta.url), "utf8"),
     readFile(new URL("../dist/upstream/node-upstream-client.d.ts", import.meta.url), "utf8"),
-    readFile(new URL("../dist/mcp/figma-workspace-helpers.d.ts", import.meta.url), "utf8"),
-    readFile(new URL("../dist/upstream/figma-workspace-helpers.d.ts", import.meta.url), "utf8"),
-    readFile(new URL("../dist/mcp/figma-plugin-typings/index.d.ts", import.meta.url), "utf8"),
-    readFile(new URL("../dist/upstream/figma-plugin-typings/index.d.ts", import.meta.url), "utf8"),
-    readFile(new URL("../dist/mcp/figma-plugin-typings/plugin-api.d.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dist/runtime/figma-workspace-helpers.d.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dist/runtime/figma-plugin-typings/index.d.ts", import.meta.url), "utf8"),
+    readFile(new URL("../dist/runtime/figma-plugin-typings/plugin-api.d.ts", import.meta.url), "utf8"),
     readFile(new URL("../dist/runtime/workspace-runtime.js", import.meta.url), "utf8"),
+    readFile(new URL("../dist/runtime/typescript-compiler-runtime.js", import.meta.url), "utf8"),
     readFile(new URL("../dist/mcp/index.js", import.meta.url), "utf8"),
     readFile(new URL("../dist/mcp/workspace-mcp-server.js", import.meta.url), "utf8"),
   ]);
@@ -96,13 +94,13 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.match(nodeWorkspaceDeclarations, /createRemoteMcpClient/);
   assert.match(nodeWorkspaceDeclarations, /createFigmaWorkspaceClient/);
   assert.match(nodeWorkspaceDeclarations, /installNodeReplWebStreamGlobals/);
-  assert.equal(mcpHelperDeclarations, upstreamHelperDeclarations);
-  assert.match(mcpHelperDeclarations, /readonly handles: Readonly<Record<string, string>>;/);
-  assert.doesNotMatch(mcpHelperDeclarations, /\$\.create|\$\.layout|\$\.find\b|\$\.findAll\b/);
-  assert.equal(mcpFigmaPluginTypings, upstreamFigmaPluginTypings);
-  assert.match(mcpFigmaPluginTypings, /plugin-api\.d\.ts/);
-  assert.match(mcpFigmaPluginApiTypings, /interface PluginAPI/);
-  assert.match(sharedRuntimeSource, /node_modules\/@typescript\/typescript6\/node_modules\/typescript\/lib\/typescript\.js/);
+  assert.match(runtimeHelperDeclarations, /readonly handles: Readonly<Record<string, string>>;/);
+  assert.doesNotMatch(runtimeHelperDeclarations, /\$\.create|\$\.layout|\$\.find\b|\$\.findAll\b/);
+  assert.match(runtimeFigmaPluginTypings, /plugin-api\.d\.ts/);
+  assert.match(runtimeFigmaPluginApiTypings, /interface PluginAPI/);
+  assert.match(sharedRuntimeSource, /(?:from "\.\/typescript-compiler-runtime\.js"|import "\.\/typescript-compiler-runtime\.js")/);
+  assert.doesNotMatch(sharedRuntimeSource, /node_modules\/@typescript\/typescript6\/node_modules\/typescript\/lib\/typescript\.js/);
+  assert.match(compilerRuntimeSource, /node_modules\/@typescript\/typescript6\/node_modules\/typescript\/lib\/typescript\.js/);
   assert.doesNotMatch(apiSource, /node_modules\/@typescript\/typescript6\/node_modules\/typescript\/lib\/typescript\.js/);
   assert.doesNotMatch(workspaceServerSource, /from "typescript"|require\("typescript"\)/);
   assert.doesNotMatch(workspaceServerSource, /node_modules\/@typescript\/typescript6\/node_modules\/typescript\/lib\/typescript\.js/);
@@ -122,13 +120,13 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.doesNotMatch(apiDeclarations, /FigmaWorkspaceVerboseScriptMetadata/);
   assert.doesNotMatch(workspaceDeclarations, /verboseResults/);
   assert.doesNotMatch(workspaceDeclarations, /verbose\?:/);
-  assert.match(workspaceDeclarations, /script: FigmaWorkspaceCompactScriptMetadata;/);
+  assert.match(workspaceDeclarations, /script\?: FigmaWorkspaceCompactScriptMetadata;/);
   const compactScriptMetadata = workspaceDeclarations.match(
     /export interface FigmaWorkspaceCompactScriptMetadata \{([\s\S]*?)\n\}/,
   )?.[1];
   assert.notEqual(compactScriptMetadata, undefined);
-  assert.match(compactScriptMetadata, /scriptPath: string;/);
-  assert.match(compactScriptMetadata, /compiledScriptBytes: number;/);
+  assert.match(compactScriptMetadata, /scriptPath\?: string;/);
+  assert.match(compactScriptMetadata, /compiledScriptBytes\?: number;/);
   assert.doesNotMatch(compactScriptMetadata, /targetPageId/);
   assert.doesNotMatch(compactScriptMetadata, /injectedHelpers/);
   assert.doesNotMatch(compactScriptMetadata, /helperUsage/);
@@ -136,17 +134,24 @@ test("build publishes CLI and TypeScript declaration contract", async () => {
   assert.match(workspaceDeclarations, /@internal[\s\S]*Internal-facing helper-selection utility[\s\S]*resolveFigmaWorkspaceScriptHelperSelection/);
   assert.equal(distFiles.includes("upstream/node-upstream-client.js"), true);
   assert.equal(distFiles.includes("runtime/workspace-runtime.js"), true);
+  assert.equal(distFiles.includes("runtime/typescript-compiler-runtime.js"), true);
   assert.equal(distFiles.includes("mcp/workspace-mcp-cli.js"), true);
   assert.equal(distFiles.includes("mcp/workspace-mcp-server.js"), true);
   assert.equal(distFiles.includes("mcp/workspace-mcp-stdio-bin.js"), true);
   assert.equal(distFiles.includes("upstream/upstream-stdio-bin.js"), true);
-  assert.equal(distFiles.includes("mcp/figma-plugin-typings/index.d.ts"), true);
-  assert.equal(distFiles.includes("mcp/figma-plugin-typings/plugin-api.d.ts"), true);
-  assert.equal(distFiles.includes("upstream/figma-plugin-typings/index.d.ts"), true);
-  assert.equal(distFiles.includes("upstream/figma-plugin-typings/plugin-api.d.ts"), true);
-  assert.equal(distFiles.includes("mcp/typescript-lib/lib.es2022.d.ts"), true);
-  assert.equal(distFiles.includes("mcp/typescript-lib/lib.dom.d.ts"), true);
-  assert.equal(distFiles.includes("upstream/typescript-lib/lib.es2022.d.ts"), true);
+  assert.equal(distFiles.includes("runtime/figma-workspace-helpers.d.ts"), true);
+  assert.equal(distFiles.includes("runtime/figma-plugin-typings/index.d.ts"), true);
+  assert.equal(distFiles.includes("runtime/figma-plugin-typings/plugin-api.d.ts"), true);
+  assert.equal(distFiles.includes("runtime/typescript-lib/lib.es2022.d.ts"), true);
+  assert.equal(distFiles.includes("runtime/typescript-lib/lib.dom.d.ts"), true);
+  assert.equal(distFiles.includes("mcp/figma-workspace-helpers.d.ts"), false);
+  assert.equal(distFiles.includes("mcp/figma-plugin-typings/index.d.ts"), false);
+  assert.equal(distFiles.includes("mcp/figma-plugin-typings/plugin-api.d.ts"), false);
+  assert.equal(distFiles.includes("mcp/typescript-lib/lib.es2022.d.ts"), false);
+  assert.equal(distFiles.includes("upstream/figma-workspace-helpers.d.ts"), false);
+  assert.equal(distFiles.includes("upstream/figma-plugin-typings/index.d.ts"), false);
+  assert.equal(distFiles.includes("upstream/figma-plugin-typings/plugin-api.d.ts"), false);
+  assert.equal(distFiles.includes("upstream/typescript-lib/lib.es2022.d.ts"), false);
   assert.equal(distFiles.includes("skills/figma-workspace/references/upstream-corpus/manifest.json"), true);
   assert.equal(distFiles.includes("skills/figma-workspace/references/upstream-corpus/corpus.jsonl"), true);
   assert.equal(distFiles.some((file) => file.endsWith(".d.ts.map")), false);
@@ -359,7 +364,7 @@ const result = await client.runScriptFile({
 const callTool = calls.find((entry) => entry[0] === "callTool") ?? [];
 console.log(JSON.stringify({
   ok: result.ok,
-  diagnostics: result.diagnostics.length,
+  diagnostics: (result.diagnostics ?? []).length,
   upstreamCalls: calls.filter((entry) => entry[0] === "callTool").length,
   upstreamName: callTool[1],
   hasCode: typeof callTool[2]?.code === "string",
@@ -395,9 +400,9 @@ const fakeUpstream = {
 
 const client = createFigmaWorkspaceClient({ client: fakeUpstream });
 await rm(join(process.cwd(), "dist/skills/figma-workspace/references/upstream-corpus"), { recursive: true, force: true });
-await rm(join(process.cwd(), "dist/mcp/figma-workspace-helpers.d.ts"), { force: true });
-await rm(join(process.cwd(), "dist/mcp/figma-plugin-typings"), { recursive: true, force: true });
-await rm(join(process.cwd(), "dist/mcp/typescript-lib"), { recursive: true, force: true });
+await rm(join(process.cwd(), "dist/runtime/figma-workspace-helpers.d.ts"), { force: true });
+await rm(join(process.cwd(), "dist/runtime/figma-plugin-typings"), { recursive: true, force: true });
+await rm(join(process.cwd(), "dist/runtime/typescript-lib"), { recursive: true, force: true });
 
 const lookup = await client.lookup({ kind: "api", symbol: "createFrame", maxResults: 1 });
 const evalResult = await client.eval({
@@ -432,8 +437,8 @@ const diagnosticsText = JSON.stringify([
 console.log(JSON.stringify({
   lookupOk: lookup.ok === true,
   lookupResults: lookup.results.length > 0,
-  evalBlocked: evalResult.ok === false && evalResult.diagnostics.length > 0,
-  scriptBlocked: scriptResult.ok === false && scriptResult.diagnostics.length > 0,
+  evalBlocked: evalResult.ok === false && (evalResult.diagnostics ?? []).length > 0,
+  scriptBlocked: scriptResult.ok === false && (scriptResult.diagnostics ?? []).length > 0,
   noMissingAssetDiagnostics: !/ENOENT|no such file|Cannot find global type|figma-workspace-helpers|figma-plugin-typings|typescript-lib/u.test(diagnosticsText),
 }));
 `;

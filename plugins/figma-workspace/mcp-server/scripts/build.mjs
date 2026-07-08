@@ -28,6 +28,10 @@ const sharedRuntimeOutput = {
   entryPoint: resolve(root, "src/runtime/workspace-runtime.ts"),
   outfile: resolve(dist, "runtime/workspace-runtime.js"),
 };
+const typescriptCompilerRuntimeOutput = {
+  entryPoint: resolve(root, "src/runtime/typescript-compiler-runtime.ts"),
+  outfile: resolve(dist, "runtime/typescript-compiler-runtime.js"),
+};
 const publicWrappers = [
   {
     outfile: resolve(dist, "mcp/index.js"),
@@ -121,7 +125,17 @@ await build({
   ...sharedBuildOptions,
   bundle: true,
   banner: { js: bundledEsmRequireBanner },
+  entryPoints: [typescriptCompilerRuntimeOutput.entryPoint],
+  outfile: typescriptCompilerRuntimeOutput.outfile,
+});
+await rewriteBuiltFile(typescriptCompilerRuntimeOutput.outfile);
+
+await build({
+  ...sharedBuildOptions,
+  bundle: true,
+  banner: { js: bundledEsmRequireBanner },
   entryPoints: [sharedRuntimeOutput.entryPoint],
+  external: ["./typescript-compiler-runtime.js"],
   outfile: sharedRuntimeOutput.outfile,
 });
 await rewriteBuiltFile(sharedRuntimeOutput.outfile);
@@ -161,12 +175,9 @@ async function stageHelperDeclarations() {
   const source = resolve(root, "src/runtime/figma-workspace-helpers.d.ts");
   const figmaTypings = resolve(root, "node_modules/@figma/plugin-typings");
   const typescriptLib = resolve(root, "node_modules/@typescript/typescript6/node_modules/typescript/lib");
-  await cp(source, resolve(dist, "mcp/figma-workspace-helpers.d.ts"));
-  await cp(source, resolve(dist, "upstream/figma-workspace-helpers.d.ts"));
-  await stageFigmaPluginTypings(figmaTypings, resolve(dist, "mcp/figma-plugin-typings"));
-  await stageFigmaPluginTypings(figmaTypings, resolve(dist, "upstream/figma-plugin-typings"));
-  await stageTypescriptLib(typescriptLib, resolve(dist, "mcp/typescript-lib"));
-  await stageTypescriptLib(typescriptLib, resolve(dist, "upstream/typescript-lib"));
+  await cp(source, resolve(dist, "runtime/figma-workspace-helpers.d.ts"));
+  await stageFigmaPluginTypings(figmaTypings, resolve(dist, "runtime/figma-plugin-typings"));
+  await stageTypescriptLib(typescriptLib, resolve(dist, "runtime/typescript-lib"));
 }
 
 async function stageFigmaPluginTypings(sourceDir, targetDir) {
