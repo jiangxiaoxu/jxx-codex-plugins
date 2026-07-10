@@ -4,9 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import stat
 from datetime import datetime
 from pathlib import Path
+
+
+REPORT_FILENAME_PATTERN = re.compile(r"^\d{8}-\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 
 
 def normalize_token(value: str, field_name: str) -> str:
@@ -30,6 +35,29 @@ def resolve_workspace(value: str) -> Path:
     return workspace
 
 
+def is_link_or_reparse_point(path: Path) -> bool:
+    try:
+        path_stat = path.lstat()
+    except FileNotFoundError:
+        return False
+    if stat.S_ISLNK(path_stat.st_mode):
+        return True
+    return os.name == "nt" and bool(path_stat.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def is_managed_report(path: Path) -> bool:
+    return bool(REPORT_FILENAME_PATTERN.fullmatch(path.name)) and not is_link_or_reparse_point(path) and path.is_file()
+
+
+def validate_managed_path(workspace: Path, path: Path, label: str) -> None:
+    if is_link_or_reparse_point(path):
+        raise SystemExit(f"refusing {label} that is a symlink, junction, or reparse point: {path}")
+    try:
+        path.resolve().relative_to(workspace)
+    except ValueError as error:
+        raise SystemExit(f"{label} escapes workspace: {path}") from error
+
+
 def task_memory_root_path(workspace: Path) -> Path:
     return workspace / "task-memory"
 
@@ -38,25 +66,13 @@ def task_dir_path(workspace: Path, normalized_task_id: str) -> Path:
     return task_memory_root_path(workspace) / normalized_task_id
 
 
-def available_task_names(task_parent: Path) -> list[str]:
-    return sorted(path.name for path in task_parent.glob("task-*") if path.is_dir())
-
-
-def task_dir_not_found_hint(workspace: Path) -> str:
-    task_memory_root = task_memory_root_path(workspace)
-    tasks = available_task_names(task_memory_root)
-    hint = f"Tasks: {', '.join(tasks)}" if tasks else "No task-memory/task-* directories found."
-    return f" {hint}"
-
-
 def resolve_task_dir(workspace: Path, task_id: str, must_exist: bool = True) -> Path:
     normalized_task_id = normalize_task_id(task_id)
     task_dir = task_dir_path(workspace, normalized_task_id)
     if task_dir.is_dir() or not must_exist:
         return task_dir
 
-    hint = task_dir_not_found_hint(workspace)
-    raise SystemExit(f"task memory folder not found: {task_dir}.{hint}")
+    raise SystemExit(f"task not found: {normalized_task_id}")
 
 
 def task_state_path(task_dir: Path) -> Path:
@@ -67,56 +83,48 @@ def reports_dir_path(task_dir: Path) -> Path:
     return task_dir / "reports"
 
 
-def archive_dir_path(task_dir: Path) -> Path:
-    return reports_dir_path(task_dir) / "archive"
-
-
 def artifacts_dir_path(task_dir: Path) -> Path:
     return task_dir / "artifacts"
 
 
-def validate_task_dir(task_dir: Path, require_reports: bool = True) -> tuple[Path, Path, Path, Path]:
+def validate_task_dir(workspace: Path, task_dir: Path, require_reports: bool = True) -> tuple[Path, Path, Path]:
     task_state = task_state_path(task_dir)
     reports_dir = reports_dir_path(task_dir)
-    archive_dir = archive_dir_path(task_dir)
     artifacts_dir = artifacts_dir_path(task_dir)
+    validate_managed_path(workspace, task_memory_root_path(workspace), "task memory root")
+    validate_managed_path(workspace, task_dir, "task directory")
+    validate_managed_path(workspace, reports_dir, "reports directory")
+    validate_managed_path(workspace, artifacts_dir, "artifacts directory")
     if not task_state.is_file():
         raise SystemExit(f"missing task_state.md: {task_state}")
     if reports_dir.exists() and not reports_dir.is_dir():
         raise SystemExit(f"reports path exists but is not a directory: {reports_dir}")
     if require_reports and not reports_dir.is_dir():
         raise SystemExit(f"missing reports directory: {reports_dir}")
-    if archive_dir.exists() and not archive_dir.is_dir():
-        raise SystemExit(f"reports archive path exists but is not a directory: {archive_dir}")
     if artifacts_dir.exists() and not artifacts_dir.is_dir():
         raise SystemExit(f"artifacts path exists but is not a directory: {artifacts_dir}")
-    return task_state, reports_dir, archive_dir, artifacts_dir
+    return task_state, reports_dir, artifacts_dir
 
 
-def task_state_template(task_name: str) -> str:
-    return f"""# Task State
+def task_state_template() -> str:
+    return """# Task State
 
 ## Goal
 
-- Task: {task_name}
+- Objective: TBD
 - Success criteria: TBD
 
 ## State
 
-- Current phase: initialization
-- Durable findings:
-  - Task memory folder created - evidence: task_state.md, reports/, reports/archive/, and artifacts/ initialized.
-- Evidence ledger:
-  - `task-memory-init`: task_state.md + reports/ + reports/archive/ + artifacts/ - initial durable memory scaffold and centralized artifact storage.
+- Phase: initialized
 
 ## Open
 
-- Fill in the task goal, success criteria, and first concrete next step.
+- Next: define the objective and first concrete action.
 
 ## Reports
 
-Pending:
-- none
+- None
 """
 
 
@@ -124,6 +132,8 @@ def next_sequence(reports_dir: Path, date: str) -> int:
     pattern = re.compile(rf"^{re.escape(date)}-(\d{{3}})-")
     max_sequence = 0
     for path in reports_dir.glob(f"{date}-*.md"):
+        if not is_managed_report(path):
+            continue
         match = pattern.match(path.name)
         if match:
             max_sequence = max(max_sequence, int(match.group(1)))
@@ -148,14 +158,11 @@ def title_from_token(token: str) -> str:
     return " ".join(part.capitalize() for part in token.split("-"))
 
 
-def report_template(report_name: str, task_state: Path) -> str:
+def report_template(report_name: str) -> str:
     created = datetime.now().isoformat(timespec="seconds")
     return f"""# {title_from_token(report_name)} Report
 
-Created: {created}
-Task state read: {task_state}
 Scope: TBD
-Repo/context snapshot: not checked
 Status: in-progress
 Last updated: {created}
 
@@ -163,28 +170,24 @@ Last updated: {created}
 
 - TBD
 
-## Absorbable Findings
+## Findings
 
-- `<finding>` Evidence: `<path:line-line>` `<symbol/config/API/error signature>` - TBD
+- TBD. Evidence: not checked.
 
-## Open or Unresolved
+## Open
 
-- N/A
-
-## Role Result
-
-- N/A
+- None
 """
 
 
-def create_report_file(reports_dir: Path, report_name: str, task_state: Path) -> Path:
+def create_report_file(reports_dir: Path, report_name: str) -> Path:
     date = datetime.now().strftime("%Y%m%d")
     sequence = next_sequence(reports_dir, date)
     while sequence < 1000:
         report = reports_dir / f"{date}-{sequence:03d}-{report_name}.md"
         try:
             with report.open("x", encoding="utf-8", newline="\n") as handle:
-                handle.write(report_template(report_name, task_state))
+                handle.write(report_template(report_name))
             return report
         except FileExistsError:
             sequence += 1
@@ -194,141 +197,103 @@ def create_report_file(reports_dir: Path, report_name: str, task_state: Path) ->
 def resolve_live_report(reports_dir: Path, report_value: str) -> Path:
     report_path = Path(report_value).expanduser()
     if report_path.is_absolute():
-        candidate = report_path.resolve()
+        candidate = report_path
     else:
-        candidate = (reports_dir / report_path).resolve()
-    if not candidate.is_file():
+        candidate = reports_dir / report_path
+    if candidate.parent.resolve() != reports_dir.resolve():
+        raise SystemExit(f"refusing to delete a report outside the live reports directory: {candidate}")
+    if not is_managed_report(candidate):
+        if not REPORT_FILENAME_PATTERN.fullmatch(candidate.name):
+            raise SystemExit(f"invalid report filename: {candidate.name}")
+        if is_link_or_reparse_point(candidate):
+            raise SystemExit(f"refusing report symlink or reparse point: {candidate}")
         raise SystemExit(f"report does not exist: {candidate}")
-    if candidate.suffix != ".md":
-        raise SystemExit(f"refusing to archive a non-markdown report: {candidate}")
-    if candidate.parent != reports_dir.resolve():
-        raise SystemExit(f"refusing to archive a report outside the live/unarchived reports directory: {candidate}")
     return candidate
-
-
-def next_archive_path(archive_dir: Path, report_name: str) -> Path:
-    initial = archive_dir / report_name
-    if not initial.exists():
-        return initial
-    stem = initial.stem
-    suffix = initial.suffix
-    sequence = 1
-    while sequence < 1000:
-        candidate = archive_dir / f"{stem}-{sequence:03d}{suffix}"
-        if not candidate.exists():
-            return candidate
-        sequence += 1
-    raise SystemExit(f"could not allocate archived report filename for: {report_name}")
 
 
 def command_init(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_id = normalize_task_id(args.task_id)
+    validate_managed_path(workspace, task_memory_root_path(workspace), "task memory root")
     actual_task_id, task_dir = allocate_task_dir(workspace, task_id)
+    validate_managed_path(workspace, task_dir, "task directory")
     reports_dir = reports_dir_path(task_dir)
-    archive_dir = archive_dir_path(task_dir)
     artifacts_dir = artifacts_dir_path(task_dir)
     task_state = task_state_path(task_dir)
 
-    archive_dir.mkdir(parents=True)
+    reports_dir.mkdir(parents=True)
     artifacts_dir.mkdir()
-    task_state.write_text(task_state_template(actual_task_id), encoding="utf-8", newline="\n")
+    task_state.write_text(task_state_template(), encoding="utf-8", newline="\n")
 
     print(f"task_id={actual_task_id}")
-    print(f"task_dir={task_dir}")
-    print(f"task_state={task_state}")
-    print(f"reports_dir={reports_dir}")
-    print(f"archive_dir={archive_dir}")
-    print(f"artifacts_dir={artifacts_dir}")
     return 0
 
 
 def command_status(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    task_state, reports_dir, archive_dir, artifacts_dir = validate_task_dir(task_dir, require_reports=False)
-    live_reports = sorted(reports_dir.glob("*.md")) if reports_dir.is_dir() else []
+    _task_state, reports_dir, _artifacts_dir = validate_task_dir(workspace, task_dir, require_reports=False)
+    live_reports = (
+        sorted(path for path in reports_dir.glob("*.md") if is_managed_report(path))
+        if reports_dir.is_dir()
+        else []
+    )
 
-    print(f"task_dir={task_dir}")
-    print(f"task_state={task_state}")
-    print(f"reports_dir={reports_dir}")
-    print(f"archive_dir={archive_dir}")
-    print(f"artifacts_dir={artifacts_dir}")
-    print(f"live_unarchived_reports={len(live_reports)}")
-    for report in live_reports:
-        print(f"live_unarchived_report={report.name}")
+    report_names = ",".join(report.name for report in live_reports)
+    print(f"reports={report_names or 'none'}")
     return 0
 
 
 def command_create_report(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    task_state, reports_dir, _archive_dir, _artifacts_dir = validate_task_dir(task_dir, require_reports=False)
+    _task_state, reports_dir, _artifacts_dir = validate_task_dir(workspace, task_dir, require_reports=False)
     reports_dir.mkdir(exist_ok=True)
     report_name = normalize_token(args.name, "--name")
-    report = create_report_file(reports_dir, report_name, task_state)
+    report = create_report_file(reports_dir, report_name)
 
-    print(report)
+    print(f"report={report.name}")
     return 0
 
 
-def command_archive_report(args: argparse.Namespace) -> int:
+def command_delete_report(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    task_state, reports_dir, archive_dir, _artifacts_dir = validate_task_dir(task_dir, require_reports=False)
+    _task_state, reports_dir, _artifacts_dir = validate_task_dir(workspace, task_dir, require_reports=False)
     reports_dir.mkdir(exist_ok=True)
     report = resolve_live_report(reports_dir, args.report)
-    archive_dir.mkdir(exist_ok=True)
-    archive_target = next_archive_path(archive_dir, report.name)
 
-    print(f"Task state: {task_state}")
-    print(f"Report to archive: {report}")
-    print(f"Archive target: {archive_target}")
-    print("Before archiving an absorbed report, the task-state owner must fully absorb durable report content into task_state.md.")
-    print("In-progress archive gate: the task-state owner may archive Status: in-progress as lifecycle cleanup only after the handoff is no longer running and the live progress artifact should no longer be used.")
-    print("Archive gate: conclusion, evidence pointers, risks, and next actions are either absorbed, intentionally discarded as non-durable, left pending after any stopped-partial review, or intentionally not absorbed for in-progress cleanup.")
-    print("Archived reports are best-effort audit copies and may later be unreadable or deleted.")
-
-    report.rename(archive_target)
-    print(f"Archived: {archive_target}")
+    report.unlink()
+    print(f"deleted={report.name}")
     return 0
 
 
 def add_common_task_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--workspace", required=True, help="Absolute workspace path containing task-memory/<task-id> folders.")
-    parser.add_argument("--task-id", required=True, help="Workspace-unique task id, normalized to lowercase hyphen-case and required to start with task-.")
+    parser.add_argument("--workspace", required=True, help="Absolute workspace path.")
+    parser.add_argument("--task-id", required=True, help="Task id beginning with task-.")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Manage task-memory/<task-id>/task_state.md, reports/, reports/archive/, and artifacts/.",
-        epilog="""Examples:
-  python <skill_dir>/scripts/task_memory.py init --workspace <absolute-workspace> --task-id task-<name>
-  python <skill_dir>/scripts/task_memory.py status --workspace <absolute-workspace> --task-id task-<name>
-  python <skill_dir>/scripts/task_memory.py create-report --workspace <absolute-workspace> --task-id task-<name> --name thumbnail-cache-check
-  python <skill_dir>/scripts/task_memory.py archive-report --workspace <absolute-workspace> --task-id task-<name> --report <report-filename>
-""",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+    parser = argparse.ArgumentParser(description="Manage task memory.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    init_parser = subparsers.add_parser("init", help="Create a task memory folder.")
+    init_parser = subparsers.add_parser("init", help="Create task memory.")
     add_common_task_args(init_parser)
     init_parser.set_defaults(func=command_init)
 
-    status_parser = subparsers.add_parser("status", help="Print task memory paths and live/unarchived report files.")
+    status_parser = subparsers.add_parser("status", help="List live reports.")
     add_common_task_args(status_parser)
     status_parser.set_defaults(func=command_status)
 
-    create_report_parser = subparsers.add_parser("create-report", help="Create a live/unarchived report template.")
+    create_report_parser = subparsers.add_parser("create-report", help="Create report.")
     add_common_task_args(create_report_parser)
-    create_report_parser.add_argument("--name", required=True, help="Short report name, normalized to lowercase hyphen-case.")
+    create_report_parser.add_argument("--name", required=True, help="Report name.")
     create_report_parser.set_defaults(func=command_create_report)
 
-    archive_report_parser = subparsers.add_parser("archive-report", help="Archive an absorbed report or in-progress lifecycle cleanup report from reports/.")
-    add_common_task_args(archive_report_parser)
-    archive_report_parser.add_argument("--report", required=True, help="Report filename under reports/. Archive one report at a time.")
-    archive_report_parser.set_defaults(func=command_archive_report)
+    delete_report_parser = subparsers.add_parser("delete-report", help="Delete report.")
+    add_common_task_args(delete_report_parser)
+    delete_report_parser.add_argument("--report", required=True, help="Report filename.")
+    delete_report_parser.set_defaults(func=command_delete_report)
 
     return parser
 

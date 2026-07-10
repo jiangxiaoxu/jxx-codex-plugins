@@ -1,10 +1,22 @@
 # jxx-codex-plugins
 
-Codex plugin marketplace repository.
+Codex plugin marketplace repository. See [Repository Guide](doc/jxx-codex-plugins-repository-guide.md) for the source map, plugin-specific documentation, and validation entrypoints.
 
-Included plugins:
+## Plugins
 
-- `rg`: Node REPL helper for structured ripgrep search sessions.
-- `figma-workspace`: Figma MCP stdio frontend with a local HTTP OAuth bootstrap bridge.
-- `chatgpt-research-prompt`: copy-ready research, investigation, and exploration prompt generator for ChatGPT.
-- `task-memory`: durable task_state.md memory with summaries, evidence reports, archived report copies, and command-only handoffs for long-running Codex tasks.
+| Plugin | Purpose |
+| --- | --- |
+| `chatgpt-research-prompt` | Generates copy-ready research prompts for ChatGPT web research. |
+| `task-memory` | Maintains durable task state and compact handoff reports for long-running Codex work. |
+| `figma-workspace` | Provides the `figma_workspace_mcp` frontend, local OAuth bridge, and Figma workspace tooling. |
+
+## Repository Layout
+
+```text
+.agents/plugins/marketplace.json  Marketplace inventory and ordering
+plugins/                          Plugin source directories
+doc/                              Repository and plugin maintenance documentation
+AGENTS.md                         AI execution instructions
+```
+
+There is no repository-wide build or test runner. Use the validation commands documented for the plugin being changed.
