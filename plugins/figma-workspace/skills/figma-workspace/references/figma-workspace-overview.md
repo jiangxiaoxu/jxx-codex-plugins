@@ -6,7 +6,8 @@ Use this reference to choose a CLI capability before opening command-specific he
 
 - Stateless guidance, docs, API, doctor, and upstream list/read commands omit `--state-file`; oversized results use `<plugin-root>/.figma-workspace/results/`.
 - Sessions and direct file-context commands accept `--state-file`. File-context commands also accept `--session-id`; the state file persists workspace context and its parent owns `results/` sidecars.
-- All executing commands accept `--max-inline-bytes`. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help; use `npm run figma:raw -- <transport-command> --help` for the complete transport JSON schema.
+- All executing commands accept `--max-inline-bytes`. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help; use `npm --silent run figma:raw -- <transport-command> --help` for the complete transport JSON schema.
+- File-binding commands accept `--workspace`; `figma:inspect` instead reuses context already bound to its session and intentionally omits `--workspace` and `--file`.
 
 ## Core Workflow
 

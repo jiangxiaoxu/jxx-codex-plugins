@@ -71,7 +71,7 @@ function targetSpec(command, purpose, extraOptions = {}) {
       description: "Node id, node URL, or $handle. A node-scoped --file URL can supply the target instead."
     },
     options: { ...fileContextOptions(), ...extraOptions },
-    examples: [`npm run figma:${npmScriptForCommand(command)} -- '$hero' --session-id default`]
+    examples: [`npm --silent run figma:${npmScriptForCommand(command)} -- '$hero' --session-id default`]
   };
 }
 var FIGMA_DIRECT_COMMANDS = {
@@ -86,14 +86,14 @@ var FIGMA_DIRECT_COMMANDS = {
       "--card-limit": integerOption("maxCards", "<n>", "Maximum returned cards from 1 to 8.", { min: 1, max: 8 })
     },
     outputLimit: true,
-    examples: ['npm run figma:guidance -- "text font loadFontAsync" --surface design']
+    examples: ['npm --silent run figma:guidance -- "text font loadFontAsync" --surface design']
   },
   "docs:list": {
     command: "docs",
     purpose: "List canonical project Markdown topics.",
     options: {},
     outputLimit: true,
-    examples: ["npm run figma:docs:list"]
+    examples: ["npm --silent run figma:docs:list"]
   },
   "docs:read": {
     command: "docs",
@@ -101,7 +101,7 @@ var FIGMA_DIRECT_COMMANDS = {
     position: { key: "topic", label: "topic", required: true, description: "Topic returned by figma:docs:list." },
     options: {},
     outputLimit: true,
-    examples: ["npm run figma:docs:read -- workflow"]
+    examples: ["npm --silent run figma:docs:read -- workflow"]
   },
   "docs:search": {
     command: "lookup",
@@ -113,7 +113,7 @@ var FIGMA_DIRECT_COMMANDS = {
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 })
     },
     outputLimit: true,
-    examples: ['npm run figma:docs:search -- "session handles recovery" --limit 5']
+    examples: ['npm --silent run figma:docs:search -- "session handles recovery" --limit 5']
   },
   "api:search": {
     command: "lookup",
@@ -125,14 +125,14 @@ var FIGMA_DIRECT_COMMANDS = {
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 })
     },
     outputLimit: true,
-    examples: ["npm run figma:api:search -- createFrame"]
+    examples: ["npm --silent run figma:api:search -- createFrame"]
   },
   doctor: {
     command: "doctor",
     purpose: "Inspect project-doc, lookup-corpus, and TypeScript runtime availability.",
     options: {},
     outputLimit: true,
-    examples: ["npm run figma:doctor"]
+    examples: ["npm --silent run figma:doctor"]
   },
   "sessions:list": {
     command: "sessions",
@@ -140,7 +140,7 @@ var FIGMA_DIRECT_COMMANDS = {
     options: {},
     stateFile: true,
     outputLimit: true,
-    examples: ['npm run figma:sessions:list -- --state-file "C:\\work\\figma-state.json"']
+    examples: ['npm --silent run figma:sessions:list -- --state-file "C:\\work\\figma-state.json"']
   },
   "sessions:read": {
     command: "sessions",
@@ -152,14 +152,14 @@ var FIGMA_DIRECT_COMMANDS = {
     },
     stateFile: true,
     outputLimit: true,
-    examples: ["npm run figma:sessions:read -- default --with-handles"]
+    examples: ["npm --silent run figma:sessions:read -- default --with-handles"]
   },
   "upstream:list": {
     command: "upstream-tools",
     purpose: "List the live official Figma upstream tool directory.",
     options: { "--refresh": booleanOption("refresh", "Refresh upstream discovery before reading.") },
     outputLimit: true,
-    examples: ["npm run figma:upstream:list -- --refresh"]
+    examples: ["npm --silent run figma:upstream:list -- --refresh"]
   },
   "upstream:read": {
     command: "upstream-tools",
@@ -167,7 +167,7 @@ var FIGMA_DIRECT_COMMANDS = {
     position: { key: "name", label: "name", required: true, description: "Exact official upstream tool name." },
     options: { "--refresh": booleanOption("refresh", "Refresh upstream discovery before reading.") },
     outputLimit: true,
-    examples: ["npm run figma:upstream:read -- whoami --refresh"]
+    examples: ["npm --silent run figma:upstream:read -- whoami --refresh"]
   },
   inspect: {
     command: "inspect",
@@ -181,7 +181,7 @@ var FIGMA_DIRECT_COMMANDS = {
       "--depth": integerOption("depth", "<n>", "Positive traversal depth.", { min: 1 }),
       "--handle": repeatOption("handles", "<name>", "Handle name or node id to validate; repeat as needed.")
     },
-    examples: ["npm run figma:inspect -- '$hero' --mode validate --session-id default"]
+    examples: ["npm --silent run figma:inspect -- '$hero' --mode validate --session-id default"]
   },
   metadata: targetSpec("get-metadata", "Read broad Figma metadata for an optional target."),
   "design-context": targetSpec("get-design-context", "Read official design implementation context.", {
@@ -211,7 +211,7 @@ var FIGMA_DIRECT_COMMANDS = {
       "--no-code-connect": booleanOption("disableCodeConnect", "Disable Code Connect context."),
       "--library": repeatOption("includeLibraryKeys", "<key>", "Include one library key; repeat as needed.")
     },
-    examples: ['npm run figma:design-system -- "button primary" --components --variables']
+    examples: ['npm --silent run figma:design-system -- "button primary" --components --variables']
   },
   libraries: {
     command: "get-libraries",
@@ -220,7 +220,7 @@ var FIGMA_DIRECT_COMMANDS = {
     stateFile: true,
     outputLimit: true,
     options: { ...fileContextOptions(), "--offset": integerOption("offset", "<n>", "Non-negative pagination offset.", { min: 0 }) },
-    examples: ["npm run figma:libraries -- --session-id default"]
+    examples: ["npm --silent run figma:libraries -- --session-id default"]
   }
 };
 var FIGMA_JSON_COMMANDS = {
@@ -252,7 +252,7 @@ async function runFigmaCommand(commandName, argv, dependencies = {}) {
   const writeStdout = writer(dependencies.writeStdout, process.stdout.write.bind(process.stdout));
   const writeStderr = writer(dependencies.writeStderr, process.stderr.write.bind(process.stderr));
   if (isCommandFamily(commandName)) {
-    if (argv.length === 0 || argv.some(isHelpToken)) {
+    if (argv.length === 0 || argv.some(isHelpFlag) || argv.length === 1 && argv[0] === "help") {
       writeStdout(formatFamilyHelp(commandName));
       return EXIT_SUCCESS;
     }
@@ -263,7 +263,7 @@ ${formatFamilyHelp(commandName)}`);
   }
   if (isDirectCommand(commandName)) {
     const spec = FIGMA_DIRECT_COMMANDS[commandName];
-    if (argv.some(isHelpToken)) {
+    if (argv.some(isHelpFlag)) {
       writeStdout(formatDirectHelp(commandName, spec));
       return EXIT_SUCCESS;
     }
@@ -283,7 +283,7 @@ ${formatDirectHelp(commandName, spec)}`);
   }
   if (isJsonCommand(commandName)) {
     const spec = FIGMA_JSON_COMMANDS[commandName];
-    if (argv.some(isHelpToken)) {
+    if (argv.some(isHelpFlag)) {
       writeStdout(formatJsonHelp(commandName, spec));
       return EXIT_SUCCESS;
     }
@@ -432,8 +432,8 @@ function formatDirectHelp(commandName, spec) {
     spec.purpose,
     "",
     "## Usage",
-    `- \`npm run figma -- ${commandName}${usagePosition} [options]\``,
-    `- \`npm run figma:${commandName} --${usagePosition} [options]\``
+    `- \`npm --silent run figma -- ${commandName}${usagePosition} [options]\``,
+    `- \`npm --silent run figma:${commandName} --${usagePosition} [options]\``
   ];
   if (spec.position !== void 0) {
     lines.push("", "## Arguments", `- \`<${spec.position.label}>\`: ${spec.position.description}`);
@@ -459,10 +459,10 @@ function formatFamilyHelp(family) {
     `Browse the figma ${family} command family.`,
     "",
     "## Commands",
-    ...commands.map((commandName) => `- \`npm run figma -- ${commandName} --help\``),
+    ...commands.map((commandName) => `- \`npm --silent run figma -- ${commandName} --help\``),
     "",
     "## NPM Scripts",
-    ...commands.map((commandName) => `- \`npm run figma:${commandName} -- --help\``),
+    ...commands.map((commandName) => `- \`npm --silent run figma:${commandName} -- --help\``),
     "",
     "## Help",
     "Use `-h` or `--help` on a concrete command before first use.",
@@ -478,8 +478,8 @@ function formatJsonHelp(commandName, spec) {
     spec.purpose,
     "",
     "## Usage",
-    `- \`npm run figma -- ${commandName}${inputUsage} [options]\``,
-    `- \`npm run figma:${commandName} --${inputUsage} [options]\``,
+    `- \`npm --silent run figma -- ${commandName}${inputUsage} [options]\``,
+    `- \`npm --silent run figma:${commandName} --${inputUsage} [options]\``,
     "",
     "## Options",
     "- `--input <json-file|->`: Read the command JSON object from a file or stdin.",
@@ -488,7 +488,7 @@ function formatJsonHelp(commandName, spec) {
     "- `-h`, `--help`: Show this command help without running Figma.",
     "",
     "## JSON Schema",
-    `Run \`npm run figma:raw -- ${spec.command} --help\` only when the complete transport-level input schema is needed.`,
+    `Run \`npm --silent run figma:raw -- ${spec.command} --help\` only when the complete transport-level input schema is needed.`,
     "",
     "## Output",
     "Restricted Markdown on stdout. Follow `outputFiles.cliResultFile` for an oversized complete JSON result.",
@@ -500,10 +500,10 @@ function formatRootHelp() {
     "# Figma command CLI help",
     "",
     "## Usage",
-    "- `npm run figma -- <command> [arguments] [options]`",
+    "- `npm --silent run figma -- <command> [arguments] [options]`",
     "",
     "## Command families",
-    ...Object.keys(FIGMA_COMMAND_FAMILIES).map((family) => `- \`npm run figma -- ${family} --help\``),
+    ...Object.keys(FIGMA_COMMAND_FAMILIES).map((family) => `- \`npm --silent run figma -- ${family} --help\``),
     "",
     "## Query and read commands",
     ...Object.keys(FIGMA_DIRECT_COMMANDS).map((command) => `- \`${command}\``),
@@ -512,7 +512,7 @@ function formatRootHelp() {
     ...Object.keys(FIGMA_JSON_COMMANDS).map((command) => `- \`${command}\``),
     "",
     "## Transport schema escape hatch",
-    "- `npm run figma:raw -- <transport-command> --help`",
+    "- `npm --silent run figma:raw -- <transport-command> --help`",
     ""
   ].join("\n");
 }
@@ -533,6 +533,9 @@ function isCommandFamily(value) {
 }
 function isHelpToken(token) {
   return token === "-h" || token === "--help" || token === "help";
+}
+function isHelpFlag(token) {
+  return token === "-h" || token === "--help";
 }
 function formatError(error) {
   return error instanceof Error ? error.message : String(error);

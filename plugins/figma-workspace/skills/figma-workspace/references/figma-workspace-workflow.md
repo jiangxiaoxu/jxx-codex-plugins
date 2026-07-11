@@ -22,7 +22,7 @@ Use this reference when root CLI help is not enough to choose a workflow. Comman
 
 ## Workflow Add-ons
 
-- Use `figma:metadata` for broad layer-tree discovery before detailed style, fill, or text inspection. Direct file-context commands accept `--session-id`, `--state-file`, `--workspace`, and `--max-inline-bytes`; node-scoped commands also accept `--file` when explicit file context is preferable.
+- Use `figma:metadata` for broad layer-tree discovery before detailed style, fill, or text inspection. File-binding commands accept `--session-id`, `--state-file`, `--workspace`, and `--max-inline-bytes`; node-scoped file-binding commands also accept `--file` when explicit file context is preferable. `figma:inspect` is the exception: it accepts session/state options but reuses the session's existing file context and omits `--workspace` and `--file`.
 - Use `figma:inspect` only after `figma:open` or `figma:task:prepare` has bound file context. Its positional target is string-only: `$selection`, `$currentPage`, a stored handle, raw node id, or node URL string. Repeat `--handle <name>` to validate multiple handles.
 - Use `figma:guidance` for wrapper profiles and workflow graph nodes when sequencing design-context, motion, or video calls.
 - Follow wrapper `guidanceRef.query` with `figma:guidance` when a thin wrapper output needs detailed next-step guidance.
@@ -45,4 +45,4 @@ Use this reference when root CLI help is not enough to choose a workflow. Comman
 - Typed `ok: false` results retain that Markdown shape and exit with code 1.
 - Usage errors and thrown failures are text on stderr.
 - Do not pass stdout to `JSON.parse`; read Markdown fields and parse only a fenced `json` value when the workflow specifically needs that nested value.
-- JSON commands intentionally expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. Run `npm run figma:raw -- <transport-command> --help` when the complete transport JSON schema is needed.
+- JSON commands intentionally expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. Run `npm --silent run figma:raw -- <transport-command> --help` when the complete transport JSON schema is needed.

@@ -9,22 +9,22 @@ npm install
 npm run build
 ```
 
-The installed plugin exposes this package through independent plugin-root npm command entrypoints. Use `npm.cmd` in Windows PowerShell and `npm` in other shells, put npm's `--` before arguments passed to an independent entrypoint, and run a selected command with `-h` or `--help` before first use. The canonical command CLI and the equivalent independent entrypoint are:
+The installed plugin exposes this package through independent plugin-root npm command entrypoints. Use `npm.cmd --silent` in Windows PowerShell and `npm --silent` in other shells so lifecycle banners do not contaminate Restricted Markdown stdout, put npm's `--` before arguments passed to an independent entrypoint, and run a selected command with `-h` or `--help` before first use. The canonical command CLI and the equivalent independent entrypoint are:
 
 ```text
-npm.cmd run figma -- api:search createFrame
-npm.cmd run figma:api:search -- createFrame
+npm.cmd --silent run figma -- api:search createFrame
+npm.cmd --silent run figma:api:search -- createFrame
 ```
 
 Family entrypoints are `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`. Direct query/read commands are `figma:guidance`, `figma:docs:list`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`.
 
 JSON commands are `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:run`, `figma:task:prepare`, and `figma:upstream:call`. They expose only `--input <json-file|->`, `--state-file <path>`, `--max-inline-bytes <bytes>`, and help. Each public npm command has an independent `scripts/commands/*.mjs` executable that delegates to the shared typechecked `dist/cli/figma-command-runtime.js`; business behavior remains in that runtime.
 
-The 22 transport-level JSON commands are available only through `figma:raw` and `figma:raw:help`. Run `npm run figma:raw -- <transport-command> --help` for a complete transport schema.
+The 22 transport-level JSON commands are available only through `figma:raw` and `figma:raw:help`. Run `npm --silent run figma:raw -- <transport-command> --help` for a complete transport schema.
 
 The CLI has exactly 22 kebab-case commands: `open`, `eval`, `run-script-file`, `apply-asset-manifest`, `download-assets`, `capture-node`, `run-task-plan`, `prepare-task`, `guidance`, `inspect`, `get-metadata`, `get-design-context`, `get-motion-context`, `search-design-system`, `get-libraries`, `get-variable-defs`, `call-upstream-tool`, `lookup`, `docs`, `doctor`, `sessions`, and `upstream-tools`.
 
-`--state-file` selects the persisted workspace state store and anchors its sibling `results/` directory. Sessions and direct file-context commands expose it; direct file-context commands also expose `--session-id`. Guidance, docs, API, doctor, and upstream list/read omit it and use `<plugin-root>/.figma-workspace/results/` for sidecars. All executing commands expose `--max-inline-bytes`; search uses `--limit` and `--snippet-lines`, guidance uses `--card-limit`, file context uses `--workspace`, design-system uses repeatable `--library`, sessions read uses `--with-handles` and `--with-history`, and inspect uses repeatable `--handle`.
+`--state-file` selects the persisted workspace state store and anchors its sibling `results/` directory. Sessions and direct file-context commands expose it; direct file-context commands also expose `--session-id`. Guidance, docs, API, doctor, and upstream list/read omit it and use `<plugin-root>/.figma-workspace/results/` for sidecars. All executing commands expose `--max-inline-bytes`; search uses `--limit` and `--snippet-lines`, guidance uses `--card-limit`, and file-binding commands use `--workspace`. Design-system uses repeatable `--library`, and sessions read uses `--with-handles` and `--with-history`. Inspect reuses context already bound to the session, omits `--workspace` and `--file`, and supports repeatable `--handle`.
 
 At the transport CLI, `--input` accepts a JSON file or `-` for stdin and defaults to `{}`. Transport session state defaults to `FIGMA_WORKSPACE_SESSION_FILE` or `<cwd>/.figma-workspace/session.json`; `--session-file` overrides it. `figma:raw:help` and `figma:raw -- <transport-command> --help` write the complete transport usage and schema.
 

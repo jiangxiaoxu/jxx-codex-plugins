@@ -2,7 +2,7 @@
 
 Use this reference when diagnostics or guardrails need more context. Runtime diagnostics and tool schemas remain the source of truth for enforcement.
 
-Before executing a command, read its help and use only the optimized flags it exposes. Do not infer transport CLI options on a command; use `npm run figma:raw -- <transport-command> --help` only when the complete transport JSON schema is required.
+Before executing a command, read its help and use only the optimized flags it exposes. Do not infer transport CLI options on a command; use `npm --silent run figma:raw -- <transport-command> --help` only when the complete transport JSON schema is required.
 
 ## Diagnostics
 

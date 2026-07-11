@@ -24,6 +24,7 @@ plugins/figma-workspace/mcp-server/dist/skills/*
 plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/*
 !plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/
 plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/*
+!plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/*.md
 !plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/upstream-corpus/
 !plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/upstream-corpus/manifest.json
 !plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/upstream-corpus/corpus.jsonl

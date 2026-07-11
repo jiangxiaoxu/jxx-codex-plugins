@@ -20,30 +20,30 @@ Use the bundled Node CLI for every Figma Workspace operation. The plugin does no
 
 ## NPM Command Contract
 
-Resolve `<plugin-root>` as `<skill-dir>/../..`, where `<skill-dir>` contains this `SKILL.md`, and use it as the working directory. In Windows PowerShell use `npm.cmd`; in cmd, bash, and other shells use `npm`. Always put npm's `--` separator before command arguments or forwarded CLI options. The canonical command CLI is `npm.cmd run figma -- <command> ...`; each `figma:<command>` script is an independent npm executable entrypoint for the same command. Before first use, run the selected entrypoint with `-h` or `--help`.
+Resolve `<plugin-root>` as `<skill-dir>/../..`, where `<skill-dir>` contains this `SKILL.md`, and use it as the working directory. In Windows PowerShell use `npm.cmd --silent`; in cmd, bash, and other shells use `npm --silent`. `--silent` is required so npm lifecycle banners do not contaminate Restricted Markdown stdout. Always put npm's `--` separator before command arguments or forwarded CLI options. The canonical command CLI is `npm.cmd --silent run figma -- <command> ...`; each `figma:<command>` script is an independent npm executable entrypoint for the same command. Before first use, run the selected entrypoint with `-h` or `--help`.
 
 ```text
-npm.cmd run figma:guidance -- --help
-npm.cmd run figma:guidance -- "text font loadFontAsync" --surface design
-npm.cmd run figma -- api:search createFrame
-npm.cmd run figma:api:search -- createFrame
+npm.cmd --silent run figma:guidance -- --help
+npm.cmd --silent run figma:guidance -- "text font loadFontAsync" --surface design
+npm.cmd --silent run figma -- api:search createFrame
+npm.cmd --silent run figma:api:search -- createFrame
 ```
 
 - Family entrypoints: `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
 - Direct query/read commands: `figma:guidance`, `figma:docs:list`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`. These accept positional arguments and optimized options instead of JSON input.
 - JSON commands: `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:run`, `figma:task:prepare`, and `figma:upstream:call`. Their optimized surface exposes only `--input <json-file|->`, `--state-file <path>`, `--max-inline-bytes <bytes>`, and help.
-- The 22 transport-level kebab-case JSON commands are available only through `figma:raw` and `figma:raw:help`. Run `npm run figma:raw -- <transport-command> --help` for a complete transport schema.
+- The 22 transport-level kebab-case JSON commands are available only through `figma:raw` and `figma:raw:help`. Run `npm --silent run figma:raw -- <transport-command> --help` for a complete transport schema.
 - `--input` accepts a JSON file path or `-` for JSON on stdin. Prefer a file for large or reusable payloads and stdin for small calls.
 - `--state-file` selects the persisted workspace state store. Its parent directory also owns the `results/` sidecar directory. Prefer an explicit absolute path and reuse it across related stateful commands.
 - Stateless `figma:guidance`, docs, API, doctor, and upstream list/read commands intentionally omit `--state-file`. If they produce a sidecar, it uses the default `<plugin-root>/.figma-workspace/results/` location.
 - `figma:sessions:list`, `figma:sessions:read`, and all direct file-context commands expose `--state-file`; direct file-context commands also expose `--session-id` for the logical workspace session.
-- Every executing command exposes `--max-inline-bytes`. Search commands use `--limit` and `--snippet-lines`; guidance uses `--card-limit`. File-context commands use `--workspace`, design-system uses repeatable `--library`, sessions read uses `--with-handles` and `--with-history`, and inspect uses repeatable `--handle`.
+- Every executing command exposes `--max-inline-bytes`. Search commands use `--limit` and `--snippet-lines`; guidance uses `--card-limit`. File-binding commands use `--workspace`, design-system uses repeatable `--library`, and sessions read uses `--with-handles` and `--with-history`. `figma:inspect` is the exception: it reuses context already bound to the selected session, omits `--workspace` and `--file`, and supports repeatable `--handle`; run `figma:open` or a file-binding read command first when the session has no file context.
 - Typed command results use Restricted Markdown on stdout. Each result has a command title, an `Input` section, an explicit status, and expanded business fields; complex nested values may appear in fenced `json` blocks.
 - A typed result with `ok: false` still uses the same Restricted Markdown result shape and exits with code 1. Usage errors, input parsing failures, transport failures, and thrown or unexpected execution errors are text on stderr with a non-zero exit code.
 - Never pass CLI stdout to `JSON.parse`. Read the Markdown headings, status, fields, and any nested JSON code fences instead.
 - Result size defaults to 4096 bytes and is capped at 10000. `--max-inline-bytes` maps to the transport runtime result limit; `0` always writes the complete JSON result under the selected state file's sibling `results/`, or the plugin-root default for stateless commands. When a result exceeds the limit, Markdown returns only `outputFiles.cliResultFile` plus the omitted-byte summary; read that JSON file for the complete payload.
 - The Markdown `Input` line summarizes long code, base64, objects, and arrays instead of echoing the full input.
-- Use `npm run figma:help` for the command directory. Use the selected command's `-h` or `--help` before first use. Use `npm run figma:raw -- <transport-command> --help` only when the complete transport JSON schema is needed.
+- Use `npm --silent run figma:help` for the command directory. Use the selected command's `-h` or `--help` before first use. Use `npm --silent run figma:raw -- <transport-command> --help` only when the complete transport JSON schema is needed.
 
 Choose a state file inside the current project, worktree, or task artifacts, for example `<project>/figma-workspace/state.json` or `<project>/task-memory/<task-id>/artifacts/figma-workspace/state.json`. It is temporary local state and should not be committed by default.
 
