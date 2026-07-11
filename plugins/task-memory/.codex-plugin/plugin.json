@@ -1,7 +1,7 @@
 {
   "name": "task-memory",
-  "version": "0.1.40",
-  "description": "Durable task memory with summaries, evidence reports, absorbed report deletion, and command-only handoffs for Codex",
+  "version": "0.1.41",
+  "description": "Durable workspace-local task state with resumable checkpoints and optional evidence reports for Codex",
   "author": {
     "name": "jiangxiaoxu"
   },
@@ -9,14 +9,13 @@
   "keywords": [
     "task-memory",
     "task-state",
-    "subagent",
     "handoff",
     "reports"
   ],
   "interface": {
     "displayName": "Task Memory",
-    "shortDescription": "Maintain task_state.md with handoffs.",
-    "longDescription": "Provides durable task memory, summaries, and handoff helpers for Codex tasks.",
+    "shortDescription": "Persist resumable state for long tasks.",
+    "longDescription": "Provides durable workspace-local task state, resumable checkpoints, and optional evidence reports for Codex tasks.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
     "capabilities": [
@@ -24,6 +23,6 @@
       "Write"
     ],
     "brandColor": "#111827",
-    "defaultPrompt": "Use $task-memory to maintain task memory for this task."
+    "defaultPrompt": "Use $task-memory to keep this task resumable."
   }
 }

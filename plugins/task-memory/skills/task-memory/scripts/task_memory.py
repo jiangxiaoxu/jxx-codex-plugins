@@ -29,33 +29,58 @@ def normalize_task_id(value: str) -> str:
 
 
 def resolve_workspace(value: str) -> Path:
-    workspace = Path(value).expanduser().resolve()
-    if not workspace.exists() or not workspace.is_dir():
-        raise SystemExit(f"workspace does not exist or is not a directory: {workspace}")
+    workspace_argument = Path(value)
+    if not workspace_argument.is_absolute():
+        raise ValueError(f"--workspace must be an absolute path: {value}")
+    workspace = workspace_argument.resolve()
+    if not workspace.is_dir():
+        raise ValueError(f"workspace does not exist or is not a directory: {workspace}")
     return workspace
 
 
-def is_link_or_reparse_point(path: Path) -> bool:
+def path_metadata(path: Path) -> os.stat_result | None:
     try:
-        path_stat = path.lstat()
+        return path.lstat()
     except FileNotFoundError:
-        return False
-    if stat.S_ISLNK(path_stat.st_mode):
+        return None
+
+
+def is_link_or_reparse_point(metadata: os.stat_result) -> bool:
+    if stat.S_ISLNK(metadata.st_mode):
         return True
-    return os.name == "nt" and bool(path_stat.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return bool(getattr(metadata, "st_file_attributes", 0) & reparse_flag)
 
 
-def is_managed_report(path: Path) -> bool:
-    return bool(REPORT_FILENAME_PATTERN.fullmatch(path.name)) and not is_link_or_reparse_point(path) and path.is_file()
-
-
-def validate_managed_path(workspace: Path, path: Path, label: str) -> None:
-    if is_link_or_reparse_point(path):
-        raise SystemExit(f"refusing {label} that is a symlink, junction, or reparse point: {path}")
+def ensure_within_workspace(workspace: Path, path: Path, label: str) -> None:
     try:
-        path.resolve().relative_to(workspace)
+        path.relative_to(workspace)
     except ValueError as error:
-        raise SystemExit(f"{label} escapes workspace: {path}") from error
+        raise ValueError(f"{label} escapes workspace: {path}") from error
+
+
+def validate_directory(workspace: Path, path: Path, label: str) -> None:
+    ensure_within_workspace(workspace, path, label)
+    metadata = path_metadata(path)
+    if metadata is None:
+        raise ValueError(f"missing {label}: {path}")
+    if is_link_or_reparse_point(metadata):
+        raise ValueError(f"refusing {label} that is a symlink, junction, or reparse point: {path}")
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError(f"{label} is not a directory: {path}")
+
+
+def validate_regular_file(workspace: Path, path: Path, label: str) -> None:
+    ensure_within_workspace(workspace, path, label)
+    metadata = path_metadata(path)
+    if metadata is None:
+        raise ValueError(f"missing {label}: {path}")
+    if is_link_or_reparse_point(metadata):
+        raise ValueError(f"refusing {label} symlink or reparse point: {path}")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"{label} is not a regular file: {path}")
+    if metadata.st_nlink != 1:
+        raise ValueError(f"refusing hard-linked {label}: {path}")
 
 
 def task_memory_root_path(workspace: Path) -> Path:
@@ -64,15 +89,6 @@ def task_memory_root_path(workspace: Path) -> Path:
 
 def task_dir_path(workspace: Path, normalized_task_id: str) -> Path:
     return task_memory_root_path(workspace) / normalized_task_id
-
-
-def resolve_task_dir(workspace: Path, task_id: str, must_exist: bool = True) -> Path:
-    normalized_task_id = normalize_task_id(task_id)
-    task_dir = task_dir_path(workspace, normalized_task_id)
-    if task_dir.is_dir() or not must_exist:
-        return task_dir
-
-    raise SystemExit(f"task not found: {normalized_task_id}")
 
 
 def task_state_path(task_dir: Path) -> Path:
@@ -87,23 +103,26 @@ def artifacts_dir_path(task_dir: Path) -> Path:
     return task_dir / "artifacts"
 
 
-def validate_task_dir(workspace: Path, task_dir: Path, require_reports: bool = True) -> tuple[Path, Path, Path]:
+def validate_task_dir(workspace: Path, task_dir: Path) -> tuple[Path, Path, Path]:
+    task_root = task_memory_root_path(workspace)
     task_state = task_state_path(task_dir)
     reports_dir = reports_dir_path(task_dir)
     artifacts_dir = artifacts_dir_path(task_dir)
-    validate_managed_path(workspace, task_memory_root_path(workspace), "task memory root")
-    validate_managed_path(workspace, task_dir, "task directory")
-    validate_managed_path(workspace, reports_dir, "reports directory")
-    validate_managed_path(workspace, artifacts_dir, "artifacts directory")
-    if not task_state.is_file():
-        raise SystemExit(f"missing task_state.md: {task_state}")
-    if reports_dir.exists() and not reports_dir.is_dir():
-        raise SystemExit(f"reports path exists but is not a directory: {reports_dir}")
-    if require_reports and not reports_dir.is_dir():
-        raise SystemExit(f"missing reports directory: {reports_dir}")
-    if artifacts_dir.exists() and not artifacts_dir.is_dir():
-        raise SystemExit(f"artifacts path exists but is not a directory: {artifacts_dir}")
+    validate_directory(workspace, task_root, "task memory root")
+    validate_directory(workspace, task_dir, "task directory")
+    validate_regular_file(workspace, task_state, "task_state.md")
+    validate_directory(workspace, reports_dir, "reports directory")
+    validate_directory(workspace, artifacts_dir, "artifacts directory")
     return task_state, reports_dir, artifacts_dir
+
+
+def resolve_task_dir(workspace: Path, task_id: str) -> Path:
+    normalized_task_id = normalize_task_id(task_id)
+    task_dir = task_dir_path(workspace, normalized_task_id)
+    if path_metadata(task_dir) is None:
+        raise ValueError(f"task not found: {normalized_task_id}")
+    validate_task_dir(workspace, task_dir)
+    return task_dir
 
 
 def task_state_template() -> str:
@@ -128,12 +147,33 @@ def task_state_template() -> str:
 """
 
 
+def managed_report_metadata(path: Path) -> os.stat_result | None:
+    if not REPORT_FILENAME_PATTERN.fullmatch(path.name):
+        return None
+    metadata = path_metadata(path)
+    if metadata is None:
+        return None
+    if is_link_or_reparse_point(metadata):
+        raise ValueError(f"refusing report symlink or reparse point: {path}")
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"managed report is not a regular file: {path}")
+    if metadata.st_nlink != 1:
+        raise ValueError(f"refusing hard-linked managed report: {path}")
+    return metadata
+
+
+def live_reports(reports_dir: Path) -> list[Path]:
+    reports: list[Path] = []
+    for path in reports_dir.iterdir():
+        if managed_report_metadata(path) is not None:
+            reports.append(path)
+    return sorted(reports)
+
+
 def next_sequence(reports_dir: Path, date: str) -> int:
     pattern = re.compile(rf"^{re.escape(date)}-(\d{{3}})-")
     max_sequence = 0
-    for path in reports_dir.glob(f"{date}-*.md"):
-        if not is_managed_report(path):
-            continue
+    for path in live_reports(reports_dir):
         match = pattern.match(path.name)
         if match:
             max_sequence = max(max_sequence, int(match.group(1)))
@@ -141,17 +181,14 @@ def next_sequence(reports_dir: Path, date: str) -> int:
 
 
 def allocate_task_dir(workspace: Path, task_id: str) -> tuple[str, Path]:
-    task_dir = task_dir_path(workspace, task_id)
-    if not task_dir.exists():
-        return task_id, task_dir
-    sequence = 1
-    while sequence < 1000:
-        candidate_task_id = f"{task_id}-{sequence:03d}"
+    for sequence in range(1000):
+        candidate_task_id = task_id if sequence == 0 else f"{task_id}-{sequence:03d}"
         candidate = task_dir_path(workspace, candidate_task_id)
-        if not candidate.exists():
+        metadata = path_metadata(candidate)
+        if metadata is None:
             return candidate_task_id, candidate
-        sequence += 1
-    raise SystemExit(f"could not allocate task memory folder for task id: {task_id}")
+        validate_directory(workspace, candidate, "existing task directory")
+    raise ValueError(f"could not allocate task memory folder for task id: {task_id}")
 
 
 def title_from_token(token: str) -> str:
@@ -190,40 +227,39 @@ def create_report_file(reports_dir: Path, report_name: str) -> Path:
                 handle.write(report_template(report_name))
             return report
         except FileExistsError:
+            managed_report_metadata(report)
             sequence += 1
-    raise SystemExit(f"could not allocate report filename for date {date}: {reports_dir}")
+    raise ValueError(f"could not allocate report filename for date {date}: {reports_dir}")
 
 
-def resolve_live_report(reports_dir: Path, report_value: str) -> Path:
-    report_path = Path(report_value).expanduser()
-    if report_path.is_absolute():
-        candidate = report_path
-    else:
-        candidate = reports_dir / report_path
-    if candidate.parent.resolve() != reports_dir.resolve():
-        raise SystemExit(f"refusing to delete a report outside the live reports directory: {candidate}")
-    if not is_managed_report(candidate):
-        if not REPORT_FILENAME_PATTERN.fullmatch(candidate.name):
-            raise SystemExit(f"invalid report filename: {candidate.name}")
-        if is_link_or_reparse_point(candidate):
-            raise SystemExit(f"refusing report symlink or reparse point: {candidate}")
-        raise SystemExit(f"report does not exist: {candidate}")
+def resolve_live_report(workspace: Path, reports_dir: Path, report_value: str) -> Path:
+    report_path = Path(report_value)
+    candidate = report_path if report_path.is_absolute() else reports_dir / report_path
+    ensure_within_workspace(workspace, candidate, "report")
+    if candidate.parent != reports_dir:
+        raise ValueError(f"refusing to delete a report outside the live reports directory: {candidate}")
+    if not REPORT_FILENAME_PATTERN.fullmatch(candidate.name):
+        raise ValueError(f"invalid report filename: {candidate.name}")
+    if managed_report_metadata(candidate) is None:
+        raise ValueError(f"report does not exist: {candidate}")
     return candidate
 
 
 def command_init(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_id = normalize_task_id(args.task_id)
-    validate_managed_path(workspace, task_memory_root_path(workspace), "task memory root")
-    actual_task_id, task_dir = allocate_task_dir(workspace, task_id)
-    validate_managed_path(workspace, task_dir, "task directory")
-    reports_dir = reports_dir_path(task_dir)
-    artifacts_dir = artifacts_dir_path(task_dir)
-    task_state = task_state_path(task_dir)
+    task_root = task_memory_root_path(workspace)
+    if path_metadata(task_root) is None:
+        task_root.mkdir()
+    validate_directory(workspace, task_root, "task memory root")
 
-    reports_dir.mkdir(parents=True)
-    artifacts_dir.mkdir()
-    task_state.write_text(task_state_template(), encoding="utf-8", newline="\n")
+    actual_task_id, task_dir = allocate_task_dir(workspace, task_id)
+    task_dir.mkdir()
+    reports_dir_path(task_dir).mkdir()
+    artifacts_dir_path(task_dir).mkdir()
+    with task_state_path(task_dir).open("x", encoding="utf-8", newline="\n") as handle:
+        handle.write(task_state_template())
+    validate_task_dir(workspace, task_dir)
 
     print(f"task_id={actual_task_id}")
     return 0
@@ -232,14 +268,8 @@ def command_init(args: argparse.Namespace) -> int:
 def command_status(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    _task_state, reports_dir, _artifacts_dir = validate_task_dir(workspace, task_dir, require_reports=False)
-    live_reports = (
-        sorted(path for path in reports_dir.glob("*.md") if is_managed_report(path))
-        if reports_dir.is_dir()
-        else []
-    )
-
-    report_names = ",".join(report.name for report in live_reports)
+    reports = live_reports(reports_dir_path(task_dir))
+    report_names = ",".join(report.name for report in reports)
     print(f"reports={report_names or 'none'}")
     return 0
 
@@ -247,10 +277,8 @@ def command_status(args: argparse.Namespace) -> int:
 def command_create_report(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    _task_state, reports_dir, _artifacts_dir = validate_task_dir(workspace, task_dir, require_reports=False)
-    reports_dir.mkdir(exist_ok=True)
     report_name = normalize_token(args.name, "--name")
-    report = create_report_file(reports_dir, report_name)
+    report = create_report_file(reports_dir_path(task_dir), report_name)
 
     print(f"report={report.name}")
     return 0
@@ -259,9 +287,7 @@ def command_create_report(args: argparse.Namespace) -> int:
 def command_delete_report(args: argparse.Namespace) -> int:
     workspace = resolve_workspace(args.workspace)
     task_dir = resolve_task_dir(workspace, args.task_id)
-    _task_state, reports_dir, _artifacts_dir = validate_task_dir(workspace, task_dir, require_reports=False)
-    reports_dir.mkdir(exist_ok=True)
-    report = resolve_live_report(reports_dir, args.report)
+    report = resolve_live_report(workspace, reports_dir_path(task_dir), args.report)
 
     report.unlink()
     print(f"deleted={report.name}")
@@ -301,7 +327,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
 
 
 if __name__ == "__main__":
