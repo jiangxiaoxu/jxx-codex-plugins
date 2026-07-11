@@ -15,7 +15,7 @@ import type {
 const BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
 const NODE_WORKSPACE_DEFAULT_CLIENT_MESSAGE = [
   "The ./node-upstream-client createFigmaWorkspaceClient() default client does not connect to the official Figma remote MCP.",
-  "Use the hosted figma_workspace_mcp stdio MCP server for live Figma work, or pass an explicit { client } to createFigmaWorkspaceClient() for a custom upstream.",
+  "Use the bundled figma-workspace CLI for live Figma work, or pass an explicit { client } to createFigmaWorkspaceClient() for a custom upstream.",
 ].join(" ");
 
 type NodeReplUpstreamClient = NonNullable<FigmaWorkspaceClientOptions["client"]>;
@@ -99,15 +99,6 @@ function createNodeReplDefaultUpstreamClient(): NodeReplUpstreamClient {
       rejectUpstreamUse();
     },
     async callTool() {
-      rejectUpstreamUse();
-    },
-    async listResources() {
-      rejectUpstreamUse();
-    },
-    async listResourceTemplates() {
-      rejectUpstreamUse();
-    },
-    async readResource() {
       rejectUpstreamUse();
     },
   };

@@ -10,7 +10,7 @@ import {
   RemoteMcpClient,
   RemoteMcpOAuthError,
   startOAuthCallbackServer,
-} from "../dist/mcp/index.js";
+} from "../dist/index.js";
 
 test("RemoteMcpClient does not start the OAuth callback server when cached auth connects", async () => {
   const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));

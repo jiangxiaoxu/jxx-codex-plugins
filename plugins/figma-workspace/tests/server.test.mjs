@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { runFigmaCommandCli as runFigmaCli } from "../mcp-server/dist/cli/figma-command-runtime.js";
 import {
   OAuthCache,
   OAUTH_AUTHORIZE_PATH,
@@ -31,17 +33,420 @@ test("createBridgeConfig applies defaults and normalizes path", () => {
   assert.equal(config.oauthCacheEnabled, true);
 });
 
-test(".mcp.json registers the default workspace MCP server only", async () => {
+test("plugin manifest exposes the CLI skill without a local MCP server", async () => {
   const manifest = JSON.parse(
-    await readFile(new URL("../.mcp.json", import.meta.url), "utf8"),
+    await readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8"),
+  );
+  const packageJson = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
   );
 
-  assert.deepEqual(Object.keys(manifest.mcpServers), ["figma_workspace_mcp"]);
-  assert.deepEqual(manifest.mcpServers["figma_workspace_mcp"], {
-    command: "node",
-    cwd: ".",
-    args: ["./mcp-server/dist/mcp/workspace-mcp-stdio-bin.js"],
+  assert.equal(manifest.mcpServers, undefined);
+  const expectedEntrypoints = {
+    figma: "figma.mjs",
+    "figma:help": "figma-help.mjs",
+    "figma:raw": "figma-raw.mjs",
+    "figma:raw:help": "figma-raw-help.mjs",
+    "figma:docs": "figma-docs.mjs",
+    "figma:docs:list": "figma-docs-list.mjs",
+    "figma:docs:read": "figma-docs-read.mjs",
+    "figma:docs:search": "figma-docs-search.mjs",
+    "figma:api": "figma-api.mjs",
+    "figma:api:search": "figma-api-search.mjs",
+    "figma:guidance": "figma-guidance.mjs",
+    "figma:doctor": "figma-doctor.mjs",
+    "figma:sessions": "figma-sessions.mjs",
+    "figma:sessions:list": "figma-sessions-list.mjs",
+    "figma:sessions:read": "figma-sessions-read.mjs",
+    "figma:upstream": "figma-upstream.mjs",
+    "figma:upstream:list": "figma-upstream-list.mjs",
+    "figma:upstream:read": "figma-upstream-read.mjs",
+    "figma:inspect": "figma-inspect.mjs",
+    "figma:metadata": "figma-metadata.mjs",
+    "figma:design-context": "figma-design-context.mjs",
+    "figma:motion-context": "figma-motion-context.mjs",
+    "figma:variables": "figma-variables.mjs",
+    "figma:design-system": "figma-design-system.mjs",
+    "figma:libraries": "figma-libraries.mjs",
+    "figma:open": "figma-open.mjs",
+    "figma:eval": "figma-eval.mjs",
+    "figma:script:run": "figma-script-run.mjs",
+    "figma:assets:apply": "figma-assets-apply.mjs",
+    "figma:assets:download": "figma-assets-download.mjs",
+    "figma:capture": "figma-capture.mjs",
+    "figma:task:run": "figma-task-run.mjs",
+    "figma:task:prepare": "figma-task-prepare.mjs",
+    "figma:upstream:call": "figma-upstream-call.mjs",
+    start: "figma-start.mjs",
+  };
+  const scriptEntrypoints = [];
+  for (const [scriptName, entrypoint] of Object.entries(expectedEntrypoints)) {
+    const expected = `node scripts/commands/${entrypoint}`;
+    assert.equal(packageJson.scripts[scriptName], expected);
+    scriptEntrypoints.push(expected);
+    const source = await readFile(new URL(`../scripts/commands/${entrypoint}`, import.meta.url), "utf8");
+    if (!["figma:raw", "figma:raw:help"].includes(scriptName)) {
+      assert.match(source, /dist\/cli\/figma-command-runtime\.js/u, scriptName);
+    }
+    if (scriptName.startsWith("figma:") && !["figma:help", "figma:raw", "figma:raw:help"].includes(scriptName)) {
+      const commandName = scriptName.slice("figma:".length);
+      assert.match(source, /dist\/cli\/figma-command-runtime\.js/u, scriptName);
+      assert.match(source, new RegExp(`runFigmaCommand\\("${commandName}"`, "u"), scriptName);
+    }
+  }
+  assert.equal(new Set(scriptEntrypoints).size, scriptEntrypoints.length, "each public command owns one executable entrypoint");
+  assert.equal(await readFile(new URL("../.npmrc", import.meta.url), "utf8"), "loglevel=silent\n");
+});
+
+test("direct commands map positional options into canonical runtime input", async () => {
+  const invocations = [];
+  const output = createCommandOutput();
+  const runCli = async (args, dependencies) => {
+    invocations.push({ args, input: JSON.parse(await dependencies.io.readStdin()) });
+    return 0;
+  };
+
+  assert.equal(await runFigmaCli([
+    "api:search", "createFrame", "--limit", "2", "--max-inline-bytes", "10000",
+  ], { ...output.dependencies, runCli }), 0);
+  assert.deepEqual(invocations[0], {
+    args: ["lookup", "--input", "-", "--inline-result-limit", "10000"],
+    input: { kind: "api", symbol: "createFrame", maxResults: 2 },
   });
+
+  assert.equal(await runFigmaCli([
+    "sessions:read", "default", "--with-handles", "--with-history", "--state-file", "C:/work/state.json",
+  ], { ...output.dependencies, runCli }), 0);
+  assert.deepEqual(invocations[1], {
+    args: ["sessions", "--input", "-", "--session-file", "C:/work/state.json"],
+    input: { sessionId: "default", includeHandles: true, includeHistory: true },
+  });
+
+  assert.equal(await runFigmaCli([
+    "design-context", "--file", "https://www.figma.com/design/file-key/Test?node-id=1-2",
+    "--force-code", "--no-code-connect", "--session-id", "design-review",
+  ], { ...output.dependencies, runCli }), 0);
+  assert.deepEqual(invocations[2], {
+    args: ["get-design-context", "--input", "-"],
+    input: {
+      file: "https://www.figma.com/design/file-key/Test?node-id=1-2",
+      forceCode: true,
+      disableCodeConnect: true,
+      sessionId: "design-review",
+    },
+  });
+
+  assert.equal(await runFigmaCli([
+    "design-system", "button", "--no-components", "--library", "one", "--library", "two",
+  ], { ...output.dependencies, runCli }), 0);
+  assert.deepEqual(invocations[3], {
+    args: ["search-design-system", "--input", "-"],
+    input: {
+      query: "button",
+      includeComponents: false,
+      includeLibraryKeys: ["one", "two"],
+    },
+  });
+});
+
+test("every command accepts -h and --help before runtime validation", async () => {
+  const commandNames = [
+    "guidance", "docs:list", "docs:read", "docs:search", "api:search", "doctor",
+    "sessions:list", "sessions:read", "upstream:list", "upstream:read", "inspect",
+    "metadata", "design-context", "motion-context", "variables", "design-system", "libraries",
+    "open", "eval", "script:run", "assets:apply", "assets:download", "capture",
+    "task:run", "task:prepare", "upstream:call",
+  ];
+  for (const commandName of commandNames) {
+    for (const helpToken of ["-h", "--help"]) {
+      const output = createCommandOutput();
+      const exitCode = await runFigmaCli([commandName, helpToken], {
+        ...output.dependencies,
+        runCli: async () => assert.fail(`figma ${commandName} help must not enter runtime`),
+      });
+      assert.equal(exitCode, 0, `${commandName} ${helpToken}`);
+      assert.match(output.stdout(), new RegExp(`^# figma ${commandName} help$`, "mu"));
+      assert.equal(output.stderr(), "");
+    }
+  }
+});
+
+test("command help exposes only optimized command-relevant option names", async () => {
+  const commandNames = [
+    "guidance", "docs:list", "docs:read", "docs:search", "api:search", "doctor",
+    "sessions:list", "sessions:read", "upstream:list", "upstream:read", "inspect",
+    "metadata", "design-context", "motion-context", "variables", "design-system", "libraries",
+    "open", "eval", "script:run", "assets:apply", "assets:download", "capture",
+    "task:run", "task:prepare", "upstream:call",
+  ];
+  const stateFileCommands = new Set([
+    "sessions:list", "sessions:read", "inspect", "metadata", "design-context", "motion-context",
+    "variables", "design-system", "libraries", "open", "eval", "script:run", "assets:apply",
+    "assets:download", "capture", "task:run", "task:prepare", "upstream:call",
+  ]);
+  const sessionIdCommands = new Set([
+    "inspect", "metadata", "design-context", "motion-context", "variables", "design-system", "libraries",
+  ]);
+  for (const commandName of commandNames) {
+    const output = createCommandOutput();
+    assert.equal(await runFigmaCli([commandName, "-h"], output.dependencies), 0);
+    const help = output.stdout();
+    assert.doesNotMatch(help, /--session-file|--inline-result-limit|--max-results|--max-snippet-lines|--max-cards|--workspace-dir|--library-key/u, commandName);
+    assert.equal(help.includes("--state-file"), stateFileCommands.has(commandName), `${commandName} state file`);
+    assert.equal(help.includes("--session-id"), sessionIdCommands.has(commandName), `${commandName} session id`);
+    assert.match(help, /--max-inline-bytes/u, commandName);
+  }
+});
+
+test("every command family accepts -h and --help", async () => {
+  for (const family of ["docs", "api", "sessions", "upstream"]) {
+    for (const helpToken of ["-h", "--help"]) {
+      const output = createCommandOutput();
+      const exitCode = await runFigmaCli([family, helpToken], output.dependencies);
+      assert.equal(exitCode, 0, `${family} ${helpToken}`);
+      assert.match(output.stdout(), new RegExp(`^# figma ${family} help$`, "mu"));
+      assert.equal(output.stderr(), "");
+    }
+  }
+});
+
+test("root command help accepts -h and --help", async () => {
+  for (const helpToken of ["-h", "--help"]) {
+    const output = createCommandOutput();
+    assert.equal(await runFigmaCli([helpToken], output.dependencies), 0);
+    assert.match(output.stdout(), /^# Figma command CLI help$/mu);
+    assert.equal(output.stderr(), "");
+  }
+});
+
+test("command usage failures use stderr, exit 2, and command help", async () => {
+  const output = createCommandOutput();
+  const exitCode = await runFigmaCli(["api:search"], {
+    ...output.dependencies,
+    runCli: async () => assert.fail("invalid command input must not enter runtime"),
+  });
+  assert.equal(exitCode, 2);
+  assert.equal(output.stdout(), "");
+  assert.match(output.stderr(), /Missing required <symbol>/u);
+  assert.match(output.stderr(), /# figma api:search help/u);
+});
+
+test("direct command validation rejects ambiguous or malformed options without runtime calls", async () => {
+  const cases = [
+    [["api:search", "createFrame", "--unknown"], /Unknown option/u],
+    [["api:search", "createFrame", "--limit", "one"], /requires an integer/u],
+    [["api:search", "createFrame", "--limit", "11"], /must be at most 10/u],
+    [["api:search", "createFrame", "--max-inline-bytes", "10001"], /must be at most 10000/u],
+    [["api:search", "createFrame", "--max-inline-bytes", "1", "--max-inline-bytes", "2"], /Duplicate option/u],
+    [["api:search", "createFrame", "--state-file", "state.json"], /Unknown option/u],
+    [["docs:search", "session", "--snippet-lines", "0"], /must be at least 1/u],
+    [["guidance", "text", "--surface", "canvas"], /must be one of/u],
+    [["guidance", "text.font", "--mode", "card"], /must be one of/u],
+    [["guidance", "text", "--card-limit", "9"], /must be at most 8/u],
+    [["inspect", "$hero", "--depth", "0"], /must be at least 1/u],
+    [["libraries", "--offset", "-1"], /must be at least 0/u],
+    [["sessions:read", "default", "--with-handles", "--with-handles"], /Duplicate option/u],
+    [["doctor", "unexpected"], /Unexpected argument/u],
+    [["api:search", "two", "arguments"], /accepts one <symbol>/u],
+  ];
+  for (const [argv, expected] of cases) {
+    const output = createCommandOutput();
+    const exitCode = await runFigmaCli(argv, {
+      ...output.dependencies,
+      runCli: async () => assert.fail(`${argv.join(" ")} must not enter runtime`),
+    });
+    assert.equal(exitCode, 2, argv.join(" "));
+    assert.equal(output.stdout(), "");
+    assert.match(output.stderr(), expected);
+  }
+});
+
+test("JSON commands translate optimized options into canonical runtime options", async () => {
+  const invocations = [];
+  const exitCode = await runFigmaCli([
+    "eval", "--input", "eval.json", "--state-file", "C:/work/state.json",
+    "--max-inline-bytes", "0",
+  ], {
+    runCli: async (args) => {
+      invocations.push(args);
+      return 0;
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(invocations, [[
+    "eval", "--input", "eval.json", "--session-file", "C:/work/state.json",
+    "--inline-result-limit", "0",
+  ]]);
+});
+
+test("JSON commands require input only when their command needs it", async () => {
+  const output = createCommandOutput();
+  assert.equal(await runFigmaCli(["eval"], {
+    ...output.dependencies,
+    runCli: async () => assert.fail("eval without input must not enter runtime"),
+  }), 2);
+  assert.match(output.stderr(), /requires --input/u);
+
+  const invocations = [];
+  assert.equal(await runFigmaCli(["open"], {
+    runCli: async (args) => {
+      invocations.push(args);
+      return 0;
+    },
+  }), 0);
+  assert.deepEqual(invocations, [["open"]]);
+});
+
+test("JSON commands reject transport-level option names", async () => {
+  for (const legacyOption of ["--session-file", "--inline-result-limit"]) {
+    const output = createCommandOutput();
+    assert.equal(await runFigmaCli(["eval", "--input", "eval.json", legacyOption, "value"], {
+      ...output.dependencies,
+      runCli: async () => assert.fail(`${legacyOption} must not enter runtime`),
+    }), 2);
+    assert.match(output.stderr(), /Unknown option/u);
+    assert.match(output.stderr(), /# figma eval help/u);
+  }
+});
+
+test("JSON commands validate optimized output limits before runtime", async () => {
+  for (const value of ["many", "-1", "10001"]) {
+    const output = createCommandOutput();
+    assert.equal(await runFigmaCli(["eval", "--input", "eval.json", "--max-inline-bytes", value], {
+      ...output.dependencies,
+      runCli: async () => assert.fail(`${value} must not enter runtime`),
+    }), 2);
+    assert.match(output.stderr(), /requires an integer|must be at least 0|must be at most 10000/u);
+    assert.match(output.stderr(), /# figma eval help/u);
+  }
+});
+
+test("plugin-root npm script starts the bundled CLI", () => {
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli, "npm_execpath must be available when the plugin test runs through npm");
+  const result = spawnSync(process.execPath, [npmCli, "run", "--silent", "figma:help"], {
+    cwd: fileURLToPath(new URL("../", import.meta.url)),
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^# Figma command CLI help$/mu);
+});
+
+test("npm command script help is Markdown without npm banners", () => {
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli);
+  const result = spawnSync(process.execPath, [npmCli, "run", "figma:api:search", "--", "-h"], {
+    cwd: fileURLToPath(new URL("../", import.meta.url)),
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^# figma api:search help$/mu);
+  assert.doesNotMatch(result.stdout, /^>/mu);
+  assert.equal(result.stderr, "");
+});
+
+test("root figma CLI dispatches the same canonical command", () => {
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli);
+  const result = spawnSync(process.execPath, [npmCli, "run", "figma", "--", "api:search", "-h"], {
+    cwd: fileURLToPath(new URL("../", import.meta.url)),
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^# figma api:search help$/mu);
+  assert.doesNotMatch(result.stdout, /^>/mu);
+  assert.equal(result.stderr, "");
+});
+
+test("figma:raw keeps the transport schema escape hatch", () => {
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli);
+  const result = spawnSync(process.execPath, [npmCli, "run", "figma:raw", "--", "lookup", "--help"], {
+    cwd: fileURLToPath(new URL("../", import.meta.url)),
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^# figma-workspace lookup help$/mu);
+  assert.equal(result.stderr, "");
+});
+
+test("figma:raw command help takes precedence over invalid or I/O-bound options", () => {
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli);
+  const cases = [
+    ["lookup", "--input", "definitely-missing.json", "--help"],
+    ["lookup", "--unknown", "value", "-h"],
+    ["lookup", "--input", "--help"],
+  ];
+
+  for (const args of cases) {
+    const result = spawnSync(process.execPath, [npmCli, "run", "figma:raw", "--", ...args], {
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      encoding: "utf8",
+    });
+
+    assert.equal(result.status, 0, `${args.join(" ")}\n${result.stderr}`);
+    assert.match(result.stdout, /^# figma-workspace lookup help$/mu);
+    assert.equal(result.stderr, "");
+  }
+});
+
+test("npm package includes runtime surfaces and excludes local state and source tests", async () => {
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli);
+  const result = spawnSync(process.execPath, [npmCli, "pack", "--dry-run", "--json"], {
+    cwd: fileURLToPath(new URL("../", import.meta.url)),
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.length, 1);
+  const paths = report[0].files.map(({ path }) => path.replaceAll("\\", "/"));
+  for (const requiredPath of [
+    ".codex-plugin/plugin.json",
+    "mcp-server/dist/cli/figma-command-runtime.js",
+    "scripts/commands/figma.mjs",
+    "skills/figma-workspace/SKILL.md",
+  ]) {
+    assert.ok(paths.includes(requiredPath), `packed files must include ${requiredPath}`);
+  }
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  for (const [scriptName, command] of Object.entries(packageJson.scripts)) {
+    const match = /^(?:node|python) ((?!-)[^ ]+)/u.exec(command);
+    if (match !== null) {
+      assert.ok(paths.includes(match[1]), `packed files must include the ${scriptName} target ${match[1]}`);
+    }
+  }
+  assert.equal(paths.some((path) => path.split("/").includes(".figma-workspace")), false);
+  assert.equal(paths.some((path) => path.includes("/src/") || path.includes("/tests/")), false);
+});
+
+test("npm direct command script returns runtime Markdown without npm banners", async () => {
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli);
+  const result = spawnSync(process.execPath, [npmCli, "run", "figma:docs:read", "--", "overview"], {
+    cwd: fileURLToPath(new URL("../", import.meta.url)),
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^# figma-workspace docs$/mu);
+  assert.match(result.stdout, /^Status: succeeded$/mu);
+  assert.doesNotMatch(result.stdout, /^>/mu);
+  assert.equal(result.stderr, "");
+});
+
+test("skill-relative plugin root resolves to the npm package directory", () => {
+  const skillFile = fileURLToPath(new URL("../skills/figma-workspace/SKILL.md", import.meta.url));
+  const pluginRoot = fileURLToPath(new URL("../", import.meta.url));
+
+  assert.equal(resolve(dirname(skillFile), "../.."), resolve(pluginRoot));
 });
 
 test("createBridgeConfig uses CODEX_HOME as the OAuth cache location", async () => {
@@ -163,6 +568,8 @@ test("login-figma-http.mjs runs in foreground and validates OAuth cache", async 
   assert.match(script, /--force/u);
   assert.match(script, /OAuth cache is not ready after adding the temporary server/u);
   assert.match(script, /invokeCodexMcp\(\["mcp", "login", serverName\]\)/u);
+  assert.match(script, /invokeCodexMcp\(\["mcp", "add", serverName, "--url", serverUrl\]\)/u);
+  assert.match(script, /invokeCodexMcp\(\["mcp", "remove", serverName\], \{ ignoreFailure: true \}\)/u);
   assert.match(script, /tokens\.access_token/u);
   assert.match(script, /expires within 60 seconds/u);
   assert.match(script, /process\.exitCode = 2/u);
@@ -496,4 +903,21 @@ function runResolveOAuthCachePath(overrides, args = []) {
     env,
     encoding: "utf8",
   });
+}
+
+function createCommandOutput() {
+  let stdout = "";
+  let stderr = "";
+  return {
+    dependencies: {
+      writeStdout(value) {
+        stdout += value;
+      },
+      writeStderr(value) {
+        stderr += value;
+      },
+    },
+    stdout: () => stdout,
+    stderr: () => stderr,
+  };
 }

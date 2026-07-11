@@ -83,7 +83,7 @@ async function main() {
 
   console.log("");
   console.log(
-    "Done. Login completed and the OAuth cache is available for the bridge and stdio frontend.",
+    "Done. Login completed and the OAuth cache is available for the bridge and Figma Workspace CLI.",
   );
 }
 

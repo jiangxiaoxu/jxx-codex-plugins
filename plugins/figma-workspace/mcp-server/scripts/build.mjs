@@ -32,26 +32,21 @@ const typescriptCompilerRuntimeOutput = {
   entryPoint: resolve(root, "src/runtime/typescript-compiler-runtime.ts"),
   outfile: resolve(dist, "runtime/typescript-compiler-runtime.js"),
 };
+const commandRuntimeOutput = {
+  entryPoint: resolve(root, "src/cli/figma-command-runtime.ts"),
+  outfile: resolve(dist, "cli/figma-command-runtime.js"),
+};
 const publicWrappers = [
   {
-    outfile: resolve(dist, "mcp/index.js"),
+    outfile: resolve(dist, "index.js"),
     source: [
-      'export * from "../runtime/workspace-runtime.js";',
+      'export * from "./runtime/workspace-runtime.js";',
     ].join("\n"),
   },
   {
-    outfile: resolve(dist, "upstream/upstream-stdio-cli.js"),
+    outfile: resolve(dist, "workspace-client.js"),
     source: [
-      "export {",
-      "  isFigmaWorkspaceUpstreamDirectRun as isDirectRun,",
-      "  runFigmaWorkspaceUpstreamStdioCli,",
-      '} from "../runtime/workspace-runtime.js";',
-    ].join("\n"),
-  },
-  {
-    outfile: resolve(dist, "mcp/workspace-mcp-server.js"),
-    source: [
-      'export * from "../runtime/workspace-runtime.js";',
+      'export * from "./runtime/workspace-runtime.js";',
     ].join("\n"),
   },
   {
@@ -75,48 +70,13 @@ const publicWrappers = [
     ].join("\n"),
   },
   {
-    outfile: resolve(dist, "mcp/workspace-mcp-cli.js"),
-    source: [
-      "export {",
-      "  isFigmaWorkspaceMcpDirectRun as isDirectRun,",
-      "  runFigmaWorkspaceMcpCli,",
-      '} from "../runtime/workspace-runtime.js";',
-    ].join("\n"),
-  },
-  {
-    outfile: resolve(dist, "upstream/upstream-stdio-bin.js"),
+    outfile: resolve(dist, "cli/figma-workspace-cli.js"),
     executable: true,
     source: [
       "#!/usr/bin/env node",
-      "import {",
-      "  isFigmaWorkspaceUpstreamDirectRun as isDirectRun,",
-      "  runFigmaWorkspaceUpstreamStdioCli,",
-      '} from "../runtime/workspace-runtime.js";',
+      'import { runFigmaWorkspaceCli } from "../runtime/workspace-runtime.js";',
       "",
-      "if (isDirectRun(import.meta.url)) {",
-      "  await runFigmaWorkspaceUpstreamStdioCli({",
-      "    useBridgeOAuthCache: true,",
-      "    openBrowser: false,",
-      "  });",
-      "}",
-    ].join("\n"),
-  },
-  {
-    outfile: resolve(dist, "mcp/workspace-mcp-stdio-bin.js"),
-    executable: true,
-    source: [
-      "#!/usr/bin/env node",
-      "import {",
-      "  isFigmaWorkspaceMcpDirectRun as isDirectRun,",
-      "  runFigmaWorkspaceMcpCli,",
-      '} from "../runtime/workspace-runtime.js";',
-      "",
-      "if (isDirectRun(import.meta.url)) {",
-      "  await runFigmaWorkspaceMcpCli({",
-      "    useBridgeOAuthCache: true,",
-      "    openBrowser: false,",
-      "  });",
-      "}",
+      "process.exitCode = await runFigmaWorkspaceCli(process.argv.slice(2));",
     ].join("\n"),
   },
 ];
@@ -140,11 +100,22 @@ await build({
 });
 await rewriteBuiltFile(sharedRuntimeOutput.outfile);
 
+await build({
+  ...sharedBuildOptions,
+  bundle: true,
+  banner: { js: bundledEsmRequireBanner },
+  entryPoints: [commandRuntimeOutput.entryPoint],
+  external: ["../runtime/workspace-runtime.js"],
+  outfile: commandRuntimeOutput.outfile,
+});
+await rewriteBuiltFile(commandRuntimeOutput.outfile);
+
 for (const output of publicWrappers) {
   await writeWrapper(output.outfile, output.source, output.executable === true);
 }
 
 await stageUpstreamCorpus();
+await stageProjectDocs();
 await stageHelperDeclarations();
 
 function stripTrailingWhitespace(value) {
@@ -169,6 +140,22 @@ async function stageUpstreamCorpus() {
   const target = resolve(dist, "skills/figma-workspace/references/upstream-corpus");
   await rm(target, { recursive: true, force: true });
   await cp(source, target, { recursive: true });
+}
+
+async function stageProjectDocs() {
+  const source = resolve(root, "../skills/figma-workspace/references");
+  const target = resolve(dist, "skills/figma-workspace/references");
+  const files = [
+    "figma-workspace-overview.md",
+    "figma-workspace-workflow.md",
+    "figma-workspace-guidance-and-lookup.md",
+    "figma-workspace-safety.md",
+    "figma-workspace-diagnostics.md",
+    "figma-workspace-sessions.md",
+    "figma-workspace-upstream-tools.md",
+  ];
+  await mkdir(target, { recursive: true });
+  await Promise.all(files.map((file) => cp(resolve(source, file), resolve(target, file))));
 }
 
 async function stageHelperDeclarations() {

@@ -8,7 +8,7 @@ Codex plugin marketplace repository. See [Repository Guide](doc/jxx-codex-plugin
 | --- | --- |
 | `chatgpt-research-prompt` | Generates copy-ready research prompts for ChatGPT web research. |
 | `task-memory` | Maintains durable task state and compact handoff reports for long-running Codex work. |
-| `figma-workspace` | Provides the `figma_workspace_mcp` frontend, local OAuth bridge, and Figma workspace tooling. |
+| `figma-workspace` | Provides a stateful Node CLI with CLI-readable project docs, Restricted Markdown results, a transient OAuth login bridge, and file-based Figma workspace tooling. |
 
 ## Repository Layout
 

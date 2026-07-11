@@ -8,7 +8,7 @@ import {
   createCallbackUrl,
   createConfig,
   findCodexHomeOAuthCachePath,
-} from "../dist/mcp/index.js";
+} from "../dist/index.js";
 
 test("createConfig applies Figma MCP defaults", () => {
   const config = createConfig({ openBrowser: false });

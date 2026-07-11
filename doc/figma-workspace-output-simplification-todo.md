@@ -2,22 +2,23 @@
 
 ## Summary
 
-This document tracks output-shape cleanup candidates for `plugins/figma-workspace`. The goal is to keep `figma_workspace_*` tool responses focused on actionable agent data, while moving internal process details to diagnostics, resources, or debug files.
+This document tracks output-shape cleanup candidates for `plugins/figma-workspace`. The goal is to keep the 22 CLI command responses focused on actionable agent data, while moving internal process details to `doctor`, read-only `sessions`, persisted state, canonical project docs, or debug files.
 
 The current direction is intentionally breaking-change friendly: remove duplicated, derivable, or process-only fields from public structured responses when the same information is already available through a narrower source.
 
 ## Current Baseline
 
-- `figma_workspace_get_metadata` no longer returns public `metadata.enrichment`. Native readback still runs internally, enriched lock/layout fields are merged into `metadata.json`, and enrichment failures are reported through `diagnostics`.
-- `figma_workspace_call_upstream_tool` allows covered upstream tools for raw upstream behavior checks, but local `figma_workspace_*` tool names remain hard errors.
-- Session resources are already split: `figma-workspace://sessions/{id}` returns compact detail, and `figma-workspace://sessions/{id}/handles` is the full handle-map entrypoint.
+- `get-metadata` no longer returns public `metadata.enrichment`. Native readback still runs internally, enriched lock/layout fields are merged into `metadata.json`, and enrichment failures are reported through `diagnostics`.
+- `call-upstream-tool` allows covered upstream tools for raw upstream behavior checks, but attempts to route local workspace operations through upstream delegation remain hard errors.
+- Cross-process session state is a JSON array in the selected session file. The CLI loads it before dispatch and atomically writes the updated sessions after dispatch; each persisted session contains its full handle map.
+- Session-file selection is `--session-file`, then `FIGMA_WORKSPACE_SESSION_FILE`, then `<cwd>/.figma-workspace/session.json`. Explicit and environment-provided relative paths resolve from the current directory.
 
-## TODO 1: Compact `figma_workspace_inspect`
+## TODO 1: Compact `inspect`
 
 ### Current
 
 - `mode: "inspect"` and `mode: "style"` can return a full `handles` map.
-- Full handle state is already available from `figma-workspace://sessions/{id}/handles`.
+- Full handle state is already available from the selected session file.
 - `mode: "style"` can also return a large `summary.children` tree even though the primary result is `style`.
 - `mode: "inspect"` currently omits a `mode` field while `style` and `validate` include mode-specific fields, so the response shape is not fully uniform.
 - `style.caps` reports internal per-category top-N caps. Because adaptive batching already handles read completeness, public output should not expose caps/limits as routine metadata.
@@ -25,7 +26,7 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 ### Expected Handling
 
 - Stop returning full `handles` from all inspect modes: `inspect`, `style`, and `validate`.
-- Stop returning `session.handleChanges` from all inspect modes. `figma_workspace_inspect` is read-only and should not report empty handle mutation state.
+- Stop returning `session.handleChanges` from all inspect modes. `inspect` is read-only and should not report empty handle mutation state.
 - Keep handle validation in `mode: "validate"` under `validations`; do not duplicate full handle cache.
 - Return `mode` consistently for every inspect response. Default `mode: "inspect"` should be explicit in output.
 - For `mode: "style"`, replace `summary` with a compact `targetSummary` identity object. Do not return `summary.children`.
@@ -43,8 +44,8 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 - `style` response focuses on `target`, `mode`, `targetSummary`, `nodeCount`, `scannedNodeCount`, `offset`, and `style`.
 - `validate` response focuses on `mode` and `validations`.
 - `style` does not contain `caps` or `limits`; `truncated` appears only when summary entries are clipped and its values are omitted counts.
-- Full handles are read from `figma-workspace://sessions/{id}/handles`, not from inspect output.
-- Handle mutations are reported by mutating tools such as `open`, `eval`, and `run_script_file`, not by `inspect`.
+- Full handles are read from the selected session file, not from inspect output.
+- Handle mutations are reported by mutating commands such as `open`, `eval`, and `run-script-file`, not by `inspect`.
 
 ### Tests
 
@@ -52,7 +53,7 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 - Update inspect tests to assert `session.handleChanges === undefined` for `inspect`, `style`, and `validate`.
 - Update inspect tests to assert empty `diagnostics` is omitted for clean `inspect`, `style`, and `validate` responses.
 - Update inspect tests to assert `mode` is returned for all modes, including default `inspect`.
-- Add or adjust a resource test proving full handles remain available through `sessions/{id}/handles`.
+- Add or adjust a session persistence test proving full handles remain available in the selected session file.
 - For style mode, assert `style` content remains unchanged, `summary === undefined`, `targetSummary` is present, and child summaries are omitted.
 - For style mode, assert `style.caps === undefined`, `style.limits === undefined`, and `style.truncated` appears only when a category is clipped with count values.
 
@@ -60,7 +61,7 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 
 ### Current
 
-- `figma_workspace_inspect({ mode: "validate" })` returns both `validations` and `validatedNodeIds`.
+- `inspect` with input `{ "mode": "validate" }` returns both `validations` and `validatedNodeIds`.
 - `validatedNodeIds` is derivable from `validations.filter(item => item.status === "valid").map(item => item.id)`.
 
 ### Expected Handling
@@ -80,11 +81,11 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 - Assert valid entries still contain enough data to derive valid node ids.
 - Keep large-batch validation coverage to ensure internal batching still works.
 
-## TODO 3: Trim `run_script_file.script` On Success
+## TODO 3: Trim `run-script-file.script` On Success
 
 ### Current
 
-- `figma_workspace_run_script_file` returns `script.scriptPath`, `script.expectedSurface`, and `script.compiledScriptBytes`.
+- `run-script-file` returns `script.scriptPath`, `script.expectedSurface`, and `script.compiledScriptBytes`.
 - On successful execution these fields are mostly process metadata and add absolute-path noise.
 - On preflight and execution failures, `scriptPath` and compile size can still help repair.
 
@@ -109,7 +110,7 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 
 ### Current
 
-- `figma_workspace_eval` and `figma_workspace_run_script_file` can return `repairPlan: { status: "ok", steps: [] }` on clean success.
+- `eval` and `run-script-file` can return `repairPlan: { status: "ok", steps: [] }` on clean success.
 - This is not actionable and repeats the empty diagnostics state.
 
 ### Expected Handling
@@ -149,9 +150,9 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 
 ### Tests
 
-- Update clean success tests across eval, script, metadata, inspect, wrappers, and resources to assert `diagnostics === undefined`.
+- Update clean success tests across eval, script, metadata, inspect, and wrapper flows to assert `diagnostics === undefined`.
 - Keep warning/failure tests asserting exact diagnostic codes.
-- Update output schema/resource wording to avoid implying `diagnostics` is always present.
+- Update typed result and CLI guidance wording to avoid implying `diagnostics` is always present.
 
 ## TODO 6: Omit Empty `session.handleChanges` Outside Inspect
 
@@ -163,29 +164,29 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 ### Expected Handling
 
 - Defer global empty `handleChanges` cleanup.
-- For the inspect compaction batch only, omit `session.handleChanges` from all `figma_workspace_inspect` responses.
-- For other tools, keep current `handleChanges` behavior until a dedicated global pass.
+- For the inspect compaction batch only, omit `session.handleChanges` from all `inspect` responses.
+- For other commands, keep current `handleChanges` behavior until a dedicated global pass.
 - When the global pass is implemented, omit `handleChanges` only when both arrays are empty and keep it when handles are updated or removed.
 - Keep session id/file/surface/sessionDir behavior unchanged.
 
 ### Expected After
 
 - Inspect responses have compact `session`.
-- Other tools keep current `session.handleChanges` behavior for now.
+- Other commands keep current `session.handleChanges` behavior for now.
 - Eval/script calls that remember or remove handles continue to report changed handles.
 
 ### Tests
 
 - Update inspect tests to assert `session.handleChanges === undefined`.
 - Keep eval/script handle persistence tests asserting non-empty `handleChanges`.
-- Ensure session resource handle maps remain unchanged.
+- Ensure persisted session handle maps remain unchanged.
 
 ## TODO 7: Revisit Routine `guidanceRef`
 
 ### Current
 
-- `figma_workspace_get_design_context` and `figma_workspace_get_motion_context` return `guidanceRef` on normal success.
-- `guidanceRef` is static routing metadata and repeats information available from `capabilities`, `lookup-index`, and `figma_workspace_guidance`.
+- `get-design-context` and `get-motion-context` return `guidanceRef` on normal success.
+- `guidanceRef` is static routing metadata and repeats information available through `guidance` and `lookup`.
 
 ### Expected Handling
 
@@ -201,7 +202,7 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 ### Tests
 
 - Keep existing design/motion wrapper success tests for `guidanceRef`.
-- Keep resource tests ensuring wrapper profiles and workflow graph hints remain discoverable.
+- Keep typed-client runtime tests ensuring wrapper profiles and workflow graph hints remain discoverable.
 
 ## TODO 8: Compact `inlineResultLimit`
 
@@ -230,11 +231,11 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 - Update all inline-limit tests for eval, script, metadata, wrappers, and call-upstream.
 - Keep sidecar/debug output assertions unchanged.
 
-## TODO 9: Compact `run_task_plan` Step Output
+## TODO 9: Compact `run-task-plan` Step Output
 
 ### Current
 
-- `figma_workspace_run_task_plan` returns step timestamps and can duplicate output references at both step and top level.
+- `run-task-plan` returns step timestamps and can duplicate output references at both step and top level.
 - Detailed timeline data is more useful in the plan debug file than in the inline response.
 
 ### Expected Handling
@@ -259,22 +260,23 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 - These changes are public output-shape breaking changes and should be implemented in small batches.
 - After each batch, update:
   - runtime handlers,
-  - `LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS`,
-  - resource guidance if response-shape wording changes,
-  - tests in `workspace-mcp-server.test.mjs`,
-  - generated `dist/runtime/workspace-runtime.js`.
+  - typed-client result types and runtime response shaping,
+  - CLI help or guidance when response-shape wording changes,
+  - typed-client runtime tests in `tests/workspace-mcp-server.test.mjs`,
+  - built CLI tests in `tests/build-output.test.mjs`,
+  - generated runtime output under `dist/`.
 - Run from `plugins/figma-workspace/mcp-server`:
   - `npm run build`
-  - `node --test tests/workspace-mcp-server.test.mjs`
+  - `node --test tests/workspace-mcp-server.test.mjs tests/build-output.test.mjs`
 
 ## Suggested Order
 
 1. `inspect` handle/style/mode/truncation metadata compaction.
 2. Remove `validatedNodeIds`.
-3. Trim `run_script_file.script` on success.
+3. Trim `run-script-file.script` on success.
 4. Omit successful `repairPlan`.
 5. Omit empty `diagnostics` globally.
 6. Omit empty inspect `session.handleChanges`; defer global handleChanges cleanup.
 7. Keep routine `guidanceRef` for now; revisit later.
 8. Compact `inlineResultLimit`.
-9. Compact `run_task_plan` step output.
+9. Compact `run-task-plan` step output.

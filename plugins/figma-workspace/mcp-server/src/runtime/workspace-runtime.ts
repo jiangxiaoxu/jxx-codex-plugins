@@ -3,14 +3,7 @@ import "./typescript-compiler-runtime.js";
 
 export * from "../mcp/index.js";
 export * from "../mcp/workspace-mcp-server.js";
-export {
-  isDirectRun as isFigmaWorkspaceMcpDirectRun,
-  runFigmaWorkspaceMcpCli,
-} from "../mcp/workspace-mcp-cli.js";
-export {
-  isDirectRun as isFigmaWorkspaceUpstreamDirectRun,
-  runFigmaWorkspaceUpstreamStdioCli,
-} from "../upstream/upstream-stdio-cli.js";
+export * from "../cli/figma-workspace-cli.js";
 export {
   FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION,
   RemoteMcpClient as NodeUpstreamRemoteMcpClient,
