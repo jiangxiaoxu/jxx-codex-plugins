@@ -12,11 +12,11 @@ The plugin does not register a local MCP server. The official Figma remote MCP i
 
 ## NPM Commands
 
-Run from the plugin root. Use `npm.cmd` in Windows PowerShell and `npm` in other shells. Put npm's `--` before arguments passed to an independent npm entrypoint, and run a selected command with `-h` or `--help` before first use. The canonical command CLI and the equivalent independent entrypoint are:
+Run from the plugin root. Use `npm.cmd --silent` in Windows PowerShell and `npm --silent` in other shells so npm lifecycle banners do not contaminate Restricted Markdown stdout. Put npm's `--` before arguments passed to an independent npm entrypoint, and run a selected command with `-h` or `--help` before first use. The canonical command CLI and the equivalent independent entrypoint are:
 
 ```text
-npm.cmd run figma -- api:search createFrame
-npm.cmd run figma:api:search -- createFrame
+npm.cmd --silent run figma -- api:search createFrame
+npm.cmd --silent run figma:api:search -- createFrame
 ```
 
 - Family entrypoints: `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
@@ -25,11 +25,11 @@ npm.cmd run figma:api:search -- createFrame
 
 Direct commands accept task-shaped positional arguments and optimized options. JSON commands expose only `--input <json-file|->`, `--state-file <path>`, `--max-inline-bytes <bytes>`, and help. Each public npm command has its own `scripts/commands/*.mjs` executable, and every command entrypoint delegates to the shared typechecked `mcp-server/dist/cli/figma-command-runtime.js` instead of copying business logic.
 
-The 22 transport-level kebab-case JSON commands are available only through `figma:raw` and `figma:raw:help`. Run `npm run figma:raw -- <transport-command> --help` for the complete transport schema.
+The 22 transport-level kebab-case JSON commands are available only through `figma:raw` and `figma:raw:help`. Run `npm --silent run figma:raw -- <transport-command> --help` for the complete transport schema.
 
 The plugin-root `package.json` owns these paths. `--state-file` is both the persisted workspace state store and the anchor whose parent owns `results/` sidecars; prefer one explicit absolute path reused by related stateful commands. Guidance, docs, API, doctor, and upstream list/read commands are stateless and omit this option; their sidecars use `<plugin-root>/.figma-workspace/results/`.
 
-All executing commands expose `--max-inline-bytes`. Search commands expose `--limit` and `--snippet-lines`; guidance exposes `--card-limit`. Direct file-context commands expose `--session-id`, `--state-file`, and `--workspace`; design-system additionally supports repeatable `--library`. Sessions read supports `--with-handles` and `--with-history`, and inspect supports repeatable `--handle`.
+All executing commands expose `--max-inline-bytes`. Search commands expose `--limit` and `--snippet-lines`; guidance exposes `--card-limit`. File-binding commands expose `--session-id`, `--state-file`, and `--workspace`; design-system additionally supports repeatable `--library`. Sessions read supports `--with-handles` and `--with-history`. `figma:inspect` reuses file context already bound to its session, intentionally omits `--workspace` and `--file`, and supports repeatable `--handle`; initialize context with `figma:open` or a file-binding read command first.
 
 Typed command results use Restricted Markdown on stdout: a command title, an `Input` section, explicit status, and expanded fields. Complex nested values may use fenced `json` blocks. Typed `ok: false` results use the same Markdown contract and exit with code 1. Usage errors and thrown failures are text on stderr. Do not call `JSON.parse` on stdout. Use the selected command's help for usage text.
 
@@ -55,7 +55,7 @@ Example with stdin:
 
 ```powershell
 '{"file":"https://www.figma.com/design/<fileKey>/<name>"}' |
-  npm.cmd run figma:open -- --input - --state-file C:/work/project/figma-workspace/state.json
+  npm.cmd --silent run figma:open -- --input - --state-file C:/work/project/figma-workspace/state.json
 ```
 
 State files contain local Figma workspace state and may reference a sensitive OAuth-backed workflow. Keep them in the project, worktree, or task artifacts and do not commit them by default.

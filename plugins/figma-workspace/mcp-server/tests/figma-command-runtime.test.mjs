@@ -63,6 +63,32 @@ test("JSON commands retain optimized option validation and transport mapping", a
   assert.match(output.stderr, /requires --input <json-file\|->/u);
 });
 
+test("bare help remains a legal positional or option value", async () => {
+  const directCalls = [];
+  const directOutput = createOutput();
+  assert.equal(await runFigmaCommand("api:search", ["help"], {
+    ...directOutput.dependencies,
+    runCli: async (argv, dependencies) => {
+      directCalls.push({ argv, input: JSON.parse(await dependencies.io.readStdin()) });
+      return 0;
+    },
+  }), 0);
+  assert.deepEqual(directCalls, [{
+    argv: ["lookup", "--input", "-"],
+    input: { kind: "api", symbol: "help" },
+  }]);
+  assert.equal(directOutput.stdout, "");
+
+  const jsonCalls = [];
+  const jsonOutput = createOutput();
+  assert.equal(await runFigmaCommand("eval", ["--input", "help"], {
+    ...jsonOutput.dependencies,
+    runCli: async (argv) => { jsonCalls.push(argv); return 0; },
+  }), 0);
+  assert.deepEqual(jsonCalls, [["eval", "--input", "help"]]);
+  assert.equal(jsonOutput.stdout, "");
+});
+
 test("root, family, direct, and JSON help remain locally formatted", async () => {
   const root = createOutput();
   assert.equal(await runFigmaCommandCli(["--help"], root.dependencies), 0);

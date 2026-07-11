@@ -4,7 +4,7 @@ This document is for AI agents maintaining `figma-workspace`. It is not the user
 
 ## Current Direction
 
-- The canonical agent-facing command CLI is `npm run figma -- <command>`. Every public `figma:<command>` npm script is an independent executable entrypoint for the same command. Direct commands cover queries and reads; JSON commands cover complex operations.
+- The canonical agent-facing command CLI is `npm --silent run figma -- <command>`. Every public `figma:<command>` npm script is an independent executable entrypoint for the same command. Direct commands cover queries and reads; JSON commands cover complex operations. Keep `--silent` in every agent invocation so npm lifecycle banners cannot contaminate Restricted Markdown stdout, including after the plugin is packed and installed.
 - The plugin does not register or expose a local MCP server. Do not route agents through deferred tool discovery, legacy underscore-named workspace tools, or MCP resource URIs.
 - The official Figma remote MCP is an internal transport behind the CLI. It is not the agent-facing contract.
 - Optimized commands name persisted workspace state `--state-file`; its parent owns result sidecars. The raw transport CLI keeps `--session-file`, `FIGMA_WORKSPACE_SESSION_FILE`, and `<cwd>/.figma-workspace/session.json` as its transport-level contract.
@@ -14,23 +14,23 @@ This document is for AI agents maintaining `figma-workspace`. It is not the user
 
 ## Canonical Agent Contract
 
-Use `npm.cmd` in Windows PowerShell and `npm` in other shells. Put npm's `--` before arguments passed to an independent entrypoint, and run a selected command with `-h` or `--help` before first use.
+Use `npm.cmd --silent` in Windows PowerShell and `npm --silent` in other shells. Put npm's `--` before arguments passed to an independent entrypoint, and run a selected command with `-h` or `--help` before first use.
 
 ```text
-npm.cmd run figma -- api:search createFrame
-npm.cmd run figma:api:search -- createFrame
+npm.cmd --silent run figma -- api:search createFrame
+npm.cmd --silent run figma:api:search -- createFrame
 ```
 
 ```text
-npm.cmd run figma:guidance -- "text font loadFontAsync" --surface design
-npm.cmd run figma:task:prepare -- --input <json-file|-> --state-file <path>
+npm.cmd --silent run figma:guidance -- "text font loadFontAsync" --surface design
+npm.cmd --silent run figma:task:prepare -- --input <json-file|-> --state-file <path>
 ```
 
 Family entrypoints are `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
 
 Direct query/read commands are `figma:guidance`, `figma:docs:list`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`.
 
-JSON commands are `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:run`, `figma:task:prepare`, and `figma:upstream:call`. They expose only `--input <json-file|->`, `--state-file <path>`, `--max-inline-bytes <bytes>`, and help. The 22 transport-level JSON commands are available only through `figma:raw`; run `npm run figma:raw -- <transport-command> --help` for a complete schema.
+JSON commands are `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:run`, `figma:task:prepare`, and `figma:upstream:call`. They expose only `--input <json-file|->`, `--state-file <path>`, `--max-inline-bytes <bytes>`, and help. The 22 transport-level JSON commands are available only through `figma:raw`; run `npm --silent run figma:raw -- <transport-command> --help` for a complete schema.
 
 The optimized command option families are intentional:
 
@@ -38,7 +38,7 @@ The optimized command option families are intentional:
 - Sessions and direct file-context commands expose `--state-file`. Direct file-context commands also expose `--session-id`.
 - Every executing command exposes `--max-inline-bytes`.
 - Docs/API search expose `--limit` and `--snippet-lines`; guidance exposes `--card-limit`.
-- File context exposes `--workspace`; design-system exposes repeatable `--library`; sessions read exposes `--with-handles` and `--with-history`; inspect exposes repeatable `--handle`.
+- File-binding commands expose `--workspace`; design-system exposes repeatable `--library`; sessions read exposes `--with-handles` and `--with-history`. Inspect intentionally reuses context already bound to the selected session, omits `--workspace` and `--file`, and exposes repeatable `--handle`.
 
 The raw transport runtime behind `figma:raw` consists of these 22 commands:
 
