@@ -1,6 +1,6 @@
 ---
 name: task-memory
-description: Maintain durable, workspace-local task state for work that must survive context compaction, interruption, or agent handoff. Use when the user asks to persist, resume, summarize, or durably hand off a task with saved state, or when a long-running investigation or implementation needs durable decisions and evidence across sessions or agents. Do not activate merely because a subagent is used, or for short tasks, validation/build/test-only work, or one-shot commands.
+description: Maintain durable, workspace-local task state that survives context compaction, interruption, or later resume. Use when the user explicitly asks to persist or resume task state, when a long-running task needs a resumable checkpoint, or when a /root dispatch explicitly invokes $task-memory with a task-id and report-name for one durable report. Do not activate for ordinary summaries, ordinary subagent work, short tasks, validation/build/test-only work, or one-shot commands.
 ---
 
 # Task Memory
@@ -27,15 +27,15 @@ python <skill-dir>/scripts/task_memory.py create-report --workspace <workspace> 
 python <skill-dir>/scripts/task_memory.py delete-report --workspace <workspace> --task-id task-<name> --report <report-filename>
 ```
 
-For a new task, the task owner runs `init` before substantive work or delegation. Use the printed `task_id`; `init` adds `-001`, `-002`, and so on when needed. Resume an existing task with its assigned id, never another `init`. Run `status` before resume or coordination.
+For a new task, `/root` runs `init` and uses the printed `task_id`; `init` adds `-001`, `-002`, and so on when needed. Resume an existing task with its assigned id. Run `status` before resume or report reconciliation.
 
-## Ownership
+## Write Contract
 
-- **Task owner**: The root session. Owns `task_state.md`, lifecycle, report absorption/deletion, and final integration.
-- **Report-required handoff**: Owns durable delegated findings or changes in one report; never edits `task_state.md`.
-- **Command-only handoff**: Runs an exact command scope and never writes task-memory files.
+- `/root` owns `task_state.md`, initialization, report reconciliation and deletion, summaries, and final integration.
+- A durable report writer is a child whose dispatch explicitly includes `$task-memory`, `task-id`, and `report-name`. It reads `task_state.md`, creates exactly one report before substantive work, edits only that report, and never edits `task_state.md`.
+- Other children do not use this skill or write task-memory files; they return through the normal agent channel.
 
-Only the task owner may run `init`, edit `task_state.md`, absorb reports, or delete reports. Do not infer task-memory ownership when a brief omits the mode. Once a task id is active, use a template below for delegated non-conversational work. This skill governs persistence, not delegation or agent-role choice.
+This contract does not decide whether to delegate, which agent role to use, or how to split or parallelize work. `/root` chooses whether a child result needs a durable report.
 
 ## State
 
@@ -50,51 +50,31 @@ Keep `task_state.md` sufficient to resume without chat history:
 ```
 
 - `Goal`: Objective and success criteria.
-- `State`: Current phase, durable decisions and facts, completed outcomes, and evidence needed to avoid reopening settled questions.
+- `State`: Current phase, durable decisions and facts, completed outcomes, and evidence that prevents reopening settled questions.
 - `Open`: Active blockers, questions, risks, and next actions.
-- `Reports`: Finished reports with durable content not yet absorbed; discover live reports with `status` and keep no deleted-report history.
+- `Reports`: Live reports whose durable content has not been reconciled.
 
-Rewrite current state instead of appending history. Update it only when the objective, a durable decision or fact, scope or contract, blocker or risk, meaningful outcome, or next action changes. Omit commands, searches, attempts, raw output, routine checks, and unchanged progress; record only an actionable issue and stable pointer when a check reveals one.
+Rewrite current state instead of appending history. Update it only when the objective, durable decision or fact, scope or contract, blocker or risk, meaningful outcome, or next action changes. Omit commands, searches, attempts, raw output, routine progress, and obsolete history.
 
-Use soft budgets of 2-4 bullets in `Goal`, 5-12 in `State`, and 0-5 in `Open`. Merge duplicates, replace obsolete state, and discard reproducible or non-durable detail; never drop resume-critical information to meet a budget. Before implementation, record the selected approach, ownership or contract decisions, blockers, and next actions needed to resume.
+Record the shortest validation conclusion only when it is bound to the current revision or diff and is needed to determine completion or resume safely. Keep the check name, pass/fail result, and shortest useful failure signature; omit command ledgers and raw output.
 
-## Reports
+Use soft budgets of 2-4 bullets in `Goal`, 5-12 in `State`, and 0-5 in `Open`. Merge duplicates and discard reproducible or non-durable detail, but never drop resume-critical information to meet a budget.
 
-For a report-required handoff, run `status`, read `task_state.md`, then run `create-report` exactly once before substantive work. Maintain the generated fields:
+## Durable Reports
 
-- `Scope`: Owned assignment and boundaries.
-- `Status`: `in-progress`, `completed`, `blocked`, or `stopped`.
-- `Last updated`: Time of the latest meaningful change.
-- `Conclusion`: 1-2 direct-result bullets.
-- `Findings`: 1-5 new durable facts with stable evidence pointers.
-- `Open`: 0-3 remaining blockers or next actions.
+A durable report writer runs `status`, reads `task_state.md`, then runs `create-report` once. Keep the generated `Scope`, `Status`, `Last updated`, `Conclusion`, `Findings`, and `Open` fields current. Use `Status: in-progress`, `completed`, `blocked`, or `stopped`; keep conclusions and evidence pointers compact and omit audit trails, raw output, diffs, repeated searches, reasoning traces, and routine validation.
 
-Omit audit trails, raw output, diffs, repeated searches, reasoning traces, dead ends, and routine validation. Before returning, set a terminal status and return only the report filename plus brief status.
+Before returning, the writer sets the most accurate status and returns the report filename plus a brief status. `/root` reconciles resume-critical content into `task_state.md` or intentionally discards reproducible or non-durable content, then may delete the report with the helper. Deleting an `in-progress` report is allowed; `/root` must first ensure no active writer will continue writing it.
 
-For `completed` or `blocked`, absorb all resume-critical content. For `stopped` or externally terminated work, absorb stable findings and active follow-up and discard unstable partial content. Before deletion, every item must be absorbed into `task_state.md` or intentionally discarded as reproducible or non-durable. Delete only with the helper.
+Use this dispatch contract only when `/root` wants a durable report:
 
-## Artifacts
+```text
+Use $task-memory in durable-report mode. Task memory: task-id=task-<name>; report-name=<report-name>.
+Run status, read task_state.md, then create one report before substantive work. Write only that report; do not edit task_state.md. Before returning, set the most accurate Status and return the report filename plus brief status.
+```
+
+## Artifacts And Resume
 
 Store task-created scratch files, downloads, captures, and intermediate assets in `artifacts/` unless the user, task, tool, or project requires another path. Keep normal build, test, cache, coverage, and repository-tool outputs in their normal locations.
 
-## Resume
-
-Run `status`, read `task_state.md`, inspect live report statuses and pending report notes, reconcile terminal reports, then continue from current state. For summary or compaction, reconcile first and rewrite current state; preserve active decisions, work, blockers, next actions, and hard evidence pointers.
-
-## Handoff Templates
-
-Report-required:
-
-```text
-Use $task-memory for a Report-required handoff. Task memory: task-id=task-<name>; report name=<report-name>.
-Run `status`, read `task_state.md`, then run `create-report` before substantive work. Set `Scope` to <assignment and boundaries>; keep `Status`, `Last updated`, and the generated headings current. Do not edit `task_state.md`.
-Before returning, set `Status: completed`, `blocked`, or `stopped`. Return only the report filename plus brief status; put durable findings and blockers in the report.
-```
-
-Command-only:
-
-```text
-Use $task-memory for a Command-only handoff. Task memory: task-id=task-<name>.
-Run only <exact command or command family>. Expected result: <pass/fail shape, exit code when available, and shortest useful error signature>.
-Do not run `create-report` or write task-memory files. Return only the requested result.
-```
+To resume, run `status`, read `task_state.md`, inspect live reports, reconcile reports that are ready, then continue from `Goal`, `State`, and `Open`. For a summary or compaction checkpoint, reconcile first and rewrite the current state.

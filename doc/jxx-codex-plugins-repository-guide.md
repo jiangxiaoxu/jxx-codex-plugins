@@ -35,7 +35,7 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 - Helper: `plugins/task-memory/skills/task-memory/scripts/task_memory.py`.
 - UI metadata: `plugins/task-memory/skills/task-memory/agents/openai.yaml`.
 - Runtime task data: `<workspace>/task-memory/<task-id>/`; this is task output, not plugin source.
-- Tests: No plugin-owned automated test suite; validate the skill and exercise helper commands in a temporary workspace.
+- Tests: `plugins/task-memory/tests/test_task_memory.py` exercises helper behavior in temporary workspaces.
 
 ### `figma-workspace`
 
@@ -78,9 +78,10 @@ python <plugin-creator>/scripts/validate_plugin.py <plugin-directory>
 
 ```text
 python plugins/task-memory/skills/task-memory/scripts/task_memory.py --help
+python -m unittest plugins/task-memory/tests/test_task_memory.py
 ```
 
-Use a temporary workspace for `init`, `status`, `create-report`, and `delete-report` integration checks. The helper manages only its canonical report filenames.
+The integration suite covers `init`, `status`, `create-report`, `delete-report`, managed-path safety, and malformed task structures. The helper manages only its canonical report filenames.
 
 ### `figma-workspace`
 
