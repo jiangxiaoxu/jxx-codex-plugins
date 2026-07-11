@@ -211668,7 +211668,7 @@ function compileFigmaWorkspaceTypescriptSource(scriptPath, source, strict, extra
       severity: "fatal",
       message: "TypeScript preflight could not extract the compiled Figma script body.",
       suggestion: "Remove unusual top-level wrapper-like code and rerun the .figma.ts script.",
-      docsHint: 'figma_workspace_lookup kind=docs query="TypeScript Figma plugin typings"',
+      docsHint: 'lookup kind=docs query="TypeScript Figma plugin typings"',
       source: { scriptPath }
     });
   }
@@ -211803,8 +211803,8 @@ function typescriptRuntimeAssetFailureDiagnostic(scriptPath, failure) {
       `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`
     ].join("; "),
-    suggestion: "Reload the figma-workspace plugin/MCP server so it starts from the current installed cache, or rebuild the plugin package if bundled declaration files are missing.",
-    docsHint: "figma-workspace://diagnostics",
+    suggestion: "Rebuild the mcp-server dist if bundled declaration files are missing, then rerun the CLI command with the same --session-file.",
+    docsHint: "Figma Workspace CLI: run-script-file --help",
     source: { scriptPath }
   };
 }
@@ -211856,7 +211856,7 @@ function typescriptDiagnosticToFileDiagnostic(diagnostic, scriptPath, sourceFile
     severity: "fatal",
     message: `${syntaxError ? "TypeScript syntax preflight failed" : "TypeScript preflight failed"}: ${message}`,
     suggestion: syntaxError ? "Fix all TypeScript syntax errors before running the Figma Workspace script; rerun afterward to get guardrail diagnostics." : "Fix the TypeScript error before running the Figma script. Use Figma Plugin API node types such as FrameNode, PageNode, or RectangleNode to model allowed methods.",
-    docsHint: syntaxError ? "figma-workspace://guide#responseContract" : "figma_workspace_lookup kind=api symbol=ChildrenMixin.appendChild",
+    docsHint: syntaxError ? "Figma Workspace CLI: run-script-file --help" : "lookup kind=api symbol=ChildrenMixin.appendChild",
     source: {
       scriptPath,
       ...location

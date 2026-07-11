@@ -48,15 +48,9 @@ export {
   type RemoteMcpClientOptions,
 } from "../upstream/remote-mcp-client.js";
 export {
-  createFigmaWorkspaceUpstreamStdioServer,
-  type FigmaUpstreamMcpProxyClient,
-  type FigmaWorkspaceUpstreamStdioServerOptions,
-} from "../upstream/upstream-stdio-server.js";
-export {
   FIGMA_WORKSPACE_DEFAULT_SESSION_ID,
   assertSafeFigmaWorkspaceCode,
   createFigmaWorkspaceClient,
-  createFigmaWorkspaceMcpServer,
   createFigmaWorkspaceSessionStore,
   diagnoseFigmaWorkspaceCode,
   type FigmaWorkspaceApplyAssetManifestArguments,
@@ -96,7 +90,6 @@ export {
   type FigmaWorkspaceInlineResultLimit,
   type FigmaWorkspaceLookupArguments,
   type FigmaWorkspaceLookupResult,
-  type FigmaWorkspaceMcpServerOptions,
   type FigmaWorkspaceMetadataJson,
   type FigmaWorkspaceMetadataTreeNode,
   type FigmaWorkspaceOpenArguments,
@@ -121,5 +114,6 @@ export {
   type FigmaWorkspaceTaskPlanFailure,
   type FigmaWorkspaceToolResultBase,
   type FigmaWorkspaceUpstreamBackedResult,
+  type FigmaWorkspaceUpstreamClient,
   type FigmaWorkspaceUpstreamEnvelope,
 } from "./workspace-mcp-server.js";

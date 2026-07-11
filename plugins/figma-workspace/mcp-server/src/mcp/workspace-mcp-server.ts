@@ -2,19 +2,6 @@ import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListResourceTemplatesRequestSchema,
-  ListResourcesRequestSchema,
-  ListToolsRequestSchema,
-  ReadResourceRequestSchema,
-  type CallToolRequest,
-  type ListResourceTemplatesRequest,
-  type ListResourcesRequest,
-  type ListToolsRequest,
-  type ReadResourceRequest,
-} from "@modelcontextprotocol/sdk/types.js";
 import {
   createRemoteMcpClient,
   isRemoteMcpOAuthError,
@@ -31,8 +18,8 @@ import {
   MAX_DOCS_SEARCH_SNIPPET_LINES,
   MAX_LOOKUP_QUERY_LENGTH,
   FigmaWorkspaceLookupCorpusUnavailableError,
-  type ReferenceSearchResult,
   getFigmaWorkspaceLookupRuntimeInfo,
+  type ReferenceSearchResult,
   normalizeLookupQuery,
   normalizeLookupRankingQuery,
   searchReferenceFiles,
@@ -40,12 +27,8 @@ import {
 import {
   FIGMA_WORKSPACE_API_CARDS,
   FIGMA_WORKSPACE_COMMON_TASK_LABELS,
-  FIGMA_WORKSPACE_HELPER_CATEGORIES,
-  FIGMA_WORKSPACE_HELPER_HARD_RULES,
   FIGMA_WORKSPACE_HELPER_PROFILES,
   FIGMA_WORKSPACE_INTENT_EXAMPLE_QUERIES,
-  FIGMA_WORKSPACE_QUERY_OUTPUT_FIELDS,
-  FIGMA_WORKSPACE_QUERY_SEARCH_ANCHORS,
   FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES,
   FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH,
   chooseApiCardsForIntent,
@@ -84,6 +67,8 @@ import {
   asCallUpstreamToolArgs,
   asCaptureNodeArgs,
   asDownloadAssetsArgs,
+  asDocsArgs,
+  asDoctorArgs,
   asEvalArgs,
   asGetDesignContextArgs,
   asGetLibrariesArgs,
@@ -98,6 +83,8 @@ import {
   asRunScriptFileArgs,
   asRunTaskPlanArgs,
   asSearchDesignSystemArgs,
+  asSessionsArgs,
+  asUpstreamToolsArgs,
   withDefaultTitle,
 } from "../contract/tool-args.js";
 import type {
@@ -106,6 +93,8 @@ import type {
   FigmaWorkspaceCaptureNodeArguments,
   FigmaWorkspaceDownloadAssetsArguments,
   FigmaWorkspaceDownloadAssetsTarget,
+  FigmaWorkspaceDocsArguments,
+  FigmaWorkspaceDoctorArguments,
   FigmaWorkspaceEvalArguments,
   FigmaWorkspaceGetDesignContextArguments,
   FigmaWorkspaceGetLibrariesArguments,
@@ -120,10 +109,17 @@ import type {
   FigmaWorkspaceRunScriptFileArguments,
   FigmaWorkspaceRunTaskPlanArguments,
   FigmaWorkspaceSearchDesignSystemArguments,
+  FigmaWorkspaceSessionsArguments,
   FigmaWorkspaceTaskPlanStep,
+  FigmaWorkspaceUpstreamToolsArguments,
 } from "../contract/tool-args.js";
-import { createReplToolDescriptions } from "../contract/tool-metadata.js";
 import {
+  getFigmaWorkspaceProjectDocsRuntimeInfo,
+  listFigmaWorkspaceProjectDocs,
+  readFigmaWorkspaceProjectDoc,
+} from "../runtime/project-docs.js";
+import {
+  LOCAL_WORKSPACE_TOOL_NAMES,
   isLocalWorkspaceToolName,
   normalizeTaskPlanStepType as normalizeTaskPlanStepTypeAlias,
   type LocalWorkspaceToolName,
@@ -159,7 +155,6 @@ import {
   writeTaskFile,
   type FigmaWorkspaceSessionWorkspace,
 } from "../runtime/workspace-files.js";
-import type { FigmaUpstreamMcpProxyClient } from "../upstream/upstream-stdio-server.js";
 
 export const FIGMA_WORKSPACE_DEFAULT_SESSION_ID = "default";
 
@@ -352,21 +347,26 @@ function createSkippedOptionalUpstreamDiagnostic(options: {
     severity: "warning",
     message: `${options.toolName} skipped optional upstream argument "${options.property}" because live official ${options.upstreamKind} tool "${options.upstreamToolName}" does not advertise inputSchema.properties.${options.property}.`,
     suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/mcp-server to audit official schema drift.",
-    docsHint: "Prefer first-class wrappers for covered workflows; use figma_workspace_call_upstream_tool when raw upstream behavior or uncovered capability debugging is needed.",
+    docsHint: "Prefer first-class commands for covered workflows; use call-upstream-tool when raw upstream behavior or uncovered capability debugging is needed.",
   };
 }
 
-export interface FigmaWorkspaceMcpServerOptions extends RemoteMcpClientOptions {
-  client?: FigmaUpstreamMcpProxyClient;
-  name?: string;
-  version?: string;
-  defaultSessionId?: string;
-  historyLimit?: number;
-  useBridgeOAuthCache?: boolean;
-  openBrowser?: boolean;
+export interface FigmaWorkspaceUpstreamClient {
+  connect(): Promise<void>;
+  close(): Promise<void>;
+  listTools(): Promise<unknown>;
+  callTool(name: string, args?: Record<string, unknown>): Promise<unknown>;
 }
 
-export interface FigmaWorkspaceClientOptions extends FigmaWorkspaceMcpServerOptions {
+type FigmaUpstreamMcpProxyClient = FigmaWorkspaceUpstreamClient;
+
+export interface FigmaWorkspaceClientOptions extends RemoteMcpClientOptions {
+  client?: FigmaWorkspaceUpstreamClient;
+  defaultSessionId?: string;
+  historyLimit?: number;
+  initialSessions?: readonly FigmaWorkspaceSession[];
+  useBridgeOAuthCache?: boolean;
+  openBrowser?: boolean;
   /**
    * Absolute path to the shared figma-workspace OAuth cache file.
    * This is a Node runtime-friendly alias for statePath.
@@ -417,44 +417,6 @@ export interface FigmaWorkspacePublicWorkspace {
   files: {
     inputFile: string;
   };
-}
-
-export interface FigmaWorkspaceResourceWorkspace {
-  [key: string]: unknown;
-  sessionDir: string;
-}
-
-export interface FigmaWorkspaceResourcePageSummary {
-  [key: string]: unknown;
-  id: string;
-  name: string;
-}
-
-export interface FigmaWorkspaceResourcePageState {
-  [key: string]: unknown;
-  currentPageId?: string;
-  currentPageName?: string;
-  knownPages?: FigmaWorkspaceResourcePageSummary[];
-}
-
-export interface FigmaWorkspaceResourceSessionSummary {
-  [key: string]: unknown;
-  id: string;
-  fileKey?: string;
-  surface?: FigmaWorkspaceSurface;
-  sessionDir?: string;
-  handleCount: number;
-}
-
-export interface FigmaWorkspaceResourceSessionDetail {
-  [key: string]: unknown;
-  id: string;
-  fileKey?: string;
-  surface?: FigmaWorkspaceSurface;
-  handleCount: number;
-  handlePreview: Record<string, string>;
-  page?: FigmaWorkspaceResourcePageState;
-  workspace?: FigmaWorkspaceResourceWorkspace;
 }
 
 export interface FigmaWorkspaceHandleChanges {
@@ -684,7 +646,7 @@ export interface FigmaWorkspaceSearchDesignSystemResult extends FigmaWorkspaceUp
 }
 
 export interface FigmaWorkspaceWrapperGuidanceRef {
-  source: "figma_workspace_guidance";
+  source: "guidance";
   query: string;
   workflowIds: string[];
 }
@@ -816,8 +778,43 @@ export interface FigmaWorkspaceLookupResult extends FigmaWorkspaceToolResultBase
   runtime?: Record<string, unknown>;
 }
 
+export interface FigmaWorkspaceDocsResult extends FigmaWorkspaceToolResultBase {
+  topics?: ReturnType<typeof listFigmaWorkspaceProjectDocs>;
+  topic?: string;
+  title?: string;
+  description?: string;
+  sourceId?: string;
+  content?: string;
+}
+
+export interface FigmaWorkspaceDoctorResult extends FigmaWorkspaceToolResultBase {
+  runtime: {
+    projectDocs: ReturnType<typeof getFigmaWorkspaceProjectDocsRuntimeInfo>;
+    lookup: ReturnType<typeof getFigmaWorkspaceLookupRuntimeInfo>;
+    typescript: ReturnType<typeof getFigmaWorkspaceTypescriptRuntimeInfo>;
+  };
+  guidance: string[];
+}
+
+export interface FigmaWorkspaceSessionsResult {
+  ok: boolean;
+  sessions?: Array<Record<string, unknown>>;
+  session?: Record<string, unknown>;
+}
+
+export interface FigmaWorkspaceUpstreamToolsResult extends FigmaWorkspaceToolResultBase {
+  tools?: Array<Record<string, unknown>>;
+  name?: string;
+  description?: string;
+  inputSchema?: unknown;
+  categories?: string[];
+  upstreamError?: Record<string, unknown>;
+  primaryFix?: string;
+  guidance: string;
+}
+
 export interface FigmaWorkspaceClient {
-  readonly client: FigmaUpstreamMcpProxyClient;
+  readonly client: FigmaWorkspaceUpstreamClient;
   readonly sessions: FigmaWorkspaceSessionStore;
   connect(): Promise<void>;
   close(): Promise<void>;
@@ -839,6 +836,10 @@ export interface FigmaWorkspaceClient {
   getVariableDefs(args: FigmaWorkspaceGetVariableDefsArguments): Promise<FigmaWorkspaceGetVariableDefsResult>;
   callUpstreamTool(args: FigmaWorkspaceCallUpstreamToolArguments): Promise<FigmaWorkspaceCallUpstreamToolResult>;
   lookup(args: FigmaWorkspaceLookupArguments): Promise<FigmaWorkspaceLookupResult>;
+  docs(args?: FigmaWorkspaceDocsArguments): Promise<FigmaWorkspaceDocsResult>;
+  doctor(args?: FigmaWorkspaceDoctorArguments): Promise<FigmaWorkspaceDoctorResult>;
+  sessionsInfo(args?: FigmaWorkspaceSessionsArguments): Promise<FigmaWorkspaceSessionsResult>;
+  upstreamTools(args?: FigmaWorkspaceUpstreamToolsArguments): Promise<FigmaWorkspaceUpstreamToolsResult>;
 }
 
 export interface FigmaWorkspaceSession {
@@ -945,7 +946,7 @@ interface TaskPlanReferenceContext {
 }
 
 interface FigmaWorkspaceRuntime {
-  client: FigmaUpstreamMcpProxyClient;
+  client: FigmaWorkspaceUpstreamClient;
   sessions: FigmaWorkspaceSessionStore;
   upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
 }
@@ -953,12 +954,26 @@ interface FigmaWorkspaceRuntime {
 export function createFigmaWorkspaceSessionStore(options: {
   defaultSessionId?: string;
   historyLimit?: number;
+  initialSessions?: readonly FigmaWorkspaceSession[];
 } = {}): FigmaWorkspaceSessionStore {
   const defaultSessionId = sanitizeSessionId(
     options.defaultSessionId ?? FIGMA_WORKSPACE_DEFAULT_SESSION_ID,
   );
   const historyLimit = normalizePositiveInteger(options.historyLimit, DEFAULT_HISTORY_LIMIT);
   const sessions = new Map<string, FigmaWorkspaceSession>();
+
+  for (const initialSession of options.initialSessions ?? []) {
+    const session = cloneSession(initialSession);
+    const id = sanitizeSessionId(session.id);
+    if (id !== session.id) {
+      throw new Error(`Invalid initial Figma Workspace session id: ${session.id}`);
+    }
+    if (sessions.has(id)) {
+      throw new Error(`Duplicate Figma Workspace session id: ${id}`);
+    }
+    session.history = session.history.slice(-historyLimit);
+    sessions.set(id, session);
+  }
 
   const create = (sessionId?: string) => {
     const id = sanitizeSessionId(sessionId ?? defaultSessionId);
@@ -1025,6 +1040,7 @@ function createFigmaWorkspaceRuntime(
   const sessions = createFigmaWorkspaceSessionStore({
     defaultSessionId: options.defaultSessionId,
     historyLimit: options.historyLimit,
+    initialSessions: options.initialSessions,
   });
   const upstreamToolCache = createUpstreamToolCache(client);
 
@@ -1130,232 +1146,98 @@ export function createFigmaWorkspaceClient(
       parseJsonToolResult<FigmaWorkspaceLookupResult>(
         await handleLookup(asLookupArgs(withDefaultTitle(args, "Look up Figma Workspace reference"))),
       ),
+    docs: async (args = {}) => handleDocs(asDocsArgs(args)),
+    doctor: async (args = {}) => handleDoctor(asDoctorArgs(args)),
+    sessionsInfo: async (args = {}) => handleSessions(asSessionsArgs(args), runtime.sessions),
+    upstreamTools: async (args = {}) => handleUpstreamTools(asUpstreamToolsArgs(args), runtime.upstreamToolCache),
   };
 }
 
-function withMcpDefaultTitle(args: unknown, title: string): Record<string, unknown> {
-  if (args === undefined) {
-    return {};
-  }
-  return withDefaultTitle(args as Record<string, unknown>, title);
+function handleDocs(args: FigmaWorkspaceDocsArguments): FigmaWorkspaceDocsResult {
+  const topic = asOptionalString(args.topic);
+  return topic
+    ? { ok: true, ...readFigmaWorkspaceProjectDoc(topic) }
+    : { ok: true, topics: listFigmaWorkspaceProjectDocs() };
 }
 
-export function createFigmaWorkspaceMcpServer(
-  options: FigmaWorkspaceMcpServerOptions = {},
-): {
-  server: Server;
-  client: FigmaUpstreamMcpProxyClient;
-  sessions: FigmaWorkspaceSessionStore;
-} {
-  const runtime = createFigmaWorkspaceRuntime(options);
-  const { client, sessions, upstreamToolCache } = runtime;
+function handleDoctor(_args: FigmaWorkspaceDoctorArguments): FigmaWorkspaceDoctorResult {
+  const projectDocs = getFigmaWorkspaceProjectDocsRuntimeInfo();
+  const lookup = getFigmaWorkspaceLookupRuntimeInfo();
+  const typescript = getFigmaWorkspaceTypescriptRuntimeInfo();
+  const ok = projectDocs.ok && lookup.ok && typescript.ok;
+  return {
+    ok,
+    runtime: { projectDocs, lookup, typescript },
+    guidance: ok
+      ? ["Project docs, lookup corpus, and TypeScript runtime assets are available."]
+      : [
+          "Compare attemptedPaths with the installed plugin cache, then rebuild or reinstall the Figma Workspace plugin if assets are missing.",
+          "Reload the Codex app or CLI process after updating the plugin because runtime assets are loaded at process startup.",
+        ],
+  };
+}
 
-  const server = new Server(
-    {
-      name: options.name ?? "figma_workspace_mcp",
-      version: options.version ?? "0.1.0",
-    },
-    {
-      capabilities: {
-        tools: {},
-        resources: {},
-      },
-      instructions: [
-        "Stateful workspace MCP proxy for the official Figma MCP server.",
-        "Use figma_workspace_prepare_task and figma_workspace_run_script_file for repairable .figma.ts workflows, figma_workspace_eval for small batched Plugin API calls, and figma-workspace://sessions resources to inspect local state.",
-        "The proxy stores only local session metadata and node-id handles; Figma execution still happens through the upstream use_figma tool.",
-      ].join("\n"),
-    },
-  );
+function handleSessions(
+  args: FigmaWorkspaceSessionsArguments,
+  sessions: FigmaWorkspaceSessionStore,
+): FigmaWorkspaceSessionsResult {
+  const sessionId = asOptionalString(args.sessionId);
+  if (!sessionId) {
+    return { ok: true, sessions: sessions.list().map(sessionDirectoryEntry) };
+  }
+  const session = sessions.get(sessionId);
+  if (!session) {
+    throw new Error(`Figma Workspace session not found: ${sessionId}`);
+  }
+  return {
+    ok: true,
+    session: sessionDetail(session, args.includeHandles === true, args.includeHistory === true),
+  };
+}
 
-  server.setRequestHandler(ListToolsRequestSchema, async (_request: ListToolsRequest) => ({
-    tools: createReplToolDescriptions({
-      taskWorkspaceRootEnv: TASK_WORKSPACE_ROOT_ENV,
-      defaultDocsSearchMaxResults: DEFAULT_DOCS_SEARCH_MAX_RESULTS,
-      maxDocsSearchResults: MAX_DOCS_SEARCH_RESULTS,
-      defaultDocsSearchSnippetLines: DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
-      maxDocsSearchSnippetLines: MAX_DOCS_SEARCH_SNIPPET_LINES,
-      maxLookupQueryLength: MAX_LOOKUP_QUERY_LENGTH,
-    }),
-  }));
-
-  server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
-    const rawArgs = request.params.arguments;
-    switch (request.params.name) {
-      case "figma_workspace_open":
-        return handleOpen(
-          asOpenArgs(withMcpDefaultTitle(rawArgs, "Open Figma Workspace session")),
-          runtime,
-        );
-      case "figma_workspace_eval":
-        return handleEval(
-          asEvalArgs(withMcpDefaultTitle(rawArgs, "Run Figma Workspace Plugin API")),
-          runtime,
-        );
-      case "figma_workspace_run_script_file":
-        return handleRunScriptFile(asRunScriptFileArgs(withMcpDefaultTitle(rawArgs, "Run Figma TypeScript file")), runtime);
-      case "figma_workspace_apply_asset_manifest":
-        return handleApplyAssetManifest(asApplyAssetManifestArgs(withMcpDefaultTitle(rawArgs, "Apply Figma asset manifest")), runtime);
-      case "figma_workspace_download_assets":
-        return handleDownloadAssets(asDownloadAssetsArgs(withMcpDefaultTitle(rawArgs, "Download Figma assets")), runtime);
-      case "figma_workspace_capture_node":
-        return handleCaptureNode(asCaptureNodeArgs(withMcpDefaultTitle(rawArgs, "Capture Figma node")), runtime);
-      case "figma_workspace_run_task_plan":
-        return handleRunTaskPlan(asRunTaskPlanArgs(withMcpDefaultTitle(rawArgs, "Run Figma Workspace task plan")), runtime);
-      case "figma_workspace_prepare_task":
-        return handlePrepareTask(
-          asPrepareTaskArgs(withMcpDefaultTitle(rawArgs, "Prepare Figma Workspace task")),
-          runtime,
-        );
-      case "figma_workspace_guidance":
-        return handleGuidance(asGuidanceArgs(withMcpDefaultTitle(rawArgs, "Read Figma Workspace guidance")));
-      case "figma_workspace_inspect":
-        return handleInspect(
-          asInspectArgs(withMcpDefaultTitle(rawArgs, "Inspect Figma Workspace target")),
-          runtime,
-        );
-      case "figma_workspace_get_metadata":
-        return handleGetMetadata(
-          asGetMetadataArgs(withMcpDefaultTitle(rawArgs, "Read Figma metadata as JSON")),
-          runtime,
-        );
-      case "figma_workspace_get_design_context":
-        return handleGetDesignContext(
-          asGetDesignContextArgs(withMcpDefaultTitle(rawArgs, "Get Figma design context")),
-          runtime,
-        );
-      case "figma_workspace_get_motion_context":
-        return handleGetMotionContext(
-          asGetMotionContextArgs(withMcpDefaultTitle(rawArgs, "Get Figma motion context")),
-          runtime,
-        );
-      case "figma_workspace_search_design_system":
-        return handleSearchDesignSystem(
-          asSearchDesignSystemArgs(withMcpDefaultTitle(rawArgs, "Search Figma design system")),
-          runtime,
-        );
-      case "figma_workspace_get_libraries":
-        return handleGetLibraries(
-          asGetLibrariesArgs(withMcpDefaultTitle(rawArgs, "Get Figma libraries")),
-          runtime,
-        );
-      case "figma_workspace_get_variable_defs":
-        return handleGetVariableDefs(
-          asGetVariableDefsArgs(withMcpDefaultTitle(rawArgs, "Get Figma variable definitions")),
-          runtime,
-        );
-      case "figma_workspace_call_upstream_tool":
-        return handleCallUpstreamTool(asCallUpstreamToolArgs(withMcpDefaultTitle(rawArgs, "Call upstream Figma MCP tool")), runtime);
-      case "figma_workspace_lookup":
-        return handleLookup(asLookupArgs(withMcpDefaultTitle(rawArgs, "Look up Figma Workspace reference")));
-      default:
-        throw new Error(`Unknown figma_workspace_mcp tool: ${request.params.name}`);
+async function handleUpstreamTools(
+  args: FigmaWorkspaceUpstreamToolsArguments,
+  upstreamToolCache: ReturnType<typeof createUpstreamToolCache>,
+): Promise<FigmaWorkspaceUpstreamToolsResult> {
+  const name = asOptionalString(args.name);
+  let tools: UpstreamToolInfo[];
+  try {
+    tools = await upstreamToolCache.list(args.refresh === true);
+  } catch (error) {
+    const upstreamError = normalizeCaughtUpstreamError(error);
+    return {
+      ok: false,
+      upstreamError: responseUpstreamError(upstreamError),
+      primaryFix: primaryFixForUpstreamError(upstreamError),
+      guidance: "Retry after upstream authentication or tool discovery succeeds.",
+    };
+  }
+  if (name) {
+    const tool = tools.find((candidate) => candidate.name === name);
+    if (!tool) {
+      throw new Error(`Upstream Figma MCP tool not found: ${name}`);
     }
-  });
-
-  server.setRequestHandler(
-    ListResourcesRequestSchema,
-    async (_request: ListResourcesRequest) => ({
-      resources: [
-        {
-          uri: "figma-workspace://capabilities",
-          name: "Figma Workspace capability router",
-          description: "Read first to choose the Figma Workspace facade path, core tools, workflow guide, and lookup strategy.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-workspace://guide",
-          name: "Figma Workspace workflow guide",
-          description: "Read when you need the continuous workflow sequence for scripts, assets, inspection, QA, design-system wrappers, and upstream escape hatches.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-workspace://lookup-index",
-          name: "Figma Workspace lookup index",
-          description: "Read when you need to choose between figma_workspace_guidance and figma_workspace_lookup without loading reference bodies.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-workspace://diagnostics",
-          name: "Figma Workspace diagnostics",
-          description: "Read only when developing/debugging figma_workspace_mcp or identifying MCP runtime-resource, reload, lookup-corpus, or installed-cache faults.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-workspace://upstream-tools",
-          name: "Figma upstream MCP tools",
-          description: "Read only when you need the compact directory of explicit uncovered official upstream Figma MCP capabilities.",
-          mimeType: "application/json",
-        },
-        {
-          uri: "figma-workspace://sessions",
-          name: "Figma Workspace sessions",
-          description: "Read when you need compact active workspace session ids, file context, and workspace directories before reading a specific session.",
-          mimeType: "application/json",
-        },
-        ...sessions.list().flatMap((session) => {
-          const encodedSessionId = encodeURIComponent(session.id);
-          return [
-            {
-              uri: `figma-workspace://sessions/${encodedSessionId}`,
-              name: `Figma Workspace session ${session.id}`,
-              description: "Read when you need compact state, handle counts/previews, and workspace file context for this specific active workspace session.",
-              mimeType: "application/json",
-            },
-            {
-              uri: `figma-workspace://sessions/${encodedSessionId}/handles`,
-              name: `Figma Workspace session ${session.id} handles`,
-              description: "Read when you need the full remembered handle map for this specific active workspace session.",
-              mimeType: "application/json",
-            },
-          ];
-        }),
-      ],
-    }),
-  );
-
-  server.setRequestHandler(
-    ListResourceTemplatesRequestSchema,
-    async (_request: ListResourceTemplatesRequest) => ({
-      resourceTemplates: [
-        {
-          uriTemplate: "figma-workspace://sessions/{id}",
-          name: "Figma Workspace session by id",
-          description: "Read when you need compact state, remembered handles, and workspace file context for a known workspace session id.",
-          mimeType: "application/json",
-        },
-        {
-          uriTemplate: "figma-workspace://sessions/{id}/handles",
-          name: "Figma Workspace session handles by id",
-          description: "Read when you need the full remembered handle map for a known workspace session id without reading full session history.",
-          mimeType: "application/json",
-        },
-        {
-          uriTemplate: "figma-workspace://upstream-tools/{name}",
-          name: "Figma upstream MCP tool by name",
-          description: "Read only after figma-workspace://upstream-tools when you need the full upstream tool description and inputSchema for one official tool.",
-          mimeType: "application/json",
-        },
-      ],
-    }),
-  );
-
-  server.setRequestHandler(
-    ReadResourceRequestSchema,
-    async (request: ReadResourceRequest) => readReplResource(request.params.uri, {
-      sessions,
-      upstreamToolCache,
-    }),
-  );
-
-  return { server, client, sessions };
+    return {
+      ok: true,
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      guidance: "Prefer a first-class Figma Workspace command when available; use call-upstream-tool for uncovered or raw official behavior.",
+    };
+  }
+  return {
+    ok: true,
+    tools: tools.map(upstreamToolDirectoryEntry),
+    categories: [...UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER],
+    guidance: "Use a first-class Figma Workspace command when available; pass name for the full official inputSchema before call-upstream-tool.",
+  };
 }
 
 async function handleOpen(
   args: Record<string, unknown>,
   runtime: {
     sessions: FigmaWorkspaceSessionStore;
-    client?: FigmaUpstreamMcpProxyClient;
+    client?: FigmaWorkspaceUpstreamClient;
   },
 ): Promise<Record<string, unknown>> {
   const session = truthy(args.reset)
@@ -1721,8 +1603,8 @@ async function executeRunScriptFile(
         code: "FIGMA_WORKSPACE_INPUT_FILE_MISSING",
         severity: "fatal",
         message: `Figma Workspace script file was not found: ${scriptPath}`,
-        suggestion: "Create the workspace script file or rerun figma_workspace_prepare_task with overwrite=true before running it.",
-        docsHint: "Use figma_workspace_prepare_task to create the .figma.ts file, then run figma_workspace_run_script_file with that inputFile.",
+        suggestion: "Create the workspace script file or rerun prepare-task with overwrite=true before running it.",
+        docsHint: "Use prepare-task to create the .figma.ts file, then run run-script-file with that inputFile.",
         source: { scriptPath },
       },
     ];
@@ -2393,7 +2275,7 @@ function normalizeDownloadAssetTarget(
   }
   const fileKey = session.fileKey ?? extractFigmaFileKey(session.fileUrl) ?? extractFigmaFileKeyFromTargetInput(record.target);
   if (!fileKey) {
-    throw new Error(`Download target ${index} requires a session fileKey. Call figma_workspace_open or figma_workspace_prepare_task with a Figma file URL first.`);
+    throw new Error(`Download target ${index} requires a session fileKey. Call open or prepare-task with a Figma file URL first.`);
   }
   const defaultFormat = asOptionalDownloadAssetFormat(record.defaultFormat);
   const defaultScale = typeof record.defaultScale === "number" && Number.isFinite(record.defaultScale)
@@ -2765,7 +2647,7 @@ function rejectRemovedCaptureMediaArguments(args: FigmaWorkspaceCaptureNodeArgum
     throw new Error('Tool argument "thumbnailMaxSize" was removed. Capture results now return local file paths in structuredContent only.');
   }
   if (Object.prototype.hasOwnProperty.call(args, "metadataFile")) {
-    throw new Error('Tool argument "metadataFile" was removed. Use "figma_workspace_call_upstream_tool" for full upstream get_screenshot debugging.');
+    throw new Error('Input "metadataFile" was removed. Use call-upstream-tool for full upstream get_screenshot debugging.');
   }
 }
 
@@ -2994,11 +2876,11 @@ async function handlePrepareTask(
       },
       next: [
         "Edit the .figma.ts file in this task folder.",
-        "Run figma_workspace_run_script_file; it strict-checks TypeScript and preflights diagnostics before upstream execution.",
+        "Run run-script-file; it strict-checks TypeScript and preflights diagnostics before upstream execution.",
         "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions.",
       ],
     };
-    return makeJsonToolResult(payload);
+    return makeJsonToolResult(toCliFacingGuidanceValue(payload));
   } catch (error) {
     if (session && sessionSnapshot) {
       restorePrepareTaskSessionState(session, sessionSnapshot);
@@ -3111,16 +2993,16 @@ async function handleGuidance(
       ok: true,
       workflow: createFileWorkflowPayload(),
       steps: [
-        "Prepare or reuse a task workspace with figma_workspace_prepare_task.",
+        "Prepare or reuse a task workspace with prepare-task.",
         "Write the transaction in a local .figma.ts file using $ helpers and native Figma Plugin API calls.",
-        "Call figma_workspace_run_script_file with strict=true, surface, inputFile, and inlineResultLimit.",
+        "Call run-script-file with strict=true, surface, inputFile, and inlineResultLimit.",
         "If preflight diagnostics fail, repair local file/line diagnostics and rerun the same script file.",
         "Inspect the paired .result.json file first when inline results are capped.",
       ],
       recommendedTools: [
-        "figma_workspace_prepare_task",
+        "prepare-task",
         "figma_workspace_guidance",
-        "figma_workspace_run_script_file",
+        "run-script-file",
         "figma_workspace_inspect",
       ],
       suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id),
@@ -3133,7 +3015,7 @@ async function handleGuidance(
         ),
       ),
     };
-    return makeJsonToolResult(payload);
+    return makeJsonToolResult(toCliFacingGuidanceValue(payload));
   }
   const intent = querySource
     ? normalizeLookupRankingQuery(querySource.value, querySource.name)
@@ -3180,7 +3062,34 @@ async function handleGuidance(
     ),
     suggestions,
   };
-  return makeJsonToolResult(payload);
+  return makeJsonToolResult(toCliFacingGuidanceValue(payload));
+}
+
+const CLI_GUIDANCE_OPERATION_REPLACEMENTS = LOCAL_WORKSPACE_TOOL_NAMES.map((operation) => [
+  operation,
+  operation.slice("figma_workspace_".length).replaceAll("_", "-"),
+] as const);
+
+function toCliFacingGuidanceValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    let result = value;
+    for (const [operation, command] of CLI_GUIDANCE_OPERATION_REPLACEMENTS) {
+      result = result.replaceAll(operation, command);
+    }
+    return result
+      .replaceAll("prepare_task", "prepare-task")
+      .replaceAll("run_script_file", "run-script-file")
+      .replaceAll("structuredContent.imageFile", "imageFile");
+  }
+  if (Array.isArray(value)) {
+    return value.map(toCliFacingGuidanceValue);
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, toCliFacingGuidanceValue(entry)]),
+  );
 }
 
 function guidanceQuerySource(
@@ -3804,7 +3713,7 @@ function assertInspectFileContext(session: FigmaWorkspaceSession): void {
     return;
   }
   throw new Error(
-    'figma_workspace_inspect requires file context. Call figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task first. target must be a string such as "$selection", "$currentPage", a stored handle, raw node id, or node URL; do not pass { fileKey, nodeId }.',
+    'inspect requires file context. Call open or prepare-task first. target must be a string such as "$selection", "$currentPage", a stored handle, raw node id, or node URL; do not pass { fileKey, nodeId }.',
   );
 }
 
@@ -3936,7 +3845,7 @@ async function resolveGetMetadataRequest(
     session,
     toolName: "figma_workspace_get_metadata",
     targetFallback: args.nodeId ?? extractFigmaNodeId(args.file),
-    fileKeyError: 'figma_workspace_get_metadata requires a Figma file key. Pass "file" or open a session with file context first.',
+    fileKeyError: 'get-metadata requires a Figma file key. Pass "file" or open a session with file context first.',
     allowDynamicSelectors: ["$currentPage", "$selection"],
   });
   const { fileKey, nodeId } = requested;
@@ -3957,7 +3866,7 @@ async function resolveGetMetadataDynamicSelector(options: {
 }): Promise<{ fileKey: string; nodeId: string }> {
   const { fileKey, selector, session, runtime } = options;
   if (selector !== "$currentPage" && selector !== "$selection") {
-    throw new Error(`figma_workspace_get_metadata cannot resolve target "${selector}" as a cached handle or supported dynamic selector. Pass a raw node id, node URL, cached handle, $currentPage, or a single-node $selection.`);
+    throw new Error(`get-metadata cannot resolve target "${selector}" as a cached handle or supported dynamic selector. Pass a raw node id, node URL, cached handle, $currentPage, or a single-node $selection.`);
   }
   const code = [
     `const __selector = ${literal(selector)};`,
@@ -3967,7 +3876,7 @@ async function resolveGetMetadataDynamicSelector(options: {
     "} else {",
     "  const __selection = figma.currentPage.selection;",
     "  if (__selection.length !== 1) {",
-    "    throw new Error(`$selection must contain exactly one node for figma_workspace_get_metadata; found ${__selection.length}.`);",
+    "    throw new Error(`$selection must contain exactly one node for get-metadata; found ${__selection.length}.`);",
     "  }",
     "  __node = __selection[0];",
     "}",
@@ -3988,13 +3897,13 @@ async function resolveGetMetadataDynamicSelector(options: {
   const parsed = parseUpstreamToolResult(upstream);
   updateSessionFromParsedResult(session, parsed.json);
   if (parsed.upstreamError) {
-    throw new Error(`figma_workspace_get_metadata failed to resolve dynamic selector "${selector}": ${parsed.upstreamError.message}`);
+    throw new Error(`get-metadata failed to resolve dynamic selector "${selector}": ${parsed.upstreamError.message}`);
   }
   const parsedRecord = asRecord(parsed.json);
   const resultRecord = asRecord(parsedRecord.result);
   const resolvedNodeId = asOptionalString(resultRecord.nodeId);
   if (!resolvedNodeId) {
-    throw new Error(`figma_workspace_get_metadata failed to resolve dynamic selector "${selector}" to a node id.`);
+    throw new Error(`get-metadata failed to resolve dynamic selector "${selector}" to a node id.`);
   }
   return { fileKey, nodeId: resolvedNodeId };
 }
@@ -4397,8 +4306,8 @@ async function selectNodeForSelectionDependentWrapper(options: {
         code: "FIGMA_WORKSPACE_SELECTION_RECOVERY_FAILED",
         severity: "warning",
         message: `Could not select target ${options.nodeId} before retrying the official context wrapper.`,
-        suggestion: "Use a smaller child node target, or call figma_workspace_get_metadata first to discover a selectable frame/component node.",
-        docsHint: "figma-workspace://guide#contextAndLookup",
+        suggestion: "Use a smaller child node target, or call get-metadata first to discover a selectable frame/component node.",
+        docsHint: "Figma Workspace CLI: get-design-context --help",
       }],
     };
   }
@@ -4413,8 +4322,8 @@ async function selectNodeForSelectionDependentWrapper(options: {
       code: "FIGMA_WORKSPACE_CONTEXT_TARGET_NOT_SELECTABLE",
       severity: "fatal",
       message: `Official context wrapper target ${options.nodeId} resolved to non-selectable ${nodeType}.`,
-      suggestion: "Pass a smaller selectable child node, such as a frame/component inside the page, or call figma_workspace_get_metadata on the page first and choose a child target.",
-      docsHint: "figma-workspace://guide#contextAndLookup",
+      suggestion: "Pass a smaller selectable child node, such as a frame/component inside the page, or call get-metadata on the page first and choose a child target.",
+      docsHint: "Figma Workspace CLI: get-design-context --help",
     }],
   };
 }
@@ -4432,7 +4341,7 @@ async function executeCallUpstreamTool(
   }
   if (isLocalWorkspaceToolName(args.toolName)) {
     throw new Error(
-      `Refusing to proxy local figma_workspace_mcp tool "${args.toolName}". Call it directly instead.`,
+      `Refusing to proxy Figma Workspace operation "${args.toolName}". Use the corresponding CLI command instead.`,
     );
   }
   const upstreamArgs = isRecord(args.arguments) ? args.arguments : {};
@@ -4504,7 +4413,7 @@ async function handleLookup(
         ok: true,
         results: matches.results,
         guidance:
-          "Use these capped BM25-ranked chunks as compact context. Run a narrower figma_workspace_lookup query or kind=api lookup when more detail is needed.",
+          "Use these capped BM25-ranked chunks as compact context. Run a narrower lookup query or kind=api lookup when more detail is needed.",
       };
       return makeJsonToolResult(payload);
     }
@@ -4532,7 +4441,7 @@ async function handleLookup(
         ok: false,
         results: [],
         diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error)]),
-        guidance: "Lookup corpus is unavailable in this MCP process. Reload the figma-workspace plugin/MCP server after confirming the installed plugin cache contains bundled corpus files.",
+        guidance: "Lookup corpus is unavailable in this CLI process. Rebuild the mcp-server dist after confirming the plugin source contains bundled corpus files, then start a new CLI command.",
         runtime: error.failure,
       });
     }
@@ -4557,8 +4466,8 @@ function lookupCorpusDiagnostic(error: FigmaWorkspaceLookupCorpusUnavailableErro
       `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`,
     ].join("; "),
-    suggestion: "Reload the figma-workspace plugin/MCP server so it starts from the current installed cache, or rebuild the plugin package if bundled corpus files are missing.",
-    docsHint: "figma-workspace://diagnostics",
+    suggestion: "Rebuild the mcp-server dist if bundled corpus files are missing, then rerun the CLI command with the same --session-file.",
+    docsHint: "Figma Workspace CLI: lookup --help",
   };
 }
 
@@ -4594,6 +4503,99 @@ function createUpstreamToolCache(client: FigmaUpstreamMcpProxyClient) {
   };
 }
 
+type UpstreamToolDirectoryCategory =
+  | "capture"
+  | "design-context"
+  | "motion"
+  | "video"
+  | "execution"
+  | "assets"
+  | "code-connect"
+  | "libraries"
+  | "figjam"
+  | "generation"
+  | "shader"
+  | "account"
+  | "other";
+
+const UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER: UpstreamToolDirectoryCategory[] = [
+  "capture", "design-context", "motion", "video", "execution", "assets",
+  "code-connect", "libraries", "figjam", "generation", "shader", "account", "other",
+];
+
+const UPSTREAM_TOOL_DIRECTORY_CATEGORIES: Record<string, UpstreamToolDirectoryCategory> = {
+  get_screenshot: "capture",
+  get_design_context: "design-context",
+  get_motion_context: "motion",
+  get_metadata: "design-context",
+  get_variable_defs: "design-context",
+  get_figjam: "figjam",
+  generate_figma_design: "generation",
+  generate_diagram: "figjam",
+  get_code_connect_map: "code-connect",
+  whoami: "account",
+  add_code_connect_map: "code-connect",
+  get_code_connect_suggestions: "code-connect",
+  send_code_connect_mappings: "code-connect",
+  get_context_for_code_connect: "code-connect",
+  use_figma: "execution",
+  get_libraries: "libraries",
+  search_design_system: "libraries",
+  create_new_file: "generation",
+  upload_assets: "assets",
+  download_assets: "assets",
+  export_video: "video",
+  list_shader_effects: "shader",
+  get_shader_effect: "shader",
+  list_shader_fills: "shader",
+  get_shader_fill: "shader",
+};
+
+function upstreamToolDirectoryEntry(tool: UpstreamToolInfo): Record<string, unknown> {
+  const normalizedDescription = tool.description?.replace(/\s+/gu, " ").trim();
+  return removeUndefined({
+    name: tool.name,
+    category: UPSTREAM_TOOL_DIRECTORY_CATEGORIES[tool.name] ?? "other",
+    description: !normalizedDescription
+      ? undefined
+      : normalizedDescription.length <= 96
+        ? normalizedDescription
+        : `${normalizedDescription.slice(0, 93)}...`,
+  }) as Record<string, unknown>;
+}
+
+function sessionDirectoryEntry(session: FigmaWorkspaceSession): Record<string, unknown> {
+  return removeUndefined({
+    id: session.id,
+    label: session.label,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    sessionDir: session.workspace?.sessionDir,
+    handleCount: Object.keys(session.handles).length,
+    historyCount: session.history.length,
+    updatedAt: session.updatedAt,
+  }) as Record<string, unknown>;
+}
+
+function sessionDetail(
+  session: FigmaWorkspaceSession,
+  includeHandles: boolean,
+  includeHistory: boolean,
+): Record<string, unknown> {
+  return removeUndefined({
+    ...sessionDirectoryEntry(session),
+    slug: session.slug,
+    createdAt: session.createdAt,
+    fileUrl: session.fileUrl,
+    currentPageId: session.currentPageId,
+    knownPages: session.knownPages,
+    lastDiagnostics: session.lastDiagnostics,
+    workspace: session.workspace,
+    handles: includeHandles ? session.handles : undefined,
+    history: includeHistory ? session.history : undefined,
+  }) as Record<string, unknown>;
+}
+
 async function resolveEvalSettings(
   session: FigmaWorkspaceSession,
   args: Record<string, unknown>,
@@ -4606,7 +4608,7 @@ async function resolveEvalSettings(
   const tool = tools.find((item) => item.name === toolName);
   if (!tool) {
     throw new Error(
-      `Required official upstream Figma MCP execution tool "${toolName}" was not found. This may indicate upstream contract drift; use "figma_workspace_call_upstream_tool" for explicit upstream debugging. Available tools: ${tools.map((item) => item.name).join(", ")}`,
+      `Required official upstream Figma MCP execution tool "${toolName}" was not found. This may indicate upstream contract drift; use call-upstream-tool for explicit upstream debugging. Available tools: ${tools.map((item) => item.name).join(", ")}`,
     );
   }
   const argumentName = DEFAULT_EVAL_ARGUMENT_NAME;
@@ -4630,7 +4632,7 @@ async function resolveEvalSettings(
     }
   }
   if (requiredUpstreamProperties.has("fileKey") && typeof upstreamArguments.fileKey !== "string") {
-    throw new Error('Required official upstream Figma MCP execution tool "use_figma" requires fileKey. Call figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task first.');
+    throw new Error('Required official upstream Figma MCP execution tool "use_figma" requires fileKey. Call open or prepare-task first.');
   }
   touchSession(session);
   return { toolName, argumentName, upstreamArguments };
@@ -4644,7 +4646,7 @@ function upstreamToolRequiredProperties(tool: UpstreamToolInfo): Set<string> {
 
 /**
  * @internal Internal wrapper builder used by the Figma Workspace server and tests.
- * This is not a stable MCP tool input contract; MCP callers should use figma_workspace_eval or figma_workspace_run_script_file.
+ * This is not a stable CLI input contract; callers should use eval or run-script-file.
  */
 export function buildFigmaEvalScript(options: {
   session: Pick<FigmaWorkspaceSession, "id" | "handles" | "currentPageId" | "fileUrl" | "fileKey" | "surface" | "knownPages">;
@@ -5580,10 +5582,10 @@ async function loadAssetManifest(
   }
   const baseDir = manifestPath ? dirname(manifestPath) : session.workspace?.sessionDir;
   if (manifestRecord.argumentsTemplate !== undefined) {
-    throw new Error('Asset manifest field "argumentsTemplate" was removed. Use "figma_workspace_call_upstream_tool".');
+    throw new Error('Asset manifest field "argumentsTemplate" was removed. Use call-upstream-tool.');
   }
   if (manifestRecord.toolName !== undefined || manifestRecord.arguments !== undefined || manifestRecord.refresh !== undefined) {
-    throw new Error('Asset manifest fields "toolName/arguments/refresh" were removed. Use "figma_workspace_call_upstream_tool".');
+    throw new Error('Asset manifest fields "toolName/arguments/refresh" were removed. Use call-upstream-tool.');
   }
   return {
     assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir, session)),
@@ -5614,7 +5616,7 @@ function assetManifestLoadDiagnostic(error: AssetManifestLoadError): FigmaWorksp
     severity: "fatal",
     message: error.message,
     suggestion: "Create the manifest file at the reported path or pass inline assets for one-off uploads; relative manifestPath values are resolved inside the initialized workspace.",
-    docsHint: "figma-workspace://guide#assetWorkflow",
+    docsHint: "Figma Workspace CLI: apply-asset-manifest --help",
   };
 }
 
@@ -5687,7 +5689,7 @@ function assertRemovedManifestAssetFields(record: Record<string, unknown>, index
     }
   }
   if (record.toolName !== undefined || record.arguments !== undefined || record.refresh !== undefined) {
-    throw new Error(`Asset manifest entry ${index} fields "toolName/arguments/refresh" were removed. Use "figma_workspace_call_upstream_tool".`);
+    throw new Error(`Asset manifest entry ${index} fields "toolName/arguments/refresh" were removed. Use call-upstream-tool.`);
   }
 }
 
@@ -5699,7 +5701,7 @@ function selectRequiredUpstreamTool(
   const tool = tools.find((item) => item.name === toolName);
   if (!tool) {
     throw new Error(
-      `Required official upstream Figma MCP ${kind} tool "${toolName}" was not found. This may indicate upstream contract drift; use "figma_workspace_call_upstream_tool" for explicit upstream debugging. Available tools: ${tools.map((item) => item.name).join(", ")}`,
+      `Required official upstream Figma MCP ${kind} tool "${toolName}" was not found. This may indicate upstream contract drift; use call-upstream-tool for explicit upstream debugging. Available tools: ${tools.map((item) => item.name).join(", ")}`,
     );
   }
   return tool;
@@ -5714,7 +5716,7 @@ function assertUpstreamToolHasProperty(
     return;
   }
   throw new Error(
-    `Required official upstream Figma MCP ${kind} tool "${tool.name}" no longer advertises inputSchema.properties.${propertyName}. This may indicate upstream contract drift; use "figma_workspace_call_upstream_tool" for explicit upstream debugging.`,
+    `Required official upstream Figma MCP ${kind} tool "${tool.name}" no longer advertises inputSchema.properties.${propertyName}. This may indicate upstream contract drift; use call-upstream-tool for explicit upstream debugging.`,
   );
 }
 
@@ -5745,14 +5747,14 @@ function buildAssetManifestUpstreamArguments(options: {
     return buildUploadAssetsArguments(options.asset);
   }
   throw new Error(
-    `Required official upstream Figma MCP asset upload/fill tool "${UPLOAD_ASSETS_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_workspace_call_upstream_tool" for explicit upstream debugging.`,
+    `Required official upstream Figma MCP asset upload/fill tool "${UPLOAD_ASSETS_TOOL_NAME}" was not available. This may indicate upstream contract drift; use call-upstream-tool for explicit upstream debugging.`,
   );
 }
 
 function buildUploadAssetsArguments(asset: NormalizedAssetManifestAsset): Record<string, unknown> {
   if (!asset.fileKey) {
     throw new Error(
-      `Asset manifest entry for "${asset.path}" needs a fileKey for upload_assets. Open the session with file or use "figma_workspace_call_upstream_tool" for explicit upstream debugging.`,
+      `Asset manifest entry for "${asset.path}" needs a fileKey for upload_assets. Open the session with file or use call-upstream-tool for explicit upstream debugging.`,
     );
   }
   const scaleMode = normalizeImageScaleMode(asset.scaleMode ?? "FILL", "scaleMode");
@@ -5778,7 +5780,7 @@ function buildCaptureUpstreamArguments(options: {
     }) as Record<string, unknown>;
   }
   throw new Error(
-    `Required official upstream Figma MCP node screenshot tool "${SCREENSHOT_TOOL_NAME}" was not available. This may indicate upstream contract drift; use "figma_workspace_call_upstream_tool" for explicit upstream debugging.`,
+    `Required official upstream Figma MCP node screenshot tool "${SCREENSHOT_TOOL_NAME}" was not available. This may indicate upstream contract drift; use call-upstream-tool for explicit upstream debugging.`,
   );
 }
 
@@ -6501,7 +6503,7 @@ async function runTaskPlanStep(options: {
       options.runtime,
     );
   }
-  throw new Error(`Unsupported figma_workspace_run_task_plan step type "${options.type}".`);
+  throw new Error(`Unsupported run-task-plan step type "${options.type}".`);
 }
 
 function taskPlanStepArguments(step: FigmaWorkspaceTaskPlanStep): Record<string, unknown> {
@@ -6736,8 +6738,8 @@ function failedMetadataEnrichment(
         code: "FIGMA_METADATA_ENRICHMENT_FAILED",
         severity: "warning",
         message: `Metadata XML conversion succeeded, but native layout-state enrichment failed: ${message}`,
-        suggestion: "Use figma_workspace_inspect or figma_workspace_eval for targeted lock/layout readback if these fields are required.",
-        docsHint: "figma_workspace_get_metadata enrichment",
+        suggestion: "Use inspect or eval for targeted lock/layout readback if these fields are required.",
+        docsHint: "get-metadata enrichment",
       },
     ],
   };
@@ -7176,7 +7178,7 @@ function deriveTaskName(
 function createTaskScriptTemplate(taskName: string, scriptName: string, args: FigmaWorkspacePrepareTaskArguments): string {
   return [
     `// ${scriptName}`,
-    "// Async Figma Plugin API body for figma_workspace_run_script_file.",
+    "// Async Figma Plugin API body for the run-script-file command.",
     scriptName.endsWith(".figma.ts")
       ? "// TypeScript is strict-checked with Figma Plugin API typings before execution."
       : undefined,
@@ -7225,12 +7227,12 @@ function createEvalHelperDescriptionsPayload(): Record<FigmaWorkspaceEvalHelperP
 
 function createFileWorkflowPayload(): Record<string, unknown> {
   return {
-    primaryTool: "figma_workspace_run_script_file",
+    primaryTool: "run-script-file",
     fileExtension: ".figma.ts",
     supportedFileExtensions: [".figma.ts"],
-    prepareTool: "figma_workspace_prepare_task",
+    prepareTool: "prepare-task",
     planTool: "figma_workspace_guidance",
-    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts for file-context work; workspaceDir is an explicit absolute directory chosen by the agent inside the project/worktree/task artifacts, and the MCP server does not append another figma-workspace segment",
+    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts for file-context work; workspaceDir is an explicit absolute directory chosen by the agent inside the project/worktree/task artifacts, and the CLI does not append another figma-workspace segment",
     outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
     workflowTools: ["figma_workspace_get_metadata", "figma_workspace_inspect", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan"],
     helpers: createEvalHelperPathList(),
@@ -7238,9 +7240,9 @@ function createFileWorkflowPayload(): Record<string, unknown> {
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.ts files.",
       "Initialize a file workspace once with an explicit workspaceDir selected by the agent inside the current project/worktree/task artifacts, then keep task scripts in that file-context folder.",
-      "Run figma_workspace_run_script_file directly; it strict-checks .figma.ts files with Figma Plugin API typings, compiles the upstream payload internally, and preflights file-aware diagnostics before upstream calls.",
+      "Run run-script-file directly; it strict-checks .figma.ts files with Figma Plugin API typings, compiles the upstream payload internally, and preflights file-aware diagnostics before upstream calls.",
       "Keep each .figma.ts transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The file runner and eval wrapper parse script ASTs and inject only referenced $ helpers plus required dependencies; eval defaults to JavaScript and compiles TypeScript only when typescript:true is supplied. Scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; compact session state and workspace file context are available through figma-workspace://sessions/{id}, and the full handle map is available through figma-workspace://sessions/{id}/handles.",
+      "The file runner and eval wrapper parse script ASTs and inject only referenced $ helpers plus required dependencies; eval defaults to JavaScript and compiles TypeScript only when typescript:true is supplied. Scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; session state and handles persist in the CLI --session-file.",
       "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
       "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
       "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.ts and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
@@ -7249,7 +7251,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
       "Use figma_workspace_capture_node to write final visual QA captures to local PNG files. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
       "Use figma_workspace_run_task_plan for sequential file-plan workflows that combine preflighted script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
       "Use figma_workspace_get_metadata for broad layer-tree discovery: target can be a raw node id, node URL, cached handle, $currentPage, single-node $selection, or target:{ fileKey, nodeId }. It calls official get_metadata, converts XML to compact JSON, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
-      "Use figma_workspace_inspect only after the session has file context from figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task. It executes upstream use_figma; target must be a string such as $selection, $currentPage, a handle, raw node id, or node URL, not { fileKey, nodeId }.",
+      "Use inspect only after the session has file context from open or prepare-task. It executes upstream use_figma; target must be a string such as $selection, $currentPage, a handle, raw node id, or node URL, not { fileKey, nodeId }.",
       "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
       "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
       "For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot; avoid covering primary controls, text, or content that visual QA must inspect.",
@@ -7278,10 +7280,10 @@ function createIntentSuggestions(
     referenceContext,
     workflow: createFileWorkflowPayload(),
     toolOrder: [
-      "figma_workspace_prepare_task",
+      "prepare-task",
       "figma_workspace_guidance",
       "figma_workspace_lookup(kind=api)",
-      "figma_workspace_run_script_file",
+      "run-script-file",
       "figma_workspace_inspect",
     ],
     referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_workspace_lookup kind=api query when exact API details are still missing.",
@@ -7303,31 +7305,6 @@ function createPublicHelperProfilePayloads(
     lookupHints: profile.lookupHints,
     example: profile.example,
   }));
-}
-
-function createCompactHelperCategoryPayloads(): Array<Record<string, unknown>> {
-  return FIGMA_WORKSPACE_HELPER_CATEGORIES.map((category) => ({
-    id: category.id,
-    helpers: category.helpers,
-    lookupHints: category.lookupHints.slice(0, 2),
-  }));
-}
-
-function createCompactHelperHardRules(): string[] {
-  return [
-    "Static only: $.x(...), $[\"x\"](...), or const { x } = $.",
-    "Forbid dynamic $[name], alias $, rest destructuring, and local $.",
-    "$.imageAsset is small PNG/JPEG only; large files use manifest/upload.",
-  ];
-}
-
-function createCompactHelperCategoryMap(): Record<string, string[]> {
-  return Object.fromEntries(
-    FIGMA_WORKSPACE_HELPER_CATEGORIES.map((category) => [
-      category.id,
-      category.helpers.map((helper) => helper.replace(/^\$\./u, "")),
-    ]),
-  );
 }
 
 function createPublicWrapperProfilePayloads(
@@ -7380,7 +7357,7 @@ function createWrapperGuidanceRef(toolName: string): FigmaWorkspaceWrapperGuidan
     return undefined;
   }
   return {
-    source: "figma_workspace_guidance",
+    source: "guidance",
     query: [profile.tool, profile.upstreamTool, ...profile.workflowIds].join(" "),
     workflowIds: profile.workflowIds,
   };
@@ -7409,9 +7386,9 @@ function createToolTierPayload(): Record<string, unknown> {
   return {
     normalPath: {
       summary: "Default path for non-trivial Figma work.",
-      tools: ["figma_workspace_prepare_task", "figma_workspace_run_script_file", "figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_inspect", "figma_workspace_capture_node"],
+      tools: ["prepare-task", "run-script-file", "get-metadata", "get-design-context", "get-motion-context", "search-design-system", "get-libraries", "get-variable-defs", "inspect", "capture-node"],
       order: [
-        "figma_workspace_prepare_task",
+        "prepare-task",
         "figma_workspace_guidance",
         "figma_workspace_lookup",
         "figma_workspace_get_metadata",
@@ -7420,7 +7397,7 @@ function createToolTierPayload(): Record<string, unknown> {
         "figma_workspace_search_design_system",
         "figma_workspace_get_libraries",
         "figma_workspace_get_variable_defs",
-        "figma_workspace_run_script_file",
+        "run-script-file",
         "figma_workspace_inspect",
         "figma_workspace_capture_node",
       ],
@@ -7446,7 +7423,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     title: {
       optional: true,
       preferSupplying: false,
-      schemaDescription: "Optional MCP call display label for Codex/UI only; validated as a string but not saved, defaulted, or used for task/file naming.",
+      schemaDescription: "Optional display label only; validated as a string but not saved, defaulted, or used for task/file naming.",
       guidance: "title is optional display-only call metadata for Codex/UI. The runtime validates it when supplied but does not store it, synthesize defaults from it, pass it upstream, or use it for task/file naming.",
       examples: [
         "Capture the hero variant for visual QA",
@@ -7455,7 +7432,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       ],
     },
     prepareTask: {
-      tool: "figma_workspace_prepare_task",
+      tool: "prepare-task",
       tier: "normalPath",
       recommendedCalls: {
         workspaceFromFile: { file: "<figma file URL or file key>", taskName: "<task-name>", workspaceDir: "<absolute project/worktree/task-artifact figma-workspace dir>", surface: "design" },
@@ -7478,14 +7455,14 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       requiredArguments: ["workspaceDir when file is present"],
       avoidUnless: {
         workspaceDir: "Do not use the plugin install/cache path. Choose an absolute directory inside the active project, worktree, or task artifacts; include the figma-workspace segment yourself when desired.",
-        connect: "Leave at the default true unless intentionally updating only local metadata; open connects without listing tools, and upstream tool discovery uses figma-workspace://upstream-tools.",
+        connect: "Leave at the default true unless intentionally updating only local metadata; open connects without listing tools, and call-upstream-tool discovers official upstream tools when needed.",
         handles: "Use only when importing known node ids into a new session; prefer $.remember from scripts.",
       },
     },
     eval: {
       tool: "figma_workspace_eval",
       tier: "advancedEscapeHatches",
-      guidance: "Use only for small ephemeral calls. Use prepare_task + figma_workspace_run_script_file for repairable scripts, multi-step work, and large structured results.",
+      guidance: "Use only for small ephemeral calls. Use prepare-task + run-script-file for repairable scripts, multi-step work, and large structured results.",
       recommendedCalls: {
         read: { sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
         write: { sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" },
@@ -7648,7 +7625,7 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
     callUpstreamTool: {
       tool: "figma_workspace_call_upstream_tool",
       tier: "advancedEscapeHatches",
-      guidance: `Explicit upstream escape hatch for official Figma MCP capabilities, including shader effect/fill reads and raw upstream behavior checks. Read figma-workspace://upstream-tools, then figma-workspace://upstream-tools/{name}; prefer dedicated wrappers for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
+      guidance: `Explicit upstream escape hatch for official Figma MCP capabilities, including shader effect/fill reads and raw upstream behavior checks. Use call-upstream-tool --help for the command contract; prefer dedicated CLI commands for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
       recommendedCalls: {
         explicit: { sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} },
       },
@@ -7660,418 +7637,6 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       },
     },
   };
-}
-
-function createCapabilitiesPayload(): Record<string, unknown> {
-  return {
-    purpose: "Routing manifest for the Figma Workspace MCP facade. Stay on figma_workspace_mcp for normal work; it keeps local sessions, handles, workspace files, diagnostics, and structured tool results while upstream execution still goes through official Figma MCP tools.",
-    defaultFlow: [
-      "Use figma_workspace_prepare_task with file, taskName, workspaceDir, and surface for repairable .figma.ts work.",
-      "Use figma_workspace_guidance with compact keywords before writing scripts; use figma_workspace_lookup only for exact docs/API snippets.",
-      "Run figma_workspace_run_script_file with inputFile and strict=true; repair every repairPlan.steps item and rerun the same file.",
-      "Use inspect/metadata/capture/design-system/asset tools as workflow add-ons, not as replacements for the file-script path.",
-    ],
-    toolSelection: {
-      normalPath: ["figma_workspace_prepare_task", "figma_workspace_guidance", "figma_workspace_run_script_file", "figma_workspace_inspect", "figma_workspace_capture_node"],
-      contextAndLookup: ["figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_lookup"],
-      workflowAddOns: ["figma_workspace_run_task_plan"],
-      advancedEscapeHatches: ["figma_workspace_eval", "figma_workspace_call_upstream_tool"],
-      upstreamEscapeHatchExamples: ["generate_figma_design", "generate_diagram", "create_new_file", "whoami", "add_code_connect_map", "get_code_connect_suggestions", "send_code_connect_mappings", "get_context_for_code_connect"],
-    },
-    contractNotes: {
-      scriptPreflight: "figma_workspace_run_script_file always runs local diagnostics/compile/strict checks first; phase=preflight means executed=false and upstream was not called, phase=execute means upstream execution was attempted. Parse errors return repairPlan.status=parse_error and no guardrail scan.",
-      responseShape: "Tools return structuredContent-first JSON with empty content, minimal session summaries, non-empty diagnostics, repairPlan steps, and outputFiles pointers for generated debug/sidecar files.",
-      upstreamEnvelope: "upstream.ok is the effective upstream/business status; consumed top-level ok fields are removed from upstream.result and bridge-internal metadata is not public.",
-      referenceOwnership: "Static resources are routing/workflow docs only. Helper, API, pattern, safety, and example details belong to figma_workspace_guidance, figma_workspace_lookup, and BM25 snippets.",
-    },
-    helperGuidance: {
-      hardRules: createCompactHelperHardRules(),
-      categories: createCompactHelperCategoryMap(),
-      profileSource: "figma_workspace_guidance.helperProfiles",
-    },
-    resources: {
-      diagnostics: "figma-workspace://diagnostics",
-      guide: "figma-workspace://guide",
-      lookupIndex: "figma-workspace://lookup-index",
-      sessions: "figma-workspace://sessions",
-      upstreamTools: "figma-workspace://upstream-tools",
-    },
-    lookupStrategy: {
-      guidanceTool: "figma_workspace_guidance",
-      lookupTool: "figma_workspace_lookup",
-      outputFields: FIGMA_WORKSPACE_QUERY_OUTPUT_FIELDS,
-      queryAnchors: FIGMA_WORKSPACE_QUERY_SEARCH_ANCHORS,
-    },
-    wrapperGuidance: {
-      profileTools: FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.tool),
-      workflowIds: FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
-      resultField: "guidanceRef",
-    },
-  };
-}
-
-function createDiagnosticsPayload(): Record<string, unknown> {
-  return {
-    purpose: "Development/debugging payload for identifying Figma Workspace MCP faults: reload, installed-cache, lookup corpus, and bundled runtime-resource loading issues. Do not read for normal Figma work or script preflight repair.",
-    runtime: {
-      lookup: getFigmaWorkspaceLookupRuntimeInfo(),
-      typescript: getFigmaWorkspaceTypescriptRuntimeInfo(),
-    },
-    guidance: [
-      "For normal routing, read figma-workspace://capabilities first; this diagnostics resource intentionally includes path details.",
-      "If lookup.ok or typescript.ok is false, compare attemptedPaths with the installed plugin cache and reload the Figma Workspace MCP/plugin after reinstalling or rebuilding.",
-      "Existing MCP processes keep startup-loaded runtime resources in memory; reload the process to pick up a newly installed plugin cache.",
-    ],
-  };
-}
-
-function createGuidePayload(): Record<string, unknown> {
-  return {
-    purpose: "Continuous workflow guide for common figma_workspace_mcp tasks. For exact helper/API/reference details, use figma_workspace_guidance or figma_workspace_lookup instead of static resources.",
-    scriptFileWorkflow: [
-      "Start non-trivial work with figma_workspace_prepare_task so the session has file context and a local .figma.ts workspace.",
-      "Write an async script body using static $ helper references and native Figma Plugin API calls. .figma.ts scripts are strict-checked with Figma Plugin API typings and compiled before upstream execution. Dynamic $ helper lookup, aliasing $, object rest destructuring of $, and local $ declarations are blocked because helper injection must be statically knowable.",
-      "Run figma_workspace_run_script_file with inputFile. The runner compiles and preflights before upstream use_figma execution; fatal preflight diagnostics return repairPlan.steps with line:column occurrences without calling upstream.",
-      "When repairPlan.status is parse_error, fix all syntax-error steps first and rerun; guardrail diagnostics are intentionally skipped until parsing succeeds.",
-      "Use $.checkpoint and stable handles such as $hero to make repair loops compact. Read figma-workspace://sessions/{id}/handles when only the handle map is needed.",
-    ],
-    helperIndex: {
-      hardRules: FIGMA_WORKSPACE_HELPER_HARD_RULES,
-      categories: createCompactHelperCategoryPayloads(),
-      profileSource: "Call figma_workspace_guidance with helper/category keywords for helperProfiles.",
-    },
-    evalWorkflow: [
-      "Use figma_workspace_eval only for small ephemeral JavaScript calls where a local file would add overhead; pass typescript:true only when inline TypeScript annotations should be compiled first.",
-      "Move repairable, multi-step, asset-heavy, or user-visible mutations into .figma.ts files so diagnostics and reruns remain stable.",
-      "Use handleUpdates only for pre-run handle import/repair; it is not read back from upstream.result.handleUpdates. Persist script-created handles with $.remember(...) or by returning top-level handles.",
-    ],
-    assetWorkflow: [
-      "For small generated PNG/JPEG payloads, $.imageAsset can create or update image-fill rectangles from base64 or byte arrays.",
-      "For large local assets, create target rectangles in script, then use figma_workspace_apply_asset_manifest so official upload_assets can fill targets from files.",
-      "Use figma_workspace_download_assets when official download_assets should export renders or raw/source images to local folders.",
-    ],
-    inspectionAndQa: [
-      "Use figma_workspace_get_metadata for broad recursive layer-tree discovery with compact lock/layout-state enrichment; targets may be raw ids, node URLs, cached handles, $currentPage, single-node $selection, or target:{ fileKey, nodeId }. Then use figma_workspace_inspect for targeted node/style/handle validation.",
-      "Use figma_workspace_get_design_context when implementation or parity review needs official design-to-code context, and figma_workspace_get_motion_context when animation data is needed.",
-      "Use figma_workspace_capture_node for final visual QA because it writes a local PNG path in structuredContent. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly.",
-      "For visible audit markers or temporary verification labels, use metadata/inspect or $.findFreeSlot to place them outside the target frame or in a confirmed free slot, then capture to confirm they do not occlude the design under review.",
-    ],
-    designSystem: [
-      "Use native Plugin API calls in .figma.ts for local variables, styles, components, and bindings.",
-      "Use figma_workspace_search_design_system, figma_workspace_get_libraries, and figma_workspace_get_variable_defs when official design-system context is needed through first-class wrappers.",
-    ],
-    motionAndShaders: [
-      "Use figma_workspace_call_upstream_tool with official export_video only when frame sampling is worth the upstream render cost.",
-      "Use figma-workspace://upstream-tools/{name} plus figma_workspace_call_upstream_tool for explicit official shader library reads; payloads remain upstream-shaped.",
-    ],
-    wrapperWorkflowGraph: createPublicWrapperWorkflowPayloads(FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH),
-    upstreamEscapeHatch: [
-      FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
-      "Examples currently exposed through upstream discovery but not covered by dedicated wrappers include file generation, FigJam diagram generation, account checks, and Code Connect mutation/suggestion helpers.",
-      `Before using it, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}; prefer dedicated wrappers for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT} unless raw upstream behavior is needed.`,
-    ],
-    responseContract: [
-      "Top-level ok reports local wrapper completion. upstream.ok reports effective upstream/business success when an upstream envelope is present.",
-      "Large inline fields may be omitted with inlineResultLimit metadata and remain available through outputFiles sidecars.",
-      "Debug JSON files are generated on demand for failures, diagnostics, inline omissions, and task-plan audit output; clean success avoids routine JSON file writes.",
-    ],
-  };
-}
-
-function createLookupIndexPayload(): Record<string, unknown> {
-  return {
-    purpose: "Compact reference discovery index; use guidance/lookup for bodies.",
-    guidance: {
-      tool: "figma_workspace_guidance",
-      useFor: ["workflow planning", "API cards", "query hints", "guardrails"],
-      recommendedQueryStyle: "compact BM25 keywords, e.g. text font loadFontAsync",
-      outputFields: FIGMA_WORKSPACE_QUERY_OUTPUT_FIELDS,
-      commonCards: [
-        "text.font",
-        "layout.auto",
-        "variables.bind",
-        "components.variants",
-        "images.fill",
-        "selection",
-        "surface.figjam",
-        "surface.slides",
-      ],
-      wrapperProfiles: {
-        tools: FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.tool),
-        upstreamTools: FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES.map((profile) => profile.upstreamTool),
-        workflowIds: FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
-        fullProfileSource: "figma_workspace_guidance.wrapperProfiles",
-      },
-      helperProfiles: {
-        categories: createCompactHelperCategoryMap(),
-        hardRules: createCompactHelperHardRules(),
-        fullProfileSource: "figma_workspace_guidance.helperProfiles",
-      },
-      workflowGraph: FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH.map((workflow) => workflow.id),
-    },
-    lookup: {
-      tool: "figma_workspace_lookup",
-      docs: "Use kind=docs with query for capped workflow snippets.",
-      api: "Use kind=api with symbol for exact Plugin API snippets.",
-      sizeControls: ["maxResults", "maxSnippetLines"],
-    },
-    ownership: "Bundled corpus stays internal; agent-facing details come from guidance, lookup, and schemas.",
-  };
-}
-
-function readStaticReplResource(uri: string): Record<string, unknown> | undefined {
-  const resources: Record<string, unknown> = {
-    "figma-workspace://capabilities": createCapabilitiesPayload(),
-    "figma-workspace://diagnostics": createDiagnosticsPayload(),
-    "figma-workspace://guide": createGuidePayload(),
-    "figma-workspace://lookup-index": createLookupIndexPayload(),
-  };
-  const content = resources[uri];
-  if (content === undefined) {
-    return undefined;
-  }
-  return {
-    contents: [
-      {
-        uri,
-        mimeType: "application/json",
-        text: JSON.stringify(content, null, 2),
-      },
-    ],
-  };
-}
-
-async function readReplResource(
-  uri: string,
-  runtime: {
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  const staticResource = readStaticReplResource(uri);
-  if (staticResource) {
-    return staticResource;
-  }
-  if (uri === "figma-workspace://upstream-tools") {
-    let tools: UpstreamToolInfo[];
-    let upstreamError: FigmaWorkspaceUpstreamError | undefined;
-    try {
-      tools = await runtime.upstreamToolCache.list(false);
-    } catch (error) {
-      tools = [];
-      upstreamError = normalizeCaughtUpstreamError(error);
-    }
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: "application/json",
-          text: JSON.stringify({
-            ok: upstreamError ? false : true,
-            tools: tools.map((tool) => upstreamToolDirectoryEntry(tool)),
-            detailTemplate: "figma-workspace://upstream-tools/{name}",
-            categories: UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER,
-            upstreamError: upstreamError ? responseUpstreamError(upstreamError) : undefined,
-            primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : undefined,
-            guidance: `Compact read-only directory for official upstream Figma MCP tools. Each entry has name, category, and curated short description. Read figma-workspace://upstream-tools/{name} for one tool's full description and inputSchema. Prefer dedicated figma_workspace_* workflow tools for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}; call figma_workspace_call_upstream_tool when raw upstream behavior or an uncovered capability is needed, including shader effect/fill tools.`,
-          }, null, 2),
-        },
-      ],
-    };
-  }
-  const upstreamToolPrefix = "figma-workspace://upstream-tools/";
-  if (uri.startsWith(upstreamToolPrefix)) {
-    const toolName = decodeURIComponent(uri.slice(upstreamToolPrefix.length));
-    let tools: UpstreamToolInfo[];
-    try {
-      tools = await runtime.upstreamToolCache.list(false);
-    } catch (error) {
-      const upstreamError = normalizeCaughtUpstreamError(error);
-      return {
-        contents: [
-          {
-            uri,
-            mimeType: "application/json",
-            text: JSON.stringify({
-              ok: false,
-              name: toolName,
-              upstreamError: responseUpstreamError(upstreamError),
-              primaryFix: primaryFixForUpstreamError(upstreamError),
-              callTool: "figma_workspace_call_upstream_tool",
-              guidance: "Upstream Figma MCP tool directory is unavailable. Retry this resource after upstream authentication or discovery succeeds; read figma-workspace://upstream-tools for directory status.",
-            }, null, 2),
-          },
-        ],
-      };
-    }
-    const tool = tools.find((item) => item.name === toolName);
-    if (!tool) {
-      throw new Error(`Upstream Figma MCP tool not found: ${toolName}`);
-    }
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: "application/json",
-          text: JSON.stringify({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-            callTool: "figma_workspace_call_upstream_tool",
-            guidance: `Full upstream tool contract. Prefer dedicated figma_workspace_* workflow tools when available; use figma_workspace_call_upstream_tool when raw upstream behavior or an uncovered capability is needed. Covered upstream tools: ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
-          }, null, 2),
-        },
-      ],
-    };
-  }
-  if (uri === "figma-workspace://sessions") {
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: "application/json",
-          text: JSON.stringify({ sessions: runtime.sessions.list().map((session) => sessionResourceSummary(session)) }, null, 2),
-        },
-      ],
-    };
-  }
-  const prefix = "figma-workspace://sessions/";
-  if (uri.startsWith(prefix)) {
-    const suffix = uri.slice(prefix.length);
-    const handlesSuffix = "/handles";
-    const handlesOnly = suffix.endsWith(handlesSuffix);
-    const sessionId = decodeURIComponent(handlesOnly ? suffix.slice(0, -handlesSuffix.length) : suffix);
-    const session = runtime.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`Figma Workspace session not found: ${sessionId}`);
-    }
-    const payload = handlesOnly
-      ? { sessionId: session.id, handles: session.handles }
-      : sessionResourceDetail(session);
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: "application/json",
-          text: JSON.stringify(payload, null, 2),
-        },
-      ],
-    };
-  }
-  throw new Error(`Unknown figma-workspace resource URI: ${uri}`);
-}
-
-function upstreamToolDirectoryEntry(tool: UpstreamToolInfo): Record<string, unknown> {
-  return {
-    name: tool.name,
-    category: upstreamToolDirectoryCategory(tool),
-    description: upstreamToolDirectoryDescription(tool),
-  };
-}
-
-type UpstreamToolDirectoryCategory =
-  | "capture"
-  | "design-context"
-  | "motion"
-  | "video"
-  | "execution"
-  | "assets"
-  | "code-connect"
-  | "libraries"
-  | "figjam"
-  | "generation"
-  | "shader"
-  | "account"
-  | "other";
-
-const UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER: UpstreamToolDirectoryCategory[] = [
-  "capture",
-  "design-context",
-  "motion",
-  "video",
-  "execution",
-  "assets",
-  "code-connect",
-  "libraries",
-  "figjam",
-  "generation",
-  "shader",
-  "account",
-  "other",
-];
-
-const UPSTREAM_TOOL_DIRECTORY_CATEGORIES: Record<string, UpstreamToolDirectoryCategory> = {
-  get_screenshot: "capture",
-  get_design_context: "design-context",
-  get_motion_context: "motion",
-  get_metadata: "design-context",
-  get_variable_defs: "design-context",
-  get_figjam: "figjam",
-  generate_figma_design: "generation",
-  generate_diagram: "figjam",
-  get_code_connect_map: "code-connect",
-  whoami: "account",
-  add_code_connect_map: "code-connect",
-  get_code_connect_suggestions: "code-connect",
-  send_code_connect_mappings: "code-connect",
-  get_context_for_code_connect: "code-connect",
-  use_figma: "execution",
-  get_libraries: "libraries",
-  search_design_system: "libraries",
-  create_new_file: "generation",
-  upload_assets: "assets",
-  download_assets: "assets",
-  export_video: "video",
-  list_shader_effects: "shader",
-  get_shader_effect: "shader",
-  list_shader_fills: "shader",
-  get_shader_fill: "shader",
-};
-
-const UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS: Record<string, string> = {
-  get_screenshot: "Capture a screenshot for a selected or specified Figma node.",
-  get_design_context: "Get design-to-code context, screenshot, and metadata for a node.",
-  get_motion_context: "Get keyframe animation data and motion code snippets for a node.",
-  get_metadata: "Read XML metadata for a node or page when full design context is unnecessary.",
-  get_variable_defs: "List variable definitions referenced by a node.",
-  get_figjam: "Generate UI code or context for a FigJam node.",
-  generate_figma_design: "Import a URL or HTML into an existing Figma design file.",
-  generate_diagram: "Create Mermaid-based diagrams in FigJam.",
-  get_code_connect_map: "Read existing Code Connect mappings for Figma nodes.",
-  whoami: "Check the authenticated Figma user and permission context.",
-  add_code_connect_map: "Map one Figma node to a code component.",
-  get_code_connect_suggestions: "Suggest Code Connect mappings for a Figma node.",
-  send_code_connect_mappings: "Save approved Code Connect mappings in bulk.",
-  get_context_for_code_connect: "Get component metadata needed for Code Connect mapping.",
-  use_figma: "Run Plugin API code to create, inspect, or edit Figma content.",
-  get_libraries: "List subscribed and available libraries for a Figma file.",
-  search_design_system: "Search library components, variables, and styles by text query.",
-  create_new_file: "Create a new blank Figma file.",
-  upload_assets: "Get upload URLs for image assets before applying them in Figma.",
-  download_assets: "Download exported renders and source images for one Figma node.",
-  export_video: "Export a Figma timeline node as an MP4 video.",
-  list_shader_effects: "List shader effects in the authenticated user's account library.",
-  get_shader_effect: "Read a shader effect source manifest by id.",
-  list_shader_fills: "List shader fills in the authenticated user's account library.",
-  get_shader_fill: "Read a shader fill source manifest by id.",
-};
-
-function upstreamToolDirectoryCategory(tool: UpstreamToolInfo): UpstreamToolDirectoryCategory {
-  return UPSTREAM_TOOL_DIRECTORY_CATEGORIES[tool.name] ?? "other";
-}
-
-function upstreamToolDirectoryDescription(tool: UpstreamToolInfo): string | undefined {
-  return UPSTREAM_TOOL_DIRECTORY_DESCRIPTIONS[tool.name] ?? compactUpstreamToolDescription(tool.description);
-}
-
-function compactUpstreamToolDescription(description: string | undefined): string | undefined {
-  const normalized = description?.replace(/\s+/gu, " ").trim();
-  if (!normalized) {
-    return undefined;
-  }
-  return normalized.length <= 96
-    ? normalized
-    : `${normalized.slice(0, 93)}...`;
 }
 
 function isPathInside(root: string, path: string): boolean {
@@ -8474,57 +8039,6 @@ function responseWorkspace(workspace: FigmaWorkspaceSessionWorkspace): FigmaWork
       inputFile: workspace.files.script,
     },
   };
-}
-
-function responseResourceWorkspace(workspace: FigmaWorkspaceSessionWorkspace): FigmaWorkspaceResourceWorkspace {
-  return removeUndefined({
-    sessionDir: workspace.sessionDir,
-  }) as FigmaWorkspaceResourceWorkspace;
-}
-
-function responseResourcePage(session: FigmaWorkspaceSession): FigmaWorkspaceResourcePageState | undefined {
-  const knownPages = Object.entries(session.knownPages)
-    .filter((entry): entry is [string, string] => typeof entry[0] === "string" && entry[0].length > 0 && typeof entry[1] === "string" && entry[1].length > 0)
-    .map(([id, name]) => ({ id, name }))
-    .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
-  if (!session.currentPageId && knownPages.length === 0) {
-    return undefined;
-  }
-  return removeUndefined({
-    currentPageId: session.currentPageId,
-    currentPageName: session.currentPageId ? session.knownPages[session.currentPageId] : undefined,
-    knownPages: knownPages.length > 0 ? knownPages : undefined,
-  }) as FigmaWorkspaceResourcePageState;
-}
-
-function sessionResourceSummary(session: FigmaWorkspaceSession): FigmaWorkspaceResourceSessionSummary {
-  return removeUndefined({
-    id: session.id,
-    fileKey: session.fileKey,
-    surface: session.surface,
-    sessionDir: session.workspace?.sessionDir,
-    handleCount: Object.keys(session.handles).length,
-  }) as FigmaWorkspaceResourceSessionSummary;
-}
-
-function sessionResourceDetail(session: FigmaWorkspaceSession): FigmaWorkspaceResourceSessionDetail {
-  return removeUndefined({
-    id: session.id,
-    fileKey: session.fileKey,
-    surface: session.surface,
-    handleCount: Object.keys(session.handles).length,
-    handlePreview: previewSessionHandles(session.handles),
-    page: responseResourcePage(session),
-    workspace: session.workspace ? responseResourceWorkspace(session.workspace) : undefined,
-  }) as FigmaWorkspaceResourceSessionDetail;
-}
-
-function previewSessionHandles(handles: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(handles)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .slice(0, 5),
-  );
 }
 
 function responseScriptMetadata(

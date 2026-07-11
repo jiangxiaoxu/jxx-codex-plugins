@@ -1,4 +1,4 @@
 interface:
   display_name: "Figma Workspace"
-  short_description: "Figma MCP workspace guide for figma_workspace_mcp and figma_workspace_ tools"
-  default_prompt: "Use $figma-workspace for Figma MCP work; discover figma_workspace_mcp / figma_workspace_ tools first."
+  short_description: "Figma automation through independent npm commands and a stateful CLI"
+  default_prompt: "Use $figma-workspace and its plugin-root npm command entrypoints for Figma work; run the chosen command help before first use, reuse --state-file for stateful work, and read Restricted Markdown or outputFiles.cliResultFile rather than JSON.parse(stdout)."

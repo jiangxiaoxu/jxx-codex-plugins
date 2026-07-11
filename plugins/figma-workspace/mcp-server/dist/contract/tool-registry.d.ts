@@ -1,6 +1,0 @@
-export declare const LOCAL_WORKSPACE_TOOL_NAMES: readonly ["figma_workspace_open", "figma_workspace_eval", "figma_workspace_run_script_file", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan", "figma_workspace_prepare_task", "figma_workspace_guidance", "figma_workspace_inspect", "figma_workspace_get_metadata", "figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs", "figma_workspace_call_upstream_tool", "figma_workspace_lookup"];
-export type LocalWorkspaceToolName = (typeof LOCAL_WORKSPACE_TOOL_NAMES)[number];
-export declare function isLocalWorkspaceToolName(value: string): value is LocalWorkspaceToolName;
-export type FigmaWorkspaceTaskPlanStepType = "script-file" | "asset-manifest" | "download-assets" | "screenshot-capture" | "upstream-tool";
-export declare const TASK_PLAN_STEP_TYPE_ALIASES: Readonly<Record<string, FigmaWorkspaceTaskPlanStepType>>;
-export declare function normalizeTaskPlanStepType(value: string | undefined): FigmaWorkspaceTaskPlanStepType | string;

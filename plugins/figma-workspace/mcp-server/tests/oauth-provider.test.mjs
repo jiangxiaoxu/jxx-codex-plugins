@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { PersistentOAuthProvider } from "../dist/mcp/index.js";
+import { PersistentOAuthProvider } from "../dist/index.js";
 
 test("PersistentOAuthProvider persists client, token, verifier, discovery, and state", async () => {
   const dir = await mkdtemp(join(tmpdir(), "figma-workspace-stdio-oauth-"));

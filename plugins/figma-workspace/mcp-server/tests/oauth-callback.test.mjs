@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   OAuthCallbackError,
   startOAuthCallbackServer,
-} from "../dist/mcp/index.js";
+} from "../dist/index.js";
 
 test("OAuth callback server close rejects a pending authorization wait", async () => {
   const server = await startOAuthCallbackServer({

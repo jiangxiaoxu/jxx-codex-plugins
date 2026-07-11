@@ -1,139 +1,104 @@
 ---
 name: figma-workspace
-description: Route Figma work through the exact MCP server figma_workspace_mcp and its figma_workspace_ tool family. Use for Figma design, FigJam, Slides, design systems, tokens, components, use_figma, Plugin API lookup, or Figma MCP auth repair. When selected, first expose deferred tools with tool_search query "figma_workspace_mcp figma_workspace_ figma".
+description: Route Figma, FigJam, Slides, design-system, token, component, Plugin API lookup, and Figma OAuth work through independent plugin-root npm command entrypoints backed by the bundled stateful Node CLI.
 ---
 
-# Figma Router
+# Figma Workspace Router
 
-Use this skill as the lightweight router for Figma MCP work. After OAuth registration, use `figma_workspace_mcp` as the agent-facing entrypoint. Bundled JSONL upstream corpus files are internal lookup data; do not read or route agents to them directly.
+Use the bundled Node CLI for every Figma Workspace operation. The plugin does not register or expose a local MCP server. The official Figma remote MCP is an internal transport used by the CLI, not an agent-facing tool surface.
 
-## Default Route
+## Start Here
 
-1. If the user asks for login, auth setup, credential refresh, or auth repair, run the Figma MCP Login flow below.
-2. Before any Figma MCP action, expose deferred Figma tools through `tool_search` with a query such as `figma_workspace_mcp figma_workspace_ figma`.
-3. After Figma tools are available, read `figma-workspace://capabilities`, then `figma-workspace://guide` when workflow sequencing is needed.
-4. If direct `figma_workspace_*` tools are not installed in the active Codex environment, do not use the `./node-upstream-client` no-client default for live Figma work; use `figma_workspace_mcp` after plugin reload, or use package-local `createFigmaWorkspaceClient` only with an explicit custom upstream `client`.
-5. Read `figma-workspace://diagnostics` only when developing/debugging `figma_workspace_mcp` or identifying MCP runtime-resource, reload, lookup-corpus, or installed-cache faults; do not read it for normal Figma work or script preflight repair.
-6. For non-trivial canvas work, initialize a workspace once, create or edit a local `.figma.ts` script, then run it with automatic strict TypeScript preflight and write results to local files.
-7. Use `figma_workspace_guidance` and `figma_workspace_lookup` for guidance. Treat lookup snippets as the exposed documentation surface.
-8. Local `figma_workspace_*` tools return structured results; use each tool schema and `figma-workspace://guide` for response details.
-9. Use local first-class wrappers for official upstream capabilities they already cover, including metadata, design context, motion context, and design-system reads. Use the Upstream Tool Discovery section for official capabilities that are hidden behind upstream resources instead of exposed as local tools.
-10. `createFigmaWorkspaceClient` mirrors the same result shape in Node: read `result.upstream.result`, compact asset entries, generated debug files, and capture `imageFile` on success.
+- Do not search for MCP tools or resource URIs. The CLI, its command help, and its project Markdown docs are the complete agent-facing surface.
+- Resolve `<plugin-root>`. For stateful work, choose one absolute command-level `--state-file` inside the current project or task artifacts and reuse it for the whole workflow.
+- Before first use of a specific command in a task, run that command with `-h` or `--help`; use its help as the source of truth for arguments and options.
+- Read stdout as Restricted Markdown. If Markdown points to `outputFiles.cliResultFile`, read that JSON sidecar for the complete result. Never parse stdout itself as JSON.
+- Treat `run-script-file` phase `preflight` as not executed. Repair every fatal diagnostic before rerunning; enable dangerous operations only after the user explicitly authorizes them.
+- Prefer first-class commands. Before `figma:upstream:call`, use `figma:upstream:list` or `figma:upstream:read` to read the live official schema.
+- Use `figma:sessions:list` and `figma:sessions:read` to inspect persisted state and handles; do not treat the state JSON layout as an agent contract.
+- Use `figma:doctor` only for installed runtime, corpus, or TypeScript asset faults. OAuth errors follow the approval-gated login flow below.
 
-## Node Tool Route
+## NPM Command Contract
 
-Use `node_repl` for Figma Workspace investigation only when the user explicitly asks for Node-level verification, local package smoke tests, or response-shape debugging. Normal live Figma design work should stay on the hosted `figma_workspace_mcp` stdio MCP tools.
-
-- Do not call the `./node-upstream-client` no-client `createFigmaWorkspaceClient()` path for live Figma connectivity. That default is local-only and intentionally fails fast for upstream calls.
-- For live Figma checks from `node_repl`, create or inject an explicit custom upstream client. The most reliable Codex pattern is to launch the package `dist/mcp/workspace-mcp-stdio-bin.js` as a child stdio MCP process and call its `figma_workspace_*` tools from Node.
-- For local response-shape tests, use `createFigmaWorkspaceClient({ client: fakeOrCustomClient })` and assert the same compact result fields used by MCP tools, especially `upstream.ok`, `upstream.result`, `outputFiles.debugFile`, `outputFiles.metadataFile`, and `imageFile`.
-- Use `createRemoteMcpClient()` only for raw upstream SDK debugging, not as the default route for Figma canvas work inside Codex `node_repl`.
-
-Recommended `node_repl` debugging sequence:
-
-1. Use `figma_workspace_mcp` directly first when only live Figma work is needed.
-2. Use `node_repl` only when comparing package-local behavior, installed-cache behavior, or response-shape parsing.
-3. From `node_repl`, start a child MCP process for `dist/mcp/workspace-mcp-stdio-bin.js`, connect with an explicit stdio client, then call `figma_workspace_open`, `figma_workspace_eval`, `figma_workspace_run_script_file`, or `figma_workspace_apply_asset_manifest` through that custom client.
-4. Before tool calls, use the same stdio client to call `listResources()` and `readResource({ uri: "figma-workspace://capabilities" })`; read `figma-workspace://guide` for workflow sequencing and `figma-workspace://upstream-tools` only when an explicit upstream-only debug task depends on it.
-5. If `figma-workspace://capabilities` cannot be read from the child MCP process, treat the `node_repl` debug environment as incomplete and fix the stdio client/session wiring before drawing conclusions from tool output.
-6. For parser-only tests, skip live Figma and inject a fake/custom client into `createFigmaWorkspaceClient({ client })`; provide fake `listResources()` / `readResource()` responses when the code under test needs resource-guided behavior.
-7. Capture the structured JSON returned by the tool call and compare only public contract fields; do not rely on private `__figmaRepl` metadata or raw upstream submit URLs.
-
-## Lazy Tool Loading
-
-Figma MCP tools may be deferred and unavailable until discovered. Do not assume `figma_workspace_prepare_task`, `figma_workspace_run_script_file`, or related tools are already visible. Before any Figma MCP action, call `tool_search` with an exact-prefix query containing `figma_workspace_mcp` and `figma_workspace_`; Figma tool names intentionally include this prefix, so it should expose the relevant tool family. Use a broader query such as `figma MCP use_figma get node selection` only if the first search does not expose the needed tools.
-
-## Primary File Workflow
-
-- Prepare a repairable workspace and task file: `figma_workspace_prepare_task({ file, taskName, workspaceDir, surface })`. Use slug-style `taskName` values such as `settings-panel-polish`. The `file` value accepts a Figma URL or raw file key; `workspaceDir` is a required absolute local directory chosen by the agent inside the current project, worktree, or task artifacts, such as `<project>/figma-workspace` or `<project>/task-memory/<task-id>/artifacts/figma-workspace`.
-- Edit the generated `<task>.figma.ts`; use native Figma Plugin API plus the injected `$` helpers.
-- Execute: `figma_workspace_run_script_file({ sessionId, inputFile, strict: true, surface })`; diagnostics and compiled payload preflight run before upstream execution.
-- For generated image assets, create target rectangles in the script, then call `figma_workspace_apply_asset_manifest({ sessionId, manifestPath })`. Read `assets[].upload.response.imageHash` / `placedOnNodeId` for upload POST evidence, and read `validation` for canvas-side IMAGE fill confirmation. Default target validation checks IMAGE fills when upstream eval is available; incomplete validation records fail the workflow and point to `outputFiles.debugFile`.
-- For broad layer-tree discovery, call `figma_workspace_get_metadata({ sessionId, target })` before targeted `figma_workspace_inspect` style/fill/text checks.
-- For targeted inspect/style/handle validation, call `figma_workspace_inspect({ sessionId, target })` only after the session has file context from `open` or `prepare_task`; `target` is string-only and does not accept `{ fileKey, nodeId }`.
-- For implementation context or motion, call `figma_workspace_get_design_context({ sessionId, target })` and `figma_workspace_get_motion_context({ sessionId, target, recursive: true })`; pass curated upstream optionals such as client hints, design-context Code Connect toggles, or export-video render controls only when the task needs them. Node-scoped wrappers also accept node URLs and `{ fileKey, nodeId }` targets when no session file context is available.
-- For visual QA, call `figma_workspace_capture_node({ sessionId, target, imageFile })` and inspect the local image file; optional `maxDimension` and `contentsOnly` tune upstream capture. Node URL or `target:{ fileKey, nodeId }` can supply file context directly.
-- For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot so they do not cover primary controls, text, or content being captured.
-- For repeatable multi-step workflows, use `figma_workspace_run_task_plan({ sessionId, planPath })`.
-
-Workspace files live under `<workspaceDir>/<fileKey-or-fileSlug>/`. `workspaceDir` is used as supplied; the MCP server does not append another `figma-workspace` segment. The workspace folder is temporary local Figma work; do not commit it to the git repository by default. Calls should use simple `file`, `taskName`, `inputFile`, `manifestPath`, `target`, `imageFile`, and `planPath` defaults after workspace initialization. `title` is optional display-only MCP call metadata for Codex/UI; the runtime validates it as a string when supplied but does not store it, default it, pass it upstream, or use it for task/file naming. Inline assets/steps, custom upstream templates, absolute `scriptPath`, and upstream overrides are advanced/debug escape hatches; JSON debug files are generated on demand and reported at `outputFiles.debugFile`. `inlineResultLimit` applies only to payload-size control. Use tool input schemas for argument details.
-
-## Script Contract
-
-- Write an ordinary async TypeScript script body in `.figma.ts`: native Figma Plugin API for advanced work, injected `$` helpers for common agent tasks.
-- Keep each transaction small and repairable. If preflight diagnostics fail, fix diagnostics by file line and rerun the same script.
-- Return compact JSON with changed node ids, handles, and validation notes. Use generated `outputFiles.debugFile` pointers for failure or omitted-payload debug JSON instead of relying on inline MCP output.
-- Read parsed upstream JSON from `upstream.result`; if upstream output is not JSON, read `upstream.text`. Debug file pointers are reported in `outputFiles.debugFile`.
-- Ordinary tool responses return only a minimal `session` summary with `handleChanges` and optional `session.sessionDir`; read `figma-workspace://sessions` for the compact list, `figma-workspace://sessions/{id}` for compact detail with handle counts/previews, and `figma-workspace://sessions/{id}/handles` when the full remembered handle map is needed.
-- Common helpers: `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`. Use native Figma Plugin API for node creation, querying, and auto layout.
-- Prefer `$.select` over direct selection mutation. Use `figma_workspace_inspect({ mode: "validate" })` before reusing old handles.
-- For generated assets, use `$.imageAsset` only for small inline PNG/JPEG data; for larger local assets, create target rectangles and use `figma_workspace_apply_asset_manifest`.
-- Use `figma_workspace_capture_node` for final visual QA and `figma_workspace_run_task_plan` for repeatable script, asset, capture, and upstream-tool sequences.
-- Use `figma_workspace_get_metadata` before broad structure analysis; follow with `figma_workspace_inspect(mode=style)` only when fills, text, and visual tokens are needed.
-
-## Lookup Order
-
-- Use `figma-workspace://capabilities` as the short routing manifest.
-- Use `figma-workspace://diagnostics` only for MCP development/debugging and MCP fault identification, such as runtime-resource, reload, lookup-corpus, or installed-cache failures.
-- Use `figma-workspace://guide` for continuous workflow sequencing.
-- Use `figma-workspace://lookup-index` to choose between `figma_workspace_guidance` and `figma_workspace_lookup`.
-- Use `figma_workspace_guidance` for BM25-style query-to-helper routing and curated short cards.
-- Use `figma_workspace_lookup({ kind: "docs" })` for BM25-ranked workflow snippets.
-- Use `figma_workspace_lookup({ kind: "api" })` for exact Plugin API symbols. It returns capped snippets and never returns a full declaration file.
-- For deeper static workflow, lookup, or safety notes, read `references/figma-workspace-workflow.md`, `references/figma-workspace-guidance-and-lookup.md`, or `references/figma-workspace-safety.md`.
-
-Prefer first-class wrappers for metadata, design context, motion context, and design-system reads. Use `figma_workspace_call_upstream_tool` when raw upstream behavior or an uncovered official capability is needed, including official shader effect/fill reads and official `export_video`. Read `figma-workspace://upstream-tools` first for upstream escape-hatch calls. Keep local workspace handles/session metadata for agent state; do not use PluginData for agent bookkeeping.
-
-## Upstream Tool Discovery
-
-Most local `figma_workspace_*` tools are visible through tool descriptions. This section names official upstream capabilities that are useful but otherwise hidden behind resources.
-
-For any listed tool below, read `figma-workspace://upstream-tools/{name}` directly to get its full description and `inputSchema`. Read `figma-workspace://upstream-tools` only when discovering available upstream tools. Call the selected tool with `figma_workspace_call_upstream_tool({ toolName: "<name>", arguments: { ... } })`.
-
-| Capability | Upstream tool names | Use when |
-|---|---|---|
-| Account/auth check | `whoami` | The user asks which Figma account/session is authenticated. |
-| New file creation | `create_new_file` | The task needs a new blank Figma file before canvas work starts. |
-| Design generation/import | `generate_figma_design` | The user asks to import/generate design content from URL or HTML into an existing design file. |
-| FigJam diagram generation | `generate_diagram` | The user explicitly wants a FigJam diagram from Mermaid-style input. |
-| FigJam context | `get_figjam` | The task targets FigJam content and no local workflow wrapper covers the needed read. |
-| Code Connect reads/suggestions | `get_code_connect_map`, `get_context_for_code_connect`, `get_code_connect_suggestions` | The user asks to inspect or prepare component-to-code mappings. |
-| Code Connect writes | `add_code_connect_map`, `send_code_connect_mappings` | The user explicitly asks to create, update, or publish mappings. |
-| Shader library reads | `list_shader_effects`, `get_shader_effect`, `list_shader_fills`, `get_shader_fill` | The task explicitly needs shader effect/fill library entries or source manifests. |
-
-Prefer local tools for Plugin API execution, screenshots/capture, metadata, asset upload/download workflows, design context, motion context, library search, libraries, and variable definitions. Use `figma_workspace_call_upstream_tool` when you need the raw official upstream contract or an uncovered capability such as official `export_video`.
-
-## Query Strategy
-
-- For planning/search, call `figma_workspace_guidance({ query })` first with compact keyword queries such as `text font loadFontAsync` or `components variants properties`, then use its `recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `suggestions.referenceContext` fields before writing `.figma.ts`.
-- Use `figma_workspace_guidance` for compact patterns, then use `apiSymbols` with `figma_workspace_lookup({ kind: "api" })` only when exact Plugin API details are still missing.
-- Treat `guardrails` as task-specific risk notes, especially for font loading, variable binding, instance properties, image upload paths, FigJam, and Slides surface mismatches.
-- For typography from 96 DPI game UI systems such as UE5/UMG/Slate, read `references/figma-workspace-safety.md` for the 72 DPI Figma conversion guardrail.
-- Prefer these anchors when narrowing a query: text/font, auto layout, variables/tokens, styles, components/variants, instances/properties, images/fills, selection, capture/QA, FigJam/Slides.
-
-## Figma MCP Login
-
-When a Figma Workspace MCP call or resource read returns an `upstreamError.code` of `FIGMA_UPSTREAM_AUTH_REQUIRED` or a code starting with `FIGMA_UPSTREAM_OAUTH_`, ask the user whether to start browser authorization before running the login helper. If the user agrees, run the helper below, wait for completion, then verify connectivity with `figma_workspace_call_upstream_tool({ toolName: "whoami", arguments: {} })`. If the user declines, do not run the login helper; report that Figma upstream access remains unavailable until OAuth is completed.
-
-Run the login helper from the plugin root, which is two directories above this `SKILL.md`:
+Resolve `<plugin-root>` as `<skill-dir>/../..`, where `<skill-dir>` contains this `SKILL.md`, and use it as the working directory. In Windows PowerShell use `npm.cmd`; in cmd, bash, and other shells use `npm`. Always put npm's `--` separator before command arguments or forwarded CLI options. The canonical command CLI is `npm.cmd run figma -- <command> ...`; each `figma:<command>` script is an independent npm executable entrypoint for the same command. Before first use, run the selected entrypoint with `-h` or `--help`.
 
 ```text
-workdir: <plugin-root>
-command: npm run login:figma-http
+npm.cmd run figma:guidance -- --help
+npm.cmd run figma:guidance -- "text font loadFontAsync" --surface design
+npm.cmd run figma -- api:search createFrame
+npm.cmd run figma:api:search -- createFrame
 ```
 
-The helper starts the local HTTP bridge, temporarily logs in through `figma-http`, then removes that temporary MCP entry. Repeated runs ensure the OAuth cache is usable and report whether this run changed the cache; use `npm run login:figma-http -- --force` only when a fresh browser authorization is required. After browser OAuth, use the resolver below when a script or programmatic client needs the shared cache path.
+- Family entrypoints: `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
+- Direct query/read commands: `figma:guidance`, `figma:docs:list`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`. These accept positional arguments and optimized options instead of JSON input.
+- JSON commands: `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:run`, `figma:task:prepare`, and `figma:upstream:call`. Their optimized surface exposes only `--input <json-file|->`, `--state-file <path>`, `--max-inline-bytes <bytes>`, and help.
+- The 22 transport-level kebab-case JSON commands are available only through `figma:raw` and `figma:raw:help`. Run `npm run figma:raw -- <transport-command> --help` for a complete transport schema.
+- `--input` accepts a JSON file path or `-` for JSON on stdin. Prefer a file for large or reusable payloads and stdin for small calls.
+- `--state-file` selects the persisted workspace state store. Its parent directory also owns the `results/` sidecar directory. Prefer an explicit absolute path and reuse it across related stateful commands.
+- Stateless `figma:guidance`, docs, API, doctor, and upstream list/read commands intentionally omit `--state-file`. If they produce a sidecar, it uses the default `<plugin-root>/.figma-workspace/results/` location.
+- `figma:sessions:list`, `figma:sessions:read`, and all direct file-context commands expose `--state-file`; direct file-context commands also expose `--session-id` for the logical workspace session.
+- Every executing command exposes `--max-inline-bytes`. Search commands use `--limit` and `--snippet-lines`; guidance uses `--card-limit`. File-context commands use `--workspace`, design-system uses repeatable `--library`, sessions read uses `--with-handles` and `--with-history`, and inspect uses repeatable `--handle`.
+- Typed command results use Restricted Markdown on stdout. Each result has a command title, an `Input` section, an explicit status, and expanded business fields; complex nested values may appear in fenced `json` blocks.
+- A typed result with `ok: false` still uses the same Restricted Markdown result shape and exits with code 1. Usage errors, input parsing failures, transport failures, and thrown or unexpected execution errors are text on stderr with a non-zero exit code.
+- Never pass CLI stdout to `JSON.parse`. Read the Markdown headings, status, fields, and any nested JSON code fences instead.
+- Result size defaults to 4096 bytes and is capped at 10000. `--max-inline-bytes` maps to the transport runtime result limit; `0` always writes the complete JSON result under the selected state file's sibling `results/`, or the plugin-root default for stateless commands. When a result exceeds the limit, Markdown returns only `outputFiles.cliResultFile` plus the omitted-byte summary; read that JSON file for the complete payload.
+- The Markdown `Input` line summarizes long code, base64, objects, and arrays instead of echoing the full input.
+- Use `npm run figma:help` for the command directory. Use the selected command's `-h` or `--help` before first use. Use `npm run figma:raw -- <transport-command> --help` only when the complete transport JSON schema is needed.
 
-Do not add persistent `figma-http`; the plugin's persistent MCP server is `figma_workspace_mcp`.
+Choose a state file inside the current project, worktree, or task artifacts, for example `<project>/figma-workspace/state.json` or `<project>/task-memory/<task-id>/artifacts/figma-workspace/state.json`. It is temporary local state and should not be committed by default.
 
-To resolve the shared OAuth cache path for scripts or programmatic clients, run this from the plugin root:
+## Default Workflow
+
+1. For stateful canvas work, choose and reuse one absolute `--state-file`. Stateless guidance, docs, API, doctor, and upstream discovery do not need one. Use the sessions commands when resuming unknown state.
+2. Use `figma:docs:list` to list canonical project docs and `figma:docs:read -- <topic>` to read one when this skill's startup rules are insufficient.
+3. For login, credential refresh, or auth repair, follow Figma Login below.
+4. Call `figma:guidance` with compact task keywords before non-trivial work. Use `figma:docs:search` for project/upstream workflow snippets and `figma:api:search` for exact Plugin API symbols.
+5. Call `figma:task:prepare -- --input <json-file|->` once with a Figma URL or file key, slug-style `taskName`, absolute `workspaceDir`, and surface when needed.
+6. Edit the generated `<taskName>.figma.ts`, then call `figma:script:run -- --input <json-file|->` with the persisted session id, `inputFile`, `strict: true`, and surface. Fix line-level preflight diagnostics and rerun the same script.
+7. Use `figma:assets:apply`, `figma:assets:download`, `figma:capture`, or `figma:task:run` with JSON input for assets, exports, visual QA, and repeatable workflows.
+8. After generating or editing an image, including a `capture-node` PNG, inspect the local file with `view_image` before reporting visual success.
+
+Use `figma:metadata` for broad layer-tree discovery before targeted `figma:inspect` checks. Use `figma:design-context`, `figma:motion-context`, `figma:design-system`, `figma:libraries`, and `figma:variables` for their first-class read workflows. Use `figma:upstream:list` or `figma:upstream:read` to discover the current official schema, then use `figma:upstream:call` only for uncovered capabilities such as `whoami`, file creation, Code Connect operations, shader reads, or `export_video`.
+
+## Script And Workspace Contract
+
+- Write an ordinary async TypeScript script body in `.figma.ts`. Use native Figma Plugin API for node creation, querying, layout, and advanced behavior.
+- Common helpers include `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`.
+- Keep each transaction small and repairable. Return compact JSON containing changed node ids, handles, and validation notes.
+- Prefer `$.select` over direct selection mutation. Validate stale handles with `figma:inspect` before reuse.
+- For large local generated assets, create target rectangles in the script and use `figma:assets:apply`; reserve `$.imageAsset` for small inline PNG/JPEG data.
+- Put temporary audit labels outside the inspected frame or in confirmed free space so they do not cover the content being captured.
+- Workspace files live under `<workspaceDir>/<fileKey-or-fileSlug>/`. The supplied `workspaceDir` is not given another implicit `figma-workspace` segment.
+
+The CLI renders the workspace runtime result as Restricted Markdown. Read expanded upstream result/text, diagnostics and output-file fields under their Markdown headings; complex nested runtime values may be preserved in fenced `json` blocks. Capture output identifies `imageFile`. The command-level `--state-file` is the canonical cross-process workspace state store and locates the results sidecar directory; do not depend on process-local state or legacy MCP session resources.
+
+## Guidance And Lookup
+
+- Use `figma:docs:list` to list canonical topics and `figma:docs:read -- <topic>` for `overview`, `workflow`, `guidance-and-lookup`, `safety`, `diagnostics`, `sessions`, or `upstream-tools`.
+- Start with `figma:guidance -- <query>` using compact queries such as `text font loadFontAsync`, `components variants properties`, or `capture visual QA`.
+- Use returned cards, query hints, API symbols, guardrails, helper profiles, and workflow graph hints before writing a script.
+- Use `figma:api:search -- <symbol>` for exact Plugin API details and `figma:docs:search -- <query>` for workflow documentation; snippets are capped rather than full declaration files.
+- Project Markdown is indexed alongside the upstream corpus for `guidance` and `lookup kind=docs`; the upstream corpus remains available for exact API and official workflow snippets.
+- Bundled JSONL upstream corpus files are internal lookup data. Do not read or route agents to them directly.
+
+## Reference Topics
+
+- Read [overview](references/figma-workspace-overview.md) for the full capability and command-selection matrix.
+- Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, eval, assets, inspection, and response semantics.
+- Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for query strategy, wrapper/helper profiles, and corpus ownership.
+- Read [safety](references/figma-workspace-safety.md) for destructive operations, fonts, surfaces, and visual QA guardrails.
+- Read [diagnostics](references/figma-workspace-diagnostics.md) when `figma:doctor`, lookup, TypeScript runtime, or installed assets fail.
+- Read [sessions](references/figma-workspace-sessions.md) for persisted state, handles, history, and recovery.
+- Read [upstream tools](references/figma-workspace-upstream-tools.md) before official escape-hatch discovery and invocation.
+
+## Figma Login
+
+When a CLI Markdown result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or a code beginning with `FIGMA_UPSTREAM_OAUTH_`, ask the user whether to start browser authorization. If approved, run from `<plugin-root>`:
 
 ```text
-workdir: <plugin-root>
-command: npm run oauth-cache:path
+npm run login:figma-http
 ```
 
-## Bundled Servers
+Use `npm run login:figma-http -- --force` only when fresh browser authorization is required. Then verify with `figma:upstream:call -- --input <json-file|-> --state-file <path>` using `toolName: "whoami"` and the same absolute state file. If the user declines, report that upstream access remains unavailable.
 
-- `figma_workspace_mcp`: primary agent-facing facade after OAuth registration. It runs local `.figma.ts` files, writes local output files, exposes compact docs/API lookup, stores process-local handles, captures screenshots, applies generated assets, provides selected first-class wrappers for covered official upstream tools, and delegates only uncovered official capabilities.
-- `figma_workspace_upstream_stdio`: optional transparent bridge CLI/server for upstream debugging and parity checks. It is not installed as a persistent plugin MCP server by default; use the package CLI or Node API `createRemoteMcpClient` when raw official MCP access is required.
+The helper temporarily registers `figma-http`, completes OAuth, and removes the temporary entry. Do not add a persistent local MCP entry. To print the shared OAuth cache path for debugging, run `npm run oauth-cache:path` from the plugin root.

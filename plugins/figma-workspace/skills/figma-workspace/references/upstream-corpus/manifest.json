@@ -9,7 +9,7 @@
   "corpus": {
     "file": "corpus.jsonl",
     "recordCount": 36,
-    "contract": "Internal lookup corpus only; agents use figma_workspace_guidance and figma_workspace_lookup instead of reading upstream files directly."
+    "contract": "Internal lookup corpus only; agents use the guidance and lookup CLI commands instead of reading upstream files directly."
   },
   "includedSkills": [
     "figma-use",

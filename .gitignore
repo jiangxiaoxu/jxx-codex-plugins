@@ -3,22 +3,11 @@ dist/
 # Keep the generated Figma Workspace lookup corpus visible when build stages it under dist.
 !plugins/figma-workspace/mcp-server/dist/
 plugins/figma-workspace/mcp-server/dist/*
-!plugins/figma-workspace/mcp-server/dist/mcp/
-plugins/figma-workspace/mcp-server/dist/mcp/*
-!plugins/figma-workspace/mcp-server/dist/mcp/figma-workspace-helpers.d.ts
-!plugins/figma-workspace/mcp-server/dist/mcp/figma-plugin-typings/
-!plugins/figma-workspace/mcp-server/dist/mcp/figma-plugin-typings/index.d.ts
-!plugins/figma-workspace/mcp-server/dist/mcp/figma-plugin-typings/plugin-api.d.ts
-!plugins/figma-workspace/mcp-server/dist/mcp/typescript-lib/
-!plugins/figma-workspace/mcp-server/dist/mcp/typescript-lib/lib.*.d.ts
+!plugins/figma-workspace/mcp-server/dist/cli/
+!plugins/figma-workspace/mcp-server/dist/cli/**
 !plugins/figma-workspace/mcp-server/dist/upstream/
 plugins/figma-workspace/mcp-server/dist/upstream/*
-!plugins/figma-workspace/mcp-server/dist/upstream/figma-workspace-helpers.d.ts
-!plugins/figma-workspace/mcp-server/dist/upstream/figma-plugin-typings/
-!plugins/figma-workspace/mcp-server/dist/upstream/figma-plugin-typings/index.d.ts
-!plugins/figma-workspace/mcp-server/dist/upstream/figma-plugin-typings/plugin-api.d.ts
-!plugins/figma-workspace/mcp-server/dist/upstream/typescript-lib/
-!plugins/figma-workspace/mcp-server/dist/upstream/typescript-lib/lib.*.d.ts
+!plugins/figma-workspace/mcp-server/dist/upstream/node-upstream-client.js
 !plugins/figma-workspace/mcp-server/dist/runtime/
 plugins/figma-workspace/mcp-server/dist/runtime/*
 !plugins/figma-workspace/mcp-server/dist/runtime/*.d.ts
@@ -40,6 +29,7 @@ plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/*
 !plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/upstream-corpus/corpus.jsonl
 downloads/
 tmp/
+.figma-workspace/
 *.log
 !.gitkeep
 __pycache__

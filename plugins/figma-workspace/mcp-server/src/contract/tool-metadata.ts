@@ -30,7 +30,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_open",
       description:
-        "Context helper for creating or updating a local Figma Workspace session. Recommended call: { sessionId, file, surface }. Use prepare_task + run_script_file for the primary file workflow; use open for lightweight session context, handle import, file binding, or upstream auth connection without tool discovery.",
+        "Context helper for creating or updating a local Figma Workspace session. Recommended input: { sessionId, file, surface }. Use prepare-task + run-script-file for the primary file workflow; use open for lightweight session context, handle import, file binding, or upstream auth connection without tool discovery.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
@@ -47,7 +47,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_eval",
       description:
-        "Small ephemeral JavaScript Plugin API call for quick reads or tightly scoped updates only. Recommended call: { sessionId, code, mode, surface }. By default code is parsed and executed as JavaScript; pass typescript:true only when inline TypeScript annotations should be compiled first. Use prepare_task + run_script_file for repairable TypeScript scripts, multi-step work, and large structured results.",
+        "Small ephemeral JavaScript Plugin API call for quick reads or tightly scoped updates only. Recommended input: { sessionId, code, mode, surface }. By default code is parsed and executed as JavaScript; pass typescript:true only when inline TypeScript annotations should be compiled first. Use prepare-task + run-script-file for repairable TypeScript scripts, multi-step work, and large structured results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id. Defaults to 'default'."),
@@ -67,8 +67,8 @@ export function createReplToolDescriptions(
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id or task name. Defaults to 'default'."),
-        scriptPath: stringProperty("Advanced absolute .figma.ts path escape hatch only. Prefer inputFile after figma_workspace_prepare_task creates a file-context workspace."),
-        inputFile: stringProperty("Recommended workspace .figma.ts script file name after figma_workspace_prepare_task; preferred over scriptPath for agents."),
+        scriptPath: stringProperty("Advanced absolute .figma.ts path escape hatch only. Prefer inputFile after prepare-task creates a file-context workspace."),
+        inputFile: stringProperty("Recommended workspace .figma.ts script file name after prepare-task; preferred over scriptPath for agents."),
         strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
@@ -111,7 +111,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_capture_node",
       description:
-        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended session call for raw string targets: { sessionId, target, imageFile? } after opening or preparing a file-context session. No-session calls may pass target as a node URL or { fileKey, nodeId }. Captures are saved as PNG; extensionless or non-.png imageFile values normalize to .png. Results return the local PNG path in structuredContent.imageFile.",
+        "Capture one Figma node for final visual QA through official upstream get_screenshot. Recommended session input for raw string targets: { sessionId, target, imageFile? } after opening or preparing a file-context session. No-session calls may pass target as a node URL or { fileKey, nodeId }. Captures are saved as PNG; extensionless or non-.png imageFile values normalize to .png. Results return the local PNG path in imageFile.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context and history. Defaults to 'default'."),
@@ -142,14 +142,14 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_prepare_task",
       description:
-        "Core workflow entrypoint for creating or reusing a task-specific .figma.ts script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended workspace call: { file, taskName, workspaceDir, surface }. Follow with guidance/lookup, run_script_file, inspect, and capture.",
+        "Core workflow entrypoint for creating or reusing a task-specific .figma.ts script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended input: { file, taskName, workspaceDir, surface }. Follow with guidance, lookup, run-script-file, inspect, and capture-node.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id. If initialized, files are created under that session file-context workspace."),
         taskName: stringProperty("Required slug-style task/workspace name such as settings-panel-polish; used to derive <taskName>.figma.ts by default."),
         file: stringProperty("Recommended Figma file URL or raw file key used to derive the file context when preparing a workspace."),
         fileSlug: stringProperty("Advanced file-context slug override to use when file cannot derive a key."),
-        workspaceDir: stringProperty("Required absolute local workspace directory selected by the agent inside the current project, worktree, or task artifacts, such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace. The MCP server uses this exact root and does not append another figma-workspace segment; file-context tasks live under <workspaceDir>/<fileKey-or-fileSlug>."),
+        workspaceDir: stringProperty("Required absolute local workspace directory selected by the agent inside the current project, worktree, or task artifacts, such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace. The CLI runtime uses this exact root and does not append another figma-workspace segment; file-context tasks live under <workspaceDir>/<fileKey-or-fileSlug>."),
         fileName: stringProperty("Advanced script file-name override ending in .figma.ts."),
         surface: enumProperty(["design", "figjam", "slides"], "Recommended expected Figma surface persisted on the session and copied into generated guidance."),
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
@@ -174,7 +174,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_inspect",
       description:
-        "Core read-side inspection tool for $selection, $currentPage, stored handles, validation, and compact style audits. Requires a file-context session because it executes fixed upstream use_figma; call figma_workspace_open({ sessionId, file }) or figma_workspace_prepare_task first. Recommended calls: { sessionId, target } or { sessionId, mode:\"style\", target }.",
+        "Core read-side inspection command for $selection, $currentPage, stored handles, validation, and compact style audits. Requires a file-context session because it executes fixed upstream use_figma; call open or prepare-task first. Recommended inputs: { sessionId, target } or { sessionId, mode:\"style\", target }.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id with file context. Defaults to 'default'."),
@@ -299,11 +299,11 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_call_upstream_tool",
       description:
-        `Explicit upstream escape hatch for one official Figma MCP tool call. Before calling, read figma-workspace://upstream-tools and then figma-workspace://upstream-tools/{name}. Prefer dedicated local workflow tools for ${COVERED_UPSTREAM_TOOLS}; use this escape hatch when raw upstream behavior or an uncovered capability is needed.`,
+        `Explicit upstream escape hatch for one official Figma MCP tool call. Pass the exact official tool name and its arguments. Prefer dedicated local workflow commands for ${COVERED_UPSTREAM_TOOLS}; use this escape hatch when raw upstream behavior or an uncovered capability is needed.`,
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Optional local session id used only for history. Defaults to 'default'."),
-        toolName: stringProperty("Official upstream Figma MCP tool name to call. Local figma_workspace_* tools are rejected."),
+        toolName: stringProperty("Official upstream Figma MCP tool name to call. Bundled Figma Workspace operation names are rejected."),
         arguments: objectProperty("Arguments sent to the upstream official Figma MCP tool."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
@@ -321,6 +321,39 @@ export function createReplToolDescriptions(
         maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
         maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`),
       }, ["kind"]),
+    },
+    {
+      name: "figma_workspace_docs",
+      description:
+        "Read bundled Figma Workspace project documentation. Omit topic to list available topics; pass one topic to return the complete document content.",
+      inputSchema: objectSchema({
+        topic: stringProperty("Optional project documentation topic. Omit to list topic metadata."),
+      }),
+    },
+    {
+      name: "figma_workspace_doctor",
+      description:
+        "Inspect local project-doc, lookup-corpus, and TypeScript runtime availability and return repair guidance. This command is read-only and does not create a session.",
+      inputSchema: objectSchema({}),
+    },
+    {
+      name: "figma_workspace_sessions",
+      description:
+        "Inspect persisted Figma Workspace sessions without mutating them. Omit sessionId for compact summaries; pass it for detail, with optional handles and history expansion.",
+      inputSchema: objectSchema({
+        sessionId: stringProperty("Optional exact session id. Omit to list compact summaries."),
+        includeHandles: booleanProperty("Include the full handle map for one selected session. Defaults to false.", { default: false }),
+        includeHistory: booleanProperty("Include full history entries for one selected session. Defaults to false.", { default: false }),
+      }),
+    },
+    {
+      name: "figma_workspace_upstream_tools",
+      description:
+        "Inspect the live official Figma MCP tool catalog. Omit name for the compact directory; pass one exact name for its full description and inputSchema.",
+      inputSchema: objectSchema({
+        name: stringProperty("Optional exact official upstream tool name. Omit to list the live directory."),
+        refresh: booleanProperty("Refresh the cached upstream tool catalog before reading it. Defaults to false.", { default: false }),
+      }),
     },
   ];
   return assertLocalWorkspaceToolDescriptions(tools);
@@ -450,7 +483,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     nodeId: stringProperty("Figma node id sent to official get_design_context."),
     diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to the guidance command for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -465,7 +498,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     nodeId: stringProperty("Figma node id sent to official get_motion_context."),
     diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
-    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to figma_workspace_guidance for detailed wrapper follow-up guidance."),
+    guidanceRef: wrapperGuidanceRefProperty("Compact pointer to the guidance command for detailed wrapper follow-up guidance."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     primaryFix: stringProperty("Suggested primary repair when execution failed."),
     outputFiles: outputFilesProperty(
@@ -533,6 +566,32 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     guidance: stringProperty("Compact follow-up guidance."),
     runtime: objectProperty("Runtime lookup corpus metadata when lookup assets are unavailable."),
   }),
+  figma_workspace_docs: toolOutputSchema({
+    topics: arrayProperty("Available project documentation topic metadata when topic is omitted."),
+    topic: stringProperty("Selected project documentation topic."),
+    title: stringProperty("Selected document title."),
+    description: stringProperty("Selected document summary."),
+    sourceId: stringProperty("Stable project-document source id."),
+    content: stringProperty("Complete selected Markdown document content."),
+  }),
+  figma_workspace_doctor: toolOutputSchema({
+    runtime: objectProperty("Dynamic lookup-corpus and TypeScript runtime status."),
+    guidance: stringArrayProperty("Repair or reload guidance based on the runtime status."),
+  }),
+  figma_workspace_sessions: toolOutputSchema({
+    sessions: arrayProperty("Compact summaries for all persisted sessions."),
+    session: objectProperty("Selected persisted session detail with optional handles and history."),
+  }),
+  figma_workspace_upstream_tools: toolOutputSchema({
+    tools: arrayProperty("Compact live official Figma MCP tool directory."),
+    name: stringProperty("Selected official upstream tool name."),
+    description: stringProperty("Selected official upstream tool description."),
+    inputSchema: jsonProperty("Selected official upstream tool inputSchema."),
+    categories: stringArrayProperty("Stable directory category ordering."),
+    upstreamError: objectProperty("Normalized upstream discovery failure."),
+    primaryFix: stringProperty("Suggested primary repair when upstream discovery failed."),
+    guidance: stringProperty("How to choose first-class wrappers or the upstream escape hatch."),
+  }),
 } satisfies Record<LocalWorkspaceToolName, Record<string, unknown>>;
 
 function assertLocalWorkspaceToolDescriptions(tools: Record<string, unknown>[]): Record<string, unknown>[] {
@@ -540,11 +599,11 @@ function assertLocalWorkspaceToolDescriptions(tools: Record<string, unknown>[]):
   const describedTools: Record<string, unknown>[] = [];
   for (const tool of tools) {
     if (typeof tool.name !== "string") {
-      throw new Error("Local figma_workspace_mcp tool description is missing a string name.");
+      throw new Error("Figma Workspace operation description is missing a string name.");
     }
     descriptionNames.add(tool.name);
     if (!isLocalWorkspaceToolName(tool.name)) {
-      throw new Error(`Local figma_workspace_mcp tool description is not in the registry: ${tool.name}`);
+      throw new Error(`Figma Workspace operation description is not in the registry: ${tool.name}`);
     }
     describedTools.push({
       ...tool,
@@ -553,7 +612,7 @@ function assertLocalWorkspaceToolDescriptions(tools: Record<string, unknown>[]):
   }
   for (const name of LOCAL_WORKSPACE_TOOL_NAMES) {
     if (!descriptionNames.has(name)) {
-      throw new Error(`Local figma_workspace_mcp registry tool is missing a description: ${name}`);
+      throw new Error(`Figma Workspace registry operation is missing a description: ${name}`);
     }
   }
   return describedTools;
@@ -585,7 +644,7 @@ function requiredBranch(...fields: string[]): Record<string, unknown> {
 }
 
 function titleProperty(): Record<string, unknown> {
-  return stringProperty("Optional MCP call display label for Codex/UI only; validated as a string but not saved, defaulted, or used for task/file naming.");
+  return stringProperty("Optional display label only; validated as a string but not saved, defaulted, or used for task/file naming.");
 }
 
 function stringProperty(description: string): Record<string, unknown> {
@@ -875,8 +934,8 @@ function wrapperGuidanceRefProperty(description: string): Record<string, unknown
     type: "object",
     description,
     properties: {
-      source: enumProperty(["figma_workspace_guidance"], "Tool that owns the full wrapper guidance profile."),
-      query: stringProperty("Deterministic compact query to pass to figma_workspace_guidance for the full wrapper profile."),
+      source: enumProperty(["guidance"], "CLI command that owns the full wrapper guidance profile."),
+      query: stringProperty("Deterministic compact query to pass to the guidance CLI command for the full wrapper profile."),
       workflowIds: stringArrayProperty("Related wrapper workflow graph ids."),
     },
     additionalProperties: true,
@@ -925,8 +984,8 @@ function taskChangeProperty(description: string): Record<string, unknown> {
     type: "object",
     description,
     properties: {
-      previous: objectProperty("Previous active task/session file pointers before prepare_task."),
-      current: objectProperty("Current active task/session file pointers after prepare_task."),
+      previous: objectProperty("Previous active task/session file pointers before prepare-task."),
+      current: objectProperty("Current active task/session file pointers after prepare-task."),
       changed: booleanProperty("Whether the session active task changed."),
     },
     additionalProperties: true,

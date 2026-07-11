@@ -2,6 +2,8 @@
 
 Use this reference when diagnostics or guardrails need more context. Runtime diagnostics and tool schemas remain the source of truth for enforcement.
 
+Before executing a command, read its help and use only the optimized flags it exposes. Do not infer transport CLI options on a command; use `npm run figma:raw -- <transport-command> --help` only when the complete transport JSON schema is required.
+
 ## Diagnostics
 
 - Diagnostics use `{ code, severity, message, suggestion, docsHint }`.
@@ -19,6 +21,7 @@ Use this reference when diagnostics or guardrails need more context. Runtime dia
 - Do not use PluginData APIs for agent state. Use local session handles.
 - Place visible audit markers or temporary verification labels outside the inspected frame or in a confirmed free slot; do not cover primary controls, text, or content that a capture must validate.
 - Destructive operations require explicit review and guarded patterns.
+- Keep mutation commands on one explicit `--state-file` and `--session-id` so file context cannot silently drift between logical sessions.
 
 ## Surfaces
 

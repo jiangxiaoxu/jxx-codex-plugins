@@ -39,12 +39,15 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 
 ### `figma-workspace`
 
-- Type: Skill, MCP server, OAuth bridge, Node packages, generated runtime, and tests.
+- Type: Skill, stateful Node CLI, OAuth bridge, private Node package, generated runtime, and tests.
 - Manifest: `plugins/figma-workspace/.codex-plugin/plugin.json`.
-- MCP registration: `plugins/figma-workspace/.mcp.json`.
 - Skill router: `plugins/figma-workspace/skills/figma-workspace/SKILL.md`.
+- Agent CLI source: `plugins/figma-workspace/mcp-server/src/cli/figma-workspace-cli.ts`.
+- Agent invocation: use the canonical `npm run figma -- <command>` CLI or the corresponding independent `figma:<command>` npm executable. Direct commands use task-shaped arguments; JSON commands use optimized input, state, and output options. All entrypoints share the typechecked command runtime. The 22 transport JSON commands and their complete schemas are available only through `figma:raw` and `figma:raw:help`. In Windows PowerShell use `npm.cmd`; other shells use `npm`; put npm's `--` before arguments passed to an independent npm executable.
+- Agent result surface: Restricted Markdown on stdout for typed results; usage and thrown failures use stderr.
+- Project docs: `plugins/figma-workspace/skills/figma-workspace/references/*.md`; `docs` reads complete topics while `guidance` and `lookup` search them.
 - OAuth bridge: `plugins/figma-workspace/scripts/server.mjs`.
-- MCP source: `plugins/figma-workspace/mcp-server/src/`.
+- Node runtime source: `plugins/figma-workspace/mcp-server/src/`; the directory name is legacy, not a local MCP registration.
 - Generated package output: `plugins/figma-workspace/mcp-server/dist/`; keep it synchronized with source changes through the package build.
 - Primary maintenance guide: [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md).
 - Output cleanup backlog: [Figma Workspace Output Simplification TODO](figma-workspace-output-simplification-todo.md).
@@ -59,7 +62,7 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 | Plugin identity or UI metadata | `.codex-plugin/plugin.json` and the marketplace entry. |
 | Marketplace inventory | Plugin directories, manifests, marketplace JSON, and root README. |
 | `task-memory` behavior | `SKILL.md` and `scripts/task_memory.py`. |
-| Figma agent workflow | Figma maintenance guide, skill router, MCP resources/tools, and focused tests. |
+| Figma agent workflow | Figma maintenance guide, skill router, CLI command contract, and focused tests. |
 | Figma runtime or public contract | `mcp-server/src/`, tests, package scripts, and generated `dist/`. |
 | Figma OAuth/login | Plugin README, bridge scripts, auth source, and auth tests. |
 
@@ -98,11 +101,12 @@ npm run typecheck
 npm test
 ```
 
-The MCP package build regenerates `dist/`; review generated changes with the source diff.
+The CLI package build regenerates `dist/`; review generated changes with the source diff.
 
 ## Generated And Local State
 
 - `plugins/figma-workspace/mcp-server/dist/` is checked-in generated output.
 - `plugins/figma-workspace/skills/figma-workspace/references/upstream-corpus/` is generated lookup data, not the primary agent documentation surface.
 - Figma OAuth cache files live outside the repository and may contain secrets.
+- Figma CLI state files are local runtime state and should not be committed by default. Their parent directory also owns result sidecars; stateless commands use the plugin-root default `.figma-workspace/results/` location.
 - Workspace `task-memory/` directories are runtime task state and should not be treated as repository documentation or plugin source.

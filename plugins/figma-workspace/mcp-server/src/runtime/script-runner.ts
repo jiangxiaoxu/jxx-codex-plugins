@@ -142,7 +142,7 @@ export function compileFigmaWorkspaceScriptFile(options: {
   if (options.targetPageId) {
     lines.push(`{ const __targetPage = await getNodeById(${literal(options.targetPageId)}); if (__targetPage.type !== "PAGE") throw new Error("targetPageId must resolve to a PAGE node."); await figma.setCurrentPageAsync(__targetPage); }`);
   }
-  lines.push(`// figma_workspace_run_script_file source: ${options.scriptPath}`);
+  lines.push(`// run-script-file source: ${options.scriptPath}`);
   lines.push(preparedSource.source);
   return {
     code: lines.join("\n"),
@@ -912,8 +912,8 @@ export function diagnoseFigmaWorkspaceCode(
       "FIGMA_WORKSPACE_MULTIPLE_PAGE_SWITCH",
       "fatal",
       "Multiple figma.setCurrentPageAsync() calls in one transaction are error-prone.",
-      "Use one targetPageId on figma_workspace_run_script_file or split page changes into separate script files.",
-      "figma_workspace_lookup kind=api symbol=figma.setCurrentPageAsync",
+      "Use one targetPageId on run-script-file or split page changes into separate script files.",
+      "lookup kind=api symbol=figma.setCurrentPageAsync",
     ));
   }
   if (!options.generatedCode && analysis.codes.has("FIGMA_WORKSPACE_DIRECT_SELECTION_ACCESS")) {
@@ -922,7 +922,7 @@ export function diagnoseFigmaWorkspaceCode(
       "warning",
       "Direct figma.currentPage.selection access is brittle in agent scripts.",
       "Use await $.select([...]) for selection writes, $.inspect('$selection') for summaries, or resolve explicit node ids/handles before mutation.",
-      "figma-workspace://guide#scriptFileWorkflow",
+      "Figma Workspace CLI: run-script-file --help",
     ));
   }
   if (options.mode === "read") {
@@ -936,8 +936,8 @@ export function diagnoseFigmaWorkspaceCode(
         "FIGMA_WORKSPACE_READ_MODE_ASSIGNMENT",
         "fatal",
         "read mode rejected a likely property assignment.",
-        "Use mode=write or figma_workspace_run_script_file when mutation is intended.",
-        "figma-workspace://guide#evalWorkflow",
+        "Use mode=write or run-script-file when mutation is intended.",
+        "Figma Workspace CLI: eval --help",
       ));
     }
   }
@@ -947,7 +947,7 @@ export function diagnoseFigmaWorkspaceCode(
       "warning",
       "Text mutation usually requires figma.loadFontAsync() before changing characters or fontName.",
       "Use $.text for helper-managed text creation, or await figma.loadFontAsync({ family, style }) for every font used before assigning characters or fontName.",
-      "figma_workspace_lookup kind=api symbol=figma.loadFontAsync",
+      "lookup kind=api symbol=figma.loadFontAsync",
     ));
   }
   if (analysis.oversizedImageAssetBase64Length !== undefined) {
@@ -956,7 +956,7 @@ export function diagnoseFigmaWorkspaceCode(
       "warning",
       `Inline $.imageAsset base64 is ${analysis.oversizedImageAssetBase64Length} characters and may exceed upstream MCP payload limits.`,
       "For large generated PNG/JPEG assets, create target rectangles in a .figma.ts script and use the official upload_assets/upstream asset workflow to fill them.",
-      "figma-workspace://guide#assetWorkflow",
+      "Figma Workspace CLI: apply-asset-manifest --help",
     ));
   }
   if (analysis.codes.has("FIGMA_WORKSPACE_CHECKPOINT_HANDLE_AS_NAME")) {
@@ -965,7 +965,7 @@ export function diagnoseFigmaWorkspaceCode(
       "warning",
       "$.checkpoint() appears to receive a handle as its first argument, but the first argument is the checkpoint name.",
       "Use $.checkpoint('meaningful-name', ['$handleOrNodeId'], { depth: 1 }).",
-      "figma-workspace://guide#scriptFileWorkflow",
+      "Figma Workspace CLI: run-script-file --help",
     ));
   }
   for (const diagnostic of diagnoseSurfaceCode(analysis, options.expectedSurface)) {
@@ -989,7 +989,7 @@ export function diagnoseWrappedScriptSize(
     severity: overLimit || strict ? "fatal" : "warning",
     message: `Compiled Figma script payload is ${byteLength} bytes; upstream use_figma accepts at most about ${UPSTREAM_EVAL_CODE_LIMIT_BYTES} characters.`,
     suggestion: "Split the work into smaller .figma.ts files, for example skeleton, asset targets, upload fills, and visual fixes.",
-    docsHint: "figma-workspace://guide#scriptFileWorkflow",
+    docsHint: "Figma Workspace CLI: run-script-file --help",
     source: { scriptPath },
   }];
 }
@@ -1123,37 +1123,37 @@ const DANGEROUS_DIAGNOSTICS = [
     code: "FIGMA_WORKSPACE_DYNAMIC_EVAL",
     message: "Dynamic code evaluation is disabled by default.",
     suggestion: "Pass allowDangerousOperations=true only after reviewing the exact script.",
-    docsHint: "figma_workspace_lookup kind=docs query=\"dynamic code safety\"",
+    docsHint: "lookup kind=docs query=\"dynamic code safety\"",
   },
   {
     code: "FIGMA_WORKSPACE_NETWORK_ACCESS",
     message: "Network access from workspace code is disabled by default.",
     suggestion: "Fetch data outside Figma or pass allowDangerousOperations=true after review.",
-    docsHint: "figma_workspace_lookup kind=docs query=\"network access safety\"",
+    docsHint: "lookup kind=docs query=\"network access safety\"",
   },
   {
     code: "FIGMA_WORKSPACE_DYNAMIC_IMPORT",
     message: "Dynamic import is disabled by default.",
     suggestion: "Inline the required logic or pass allowDangerousOperations=true after review.",
-    docsHint: "figma_workspace_lookup kind=docs query=\"dynamic import safety\"",
+    docsHint: "lookup kind=docs query=\"dynamic import safety\"",
   },
   {
     code: "FIGMA_WORKSPACE_NODE_REMOVAL",
     message: "Direct remove() is destructive and can break clone rebuilds, especially inside instance subtrees.",
     suggestion: "Prefer $.replaceGeneratedFrame for guarded generated-frame replacement or $.cloneNodeTree for copy/rebuild workflows; use allowDangerousOperations=true only after reviewing every removal occurrence.",
-    docsHint: "figma-workspace://guide#scriptFileWorkflow",
+    docsHint: "Figma Workspace CLI: run-script-file --help",
   },
   {
     code: "FIGMA_WORKSPACE_FIGMA_DELETE",
     message: "Deleting properties on the figma object is not supported.",
     suggestion: "Use documented Plugin API calls only.",
-    docsHint: "figma_workspace_lookup kind=api symbol=PluginAPI",
+    docsHint: "lookup kind=api symbol=PluginAPI",
   },
   {
     code: "FIGMA_WORKSPACE_DESTRUCTIVE_OPERATION",
     message: "Destructive Figma operation is disabled by default.",
     suggestion: "Pass allowDangerousOperations=true only after reviewing the exact effect.",
-    docsHint: "figma-workspace://guide#scriptFileWorkflow",
+    docsHint: "Figma Workspace CLI: run-script-file --help",
   },
 ];
 
@@ -1161,26 +1161,26 @@ const READ_MODE_WRITE_DIAGNOSTICS = [
   {
     code: "FIGMA_WORKSPACE_READ_MODE_CREATE",
     message: "read mode rejected node creation.",
-    suggestion: "Use mode=write or figma_workspace_run_script_file when mutation is intended.",
-    docsHint: "figma-workspace://guide#evalWorkflow",
+    suggestion: "Use mode=write or run-script-file when mutation is intended.",
+    docsHint: "Figma Workspace CLI: eval --help",
   },
   {
     code: "FIGMA_WORKSPACE_READ_MODE_APPEND",
     message: "read mode rejected child insertion.",
-    suggestion: "Use mode=write or figma_workspace_run_script_file when mutation is intended.",
-    docsHint: "figma-workspace://guide#evalWorkflow",
+    suggestion: "Use mode=write or run-script-file when mutation is intended.",
+    docsHint: "Figma Workspace CLI: eval --help",
   },
   {
     code: "FIGMA_WORKSPACE_READ_MODE_REMOVE",
     message: "read mode rejected node removal.",
     suggestion: "Use mode=write with allowDangerousOperations only after review.",
-    docsHint: "figma-workspace://guide#evalWorkflow",
+    docsHint: "Figma Workspace CLI: eval --help",
   },
   {
     code: "FIGMA_WORKSPACE_READ_MODE_RESIZE",
     message: "read mode rejected resize.",
-    suggestion: "Use mode=write or figma_workspace_run_script_file when mutation is intended.",
-    docsHint: "figma-workspace://guide#evalWorkflow",
+    suggestion: "Use mode=write or run-script-file when mutation is intended.",
+    docsHint: "Figma Workspace CLI: eval --help",
   },
 ];
 
@@ -1251,7 +1251,7 @@ function parseFigmaWorkspaceCodeForDiagnostics(code: string): ParsedDiagnosticAs
             "fatal",
             "Script could not be parsed.",
             "Fix script syntax before running the Figma Workspace script.",
-            "figma-workspace://guide#responseContract",
+            "Figma Workspace CLI: run-script-file --help",
           )],
         };
   } catch (error) {
@@ -1265,7 +1265,7 @@ function parseFigmaWorkspaceCodeForDiagnostics(code: string): ParsedDiagnosticAs
         "fatal",
         `Script could not be parsed.${formatErrorDetail(error)}`,
         "Fix script syntax before running the Figma Workspace script.",
-        "figma-workspace://guide#responseContract",
+        "Figma Workspace CLI: run-script-file --help",
       )],
     };
   }
@@ -1293,7 +1293,7 @@ function createParseDiagnostic(error: unknown, source: string): FigmaWorkspaceDi
     "fatal",
     `Script could not be parsed.${detail}`,
     "Fix all script syntax errors before running the Figma Workspace script; rerun afterward to get guardrail diagnostics.",
-    "figma-workspace://guide#responseContract",
+    "Figma Workspace CLI: run-script-file --help",
     ),
     location: parseErrorLocation(error, source),
   };
@@ -1663,32 +1663,32 @@ const API_CONTRACT_DIAGNOSTICS = [
   {
     code: "FIGMA_WORKSPACE_CURRENT_PAGE_ASSIGNMENT",
     message: "figma.currentPage is not assigned directly in the Plugin API.",
-    suggestion: "Use await figma.setCurrentPageAsync(page) or figma_workspace_run_script_file targetPageId.",
-    docsHint: "figma_workspace_lookup kind=api symbol=figma.setCurrentPageAsync",
+    suggestion: "Use await figma.setCurrentPageAsync(page) or run-script-file targetPageId.",
+    docsHint: "lookup kind=api symbol=figma.setCurrentPageAsync",
   },
   {
     code: "FIGMA_WORKSPACE_ROOT_FIND_ALL",
     message: "figma.root.findAll() can scan the whole file and is not allowed through this layer.",
-    suggestion: "Use scoped Plugin API queries such as figma.currentPage.findAll(...) or figma_workspace_inspect for known targets; avoid proving file-wide absence from one root scan.",
-    docsHint: "figma_workspace_lookup kind=docs query=\"selection query findAll\"",
+    suggestion: "Use scoped Plugin API queries such as figma.currentPage.findAll(...) or the inspect CLI command for known targets; avoid proving file-wide absence from one root scan.",
+    docsHint: "lookup kind=docs query=\"selection query findAll\"",
   },
   {
     code: "FIGMA_WORKSPACE_PLUGIN_DATA",
     message: "Plugin data APIs are not a reliable agent-facing persistence layer for this workspace.",
     suggestion: "Use local handles/session metadata or a dedicated upstream workflow.",
-    docsHint: "figma-workspace://lookup-index#ownership",
+    docsHint: "Figma Workspace CLI: lookup --help",
   },
   {
     code: "FIGMA_WORKSPACE_IMAGE_CREATION",
     message: "Raw image creation is outside the supported script-file asset workflow.",
-    suggestion: "For large/local generated assets, create target rectangles and use figma_workspace_apply_asset_manifest; use $.imageAsset only for small inline PNG/JPEG payloads.",
-    docsHint: "figma-workspace://guide#assetWorkflow",
+    suggestion: "For large/local generated assets, create target rectangles and use the apply-asset-manifest CLI command; use $.imageAsset only for small inline PNG/JPEG payloads.",
+    docsHint: "Figma Workspace CLI: apply-asset-manifest --help",
   },
   {
     code: "FIGMA_WORKSPACE_DYNAMIC_HELPER_ACCESS",
     message: "Dynamic $ helper access cannot be statically analyzed for on-demand helper injection.",
     suggestion: "Use a literal retained helper access such as $.text(...) or $[\"text\"](...); avoid $[name](...), object rest destructuring, aliasing $, or declaring a local $.",
-    docsHint: "figma-workspace://guide#scriptFileWorkflow",
+    docsHint: "Figma Workspace CLI: run-script-file --help",
   },
 ];
 
@@ -1840,7 +1840,7 @@ function diagnoseSurfaceCode(
       "fatal",
       "FigJam creation APIs were used while the session expects a Design file.",
       "Use a FigJam-specific workflow or open the session with surface='figjam'.",
-      "figma_workspace_lookup kind=docs query=\"FigJam surface APIs\"",
+      "lookup kind=docs query=\"FigJam surface APIs\"",
     ));
   }
   if (analysis.codes.has("FIGMA_WORKSPACE_SURFACE_DESIGN_API_IN_FIGJAM")) {
@@ -1849,7 +1849,7 @@ function diagnoseSurfaceCode(
       "fatal",
       "Design canvas APIs were used while the session expects a FigJam board.",
       "Use FigJam-specific helpers for boards or open the session with surface='design'.",
-      "figma_workspace_lookup kind=docs query=\"FigJam Design surface APIs\"",
+      "lookup kind=docs query=\"FigJam Design surface APIs\"",
     ));
   }
   if (analysis.codes.has("FIGMA_WORKSPACE_SURFACE_CANVAS_API_IN_SLIDES")) {
@@ -1858,7 +1858,7 @@ function diagnoseSurfaceCode(
       "fatal",
       "Canvas mutation APIs were used while the session expects Slides.",
       "Use the official Slides workflow rather than the workspace mutation layer.",
-      "figma_workspace_lookup kind=docs query=\"Slides surface APIs\"",
+      "lookup kind=docs query=\"Slides surface APIs\"",
     ));
   }
   return diagnostics;
@@ -1880,7 +1880,7 @@ export function diagnoseFigmaWorkspaceContext(options: {
         "fatal",
         `Open expected ${options.expectedSurface} but the Figma URL looks like ${options.derivedSurface}.`,
         "Check the file URL or surface before running mutations.",
-        "figma_workspace_lookup kind=docs query=\"Figma surface routing\"",
+        "lookup kind=docs query=\"Figma surface routing\"",
       ),
     ];
   }

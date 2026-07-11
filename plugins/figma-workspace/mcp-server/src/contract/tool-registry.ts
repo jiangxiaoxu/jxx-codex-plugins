@@ -17,6 +17,10 @@ export const LOCAL_WORKSPACE_TOOL_NAMES = [
   "figma_workspace_get_variable_defs",
   "figma_workspace_call_upstream_tool",
   "figma_workspace_lookup",
+  "figma_workspace_docs",
+  "figma_workspace_doctor",
+  "figma_workspace_sessions",
+  "figma_workspace_upstream_tools",
 ] as const;
 
 export type LocalWorkspaceToolName = (typeof LOCAL_WORKSPACE_TOOL_NAMES)[number];

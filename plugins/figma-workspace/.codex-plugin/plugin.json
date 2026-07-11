@@ -1,16 +1,15 @@
 {
   "name": "figma-workspace",
-  "version": "0.1.92",
-  "description": "Figma Workspace MCP frontend with local Figma MCP login support.",
+  "version": "0.1.96",
+  "description": "Independent npm command entrypoints and a shared typed Node.js runtime for file-based Figma workspace automation.",
   "author": {
     "name": "Local developer"
   },
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Figma Workspace",
-    "shortDescription": "Use Figma MCP through a stateful workspace proxy with local Figma MCP login.",
-    "longDescription": "Provides the persistent figma_workspace_mcp MCP server for the official Figma remote MCP endpoint, plus a local HTTP bridge used for Figma MCP login and credential caching. The transparent @jxx-codex-plugins/figma-workspace-stdio package remains available through the optional figma_workspace_upstream_stdio CLI and Node library surface for debugging.",
+    "shortDescription": "Automate Figma through independent npm commands and a shared typed runtime.",
+    "longDescription": "Provides independent plugin-root npm command entrypoints backed by one shared typed Node.js runtime for repairable .figma.ts workflows, project docs, persisted sessions and handles, live upstream discovery, diagnostics, assets, captures, guidance, and lookup. Direct commands expose task-shaped arguments, JSON commands expose input, state, and output controls, and transport-level JSON commands remain isolated behind figma:raw.",
     "developerName": "jiangxiaoxu",
     "category": "Developer Tools",
     "capabilities": [

@@ -220,6 +220,28 @@ export interface FigmaWorkspacePrepareTaskArguments {
   overwrite?: boolean;
 }
 
+export interface FigmaWorkspaceDocsArguments {
+  [key: string]: unknown;
+  topic?: string;
+}
+
+export interface FigmaWorkspaceDoctorArguments {
+  [key: string]: unknown;
+}
+
+export interface FigmaWorkspaceSessionsArguments {
+  [key: string]: unknown;
+  sessionId?: string;
+  includeHandles?: boolean;
+  includeHistory?: boolean;
+}
+
+export interface FigmaWorkspaceUpstreamToolsArguments {
+  [key: string]: unknown;
+  name?: string;
+  refresh?: boolean;
+}
+
 export interface FigmaWorkspaceGuidanceArguments {
   [key: string]: unknown;
   title?: string;
@@ -280,7 +302,7 @@ function assertRemovedRunScriptOutputLayoutArguments(record: Record<string, unkn
   const removed = ["outputDir", "diagnosticsFile", "summaryFile"].filter((field) => record[field] !== undefined);
   if (removed.length > 0) {
     throw new Error(
-      `Tool argument "${removed.join("/")}" was removed for figma_workspace_run_script_file. Debug files are generated on demand for failures, diagnostics, and inline omissions; diagnostics are included in outputFiles.debugFile.`,
+      `Input "${removed.join("/")}" was removed for run-script-file. Debug files are generated on demand for failures, diagnostics, and inline omissions; diagnostics are included in outputFiles.debugFile.`,
     );
   }
 }
@@ -290,7 +312,7 @@ export function asOpenArgs(args: unknown): FigmaWorkspaceOpenArguments {
   assertRemovedFileReferenceFields(record);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
-  assertRemovedArguments(record, ["refresh"], "figma-workspace://upstream-tools");
+  assertRemovedArguments(record, ["refresh"], "the call-upstream-tool CLI command");
   assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertOptionalStringFields(record, [
     "sessionId",
@@ -323,7 +345,7 @@ export function asEvalArgs(args: unknown): FigmaWorkspaceEvalArguments {
 export function asRunScriptFileArgs(args: unknown): FigmaWorkspaceRunScriptFileArguments {
   const record = parseToolArgs<FigmaWorkspaceRunScriptFileArguments>(args);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
-  assertRemovedArguments(record, ["dryRun"], "figma_workspace_run_script_file without dryRun; preflight runs automatically");
+  assertRemovedArguments(record, ["dryRun"], "run-script-file without dryRun; preflight runs automatically");
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertRemovedRunScriptOutputLayoutArguments(record);
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
@@ -579,6 +601,30 @@ export function asLookupArgs(args: unknown): FigmaWorkspaceLookupArguments {
   const record = parseToolArgs<FigmaWorkspaceLookupArguments>(args);
   assertOptionalEnum(record, "kind", FIGMA_WORKSPACE_LOOKUP_KINDS);
   assertOptionalStringFields(record, ["query", "symbol"]);
+  return record;
+}
+
+export function asDocsArgs(args: unknown): FigmaWorkspaceDocsArguments {
+  const record = parseToolArgs<FigmaWorkspaceDocsArguments>(args);
+  assertOptionalStringFields(record, ["topic"]);
+  return record;
+}
+
+export function asDoctorArgs(args: unknown): FigmaWorkspaceDoctorArguments {
+  return parseToolArgs<FigmaWorkspaceDoctorArguments>(args);
+}
+
+export function asSessionsArgs(args: unknown): FigmaWorkspaceSessionsArguments {
+  const record = parseToolArgs<FigmaWorkspaceSessionsArguments>(args);
+  assertOptionalStringFields(record, ["sessionId"]);
+  assertOptionalBooleanFields(record, ["includeHandles", "includeHistory"]);
+  return record;
+}
+
+export function asUpstreamToolsArgs(args: unknown): FigmaWorkspaceUpstreamToolsArguments {
+  const record = parseToolArgs<FigmaWorkspaceUpstreamToolsArguments>(args);
+  assertOptionalStringFields(record, ["name"]);
+  assertOptionalBooleanFields(record, ["refresh"]);
   return record;
 }
 

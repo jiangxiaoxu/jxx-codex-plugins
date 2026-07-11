@@ -81,7 +81,7 @@ const manifest = {
   corpus: {
     file: "corpus.jsonl",
     recordCount: records.length,
-    contract: "Internal lookup corpus only; agents use figma_workspace_guidance and figma_workspace_lookup instead of reading upstream files directly.",
+    contract: "Internal lookup corpus only; agents use the guidance and lookup CLI commands instead of reading upstream files directly.",
   },
   includedSkills: [...new Set(records.map((record) => record.skill))],
   outOfScopeSkills: [],
