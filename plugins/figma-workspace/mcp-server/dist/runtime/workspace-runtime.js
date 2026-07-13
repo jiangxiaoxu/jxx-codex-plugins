@@ -42884,7 +42884,7 @@ function resolvePreparedTaskWorkspace(options) {
   }
   const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
   if (!explicitWorkspaceDir) {
-    throw new Error('Tool argument "workspaceDir" is required. Pass an absolute workspace directory inside the current project, worktree, or task artifacts.');
+    throw new Error('Tool argument "workspaceDir" is required. Pass a Git-ignored project-local .figma-workspace directory or an explicitly selected Figma task-artifact directory.');
   }
   if (!isAbsolute(explicitWorkspaceDir)) {
     throw new Error('Tool argument "workspaceDir" must be an absolute path.');
@@ -48398,7 +48398,7 @@ function bindOpenWorkspaceIfAvailable(session, args) {
   }
   const workspaceDir = asOptionalString2(args.workspaceDir);
   if (!workspaceDir) {
-    throw new Error('Tool argument "workspaceDir" is required when binding a file-context workspace. Pass an absolute workspace directory inside the current project, worktree, or task artifacts.');
+    throw new Error('Tool argument "workspaceDir" is required when binding a file-context workspace. Pass a Git-ignored project-local .figma-workspace directory or an explicitly selected Figma task-artifact directory.');
   }
   const fileSlug = slugifyTaskName2(
     session.fileKey ?? extractFigmaFileSlug(session.fileUrl) ?? session.slug ?? "figma-file"
@@ -48448,14 +48448,14 @@ function createFileWorkflowPayload() {
     supportedFileExtensions: [".figma.ts"],
     prepareTool: "prepare-task",
     planTool: "figma_workspace_guidance",
-    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts for file-context work; workspaceDir is an explicit absolute directory chosen by the agent inside the project/worktree/task artifacts, and the CLI does not append another figma-workspace segment",
+    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts for file-context work; select workspaceDir according to workspaceDirGuidance, and the CLI does not append another figma-workspace segment",
     outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
     workflowTools: ["figma_workspace_get_metadata", "figma_workspace_inspect", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan"],
     helpers: createEvalHelperPathList(),
-    workspaceDirGuidance: "Always pass an explicit absolute workspaceDir for prepare/open/file-scoped calls that need local workspace files. Choose a suitable path in the current project, worktree, or task artifacts, such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace.",
+    workspaceDirGuidance: "Always pass an explicit absolute workspaceDir for prepare/open/file-scoped calls that need local workspace files. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. Do not treat capability-specific output roots as generic task storage.",
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.ts files.",
-      "Initialize a file workspace once with an explicit workspaceDir selected by the agent inside the current project/worktree/task artifacts, then keep task scripts in that file-context folder.",
+      "Initialize a file workspace once with an explicit workspaceDir selected according to workspaceDirGuidance, then keep task scripts in that file-context folder.",
       "Run run-script-file directly; it strict-checks .figma.ts files with Figma Plugin API typings, compiles the upstream payload internally, and preflights file-aware diagnostics before upstream calls.",
       "Keep each .figma.ts transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
       "The file runner and eval wrapper parse script ASTs and inject only referenced $ helpers plus required dependencies; eval defaults to JavaScript and compiles TypeScript only when typescript:true is supplied. Scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; session state and handles persist in the CLI --session-file.",
@@ -49575,7 +49575,7 @@ function createReplToolDescriptions(options) {
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
         label: stringProperty("Human-readable session label."),
         file: stringProperty("Optional Figma file URL or raw file key stored in local session metadata. When present, workspaceDir is required to bind a file-context workspace."),
-        workspaceDir: stringProperty("Required absolute local workspace directory when file is present. The agent must choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is present. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface; blocks mismatched Design/FigJam/Slides usage later."),
         currentPageId: stringProperty("Optional current Figma page id stored in local session metadata."),
         reset: booleanProperty("Reset local handles and history for this session before opening."),
@@ -49681,7 +49681,7 @@ function createReplToolDescriptions(options) {
         taskName: stringProperty("Required slug-style task/workspace name such as settings-panel-polish; used to derive <taskName>.figma.ts by default."),
         file: stringProperty("Recommended Figma file URL or raw file key used to derive the file context when preparing a workspace."),
         fileSlug: stringProperty("Advanced file-context slug override to use when file cannot derive a key."),
-        workspaceDir: stringProperty("Required absolute local workspace directory selected by the agent inside the current project, worktree, or task artifacts, such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace. The CLI runtime uses this exact root and does not append another figma-workspace segment; file-context tasks live under <workspaceDir>/<fileKey-or-fileSlug>."),
+        workspaceDir: stringProperty("Required absolute local workspace directory. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. The CLI runtime uses this exact root and does not append another figma-workspace segment; file-context tasks live under <workspaceDir>/<fileKey-or-fileSlug>."),
         fileName: stringProperty("Advanced script file-name override ending in .figma.ts."),
         surface: enumProperty(["design", "figjam", "slides"], "Recommended expected Figma surface persisted on the session and copied into generated guidance."),
         targetPageId: stringProperty("Optional target page id copied into generated guidance."),
@@ -49725,7 +49725,7 @@ function createReplToolDescriptions(options) {
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
-        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         target: {
           description: `Optional metadata root. ${NODE_SCOPED_TARGET_SHAPES} Also accepts $currentPage or a single-node $selection, which are resolved with a read-only use_figma call before official get_metadata. Other dynamic selectors are rejected.`
         },
@@ -49743,7 +49743,7 @@ function createReplToolDescriptions(options) {
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target is omitted."),
-        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`
         },
@@ -49763,7 +49763,7 @@ function createReplToolDescriptions(options) {
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target is omitted."),
-        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`
         },
@@ -49781,7 +49781,7 @@ function createReplToolDescriptions(options) {
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. Used when the session does not already have file context."),
-        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         query: stringProperty("Required official search_design_system query."),
         disableCodeConnect: booleanProperty("Optional official search_design_system flag to disable Code Connect for search results."),
         includeComponents: booleanProperty("Optional official search_design_system flag. Defaults upstream to true."),
@@ -49799,7 +49799,7 @@ function createReplToolDescriptions(options) {
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. Used when the session does not already have file context."),
-        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         offset: numberProperty("Optional official get_libraries pagination offset."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
@@ -49812,7 +49812,7 @@ function createReplToolDescriptions(options) {
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
-        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Choose a project/worktree/task-artifact path such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace; file-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
+        workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
         target: {
           description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`
         },

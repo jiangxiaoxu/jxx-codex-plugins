@@ -433,7 +433,7 @@ export function resolvePreparedTaskWorkspace(options: {
   }
   const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
   if (!explicitWorkspaceDir) {
-    throw new Error('Tool argument "workspaceDir" is required. Pass an absolute workspace directory inside the current project, worktree, or task artifacts.');
+    throw new Error('Tool argument "workspaceDir" is required. Pass a Git-ignored project-local .figma-workspace directory or an explicitly selected Figma task-artifact directory.');
   }
   if (!isAbsolute(explicitWorkspaceDir)) {
     throw new Error('Tool argument "workspaceDir" must be an absolute path.');

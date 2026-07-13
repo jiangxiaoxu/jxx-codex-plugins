@@ -7143,7 +7143,7 @@ function bindOpenWorkspaceIfAvailable(
   }
   const workspaceDir = asOptionalString(args.workspaceDir);
   if (!workspaceDir) {
-    throw new Error('Tool argument "workspaceDir" is required when binding a file-context workspace. Pass an absolute workspace directory inside the current project, worktree, or task artifacts.');
+    throw new Error('Tool argument "workspaceDir" is required when binding a file-context workspace. Pass a Git-ignored project-local .figma-workspace directory or an explicitly selected Figma task-artifact directory.');
   }
   const fileSlug = slugifyTaskName(
     session.fileKey ??
@@ -7232,14 +7232,14 @@ function createFileWorkflowPayload(): Record<string, unknown> {
     supportedFileExtensions: [".figma.ts"],
     prepareTool: "prepare-task",
     planTool: "figma_workspace_guidance",
-    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts for file-context work; workspaceDir is an explicit absolute directory chosen by the agent inside the project/worktree/task artifacts, and the CLI does not append another figma-workspace segment",
+    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts for file-context work; select workspaceDir according to workspaceDirGuidance, and the CLI does not append another figma-workspace segment",
     outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
     workflowTools: ["figma_workspace_get_metadata", "figma_workspace_inspect", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan"],
     helpers: createEvalHelperPathList(),
-    workspaceDirGuidance: "Always pass an explicit absolute workspaceDir for prepare/open/file-scoped calls that need local workspace files. Choose a suitable path in the current project, worktree, or task artifacts, such as <project>/figma-workspace or <project>/task-memory/<task-id>/artifacts/figma-workspace.",
+    workspaceDirGuidance: "Always pass an explicit absolute workspaceDir for prepare/open/file-scoped calls that need local workspace files. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. Do not treat capability-specific output roots as generic task storage.",
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.ts files.",
-      "Initialize a file workspace once with an explicit workspaceDir selected by the agent inside the current project/worktree/task artifacts, then keep task scripts in that file-context folder.",
+      "Initialize a file workspace once with an explicit workspaceDir selected according to workspaceDirGuidance, then keep task scripts in that file-context folder.",
       "Run run-script-file directly; it strict-checks .figma.ts files with Figma Plugin API typings, compiles the upstream payload internally, and preflights file-aware diagnostics before upstream calls.",
       "Keep each .figma.ts transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
       "The file runner and eval wrapper parse script ASTs and inject only referenced $ helpers plus required dependencies; eval defaults to JavaScript and compiles TypeScript only when typescript:true is supplied. Scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; session state and handles persist in the CLI --session-file.",
@@ -7435,12 +7435,12 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       tool: "prepare-task",
       tier: "normalPath",
       recommendedCalls: {
-        workspaceFromFile: { file: "<figma file URL or file key>", taskName: "<task-name>", workspaceDir: "<absolute project/worktree/task-artifact figma-workspace dir>", surface: "design" },
+        workspaceFromFile: { file: "<figma file URL or file key>", taskName: "<task-name>", workspaceDir: "<Git-ignored project .figma-workspace or explicit Figma task-artifact dir>", surface: "design" },
       },
       advancedArguments: ["fileSlug", "fileName", "template", "overwrite"],
       requiredArguments: ["taskName", "workspaceDir"],
       avoidUnless: {
-        workspaceDir: "Do not use the plugin install/cache path. Choose an absolute directory inside the active project, worktree, or task artifacts; include the figma-workspace segment yourself when desired.",
+        workspaceDir: "Do not use the plugin install/cache path or a capability-specific output root. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory.",
         fileName: "Use fileName only when the generated <task>.figma.ts name is unsuitable.",
         overwrite: "Use only after deciding that replacing an existing script/result pair is intended.",
       },
@@ -7449,12 +7449,12 @@ function createToolArgumentGuidancePayload(): Record<string, unknown> {
       tool: "figma_workspace_open",
       tier: "contextAndLookup",
       recommendedCalls: {
-        session: { sessionId: "<session>", file: "<figma file URL or file key>", workspaceDir: "<absolute project/worktree/task-artifact figma-workspace dir>", surface: "design" },
+        session: { sessionId: "<session>", file: "<figma file URL or file key>", workspaceDir: "<Git-ignored project .figma-workspace or explicit Figma task-artifact dir>", surface: "design" },
       },
       advancedArguments: ["connect", "handles"],
       requiredArguments: ["workspaceDir when file is present"],
       avoidUnless: {
-        workspaceDir: "Do not use the plugin install/cache path. Choose an absolute directory inside the active project, worktree, or task artifacts; include the figma-workspace segment yourself when desired.",
+        workspaceDir: "Do not use the plugin install/cache path or a capability-specific output root. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory.",
         connect: "Leave at the default true unless intentionally updating only local metadata; open connects without listing tools, and call-upstream-tool discovers official upstream tools when needed.",
         handles: "Use only when importing known node ids into a new session; prefer $.remember from scripts.",
       },

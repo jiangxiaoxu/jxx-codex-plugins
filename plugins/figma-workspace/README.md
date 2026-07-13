@@ -12,11 +12,11 @@ The plugin does not register a local MCP server. The official Figma remote MCP i
 
 ## NPM Commands
 
-Run from the plugin root. Use `npm.cmd --silent` in Windows PowerShell and `npm --silent` in other shells so npm lifecycle banners do not contaminate Restricted Markdown stdout. Put npm's `--` before arguments passed to an independent npm entrypoint, and run a selected command with `-h` or `--help` before first use. The canonical command CLI and the equivalent independent entrypoint are:
+Run from the plugin root. Use `npm --silent` in every shell so npm lifecycle banners do not contaminate Restricted Markdown stdout. Put npm's `--` before arguments passed to an independent npm entrypoint, and run a selected command with `-h` or `--help` before first use. The canonical command CLI and the equivalent independent entrypoint are:
 
 ```text
-npm.cmd --silent run figma -- api:search createFrame
-npm.cmd --silent run figma:api:search -- createFrame
+npm --silent run figma -- api:search createFrame
+npm --silent run figma:api:search -- createFrame
 ```
 
 - Family entrypoints: `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
@@ -55,10 +55,10 @@ Example with stdin:
 
 ```powershell
 '{"file":"https://www.figma.com/design/<fileKey>/<name>"}' |
-  npm.cmd --silent run figma:open -- --input - --state-file C:/work/project/figma-workspace/state.json
+  npm --silent run figma:open -- --input - --state-file C:/work/project/.figma-workspace/state.json
 ```
 
-State files and result sidecars may contain sensitive Figma workspace content or references to an OAuth-backed workflow. Keep them in the project, worktree, or task artifacts and do not commit them by default. Sidecars are retained for result recovery and are removed manually by the user or owning workflow; the CLI does not delete them automatically. Session locks coordinate same-machine processes on a local filesystem and do not provide distributed, network-filesystem, or shared-volume safety.
+State files and result sidecars may contain sensitive Figma workspace content or references to an OAuth-backed workflow. Prefer a Git-ignored project-local `.figma-workspace/`; otherwise use an explicitly selected Figma task-artifact directory. Do not treat capability-specific output roots as generic task storage, and do not commit state or sidecars by default. Sidecars are retained for result recovery and are removed manually by the user or owning workflow; the CLI does not delete them automatically. Session locks coordinate same-machine processes on a local filesystem and do not provide distributed, network-filesystem, or shared-volume safety.
 
 ## Agent Workflow
 

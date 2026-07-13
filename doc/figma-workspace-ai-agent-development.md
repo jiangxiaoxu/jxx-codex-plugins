@@ -9,21 +9,22 @@ This document is for AI agents maintaining `figma-workspace`. It is not the user
 - The official Figma remote MCP is an internal transport behind the CLI. It is not the agent-facing contract.
 - Optimized commands name persisted workspace state `--state-file`; its parent owns result sidecars. The raw transport CLI keeps `--session-file`, `FIGMA_WORKSPACE_SESSION_FILE`, and `<cwd>/.figma-workspace/session.json` as its transport-level contract.
 - Local `.figma.ts` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, canonical project Markdown, guidance, and compact docs/API lookup remain the supported workflow.
+- Keep state and workspace files in a Git-ignored project-local `.figma-workspace/` or an explicitly selected Figma task-artifact directory. Do not infer that an injected writable workspace root is generic task storage; capability-specific output roots remain exclusive to their capability.
 - Bundled upstream skill content remains internal JSONL lookup data under `skills/figma-workspace/references/upstream-corpus/`. Do not route agents to read it directly.
 - DSL, `$.ops`, `compileFigmaWorkspaceOps`, and related operation types are not public runtime contracts.
 
 ## Canonical Agent Contract
 
-Use `npm.cmd --silent` in Windows PowerShell and `npm --silent` in other shells. Put npm's `--` before arguments passed to an independent entrypoint, and run a selected command with `-h` or `--help` before first use.
+Use `npm --silent` in every shell. Put npm's `--` before arguments passed to an independent entrypoint, and run a selected command with `-h` or `--help` before first use.
 
 ```text
-npm.cmd --silent run figma -- api:search createFrame
-npm.cmd --silent run figma:api:search -- createFrame
+npm --silent run figma -- api:search createFrame
+npm --silent run figma:api:search -- createFrame
 ```
 
 ```text
-npm.cmd --silent run figma:guidance -- "text font loadFontAsync" --surface design
-npm.cmd --silent run figma:task:prepare -- --input <json-file|-> --state-file <path>
+npm --silent run figma:guidance -- "text font loadFontAsync" --surface design
+npm --silent run figma:task:prepare -- --input <json-file|-> --state-file <path>
 ```
 
 Family entrypoints are `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
@@ -138,8 +139,9 @@ Generated output under `mcp-server/dist/` is checked in and must remain synchron
 2. For runtime behavior, update source first, then tests, then generated `dist`.
 3. For CLI wording and command shape, update canonical CLI/runtime metadata and plugin-root package scripts before the skill and README summaries.
 4. Keep OAuth cache and workspace state files outside committed source.
-5. Do not install or register a persistent local MCP server during development.
-6. Do not update the locally installed Codex plugin cache from an agent session; leave reload/reinstall to the user or a fresh app session.
+5. Prefer a project-local `.figma-workspace/` only after confirming Git ignores it; otherwise use an explicitly selected Figma task-artifact directory.
+6. Do not install or register a persistent local MCP server during development.
+7. Do not update the locally installed Codex plugin cache from an agent session; leave reload/reinstall to the user or a fresh app session.
 
 ## Validation
 
