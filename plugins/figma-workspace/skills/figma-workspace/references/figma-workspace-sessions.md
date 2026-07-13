@@ -28,3 +28,5 @@ Use this reference when file context, handles, or cross-process continuity matte
 
 - Result sidecars, captures, and task files are local workspace artifacts, not session state.
 - Command `--max-inline-bytes` can cause complete JSON to be written under the state file's sibling `results/` directory. Follow the returned output-file pointer.
+- State and sidecar writes use sibling temporary files followed by atomic rename. Sidecars may contain sensitive Figma content and remain available for recovery until the user or owning workflow removes them manually.
+- Session locks coordinate same-machine processes on a local filesystem. They do not provide distributed locking or safety across hosts, network filesystems, or shared volumes.

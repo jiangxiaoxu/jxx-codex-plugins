@@ -29,7 +29,7 @@ Use this reference to choose between `figma:guidance`, `figma:docs:search`, and 
 - The guidance and search commands emit Restricted Markdown on stdout with a command title, `Input`, explicit status, and expanded fields.
 - These stateless commands intentionally omit `--state-file`. Use `--max-inline-bytes` to control inline output; any sidecar uses the default `<plugin-root>/.figma-workspace/results/` directory.
 - Cards, hints, symbols, snippets, and other complex nested values may appear in fenced `json` blocks inside the Markdown result.
-- Typed `ok: false` still emits Markdown and exits with code 1; usage and thrown failures are text on stderr.
+- Typed failures still emit Markdown and normally exit 1; an unhealthy doctor observation is the exit-0 exception. Usage exits 2, typed interrupts exit 130, and thrown failures are text on stderr.
 - Do not use `JSON.parse(stdout)`. Read the Markdown result and parse only a specific fenced `json` block when necessary.
 
 ## API Cards

@@ -50,6 +50,7 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 - Node runtime source: `plugins/figma-workspace/mcp-server/src/`; the directory name is legacy, not a local MCP registration.
 - Generated package output: `plugins/figma-workspace/mcp-server/dist/`; keep it synchronized with source changes through the package build.
 - Primary maintenance guide: [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md).
+- Cross-repository CLI guide: [Reusable npm CLI Implementation Guide](figma-workspace-reusable-npm-cli-implementation-guide.md).
 - Output cleanup backlog: [Figma Workspace Output Simplification TODO](figma-workspace-output-simplification-todo.md).
 - User-facing plugin guide: `plugins/figma-workspace/README.md`.
 - Package guide: `plugins/figma-workspace/mcp-server/README.md`.

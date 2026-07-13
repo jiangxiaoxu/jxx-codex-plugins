@@ -70,9 +70,12 @@ The raw transport runtime behind `figma:raw` consists of these 22 commands:
 Pin these facts when changing the CLI surface:
 
 - `--input` accepts a JSON file or `-` for stdin.
-- Command `--state-file` identifies the persisted workspace state store and its parent `results/` directory. For raw transport calls, state defaults to `FIGMA_WORKSPACE_SESSION_FILE`, then `<cwd>/.figma-workspace/session.json`; `--session-file` overrides it and relative paths resolve from the current directory.
+- Optimized help is generated from typed command metadata. Every positional and option declares required, default, or unset behavior; options also declare repeatability and applicable integer range or enum values.
+- Direct parsing recognizes only the exact `--` token as the positional separator. Every token after it is positional, including `-h` and `--help`; JSON commands and `figma:raw` remain option-only surfaces.
+- Command `--state-file` identifies the persisted workspace state store and its parent `results/` directory. At the transport layer, resolution is explicit `--session-file`, then `FIGMA_WORKSPACE_SESSION_FILE`, then `<cwd>/.figma-workspace/session.json`; relative explicit and environment paths resolve from the current directory.
 - Typed commands emit Restricted Markdown on stdout with a command title, `Input`, explicit status, and expanded business fields. Complex nested values may use fenced `json` blocks.
-- Typed `ok: false` results use the same Markdown shape and exit 1. Usage, input parsing, transport, and thrown or unexpected errors are text on stderr with a non-zero exit code.
+- Presentation classification does not rewrite backend results. Inline Markdown retains the backend fields, and oversized sidecars contain the complete original backend result. Only an unhealthy `doctor` result renders `Status: observed unhealthy` and exits 0; every other top-level `ok: false` result renders failure and exits 1.
+- Usage failures exit 2. Input parsing, transport, and thrown or unexpected errors are text on stderr and normally exit 1. Typed interrupts identified by `AbortError`, `ABORT_ERR`, or `ERR_CANCELED` exit 130.
 - Stdout is not JSON and must not be passed to `JSON.parse`.
 - CLI output defaults to a 4096-byte inline result limit, capped at 10000. Command `--max-inline-bytes` maps to transport `--inline-result-limit`; 0 forces the complete JSON result to the selected state file's sibling `results/`, or the plugin-root default for stateless commands. Oversized Markdown exposes `outputFiles.cliResultFile` and omitted-byte metadata only.
 - Long input values are summarized in the Markdown `Input` line rather than echoed.
@@ -122,6 +125,8 @@ Generated output under `mcp-server/dist/` is checked in and must remain synchron
 - Validate command state-file and transport session-file reads and writes explicitly. Do not duplicate path validation across unrelated modules.
 - Keep stdout within the Restricted Markdown result grammar: title, `Input`, status, expanded fields, and fenced `json` only for complex nested values. Send usage and thrown failures to stderr.
 - Keep sidecar writes atomic. Test the default threshold, CLI override precedence, zero-force behavior, maximum validation, and complete JSON recovery through `outputFiles.cliResultFile`.
+- Write state and result sidecars through sibling temporary files followed by atomic rename. Sidecars may contain sensitive Figma content; retain them by default for recovery, never remove them automatically, and leave manual cleanup to the user or owning workflow.
+- Treat the session lock as a same-machine, local-filesystem coordination mechanism based on process identity, PID liveness, and filesystem operations. It does not provide distributed locking or safety across hosts, network filesystems, or shared volumes.
 - Do not introduce a JSON stdout compatibility mode or document `JSON.parse(stdout)` as supported.
 - Keep help concise and generated from canonical command metadata where practical.
 - Lightweight references under `skills/figma-workspace/references/` may contain static workflow and safety notes, but must not become a second schema contract.
@@ -145,11 +150,13 @@ npm run typecheck
 npm test
 ```
 
-`tests/workspace-mcp-server.test.mjs` now exercises the typed-client runtime behind the CLI. `tests/build-output.test.mjs` exercises the built CLI, including help, all 22 command mappings, project-doc staging, JSON file/stdin input, Restricted Markdown stdout, typed `ok: false` exit code 1, stderr failures, and cross-process persistence.
+`tests/workspace-mcp-server.test.mjs` now exercises the typed-client runtime behind the CLI. `tests/build-output.test.mjs` exercises the built CLI, including help, all 22 command mappings, project-doc staging, JSON file/stdin input, Restricted Markdown stdout, doctor observation classification, domain failure and interrupt exits, stderr failures, atomic state/sidecar writes, and cross-process persistence.
 
 Transport session-path tests should cover the default `<cwd>/.figma-workspace/session.json`, `FIGMA_WORKSPACE_SESSION_FILE`, explicit `--session-file`, and relative-path resolution from the current directory. Command runtime tests should pin the optimized visibility and mapping rules for `--state-file`, `--session-id`, `--max-inline-bytes`, query limits, workspace/library filters, sessions expansions, and repeated handles. Runtime tests should continue covering structured failures and representative `.figma.ts`, asset, capture, guidance, lookup, and upstream delegation flows. Live upstream checks remain separate from deterministic offline tests.
 
 Also run repository validators for the skill and plugin plus `git diff --check` when those surfaces change.
+
+`npm run check:dist` builds and then compares checked-in `dist`. Run it only in a clean checkout or CI job because unrelated or pre-existing `dist` edits make its cleanliness assertion ambiguous.
 
 ## Release Checklist
 

@@ -45,6 +45,7 @@ import { TASK_WORKSPACE_ROOT_ENV } from "../runtime/workspace-files.js";
 export const FIGMA_WORKSPACE_CLI_EXIT_SUCCESS = 0;
 export const FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR = 1;
 export const FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR = 2;
+export const FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT = 130;
 export const FIGMA_WORKSPACE_SESSION_FILE_ENV = "FIGMA_WORKSPACE_SESSION_FILE";
 const FIGMA_WORKSPACE_SESSION_LOCK_TIMEOUT_MS = 30_000;
 const FIGMA_WORKSPACE_SESSION_LOCK_STALE_MS = 10 * 60_000;
@@ -108,6 +109,13 @@ export interface FigmaWorkspaceCliDependencies {
   saveSessions?: (path: string, sessions: readonly FigmaWorkspaceSession[]) => Promise<void>;
   clientOptions?: Omit<FigmaWorkspaceClientOptions, "initialSessions">;
   sessionLockOptions?: FigmaWorkspaceCliSessionLockOptions;
+  atomicFileOperations?: FigmaWorkspaceCliAtomicFileOperations;
+}
+
+export interface FigmaWorkspaceCliAtomicFileOperations {
+  writeFile(path: string, source: string, encoding: "utf8"): Promise<void>;
+  rename(source: string, destination: string): Promise<void>;
+  rm(path: string, options: { force: true }): Promise<void>;
 }
 
 export interface FigmaWorkspaceCliSessionLockOptions {
@@ -125,6 +133,23 @@ export interface FigmaWorkspaceCliSessionLockOptions {
 
 export class FigmaWorkspaceCliUsageError extends Error {
   override readonly name = "FigmaWorkspaceCliUsageError";
+}
+
+export type FigmaWorkspaceCliPresentationStatus = "succeeded" | "observed-unhealthy" | "failed";
+
+export interface FigmaWorkspaceCliPresentationError {
+  readonly message: string;
+  readonly code?: string | number;
+  readonly details?: unknown;
+}
+
+export interface FigmaWorkspaceCliResultPresentation {
+  readonly status: FigmaWorkspaceCliPresentationStatus;
+  readonly exitCode:
+    | typeof FIGMA_WORKSPACE_CLI_EXIT_SUCCESS
+    | typeof FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR;
+  readonly error?: FigmaWorkspaceCliPresentationError;
+  readonly warnings: readonly unknown[];
 }
 
 export function parseFigmaWorkspaceCliArguments(argv: readonly string[]): FigmaWorkspaceCliArguments {
@@ -224,7 +249,11 @@ export async function runFigmaWorkspaceCli(
       }
       let saveError: unknown;
       try {
-        await (dependencies.saveSessions ?? writeFigmaWorkspaceSessions)(sessionFile, client.sessions.list());
+        if (dependencies.saveSessions === undefined) {
+          await writeFigmaWorkspaceSessions(sessionFile, client.sessions.list(), dependencies.atomicFileOperations);
+        } else {
+          await dependencies.saveSessions(sessionFile, client.sessions.list());
+        }
       } catch (error) {
         saveError = error;
       }
@@ -238,6 +267,9 @@ export async function runFigmaWorkspaceCli(
     } catch (error) {
       transactionError = error;
     }
+    const presentation = transactionError === undefined
+      ? classifyFigmaWorkspaceCliResult(parsed.command, result)
+      : undefined;
     if (transactionError === undefined) {
       try {
         markdownResult = await persistOversizedCliResult(
@@ -246,6 +278,7 @@ export async function runFigmaWorkspaceCli(
           commandInput,
           sessionFile,
           inlineResultLimit,
+          dependencies.atomicFileOperations,
         );
       } catch (error) {
         transactionError = error;
@@ -261,12 +294,13 @@ export async function runFigmaWorkspaceCli(
     if (transactionError !== undefined) {
       throw transactionError;
     }
-    io.writeStdout(`${formatFigmaWorkspaceCommandMarkdown(parsed.command, markdownResult, commandInput)}\n`);
-    return isRecord(result) && result.ok === false
-      ? FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR
-      : FIGMA_WORKSPACE_CLI_EXIT_SUCCESS;
+    io.writeStdout(`${formatFigmaWorkspaceCommandMarkdown(parsed.command, markdownResult, commandInput, presentation)}\n`);
+    return presentation?.exitCode ?? FIGMA_WORKSPACE_CLI_EXIT_SUCCESS;
   } catch (error) {
     io.writeStderr(`${formatCliError(error)}\n`);
+    if (isCliInterruptError(error)) {
+      return FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT;
+    }
     return error instanceof FigmaWorkspaceCliUsageError
       ? FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR
       : FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR;
@@ -298,8 +332,9 @@ export async function readFigmaWorkspaceSessions(path: string): Promise<FigmaWor
 export async function writeFigmaWorkspaceSessions(
   path: string,
   sessions: readonly FigmaWorkspaceSession[],
+  operations?: FigmaWorkspaceCliAtomicFileOperations,
 ): Promise<void> {
-  await writeAtomicTextFile(path, `${JSON.stringify(sessions, null, 2)}\n`);
+  await writeAtomicTextFile(path, `${JSON.stringify(sessions, null, 2)}\n`, operations);
 }
 
 async function persistOversizedCliResult(
@@ -308,6 +343,7 @@ async function persistOversizedCliResult(
   input: Readonly<Record<string, unknown>>,
   sessionFile: string,
   inlineResultLimit: number,
+  operations?: FigmaWorkspaceCliAtomicFileOperations,
 ): Promise<unknown> {
   const resultSource = `${JSON.stringify(result, jsonBigIntReplacer, 2) ?? "null"}\n`;
   const resultBytes = Buffer.byteLength(resultSource, "utf8");
@@ -323,7 +359,7 @@ async function persistOversizedCliResult(
     "results",
     `${Date.now()}-${command}-${randomUUID()}.json`,
   );
-  await writeAtomicTextFile(resultFile, resultSource);
+  await writeAtomicTextFile(resultFile, resultSource, operations);
   const ok = isRecord(result) && typeof result.ok === "boolean" ? result.ok : true;
   return {
     ok,
@@ -341,15 +377,19 @@ async function persistOversizedCliResult(
   };
 }
 
-async function writeAtomicTextFile(path: string, source: string): Promise<void> {
+async function writeAtomicTextFile(
+  path: string,
+  source: string,
+  operations: FigmaWorkspaceCliAtomicFileOperations = { writeFile, rename, rm },
+): Promise<void> {
   const directory = dirname(path);
   const temporaryPath = resolve(directory, `.${randomUUID()}.tmp`);
   await mkdir(directory, { recursive: true });
   try {
-    await writeFile(temporaryPath, source, "utf8");
-    await rename(temporaryPath, path);
+    await operations.writeFile(temporaryPath, source, "utf8");
+    await operations.rename(temporaryPath, path);
   } catch (error) {
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
+    await operations.rm(temporaryPath, { force: true }).catch(() => undefined);
     throw error;
   }
 }
@@ -602,12 +642,11 @@ export function formatFigmaWorkspaceCommandMarkdown(
   command: FigmaWorkspaceCliCommand,
   result: unknown,
   input: Readonly<Record<string, unknown>> = {},
+  presentation: FigmaWorkspaceCliResultPresentation = classifyFigmaWorkspaceCliResult(command, result),
 ): string {
   const lines = [`# figma-workspace ${command}`];
   lines.push(formatMarkdownInput(input));
-  if (isRecord(result) && typeof result.ok === "boolean") {
-    lines.push(result.ok ? "Status: succeeded" : "Status: failed");
-  }
+  lines.push(`Status: ${presentation.status.replace("-", " ")}`);
   if (isRecord(result)) {
     const fields = Object.entries(result).filter(([key, value]) => key !== "ok" && value !== undefined);
     if (fields.length === 0) {
@@ -621,6 +660,51 @@ export function formatFigmaWorkspaceCommandMarkdown(
     pushRestrictedMarkdownValue(lines, "Result", result, 2, 0);
   }
   return stripAnsi(lines.join("\n"));
+}
+
+export function classifyFigmaWorkspaceCliResult(
+  command: FigmaWorkspaceCliCommand,
+  result: unknown,
+): FigmaWorkspaceCliResultPresentation {
+  const failed = isRecord(result) && result.ok === false;
+  const status = failed
+    ? command === "doctor" ? "observed-unhealthy" : "failed"
+    : "succeeded";
+  return {
+    status,
+    exitCode: status === "failed"
+      ? FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR
+      : FIGMA_WORKSPACE_CLI_EXIT_SUCCESS,
+    error: presentationError(result),
+    warnings: presentationWarnings(result),
+  };
+}
+
+function presentationError(result: unknown): FigmaWorkspaceCliPresentationError | undefined {
+  if (!isRecord(result)) return undefined;
+  const candidate = isRecord(result.error)
+    ? result.error
+    : isRecord(result.upstreamError)
+      ? result.upstreamError
+      : undefined;
+  if (candidate === undefined || typeof candidate.message !== "string") return undefined;
+  const code = typeof candidate.code === "string" || typeof candidate.code === "number"
+    ? candidate.code
+    : undefined;
+  return {
+    message: candidate.message,
+    ...(code === undefined ? {} : { code }),
+    ...(candidate.details === undefined ? {} : { details: candidate.details }),
+  };
+}
+
+function presentationWarnings(result: unknown): readonly unknown[] {
+  if (!isRecord(result)) return [];
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  const diagnostics = Array.isArray(result.diagnostics)
+    ? result.diagnostics.filter((diagnostic) => isRecord(diagnostic) && diagnostic.severity === "warning")
+    : [];
+  return [...warnings, ...diagnostics];
 }
 
 function formatMarkdownInput(input: Readonly<Record<string, unknown>>): string {
@@ -982,6 +1066,11 @@ function isMissingFileError(error: unknown): boolean {
 
 function hasErrorCode(error: unknown, code: string): boolean {
   return isRecord(error) && error.code === code;
+}
+
+function isCliInterruptError(error: unknown): boolean {
+  return isRecord(error)
+    && (error.name === "AbortError" || error.code === "ABORT_ERR" || error.code === "ERR_CANCELED");
 }
 
 function formatCliError(error: unknown): string {

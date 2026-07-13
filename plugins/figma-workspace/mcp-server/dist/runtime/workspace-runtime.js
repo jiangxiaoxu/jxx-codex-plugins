@@ -50471,6 +50471,7 @@ init_workspace_files();
 var FIGMA_WORKSPACE_CLI_EXIT_SUCCESS = 0;
 var FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR = 1;
 var FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR = 2;
+var FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT = 130;
 var FIGMA_WORKSPACE_SESSION_FILE_ENV = "FIGMA_WORKSPACE_SESSION_FILE";
 var FIGMA_WORKSPACE_SESSION_LOCK_TIMEOUT_MS = 3e4;
 var FIGMA_WORKSPACE_SESSION_LOCK_STALE_MS = 10 * 6e4;
@@ -50591,7 +50592,11 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
       }
       let saveError;
       try {
-        await (dependencies.saveSessions ?? writeFigmaWorkspaceSessions)(sessionFile, client.sessions.list());
+        if (dependencies.saveSessions === void 0) {
+          await writeFigmaWorkspaceSessions(sessionFile, client.sessions.list(), dependencies.atomicFileOperations);
+        } else {
+          await dependencies.saveSessions(sessionFile, client.sessions.list());
+        }
       } catch (error2) {
         saveError = error2;
       }
@@ -50605,6 +50610,7 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
     } catch (error2) {
       transactionError = error2;
     }
+    const presentation = transactionError === void 0 ? classifyFigmaWorkspaceCliResult(parsed.command, result) : void 0;
     if (transactionError === void 0) {
       try {
         markdownResult = await persistOversizedCliResult(
@@ -50612,7 +50618,8 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
           result,
           commandInput,
           sessionFile,
-          inlineResultLimit
+          inlineResultLimit,
+          dependencies.atomicFileOperations
         );
       } catch (error2) {
         transactionError = error2;
@@ -50628,12 +50635,15 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
     if (transactionError !== void 0) {
       throw transactionError;
     }
-    io.writeStdout(`${formatFigmaWorkspaceCommandMarkdown(parsed.command, markdownResult, commandInput)}
+    io.writeStdout(`${formatFigmaWorkspaceCommandMarkdown(parsed.command, markdownResult, commandInput, presentation)}
 `);
-    return isRecord6(result) && result.ok === false ? FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR : FIGMA_WORKSPACE_CLI_EXIT_SUCCESS;
+    return presentation?.exitCode ?? FIGMA_WORKSPACE_CLI_EXIT_SUCCESS;
   } catch (error2) {
     io.writeStderr(`${formatCliError(error2)}
 `);
+    if (isCliInterruptError(error2)) {
+      return FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT;
+    }
     return error2 instanceof FigmaWorkspaceCliUsageError ? FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR : FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR;
   }
 }
@@ -50658,11 +50668,11 @@ async function readFigmaWorkspaceSessions(path) {
   }
   return value;
 }
-async function writeFigmaWorkspaceSessions(path, sessions) {
+async function writeFigmaWorkspaceSessions(path, sessions, operations) {
   await writeAtomicTextFile(path, `${JSON.stringify(sessions, null, 2)}
-`);
+`, operations);
 }
-async function persistOversizedCliResult(command, result, input, sessionFile, inlineResultLimit) {
+async function persistOversizedCliResult(command, result, input, sessionFile, inlineResultLimit, operations) {
   const resultSource = `${JSON.stringify(result, jsonBigIntReplacer, 2) ?? "null"}
 `;
   const resultBytes = Buffer.byteLength(resultSource, "utf8");
@@ -50678,7 +50688,7 @@ async function persistOversizedCliResult(command, result, input, sessionFile, in
     "results",
     `${Date.now()}-${command}-${randomUUID2()}.json`
   );
-  await writeAtomicTextFile(resultFile, resultSource);
+  await writeAtomicTextFile(resultFile, resultSource, operations);
   const ok = isRecord6(result) && typeof result.ok === "boolean" ? result.ok : true;
   return {
     ok,
@@ -50695,15 +50705,15 @@ async function persistOversizedCliResult(command, result, input, sessionFile, in
     }
   };
 }
-async function writeAtomicTextFile(path, source) {
+async function writeAtomicTextFile(path, source, operations = { writeFile: writeFile4, rename: rename2, rm: rm2 }) {
   const directory = dirname7(path);
   const temporaryPath = resolve7(directory, `.${randomUUID2()}.tmp`);
   await mkdir4(directory, { recursive: true });
   try {
-    await writeFile4(temporaryPath, source, "utf8");
-    await rename2(temporaryPath, path);
+    await operations.writeFile(temporaryPath, source, "utf8");
+    await operations.rename(temporaryPath, path);
   } catch (error2) {
-    await rm2(temporaryPath, { force: true }).catch(() => void 0);
+    await operations.rm(temporaryPath, { force: true }).catch(() => void 0);
     throw error2;
   }
 }
@@ -50920,12 +50930,10 @@ function commandSupportsInlineResultLimit(command) {
   const metadata = FIGMA_WORKSPACE_CLI_TOOL_DESCRIPTIONS.get(toFigmaWorkspaceToolName(command));
   return metadata !== void 0 && isRecord6(metadata.inputSchema.properties) && Object.hasOwn(metadata.inputSchema.properties, "inlineResultLimit");
 }
-function formatFigmaWorkspaceCommandMarkdown(command, result, input = {}) {
+function formatFigmaWorkspaceCommandMarkdown(command, result, input = {}, presentation = classifyFigmaWorkspaceCliResult(command, result)) {
   const lines = [`# figma-workspace ${command}`];
   lines.push(formatMarkdownInput(input));
-  if (isRecord6(result) && typeof result.ok === "boolean") {
-    lines.push(result.ok ? "Status: succeeded" : "Status: failed");
-  }
+  lines.push(`Status: ${presentation.status.replace("-", " ")}`);
   if (isRecord6(result)) {
     const fields = Object.entries(result).filter(([key, value]) => key !== "ok" && value !== void 0);
     if (fields.length === 0) {
@@ -50939,6 +50947,33 @@ function formatFigmaWorkspaceCommandMarkdown(command, result, input = {}) {
     pushRestrictedMarkdownValue(lines, "Result", result, 2, 0);
   }
   return stripAnsi(lines.join("\n"));
+}
+function classifyFigmaWorkspaceCliResult(command, result) {
+  const failed = isRecord6(result) && result.ok === false;
+  const status = failed ? command === "doctor" ? "observed-unhealthy" : "failed" : "succeeded";
+  return {
+    status,
+    exitCode: status === "failed" ? FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR : FIGMA_WORKSPACE_CLI_EXIT_SUCCESS,
+    error: presentationError(result),
+    warnings: presentationWarnings(result)
+  };
+}
+function presentationError(result) {
+  if (!isRecord6(result)) return void 0;
+  const candidate = isRecord6(result.error) ? result.error : isRecord6(result.upstreamError) ? result.upstreamError : void 0;
+  if (candidate === void 0 || typeof candidate.message !== "string") return void 0;
+  const code2 = typeof candidate.code === "string" || typeof candidate.code === "number" ? candidate.code : void 0;
+  return {
+    message: candidate.message,
+    ...code2 === void 0 ? {} : { code: code2 },
+    ...candidate.details === void 0 ? {} : { details: candidate.details }
+  };
+}
+function presentationWarnings(result) {
+  if (!isRecord6(result)) return [];
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  const diagnostics = Array.isArray(result.diagnostics) ? result.diagnostics.filter((diagnostic) => isRecord6(diagnostic) && diagnostic.severity === "warning") : [];
+  return [...warnings, ...diagnostics];
 }
 function formatMarkdownInput(input) {
   const entries = Object.entries(input).filter(([, value]) => value !== void 0);
@@ -51244,6 +51279,9 @@ function isMissingFileError2(error2) {
 function hasErrorCode(error2, code2) {
   return isRecord6(error2) && error2.code === code2;
 }
+function isCliInterruptError(error2) {
+  return isRecord6(error2) && (error2.name === "AbortError" || error2.code === "ABORT_ERR" || error2.code === "ERR_CANCELED");
+}
 function formatCliError(error2) {
   return error2 instanceof Error ? error2.message : String(error2);
 }
@@ -51496,6 +51534,7 @@ export {
   FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION,
   FIGMA_WORKSPACE_CLI_COMMANDS,
   FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR,
+  FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT,
   FIGMA_WORKSPACE_CLI_EXIT_SUCCESS,
   FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR,
   FIGMA_WORKSPACE_CLI_HELP,
@@ -51514,6 +51553,7 @@ export {
   RemoteMcpOAuthError,
   assertSafeFigmaWorkspaceCode,
   buildFigmaEvalScript,
+  classifyFigmaWorkspaceCliResult,
   createCallbackUrl,
   createClientMetadata,
   createConfig,
