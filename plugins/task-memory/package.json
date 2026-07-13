@@ -1,0 +1,27 @@
+{
+  "name": "@jxx-codex-plugins/task-memory",
+  "version": "0.1.42",
+  "private": true,
+  "description": "Independent npm commands backed by one typed task-memory runtime.",
+  "type": "module",
+  "files": [
+    ".codex-plugin",
+    "scripts",
+    "skills",
+    "src"
+  ],
+  "scripts": {
+    "task-memory:init": "node scripts/commands/task-memory-init.mjs",
+    "task-memory:status": "node scripts/commands/task-memory-status.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "npm run typecheck && node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}

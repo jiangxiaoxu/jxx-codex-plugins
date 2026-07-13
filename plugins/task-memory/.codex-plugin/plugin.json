@@ -1,7 +1,7 @@
 {
   "name": "task-memory",
-  "version": "0.1.41",
-  "description": "Durable workspace-local task state with resumable checkpoints and optional evidence reports for Codex",
+  "version": "0.1.42",
+  "description": "Durable workspace-local task state managed through independent npm CLI commands for Codex",
   "author": {
     "name": "jiangxiaoxu"
   },
@@ -9,13 +9,13 @@
   "keywords": [
     "task-memory",
     "task-state",
-    "handoff",
-    "reports"
+    "checkpoint",
+    "resume"
   ],
   "interface": {
     "displayName": "Task Memory",
-    "shortDescription": "Persist resumable state for long tasks.",
-    "longDescription": "Provides durable workspace-local task state, resumable checkpoints, and optional evidence reports for Codex tasks.",
+    "shortDescription": "Persist long-task state through npm commands.",
+    "longDescription": "Provides independent npm command entrypoints for durable workspace-local task state and resumable checkpoints for long-running Codex tasks.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
     "capabilities": [
@@ -23,6 +23,6 @@
       "Write"
     ],
     "brandColor": "#111827",
-    "defaultPrompt": "Use $task-memory to keep this task resumable."
+    "defaultPrompt": "Use $task-memory to keep this long-running task resumable."
   }
 }
