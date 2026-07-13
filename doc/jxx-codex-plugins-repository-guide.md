@@ -29,13 +29,15 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 
 ### `task-memory`
 
-- Type: Skill plus Python helper.
+- Type: Skill plus Node.js npm CLI.
 - Manifest: `plugins/task-memory/.codex-plugin/plugin.json`.
 - Main source: `plugins/task-memory/skills/task-memory/SKILL.md`.
-- Helper: `plugins/task-memory/skills/task-memory/scripts/task_memory.py`.
+- Public commands: `plugins/task-memory/package.json`.
+- Shared runtime: `plugins/task-memory/src/task-memory-cli.mjs`.
+- Command entrypoints: `plugins/task-memory/scripts/commands/*.mjs`.
 - UI metadata: `plugins/task-memory/skills/task-memory/agents/openai.yaml`.
-- Runtime task data: `<workspace>/task-memory/<task-id>/`; this is task output, not plugin source.
-- Tests: `plugins/task-memory/tests/test_task_memory.py` exercises helper behavior in temporary workspaces.
+- Runtime task data: `<workspace>/task-memory/<task-id>/` contains `task_state.md` and `artifacts/`; this is task output, not plugin source.
+- Tests: `plugins/task-memory/tests/task-memory-cli.test.mjs` exercises CLI behavior in temporary workspaces and a packed plugin.
 
 ### `figma-workspace`
 
@@ -62,7 +64,7 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 | Skill trigger or workflow | Plugin manifest, `SKILL.md`, and `agents/openai.yaml`. |
 | Plugin identity or UI metadata | `.codex-plugin/plugin.json` and the marketplace entry. |
 | Marketplace inventory | Plugin directories, manifests, marketplace JSON, and root README. |
-| `task-memory` behavior | `SKILL.md` and `scripts/task_memory.py`. |
+| `task-memory` behavior | `SKILL.md`, plugin-root `package.json`, shared CLI runtime, and tests. |
 | Figma agent workflow | Figma maintenance guide, skill router, CLI command contract, and focused tests. |
 | Figma runtime or public contract | `mcp-server/src/`, tests, package scripts, and generated `dist/`. |
 | Figma OAuth/login | Plugin README, bridge scripts, auth source, and auth tests. |
@@ -80,12 +82,14 @@ python <plugin-creator>/scripts/validate_plugin.py <plugin-directory>
 
 ### `task-memory`
 
+From `plugins/task-memory`:
+
 ```text
-python plugins/task-memory/skills/task-memory/scripts/task_memory.py --help
-python -m unittest plugins/task-memory/tests/test_task_memory.py
+npm test
+npm pack --dry-run --json
 ```
 
-The integration suite covers `init`, `status`, `create-report`, `delete-report`, managed-path safety, and malformed task structures. The helper manages only its canonical report filenames.
+The integration suite covers both independent npm entrypoints, `init`, `status`, help and output contracts, concurrent allocation, managed-path safety, malformed task structures, and packed-artifact execution.
 
 ### `figma-workspace`
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Task Memory"
   short_description: "Persist resumable state for long tasks."
-  default_prompt: "Use $task-memory to keep this task resumable."
+  default_prompt: "Use $task-memory to keep this long-running task resumable."
