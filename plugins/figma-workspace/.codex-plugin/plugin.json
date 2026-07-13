@@ -1,6 +1,6 @@
 {
   "name": "figma-workspace",
-  "version": "0.1.97",
+  "version": "0.1.98",
   "description": "Independent npm command entrypoints and a shared typed Node.js runtime for file-based Figma workspace automation.",
   "author": {
     "name": "Local developer"

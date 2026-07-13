@@ -42,7 +42,7 @@ Use this reference when root CLI help is not enough to choose a workflow. Comman
 ## Reading CLI Results
 
 - Typed results on stdout use Restricted Markdown with a command title, `Input`, explicit status, and expanded fields. Complex nested values may appear in fenced `json` blocks.
-- Typed `ok: false` results retain that Markdown shape and exit with code 1.
+- Presentation classification preserves the backend result and complete sidecar. An unhealthy doctor observation uses `Status: observed unhealthy` and exits 0; every other top-level `ok: false` result retains the Markdown shape and exits 1. Usage exits 2 and typed interrupts exit 130.
 - Usage errors and thrown failures are text on stderr.
 - Do not pass stdout to `JSON.parse`; read Markdown fields and parse only a fenced `json` value when the workflow specifically needs that nested value.
 - JSON commands intentionally expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. Run `npm --silent run figma:raw -- <transport-command> --help` when the complete transport JSON schema is needed.

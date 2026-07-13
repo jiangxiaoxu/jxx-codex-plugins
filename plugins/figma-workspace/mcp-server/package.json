@@ -13,6 +13,7 @@
   ],
   "scripts": {
     "build": "npm run typecheck && node scripts/build.mjs",
+    "check:dist": "npm run build && git diff --exit-code -- dist",
     "login:figma-http": "node scripts/login-figma-http.mjs",
     "upstream:contract:check": "npm run build && node scripts/compare-upstream-contract.mjs",
     "upstream:contract:refresh": "npm run build && node scripts/refresh-upstream-contract.mjs",

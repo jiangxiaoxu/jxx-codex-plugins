@@ -7,11 +7,14 @@ import test from "node:test";
 import {
   FIGMA_WORKSPACE_CLI_COMMANDS,
   FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR,
+  FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT,
   FIGMA_WORKSPACE_CLI_EXIT_SUCCESS,
+  classifyFigmaWorkspaceCliResult,
   createFigmaWorkspaceClient,
   createFigmaWorkspaceCommandHelp,
   formatFigmaWorkspaceCommandMarkdown,
   runFigmaWorkspaceCli,
+  writeFigmaWorkspaceSessions,
 } from "../dist/index.js";
 
 const packageRoot = resolve(import.meta.dirname, "..");
@@ -462,6 +465,83 @@ test("CLI exits 1 when a command returns top-level ok false", async () => {
   assert.equal(output.stderr, "");
 });
 
+test("CLI presentation distinguishes completed unhealthy observations from failures", async () => {
+  const unhealthy = {
+    ok: false,
+    runtime: { projectDocs: { ok: false }, lookup: { ok: true }, typescript: { ok: true } },
+    guidance: ["repair installed assets"],
+    warnings: ["runtime warning"],
+  };
+  assert.deepEqual(classifyFigmaWorkspaceCliResult("doctor", unhealthy), {
+    status: "observed-unhealthy",
+    exitCode: FIGMA_WORKSPACE_CLI_EXIT_SUCCESS,
+    error: undefined,
+    warnings: ["runtime warning"],
+  });
+  assert.equal(classifyFigmaWorkspaceCliResult("inspect", { ok: false }).exitCode, FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR);
+  assert.equal(classifyFigmaWorkspaceCliResult("inspect", {
+    ok: true,
+    validations: [{ status: "stale" }, { status: "missing" }],
+  }).exitCode, FIGMA_WORKSPACE_CLI_EXIT_SUCCESS);
+
+  const output = createMemoryIo();
+  const exitCode = await runFigmaWorkspaceCli(
+    ["doctor", "--session-file", resolve(packageRoot, ".test-session.json")],
+    {
+      io: output.io,
+      createClient: () => createRecordingClient([], unhealthy),
+      loadSessions: async () => [],
+      saveSessions: async () => undefined,
+    },
+  );
+  assert.equal(exitCode, FIGMA_WORKSPACE_CLI_EXIT_SUCCESS);
+  assert.match(output.stdout, /^Status: observed unhealthy$/mu);
+  assert.equal(output.stderr, "");
+});
+
+test("doctor sidecars preserve the original unhealthy result while exiting 0", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-cli-doctor-observation-"));
+  try {
+    const unhealthy = { ok: false, runtime: { lookup: { ok: false } }, guidance: ["repair"] };
+    const output = createMemoryIo();
+    const exitCode = await runFigmaWorkspaceCli(
+      ["doctor", "--session-file", resolve(tempDir, "session.json"), "--inline-result-limit", "0"],
+      {
+        io: output.io,
+        createClient: () => createRecordingClient([], unhealthy),
+        loadSessions: async () => [],
+        saveSessions: async () => undefined,
+      },
+    );
+    assert.equal(exitCode, FIGMA_WORKSPACE_CLI_EXIT_SUCCESS);
+    assert.match(output.stdout, /^Status: observed unhealthy$/mu);
+    assert.deepEqual(await readCliResultSidecar(output.stdout), unhealthy);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("typed abort errors map to interrupt exit 130", async () => {
+  const output = createMemoryIo();
+  const client = createRecordingClient([]);
+  client.guidance = async () => {
+    const error = new Error("interrupted");
+    error.name = "AbortError";
+    throw error;
+  };
+  const exitCode = await runFigmaWorkspaceCli(
+    ["guidance", "--session-file", resolve(packageRoot, ".test-session.json")],
+    {
+      io: output.io,
+      createClient: () => client,
+      loadSessions: async () => [],
+      saveSessions: async () => undefined,
+    },
+  );
+  assert.equal(exitCode, FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT);
+  assert.match(output.stderr, /interrupted/u);
+});
+
 test("CLI saves mutated sessions and closes the client after a command exception", async () => {
   const output = createMemoryIo();
   const saved = [];
@@ -716,6 +796,92 @@ test("CLI uses the default absolute session path under cwd", async () => {
     const defaultSessionFile = resolve(tempDir, ".figma-workspace/session.json");
     assert.equal(isAbsolute(defaultSessionFile), true);
     assert.equal(JSON.parse(await readFile(defaultSessionFile, "utf8"))[0].id, "default-path");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("session path precedence is explicit then environment then cwd default", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-cli-path-precedence-"));
+  try {
+    const inputFile = resolve(tempDir, "open.json");
+    await writeFile(inputFile, JSON.stringify({
+      sessionId: "path-precedence",
+      file: "https://www.figma.com/design/PathPrecedenceKey01/Test",
+      workspaceDir: tempDir,
+      connect: false,
+    }), "utf8");
+    const cases = [
+      {
+        args: ["open", "--input", inputFile],
+        env: { FIGMA_WORKSPACE_SESSION_FILE: "env-relative/session.json" },
+        expected: resolve(tempDir, "env-relative/session.json"),
+      },
+      {
+        args: ["open", "--input", inputFile],
+        env: { FIGMA_WORKSPACE_SESSION_FILE: resolve(tempDir, "env-absolute.json") },
+        expected: resolve(tempDir, "env-absolute.json"),
+      },
+      {
+        args: ["open", "--input", inputFile, "--session-file", "explicit/session.json"],
+        env: { FIGMA_WORKSPACE_SESSION_FILE: resolve(tempDir, "ignored-env.json") },
+        expected: resolve(tempDir, "explicit/session.json"),
+      },
+    ];
+    for (const entry of cases) {
+      const result = await runCli(entry.args, { cwd: tempDir, env: entry.env });
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(JSON.parse(await readFile(entry.expected, "utf8"))[0].id, "path-precedence");
+    }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("atomic session writes preserve the previous file and clean temporary files on rename failure", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-cli-atomic-session-"));
+  try {
+    const sessionFile = resolve(tempDir, "session.json");
+    const previous = '[{"id":"previous"}]\n';
+    await writeFile(sessionFile, previous, "utf8");
+    await assert.rejects(
+      writeFigmaWorkspaceSessions(sessionFile, [], {
+        writeFile: (path, source, encoding) => writeFile(path, source, encoding),
+        rename: async () => { throw new Error("rename blocked"); },
+        rm: (path, options) => rm(path, options),
+      }),
+      /rename blocked/u,
+    );
+    assert.equal(await readFile(sessionFile, "utf8"), previous);
+    assert.equal((await readdir(tempDir)).some((entry) => entry.endsWith(".tmp")), false);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("sidecar rename failures exit 1 without leaking temporary or partial result files", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-cli-atomic-sidecar-"));
+  try {
+    const output = createMemoryIo({ cwd: tempDir });
+    const exitCode = await runFigmaWorkspaceCli(
+      ["guidance", "--session-file", resolve(tempDir, "session.json"), "--inline-result-limit", "0"],
+      {
+        io: output.io,
+        createClient: () => createRecordingClient([], { ok: true, payload: "complete" }),
+        loadSessions: async () => [],
+        saveSessions: async () => undefined,
+        atomicFileOperations: {
+          writeFile: (path, source, encoding) => writeFile(path, source, encoding),
+          rename: async () => { throw new Error("sidecar rename blocked"); },
+          rm: (path, options) => rm(path, options),
+        },
+      },
+    );
+    assert.equal(exitCode, FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR);
+    assert.match(output.stderr, /sidecar rename blocked/u);
+    assert.equal(output.stdout, "");
+    const entries = await readdir(tempDir, { recursive: true });
+    assert.equal(entries.some((entry) => entry.endsWith(".tmp") || entry.endsWith(".json")), false);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

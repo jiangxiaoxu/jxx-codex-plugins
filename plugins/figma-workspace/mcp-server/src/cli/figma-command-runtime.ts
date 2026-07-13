@@ -28,7 +28,16 @@ interface OptionBase<Key extends string, Type extends string> {
   readonly key: Key;
   readonly type: Type;
   readonly description: string;
+  readonly omitted: OmittedValue;
+  readonly repeatable: boolean;
 }
+
+type OmittedValue =
+  | { readonly state: "required" }
+  | { readonly state: "default"; readonly value: string }
+  | { readonly state: "unset" };
+
+const UNSET_VALUE = { state: "unset" } as const satisfies OmittedValue;
 
 interface ValueOptionBase<Key extends string, Type extends string> extends OptionBase<Key, Type> {
   readonly value: string;
@@ -53,6 +62,8 @@ interface GlobalOption<Type extends "global" | "global-integer"> {
   readonly forwardFlag: "--session-file" | "--inline-result-limit";
   readonly value: string;
   readonly description: string;
+  readonly omitted: OmittedValue;
+  readonly repeatable: false;
   readonly min?: number;
   readonly max?: number;
 }
@@ -60,10 +71,20 @@ interface GlobalOption<Type extends "global" | "global-integer"> {
 type DirectOption = InputOption | GlobalOption<"global"> | GlobalOption<"global-integer">;
 type DirectOptionMap = Readonly<Record<string, DirectOption>>;
 
+interface ForwardOption {
+  readonly type: "forward";
+  readonly forwardFlag: "--input";
+  readonly value: string;
+  readonly description: string;
+  readonly omitted: OmittedValue;
+  readonly repeatable: false;
+}
+
 interface PositionSpec<Key extends string = string> {
   readonly key: Key;
   readonly label: string;
-  readonly required: boolean;
+  readonly omitted: Extract<OmittedValue, { readonly state: "required" | "unset" }>;
+  readonly repeatable: false;
   readonly description: string;
 }
 
@@ -90,6 +111,8 @@ const STATE_FILE_OPTION: GlobalOption<"global"> = {
   forwardFlag: "--session-file",
   value: "<path>",
   description: "Path to the persisted workspace state file.",
+  omitted: { state: "default", value: "FIGMA_WORKSPACE_SESSION_FILE, otherwise <cwd>/.figma-workspace/session.json" },
+  repeatable: false,
 };
 
 const MAX_INLINE_BYTES_OPTION: GlobalOption<"global-integer"> = {
@@ -97,12 +120,24 @@ const MAX_INLINE_BYTES_OPTION: GlobalOption<"global-integer"> = {
   forwardFlag: "--inline-result-limit",
   value: "<bytes>",
   description: "Maximum inline Markdown bytes from 0 to 10000; 0 forces a complete JSON sidecar.",
+  omitted: { state: "default", value: "4096" },
+  repeatable: false,
   min: 0,
   max: 10000,
 };
 
+const JSON_MAX_INLINE_BYTES_OPTION: GlobalOption<"global-integer"> = {
+  ...MAX_INLINE_BYTES_OPTION,
+  omitted: { state: "default", value: "input inlineResultLimit when present, otherwise 4096" },
+};
+
+const SESSION_ID_OPTION = {
+  ...stringOption("sessionId", "<id>", "Logical workspace session id."),
+  omitted: { state: "default", value: "the runtime default session" },
+} as const satisfies StringOption<"sessionId">;
+
 function stringOption<Key extends string>(key: Key, value: string, description: string): StringOption<Key> {
-  return { key, type: "string", value, description };
+  return { key, type: "string", value, description, omitted: UNSET_VALUE, repeatable: false };
 }
 
 function integerOption<Key extends string>(
@@ -111,7 +146,7 @@ function integerOption<Key extends string>(
   description: string,
   bounds: Readonly<Pick<IntegerOption<Key>, "min" | "max">> = {},
 ): IntegerOption<Key> {
-  return { key, type: "integer", value, description, ...bounds };
+  return { key, type: "integer", value, description, omitted: UNSET_VALUE, repeatable: false, ...bounds };
 }
 
 function booleanOption<Key extends string>(
@@ -119,7 +154,7 @@ function booleanOption<Key extends string>(
   description: string,
   mappedValue = true,
 ): BooleanOption<Key> {
-  return { key, type: "boolean", description, mappedValue };
+  return { key, type: "boolean", description, mappedValue, omitted: UNSET_VALUE, repeatable: false };
 }
 
 function enumOption<Key extends string, Value extends string>(
@@ -127,11 +162,14 @@ function enumOption<Key extends string, Value extends string>(
   values: readonly Value[],
   description: string,
 ): EnumOption<Key> & { readonly values: readonly Value[] } {
-  return { key, type: "enum", value: `<${values.join("|")}>`, values, description };
+  return {
+    key, type: "enum", value: `<${values.join("|")}>`, values, description,
+    omitted: UNSET_VALUE, repeatable: false,
+  };
 }
 
 function repeatOption<Key extends string>(key: Key, value: string, description: string): RepeatOption<Key> {
-  return { key, type: "repeat", value, description };
+  return { key, type: "repeat", value, description, omitted: UNSET_VALUE, repeatable: true };
 }
 
 function fileContextOptions() {
@@ -169,7 +207,8 @@ function targetSpec(
     position: {
       key: "target",
       label: "target",
-      required: false,
+      omitted: UNSET_VALUE,
+      repeatable: false,
       description: "Node id, node URL, or $handle. A node-scoped --file URL can supply the target instead.",
     },
     options: { ...fileContextOptions(), ...extraOptions },
@@ -181,7 +220,7 @@ export const FIGMA_DIRECT_COMMANDS = {
   guidance: {
     command: "guidance",
     purpose: "Get task-oriented workflow guidance from a direct keyword query.",
-    position: { key: "query", label: "query", required: true, description: "Compact planning keywords." },
+    position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Compact planning keywords." },
     options: {
       "--mode": enumOption("mode", ["guidance", "plan"], "Guidance mode. Use the JSON escape hatch for card or catalog mode."),
       "--surface": enumOption("surface", ["design", "figjam", "slides"], "Expected Figma surface."),
@@ -197,12 +236,12 @@ export const FIGMA_DIRECT_COMMANDS = {
   },
   "docs:read": {
     command: "docs", purpose: "Read one complete canonical project Markdown topic.",
-    position: { key: "topic", label: "topic", required: true, description: "Topic returned by figma:docs:list." },
+    position: { key: "topic", label: "topic", omitted: { state: "required" }, repeatable: false, description: "Topic returned by figma:docs:list." },
     options: {}, outputLimit: true, examples: ["npm --silent run figma:docs:read -- workflow"],
   },
   "docs:search": {
     command: "lookup", purpose: "Search project and upstream workflow documentation.", fixedInput: { kind: "docs" },
-    position: { key: "query", label: "query", required: true, description: "Documentation search text." },
+    position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Documentation search text." },
     options: {
       "--limit": integerOption("maxResults", "<n>", "Maximum returned snippets from 1 to 10.", { min: 1, max: 10 }),
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 }),
@@ -211,7 +250,7 @@ export const FIGMA_DIRECT_COMMANDS = {
   },
   "api:search": {
     command: "lookup", purpose: "Search exact or near-exact Figma Plugin API symbol documentation.", fixedInput: { kind: "api" },
-    position: { key: "symbol", label: "symbol", required: true, description: "Plugin API symbol or search text." },
+    position: { key: "symbol", label: "symbol", omitted: { state: "required" }, repeatable: false, description: "Plugin API symbol or search text." },
     options: {
       "--limit": integerOption("maxResults", "<n>", "Maximum returned snippets from 1 to 10.", { min: 1, max: 10 }),
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 }),
@@ -228,7 +267,7 @@ export const FIGMA_DIRECT_COMMANDS = {
   },
   "sessions:read": {
     command: "sessions", purpose: "Read one persisted session with optional handles and history.",
-    position: { key: "sessionId", label: "session-id", required: true, description: "Exact persisted session id." },
+    position: { key: "sessionId", label: "session-id", omitted: { state: "required" }, repeatable: false, description: "Exact persisted session id." },
     options: {
       "--with-handles": booleanOption("includeHandles", "Include the full handle map."),
       "--with-history": booleanOption("includeHistory", "Include full history entries."),
@@ -242,14 +281,14 @@ export const FIGMA_DIRECT_COMMANDS = {
   },
   "upstream:read": {
     command: "upstream-tools", purpose: "Read one live official upstream tool description and input schema.",
-    position: { key: "name", label: "name", required: true, description: "Exact official upstream tool name." },
+    position: { key: "name", label: "name", omitted: { state: "required" }, repeatable: false, description: "Exact official upstream tool name." },
     options: { "--refresh": booleanOption("refresh", "Refresh upstream discovery before reading.") },
     outputLimit: true, examples: ["npm --silent run figma:upstream:read -- whoami --refresh"],
   },
   inspect: {
     command: "inspect", purpose: "Inspect or validate a target using direct positional syntax.",
     sessionId: true, stateFile: true, outputLimit: true,
-    position: { key: "target", label: "target", required: false, description: "Node id, node URL, or $handle." },
+    position: { key: "target", label: "target", omitted: UNSET_VALUE, repeatable: false, description: "Node id, node URL, or $handle." },
     options: {
       "--mode": enumOption("mode", ["inspect", "validate", "style"], "Inspection mode."),
       "--depth": integerOption("depth", "<n>", "Positive traversal depth.", { min: 1 }),
@@ -270,7 +309,7 @@ export const FIGMA_DIRECT_COMMANDS = {
   "design-system": {
     command: "search-design-system", purpose: "Search official design-system components, variables, and styles.",
     sessionId: true, stateFile: true, outputLimit: true,
-    position: { key: "query", label: "query", required: true, description: "Design-system search text." },
+    position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Design-system search text." },
     options: {
       ...fileContextOptions(),
       "--components": booleanOption("includeComponents", "Include components."),
@@ -349,7 +388,7 @@ export async function runFigmaCommand(
 
   if (isDirectCommand(commandName)) {
     const spec: DirectCommandSpec = FIGMA_DIRECT_COMMANDS[commandName];
-    if (argv.some(isHelpFlag)) {
+    if (hasDirectHelpFlag(argv)) {
       writeStdout(formatDirectHelp(commandName, spec));
       return EXIT_SUCCESS;
     }
@@ -400,10 +439,15 @@ export function parseDirectArguments(
   const options = directOptions(spec);
   const seenKeys = new Set<string>();
   let positionalSeen = false;
+  let positionalOnly = false;
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === undefined) continue;
-    if (token.startsWith("-")) {
+    if (!positionalOnly && token === "--") {
+      positionalOnly = true;
+      continue;
+    }
+    if (!positionalOnly && token.startsWith("-")) {
       const option = options[token];
       if (option === undefined) throw new Error(`Unknown option for figma ${commandName}: ${token}`);
       if (option.type === "boolean") {
@@ -436,7 +480,7 @@ export function parseDirectArguments(
     input[spec.position.key] = token;
     positionalSeen = true;
   }
-  if (spec.position?.required === true && !positionalSeen) {
+  if (spec.position?.omitted.state === "required" && !positionalSeen) {
     throw new Error(`Missing required <${spec.position.label}> for figma ${commandName}.`);
   }
   return { input, globalArgs };
@@ -447,11 +491,7 @@ export function parseJsonArguments(
   spec: JsonCommandSpec,
   argv: readonly string[],
 ): readonly string[] {
-  const options = {
-    "--input": { type: "forward", forwardFlag: "--input", value: "<json-file|->" },
-    "--state-file": STATE_FILE_OPTION,
-    "--max-inline-bytes": MAX_INLINE_BYTES_OPTION,
-  } as const;
+  const options = jsonOptions(spec);
   const forwardedArgs: string[] = [];
   const seen = new Set<string>();
   for (let index = 0; index < argv.length; index += 1) {
@@ -470,11 +510,26 @@ export function parseJsonArguments(
   return forwardedArgs;
 }
 
+function jsonOptions(spec: JsonCommandSpec) {
+  return {
+    "--input": {
+      type: "forward",
+      forwardFlag: "--input",
+      value: "<json-file|->",
+      description: "Read the command JSON object from a file or stdin.",
+      omitted: spec.inputRequired ? { state: "required" } : UNSET_VALUE,
+      repeatable: false,
+    } satisfies ForwardOption,
+    "--state-file": STATE_FILE_OPTION,
+    "--max-inline-bytes": JSON_MAX_INLINE_BYTES_OPTION,
+  } as const;
+}
+
 function directOptions(spec: DirectCommandSpec): DirectOptionMap {
   return {
     ...(spec.stateFile === true ? { "--state-file": STATE_FILE_OPTION } : {}),
     ...(spec.sessionId === true
-      ? { "--session-id": stringOption("sessionId", "<id>", "Logical workspace session id.") }
+      ? { "--session-id": SESSION_ID_OPTION }
       : {}),
     ...(spec.outputLimit === true ? { "--max-inline-bytes": MAX_INLINE_BYTES_OPTION } : {}),
     ...spec.options,
@@ -529,19 +584,22 @@ function createMappedIo(input: CommandInput, dependencies: FigmaCommandRuntimeDe
 export function formatDirectHelp(commandName: string, spec: DirectCommandSpec): string {
   const usagePosition = spec.position === undefined
     ? ""
-    : ` ${spec.position.required ? `<${spec.position.label}>` : `[${spec.position.label}]`}`;
+    : ` ${spec.position.omitted.state === "required" ? `<${spec.position.label}>` : `[${spec.position.label}]`}`;
   const lines = [
     `# figma ${commandName} help`, "", "## Purpose", spec.purpose, "", "## Usage",
     `- \`npm --silent run figma -- ${commandName}${usagePosition} [options]\``,
     `- \`npm --silent run figma:${commandName} --${usagePosition} [options]\``,
   ];
   if (spec.position !== undefined) {
-    lines.push("", "## Arguments", `- \`<${spec.position.label}>\`: ${spec.position.description}`);
+    lines.push(
+      "", "## Arguments",
+      `- \`<${spec.position.label}>\`: ${spec.position.description} ${formatOmittedValue(spec.position.omitted)} Repeatable: no.`,
+    );
   }
   lines.push("", "## Options", "- `-h`, `--help`: Show this command help without running Figma.");
   for (const [flag, option] of Object.entries(directOptions(spec))) {
     const value = "value" in option ? ` ${option.value}` : "";
-    lines.push(`- \`${flag}${value}\`: ${option.description}`);
+    lines.push(`- \`${flag}${value}\`: ${option.description} ${formatOptionMetadata(option)}`);
   }
   lines.push("", "## Output", "Restricted Markdown on stdout. Follow `outputFiles.cliResultFile` for an oversized complete JSON result.");
   if (spec.examples !== undefined && spec.examples.length > 0) {
@@ -562,17 +620,37 @@ export function formatFamilyHelp(family: FigmaCommandFamily): string {
 
 export function formatJsonHelp(commandName: string, spec: JsonCommandSpec): string {
   const inputUsage = spec.inputRequired ? " --input <json-file|->" : " [--input <json-file|->]";
-  return [
+  const lines = [
     `# figma ${commandName} help`, "", "## Purpose", spec.purpose, "", "## Usage",
     `- \`npm --silent run figma -- ${commandName}${inputUsage} [options]\``,
     `- \`npm --silent run figma:${commandName} --${inputUsage} [options]\``, "", "## Options",
-    "- `--input <json-file|->`: Read the command JSON object from a file or stdin.",
-    "- `--state-file <path>`: Path to the persisted workspace state file.",
-    "- `--max-inline-bytes <bytes>`: Maximum inline Markdown bytes from 0 to 10000; 0 forces a complete JSON sidecar.",
+  ];
+  for (const [flag, option] of Object.entries(jsonOptions(spec))) {
+    lines.push(`- \`${flag} ${option.value}\`: ${option.description} ${formatOptionMetadata(option)}`);
+  }
+  lines.push(
     "- `-h`, `--help`: Show this command help without running Figma.", "", "## JSON Schema",
     `Run \`npm --silent run figma:raw -- ${spec.command} --help\` only when the complete transport-level input schema is needed.`, "",
     "## Output", "Restricted Markdown on stdout. Follow `outputFiles.cliResultFile` for an oversized complete JSON result.", "",
-  ].join("\n");
+  );
+  return lines.join("\n");
+}
+
+function formatOptionMetadata(option: DirectOption | ForwardOption): string {
+  const metadata = [formatOmittedValue(option.omitted), `Repeatable: ${option.repeatable ? "yes" : "no"}.`];
+  if (option.type === "integer" || option.type === "global-integer") {
+    metadata.push(`Range: ${option.min ?? Number.MIN_SAFE_INTEGER} to ${option.max ?? Number.MAX_SAFE_INTEGER}.`);
+  }
+  if (option.type === "enum") metadata.push(`Allowed: ${option.values.join(", ")}.`);
+  return metadata.join(" ");
+}
+
+function formatOmittedValue(omitted: OmittedValue): string {
+  switch (omitted.state) {
+    case "required": return "Required.";
+    case "default": return `Default: ${omitted.value}.`;
+    case "unset": return "Default: unset.";
+  }
 }
 
 export function formatRootHelp(): string {
@@ -612,6 +690,14 @@ function isHelpToken(token: string): boolean {
 
 function isHelpFlag(token: string): boolean {
   return token === "-h" || token === "--help";
+}
+
+function hasDirectHelpFlag(argv: readonly string[]): boolean {
+  for (const token of argv) {
+    if (token === "--") return false;
+    if (isHelpFlag(token)) return true;
+  }
+  return false;
 }
 
 function formatError(error: unknown): string {

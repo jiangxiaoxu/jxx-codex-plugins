@@ -12,34 +12,55 @@ import {
 } from "../runtime/workspace-runtime.js";
 var EXIT_SUCCESS = 0;
 var EXIT_USAGE = 2;
+var UNSET_VALUE = { state: "unset" };
 var STATE_FILE_OPTION = {
   type: "global",
   forwardFlag: "--session-file",
   value: "<path>",
-  description: "Path to the persisted workspace state file."
+  description: "Path to the persisted workspace state file.",
+  omitted: { state: "default", value: "FIGMA_WORKSPACE_SESSION_FILE, otherwise <cwd>/.figma-workspace/session.json" },
+  repeatable: false
 };
 var MAX_INLINE_BYTES_OPTION = {
   type: "global-integer",
   forwardFlag: "--inline-result-limit",
   value: "<bytes>",
   description: "Maximum inline Markdown bytes from 0 to 10000; 0 forces a complete JSON sidecar.",
+  omitted: { state: "default", value: "4096" },
+  repeatable: false,
   min: 0,
   max: 1e4
 };
+var JSON_MAX_INLINE_BYTES_OPTION = {
+  ...MAX_INLINE_BYTES_OPTION,
+  omitted: { state: "default", value: "input inlineResultLimit when present, otherwise 4096" }
+};
+var SESSION_ID_OPTION = {
+  ...stringOption("sessionId", "<id>", "Logical workspace session id."),
+  omitted: { state: "default", value: "the runtime default session" }
+};
 function stringOption(key, value, description) {
-  return { key, type: "string", value, description };
+  return { key, type: "string", value, description, omitted: UNSET_VALUE, repeatable: false };
 }
 function integerOption(key, value, description, bounds = {}) {
-  return { key, type: "integer", value, description, ...bounds };
+  return { key, type: "integer", value, description, omitted: UNSET_VALUE, repeatable: false, ...bounds };
 }
 function booleanOption(key, description, mappedValue = true) {
-  return { key, type: "boolean", description, mappedValue };
+  return { key, type: "boolean", description, mappedValue, omitted: UNSET_VALUE, repeatable: false };
 }
 function enumOption(key, values, description) {
-  return { key, type: "enum", value: `<${values.join("|")}>`, values, description };
+  return {
+    key,
+    type: "enum",
+    value: `<${values.join("|")}>`,
+    values,
+    description,
+    omitted: UNSET_VALUE,
+    repeatable: false
+  };
 }
 function repeatOption(key, value, description) {
-  return { key, type: "repeat", value, description };
+  return { key, type: "repeat", value, description, omitted: UNSET_VALUE, repeatable: true };
 }
 function fileContextOptions() {
   return {
@@ -67,7 +88,8 @@ function targetSpec(command, purpose, extraOptions = {}) {
     position: {
       key: "target",
       label: "target",
-      required: false,
+      omitted: UNSET_VALUE,
+      repeatable: false,
       description: "Node id, node URL, or $handle. A node-scoped --file URL can supply the target instead."
     },
     options: { ...fileContextOptions(), ...extraOptions },
@@ -78,7 +100,7 @@ var FIGMA_DIRECT_COMMANDS = {
   guidance: {
     command: "guidance",
     purpose: "Get task-oriented workflow guidance from a direct keyword query.",
-    position: { key: "query", label: "query", required: true, description: "Compact planning keywords." },
+    position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Compact planning keywords." },
     options: {
       "--mode": enumOption("mode", ["guidance", "plan"], "Guidance mode. Use the JSON escape hatch for card or catalog mode."),
       "--surface": enumOption("surface", ["design", "figjam", "slides"], "Expected Figma surface."),
@@ -98,7 +120,7 @@ var FIGMA_DIRECT_COMMANDS = {
   "docs:read": {
     command: "docs",
     purpose: "Read one complete canonical project Markdown topic.",
-    position: { key: "topic", label: "topic", required: true, description: "Topic returned by figma:docs:list." },
+    position: { key: "topic", label: "topic", omitted: { state: "required" }, repeatable: false, description: "Topic returned by figma:docs:list." },
     options: {},
     outputLimit: true,
     examples: ["npm --silent run figma:docs:read -- workflow"]
@@ -107,7 +129,7 @@ var FIGMA_DIRECT_COMMANDS = {
     command: "lookup",
     purpose: "Search project and upstream workflow documentation.",
     fixedInput: { kind: "docs" },
-    position: { key: "query", label: "query", required: true, description: "Documentation search text." },
+    position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Documentation search text." },
     options: {
       "--limit": integerOption("maxResults", "<n>", "Maximum returned snippets from 1 to 10.", { min: 1, max: 10 }),
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 })
@@ -119,7 +141,7 @@ var FIGMA_DIRECT_COMMANDS = {
     command: "lookup",
     purpose: "Search exact or near-exact Figma Plugin API symbol documentation.",
     fixedInput: { kind: "api" },
-    position: { key: "symbol", label: "symbol", required: true, description: "Plugin API symbol or search text." },
+    position: { key: "symbol", label: "symbol", omitted: { state: "required" }, repeatable: false, description: "Plugin API symbol or search text." },
     options: {
       "--limit": integerOption("maxResults", "<n>", "Maximum returned snippets from 1 to 10.", { min: 1, max: 10 }),
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 })
@@ -145,7 +167,7 @@ var FIGMA_DIRECT_COMMANDS = {
   "sessions:read": {
     command: "sessions",
     purpose: "Read one persisted session with optional handles and history.",
-    position: { key: "sessionId", label: "session-id", required: true, description: "Exact persisted session id." },
+    position: { key: "sessionId", label: "session-id", omitted: { state: "required" }, repeatable: false, description: "Exact persisted session id." },
     options: {
       "--with-handles": booleanOption("includeHandles", "Include the full handle map."),
       "--with-history": booleanOption("includeHistory", "Include full history entries.")
@@ -164,7 +186,7 @@ var FIGMA_DIRECT_COMMANDS = {
   "upstream:read": {
     command: "upstream-tools",
     purpose: "Read one live official upstream tool description and input schema.",
-    position: { key: "name", label: "name", required: true, description: "Exact official upstream tool name." },
+    position: { key: "name", label: "name", omitted: { state: "required" }, repeatable: false, description: "Exact official upstream tool name." },
     options: { "--refresh": booleanOption("refresh", "Refresh upstream discovery before reading.") },
     outputLimit: true,
     examples: ["npm --silent run figma:upstream:read -- whoami --refresh"]
@@ -175,7 +197,7 @@ var FIGMA_DIRECT_COMMANDS = {
     sessionId: true,
     stateFile: true,
     outputLimit: true,
-    position: { key: "target", label: "target", required: false, description: "Node id, node URL, or $handle." },
+    position: { key: "target", label: "target", omitted: UNSET_VALUE, repeatable: false, description: "Node id, node URL, or $handle." },
     options: {
       "--mode": enumOption("mode", ["inspect", "validate", "style"], "Inspection mode."),
       "--depth": integerOption("depth", "<n>", "Positive traversal depth.", { min: 1 }),
@@ -199,7 +221,7 @@ var FIGMA_DIRECT_COMMANDS = {
     sessionId: true,
     stateFile: true,
     outputLimit: true,
-    position: { key: "query", label: "query", required: true, description: "Design-system search text." },
+    position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Design-system search text." },
     options: {
       ...fileContextOptions(),
       "--components": booleanOption("includeComponents", "Include components."),
@@ -263,7 +285,7 @@ ${formatFamilyHelp(commandName)}`);
   }
   if (isDirectCommand(commandName)) {
     const spec = FIGMA_DIRECT_COMMANDS[commandName];
-    if (argv.some(isHelpFlag)) {
+    if (hasDirectHelpFlag(argv)) {
       writeStdout(formatDirectHelp(commandName, spec));
       return EXIT_SUCCESS;
     }
@@ -308,10 +330,15 @@ function parseDirectArguments(commandName, spec, argv) {
   const options = directOptions(spec);
   const seenKeys = /* @__PURE__ */ new Set();
   let positionalSeen = false;
+  let positionalOnly = false;
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === void 0) continue;
-    if (token.startsWith("-")) {
+    if (!positionalOnly && token === "--") {
+      positionalOnly = true;
+      continue;
+    }
+    if (!positionalOnly && token.startsWith("-")) {
       const option = options[token];
       if (option === void 0) throw new Error(`Unknown option for figma ${commandName}: ${token}`);
       if (option.type === "boolean") {
@@ -344,17 +371,13 @@ function parseDirectArguments(commandName, spec, argv) {
     input[spec.position.key] = token;
     positionalSeen = true;
   }
-  if (spec.position?.required === true && !positionalSeen) {
+  if (spec.position?.omitted.state === "required" && !positionalSeen) {
     throw new Error(`Missing required <${spec.position.label}> for figma ${commandName}.`);
   }
   return { input, globalArgs };
 }
 function parseJsonArguments(commandName, spec, argv) {
-  const options = {
-    "--input": { type: "forward", forwardFlag: "--input", value: "<json-file|->" },
-    "--state-file": STATE_FILE_OPTION,
-    "--max-inline-bytes": MAX_INLINE_BYTES_OPTION
-  };
+  const options = jsonOptions(spec);
   const forwardedArgs = [];
   const seen = /* @__PURE__ */ new Set();
   for (let index = 0; index < argv.length; index += 1) {
@@ -372,10 +395,24 @@ function parseJsonArguments(commandName, spec, argv) {
   if (spec.inputRequired && !seen.has("--input")) throw new Error(`figma ${commandName} requires --input <json-file|->.`);
   return forwardedArgs;
 }
+function jsonOptions(spec) {
+  return {
+    "--input": {
+      type: "forward",
+      forwardFlag: "--input",
+      value: "<json-file|->",
+      description: "Read the command JSON object from a file or stdin.",
+      omitted: spec.inputRequired ? { state: "required" } : UNSET_VALUE,
+      repeatable: false
+    },
+    "--state-file": STATE_FILE_OPTION,
+    "--max-inline-bytes": JSON_MAX_INLINE_BYTES_OPTION
+  };
+}
 function directOptions(spec) {
   return {
     ...spec.stateFile === true ? { "--state-file": STATE_FILE_OPTION } : {},
-    ...spec.sessionId === true ? { "--session-id": stringOption("sessionId", "<id>", "Logical workspace session id.") } : {},
+    ...spec.sessionId === true ? { "--session-id": SESSION_ID_OPTION } : {},
     ...spec.outputLimit === true ? { "--max-inline-bytes": MAX_INLINE_BYTES_OPTION } : {},
     ...spec.options
   };
@@ -424,7 +461,7 @@ function createMappedIo(input, dependencies) {
   };
 }
 function formatDirectHelp(commandName, spec) {
-  const usagePosition = spec.position === void 0 ? "" : ` ${spec.position.required ? `<${spec.position.label}>` : `[${spec.position.label}]`}`;
+  const usagePosition = spec.position === void 0 ? "" : ` ${spec.position.omitted.state === "required" ? `<${spec.position.label}>` : `[${spec.position.label}]`}`;
   const lines = [
     `# figma ${commandName} help`,
     "",
@@ -436,12 +473,16 @@ function formatDirectHelp(commandName, spec) {
     `- \`npm --silent run figma:${commandName} --${usagePosition} [options]\``
   ];
   if (spec.position !== void 0) {
-    lines.push("", "## Arguments", `- \`<${spec.position.label}>\`: ${spec.position.description}`);
+    lines.push(
+      "",
+      "## Arguments",
+      `- \`<${spec.position.label}>\`: ${spec.position.description} ${formatOmittedValue(spec.position.omitted)} Repeatable: no.`
+    );
   }
   lines.push("", "## Options", "- `-h`, `--help`: Show this command help without running Figma.");
   for (const [flag, option] of Object.entries(directOptions(spec))) {
     const value = "value" in option ? ` ${option.value}` : "";
-    lines.push(`- \`${flag}${value}\`: ${option.description}`);
+    lines.push(`- \`${flag}${value}\`: ${option.description} ${formatOptionMetadata(option)}`);
   }
   lines.push("", "## Output", "Restricted Markdown on stdout. Follow `outputFiles.cliResultFile` for an oversized complete JSON result.");
   if (spec.examples !== void 0 && spec.examples.length > 0) {
@@ -471,7 +512,7 @@ function formatFamilyHelp(family) {
 }
 function formatJsonHelp(commandName, spec) {
   const inputUsage = spec.inputRequired ? " --input <json-file|->" : " [--input <json-file|->]";
-  return [
+  const lines = [
     `# figma ${commandName} help`,
     "",
     "## Purpose",
@@ -481,10 +522,12 @@ function formatJsonHelp(commandName, spec) {
     `- \`npm --silent run figma -- ${commandName}${inputUsage} [options]\``,
     `- \`npm --silent run figma:${commandName} --${inputUsage} [options]\``,
     "",
-    "## Options",
-    "- `--input <json-file|->`: Read the command JSON object from a file or stdin.",
-    "- `--state-file <path>`: Path to the persisted workspace state file.",
-    "- `--max-inline-bytes <bytes>`: Maximum inline Markdown bytes from 0 to 10000; 0 forces a complete JSON sidecar.",
+    "## Options"
+  ];
+  for (const [flag, option] of Object.entries(jsonOptions(spec))) {
+    lines.push(`- \`${flag} ${option.value}\`: ${option.description} ${formatOptionMetadata(option)}`);
+  }
+  lines.push(
     "- `-h`, `--help`: Show this command help without running Figma.",
     "",
     "## JSON Schema",
@@ -493,7 +536,26 @@ function formatJsonHelp(commandName, spec) {
     "## Output",
     "Restricted Markdown on stdout. Follow `outputFiles.cliResultFile` for an oversized complete JSON result.",
     ""
-  ].join("\n");
+  );
+  return lines.join("\n");
+}
+function formatOptionMetadata(option) {
+  const metadata = [formatOmittedValue(option.omitted), `Repeatable: ${option.repeatable ? "yes" : "no"}.`];
+  if (option.type === "integer" || option.type === "global-integer") {
+    metadata.push(`Range: ${option.min ?? Number.MIN_SAFE_INTEGER} to ${option.max ?? Number.MAX_SAFE_INTEGER}.`);
+  }
+  if (option.type === "enum") metadata.push(`Allowed: ${option.values.join(", ")}.`);
+  return metadata.join(" ");
+}
+function formatOmittedValue(omitted) {
+  switch (omitted.state) {
+    case "required":
+      return "Required.";
+    case "default":
+      return `Default: ${omitted.value}.`;
+    case "unset":
+      return "Default: unset.";
+  }
 }
 function formatRootHelp() {
   return [
@@ -536,6 +598,13 @@ function isHelpToken(token) {
 }
 function isHelpFlag(token) {
   return token === "-h" || token === "--help";
+}
+function hasDirectHelpFlag(argv) {
+  for (const token of argv) {
+    if (token === "--") return false;
+    if (isHelpFlag(token)) return true;
+  }
+  return false;
 }
 function formatError(error) {
   return error instanceof Error ? error.message : String(error);

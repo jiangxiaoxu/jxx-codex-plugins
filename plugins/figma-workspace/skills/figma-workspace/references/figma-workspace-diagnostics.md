@@ -19,7 +19,7 @@ Use this reference to interpret failures and choose the narrowest repair. Runtim
 
 ## Result And Transport Failures
 
-- Typed `ok: false` results use Restricted Markdown on stdout and exit with code 1.
+- An unhealthy doctor result is a completed observation: it uses `Status: observed unhealthy` on Restricted Markdown stdout and exits 0. Other top-level `ok: false` results exit 1; usage exits 2 and typed interrupts exit 130.
 - Usage, JSON input parsing, transport, and unexpected failures are text on stderr with a non-zero exit code.
 - Oversized typed results expose an `outputFiles.cliResultFile`; read that complete JSON sidecar rather than parsing stdout.
 - If docs or API lookup reports missing runtime assets, rebuild the package so the canonical Markdown docs and upstream corpus are copied into `dist`.

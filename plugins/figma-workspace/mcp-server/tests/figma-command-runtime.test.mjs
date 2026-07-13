@@ -46,6 +46,46 @@ test("direct command parsing maps typed input and optimized global arguments", a
   }]);
 });
 
+test("direct parsing supports option order and an exact positional separator", async () => {
+  const calls = [];
+  const runCli = async (argv, dependencies) => {
+    calls.push({ argv, input: JSON.parse(await dependencies.io.readStdin()) });
+    return 0;
+  };
+
+  assert.equal(await runFigmaCommand("api:search", ["--limit", "2", "createFrame"], { runCli }), 0);
+  assert.equal(await runFigmaCommand("api:search", ["createFrame", "--limit", "2"], { runCli }), 0);
+  assert.equal(await runFigmaCommand("api:search", ["--limit", "2", "--", "--help"], { runCli }), 0);
+  assert.deepEqual(calls.map(({ input }) => input), [
+    { kind: "api", symbol: "createFrame", maxResults: 2 },
+    { kind: "api", symbol: "createFrame", maxResults: 2 },
+    { kind: "api", symbol: "--help", maxResults: 2 },
+  ]);
+});
+
+test("strict integers accept exact boundaries and reject non-decimal or unsafe values before runtime", async () => {
+  const accepted = [];
+  for (const value of ["0", "10000"]) {
+    assert.equal(await runFigmaCommand("doctor", ["--max-inline-bytes", value], {
+      runCli: async (argv) => { accepted.push(argv); return 0; },
+    }), 0);
+  }
+  assert.deepEqual(accepted, [
+    ["doctor", "--input", "-", "--inline-result-limit", "0"],
+    ["doctor", "--input", "-", "--inline-result-limit", "10000"],
+  ]);
+
+  for (const value of ["", "+1", "1.0", "1e3", "9007199254740992", "-9007199254740992"]) {
+    const output = createOutput();
+    assert.equal(await runFigmaCommand("doctor", ["--max-inline-bytes", value], {
+      ...output.dependencies,
+      readFile: async () => assert.fail("invalid input must fail before file I/O"),
+      runCli: async () => assert.fail("invalid input must fail before runtime"),
+    }), 2, value);
+    assert.match(output.stderr, /requires an integer|requires a safe integer/u, value);
+  }
+});
+
 test("JSON commands retain optimized option validation and transport mapping", async () => {
   const calls = [];
   const output = createOutput();
@@ -106,10 +146,21 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   assert.equal(await runFigmaCommand("guidance", ["--help"], direct.dependencies), 0);
   assert.match(direct.stdout, /--card-limit <n>/u);
   assert.match(direct.stdout, /--max-inline-bytes <bytes>/u);
+  assert.match(direct.stdout, /<query>.*Required\./u);
+  assert.match(direct.stdout, /--workflow <id>.*Default: unset\./u);
+  assert.match(direct.stdout, /--card-limit <n>.*Range: 1 to 8\./u);
+  assert.match(direct.stdout, /--max-inline-bytes <bytes>.*Default: 4096\..*Range: 0 to 10000\./u);
 
   const json = createOutput();
   assert.equal(await runFigmaCommand("capture", ["-h"], json.dependencies), 0);
   assert.match(json.stdout, /figma:raw -- capture-node --help/u);
+  assert.match(json.stdout, /--input <json-file\|->.*Required\./u);
+  assert.match(json.stdout, /--state-file <path>.*Default: FIGMA_WORKSPACE_SESSION_FILE/u);
+  assert.match(json.stdout, /--max-inline-bytes <bytes>.*Default: input inlineResultLimit when present, otherwise 4096\./u);
+
+  const repeatable = createOutput();
+  assert.equal(await runFigmaCommand("inspect", ["--help"], repeatable.dependencies), 0);
+  assert.match(repeatable.stdout, /--handle <name>.*Default: unset\. Repeatable: yes\./u);
 });
 
 function createOutput() {
