@@ -7,7 +7,7 @@ This document is for AI agents maintaining `figma-workspace`. It is not the user
 - The canonical agent-facing command CLI is `npm --silent run figma -- <command>`. Every public `figma:<command>` npm script is an independent executable entrypoint for the same command. Direct commands cover queries and reads; JSON commands cover complex operations. Keep `--silent` in every agent invocation so npm lifecycle banners cannot contaminate Restricted Markdown stdout, including after the plugin is packed and installed.
 - The plugin does not register or expose a local MCP server. Do not route agents through deferred tool discovery, legacy underscore-named workspace tools, or MCP resource URIs.
 - The official Figma remote MCP is an internal transport behind the CLI. It is not the agent-facing contract.
-- Optimized commands name persisted workspace state `--state-file`; its parent owns result sidecars. The raw transport CLI keeps `--session-file`, `FIGMA_WORKSPACE_SESSION_FILE`, and `<cwd>/.figma-workspace/session.json` as its transport-level contract.
+- Every executing optimized command requires an explicit fully qualified absolute `--state-file`; its parent owns result sidecars. The raw transport CLI requires either a fully qualified absolute `--session-file` or a fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE` and has no current-directory default.
 - Local `.figma.ts` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, canonical project Markdown, guidance, and compact docs/API lookup remain the supported workflow.
 - Keep state and workspace files in a Git-ignored project-local `.figma-workspace/` or an explicitly selected Figma task-artifact directory. Do not infer that an injected writable workspace root is generic task storage; capability-specific output roots remain exclusive to their capability.
 - Bundled upstream skill content remains internal JSONL lookup data under `skills/figma-workspace/references/upstream-corpus/`. Do not route agents to read it directly.
@@ -18,25 +18,25 @@ This document is for AI agents maintaining `figma-workspace`. It is not the user
 Use `npm --silent` in every shell. Put npm's `--` before arguments passed to an independent entrypoint, and run a selected command with `-h` or `--help` before first use.
 
 ```text
-npm --silent run figma -- api:search createFrame
-npm --silent run figma:api:search -- createFrame
+npm --silent run figma -- api:search createFrame --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:api:search -- createFrame --state-file C:/work/project/.figma-workspace/state.json
 ```
 
 ```text
-npm --silent run figma:guidance -- "text font loadFontAsync" --surface design
-npm --silent run figma:task:prepare -- --input <json-file|-> --state-file <path>
+npm --silent run figma:guidance -- "text font loadFontAsync" --surface design --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:task:prepare -- --input <json-file|-> --state-file <absolute-path>
 ```
 
 Family entrypoints are `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
 
-Direct query/read commands are `figma:guidance`, `figma:docs:list`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`.
+The 17 direct query/read commands are `figma:guidance`, `figma:docs:list`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`.
 
 JSON commands are `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:run`, `figma:task:prepare`, and `figma:upstream:call`. They expose only `--input <json-file|->`, `--state-file <path>`, `--max-inline-bytes <bytes>`, and help. The 22 transport-level JSON commands are available only through `figma:raw`; run `npm --silent run figma:raw -- <transport-command> --help` for a complete schema.
 
 The optimized command option families are intentional:
 
-- Stateless guidance, docs, API, doctor, and upstream list/read commands omit `--state-file`; their sidecars use `<plugin-root>/.figma-workspace/results/`.
-- Sessions and direct file-context commands expose `--state-file`. Direct file-context commands also expose `--session-id`.
+- All 17 direct commands and all 9 JSON commands require an explicit fully qualified absolute `--state-file` when executing. Its parent owns `results/` sidecars.
+- Guidance, docs, API, doctor, and upstream list/read need no existing Figma file context, but still require `--state-file`. Direct file-context commands also expose `--session-id`.
 - Every executing command exposes `--max-inline-bytes`.
 - Docs/API search expose `--limit` and `--snippet-lines`; guidance exposes `--card-limit`.
 - File-binding commands expose `--workspace`; design-system exposes repeatable `--library`; sessions read exposes `--with-handles` and `--with-history`. Inspect intentionally reuses context already bound to the selected session, omits `--workspace` and `--file`, and exposes repeatable `--handle`.
@@ -73,12 +73,12 @@ Pin these facts when changing the CLI surface:
 - `--input` accepts a JSON file or `-` for stdin.
 - Optimized help is generated from typed command metadata. Every positional and option declares required, default, or unset behavior; options also declare repeatability and applicable integer range or enum values.
 - Direct parsing recognizes only the exact `--` token as the positional separator. Every token after it is positional, including `-h` and `--help`; JSON commands and `figma:raw` remain option-only surfaces.
-- Command `--state-file` identifies the persisted workspace state store and its parent `results/` directory. At the transport layer, resolution is explicit `--session-file`, then `FIGMA_WORKSPACE_SESSION_FILE`, then `<cwd>/.figma-workspace/session.json`; relative explicit and environment paths resolve from the current directory.
+- Command `--state-file` must be fully qualified absolute and identifies the persisted workspace state store and its parent `results/` directory. At the transport layer, a fully qualified absolute explicit `--session-file` takes precedence over fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`; one is required, there is no current-directory default, and relative or current-drive-rooted paths are rejected.
 - Typed commands emit Restricted Markdown on stdout with a command title, `Input`, explicit status, and expanded business fields. Complex nested values may use fenced `json` blocks.
 - Presentation classification does not rewrite backend results. Inline Markdown retains the backend fields, and oversized sidecars contain the complete original backend result. Only an unhealthy `doctor` result renders `Status: observed unhealthy` and exits 0; every other top-level `ok: false` result renders failure and exits 1.
 - Usage failures exit 2. Input parsing, transport, and thrown or unexpected errors are text on stderr and normally exit 1. Typed interrupts identified by `AbortError`, `ABORT_ERR`, or `ERR_CANCELED` exit 130.
 - Stdout is not JSON and must not be passed to `JSON.parse`.
-- CLI output defaults to a 4096-byte inline result limit, capped at 10000. Command `--max-inline-bytes` maps to transport `--inline-result-limit`; 0 forces the complete JSON result to the selected state file's sibling `results/`, or the plugin-root default for stateless commands. Oversized Markdown exposes `outputFiles.cliResultFile` and omitted-byte metadata only.
+- CLI output defaults to a 4096-byte inline result limit, capped at 10000. Command `--max-inline-bytes` maps to transport `--inline-result-limit`; 0 forces the complete JSON result to the selected state file's sibling `results/`. Oversized Markdown exposes `outputFiles.cliResultFile` and omitted-byte metadata only.
 - Long input values are summarized in the Markdown `Input` line rather than echoed.
 - Command argument and runtime result shapes come from runtime schemas and CLI help. Markdown files are secondary summaries.
 - Existing runtime semantics remain available through rendered fields: status, optional diagnostics, upstream result or text, generated output-file pointers, and capture `imageFile`.
@@ -154,7 +154,7 @@ npm test
 
 `tests/workspace-mcp-server.test.mjs` now exercises the typed-client runtime behind the CLI. `tests/build-output.test.mjs` exercises the built CLI, including help, all 22 command mappings, project-doc staging, JSON file/stdin input, Restricted Markdown stdout, doctor observation classification, domain failure and interrupt exits, stderr failures, atomic state/sidecar writes, and cross-process persistence.
 
-Transport session-path tests should cover the default `<cwd>/.figma-workspace/session.json`, `FIGMA_WORKSPACE_SESSION_FILE`, explicit `--session-file`, and relative-path resolution from the current directory. Command runtime tests should pin the optimized visibility and mapping rules for `--state-file`, `--session-id`, `--max-inline-bytes`, query limits, workspace/library filters, sessions expansions, and repeated handles. Runtime tests should continue covering structured failures and representative `.figma.ts`, asset, capture, guidance, lookup, and upstream delegation flows. Live upstream checks remain separate from deterministic offline tests.
+Transport session-path tests should cover fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`, fully qualified absolute explicit `--session-file`, explicit-option precedence, missing-path rejection, relative-path rejection, and current-drive-rooted rejection. Command runtime tests should pin the required fully qualified absolute optimized `--state-file`, its mapping to transport `--session-file`, `--session-id`, `--max-inline-bytes`, query limits, workspace/library filters, sessions expansions, and repeated handles. Runtime tests should continue covering structured failures and representative `.figma.ts`, asset, capture, guidance, lookup, and upstream delegation flows. Live upstream checks remain separate from deterministic offline tests.
 
 Also run repository validators for the skill and plugin plus `git diff --check` when those surfaces change.
 

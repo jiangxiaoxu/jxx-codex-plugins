@@ -10,7 +10,7 @@ Use the bundled Node CLI for every Figma Workspace operation. The plugin does no
 ## Start Here
 
 - Do not search for MCP tools or resource URIs. The CLI, its command help, and its project Markdown docs are the complete agent-facing surface.
-- Resolve `<plugin-root>`. For stateful work, choose and reuse one absolute command-level `--state-file`. Prefer a Git-ignored `<project>/.figma-workspace/state.json`; otherwise use an explicitly selected Figma task-artifact directory. Do not treat every injected writable workspace root as generic task artifacts; capability-specific output roots belong only to that capability.
+- Resolve `<plugin-root>`. Before executing any optimized command, choose and pass one fully qualified absolute command-level `--state-file`; reuse it across related calls. Prefer a Git-ignored `<project>/.figma-workspace/state.json`; otherwise use an explicitly selected Figma task-artifact directory. Do not treat every injected writable workspace root as generic task artifacts; capability-specific output roots belong only to that capability.
 - Before first use of a specific command in a task, run that command with `-h` or `--help`; use its help as the source of truth for arguments and options.
 - Read stdout as Restricted Markdown. If Markdown points to `outputFiles.cliResultFile`, read that JSON sidecar for the complete result. Never parse stdout itself as JSON.
 - Treat `run-script-file` phase `preflight` as not executed. Repair every fatal diagnostic before rerunning; enable dangerous operations only after the user explicitly authorizes them.
@@ -24,25 +24,25 @@ Resolve `<plugin-root>` as `<skill-dir>/../..`, where `<skill-dir>` contains thi
 
 ```text
 npm --silent run figma:guidance -- --help
-npm --silent run figma:guidance -- "text font loadFontAsync" --surface design
-npm --silent run figma -- api:search createFrame
-npm --silent run figma:api:search -- createFrame
+npm --silent run figma:guidance -- "text font loadFontAsync" --surface design --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma -- api:search createFrame --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:api:search -- createFrame --state-file C:/work/project/.figma-workspace/state.json
 ```
 
 - Family entrypoints: `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
-- Direct query/read commands: `figma:guidance`, `figma:docs:list`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`. These accept positional arguments and optimized options instead of JSON input.
+- The 17 direct query/read commands are `figma:guidance`, `figma:docs:list`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`. These accept positional arguments and optimized options instead of JSON input.
 - JSON commands: `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:run`, `figma:task:prepare`, and `figma:upstream:call`. Their optimized surface exposes only `--input <json-file|->`, `--state-file <path>`, `--max-inline-bytes <bytes>`, and help.
 - The 22 transport-level kebab-case JSON commands are available only through `figma:raw` and `figma:raw:help`. Run `npm --silent run figma:raw -- <transport-command> --help` for a complete transport schema.
 - `--input` accepts a JSON file path or `-` for JSON on stdin. Prefer a file for large or reusable payloads and stdin for small calls.
-- `--state-file` selects the persisted workspace state store. Its parent directory also owns the `results/` sidecar directory. Prefer an explicit absolute path and reuse it across related stateful commands.
-- Stateless `figma:guidance`, docs, API, doctor, and upstream list/read commands intentionally omit `--state-file`. If they produce a sidecar, it uses the default `<plugin-root>/.figma-workspace/results/` location.
-- `figma:sessions:list`, `figma:sessions:read`, and all direct file-context commands expose `--state-file`; direct file-context commands also expose `--session-id` for the logical workspace session.
+- Every executing optimized command, including all 17 direct commands and all 9 JSON commands, requires an explicit fully qualified absolute `--state-file`. It selects the persisted workspace state store, and its parent directory owns the `results/` sidecar directory. Reuse one path across related commands.
+- `figma:guidance`, docs, API, doctor, and upstream list/read do not require existing Figma file context, but they still require `--state-file` for execution and sidecar ownership.
+- Direct file-context commands also expose `--session-id` for the logical workspace session.
 - Every executing command exposes `--max-inline-bytes`. Search commands use `--limit` and `--snippet-lines`; guidance uses `--card-limit`. File-binding commands use `--workspace`, design-system uses repeatable `--library`, and sessions read uses `--with-handles` and `--with-history`. `figma:inspect` is the exception: it reuses context already bound to the selected session, omits `--workspace` and `--file`, and supports repeatable `--handle`; run `figma:open` or a file-binding read command first when the session has no file context.
 - Typed command results use Restricted Markdown on stdout. Each result has a command title, an `Input` section, an explicit status, and expanded business fields; complex nested values may appear in fenced `json` blocks.
 - CLI presentation classification does not rewrite backend results or complete sidecars. An unhealthy `figma:doctor` result uses `Status: observed unhealthy` and exits 0; every other top-level `ok: false` result uses the same Restricted Markdown shape and exits 1. Usage errors exit 2, typed interrupts exit 130, and input, transport, I/O, or unexpected execution failures use stderr and a non-zero exit.
 - Optimized help declares required/default/unset behavior, repeatability, and applicable ranges or enum values. Direct commands accept exact `--` as a positional separator; JSON commands and `figma:raw` remain option-only.
 - Never pass CLI stdout to `JSON.parse`. Read the Markdown headings, status, fields, and any nested JSON code fences instead.
-- Result size defaults to 4096 bytes and is capped at 10000. `--max-inline-bytes` maps to the transport runtime result limit; `0` always writes the complete JSON result under the selected state file's sibling `results/`, or the plugin-root default for stateless commands. When a result exceeds the limit, Markdown returns only `outputFiles.cliResultFile` plus the omitted-byte summary; read that JSON file for the complete payload.
+- Result size defaults to 4096 bytes and is capped at 10000. `--max-inline-bytes` maps to the transport runtime result limit; `0` always writes the complete JSON result under the selected state file's sibling `results/`. When a result exceeds the limit, Markdown returns only `outputFiles.cliResultFile` plus the omitted-byte summary; read that JSON file for the complete payload.
 - The Markdown `Input` line summarizes long code, base64, objects, and arrays instead of echoing the full input.
 - Use `npm --silent run figma:help` for the command directory. Use the selected command's `-h` or `--help` before first use. Use `npm --silent run figma:raw -- <transport-command> --help` only when the complete transport JSON schema is needed.
 
@@ -50,12 +50,12 @@ The state file is temporary local state and should not be committed by default.
 
 ## Default Workflow
 
-1. For stateful canvas work, choose and reuse one absolute `--state-file`. Stateless guidance, docs, API, doctor, and upstream discovery do not need one. Use the sessions commands when resuming unknown state.
-2. Use `figma:docs:list` to list canonical project docs and `figma:docs:read -- <topic>` to read one when this skill's startup rules are insufficient.
+1. Choose and reuse one fully qualified absolute `--state-file` for every executing optimized command. Use the sessions commands when resuming unknown state.
+2. Use `figma:docs:list -- --state-file <absolute-path>` to list canonical project docs and `figma:docs:read -- <topic> --state-file <absolute-path>` to read one when this skill's startup rules are insufficient.
 3. For login, credential refresh, or auth repair, follow Figma Login below.
-4. Call `figma:guidance` with compact task keywords before non-trivial work. Use `figma:docs:search` for project/upstream workflow snippets and `figma:api:search` for exact Plugin API symbols.
-5. Call `figma:task:prepare -- --input <json-file|->` once with a Figma URL or file key, slug-style `taskName`, absolute `workspaceDir`, and surface when needed.
-6. Edit the generated `<taskName>.figma.ts`, then call `figma:script:run -- --input <json-file|->` with the persisted session id, `inputFile`, `strict: true`, and surface. Fix line-level preflight diagnostics and rerun the same script.
+4. Call `figma:guidance -- <keywords> --state-file <absolute-path>` with compact task keywords before non-trivial work. Use `figma:docs:search` for project/upstream workflow snippets and `figma:api:search` for exact Plugin API symbols, always with the same state file.
+5. Call `figma:task:prepare -- --input <json-file|-> --state-file <absolute-path>` once with a Figma URL or file key, slug-style `taskName`, absolute `workspaceDir`, and surface when needed.
+6. Edit the generated `<taskName>.figma.ts`, then call `figma:script:run -- --input <json-file|-> --state-file <absolute-path>` with the persisted session id, `inputFile`, `strict: true`, and surface. Fix line-level preflight diagnostics and rerun the same script.
 7. Use `figma:assets:apply`, `figma:assets:download`, `figma:capture`, or `figma:task:run` with JSON input for assets, exports, visual QA, and repeatable workflows.
 8. After generating or editing an image, including a `capture-node` PNG, inspect the local file with `view_image` before reporting visual success.
 
@@ -75,10 +75,10 @@ The CLI renders the workspace runtime result as Restricted Markdown. Read expand
 
 ## Guidance And Lookup
 
-- Use `figma:docs:list` to list canonical topics and `figma:docs:read -- <topic>` for `overview`, `workflow`, `guidance-and-lookup`, `safety`, `diagnostics`, `sessions`, or `upstream-tools`.
-- Start with `figma:guidance -- <query>` using compact queries such as `text font loadFontAsync`, `components variants properties`, or `capture visual QA`.
+- Use `figma:docs:list -- --state-file <absolute-path>` to list canonical topics and `figma:docs:read -- <topic> --state-file <absolute-path>` for `overview`, `workflow`, `guidance-and-lookup`, `safety`, `diagnostics`, `sessions`, or `upstream-tools`.
+- Start with `figma:guidance -- <query> --state-file <absolute-path>` using compact queries such as `text font loadFontAsync`, `components variants properties`, or `capture visual QA`.
 - Use returned cards, query hints, API symbols, guardrails, helper profiles, and workflow graph hints before writing a script.
-- Use `figma:api:search -- <symbol>` for exact Plugin API details and `figma:docs:search -- <query>` for workflow documentation; snippets are capped rather than full declaration files.
+- Use `figma:api:search -- <symbol> --state-file <absolute-path>` for exact Plugin API details and `figma:docs:search -- <query> --state-file <absolute-path>` for workflow documentation; snippets are capped rather than full declaration files.
 - Project Markdown is indexed alongside the upstream corpus for `guidance` and `lookup kind=docs`; the upstream corpus remains available for exact API and official workflow snippets.
 - Bundled JSONL upstream corpus files are internal lookup data. Do not read or route agents to them directly.
 
@@ -100,6 +100,6 @@ When a CLI Markdown result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or a code begi
 npm run login:figma-http
 ```
 
-Use `npm run login:figma-http -- --force` only when fresh browser authorization is required. Then verify with `figma:upstream:call -- --input <json-file|-> --state-file <path>` using `toolName: "whoami"` and the same absolute state file. If the user declines, report that upstream access remains unavailable.
+Use `npm run login:figma-http -- --force` only when fresh browser authorization is required. Then verify with `figma:upstream:call -- --input <json-file|-> --state-file <absolute-path>` using `toolName: "whoami"` and the same absolute state file. If the user declines, report that upstream access remains unavailable.
 
 The helper temporarily registers `figma-http`, completes OAuth, and removes the temporary entry. Do not add a persistent local MCP entry. To print the shared OAuth cache path for debugging, run `npm run oauth-cache:path` from the plugin root.

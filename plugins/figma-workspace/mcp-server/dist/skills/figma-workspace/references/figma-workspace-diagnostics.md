@@ -10,9 +10,9 @@ Use this reference to interpret failures and choose the narrowest repair. Runtim
 
 ## Common Repairs
 
-- Run stateless `figma:doctor` first when installed project docs, the upstream corpus, or TypeScript runtime assets cannot be loaded. It intentionally omits `--state-file`; use `--max-inline-bytes` if its output must be bounded, and follow any plugin-root results sidecar pointer.
-- For TypeScript or Plugin API errors, follow the source location and use `figma:api:search` for the exact symbol.
-- For a stale `$handle`, run `figma:inspect -- <target> --mode validate`, then refresh or forget the handle as appropriate.
+- Run `figma:doctor -- --state-file <absolute-path>` first when installed project docs, the upstream corpus, or TypeScript runtime assets cannot be loaded. It requires no existing Figma file context. Use `--max-inline-bytes` if its output must be bounded, and follow any sidecar pointer under the selected state file's sibling `results/` directory.
+- For TypeScript or Plugin API errors, follow the source location and use `figma:api:search -- <symbol> --state-file <absolute-path>` for the exact symbol.
+- For a stale `$handle`, run `figma:inspect -- <target> --mode validate --state-file <absolute-path>`, then refresh or forget the handle as appropriate.
 - For missing file context, use `figma:open` with the same command `--state-file`, or provide a node URL or structured target that contains file context.
 - For surface mismatches, pass the correct design, figjam, or slides surface and replace APIs that belong to another surface.
 - For asset or capture path failures, use absolute workspace-owned paths and verify that the expected file was actually written.

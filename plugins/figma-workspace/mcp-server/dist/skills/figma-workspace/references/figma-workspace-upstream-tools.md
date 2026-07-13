@@ -10,7 +10,7 @@ Use this reference to decide between a first-class CLI command and direct offici
 
 ## Call An Uncovered Official Capability
 
-- Run `figma:upstream:list` for the live compact directory. Run `figma:upstream:read -- <name> --refresh` to read one current description and `inputSchema`. These stateless discovery commands omit `--state-file`, accept `--max-inline-bytes`, and use the plugin-root default `results/` directory for sidecars.
+- Run `figma:upstream:list -- --state-file <absolute-path>` for the live compact directory. Run `figma:upstream:read -- <name> --refresh --state-file <absolute-path>` to read one current description and `inputSchema`. These discovery commands need no existing Figma file context, but every execution requires the state file; sidecars belong to its sibling `results/` directory.
 - Use `figma:upstream:call` for official capabilities without a first-class wrapper, such as Code Connect writes, shader reads, or `export_video`.
 - The `figma:upstream:call` JSON command exposes `--input`, `--state-file`, and `--max-inline-bytes`; use `npm --silent run figma:raw -- call-upstream-tool --help` for its complete transport JSON schema.
 - Provide the official upstream tool name and arguments exactly as required by that tool.

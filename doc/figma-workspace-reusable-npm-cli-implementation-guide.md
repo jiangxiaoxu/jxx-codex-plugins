@@ -376,7 +376,7 @@ command registry, transport command list, wrappers 和 npm scripts 很容易形�
 4. 只有 unhealthy `doctor` 使用 `Status: observed unhealthy` 且 exit 0; 其他 top-level `ok: false` 仍 exit 1. Usage 保持 exit 2; `AbortError`, `ABORT_ERR` 和 `ERR_CANCELED` exit 130. Doctor exit change 和新增 typed interrupt mapping 需要 consumer 评估迁移, 其他 domain failure contract 保持不变.
 5. Public wrappers 与 package scripts 通过 registry 派生出的严格集合做一致性校验, 但 wrappers 并未由 registry 自动生成. Registry 只覆盖 public command namespace; login, cache, corpus update, build 和 test 等 maintenance scripts 明确排除. 这是维护时的兼容校验, 不扩展 public runtime surface.
 6. `check:dist` 执行 build 后检查 generated `dist` cleanliness, 只适合 clean checkout 或 CI. 它是维护/CI contract, 不应在含用户改动的 working tree 中作为普通本地验证运行.
-7. Transport state path 明确为 explicit `--session-file` > `FIGMA_WORKSPACE_SESSION_FILE` > `<cwd>/.figma-workspace/session.json`, relative path 基于 cwd. State 与 sidecar 使用 sibling temp file + atomic rename; sidecar 可能含敏感 Figma 内容, 默认保留用于恢复并由用户手动清理, 不自动删除. Path precedence 和 retention 是 public behavior clarification; 修改既有隐含假设的 caller 应单独评估兼容性.
+7. Transport state path 明确为 fully qualified absolute `--session-file` > fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`; 二者缺失或路径依赖 current drive/cwd 时直接返回 usage error. State 与 sidecar 使用 sibling temp file + atomic rename; sidecar 可能含敏感 Figma 内容, 默认保留用于恢复并由用户手动清理, 不自动删除. 移除 cwd fallback 与 relative-path resolution 是 breaking path contract; caller 必须显式迁移.
 8. Session lock 只保证同机 local filesystem/process/PID model, 不保证 distributed, network filesystem 或 shared-volume safety. 这是现有能力边界的文档化, 不新增跨主机语义.
 
 ## What Not To Copy

@@ -13,6 +13,7 @@ import {
   createFigmaWorkspaceClient,
   createFigmaWorkspaceCommandHelp,
   formatFigmaWorkspaceCommandMarkdown,
+  isFullyQualifiedAbsolutePath,
   runFigmaWorkspaceCli,
   writeFigmaWorkspaceSessions,
 } from "../dist/index.js";
@@ -86,6 +87,7 @@ test("CLI exposes local help and returns a usage error for unknown commands", as
   assert.match(help.stdout, /^## Usage$/mu);
   assert.match(help.stdout, /^## Commands$/mu);
   assert.match(help.stdout, /^## Options$/mu);
+  assert.match(help.stdout, /--session-file <absolute-path>.*Required unless fully qualified absolute/u);
   assert.match(help.stdout, /^## Output$/mu);
   for (const command of Object.keys(commandMethods)) {
     assert.match(help.stdout, new RegExp("^- `" + command + "`$", "mu"));
@@ -95,6 +97,7 @@ test("CLI exposes local help and returns a usage error for unknown commands", as
   assert.equal(commandHelp.code, 0, commandHelp.stderr);
   assert.match(commandHelp.stdout, /^# figma-workspace open help\n/u);
   assert.match(commandHelp.stdout, /^## CLI Options$/mu);
+  assert.match(commandHelp.stdout, /--session-file <absolute-path>.*Required unless fully qualified absolute/u);
   assert.match(commandHelp.stdout, /^## Input JSON Schema$/mu);
   assert.match(commandHelp.stdout, /```json\n\{/u);
   assert.match(commandHelp.stdout, /Git-ignored <project>\/\.figma-workspace/u);
@@ -114,6 +117,7 @@ test("every command-specific help exposes its canonical input JSON schema", () =
     assert.match(help, /^## Purpose\n.+/mu);
     assert.match(help, /^## Usage$/mu);
     assert.match(help, /^## CLI Options$/mu);
+    assert.match(help, /--session-file <absolute-path>.*Required unless fully qualified absolute/u);
     assert.match(help, /^## Input JSON Schema$/mu);
     assert.match(help, /^## Output$/mu);
     assert.doesNotMatch(help, /figma_workspace_|figma-workspace:\/\//u, command);
@@ -782,7 +786,42 @@ test("stale lock reclaim does not delete a live lock replaced before the atomic 
   }
 });
 
-test("CLI uses the default absolute session path under cwd", async () => {
+test("fully qualified absolute path checks reject relative and drive-root-relative paths", () => {
+  assert.equal(isFullyQualifiedAbsolutePath(resolve(packageRoot, "state.json")), true);
+  assert.equal(isFullyQualifiedAbsolutePath("relative/state.json"), false);
+  if (process.platform === "win32") {
+    assert.equal(isFullyQualifiedAbsolutePath("/state.json"), false);
+    assert.equal(isFullyQualifiedAbsolutePath("\\state.json"), false);
+    assert.equal(isFullyQualifiedAbsolutePath("\\\\server\\share\\state.json"), true);
+  }
+});
+
+test("CLI validates the session path before reading file or stdin input", async () => {
+  for (const args of [
+    ["guidance", "--input", "missing.json"],
+    ["guidance", "--input", "-", "--session-file", "relative/session.json"],
+  ]) {
+    let readFileCalled = false;
+    let readStdinCalled = false;
+    let stderr = "";
+    const exitCode = await runFigmaWorkspaceCli(args, {
+      io: {
+        cwd: () => packageRoot,
+        env: () => undefined,
+        readFile: async () => { readFileCalled = true; throw new Error("must not read input"); },
+        readStdin: async () => { readStdinCalled = true; return "{}"; },
+        writeStdout: () => {},
+        writeStderr: (value) => { stderr += value; },
+      },
+    });
+    assert.equal(exitCode, 2, args.join(" "));
+    assert.equal(readFileCalled, false, args.join(" "));
+    assert.equal(readStdinCalled, false, args.join(" "));
+    assert.match(stderr, /fully qualified absolute path/u);
+  }
+});
+
+test("CLI rejects a missing or relative session path before filesystem writes", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-cli-default-"));
   try {
     const inputFile = resolve(tempDir, "open.json");
@@ -792,20 +831,22 @@ test("CLI uses the default absolute session path under cwd", async () => {
       workspaceDir: tempDir,
       connect: false,
     }), "utf8");
-    const result = await runCli(["open", "--input", inputFile], {
-      cwd: tempDir,
-      env: { FIGMA_WORKSPACE_SESSION_FILE: undefined },
-    });
-    assert.equal(result.code, 0, result.stderr);
-    const defaultSessionFile = resolve(tempDir, ".figma-workspace/session.json");
-    assert.equal(isAbsolute(defaultSessionFile), true);
-    assert.equal(JSON.parse(await readFile(defaultSessionFile, "utf8"))[0].id, "default-path");
+    for (const entry of [
+      { args: ["open", "--input", inputFile], env: { FIGMA_WORKSPACE_SESSION_FILE: undefined } },
+      { args: ["open", "--input", inputFile, "--session-file", "relative/session.json"], env: {} },
+      { args: ["open", "--input", inputFile], env: { FIGMA_WORKSPACE_SESSION_FILE: "relative/session.json" } },
+    ]) {
+      const result = await runCli(entry.args, { cwd: tempDir, env: entry.env });
+      assert.equal(result.code, 2, result.stderr);
+      assert.match(result.stderr, /requires a fully qualified absolute path|must be a fully qualified absolute path/u);
+    }
+    await assert.rejects(readFile(resolve(tempDir, ".figma-workspace/session.json"), "utf8"), /ENOENT/u);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test("session path precedence is explicit then environment then cwd default", async () => {
+test("absolute session path precedence is explicit then environment", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-cli-path-precedence-"));
   try {
     const inputFile = resolve(tempDir, "open.json");
@@ -818,16 +859,11 @@ test("session path precedence is explicit then environment then cwd default", as
     const cases = [
       {
         args: ["open", "--input", inputFile],
-        env: { FIGMA_WORKSPACE_SESSION_FILE: "env-relative/session.json" },
-        expected: resolve(tempDir, "env-relative/session.json"),
-      },
-      {
-        args: ["open", "--input", inputFile],
         env: { FIGMA_WORKSPACE_SESSION_FILE: resolve(tempDir, "env-absolute.json") },
         expected: resolve(tempDir, "env-absolute.json"),
       },
       {
-        args: ["open", "--input", inputFile, "--session-file", "explicit/session.json"],
+        args: ["open", "--input", inputFile, "--session-file", resolve(tempDir, "explicit/session.json")],
         env: { FIGMA_WORKSPACE_SESSION_FILE: resolve(tempDir, "ignored-env.json") },
         expected: resolve(tempDir, "explicit/session.json"),
       },

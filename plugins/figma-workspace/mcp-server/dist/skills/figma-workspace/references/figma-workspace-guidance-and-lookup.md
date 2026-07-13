@@ -4,7 +4,7 @@ Use this reference to choose between `figma:guidance`, `figma:docs:search`, and 
 
 ## Guidance First
 
-- Before writing `.figma.ts`, call `figma:guidance -- <query>` using compact BM25-style keywords, not natural-language task prose. Use `--card-limit` to bound returned cards.
+- Before writing `.figma.ts`, call `figma:guidance -- <query> --state-file <absolute-path>` using compact BM25-style keywords, not natural-language task prose. Use `--card-limit` to bound returned cards.
 - Use its `recommendedCards`, `queryHints`, `apiSymbols`, `guardrails`, and `suggestions.referenceContext` fields to choose the next tool or API symbols.
 - Use `helperProfiles` when returned for `$` helper category choice, static-reference patterns, avoid notes, lookup hints, and compact examples.
 - Use `wrapperProfiles` and `workflowGraph` when returned to sequence first-class design-context, motion, or video wrappers.
@@ -17,8 +17,8 @@ Use this reference to choose between `figma:guidance`, `figma:docs:search`, and 
 
 ## Lookup When Exact Context Is Needed
 
-- Use `figma:docs:search -- <query>` for compact BM25-ranked project documentation and upstream workflow snippets, including runtime-owned explanations for `guidanceRef`, wrapper profiles, helper profiles, and workflow graph routing.
-- Use `figma:api:search -- <symbol>` for exact Figma Plugin API symbols. Both search commands accept `--limit` and `--snippet-lines`.
+- Use `figma:docs:search -- <query> --state-file <absolute-path>` for compact BM25-ranked project documentation and upstream workflow snippets, including runtime-owned explanations for `guidanceRef`, wrapper profiles, helper profiles, and workflow graph routing.
+- Use `figma:api:search -- <symbol> --state-file <absolute-path>` for exact Figma Plugin API symbols. Both search commands accept `--limit` and `--snippet-lines`.
 - Lookup output is capped and confidence-labeled.
 - Project documentation topics cover overview, workflow, guidance and lookup, safety, diagnostics, sessions, and upstream tools.
 - `figma:guidance` exposes compact helper categories, wrapper profiles, and workflow graph nodes; use it instead of reading internal corpus files for sequencing.
@@ -27,7 +27,7 @@ Use this reference to choose between `figma:guidance`, `figma:docs:search`, and 
 ## Reading Results
 
 - The guidance and search commands emit Restricted Markdown on stdout with a command title, `Input`, explicit status, and expanded fields.
-- These stateless commands intentionally omit `--state-file`. Use `--max-inline-bytes` to control inline output; any sidecar uses the default `<plugin-root>/.figma-workspace/results/` directory.
+- These commands need no existing Figma file context, but every execution requires an explicit absolute `--state-file`. Use `--max-inline-bytes` to control inline output; any sidecar is written under the selected state file's sibling `results/` directory.
 - Cards, hints, symbols, snippets, and other complex nested values may appear in fenced `json` blocks inside the Markdown result.
 - Typed failures still emit Markdown and normally exit 1; an unhealthy doctor observation is the exit-0 exception. Usage exits 2, typed interrupts exit 130, and thrown failures are text on stderr.
 - Do not use `JSON.parse(stdout)`. Read the Markdown result and parse only a specific fenced `json` block when necessary.

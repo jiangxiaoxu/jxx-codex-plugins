@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { link, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   FigmaWorkspaceApplyAssetManifestArguments,
@@ -224,9 +224,9 @@ export async function runFigmaWorkspaceCli(
   }
 
   try {
+    const sessionFile = resolveSessionFile(parsed.sessionFile, io);
     const input = await readCommandInput(parsed.inputFile, io);
     const commandInput = createCommandInvocationInput(parsed.command, input, parsed.inlineResultLimit);
-    const sessionFile = resolveSessionFile(parsed.sessionFile, io);
     const inlineResultLimit = resolveInlineResultLimit(parsed.inlineResultLimit, input.inlineResultLimit);
     let result: unknown;
     let markdownResult: unknown;
@@ -561,10 +561,11 @@ export const FIGMA_WORKSPACE_CLI_HELP = [
   "Input defaults to `{}`. Use `--input -` to read one JSON object from stdin.",
   "",
   "## Options",
+  `- \`--session-file <absolute-path>\`: Required unless fully qualified absolute \`$${FIGMA_WORKSPACE_SESSION_FILE_ENV}\` is set. Anchors persisted session state and the sibling \`results/\` directory.`,
   "- `--inline-result-limit <bytes>`: Global Markdown inline-result byte limit from 0 to 10000. CLI option overrides input `inlineResultLimit`; 0 always writes the complete result to a file; default is 4096.",
   "",
   "## Session State",
-  `Session state defaults to \`$${FIGMA_WORKSPACE_SESSION_FILE_ENV}\` or \`<cwd>/.figma-workspace/session.json\`.`,
+  `Session state requires a fully qualified absolute \`--session-file\` path or fully qualified absolute \`$${FIGMA_WORKSPACE_SESSION_FILE_ENV}\`.`,
   "",
   "## Output",
   "Command results use Restricted Markdown. Failed typed results include `Status: failed`.",
@@ -588,6 +589,7 @@ export function createFigmaWorkspaceCommandHelp(command: FigmaWorkspaceCliComman
     `- \`figma-workspace ${command} [--input <json-file|->] [--session-file <path>] [--inline-result-limit <bytes>]\``,
     "",
     "## CLI Options",
+    `- \`--session-file <absolute-path>\`: Required unless fully qualified absolute \`$${FIGMA_WORKSPACE_SESSION_FILE_ENV}\` is set. Anchors persisted session state and the sibling \`results/\` directory.`,
     "- `--inline-result-limit <bytes>`: Global Markdown inline-result byte limit from 0 to 10000. Overrides input `inlineResultLimit`; 0 forces result-file output; default is 4096.",
     "",
     "## Input JSON Schema",
@@ -927,9 +929,21 @@ async function readCommandInput(
   }
 }
 
+export function isFullyQualifiedAbsolutePath(path: string): boolean {
+  return isAbsolute(path) && normalize(path) === resolve(path);
+}
+
 function resolveSessionFile(explicitPath: string | undefined, io: FigmaWorkspaceCliIo): string {
   const configuredPath = explicitPath ?? io.env(FIGMA_WORKSPACE_SESSION_FILE_ENV);
-  return resolve(io.cwd(), configuredPath || ".figma-workspace/session.json");
+  if (configuredPath === undefined || configuredPath.trim() === "") {
+    throw new FigmaWorkspaceCliUsageError(
+      `Option --session-file requires a fully qualified absolute path when $${FIGMA_WORKSPACE_SESSION_FILE_ENV} is unset.`,
+    );
+  }
+  if (!isFullyQualifiedAbsolutePath(configuredPath)) {
+    throw new FigmaWorkspaceCliUsageError("Session file path must be a fully qualified absolute path.");
+  }
+  return resolve(configuredPath);
 }
 
 function resolveInlineResultLimit(explicitLimit: number | undefined, inputLimit: unknown): number {

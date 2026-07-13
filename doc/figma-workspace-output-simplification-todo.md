@@ -11,7 +11,7 @@ The current direction is intentionally breaking-change friendly: remove duplicat
 - `get-metadata` no longer returns public `metadata.enrichment`. Native readback still runs internally, enriched lock/layout fields are merged into `metadata.json`, and enrichment failures are reported through `diagnostics`.
 - `call-upstream-tool` allows covered upstream tools for raw upstream behavior checks, but attempts to route local workspace operations through upstream delegation remain hard errors.
 - Cross-process session state is a JSON array in the selected session file. The CLI loads it before dispatch and atomically writes the updated sessions after dispatch; each persisted session contains its full handle map.
-- Session-file selection is `--session-file`, then `FIGMA_WORKSPACE_SESSION_FILE`, then `<cwd>/.figma-workspace/session.json`. Explicit and environment-provided relative paths resolve from the current directory.
+- Session-file selection is fully qualified absolute `--session-file`, then fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`. One is required; there is no current-directory fallback, and relative or current-drive-rooted paths are rejected.
 
 ## TODO 1: Compact `inspect`
 

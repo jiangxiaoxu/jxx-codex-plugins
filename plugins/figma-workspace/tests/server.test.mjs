@@ -28,6 +28,8 @@ import {
   startFigmaMcpBridge,
 } from "../scripts/server.mjs";
 
+const testStateFile = resolve(tmpdir(), "figma-workspace-server-tests-state.json");
+
 test("createBridgeConfig applies defaults and normalizes path", () => {
   const config = createBridgeConfig({ port: 19001, path: "mcp" });
 
@@ -106,27 +108,27 @@ test("direct commands map positional options into canonical runtime input", asyn
   };
 
   assert.equal(await runFigmaCli([
-    "api:search", "createFrame", "--limit", "2", "--max-inline-bytes", "10000",
+    "api:search", "createFrame", "--limit", "2", "--state-file", testStateFile, "--max-inline-bytes", "10000",
   ], { ...output.dependencies, runCli }), 0);
   assert.deepEqual(invocations[0], {
-    args: ["lookup", "--input", "-", "--inline-result-limit", "10000"],
+    args: ["lookup", "--input", "-", "--session-file", testStateFile, "--inline-result-limit", "10000"],
     input: { kind: "api", symbol: "createFrame", maxResults: 2 },
   });
 
   assert.equal(await runFigmaCli([
-    "sessions:read", "default", "--with-handles", "--with-history", "--state-file", "C:/work/state.json",
+    "sessions:read", "default", "--with-handles", "--with-history", "--state-file", testStateFile,
   ], { ...output.dependencies, runCli }), 0);
   assert.deepEqual(invocations[1], {
-    args: ["sessions", "--input", "-", "--session-file", "C:/work/state.json"],
+    args: ["sessions", "--input", "-", "--session-file", testStateFile],
     input: { sessionId: "default", includeHandles: true, includeHistory: true },
   });
 
   assert.equal(await runFigmaCli([
     "design-context", "--file", "https://www.figma.com/design/file-key/Test?node-id=1-2",
-    "--force-code", "--no-code-connect", "--session-id", "design-review",
+    "--force-code", "--no-code-connect", "--session-id", "design-review", "--state-file", testStateFile,
   ], { ...output.dependencies, runCli }), 0);
   assert.deepEqual(invocations[2], {
-    args: ["get-design-context", "--input", "-"],
+    args: ["get-design-context", "--input", "-", "--session-file", testStateFile],
     input: {
       file: "https://www.figma.com/design/file-key/Test?node-id=1-2",
       forceCode: true,
@@ -136,10 +138,10 @@ test("direct commands map positional options into canonical runtime input", asyn
   });
 
   assert.equal(await runFigmaCli([
-    "design-system", "button", "--no-components", "--library", "one", "--library", "two",
+    "design-system", "button", "--no-components", "--library", "one", "--library", "two", "--state-file", testStateFile,
   ], { ...output.dependencies, runCli }), 0);
   assert.deepEqual(invocations[3], {
-    args: ["search-design-system", "--input", "-"],
+    args: ["search-design-system", "--input", "-", "--session-file", testStateFile],
     input: {
       query: "button",
       includeComponents: false,
@@ -148,10 +150,10 @@ test("direct commands map positional options into canonical runtime input", asyn
   });
 
   assert.equal(await runFigmaCli([
-    "api:search", "--snippet-lines", "4", "--", "--help",
+    "api:search", "--snippet-lines", "4", "--state-file", testStateFile, "--", "--help",
   ], { ...output.dependencies, runCli }), 0);
   assert.deepEqual(invocations[4], {
-    args: ["lookup", "--input", "-"],
+    args: ["lookup", "--input", "-", "--session-file", testStateFile],
     input: { kind: "api", symbol: "--help", maxSnippetLines: 4 },
   });
 });
@@ -186,11 +188,6 @@ test("command help exposes only optimized command-relevant option names", async 
     "open", "eval", "script:run", "assets:apply", "assets:download", "capture",
     "task:run", "task:prepare", "upstream:call",
   ];
-  const stateFileCommands = new Set([
-    "sessions:list", "sessions:read", "inspect", "metadata", "design-context", "motion-context",
-    "variables", "design-system", "libraries", "open", "eval", "script:run", "assets:apply",
-    "assets:download", "capture", "task:run", "task:prepare", "upstream:call",
-  ]);
   const sessionIdCommands = new Set([
     "inspect", "metadata", "design-context", "motion-context", "variables", "design-system", "libraries",
   ]);
@@ -199,9 +196,12 @@ test("command help exposes only optimized command-relevant option names", async 
     assert.equal(await runFigmaCli([commandName, "-h"], output.dependencies), 0);
     const help = output.stdout();
     assert.doesNotMatch(help, /--session-file|--inline-result-limit|--max-results|--max-snippet-lines|--max-cards|--workspace-dir|--library-key/u, commandName);
-    assert.equal(help.includes("--state-file"), stateFileCommands.has(commandName), `${commandName} state file`);
+    assert.equal(help.includes("--state-file"), true, `${commandName} state file`);
     assert.equal(help.includes("--session-id"), sessionIdCommands.has(commandName), `${commandName} session id`);
     assert.match(help, /--max-inline-bytes/u, commandName);
+    if (Object.hasOwn(FIGMA_DIRECT_COMMANDS, commandName)) {
+      assert.match(help, /## Examples[\s\S]*--state-file C:\/work\/project\/\.figma-workspace\/state\.json/u, commandName);
+    }
   }
 });
 
@@ -209,6 +209,7 @@ test("optimized help declares positional and option omitted states, repeatabilit
   const guidance = createCommandOutput();
   assert.equal(await runFigmaCli(["guidance", "--help"], guidance.dependencies), 0);
   assert.match(guidance.stdout(), /<query>.*Required\./u);
+  assert.match(guidance.stdout(), /--state-file <path>.*Required\./u);
   assert.match(guidance.stdout(), /--workflow <id>.*Default: unset\./u);
   assert.match(guidance.stdout(), /--card-limit <n>.*Range: 1 to 8\./u);
   assert.match(guidance.stdout(), /--max-inline-bytes <bytes>.*Default: 4096\..*Range: 0 to 10000\./u);
@@ -224,7 +225,7 @@ test("optimized help declares positional and option omitted states, repeatabilit
   const json = createCommandOutput();
   assert.equal(await runFigmaCli(["eval", "--help"], json.dependencies), 0);
   assert.match(json.stdout(), /--input <json-file\|->.*Required\./u);
-  assert.match(json.stdout(), /--state-file <path>.*Default: FIGMA_WORKSPACE_SESSION_FILE/u);
+  assert.match(json.stdout(), /--state-file <path>.*Required\./u);
   assert.match(json.stdout(), /--max-inline-bytes <bytes>.*Default: input inlineResultLimit when present, otherwise 4096\./u);
 });
 
@@ -271,7 +272,7 @@ test("direct command validation rejects ambiguous or malformed options without r
     [["api:search", "createFrame", "--limit", "11"], /must be at most 10/u],
     [["api:search", "createFrame", "--max-inline-bytes", "10001"], /must be at most 10000/u],
     [["api:search", "createFrame", "--max-inline-bytes", "1", "--max-inline-bytes", "2"], /Duplicate option/u],
-    [["api:search", "createFrame", "--state-file", "state.json"], /Unknown option/u],
+    [["api:search", "createFrame", "--state-file", "state.json"], /requires a fully qualified absolute path/u],
     [["docs:search", "session", "--snippet-lines", "0"], /must be at least 1/u],
     [["guidance", "text", "--surface", "canvas"], /must be one of/u],
     [["guidance", "text.font", "--mode", "card"], /must be one of/u],
@@ -285,11 +286,14 @@ test("direct command validation rejects ambiguous or malformed options without r
   ];
   for (const [argv, expected] of cases) {
     const output = createCommandOutput();
-    const exitCode = await runFigmaCli(argv, {
+    const commandArgv = argv.includes("--state-file")
+      ? argv
+      : [argv[0], "--state-file", testStateFile, ...argv.slice(1)];
+    const exitCode = await runFigmaCli(commandArgv, {
       ...output.dependencies,
-      runCli: async () => assert.fail(`${argv.join(" ")} must not enter runtime`),
+      runCli: async () => assert.fail(`${commandArgv.join(" ")} must not enter runtime`),
     });
-    assert.equal(exitCode, 2, argv.join(" "));
+    assert.equal(exitCode, 2, commandArgv.join(" "));
     assert.equal(output.stdout(), "");
     assert.match(output.stderr(), expected);
   }
@@ -299,7 +303,7 @@ test("integer options use strict decimal grammar and safe bounded values before 
   const invalidValues = ["", "+1", "1.0", "1e3", "9007199254740992", "-9007199254740992"];
   for (const value of invalidValues) {
     const output = createCommandOutput();
-    assert.equal(await runFigmaCli(["doctor", "--max-inline-bytes", value], {
+    assert.equal(await runFigmaCli(["doctor", "--state-file", testStateFile, "--max-inline-bytes", value], {
       ...output.dependencies,
       readFile: async () => assert.fail("invalid input must fail before file I/O"),
       runCli: async () => assert.fail("invalid input must fail before runtime"),
@@ -309,20 +313,20 @@ test("integer options use strict decimal grammar and safe bounded values before 
 
   const invocations = [];
   for (const value of ["0", "10000"]) {
-    assert.equal(await runFigmaCli(["doctor", "--max-inline-bytes", value], {
+    assert.equal(await runFigmaCli(["doctor", "--state-file", testStateFile, "--max-inline-bytes", value], {
       runCli: async (args) => { invocations.push(args); return 0; },
     }), 0);
   }
   assert.deepEqual(invocations, [
-    ["doctor", "--input", "-", "--inline-result-limit", "0"],
-    ["doctor", "--input", "-", "--inline-result-limit", "10000"],
+    ["doctor", "--input", "-", "--session-file", testStateFile, "--inline-result-limit", "0"],
+    ["doctor", "--input", "-", "--session-file", testStateFile, "--inline-result-limit", "10000"],
   ]);
 });
 
 test("JSON commands translate optimized options into canonical runtime options", async () => {
   const invocations = [];
   const exitCode = await runFigmaCli([
-    "eval", "--input", "eval.json", "--state-file", "C:/work/state.json",
+    "eval", "--input", "eval.json", "--state-file", testStateFile,
     "--max-inline-bytes", "0",
   ], {
     runCli: async (args) => {
@@ -333,7 +337,7 @@ test("JSON commands translate optimized options into canonical runtime options",
 
   assert.equal(exitCode, 0);
   assert.deepEqual(invocations, [[
-    "eval", "--input", "eval.json", "--session-file", "C:/work/state.json",
+    "eval", "--input", "eval.json", "--session-file", testStateFile,
     "--inline-result-limit", "0",
   ]]);
 });
@@ -347,13 +351,13 @@ test("JSON commands require input only when their command needs it", async () =>
   assert.match(output.stderr(), /requires --input/u);
 
   const invocations = [];
-  assert.equal(await runFigmaCli(["open"], {
+  assert.equal(await runFigmaCli(["open", "--state-file", testStateFile], {
     runCli: async (args) => {
       invocations.push(args);
       return 0;
     },
   }), 0);
-  assert.deepEqual(invocations, [["open"]]);
+  assert.deepEqual(invocations, [["open", "--session-file", testStateFile]]);
 });
 
 test("JSON commands reject transport-level option names", async () => {
@@ -573,7 +577,7 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
 
     const docsResult = spawnSync(
       process.execPath,
-      [npmCli, "--silent", "run", "figma:docs:read", "--", "overview"],
+      [npmCli, "--silent", "run", "figma:docs:read", "--", "overview", "--state-file", join(tempDir, "state.json")],
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(docsResult.status, 0, docsResult.stderr);
@@ -590,16 +594,49 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
 test("npm direct command script returns runtime Markdown without npm banners", async () => {
   const npmCli = process.env.npm_execpath;
   assert.ok(npmCli);
-  const result = spawnSync(process.execPath, [npmCli, "--silent", "run", "figma:docs:read", "--", "overview"], {
-    cwd: fileURLToPath(new URL("../", import.meta.url)),
-    encoding: "utf8",
-  });
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-command-"));
+  try {
+    const result = spawnSync(process.execPath, [
+      npmCli, "--silent", "run", "figma:docs:read", "--", "overview", "--state-file", join(tempDir, "state.json"),
+    ], {
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      encoding: "utf8",
+    });
 
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^# figma-workspace docs$/mu);
-  assert.match(result.stdout, /^Status: succeeded$/mu);
-  assert.doesNotMatch(result.stdout, /^>/mu);
-  assert.equal(result.stderr, "");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^# figma-workspace docs$/mu);
+    assert.match(result.stdout, /^Status: succeeded$/mu);
+    assert.doesNotMatch(result.stdout, /^>/mu);
+    assert.equal(result.stderr, "");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("optimized command sidecars stay under the explicit state-file owner", async () => {
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli);
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-sidecar-owner-"));
+  try {
+    const stateFile = join(tempDir, "state.json");
+    const result = spawnSync(process.execPath, [
+      npmCli, "--silent", "run", "figma:guidance", "--", "layout", "--state-file", stateFile,
+      "--max-inline-bytes", "0",
+    ], {
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      encoding: "utf8",
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const pathMatch = /^Path: (.+\.json)$/mu.exec(result.stdout);
+    assert.ok(pathMatch, result.stdout);
+    const sidecarFile = pathMatch[1];
+    assert.equal(dirname(sidecarFile), join(tempDir, "results"));
+    assert.equal(JSON.parse(await readFile(sidecarFile, "utf8")).ok, true);
+    assert.equal(result.stderr, "");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("skill-relative plugin root resolves to the npm package directory", () => {
