@@ -4,9 +4,9 @@ Use this reference when root CLI help is not enough to choose a workflow. Comman
 
 ## Primary File Workflow
 
-- Start non-trivial work with `figma:task:prepare -- --input <json-file|-> --state-file <path>` using JSON fields such as `file`, `taskName`, `workspaceDir`, and `surface`.
+- Start non-trivial work with `figma:task:prepare -- --input <json-file|-> --state-file <absolute-path>` using JSON fields such as `file`, `taskName`, `workspaceDir`, and `surface`.
 - Edit the generated `.figma.ts` file in the task workspace.
-- Run `figma:script:run -- --input <json-file|-> --state-file <path>` with `sessionId`, `inputFile`, `strict: true`, and `surface`; diagnostics and compiled payload preflight run before upstream execution.
+- Run `figma:script:run -- --input <json-file|-> --state-file <absolute-path>` with `sessionId`, `inputFile`, `strict: true`, and `surface`; diagnostics and compiled payload preflight run before upstream execution.
 - If preflight diagnostics fail, repair the same file and rerun it.
 - Return a compact JSON value from the `.figma.ts` script with changed node ids, handles, and validation notes. The CLI renders that runtime value into its Restricted Markdown result; CLI stdout itself is not JSON.
 
@@ -16,9 +16,9 @@ Use this reference when root CLI help is not enough to choose a workflow. Comman
 - Use native Plugin API for advanced work and `$` helpers for common agent tasks.
 - Common helpers include `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`. Use native Figma Plugin API for node creation, querying, and auto layout.
 - Helper access must be static so runtime injection can be analyzed: use `$.helper(...)`, `$["helper"](...)`, or explicit destructuring; avoid dynamic `$[name]`, aliasing `$`, object rest destructuring, and local `$` declarations.
-- Use `figma:guidance` for on-demand `helperProfiles` when choosing between selection, text, layout, assets, capture/QA, repair, and clone/rebuild helpers.
+- Use `figma:guidance -- <query> --state-file <absolute-path>` for on-demand `helperProfiles` when choosing between selection, text, layout, assets, capture/QA, repair, and clone/rebuild helpers.
 - Prefer `$.select` over direct selection mutation.
-- Validate stale handles with `figma:inspect -- <target> --mode validate` before reusing them.
+- Validate stale handles with `figma:inspect -- <target> --mode validate --state-file <absolute-path>` before reusing them.
 
 ## Workflow Add-ons
 
@@ -46,3 +46,4 @@ Use this reference when root CLI help is not enough to choose a workflow. Comman
 - Usage errors and thrown failures are text on stderr.
 - Do not pass stdout to `JSON.parse`; read Markdown fields and parse only a fenced `json` value when the workflow specifically needs that nested value.
 - JSON commands intentionally expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. Run `npm --silent run figma:raw -- <transport-command> --help` when the complete transport JSON schema is needed.
+- Every executing optimized command requires an explicit absolute `--state-file`; its parent owns any `results/` sidecars. Commands that need no existing Figma file context still follow this requirement.

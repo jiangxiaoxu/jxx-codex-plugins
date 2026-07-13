@@ -11326,8 +11326,8 @@ var require_resolve = __commonJS({
       }
       return count;
     }
-    function getFullPath(resolver, id = "", normalize) {
-      if (normalize !== false)
+    function getFullPath(resolver, id = "", normalize2) {
+      if (normalize2 !== false)
         id = normalizeId(id);
       const p = resolver.parse(id);
       return _getFullPath(resolver, p);
@@ -12723,7 +12723,7 @@ var require_fast_uri = __commonJS({
     "use strict";
     var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, escapePreservingEscapes, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = require_utils();
     var { SCHEMES, getSchemeHandler } = require_schemes();
-    function normalize(uri, options) {
+    function normalize2(uri, options) {
       if (typeof uri === "string") {
         uri = /** @type {T} */
         normalizeString(uri, options);
@@ -12990,7 +12990,7 @@ var require_fast_uri = __commonJS({
     }
     var fastUri = {
       SCHEMES,
-      normalize,
+      normalize: normalize2,
       resolve: resolve9,
       resolveComponent,
       equal,
@@ -49555,7 +49555,7 @@ init_workspace_mcp_server();
 // src/cli/figma-workspace-cli.ts
 import { randomUUID as randomUUID2 } from "node:crypto";
 import { link, mkdir as mkdir4, open, readFile as readFile4, rename as rename2, rm as rm2, stat, writeFile as writeFile4 } from "node:fs/promises";
-import { dirname as dirname7, resolve as resolve7 } from "node:path";
+import { dirname as dirname7, isAbsolute as isAbsolute3, normalize, resolve as resolve7 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // src/contract/tool-metadata.ts
@@ -50570,9 +50570,9 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
     return FIGMA_WORKSPACE_CLI_EXIT_SUCCESS;
   }
   try {
+    const sessionFile = resolveSessionFile(parsed.sessionFile, io);
     const input = await readCommandInput(parsed.inputFile, io);
     const commandInput = createCommandInvocationInput(parsed.command, input, parsed.inlineResultLimit);
-    const sessionFile = resolveSessionFile(parsed.sessionFile, io);
     const inlineResultLimit = resolveInlineResultLimit(parsed.inlineResultLimit, input.inlineResultLimit);
     let result;
     let markdownResult;
@@ -50864,10 +50864,11 @@ var FIGMA_WORKSPACE_CLI_HELP = [
   "Input defaults to `{}`. Use `--input -` to read one JSON object from stdin.",
   "",
   "## Options",
+  `- \`--session-file <absolute-path>\`: Required unless fully qualified absolute \`$${FIGMA_WORKSPACE_SESSION_FILE_ENV}\` is set. Anchors persisted session state and the sibling \`results/\` directory.`,
   "- `--inline-result-limit <bytes>`: Global Markdown inline-result byte limit from 0 to 10000. CLI option overrides input `inlineResultLimit`; 0 always writes the complete result to a file; default is 4096.",
   "",
   "## Session State",
-  `Session state defaults to \`$${FIGMA_WORKSPACE_SESSION_FILE_ENV}\` or \`<cwd>/.figma-workspace/session.json\`.`,
+  `Session state requires a fully qualified absolute \`--session-file\` path or fully qualified absolute \`$${FIGMA_WORKSPACE_SESSION_FILE_ENV}\`.`,
   "",
   "## Output",
   "Command results use Restricted Markdown. Failed typed results include `Status: failed`.",
@@ -50890,6 +50891,7 @@ function createFigmaWorkspaceCommandHelp(command) {
     `- \`figma-workspace ${command} [--input <json-file|->] [--session-file <path>] [--inline-result-limit <bytes>]\``,
     "",
     "## CLI Options",
+    `- \`--session-file <absolute-path>\`: Required unless fully qualified absolute \`$${FIGMA_WORKSPACE_SESSION_FILE_ENV}\` is set. Anchors persisted session state and the sibling \`results/\` directory.`,
     "- `--inline-result-limit <bytes>`: Global Markdown inline-result byte limit from 0 to 10000. Overrides input `inlineResultLimit`; 0 forces result-file output; default is 4096.",
     "",
     "## Input JSON Schema",
@@ -51151,9 +51153,20 @@ async function readCommandInput(inputFile, io) {
     throw new FigmaWorkspaceCliUsageError(`Command input is not valid JSON: ${formatCliError(error2)}`);
   }
 }
+function isFullyQualifiedAbsolutePath(path) {
+  return isAbsolute3(path) && normalize(path) === resolve7(path);
+}
 function resolveSessionFile(explicitPath, io) {
   const configuredPath = explicitPath ?? io.env(FIGMA_WORKSPACE_SESSION_FILE_ENV);
-  return resolve7(io.cwd(), configuredPath || ".figma-workspace/session.json");
+  if (configuredPath === void 0 || configuredPath.trim() === "") {
+    throw new FigmaWorkspaceCliUsageError(
+      `Option --session-file requires a fully qualified absolute path when $${FIGMA_WORKSPACE_SESSION_FILE_ENV} is unset.`
+    );
+  }
+  if (!isFullyQualifiedAbsolutePath(configuredPath)) {
+    throw new FigmaWorkspaceCliUsageError("Session file path must be a fully qualified absolute path.");
+  }
+  return resolve7(configuredPath);
 }
 function resolveInlineResultLimit(explicitLimit, inputLimit) {
   if (explicitLimit !== void 0) {
@@ -51573,6 +51586,7 @@ export {
   installNodeReplWebStreamGlobals,
   isFigmaWorkspaceCliDirectRun,
   isMissingFileError as isFigmaWorkspaceMissingFileErrorForTesting,
+  isFullyQualifiedAbsolutePath,
   isRemoteMcpOAuthError2 as isNodeUpstreamRemoteMcpOAuthError,
   isRemoteMcpOAuthError,
   normalizeCallbackPath,

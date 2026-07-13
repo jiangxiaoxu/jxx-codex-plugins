@@ -8,6 +8,7 @@ const __dirname = __figmaWorkspacePathDirname(__filename);
 // src/cli/figma-command-runtime.ts
 import { readFile } from "node:fs/promises";
 import {
+  isFullyQualifiedAbsolutePath,
   runFigmaWorkspaceCli
 } from "../runtime/workspace-runtime.js";
 var EXIT_SUCCESS = 0;
@@ -17,10 +18,11 @@ var STATE_FILE_OPTION = {
   type: "global",
   forwardFlag: "--session-file",
   value: "<path>",
-  description: "Path to the persisted workspace state file.",
-  omitted: { state: "default", value: "FIGMA_WORKSPACE_SESSION_FILE, otherwise <cwd>/.figma-workspace/session.json" },
+  description: "Fully qualified absolute path to the persisted workspace state file and result-sidecar anchor.",
+  omitted: { state: "required" },
   repeatable: false
 };
+var STATE_FILE_EXAMPLE = "--state-file C:/work/project/.figma-workspace/state.json";
 var MAX_INLINE_BYTES_OPTION = {
   type: "global-integer",
   forwardFlag: "--inline-result-limit",
@@ -83,7 +85,6 @@ function targetSpec(command, purpose, extraOptions = {}) {
     command,
     purpose,
     sessionId: true,
-    stateFile: true,
     outputLimit: true,
     position: {
       key: "target",
@@ -93,7 +94,7 @@ function targetSpec(command, purpose, extraOptions = {}) {
       description: "Node id, node URL, or $handle. A node-scoped --file URL can supply the target instead."
     },
     options: { ...fileContextOptions(), ...extraOptions },
-    examples: [`npm --silent run figma:${npmScriptForCommand(command)} -- '$hero' --session-id default`]
+    examples: [`npm --silent run figma:${npmScriptForCommand(command)} -- '$hero' --session-id default ${STATE_FILE_EXAMPLE}`]
   };
 }
 var FIGMA_DIRECT_COMMANDS = {
@@ -108,14 +109,14 @@ var FIGMA_DIRECT_COMMANDS = {
       "--card-limit": integerOption("maxCards", "<n>", "Maximum returned cards from 1 to 8.", { min: 1, max: 8 })
     },
     outputLimit: true,
-    examples: ['npm --silent run figma:guidance -- "text font loadFontAsync" --surface design']
+    examples: [`npm --silent run figma:guidance -- "text font loadFontAsync" --surface design ${STATE_FILE_EXAMPLE}`]
   },
   "docs:list": {
     command: "docs",
     purpose: "List canonical project Markdown topics.",
     options: {},
     outputLimit: true,
-    examples: ["npm --silent run figma:docs:list"]
+    examples: [`npm --silent run figma:docs:list -- ${STATE_FILE_EXAMPLE}`]
   },
   "docs:read": {
     command: "docs",
@@ -123,7 +124,7 @@ var FIGMA_DIRECT_COMMANDS = {
     position: { key: "topic", label: "topic", omitted: { state: "required" }, repeatable: false, description: "Topic returned by figma:docs:list." },
     options: {},
     outputLimit: true,
-    examples: ["npm --silent run figma:docs:read -- workflow"]
+    examples: [`npm --silent run figma:docs:read -- workflow ${STATE_FILE_EXAMPLE}`]
   },
   "docs:search": {
     command: "lookup",
@@ -135,7 +136,7 @@ var FIGMA_DIRECT_COMMANDS = {
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 })
     },
     outputLimit: true,
-    examples: ['npm --silent run figma:docs:search -- "session handles recovery" --limit 5']
+    examples: [`npm --silent run figma:docs:search -- "session handles recovery" --limit 5 ${STATE_FILE_EXAMPLE}`]
   },
   "api:search": {
     command: "lookup",
@@ -147,22 +148,21 @@ var FIGMA_DIRECT_COMMANDS = {
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 })
     },
     outputLimit: true,
-    examples: ["npm --silent run figma:api:search -- createFrame"]
+    examples: [`npm --silent run figma:api:search -- createFrame ${STATE_FILE_EXAMPLE}`]
   },
   doctor: {
     command: "doctor",
     purpose: "Inspect project-doc, lookup-corpus, and TypeScript runtime availability.",
     options: {},
     outputLimit: true,
-    examples: ["npm --silent run figma:doctor"]
+    examples: [`npm --silent run figma:doctor -- ${STATE_FILE_EXAMPLE}`]
   },
   "sessions:list": {
     command: "sessions",
     purpose: "List compact persisted session summaries.",
     options: {},
-    stateFile: true,
     outputLimit: true,
-    examples: ['npm --silent run figma:sessions:list -- --state-file "C:\\work\\figma-state.json"']
+    examples: [`npm --silent run figma:sessions:list -- ${STATE_FILE_EXAMPLE}`]
   },
   "sessions:read": {
     command: "sessions",
@@ -172,16 +172,15 @@ var FIGMA_DIRECT_COMMANDS = {
       "--with-handles": booleanOption("includeHandles", "Include the full handle map."),
       "--with-history": booleanOption("includeHistory", "Include full history entries.")
     },
-    stateFile: true,
     outputLimit: true,
-    examples: ["npm --silent run figma:sessions:read -- default --with-handles"]
+    examples: [`npm --silent run figma:sessions:read -- default --with-handles ${STATE_FILE_EXAMPLE}`]
   },
   "upstream:list": {
     command: "upstream-tools",
     purpose: "List the live official Figma upstream tool directory.",
     options: { "--refresh": booleanOption("refresh", "Refresh upstream discovery before reading.") },
     outputLimit: true,
-    examples: ["npm --silent run figma:upstream:list -- --refresh"]
+    examples: [`npm --silent run figma:upstream:list -- --refresh ${STATE_FILE_EXAMPLE}`]
   },
   "upstream:read": {
     command: "upstream-tools",
@@ -189,13 +188,12 @@ var FIGMA_DIRECT_COMMANDS = {
     position: { key: "name", label: "name", omitted: { state: "required" }, repeatable: false, description: "Exact official upstream tool name." },
     options: { "--refresh": booleanOption("refresh", "Refresh upstream discovery before reading.") },
     outputLimit: true,
-    examples: ["npm --silent run figma:upstream:read -- whoami --refresh"]
+    examples: [`npm --silent run figma:upstream:read -- whoami --refresh ${STATE_FILE_EXAMPLE}`]
   },
   inspect: {
     command: "inspect",
     purpose: "Inspect or validate a target using direct positional syntax.",
     sessionId: true,
-    stateFile: true,
     outputLimit: true,
     position: { key: "target", label: "target", omitted: UNSET_VALUE, repeatable: false, description: "Node id, node URL, or $handle." },
     options: {
@@ -203,7 +201,7 @@ var FIGMA_DIRECT_COMMANDS = {
       "--depth": integerOption("depth", "<n>", "Positive traversal depth.", { min: 1 }),
       "--handle": repeatOption("handles", "<name>", "Handle name or node id to validate; repeat as needed.")
     },
-    examples: ["npm --silent run figma:inspect -- '$hero' --mode validate --session-id default"]
+    examples: [`npm --silent run figma:inspect -- '$hero' --mode validate --session-id default ${STATE_FILE_EXAMPLE}`]
   },
   metadata: targetSpec("get-metadata", "Read broad Figma metadata for an optional target."),
   "design-context": targetSpec("get-design-context", "Read official design implementation context.", {
@@ -219,7 +217,6 @@ var FIGMA_DIRECT_COMMANDS = {
     command: "search-design-system",
     purpose: "Search official design-system components, variables, and styles.",
     sessionId: true,
-    stateFile: true,
     outputLimit: true,
     position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Design-system search text." },
     options: {
@@ -233,16 +230,15 @@ var FIGMA_DIRECT_COMMANDS = {
       "--no-code-connect": booleanOption("disableCodeConnect", "Disable Code Connect context."),
       "--library": repeatOption("includeLibraryKeys", "<key>", "Include one library key; repeat as needed.")
     },
-    examples: ['npm --silent run figma:design-system -- "button primary" --components --variables']
+    examples: [`npm --silent run figma:design-system -- "button primary" --components --variables ${STATE_FILE_EXAMPLE}`]
   },
   libraries: {
     command: "get-libraries",
     purpose: "List available Figma libraries.",
     sessionId: true,
-    stateFile: true,
     outputLimit: true,
     options: { ...fileContextOptions(), "--offset": integerOption("offset", "<n>", "Non-negative pagination offset.", { min: 0 }) },
-    examples: ["npm --silent run figma:libraries -- --session-id default"]
+    examples: [`npm --silent run figma:libraries -- --session-id default ${STATE_FILE_EXAMPLE}`]
   }
 };
 var FIGMA_JSON_COMMANDS = {
@@ -353,6 +349,9 @@ function parseDirectArguments(commandName, spec, argv) {
       if (option.type === "global" || option.type === "global-integer") {
         if (seenKeys.has(token)) throw new Error(`Duplicate option for figma ${commandName}: ${token}`);
         seenKeys.add(token);
+        if (token === "--state-file" && !isFullyQualifiedAbsolutePath(value)) {
+          throw new Error("Option --state-file requires a fully qualified absolute path.");
+        }
         const forwardedValue = option.type === "global-integer" ? String(parseIntegerOption(option, value, token)) : value;
         globalArgs.push(option.forwardFlag, forwardedValue);
         continue;
@@ -374,6 +373,9 @@ function parseDirectArguments(commandName, spec, argv) {
   if (spec.position?.omitted.state === "required" && !positionalSeen) {
     throw new Error(`Missing required <${spec.position.label}> for figma ${commandName}.`);
   }
+  if (!seenKeys.has("--state-file")) {
+    throw new Error(`figma ${commandName} requires --state-file <path>.`);
+  }
   return { input, globalArgs };
 }
 function parseJsonArguments(commandName, spec, argv) {
@@ -387,12 +389,16 @@ function parseJsonArguments(commandName, spec, argv) {
     if (seen.has(token)) throw new Error(`Duplicate option for figma ${commandName}: ${token}`);
     const value = argv[index + 1];
     if (value === void 0 || value.startsWith("--")) throw new Error(`Option ${token} requires ${option.value}.`);
+    if (token === "--state-file" && !isFullyQualifiedAbsolutePath(value)) {
+      throw new Error("Option --state-file requires a fully qualified absolute path.");
+    }
     seen.add(token);
     const forwardedValue = option.type === "global-integer" ? String(parseIntegerOption(option, value, token)) : value;
     forwardedArgs.push(option.forwardFlag, forwardedValue);
     index += 1;
   }
   if (spec.inputRequired && !seen.has("--input")) throw new Error(`figma ${commandName} requires --input <json-file|->.`);
+  if (!seen.has("--state-file")) throw new Error(`figma ${commandName} requires --state-file <path>.`);
   return forwardedArgs;
 }
 function jsonOptions(spec) {
@@ -411,7 +417,7 @@ function jsonOptions(spec) {
 }
 function directOptions(spec) {
   return {
-    ...spec.stateFile === true ? { "--state-file": STATE_FILE_OPTION } : {},
+    "--state-file": STATE_FILE_OPTION,
     ...spec.sessionId === true ? { "--session-id": SESSION_ID_OPTION } : {},
     ...spec.outputLimit === true ? { "--max-inline-bytes": MAX_INLINE_BYTES_OPTION } : {},
     ...spec.options

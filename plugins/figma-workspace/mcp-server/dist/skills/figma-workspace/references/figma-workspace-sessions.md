@@ -5,12 +5,12 @@ Use this reference when file context, handles, or cross-process continuity matte
 ## State File Selection
 
 - Command `--state-file` selects the persisted workspace state store. Use the same absolute path across CLI calls that must share context.
-- The state file's parent directory also owns `results/` sidecars. Without an explicit state file, the plugin-root default is `.figma-workspace/session.json` with sidecars under `.figma-workspace/results/`.
-- The raw transport CLI names the same state option `--session-file`; its environment/default resolution remains part of `figma:raw` help, not the optimized command surface.
+- Every executing optimized command requires this explicit absolute option. The state file's parent directory also owns `results/` sidecars.
+- The raw transport CLI names the same state option `--session-file`. Pass it as a fully qualified absolute path or set fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`; there is no current-directory default, and relative or current-drive-rooted paths are rejected.
 
 ## Opening And Reusing Context
 
-- Use `figma:sessions:list -- --state-file <path>` for compact persisted summaries. Use `figma:sessions:read -- <session-id> --state-file <path>` with `--with-handles` or `--with-history` only when needed.
+- Use `figma:sessions:list -- --state-file <absolute-path>` for compact persisted summaries. Use `figma:sessions:read -- <session-id> --state-file <absolute-path>` with `--with-handles` or `--with-history` only when needed.
 - Run `figma:open` with JSON containing the intended Figma file or URL to create or update a session.
 - Commands that accept a raw node id or `$handle` need state-file context to determine the file and accept `--session-id` to select the logical workspace session.
 - A node URL or structured `{ fileKey, nodeId }` target can provide file context directly where the command supports that target form.
@@ -19,7 +19,7 @@ Use this reference when file context, handles, or cross-process continuity matte
 ## Handles And Recovery
 
 - Handles persist agent-friendly node references in local session state; they are not PluginData stored in the Figma document.
-- Validate a handle with `figma:inspect -- <target> --mode validate` before relying on it after structural changes or a later process.
+- Validate a handle with `figma:inspect -- <target> --mode validate --state-file <absolute-path>` before relying on it after structural changes or a later process.
 - Use `$.remember` and `$.forget` deliberately, and return changed node ids or handles from repairable scripts.
 - If a state file is malformed or points at the wrong file, stop the mutation, preserve the file for diagnosis, and reopen with an explicit, task-specific state path.
 - Do not parse the session JSON directly as an agent contract; use the read-only session commands so schema and locking stay owned by the CLI.

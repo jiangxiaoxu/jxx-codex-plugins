@@ -13,6 +13,7 @@ import {
 
 const packageRoot = resolve(import.meta.dirname, "..");
 const runtimePath = resolve(packageRoot, "dist/cli/figma-command-runtime.js");
+const stateFile = resolve(packageRoot, ".test-state.json");
 
 test("build publishes the typed shared Figma command runtime", async () => {
   const source = await readFile(runtimePath, "utf8");
@@ -29,7 +30,7 @@ test("direct command parsing maps typed input and optimized global arguments", a
   const output = createOutput();
   const exitCode = await runFigmaCommand("inspect", [
     "$hero", "--mode", "validate", "--depth", "2", "--handle", "title", "--handle", "body",
-    "--session-id", "workspace", "--state-file", "state.json", "--max-inline-bytes", "512",
+    "--session-id", "workspace", "--state-file", stateFile, "--max-inline-bytes", "512",
   ], {
     ...output.dependencies,
     runCli: async (argv, dependencies) => {
@@ -39,7 +40,7 @@ test("direct command parsing maps typed input and optimized global arguments", a
   });
   assert.equal(exitCode, 0, output.stderr);
   assert.deepEqual(calls, [{
-    argv: ["inspect", "--input", "-", "--session-file", "state.json", "--inline-result-limit", "512"],
+    argv: ["inspect", "--input", "-", "--session-file", stateFile, "--inline-result-limit", "512"],
     input: {
       target: "$hero", mode: "validate", depth: 2, handles: ["title", "body"], sessionId: "workspace",
     },
@@ -53,9 +54,9 @@ test("direct parsing supports option order and an exact positional separator", a
     return 0;
   };
 
-  assert.equal(await runFigmaCommand("api:search", ["--limit", "2", "createFrame"], { runCli }), 0);
-  assert.equal(await runFigmaCommand("api:search", ["createFrame", "--limit", "2"], { runCli }), 0);
-  assert.equal(await runFigmaCommand("api:search", ["--limit", "2", "--", "--help"], { runCli }), 0);
+  assert.equal(await runFigmaCommand("api:search", ["--limit", "2", "createFrame", "--state-file", stateFile], { runCli }), 0);
+  assert.equal(await runFigmaCommand("api:search", ["createFrame", "--limit", "2", "--state-file", stateFile], { runCli }), 0);
+  assert.equal(await runFigmaCommand("api:search", ["--limit", "2", "--state-file", stateFile, "--", "--help"], { runCli }), 0);
   assert.deepEqual(calls.map(({ input }) => input), [
     { kind: "api", symbol: "createFrame", maxResults: 2 },
     { kind: "api", symbol: "createFrame", maxResults: 2 },
@@ -66,18 +67,18 @@ test("direct parsing supports option order and an exact positional separator", a
 test("strict integers accept exact boundaries and reject non-decimal or unsafe values before runtime", async () => {
   const accepted = [];
   for (const value of ["0", "10000"]) {
-    assert.equal(await runFigmaCommand("doctor", ["--max-inline-bytes", value], {
+    assert.equal(await runFigmaCommand("doctor", ["--state-file", stateFile, "--max-inline-bytes", value], {
       runCli: async (argv) => { accepted.push(argv); return 0; },
     }), 0);
   }
   assert.deepEqual(accepted, [
-    ["doctor", "--input", "-", "--inline-result-limit", "0"],
-    ["doctor", "--input", "-", "--inline-result-limit", "10000"],
+    ["doctor", "--input", "-", "--session-file", stateFile, "--inline-result-limit", "0"],
+    ["doctor", "--input", "-", "--session-file", stateFile, "--inline-result-limit", "10000"],
   ]);
 
   for (const value of ["", "+1", "1.0", "1e3", "9007199254740992", "-9007199254740992"]) {
     const output = createOutput();
-    assert.equal(await runFigmaCommand("doctor", ["--max-inline-bytes", value], {
+    assert.equal(await runFigmaCommand("doctor", ["--state-file", stateFile, "--max-inline-bytes", value], {
       ...output.dependencies,
       readFile: async () => assert.fail("invalid input must fail before file I/O"),
       runCli: async () => assert.fail("invalid input must fail before runtime"),
@@ -90,23 +91,65 @@ test("JSON commands retain optimized option validation and transport mapping", a
   const calls = [];
   const output = createOutput();
   assert.equal(await runFigmaCommand("task:prepare", [
-    "--input", "task.json", "--state-file", "state.json", "--max-inline-bytes", "0",
+    "--input", "task.json", "--state-file", stateFile, "--max-inline-bytes", "0",
   ], {
     ...output.dependencies,
     runCli: async (argv) => { calls.push(argv); return 7; },
   }), 7);
   assert.deepEqual(calls, [[
-    "prepare-task", "--input", "task.json", "--session-file", "state.json", "--inline-result-limit", "0",
+    "prepare-task", "--input", "task.json", "--session-file", stateFile, "--inline-result-limit", "0",
   ]]);
 
-  assert.equal(await runFigmaCommand("task:prepare", [], output.dependencies), 2);
+  assert.equal(await runFigmaCommand("task:prepare", ["--state-file", stateFile], output.dependencies), 2);
   assert.match(output.stderr, /requires --input <json-file\|->/u);
+});
+
+test("every executing optimized command requires an explicit absolute state file", async () => {
+  for (const commandName of Object.keys(FIGMA_DIRECT_COMMANDS)) {
+    const output = createOutput();
+    const args = commandName === "guidance" ? ["query"]
+      : commandName === "docs:read" ? ["overview"]
+        : commandName === "docs:search" || commandName === "api:search" || commandName === "design-system" ? ["query"]
+          : commandName === "sessions:read" ? ["default"]
+            : commandName === "upstream:read" ? ["whoami"]
+              : [];
+    assert.equal(await runFigmaCommand(commandName, args, {
+      ...output.dependencies,
+      runCli: async () => assert.fail("missing state file must fail before runtime"),
+    }), 2, commandName);
+    assert.match(output.stderr, /requires --state-file <path>/u, commandName);
+  }
+
+  for (const commandName of Object.keys(FIGMA_JSON_COMMANDS)) {
+    const output = createOutput();
+    const inputArgs = commandName === "open" ? [] : ["--input", "input.json"];
+    assert.equal(await runFigmaCommand(commandName, inputArgs, {
+      ...output.dependencies,
+      runCli: async () => assert.fail("missing state file must fail before runtime"),
+    }), 2, commandName);
+    assert.match(output.stderr, /requires --state-file <path>/u, commandName);
+  }
+
+  const invalidStateFiles = [
+    "relative/state.json",
+    ...(process.platform === "win32" ? ["/state.json", "\\state.json"] : []),
+  ];
+  for (const [commandName, args] of [["guidance", ["query"]], ["open", []]]) {
+    for (const invalidStateFile of invalidStateFiles) {
+      const output = createOutput();
+      assert.equal(await runFigmaCommand(commandName, [...args, "--state-file", invalidStateFile], {
+        ...output.dependencies,
+        runCli: async () => assert.fail("invalid state file must fail before runtime"),
+      }), 2, `${commandName} ${invalidStateFile}`);
+      assert.match(output.stderr, /requires a fully qualified absolute path/u, `${commandName} ${invalidStateFile}`);
+    }
+  }
 });
 
 test("bare help remains a legal positional or option value", async () => {
   const directCalls = [];
   const directOutput = createOutput();
-  assert.equal(await runFigmaCommand("api:search", ["help"], {
+  assert.equal(await runFigmaCommand("api:search", ["help", "--state-file", stateFile], {
     ...directOutput.dependencies,
     runCli: async (argv, dependencies) => {
       directCalls.push({ argv, input: JSON.parse(await dependencies.io.readStdin()) });
@@ -114,18 +157,18 @@ test("bare help remains a legal positional or option value", async () => {
     },
   }), 0);
   assert.deepEqual(directCalls, [{
-    argv: ["lookup", "--input", "-"],
+    argv: ["lookup", "--input", "-", "--session-file", stateFile],
     input: { kind: "api", symbol: "help" },
   }]);
   assert.equal(directOutput.stdout, "");
 
   const jsonCalls = [];
   const jsonOutput = createOutput();
-  assert.equal(await runFigmaCommand("eval", ["--input", "help"], {
+  assert.equal(await runFigmaCommand("eval", ["--input", "help", "--state-file", stateFile], {
     ...jsonOutput.dependencies,
     runCli: async (argv) => { jsonCalls.push(argv); return 0; },
   }), 0);
-  assert.deepEqual(jsonCalls, [["eval", "--input", "help"]]);
+  assert.deepEqual(jsonCalls, [["eval", "--input", "help", "--session-file", stateFile]]);
   assert.equal(jsonOutput.stdout, "");
 });
 
@@ -145,6 +188,7 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   const direct = createOutput();
   assert.equal(await runFigmaCommand("guidance", ["--help"], direct.dependencies), 0);
   assert.match(direct.stdout, /--card-limit <n>/u);
+  assert.match(direct.stdout, /--state-file <path>.*Required\./u);
   assert.match(direct.stdout, /--max-inline-bytes <bytes>/u);
   assert.match(direct.stdout, /<query>.*Required\./u);
   assert.match(direct.stdout, /--workflow <id>.*Default: unset\./u);
@@ -155,7 +199,7 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   assert.equal(await runFigmaCommand("capture", ["-h"], json.dependencies), 0);
   assert.match(json.stdout, /figma:raw -- capture-node --help/u);
   assert.match(json.stdout, /--input <json-file\|->.*Required\./u);
-  assert.match(json.stdout, /--state-file <path>.*Default: FIGMA_WORKSPACE_SESSION_FILE/u);
+  assert.match(json.stdout, /--state-file <path>.*Required\./u);
   assert.match(json.stdout, /--max-inline-bytes <bytes>.*Default: input inlineResultLimit when present, otherwise 4096\./u);
 
   const repeatable = createOutput();
