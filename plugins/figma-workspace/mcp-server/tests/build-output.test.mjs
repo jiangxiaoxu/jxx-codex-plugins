@@ -97,6 +97,9 @@ test("CLI exposes local help and returns a usage error for unknown commands", as
   assert.match(commandHelp.stdout, /^## CLI Options$/mu);
   assert.match(commandHelp.stdout, /^## Input JSON Schema$/mu);
   assert.match(commandHelp.stdout, /```json\n\{/u);
+  assert.match(commandHelp.stdout, /Git-ignored <project>\/\.figma-workspace/u);
+  assert.match(commandHelp.stdout, /explicitly selected Figma task-artifact directory/u);
+  assert.doesNotMatch(commandHelp.stdout, /task-memory|<project>\/figma-workspace|project\/worktree path/u);
 
   const usage = await runCli(["not-a-command"]);
   assert.equal(usage.code, 2);
@@ -114,6 +117,7 @@ test("every command-specific help exposes its canonical input JSON schema", () =
     assert.match(help, /^## Input JSON Schema$/mu);
     assert.match(help, /^## Output$/mu);
     assert.doesNotMatch(help, /figma_workspace_|figma-workspace:\/\//u, command);
+    assert.doesNotMatch(help, /task-memory|<project>\/figma-workspace|project\/worktree path/u, command);
     const schemaSource = help.match(/## Input JSON Schema\n```json\n([\s\S]*?)\n```/u)?.[1];
     assert.notEqual(schemaSource, undefined, command);
     const schema = JSON.parse(schemaSource);

@@ -117,6 +117,9 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     assert.equal(plan.ok, true);
     assert.ok(plan.recommendedTools.includes("guidance"));
     assert.ok(plan.recommendedTools.includes("inspect"));
+    assert.match(plan.workflow.workspaceDirGuidance, /Git-ignored <project>\/\.figma-workspace/u);
+    assert.match(plan.workflow.workspaceDirGuidance, /capability-specific output roots/u);
+    assert.doesNotMatch(JSON.stringify(plan), /task-memory|<project>\/figma-workspace|absolute project\/worktree/u);
     assert.doesNotMatch(JSON.stringify(plan), /figma_workspace_/u);
 
     for (const result of [

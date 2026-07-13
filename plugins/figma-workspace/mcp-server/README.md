@@ -9,11 +9,11 @@ npm install
 npm run build
 ```
 
-The installed plugin exposes this package through independent plugin-root npm command entrypoints. Use `npm.cmd --silent` in Windows PowerShell and `npm --silent` in other shells so lifecycle banners do not contaminate Restricted Markdown stdout, put npm's `--` before arguments passed to an independent entrypoint, and run a selected command with `-h` or `--help` before first use. The canonical command CLI and the equivalent independent entrypoint are:
+The installed plugin exposes this package through independent plugin-root npm command entrypoints. Use `npm --silent` in every shell so lifecycle banners do not contaminate Restricted Markdown stdout. Put npm's `--` before arguments passed to an independent entrypoint, and run a selected command with `-h` or `--help` before first use. The canonical command CLI and the equivalent independent entrypoint are:
 
 ```text
-npm.cmd --silent run figma -- api:search createFrame
-npm.cmd --silent run figma:api:search -- createFrame
+npm --silent run figma -- api:search createFrame
+npm --silent run figma:api:search -- createFrame
 ```
 
 Family entrypoints are `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`. Direct query/read commands are `figma:guidance`, `figma:docs:list`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`.
@@ -39,7 +39,7 @@ This package is not installed as a Codex MCP server and does not expose local MC
   "sessionId": "settings-workspace",
   "file": "https://www.figma.com/design/ExampleFigmaFileKey012/UI",
   "taskName": "settings-panel-polish",
-  "workspaceDir": "C:/work/project/figma-workspace",
+  "workspaceDir": "C:/work/project/.figma-workspace",
   "overwrite": true
 }
 ```

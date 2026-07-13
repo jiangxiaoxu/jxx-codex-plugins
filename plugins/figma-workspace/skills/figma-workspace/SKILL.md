@@ -10,7 +10,7 @@ Use the bundled Node CLI for every Figma Workspace operation. The plugin does no
 ## Start Here
 
 - Do not search for MCP tools or resource URIs. The CLI, its command help, and its project Markdown docs are the complete agent-facing surface.
-- Resolve `<plugin-root>`. For stateful work, choose one absolute command-level `--state-file` inside the current project or task artifacts and reuse it for the whole workflow.
+- Resolve `<plugin-root>`. For stateful work, choose and reuse one absolute command-level `--state-file`. Prefer a Git-ignored `<project>/.figma-workspace/state.json`; otherwise use an explicitly selected Figma task-artifact directory. Do not treat every injected writable workspace root as generic task artifacts; capability-specific output roots belong only to that capability.
 - Before first use of a specific command in a task, run that command with `-h` or `--help`; use its help as the source of truth for arguments and options.
 - Read stdout as Restricted Markdown. If Markdown points to `outputFiles.cliResultFile`, read that JSON sidecar for the complete result. Never parse stdout itself as JSON.
 - Treat `run-script-file` phase `preflight` as not executed. Repair every fatal diagnostic before rerunning; enable dangerous operations only after the user explicitly authorizes them.
@@ -20,13 +20,13 @@ Use the bundled Node CLI for every Figma Workspace operation. The plugin does no
 
 ## NPM Command Contract
 
-Resolve `<plugin-root>` as `<skill-dir>/../..`, where `<skill-dir>` contains this `SKILL.md`, and use it as the working directory. In Windows PowerShell use `npm.cmd --silent`; in cmd, bash, and other shells use `npm --silent`. `--silent` is required so npm lifecycle banners do not contaminate Restricted Markdown stdout. Always put npm's `--` separator before command arguments or forwarded CLI options. The canonical command CLI is `npm.cmd --silent run figma -- <command> ...`; each `figma:<command>` script is an independent npm executable entrypoint for the same command. Before first use, run the selected entrypoint with `-h` or `--help`.
+Resolve `<plugin-root>` as `<skill-dir>/../..`, where `<skill-dir>` contains this `SKILL.md`, and use it as the working directory. Use `npm --silent` in every shell. `--silent` is required so npm lifecycle banners do not contaminate Restricted Markdown stdout. Always put npm's `--` separator before command arguments or forwarded CLI options. The canonical command CLI is `npm --silent run figma -- <command> ...`; each `figma:<command>` script is an independent npm executable entrypoint for the same command. Before first use, run the selected entrypoint with `-h` or `--help`.
 
 ```text
-npm.cmd --silent run figma:guidance -- --help
-npm.cmd --silent run figma:guidance -- "text font loadFontAsync" --surface design
-npm.cmd --silent run figma -- api:search createFrame
-npm.cmd --silent run figma:api:search -- createFrame
+npm --silent run figma:guidance -- --help
+npm --silent run figma:guidance -- "text font loadFontAsync" --surface design
+npm --silent run figma -- api:search createFrame
+npm --silent run figma:api:search -- createFrame
 ```
 
 - Family entrypoints: `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
@@ -46,7 +46,7 @@ npm.cmd --silent run figma:api:search -- createFrame
 - The Markdown `Input` line summarizes long code, base64, objects, and arrays instead of echoing the full input.
 - Use `npm --silent run figma:help` for the command directory. Use the selected command's `-h` or `--help` before first use. Use `npm --silent run figma:raw -- <transport-command> --help` only when the complete transport JSON schema is needed.
 
-Choose a state file inside the current project, worktree, or task artifacts, for example `<project>/figma-workspace/state.json` or `<project>/task-memory/<task-id>/artifacts/figma-workspace/state.json`. It is temporary local state and should not be committed by default.
+The state file is temporary local state and should not be committed by default.
 
 ## Default Workflow
 

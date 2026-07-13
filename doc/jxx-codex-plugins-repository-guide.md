@@ -43,7 +43,7 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 - Manifest: `plugins/figma-workspace/.codex-plugin/plugin.json`.
 - Skill router: `plugins/figma-workspace/skills/figma-workspace/SKILL.md`.
 - Agent CLI source: `plugins/figma-workspace/mcp-server/src/cli/figma-workspace-cli.ts`.
-- Agent invocation: use the canonical `npm --silent run figma -- <command>` CLI or the corresponding independent `figma:<command>` npm executable. Direct commands use task-shaped arguments; JSON commands use optimized input, state, and output options. All entrypoints share the typechecked command runtime. The 22 transport JSON commands and their complete schemas are available only through `figma:raw` and `figma:raw:help`. In Windows PowerShell use `npm.cmd --silent`; other shells use `npm --silent`; `--silent` preserves Restricted Markdown stdout after packaging. Put npm's `--` before arguments passed to an independent npm executable.
+- Agent invocation: use the canonical `npm --silent run figma -- <command>` CLI or the corresponding independent `figma:<command>` npm executable. Direct commands use task-shaped arguments; JSON commands use optimized input, state, and output options. All entrypoints share the typechecked command runtime. The 22 transport JSON commands and their complete schemas are available only through `figma:raw` and `figma:raw:help`. Use `npm --silent` in every shell to preserve Restricted Markdown stdout after packaging. Put npm's `--` before arguments passed to an independent npm executable.
 - Agent result surface: Restricted Markdown on stdout for typed results; usage and thrown failures use stderr.
 - Project docs: `plugins/figma-workspace/skills/figma-workspace/references/*.md`; `docs` reads complete topics while `guidance` and `lookup` search them.
 - OAuth bridge: `plugins/figma-workspace/scripts/server.mjs`.
@@ -109,5 +109,5 @@ The CLI package build regenerates `dist/`; review generated changes with the sou
 - `plugins/figma-workspace/mcp-server/dist/` is checked-in generated output.
 - `plugins/figma-workspace/skills/figma-workspace/references/upstream-corpus/` is generated lookup data, not the primary agent documentation surface.
 - Figma OAuth cache files live outside the repository and may contain secrets.
-- Figma CLI state files are local runtime state and should not be committed by default. Their parent directory also owns result sidecars; stateless commands use the plugin-root default `.figma-workspace/results/` location.
+- Figma CLI state files are local runtime state and should not be committed by default. Prefer a Git-ignored project-local `.figma-workspace/`; otherwise use an explicitly selected Figma task-artifact directory. Do not reuse capability-specific output roots as generic task storage. The state file's parent directory also owns result sidecars; stateless commands use the plugin-root default `.figma-workspace/results/` location.
 - Workspace `task-memory/` directories are runtime task state and should not be treated as repository documentation or plugin source.
