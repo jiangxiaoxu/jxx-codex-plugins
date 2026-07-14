@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "skill": "figma-generate-library",
+  "records": [
+    {
+      "id": "figma-generate-library/SKILL.md",
+      "sourceContentSha256": "38d9381d4fb089233eec0a9af829a6444fbe7c8413cfcfbb89d1992a5f08b7fc",
+      "classification": "router",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/SKILL.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-library/references/code-connect-setup.md",
+      "sourceContentSha256": "6662c3f0d68e9b81bc2e8d766a40fc526a055b4c2acfaab36947a56c38f660fe",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/references/code-connect-setup.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-library/references/component-creation.md",
+      "sourceContentSha256": "c16fc09041470ae7b4a04a268c457039738e834c2ea845bd239ada3a859de420",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/references/component-creation.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-library/references/discovery-phase.md",
+      "sourceContentSha256": "fb60b63283f9cc9956eb57d19cf7c696f38d4b0e5c5a68f5e451ad3815ef8666",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/references/discovery-phase.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-library/references/documentation-creation.md",
+      "sourceContentSha256": "269e706d9f1414c6a44df1886ccacc17c10b9c2cd3cde6025c065ac838a835e4",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/references/documentation-creation.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-library/references/error-recovery.md",
+      "sourceContentSha256": "6efebd43841b882c43aa9ced7e182a4478062fcba7b164fa9ab3eedb3014ef92",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/references/error-recovery.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-library/references/naming-conventions.md",
+      "sourceContentSha256": "16810f87eab00ea93644035dca95e2d927b266b9fcbf5460c1712dab30638442",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/references/naming-conventions.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-library/references/token-creation.md",
+      "sourceContentSha256": "05a476c0c7e85aab8e576c45c263299ac66c77b7d4dff553a6f671b46898c87e",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/references/token-creation.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-library/scripts/bindVariablesToComponent.js",
+      "sourceContentSha256": "f6492ad075b38bab0ae9a7a0dfb60c58e23a4258f67261f1b166098df58f115c",
+      "classification": "examples",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/examples/bind-variables-to-component.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "canonical-typescript-example"
+    },
+    {
+      "id": "figma-generate-library/scripts/cleanupOrphans.js",
+      "sourceContentSha256": "7cb841968d821597fe308b0feece3637a693c49c9f9ff137a846e5543716c878",
+      "classification": "examples",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/examples/cleanup-orphans.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "canonical-typescript-example"
+    },
+    {
+      "id": "figma-generate-library/scripts/createComponentWithVariants.js",
+      "sourceContentSha256": "bb49ab8921f239e4c0a188c83bf382f00dcfa877afb340a8d0ff473fed764777",
+      "classification": "examples",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/examples/create-component-with-variants.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "canonical-typescript-example"
+    },
+    {
+      "id": "figma-generate-library/scripts/createDocumentationPage.js",
+      "sourceContentSha256": "c0aaab85fbd914cba961dc4036033ccce16ba19752c3664a82843f2479f71119",
+      "classification": "examples",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/examples/create-documentation-page.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "canonical-typescript-example"
+    },
+    {
+      "id": "figma-generate-library/scripts/createSemanticTokens.js",
+      "sourceContentSha256": "15682762708cbfcca1b2734c72fce8b981528c4b1131c8f1645b411edbc94b46",
+      "classification": "examples",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/examples/create-semantic-tokens.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "canonical-typescript-example"
+    },
+    {
+      "id": "figma-generate-library/scripts/createVariableCollection.js",
+      "sourceContentSha256": "27de8086b7e9cc2ed475d7ba5014d91e62527982a5216a8cfcda1c8bef14f117",
+      "classification": "examples",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/examples/create-variable-collection.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "canonical-typescript-example"
+    },
+    {
+      "id": "figma-generate-library/scripts/inspectFileStructure.js",
+      "sourceContentSha256": "d4c73a074cfef2bfe6dc31998b3e9fb4861bfd4e0ae61bcda6165ab05c9f3118",
+      "classification": "examples",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/examples/inspect-file-structure.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "canonical-typescript-example"
+    },
+    {
+      "id": "figma-generate-library/scripts/rehydrateState.js",
+      "sourceContentSha256": "0ef4d0e01eed173a26d72f3ad88093c81088a68d54e252f373030c0fe5b1d4cf",
+      "classification": "examples",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/examples/rehydrate-state.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "canonical-typescript-example"
+    },
+    {
+      "id": "figma-generate-library/scripts/validateCreation.js",
+      "sourceContentSha256": "dae970b4d80c4d0994f14c89ad01c04115604444b916a0b8fc342ed262fdfa97",
+      "classification": "examples",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-library/examples/validate-creation.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "canonical-typescript-example"
+    }
+  ]
+}

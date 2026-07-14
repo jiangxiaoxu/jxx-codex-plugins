@@ -240,7 +240,7 @@ export const FIGMA_DIRECT_COMMANDS = {
     options: {}, outputLimit: true, examples: [`npm --silent run figma:docs:read -- workflow ${STATE_FILE_EXAMPLE}`],
   },
   "docs:search": {
-    command: "lookup", purpose: "Search project and upstream workflow documentation.", fixedInput: { kind: "docs", scope: "active" },
+    command: "lookup", purpose: "Search project and canonical workflow documentation.", fixedInput: { kind: "docs", scope: "active" },
     position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Documentation search text." },
     options: {
       "--scope": {
@@ -262,7 +262,7 @@ export const FIGMA_DIRECT_COMMANDS = {
     outputLimit: true, examples: [`npm --silent run figma:api:search -- createFrame ${STATE_FILE_EXAMPLE}`],
   },
   doctor: {
-    command: "doctor", purpose: "Inspect project-doc, lookup-corpus, and TypeScript runtime availability.",
+    command: "doctor", purpose: "Inspect canonical docs, generated Plugin API index, and TypeScript runtime availability.",
     options: {}, outputLimit: true, examples: [`npm --silent run figma:doctor -- ${STATE_FILE_EXAMPLE}`],
   },
   "sessions:list": {

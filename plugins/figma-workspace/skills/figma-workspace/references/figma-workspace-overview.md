@@ -33,8 +33,8 @@ Use this reference to choose a CLI capability before opening command-specific he
 
 - Use `figma:docs:list` and `figma:docs:read` for canonical project Markdown topics.
 - Use `figma:guidance` for task-oriented cards, helper profiles, wrapper profiles, and workflow sequencing.
-- Use `figma:docs:search` for project workflow documentation plus upstream reference snippets.
-- Use `figma:api:search` for exact Plugin API symbols.
+- Use `figma:docs:search` for project workflow documentation plus the plugin-owned canonical corpus. Its scope is `active|conditional|examples|all`; the 9 examples are plugin-owned TypeScript-in-Markdown templates.
+- Use `figma:api:search` for exact Plugin API symbols from the generated bundled `@figma/plugin-typings` index, independently of any development snapshot.
 - Use `figma:sessions:list` and `figma:sessions:read` to inspect persisted state without reading session JSON directly.
 - Use `figma:doctor` for local lookup, project-doc, and TypeScript runtime asset faults.
 - Use `figma:upstream:list` and `figma:upstream:read` for the live official schema, then use `figma:upstream:call` only when an official capability has no first-class CLI wrapper.

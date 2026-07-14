@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-14T07:41:18.793Z",
+  "from": {
+    "resolvedCommit": "07316dd2920d61303ca0e52812b31f5f341e7b15",
+    "corpusSha256": "de51eaaab4b4452ad521f3c9e7ad5182d383a2024c21948fbc95ac7c18bdbb45",
+    "recordCount": 88
+  },
+  "to": {
+    "resolvedCommit": "07316dd2920d61303ca0e52812b31f5f341e7b15",
+    "corpusSha256": "de51eaaab4b4452ad521f3c9e7ad5182d383a2024c21948fbc95ac7c18bdbb45",
+    "recordCount": 88
+  },
+  "summary": {
+    "newCount": 0,
+    "changedCount": 0,
+    "deletedCount": 0,
+    "unchangedCount": 88
+  },
+  "changes": {
+    "new": [],
+    "changed": [],
+    "deleted": []
+  },
+  "adaptation": {
+    "readyCount": 88,
+    "pendingCount": 0,
+    "retiredCount": 0,
+    "pendingRecords": [],
+    "retiredRecords": []
+  }
+}

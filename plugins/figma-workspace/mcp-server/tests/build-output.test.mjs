@@ -66,6 +66,9 @@ test("build publishes a private package with only the figma-workspace CLI bin", 
   assert.equal(distFiles.includes("cli/figma-workspace-cli.js"), true);
   assert.equal(distFiles.some((entry) => entry === "mcp" || entry.startsWith("mcp/")), false);
   assert.equal(distFiles.some((entry) => entry.includes("upstream-stdio")), false);
+  assert.equal(distFiles.some((entry) => entry.includes("upstream-corpus") || entry.includes("upstream-active")), false);
+  assert.equal(distFiles.includes("skills/figma-workspace/references/canonical-corpus/manifest.json"), true);
+  assert.equal(distFiles.includes("runtime/figma-plugin-api-index/manifest.json"), true);
   for (const file of [
     "figma-workspace-overview.md",
     "figma-workspace-workflow.md",

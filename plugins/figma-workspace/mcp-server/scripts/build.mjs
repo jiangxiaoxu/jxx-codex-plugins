@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmod, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -114,8 +115,7 @@ for (const output of publicWrappers) {
   await writeWrapper(output.outfile, output.source, output.executable === true);
 }
 
-await stageUpstreamCorpus();
-await stageUpstreamActive();
+await stageCanonicalCorpus();
 await stageProjectDocs();
 await stageHelperDeclarations();
 
@@ -136,16 +136,9 @@ async function writeWrapper(file, source, executable) {
   }
 }
 
-async function stageUpstreamCorpus() {
-  const source = resolve(root, "../skills/figma-workspace/references/upstream-corpus");
-  const target = resolve(dist, "skills/figma-workspace/references/upstream-corpus");
-  await rm(target, { recursive: true, force: true });
-  await cp(source, target, { recursive: true });
-}
-
-async function stageUpstreamActive() {
-  const source = resolve(root, "../skills/figma-workspace/references/upstream-active");
-  const target = resolve(dist, "skills/figma-workspace/references/upstream-active");
+async function stageCanonicalCorpus() {
+  const source = resolve(root, "../skills/figma-workspace/references/canonical-corpus");
+  const target = resolve(dist, "skills/figma-workspace/references/canonical-corpus");
   await rm(target, { recursive: true, force: true });
   await cp(source, target, { recursive: true });
 }
@@ -171,7 +164,9 @@ async function stageHelperDeclarations() {
   const figmaTypings = resolve(root, "node_modules/@figma/plugin-typings");
   const typescriptLib = resolve(root, "node_modules/@typescript/typescript6/node_modules/typescript/lib");
   await cp(source, resolve(dist, "runtime/figma-workspace-helpers.d.ts"));
-  await stageFigmaPluginTypings(figmaTypings, resolve(dist, "runtime/figma-plugin-typings"));
+  const stagedFigmaTypings = resolve(dist, "runtime/figma-plugin-typings");
+  await stageFigmaPluginTypings(figmaTypings, stagedFigmaTypings);
+  await stageFigmaPluginApiIndex(figmaTypings, resolve(dist, "runtime/figma-plugin-api-index"));
   await stageTypescriptLib(typescriptLib, resolve(dist, "runtime/typescript-lib"));
 }
 
@@ -179,6 +174,102 @@ async function stageFigmaPluginTypings(sourceDir, targetDir) {
   await mkdir(targetDir, { recursive: true });
   await Promise.all(["index.d.ts", "plugin-api.d.ts"]
     .map((entry) => cp(resolve(sourceDir, entry), resolve(targetDir, entry))));
+}
+
+async function stageFigmaPluginApiIndex(sourceDir, targetDir) {
+  const sourceFiles = ["index.d.ts", "plugin-api.d.ts"];
+  const packageData = JSON.parse(await readFile(resolve(sourceDir, "package.json"), "utf8"));
+  const sourceEntries = [];
+  const records = [];
+  for (const sourceFile of sourceFiles) {
+    const sourceText = normalizeLineEndings(await readFile(resolve(sourceDir, sourceFile), "utf8"));
+    sourceEntries.push({ file: sourceFile, sha256: sha256(sourceText) });
+    records.push(...createPluginApiSymbolRecords(sourceFile, sourceText));
+  }
+  const indexText = `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
+  const indexSha256 = sha256(indexText);
+  const indexFile = `index-${indexSha256}.jsonl`;
+  const manifest = {
+    schemaVersion: 1,
+    source: {
+      package: "@figma/plugin-typings",
+      version: packageData.version,
+      files: sourceEntries,
+    },
+    index: { file: indexFile, recordCount: records.length, sha256: indexSha256 },
+    integrity: {
+      algorithm: "sha256",
+      contentHashes: Object.fromEntries(records.map((record) => [record.id, record.contentSha256])),
+    },
+  };
+  await rm(targetDir, { recursive: true, force: true });
+  await mkdir(targetDir, { recursive: true });
+  await writeFile(resolve(targetDir, indexFile), indexText, "utf8");
+  await writeFile(resolve(targetDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
+function createPluginApiSymbolRecords(sourceFile, sourceText) {
+  const lines = sourceText.split("\n");
+  const records = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const symbol = pluginApiSymbol(lines[index]);
+    if (!symbol) continue;
+    const start = pluginApiChunkStart(lines, index);
+    const end = pluginApiChunkEnd(lines, index);
+    const text = lines.slice(start, end).join("\n");
+    const id = `@figma/plugin-typings/${sourceFile}:${index + 1}:${symbol}`;
+    records.push({
+      schemaVersion: 1,
+      id,
+      symbol,
+      sourceFile,
+      declarationLine: index + 1,
+      lineStart: start + 1,
+      lineEnd: end,
+      contentSha256: sha256(text),
+      text,
+    });
+  }
+  return records;
+}
+
+function pluginApiSymbol(line) {
+  const normalized = line.trim();
+  const declaration = /^(?:export\s+)?(?:declare\s+)?(?:interface|type|class|enum|namespace|function|const|let|var)\s+([$A-Z_a-z][$\w]*)/u.exec(normalized);
+  if (declaration) return declaration[1];
+  const member = /^(?:readonly\s+)?([$A-Z_a-z][$\w]*)\??\s*(?:<[^>]*>)?\s*(?:\(|:)/u.exec(normalized);
+  return member?.[1];
+}
+
+function pluginApiChunkStart(lines, symbolIndex) {
+  let start = symbolIndex;
+  for (let index = symbolIndex - 1; index >= Math.max(0, symbolIndex - 18); index -= 1) {
+    const line = lines[index].trim();
+    if (line === "" || line.startsWith("/**") || line.startsWith("*") || line.startsWith("*/")) {
+      start = index;
+      continue;
+    }
+    break;
+  }
+  return start;
+}
+
+function pluginApiChunkEnd(lines, symbolIndex) {
+  let end = symbolIndex + 1;
+  for (let index = symbolIndex + 1; index < Math.min(lines.length, symbolIndex + 12); index += 1) {
+    if (index > symbolIndex + 1 && pluginApiSymbol(lines[index])) break;
+    end = index + 1;
+    if (lines[index].trim() === "") break;
+  }
+  return end;
+}
+
+function normalizeLineEndings(value) {
+  return value.replace(/\r\n/gu, "\n");
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 async function stageTypescriptLib(sourceDir, targetDir) {

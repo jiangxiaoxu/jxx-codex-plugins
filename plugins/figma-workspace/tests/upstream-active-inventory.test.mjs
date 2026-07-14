@@ -5,19 +5,25 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const rawRoot = join(pluginRoot, "skills", "figma-workspace", "references", "upstream-corpus");
-const activeRoot = join(pluginRoot, "skills", "figma-workspace", "references", "upstream-active");
+const rawRoot = join(pluginRoot, "dev", "upstream-snapshot");
+const canonicalRoot = join(
+  pluginRoot,
+  "skills",
+  "figma-workspace",
+  "references",
+  "canonical-corpus",
+);
 
 test("committed policy classifies every raw snapshot record exactly once", async () => {
   const rawManifest = JSON.parse(await readFile(join(rawRoot, "manifest.json"), "utf8"));
   const rawRecords = parseJsonl(await readFile(join(rawRoot, rawManifest.corpus.file), "utf8"));
-  const policyFiles = (await readdir(join(activeRoot, "policy")))
+  const policyFiles = (await readdir(join(canonicalRoot, "policy")))
     .filter((file) => file.endsWith(".json"))
     .sort();
   assert.equal(policyFiles.length, 12);
   const policyRecords = (
     await Promise.all(policyFiles.map(async (file) => {
-      const fragment = JSON.parse(await readFile(join(activeRoot, "policy", file), "utf8"));
+      const fragment = JSON.parse(await readFile(join(canonicalRoot, "policy", file), "utf8"));
       assert.equal(file, `${fragment.skill}.json`);
       return fragment.records;
     }))
@@ -40,22 +46,28 @@ test("committed policy classifies every raw snapshot record exactly once", async
   }
 });
 
-test("all Markdown mirrors are CLI-compatible and uncovered operations remain schema-gated", async () => {
-  const policyFiles = (await readdir(join(activeRoot, "policy"))).filter((file) => file.endsWith(".json"));
+test("all 87 canonical mirrors are adapted, CLI-compatible Markdown", async () => {
+  const policyFiles = (await readdir(join(canonicalRoot, "policy")))
+    .filter((file) => file.endsWith(".json"));
   const policyRecords = (
     await Promise.all(policyFiles.map(async (file) =>
-      JSON.parse(await readFile(join(activeRoot, "policy", file), "utf8")).records))
+      JSON.parse(await readFile(join(canonicalRoot, "policy", file), "utf8")).records))
   ).flat();
   const markdownRecords = policyRecords.filter((record) => record.mirrorPath);
-  assert.equal(markdownRecords.length, 78);
+  assert.equal(markdownRecords.length, 87);
+  assert.equal(markdownRecords.filter((record) => record.classification === "examples").length, 9);
   const forbiddenRouting = /skillNames|resource:|mcpServers|ToolSearch|MUST invoke|MANDATORY prerequisite|use_figma|get_metadata|get_design_context|get_motion_context|get_variable_defs|get_libraries|search_design_system|generate_diagram|create_new_file|figma-workspace:\/\/|figma:\/\//iu;
   const invalidCliExample = /figma:(?:libraries|design-system|metadata|assets:apply)\s*\(|^\s*figma:(?:libraries|design-system|metadata|assets:apply)\s+--|--node-id\b/mu;
   const mandatorySkillRouting = /must be loaded alongside|load (?:the|those) skills?\b|load (?:the )?figma-[a-z0-9-]+ skill\b|follow (?:that|the) skill instead/iu;
   const brokenInlineCode = /`a local `\.figma\.ts`|your a local `\.figma\.ts`|the a local `\.figma\.ts`/u;
   const brokenAnchor = /\]\(#[^)]*(?:\s|`)[^)]*\)/u;
   const uncoveredCodeConnect = /\b(?:add|remove|get|send)_code_connect_(?:map|mappings)\b/iu;
+  const canonicalIds = new Set();
   for (const record of markdownRecords) {
-    const text = await readFile(join(activeRoot, ...record.mirrorPath.split("/")), "utf8");
+    const text = await readFile(join(canonicalRoot, ...record.mirrorPath.split("/")), "utf8");
+    const canonicalId = record.mirrorPath.slice("docs/".length);
+    assert.equal(canonicalIds.has(canonicalId), false, canonicalId);
+    canonicalIds.add(canonicalId);
     assert.doesNotMatch(text, forbiddenRouting, record.id);
     assert.doesNotMatch(text, invalidCliExample, record.id);
     assert.doesNotMatch(text, mandatorySkillRouting, record.id);
@@ -65,6 +77,13 @@ test("all Markdown mirrors are CLI-compatible and uncovered operations remain sc
     if (uncoveredCodeConnect.test(text)) {
       assert.match(text, /figma:upstream:(?:list|read)/u, `${record.id} lacks live schema discovery`);
       assert.match(text, /figma:upstream:call/u, `${record.id} lacks the CLI escape hatch`);
+    }
+    if (record.classification === "examples") {
+      assert.match(record.id, /\.js$/u);
+      assert.match(record.mirrorPath, /\.md$/u);
+      assert.notEqual(canonicalId, record.id);
+      assert.equal(record.mappingProfile, "canonical-typescript-example");
+      assert.match(text, /```(?:ts|typescript)\b/u);
     }
   }
 });

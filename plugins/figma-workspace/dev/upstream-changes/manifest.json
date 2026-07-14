@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-14T07:41:18.793Z",
+  "upstream": {
+    "repository": "https://github.com/figma/mcp-server-guide.git",
+    "requestedRef": "07316dd2920d61303ca0e52812b31f5f341e7b15",
+    "resolvedCommit": "07316dd2920d61303ca0e52812b31f5f341e7b15"
+  },
+  "snapshot": {
+    "file": "corpus-de51eaaab4b4452ad521f3c9e7ad5182d383a2024c21948fbc95ac7c18bdbb45.jsonl",
+    "sha256": "de51eaaab4b4452ad521f3c9e7ad5182d383a2024c21948fbc95ac7c18bdbb45",
+    "recordCount": 88
+  },
+  "report": {
+    "file": "report-3a5d875ff6568aab89f646d115c571511d1cfe3ad6fc5a4727a711151ea0209d.json",
+    "sha256": "3a5d875ff6568aab89f646d115c571511d1cfe3ad6fc5a4727a711151ea0209d",
+    "newCount": 0,
+    "changedCount": 0,
+    "deletedCount": 0,
+    "unchangedCount": 88
+  },
+  "adaptation": {
+    "readyCount": 88,
+    "pendingCount": 0,
+    "retiredCount": 0,
+    "pendingRecords": [],
+    "retiredRecords": []
+  }
+}

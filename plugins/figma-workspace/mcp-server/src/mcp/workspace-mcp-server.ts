@@ -9,7 +9,6 @@ import {
   type RemoteMcpClientOptions,
 } from "../upstream/remote-mcp-client.js";
 import {
-  API_LOOKUP_FILES,
   DEFAULT_DOCS_SEARCH_MAX_RESULTS,
   DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
   DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
@@ -1165,16 +1164,14 @@ function handleDoctor(_args: FigmaWorkspaceDoctorArguments): FigmaWorkspaceDocto
   const projectDocs = getFigmaWorkspaceProjectDocsRuntimeInfo();
   const lookup = getFigmaWorkspaceLookupRuntimeInfo();
   const typescript = getFigmaWorkspaceTypescriptRuntimeInfo();
-  const activeIndexHealthy = lookup.ok && lookup.active.pendingCount === 0 && lookup.active.retiredCount === 0;
-  const ok = projectDocs.ok && activeIndexHealthy && typescript.ok;
+  const ok = projectDocs.ok && lookup.ok && typescript.ok;
   return {
     ok,
     runtime: { projectDocs, lookup, typescript },
     guidance: ok
-      ? ["Project docs, raw snapshot, active index, and TypeScript runtime assets are available."]
+      ? ["Project docs, canonical docs corpus, generated Plugin API index, and TypeScript runtime assets are available."]
       : [
           "Compare attemptedPaths with the installed plugin cache, then rebuild or reinstall the Figma Workspace plugin if assets are missing.",
-          "Review active-index pending, stale, and retired records before publishing; pending records are not queryable.",
           "Reload the Codex app or CLI process after updating the plugin because runtime assets are loaded at process startup.",
         ],
   };
@@ -4428,7 +4425,7 @@ async function handleLookup(
     const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
     const matches = await searchReferenceFiles({
       query: symbol,
-      files: API_LOOKUP_FILES,
+      files: [],
       maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
       maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
       exactSymbol: true,
@@ -4438,7 +4435,7 @@ async function handleLookup(
       ok: true,
       results: matches.results,
       guidance:
-        "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents.",
+        "Results are capped BM25-ranked Plugin API chunks from the generated bundled typings index, with opaque source ids, matchType, and confidence. Exact symbol matches are boosted.",
     };
     return makeJsonToolResult(payload);
   } catch (error) {
@@ -4447,7 +4444,7 @@ async function handleLookup(
         ok: false,
         results: [],
         diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error)]),
-        guidance: "Lookup corpus is unavailable in this CLI process. Rebuild the mcp-server dist after confirming the plugin source contains bundled corpus files, then start a new CLI command.",
+        guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the mcp-server dist after confirming those bundled assets exist, then start a new CLI command.",
         runtime: error.failure,
       });
     }
@@ -4472,7 +4469,7 @@ function lookupCorpusDiagnostic(error: FigmaWorkspaceLookupCorpusUnavailableErro
       `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`,
     ].join("; "),
-    suggestion: "Rebuild the mcp-server dist if bundled corpus files are missing, then rerun the CLI command with the same --session-file.",
+    suggestion: "Rebuild the mcp-server dist if canonical docs or generated Plugin API index assets are missing, then rerun the CLI command with the same --session-file.",
     docsHint: "Figma Workspace CLI: lookup --help",
   };
 }
