@@ -111,7 +111,7 @@ The CLI package build regenerates `dist/`; review generated changes with the sou
 ## Generated And Local State
 
 - `plugins/figma-workspace/mcp-server/dist/` is checked-in generated output.
-- `plugins/figma-workspace/skills/figma-workspace/references/upstream-corpus/` is generated lookup data, not the primary agent documentation surface.
+- `plugins/figma-workspace/skills/figma-workspace/references/upstream-corpus/` is the pinned 88-record raw upstream snapshot and provenance boundary, not a default agent retrieval surface. `upstream-active/` is its derived active index: its 46 active records are the default lookup surface. The GitHub-only `update:upstream-corpus` updater resolves a Git ref in `figma/mcp-server-guide`, records the resolved commit and SHA-256 values, then publishes the derived index; it must not depend on a locally installed Figma plugin cache.
 - Figma OAuth cache files live outside the repository and may contain secrets.
 - Figma CLI state files are local runtime state and should not be committed by default. Every executing optimized command requires an explicit fully qualified absolute `--state-file`; its parent directory owns result sidecars. Prefer a Git-ignored project-local `.figma-workspace/`; otherwise use an explicitly selected Figma task-artifact directory. Do not reuse capability-specific output roots as generic task storage. The raw transport requires a fully qualified absolute `--session-file` or fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE` and has no current-directory default.
 - Workspace `task-memory/` directories are runtime task state and should not be treated as repository documentation or plugin source.

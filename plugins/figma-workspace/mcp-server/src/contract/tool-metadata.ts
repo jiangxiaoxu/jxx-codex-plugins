@@ -316,6 +316,13 @@ export function createReplToolDescriptions(
       inputSchema: objectSchema({
         title: titleProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
+        scope: {
+          ...enumProperty(
+            ["active", "conditional", "examples", "all"],
+            "Docs-only lookup scope. Defaults to active.",
+          ),
+          default: "active",
+        },
         query: stringProperty(`Recommended for kind=docs keyword lookup, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
         symbol: stringProperty(`Recommended for kind=api exact Plugin API lookup, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
         maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),

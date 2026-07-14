@@ -17,19 +17,19 @@ Use this reference to choose between `figma:guidance`, `figma:docs:search`, and 
 
 ## Lookup When Exact Context Is Needed
 
-- Use `figma:docs:search -- <query> --state-file <absolute-path>` for compact BM25-ranked project documentation and upstream workflow snippets, including runtime-owned explanations for `guidanceRef`, wrapper profiles, helper profiles, and workflow graph routing.
-- Use `figma:api:search -- <symbol> --state-file <absolute-path>` for exact Figma Plugin API symbols. Both search commands accept `--limit` and `--snippet-lines`.
+- Use `figma:docs:search -- <query> --scope <active|conditional|examples|all> --state-file <absolute-path>` for compact BM25-ranked project documentation and upstream workflow snippets, including runtime-owned explanations for `guidanceRef`, wrapper profiles, helper profiles, and workflow graph routing. The default `active` scope uses 46 active records; select the 20 conditional records explicitly, select the 9 non-executable examples explicitly, or use `all` to include examples and the 12 router records.
+- Use `figma:api:search -- <symbol> --state-file <absolute-path>` for exact Figma Plugin API symbols and the single API record. Both search commands accept `--limit` and `--snippet-lines`.
 - Lookup output is capped and confidence-labeled.
 - Project documentation topics cover overview, workflow, guidance and lookup, safety, diagnostics, sessions, and upstream tools.
-- `figma:guidance` exposes compact helper categories, wrapper profiles, and workflow graph nodes; use it instead of reading internal corpus files for sequencing.
-- Bundled `upstream-corpus/manifest.json` and `upstream-corpus/corpus.jsonl` files are internal lookup data and should not be routed to agents as documents.
+- `figma:guidance` is fixed to the active scope and exposes compact helper categories, wrapper profiles, and workflow graph nodes; use it instead of reading internal corpus files for sequencing.
+- Bundled `upstream-corpus/manifest.json` and its content-addressed raw 88-record JSONL are the pinned GitHub provenance boundary, not default retrieval data. `upstream-active/` is the derived lookup index. Both are internal data and should not be routed to agents as documents. The GitHub-only updater regenerates the raw snapshot and publishes the derived index.
 
 ## Reading Results
 
 - The guidance and search commands emit Restricted Markdown on stdout with a command title, `Input`, explicit status, and expanded fields.
 - These commands need no existing Figma file context, but every execution requires an explicit absolute `--state-file`. Use `--max-inline-bytes` to control inline output; any sidecar is written under the selected state file's sibling `results/` directory.
 - Cards, hints, symbols, snippets, and other complex nested values may appear in fenced `json` blocks inside the Markdown result.
-- Typed failures still emit Markdown and normally exit 1; an unhealthy doctor observation is the exit-0 exception. Usage exits 2, typed interrupts exit 130, and thrown failures are text on stderr.
+- Typed failures still emit Markdown and normally exit 1; an unhealthy doctor observation is the exit-0 exception. `figma:doctor` reports raw snapshot, active-index, and pending/retired status. Usage exits 2, typed interrupts exit 130, and thrown failures are text on stderr.
 - Do not use `JSON.parse(stdout)`. Read the Markdown result and parse only a specific fenced `json` block when necessary.
 
 ## API Cards

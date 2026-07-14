@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "skill": "figma-implement-motion",
+  "records": [
+    {
+      "id": "figma-implement-motion/SKILL.md",
+      "sourceContentSha256": "2e26e67284d47c6a74aedf9dca7543f4c8817dafc59a11abb156d4f7feedb2c2",
+      "classification": "router",
+      "state": "ready",
+      "mirrorPath": "docs/figma-implement-motion/SKILL.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    },
+    {
+      "id": "figma-implement-motion/references/examples-and-anti-examples.md",
+      "sourceContentSha256": "879c7d77e48573f863b7b52be04c56b1e6c0a9cd5e236274699e86b50ffd3a72",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-implement-motion/references/examples-and-anti-examples.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    },
+    {
+      "id": "figma-implement-motion/references/framework-recommendations.md",
+      "sourceContentSha256": "985fc9a7a390d9c7389b0191a2660ed12da8af3508ae1ba613323cca3fe19c18",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-implement-motion/references/framework-recommendations.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    },
+    {
+      "id": "figma-implement-motion/references/gotchas.md",
+      "sourceContentSha256": "f970e4ab6ecb6e99ad27de6a770ddbbe1a799d9effd6b41f1e85bbd821675876",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-implement-motion/references/gotchas.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    },
+    {
+      "id": "figma-implement-motion/references/motion-lint-rules.md",
+      "sourceContentSha256": "017029d2c0872a6316b5b1594adc97062bab3f7efb1ca340f00fa6cd265f6316",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-implement-motion/references/motion-lint-rules.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    },
+    {
+      "id": "figma-implement-motion/references/svg-and-path-motion.md",
+      "sourceContentSha256": "a283d0a875e94edc30d8021b6f8b47cd26547c770f53420ac3f56df0966054ad",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-implement-motion/references/svg-and-path-motion.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    },
+    {
+      "id": "figma-implement-motion/references/unsupported-and-fallbacks.md",
+      "sourceContentSha256": "e12c6985e5fd88d37a5cc7cf219fd738a5102debd4e9f0943515900cf8c62000",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-implement-motion/references/unsupported-and-fallbacks.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    }
+  ]
+}

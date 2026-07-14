@@ -64,6 +64,37 @@ test("direct parsing supports option order and an exact positional separator", a
   ]);
 });
 
+test("docs search maps its exact lookup scope while API search does not expose scope", async () => {
+  const calls = [];
+  const runCli = async (_argv, dependencies) => {
+    calls.push(JSON.parse(await dependencies.io.readStdin()));
+    return 0;
+  };
+
+  assert.equal(await runFigmaCommand("docs:search", ["components", "--state-file", stateFile], { runCli }), 0);
+  assert.equal(await runFigmaCommand("docs:search", [
+    "components", "--scope", "conditional", "--state-file", stateFile,
+  ], { runCli }), 0);
+  assert.deepEqual(calls, [
+    { kind: "docs", scope: "active", query: "components" },
+    { kind: "docs", scope: "conditional", query: "components" },
+  ]);
+
+  for (const scope of ["unknown", "Active", "example"]) {
+    const output = createOutput();
+    assert.equal(await runFigmaCommand("docs:search", [
+      "components", "--scope", scope, "--state-file", stateFile,
+    ], { ...output.dependencies, runCli }), 2, scope);
+    assert.match(output.stderr, /must be one of: active, conditional, examples, all/u, scope);
+  }
+
+  const apiOutput = createOutput();
+  assert.equal(await runFigmaCommand("api:search", [
+    "createFrame", "--scope", "active", "--state-file", stateFile,
+  ], { ...apiOutput.dependencies, runCli }), 2);
+  assert.match(apiOutput.stderr, /Unknown option for figma api:search: --scope/u);
+});
+
 test("strict integers accept exact boundaries and reject non-decimal or unsafe values before runtime", async () => {
   const accepted = [];
   for (const value of ["0", "10000"]) {
@@ -205,6 +236,15 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   const repeatable = createOutput();
   assert.equal(await runFigmaCommand("inspect", ["--help"], repeatable.dependencies), 0);
   assert.match(repeatable.stdout, /--handle <name>.*Default: unset\. Repeatable: yes\./u);
+
+  const docsSearch = createOutput();
+  assert.equal(await runFigmaCommand("docs:search", ["--help"], docsSearch.dependencies), 0);
+  assert.match(docsSearch.stdout, /--scope <active\|conditional\|examples\|all>/u);
+  assert.match(docsSearch.stdout, /--scope .*Default: active\..*Allowed: active, conditional, examples, all\./u);
+
+  const apiSearch = createOutput();
+  assert.equal(await runFigmaCommand("api:search", ["--help"], apiSearch.dependencies), 0);
+  assert.doesNotMatch(apiSearch.stdout, /--scope/u);
 });
 
 function createOutput() {

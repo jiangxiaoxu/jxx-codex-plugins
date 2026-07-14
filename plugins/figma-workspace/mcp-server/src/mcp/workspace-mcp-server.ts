@@ -13,11 +13,11 @@ import {
   DEFAULT_DOCS_SEARCH_MAX_RESULTS,
   DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
   DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
-  DOCS_SEARCH_ALLOWLIST,
   MAX_DOCS_SEARCH_RESULTS,
   MAX_DOCS_SEARCH_SNIPPET_LINES,
   MAX_LOOKUP_QUERY_LENGTH,
   FigmaWorkspaceLookupCorpusUnavailableError,
+  docsSearchFilesForScope,
   getFigmaWorkspaceLookupRuntimeInfo,
   type ReferenceSearchResult,
   normalizeLookupQuery,
@@ -772,6 +772,7 @@ export interface FigmaWorkspaceGetMetadataResult extends FigmaWorkspaceToolResul
 }
 
 export interface FigmaWorkspaceLookupResult extends FigmaWorkspaceToolResultBase {
+  scope?: "active" | "conditional" | "examples" | "all";
   results: ReferenceSearchResult[];
   diagnostics?: FigmaWorkspaceDiagnostic[];
   guidance: string;
@@ -1164,14 +1165,16 @@ function handleDoctor(_args: FigmaWorkspaceDoctorArguments): FigmaWorkspaceDocto
   const projectDocs = getFigmaWorkspaceProjectDocsRuntimeInfo();
   const lookup = getFigmaWorkspaceLookupRuntimeInfo();
   const typescript = getFigmaWorkspaceTypescriptRuntimeInfo();
-  const ok = projectDocs.ok && lookup.ok && typescript.ok;
+  const activeIndexHealthy = lookup.ok && lookup.active.pendingCount === 0 && lookup.active.retiredCount === 0;
+  const ok = projectDocs.ok && activeIndexHealthy && typescript.ok;
   return {
     ok,
     runtime: { projectDocs, lookup, typescript },
     guidance: ok
-      ? ["Project docs, lookup corpus, and TypeScript runtime assets are available."]
+      ? ["Project docs, raw snapshot, active index, and TypeScript runtime assets are available."]
       : [
           "Compare attemptedPaths with the installed plugin cache, then rebuild or reinstall the Figma Workspace plugin if assets are missing.",
+          "Review active-index pending, stale, and retired records before publishing; pending records are not queryable.",
           "Reload the Codex app or CLI process after updating the plugin because runtime assets are loaded at process startup.",
         ],
   };
@@ -3033,7 +3036,7 @@ async function handleGuidance(
   const context = intent
     ? await searchReferenceFiles({
         query: intent,
-        files: DOCS_SEARCH_ALLOWLIST,
+        files: docsSearchFilesForScope("active"),
         maxResults: DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
         maxSnippetLines: 4,
         exactSymbol: false,
@@ -4395,9 +4398,10 @@ async function handleLookup(
   try {
     if (args.kind === "docs") {
       const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
+      const scope = args.scope ?? "active";
       const matches = await searchReferenceFiles({
         query,
-        files: DOCS_SEARCH_ALLOWLIST,
+        files: docsSearchFilesForScope(scope),
         maxResults: normalizeBoundedInteger(
           args.maxResults,
           DEFAULT_DOCS_SEARCH_MAX_RESULTS,
@@ -4411,6 +4415,7 @@ async function handleLookup(
       });
       const payload = {
         ok: true,
+        scope,
         results: matches.results,
         guidance:
           "Use these capped BM25-ranked chunks as compact context. Run a narrower lookup query or kind=api lookup when more detail is needed.",
@@ -4427,6 +4432,7 @@ async function handleLookup(
       maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
       maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
       exactSymbol: true,
+      corpus: "api",
     });
     const payload = {
       ok: true,

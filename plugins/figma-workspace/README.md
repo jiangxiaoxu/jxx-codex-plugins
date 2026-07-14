@@ -29,7 +29,7 @@ The 22 transport-level kebab-case JSON commands are available only through `figm
 
 The plugin-root `package.json` owns these paths. Every executing optimized command, including all 17 direct commands and all 9 JSON commands, requires an explicit fully qualified absolute `--state-file`. It is both the persisted workspace state store and the anchor whose parent owns `results/` sidecars; reuse one path across related commands. Guidance, docs, API, doctor, and upstream list/read do not require existing Figma file context, but they still require this option. At the raw transport layer, pass a fully qualified absolute `--session-file` or set fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`; there is no current-directory default, and relative or current-drive-rooted paths are rejected.
 
-All executing commands expose `--max-inline-bytes`. Search commands expose `--limit` and `--snippet-lines`; guidance exposes `--card-limit`. File-binding commands expose `--session-id`, `--state-file`, and `--workspace`; design-system additionally supports repeatable `--library`. Sessions read supports `--with-handles` and `--with-history`. `figma:inspect` reuses file context already bound to its session, intentionally omits `--workspace` and `--file`, and supports repeatable `--handle`; initialize context with `figma:open` or a file-binding read command first.
+All executing commands expose `--max-inline-bytes`. Search commands expose `--limit` and `--snippet-lines`; `figma:docs:search` also exposes `--scope active|conditional|examples|all`, defaulting to `active`; guidance exposes `--card-limit` and is fixed to active lookup. File-binding commands expose `--session-id`, `--state-file`, and `--workspace`; design-system additionally supports repeatable `--library`. Sessions read supports `--with-handles` and `--with-history`. `figma:inspect` reuses file context already bound to its session, intentionally omits `--workspace` and `--file`, and supports repeatable `--handle`; initialize context with `figma:open` or a file-binding read command first.
 
 Typed command results use Restricted Markdown on stdout: a command title, an `Input` section, explicit status, and expanded fields. Complex nested values may use fenced `json` blocks. CLI presentation does not rewrite the backend result or complete sidecar. An unhealthy doctor observation uses `Status: observed unhealthy` and exits 0; every other top-level `ok: false` result exits 1. Usage errors exit 2, typed interrupts exit 130, and thrown failures use stderr. Do not call `JSON.parse` on stdout. Use the selected command's help for usage text.
 
@@ -63,7 +63,8 @@ State files and result sidecars may contain sensitive Figma workspace content or
 ## Agent Workflow
 
 1. Choose one fully qualified absolute `--state-file` and pass it to every executing optimized command. Use `figma:docs:list` and `figma:docs:read` for project Markdown; use `figma:sessions:list` or `figma:sessions:read` when resuming state and `figma:doctor` for runtime faults.
-2. Call `figma:guidance` for planning, `figma:docs:search` for docs, and `figma:api:search` for Plugin API symbols. These commands need no existing Figma file context, but still require the selected state file.
+2. Call `figma:guidance` for active planning guidance, `figma:docs:search` for docs, and `figma:api:search` for Plugin API symbols. Use `docs:search --scope conditional` only deliberately; `--scope examples` and `--scope all` include non-executable examples, while router records appear only in `all`. These commands need no existing Figma file context, but still require the selected state file.
+
 3. Call `figma:task:prepare` with JSON containing a Figma URL or key, slug-style `taskName`, absolute `workspaceDir`, and optional surface.
 4. Edit the generated `.figma.ts` using native Figma Plugin API and injected `$` helpers.
 5. Call `figma:script:run` with JSON containing `strict: true`; repair preflight diagnostics and rerun.
@@ -73,6 +74,10 @@ State files and result sidecars may contain sensitive Figma workspace content or
 Use `figma:metadata` before targeted `figma:inspect` when broad layer structure is needed. Direct context and design-system commands cover common official reads. Use `figma:upstream:call` only for uncovered official capabilities such as `whoami`, file creation, Code Connect writes, shader reads, or `export_video`.
 
 The CLI expands the workspace runtime result into Markdown fields. Parsed official output, non-JSON upstream text, diagnostics, output-file pointers, and capture paths retain their runtime field names where useful; complex nested values may be shown in fenced `json` blocks.
+
+## Upstream Snapshot And Active Index
+
+The bundled 88-record raw upstream snapshot records its GitHub commit, content hashes, and provenance; it is not queried by default. Its derived active index is the agent retrieval surface: 46 `active` records are default, 20 `conditional` records require explicit scope, 12 `router` records are available only through `--scope all`, and 9 `examples` records are available only through `--scope examples` or `--scope all` and are non-executable. The single API record is available only through `figma:api:search`. `figma:doctor` reports raw snapshot, active-index, and pending/retired health. Maintainers regenerate and publish both layers only through the GitHub-only `npm run update:upstream-corpus -- --ref <git-ref>` updater.
 
 ## OAuth Cache And Login
 
