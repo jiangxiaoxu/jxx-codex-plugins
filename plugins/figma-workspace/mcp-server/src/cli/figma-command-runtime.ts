@@ -240,9 +240,13 @@ export const FIGMA_DIRECT_COMMANDS = {
     options: {}, outputLimit: true, examples: [`npm --silent run figma:docs:read -- workflow ${STATE_FILE_EXAMPLE}`],
   },
   "docs:search": {
-    command: "lookup", purpose: "Search project and upstream workflow documentation.", fixedInput: { kind: "docs" },
+    command: "lookup", purpose: "Search project and upstream workflow documentation.", fixedInput: { kind: "docs", scope: "active" },
     position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Documentation search text." },
     options: {
+      "--scope": {
+        ...enumOption("scope", ["active", "conditional", "examples", "all"], "Documentation lookup scope."),
+        omitted: { state: "default", value: "active" },
+      },
       "--limit": integerOption("maxResults", "<n>", "Maximum returned snippets from 1 to 10.", { min: 1, max: 10 }),
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 }),
     },

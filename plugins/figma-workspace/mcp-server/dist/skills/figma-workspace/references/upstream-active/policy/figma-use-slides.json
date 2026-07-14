@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "skill": "figma-use-slides",
+  "records": [
+    {
+      "id": "figma-use-slides/SKILL.md",
+      "sourceContentSha256": "0a69a65e686dcc223581afb409a4d31cf318716e2c65cc9c926839a8737e71a4",
+      "classification": "router",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-slides/SKILL.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "slides"
+      ],
+      "mappingProfile": "slides"
+    },
+    {
+      "id": "figma-use-slides/references/slide-content.md",
+      "sourceContentSha256": "e58b6dc776fd17677e0edd3385deecd978208fe499e8199723cb0be842fb5b08",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-slides/references/slide-content.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "slides"
+      ],
+      "mappingProfile": "slides"
+    },
+    {
+      "id": "figma-use-slides/references/slide-design.md",
+      "sourceContentSha256": "6d8e56017ef49ee9f66332e6f6093b8fabac8dabd68e81101512e11751820224",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-slides/references/slide-design.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "slides"
+      ],
+      "mappingProfile": "slides"
+    },
+    {
+      "id": "figma-use-slides/references/slide-gotchas.md",
+      "sourceContentSha256": "8d28df88e7aee9ab5895835932b54a5a70998d896ff7dc7f3aef1edb7ddd1bdc",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-slides/references/slide-gotchas.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "slides"
+      ],
+      "mappingProfile": "slides"
+    },
+    {
+      "id": "figma-use-slides/references/slide-grid.md",
+      "sourceContentSha256": "982f6c1ce3b3e487817273c5840e0121fd1abf61f42e37a6bf9b06d9fe924d48",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-slides/references/slide-grid.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "slides"
+      ],
+      "mappingProfile": "slides"
+    },
+    {
+      "id": "figma-use-slides/references/slide-lifecycle.md",
+      "sourceContentSha256": "880e80bd9a4ed0ff30648ac609cf0337c167706613f438333289fce5164cd1cb",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-slides/references/slide-lifecycle.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "slides"
+      ],
+      "mappingProfile": "slides"
+    },
+    {
+      "id": "figma-use-slides/references/slide-properties.md",
+      "sourceContentSha256": "1755322fdeb262014b341ef456392dc1c7dd602d8416dba549d2543fc1cba10c",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-slides/references/slide-properties.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "slides"
+      ],
+      "mappingProfile": "slides"
+    }
+  ]
+}

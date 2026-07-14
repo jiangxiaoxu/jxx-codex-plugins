@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 1,
+  "skill": "figma-use-figjam",
+  "records": [
+    {
+      "id": "figma-use-figjam/SKILL.md",
+      "sourceContentSha256": "16b15da304f777e6bdc79bf425da73fa1ce0ea41af726cab8ddd6f40180acd74",
+      "classification": "router",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/SKILL.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/batch-modify.md",
+      "sourceContentSha256": "35f5067406699a7d91cbcb51c567dfec37f46ccd856dc0a00db6d1bb97386323",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/batch-modify.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/create-code-block.md",
+      "sourceContentSha256": "a7e4dbf31d8f0310dc5d1aa56de24ca66de34cb95031c60fbe6cf9d8b7ce878e",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/create-code-block.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/create-connector.md",
+      "sourceContentSha256": "5b64b05a50bcdf0831d9f56b64dfa5398e12dbac21cb97137aaf2b875749f87a",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/create-connector.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/create-label.md",
+      "sourceContentSha256": "aa682240fb4713617975d3d7af90419ae09363d75c834aba17fdf798c582ed07",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/create-label.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/create-section.md",
+      "sourceContentSha256": "49ce969c599204190e7cb54c93b96447ba74d855b92b7d64a39dc7295540ec74",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/create-section.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/create-shape-with-text.md",
+      "sourceContentSha256": "bd92fd1a406babdceff480a6dbce459bd8397d31c3a56710bd6f3806876b03f8",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/create-shape-with-text.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/create-sticky.md",
+      "sourceContentSha256": "8e3afc40db5aba563a228e3488f76db9840bf3a50d836980e1c722a9e3334f2b",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/create-sticky.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/create-table.md",
+      "sourceContentSha256": "71877bd8a987d893f5352d6bc202cd155705193faf4efd49a5ff7f7aea49eb48",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/create-table.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/create-text.md",
+      "sourceContentSha256": "2cfdd1329d913b227d2cdc33e20c92276e95b23f3b731e44600ddb30007988ee",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/create-text.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/edit-text.md",
+      "sourceContentSha256": "598198a416d7413cfadfbc6e758c0e741adcb3b7d9f234498bce0178649bcb93",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/edit-text.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/figjam-colors.md",
+      "sourceContentSha256": "4610c00dd720309656c484fcf37612b56249cf800fe6d8dcb3f4cc65a112037e",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/figjam-colors.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/plan-board-content.md",
+      "sourceContentSha256": "1a951719d4a8934da2c0324298c0982b4612dfe788ba1f0237c94d715f139925",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/plan-board-content.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    },
+    {
+      "id": "figma-use-figjam/references/position-figjam-nodes.md",
+      "sourceContentSha256": "5355af8a1bf7711f065c667251b9290959d63a831bef9a096b40f8d276053023",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-figjam/references/position-figjam-nodes.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "figjam"
+      ],
+      "mappingProfile": "figjam"
+    }
+  ]
+}

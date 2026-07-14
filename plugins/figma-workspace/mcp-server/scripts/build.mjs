@@ -115,6 +115,7 @@ for (const output of publicWrappers) {
 }
 
 await stageUpstreamCorpus();
+await stageUpstreamActive();
 await stageProjectDocs();
 await stageHelperDeclarations();
 
@@ -138,6 +139,13 @@ async function writeWrapper(file, source, executable) {
 async function stageUpstreamCorpus() {
   const source = resolve(root, "../skills/figma-workspace/references/upstream-corpus");
   const target = resolve(dist, "skills/figma-workspace/references/upstream-corpus");
+  await rm(target, { recursive: true, force: true });
+  await cp(source, target, { recursive: true });
+}
+
+async function stageUpstreamActive() {
+  const source = resolve(root, "../skills/figma-workspace/references/upstream-active");
+  const target = resolve(dist, "skills/figma-workspace/references/upstream-active");
   await rm(target, { recursive: true, force: true });
   await cp(source, target, { recursive: true });
 }

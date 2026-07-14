@@ -195,10 +195,13 @@ export interface FigmaWorkspaceGetVariableDefsArguments {
   inlineResultLimit?: number;
 }
 
+export type FigmaWorkspaceDocsLookupScope = "active" | "conditional" | "examples" | "all";
+
 export interface FigmaWorkspaceLookupArguments {
   [key: string]: unknown;
   title?: string;
   kind: "docs" | "api";
+  scope?: FigmaWorkspaceDocsLookupScope;
   query?: string;
   symbol?: string;
   maxResults?: number;
@@ -268,6 +271,12 @@ const FIGMA_WORKSPACE_EVAL_MODES = ["read", "write"] as const;
 const FIGMA_WORKSPACE_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as const;
 const FIGMA_WORKSPACE_INSPECT_MODES = ["inspect", "validate", "style"] as const;
 const FIGMA_WORKSPACE_LOOKUP_KINDS = ["docs", "api"] as const;
+const FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES = [
+  "active",
+  "conditional",
+  "examples",
+  "all",
+] as const satisfies readonly FigmaWorkspaceDocsLookupScope[];
 const FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"] as const;
 
 function assertRemovedFileReferenceFields(record: Record<string, unknown>): void {
@@ -600,6 +609,13 @@ export function asGetVariableDefsArgs(args: unknown): FigmaWorkspaceGetVariableD
 export function asLookupArgs(args: unknown): FigmaWorkspaceLookupArguments {
   const record = parseToolArgs<FigmaWorkspaceLookupArguments>(args);
   assertOptionalEnum(record, "kind", FIGMA_WORKSPACE_LOOKUP_KINDS);
+  assertOptionalEnum(record, "scope", FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES);
+  if (record.scope !== undefined && record.kind !== "docs") {
+    throw new Error('Tool argument "scope" is only allowed when "kind" is "docs".');
+  }
+  if (record.kind === "docs" && record.scope === undefined) {
+    record.scope = "active";
+  }
   assertOptionalStringFields(record, ["query", "symbol"]);
   return record;
 }

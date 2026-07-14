@@ -111,6 +111,7 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     assert.equal(guidance.ok, true);
     assert.ok(guidance.suggestions.referenceContext.length > 0);
     assert.ok(guidance.suggestions.referenceContext.every((entry) => entry.sourceId.startsWith("internal:")));
+    assert.ok(guidance.suggestions.referenceContext.every((entry) => entry.classification === "active"));
     assert.doesNotMatch(JSON.stringify(guidance), /figma_workspace_/u);
 
     const plan = await client.guidance({ mode: "plan", query: "component variants text" });
@@ -151,11 +152,109 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     assert.ok(projectDocsLookup.results.some((entry) => entry.sourceId.startsWith("project:sessions#")));
     assert.match(JSON.stringify(projectDocsLookup.results), /--state-file|\.figma-workspace\/results/u);
 
+    const defaultExampleLookup = await client.lookup({
+      kind: "docs",
+      query: "cleanupOrphans",
+      maxResults: 3,
+      maxSnippetLines: 4,
+    });
+    assert.equal(defaultExampleLookup.ok, true);
+    assert.equal(defaultExampleLookup.scope, "active");
+    assert.equal(defaultExampleLookup.results.length, 0);
+
+    const exampleLookup = await client.lookup({
+      kind: "docs",
+      scope: "examples",
+      query: "cleanupOrphans",
+      maxResults: 3,
+      maxSnippetLines: 4,
+    });
+    assert.equal(exampleLookup.ok, true);
+    assert.ok(exampleLookup.results.some(
+      (entry) => entry.sourceId.includes("figma-generate-library/scripts/cleanupOrphans.js"),
+    ));
+    assert.ok(exampleLookup.results.every((entry) => entry.classification === "examples"));
+    assert.ok(exampleLookup.results.every((entry) => entry.nonExecutable === true));
+    const allExampleLookup = await client.lookup({
+      kind: "docs",
+      scope: "all",
+      query: "cleanupOrphans",
+      maxResults: 3,
+      maxSnippetLines: 4,
+    });
+    assert.ok(allExampleLookup.results.some(
+      (entry) => entry.sourceRecordId === "figma-generate-library/scripts/cleanupOrphans.js" && entry.nonExecutable === true,
+    ));
+
+    const activeLookup = await client.lookup({
+      kind: "docs",
+      query: "createCodeBlock codeLanguage PLAINTEXT",
+      maxResults: 3,
+      maxSnippetLines: 4,
+    });
+    assert.ok(activeLookup.results.some(
+      (entry) => entry.sourceRecordId === "figma-use-figjam/references/create-code-block.md",
+    ));
+    assert.ok(activeLookup.results.every((entry) => entry.classification === "active"));
+
+    const conditionalDefaultLookup = await client.lookup({
+      kind: "docs",
+      query: "non-snippet information upwards",
+      maxResults: 5,
+      maxSnippetLines: 4,
+    });
+    assert.ok(conditionalDefaultLookup.results.every(
+      (entry) => entry.sourceRecordId !== "figma-code-connect/references/advanced-patterns.md",
+    ));
+    const conditionalLookup = await client.lookup({
+      kind: "docs",
+      scope: "conditional",
+      query: "non-snippet information upwards",
+      maxResults: 5,
+      maxSnippetLines: 4,
+    });
+    assert.ok(conditionalLookup.results.some(
+      (entry) => entry.sourceRecordId === "figma-code-connect/references/advanced-patterns.md",
+    ));
+    assert.ok(conditionalLookup.results.every((entry) => entry.classification === "conditional"));
+
+    const routerDefaultLookup = await client.lookup({
+      kind: "docs",
+      query: "read-FROM-Figma design context response hints",
+      maxResults: 5,
+      maxSnippetLines: 4,
+    });
+    assert.ok(routerDefaultLookup.results.every(
+      (entry) => entry.sourceRecordId !== "figma-design-to-code/SKILL.md",
+    ));
+    const allLookup = await client.lookup({
+      kind: "docs",
+      scope: "all",
+      query: "read-FROM-Figma design context response hints",
+      maxResults: 5,
+      maxSnippetLines: 4,
+    });
+    const designToCodeResult = allLookup.results.find(
+      (entry) => entry.sourceRecordId === "figma-design-to-code/SKILL.md",
+    );
+    assert.ok(designToCodeResult);
+    assert.equal(designToCodeResult.classification, "router");
+    assert.equal(designToCodeResult.sanitized, true);
+    assert.doesNotMatch(designToCodeResult.snippet, /invoke skill|skillNames|resource:/iu);
+
     const lookup = await client.lookup({ kind: "api", symbol: "createFrame", maxResults: 2, maxSnippetLines: 3 });
     assert.equal(lookup.ok, true);
     assert.ok(lookup.results.length > 0);
     assert.equal(lookup.results[0].matchType, "exact-symbol");
     assert.match(JSON.stringify(lookup.results), /createFrame/u);
+    assert.ok(lookup.results.every((entry) => entry.classification === "api"));
+    assert.ok(lookup.results.every(
+      (entry) => entry.sourceRecordId === "figma-use/references/plugin-api-standalone.d.ts",
+    ));
+    await assert.rejects(
+      client.lookup({ kind: "api", scope: "active", symbol: "createFrame" }),
+      /scope.*only allowed.*kind.*docs/u,
+    );
     assert.deepEqual(calls, []);
   } finally {
     await client.close();
@@ -195,6 +294,23 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
     assert.equal(typeof doctor.runtime.projectDocs.ok, "boolean");
     assert.equal(typeof doctor.runtime.lookup.ok, "boolean");
     assert.equal(typeof doctor.runtime.typescript.ok, "boolean");
+    assert.equal(doctor.runtime.lookup.repository, "https://github.com/figma/mcp-server-guide.git");
+    assert.match(doctor.runtime.lookup.resolvedCommit, /^[a-f0-9]{40}$/u);
+    assert.match(doctor.runtime.lookup.corpusSha256, /^[a-f0-9]{64}$/u);
+    assert.equal(doctor.runtime.lookup.raw.recordCount, 88);
+    assert.equal(doctor.runtime.lookup.active.recordCount, 87);
+    assert.equal(doctor.runtime.lookup.active.queryableRecordCount, 87);
+    assert.deepEqual(doctor.runtime.lookup.active.classificationCounts, {
+      active: 46,
+      conditional: 20,
+      router: 12,
+      examples: 9,
+      api: 1,
+    });
+    assert.equal(doctor.runtime.lookup.active.pendingCount, 0);
+    assert.equal(doctor.runtime.lookup.active.staleCount, 0);
+    assert.equal(doctor.runtime.lookup.active.retiredCount, 0);
+    assert.equal(doctor.runtime.lookup.active.parentResolvedCommit, doctor.runtime.lookup.resolvedCommit);
 
     const summaries = await client.sessionsInfo();
     assert.equal(summaries.sessions[0].id, "saved");

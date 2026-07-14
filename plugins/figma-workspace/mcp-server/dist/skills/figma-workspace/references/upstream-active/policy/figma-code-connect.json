@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "skill": "figma-code-connect",
+  "records": [
+    {
+      "id": "figma-code-connect/SKILL.md",
+      "sourceContentSha256": "d69cfc0e2080351f0182a8f3c2349349fb6696f63cede8972e12ca3b71bafe10",
+      "classification": "router",
+      "state": "ready",
+      "mirrorPath": "docs/figma-code-connect/SKILL.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "code-connect"
+    },
+    {
+      "id": "figma-code-connect/references/advanced-patterns.md",
+      "sourceContentSha256": "ac2cb232aca4e43b75169f47f5550d6e7e48a8df0eb55aa1adbfb1a2ab0aa1b4",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-code-connect/references/advanced-patterns.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "code-connect"
+    },
+    {
+      "id": "figma-code-connect/references/api.md",
+      "sourceContentSha256": "40c1dcae2db387fb93ffbf4eba8ae81362e204bdfa5be7018f743b8ac24d4252",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-code-connect/references/api.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "code-connect"
+    }
+  ]
+}

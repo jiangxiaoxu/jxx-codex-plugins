@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "skill": "figma-use-motion",
+  "records": [
+    {
+      "id": "figma-use-motion/SKILL.md",
+      "sourceContentSha256": "d74fa8c9435a5260f8a61e3a8fbf11c068f940ae3423e9be2efde8b5e785d78c",
+      "classification": "router",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-motion/SKILL.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    },
+    {
+      "id": "figma-use-motion/references/motion-easing.md",
+      "sourceContentSha256": "bb687254ab222747d385e1604ead72a439a444dec8aa0a51ef8a2189a9f45637",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-motion/references/motion-easing.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    },
+    {
+      "id": "figma-use-motion/references/motion-patterns.md",
+      "sourceContentSha256": "429a4be590898acd025dffa18c9ce2b9a2bd1a7c6a065d96cec7f55eb86762f1",
+      "classification": "active",
+      "state": "ready",
+      "mirrorPath": "docs/figma-use-motion/references/motion-patterns.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "motion"
+    }
+  ]
+}

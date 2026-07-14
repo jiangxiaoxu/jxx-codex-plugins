@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "skill": "figma-generate-design",
+  "records": [
+    {
+      "id": "figma-generate-design/SKILL.md",
+      "sourceContentSha256": "7d07e4f4f8fec7012cd82ab7b9e0e062595cf7dbc42fd5e3c7d2be19490d965c",
+      "classification": "router",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-design/SKILL.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-design/references/componentization.md",
+      "sourceContentSha256": "20cb544a638c12723f653eda19de274cc713292a51c311e76cb9010271f666d7",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-design/references/componentization.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    },
+    {
+      "id": "figma-generate-design/references/discover-product-font.md",
+      "sourceContentSha256": "87858089c77f71d478d0233b89498e3589ff14556b0cd503f6a3faf5941f643a",
+      "classification": "conditional",
+      "state": "ready",
+      "mirrorPath": "docs/figma-generate-design/references/discover-product-font.md",
+      "sourceContract": "figma-mcp",
+      "targetContract": "figma-workspace-cli",
+      "surfaces": [
+        "design"
+      ],
+      "mappingProfile": "plugin-api"
+    }
+  ]
+}
