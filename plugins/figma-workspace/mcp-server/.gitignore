@@ -9,8 +9,7 @@ dist/skills/figma-workspace/*
 !dist/skills/figma-workspace/references/
 dist/skills/figma-workspace/references/*
 !dist/skills/figma-workspace/references/*.md
-!dist/skills/figma-workspace/references/upstream-corpus/
-!dist/skills/figma-workspace/references/upstream-corpus/manifest.json
-!dist/skills/figma-workspace/references/upstream-corpus/corpus-*.jsonl
-!dist/skills/figma-workspace/references/upstream-active/
-!dist/skills/figma-workspace/references/upstream-active/**
+!dist/skills/figma-workspace/references/canonical-corpus/
+!dist/skills/figma-workspace/references/canonical-corpus/**
+!dist/runtime/figma-plugin-api-index/
+!dist/runtime/figma-plugin-api-index/**

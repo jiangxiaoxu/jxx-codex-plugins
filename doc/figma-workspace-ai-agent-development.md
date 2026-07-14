@@ -10,7 +10,8 @@ This document is for AI agents maintaining `figma-workspace`. It is not the user
 - Every executing optimized command requires an explicit fully qualified absolute `--state-file`; its parent owns result sidecars. The raw transport CLI requires either a fully qualified absolute `--session-file` or a fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE` and has no current-directory default.
 - Local `.figma.ts` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, canonical project Markdown, guidance, and compact docs/API lookup remain the supported workflow.
 - Keep state and workspace files in a Git-ignored project-local `.figma-workspace/` or an explicitly selected Figma task-artifact directory. Do not infer that an injected writable workspace root is generic task storage; capability-specific output roots remain exclusive to their capability.
-- Bundled upstream skill content has a pinned 88-record raw JSONL snapshot under `skills/figma-workspace/references/upstream-corpus/` and a derived `upstream-active/` index. Raw data and provenance are not default retrieval surfaces. The active index defaults to its 46 `active` records; its 20 `conditional` records require an explicit docs scope, its 12 `router` records appear only in `all`, its 9 `examples` records appear only in `examples` or `all` and are `nonExecutable`, and its one TypeScript API record is available only through `api:search`. Do not route agents to read either JSONL corpus directly.
+- Runtime workflow lookup reads only the plugin-owned `skills/figma-workspace/references/canonical-corpus/`. This self-contained corpus contains 87 records: 46 `active`, 20 `conditional`, 12 `router`, and 9 `examples`. The examples are plugin-owned TypeScript-in-Markdown templates. Neither the complete upstream source snapshot nor upstream source text is packaged or read at runtime.
+- `figma:api:search` reads the plugin-owned symbol index generated during build from bundled `@figma/plugin-typings`; it is independent of the development snapshot.
 - DSL, `$.ops`, `compileFigmaWorkspaceOps`, and related operation types are not public runtime contracts.
 
 ## Canonical Agent Contract
@@ -38,7 +39,7 @@ The optimized command option families are intentional:
 - All 17 direct commands and all 9 JSON commands require an explicit fully qualified absolute `--state-file` when executing. Its parent owns `results/` sidecars.
 - Guidance, docs, API, doctor, and upstream list/read need no existing Figma file context, but still require `--state-file`. Direct file-context commands also expose `--session-id`.
 - Every executing command exposes `--max-inline-bytes`.
-- Docs/API search expose `--limit` and `--snippet-lines`; `figma:docs:search` also exposes `--scope active|conditional|examples|all` and defaults to `active`. Guidance exposes `--card-limit` and is fixed to the active scope.
+- Docs/API search expose `--limit` and `--snippet-lines`; `figma:docs:search` also exposes `--scope active|conditional|examples|all` and defaults to `active`. Guidance exposes `--card-limit` and uses the `active` canonical scope.
 - File-binding commands expose `--workspace`; design-system exposes repeatable `--library`; sessions read exposes `--with-handles` and `--with-history`. Inspect intentionally reuses context already bound to the selected session, omits `--workspace` and `--file`, and exposes repeatable `--handle`.
 
 The raw transport runtime behind `figma:raw` consists of these 22 commands:
@@ -64,7 +65,7 @@ The raw transport runtime behind `figma:raw` consists of these 22 commands:
 | `call-upstream-tool` | Invoke an uncovered official upstream capability. |
 | `lookup` | Search compact local API and workflow references. |
 | `docs` | List or read canonical project Markdown topics. |
-| `doctor` | Diagnose the raw snapshot, derived active index and pending/retired records, project docs, and TypeScript runtime assets. |
+| `doctor` | Diagnose the canonical corpus, generated Plugin API index, project docs, and TypeScript runtime assets. |
 | `sessions` | Read persisted session summaries, handles, and history. |
 | `upstream-tools` | List or describe the live official upstream tool schema. |
 
@@ -100,7 +101,9 @@ Breaking changes are allowed by default when they simplify this active contract.
 - `mcp-server/src/runtime/workspace-files.ts`: workspace, script output, capture output, plan, and session workspace helpers.
 - `mcp-server/src/runtime/guidance-catalog.ts`: API cards, task buckets, query anchors, and guidance helpers.
 - `mcp-server/src/runtime/doc-search.ts`: corpus resolution, chunking, ranking, and lookup shaping.
-- `scripts/update-upstream-corpus.mjs`: GitHub-only upstream skill acquisition, Git ref resolution, raw snapshot provenance and integrity hashes, deterministic active-index derivation, and publication.
+- `scripts/update-upstream-corpus.mjs`: maintenance command implementation. `update-upstream-snapshot` refreshes only `dev/upstream-snapshot/` and `dev/upstream-changes/`; `build-canonical-corpus` publishes only the plugin-owned canonical corpus.
+- `scripts/lib/canonical-corpus.mjs`: builds the self-contained 87-record runtime corpus from plugin-owned mirrors and policy. A source-identical record is review information, not a mechanical publication blocker.
+- `mcp-server/scripts/build.mjs`: stages the canonical corpus and project docs, bundles the required TypeScript declarations, and generates the plugin-owned Figma Plugin API symbol index from bundled `@figma/plugin-typings`.
 - `mcp-server/src/contract/tool-args.ts`: operation argument types and parsers.
 - `mcp-server/src/contract/tool-metadata.ts`: operation descriptions and schemas reused by CLI help/dispatch where applicable.
 - `mcp-server/src/contract/tool-registry.ts`: operation names and task-plan aliases.
@@ -117,7 +120,7 @@ Generated output under `mcp-server/dist/` is checked in and must remain synchron
 - `get-metadata` precedes targeted `inspect` when broad structure discovery is needed.
 - First-class commands remain preferred for design context, motion, design-system search, libraries, variables, assets, downloads, and capture.
 - `call-upstream-tool` is reserved for raw or uncovered official capabilities such as Code Connect writes, shader reads, and `export_video`.
-- `figma:docs:list` and `figma:docs:read` own complete canonical project Markdown. `figma:guidance` is fixed to the derived active scope; `figma:docs:search --scope` selects active by default, conditional explicitly, examples explicitly, or all including router records. `figma:api:search` is the only route to the single API record. Internal JSONL corpus files are not documentation.
+- `figma:docs:list` and `figma:docs:read` own complete canonical project Markdown. `figma:guidance` uses the `active` canonical scope; `figma:docs:search --scope` selects `active` by default, `conditional` explicitly, `examples` explicitly, or `all` including router records. The 9 examples are plugin-owned TypeScript-in-Markdown templates. `figma:api:search` reads the separately generated Plugin API symbol index. Internal corpus and index files are not documentation.
 - Visual QA uses a local capture path followed by `view_image` inspection.
 
 ## Change Rules
@@ -140,10 +143,11 @@ Generated output under `mcp-server/dist/` is checked in and must remain synchron
 2. For runtime behavior, update source first, then tests, then generated `dist`.
 3. For CLI wording and command shape, update canonical CLI/runtime metadata and plugin-root package scripts before the skill and README summaries.
 4. Keep OAuth cache and workspace state files outside committed source.
-5. Regenerate the internal upstream snapshot and derived active index from the Figma-maintained GitHub repository with `npm run update:upstream-corpus -- --ref <git-ref>`. The GitHub-only updater resolves the ref to an immutable commit, ingests every supported text file under `skills/`, records standalone `workflow-skills/` as out of scope, writes per-record and whole-corpus SHA-256 metadata, then derives and publishes the active index from the raw snapshot. Corpus files are content-addressed and manifests are switched last; older generations remain available for concurrent readers and require an explicit later garbage-collection decision. Review the resolved commit, pending/retired index records, and generated diff before building.
-6. Prefer a project-local `.figma-workspace/` only after confirming Git ignores it; otherwise use an explicitly selected Figma task-artifact directory.
-7. Do not install or register a persistent local MCP server during development.
-8. Do not update the locally installed Codex plugin cache from an agent session; leave reload/reinstall to the user or a fresh app session.
+5. Refresh the complete development source snapshot and drift report with `npm run update:upstream-snapshot -- --ref <git-ref>`. This maintenance command updates only `dev/upstream-snapshot/` and `dev/upstream-changes/`; neither directory enters the npm package or `mcp-server/dist/`, and the command never publishes canonical runtime content. Review the resolved commit and drift report manually.
+6. Publish runtime workflow lookup content separately with `npm run build:canonical-corpus`. It reads only plugin-owned mirrors and policy under `skills/figma-workspace/references/canonical-corpus/` and produces the self-contained 87-record corpus. Treat any source-identical marker as a review warning rather than a mechanical failure.
+7. Prefer a project-local `.figma-workspace/` only after confirming Git ignores it; otherwise use an explicitly selected Figma task-artifact directory.
+8. Do not install or register a persistent local MCP server during development.
+9. Do not update the locally installed Codex plugin cache from an agent session; leave reload/reinstall to the user or a fresh app session.
 
 ## Validation
 
@@ -160,7 +164,7 @@ Transport session-path tests should cover fully qualified absolute `FIGMA_WORKSP
 
 Also run repository validators for the skill and plugin plus `git diff --check` when those surfaces change.
 
-The upstream corpus updater requires Git and network access for the selected ref. Its committed manifest is the reproducible boundary: `upstream.resolvedCommit` identifies the exact Figma source tree, while the corpus and record hashes detect incomplete or altered generated assets. Runtime lookup validates those hashes before using the corpus. Publication fsyncs the output directory where the platform supports directory handles; Node on Windows rejects directory fsync, so Windows retains file-level fsync plus rename ordering rather than claiming power-loss durability.
+The development snapshot updater requires Git and network access for the selected ref. Its snapshot and drift report are maintenance evidence only and are never runtime inputs. Runtime lookup validates the independently published canonical corpus and generated Plugin API index. Content-addressed publication fsyncs the output directory where the platform supports directory handles; Node on Windows rejects directory fsync, so Windows retains file-level fsync plus rename ordering rather than claiming power-loss durability.
 
 `npm run check:dist` builds and then compares checked-in `dist`. Run it only in a clean checkout or CI job because unrelated or pre-existing `dist` edits make its cleanliness assertion ambiguous.
 

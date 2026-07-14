@@ -12,391 +12,289 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
-  DEFAULT_UPSTREAM_REF,
-  FIGMA_DEVELOPER_TERMS_URL,
-  OFFICIAL_UPSTREAM_REPOSITORY,
-  parseCliArgs,
-  updateUpstreamCorpus,
+  parseCliInvocation,
+  updateUpstreamSnapshot,
 } from "../scripts/update-upstream-corpus.mjs";
 
-const updaterScript = fileURLToPath(new URL("../scripts/update-upstream-corpus.mjs", import.meta.url));
-const fixedGeneratedAt = "2026-07-14T01:02:03.000Z";
+const generatedAt = "2026-07-14T04:05:06.000Z";
 
-test("defaults pin the official GitHub repository and main ref", () => {
-  assert.equal(OFFICIAL_UPSTREAM_REPOSITORY, "https://github.com/figma/mcp-server-guide.git");
-  assert.equal(DEFAULT_UPSTREAM_REF, "main");
-  assert.deepEqual(parseCliArgs([]), { requestedRef: "main" });
-  assert.deepEqual(parseCliArgs(["--ref", "release/v2"]), { requestedRef: "release/v2" });
-});
-
-test("CLI parser rejects unknown, duplicate, missing, and malformed ref arguments", () => {
-  for (const [args, expected] of [
-    [["--unknown"], /Unknown argument/u],
-    [["main"], /Unknown argument/u],
-    [["--ref"], /requires a <git-ref>/u],
-    [["--ref", "--other"], /requires a <git-ref>/u],
-    [["--ref", "main", "--ref", "next"], /Duplicate option/u],
-    [["--ref", "-main"], /Invalid git ref/u],
-    [["--ref", "bad ref"], /Invalid git ref/u],
-  ]) {
-    assert.throws(() => parseCliArgs(args), expected, args.join(" "));
-  }
-
-  const subprocess = spawnSync(process.execPath, [updaterScript, "--unknown"], {
-    encoding: "utf8",
+test("CLI exposes separate snapshot update and canonical build commands", () => {
+  assert.deepEqual(parseCliInvocation(["update-upstream-snapshot"]), {
+    command: "update-upstream-snapshot",
+    requestedRef: "main",
   });
-  assert.equal(subprocess.status, 1);
-  assert.equal(subprocess.stdout, "");
-  assert.match(subprocess.stderr, /Unknown argument/u);
+  assert.deepEqual(parseCliInvocation(["update-upstream-snapshot", "--ref", "release/v1"]), {
+    command: "update-upstream-snapshot",
+    requestedRef: "release/v1",
+  });
+  assert.deepEqual(parseCliInvocation(["build-canonical-corpus"]), {
+    command: "build-canonical-corpus",
+  });
+  assert.throws(() => parseCliInvocation([]), /Expected command/u);
+  assert.throws(
+    () => parseCliInvocation(["update-upstream-snapshot", "--ref", "main", "--ref", "next"]),
+    /Duplicate option/u,
+  );
+  assert.throws(() => parseCliInvocation(["build-canonical-corpus", "--ref", "main"]), /Unknown/u);
 });
 
-test("Git refs and raw commit SHAs resolve to the fetched commit", async () => {
+test("updater publishes a complete dev snapshot and a content-addressed change report", async () => {
   const fixture = await createRepositoryFixture();
-  const outputByRef = join(fixture.root, "output-ref");
-  const outputBySha = join(fixture.root, "output-sha");
+  const snapshotRoot = join(fixture.root, "dev/upstream-snapshot");
+  const changesRoot = join(fixture.root, "dev/upstream-changes");
   try {
-    git(fixture.repository, ["branch", "fixture-ref", fixture.commit]);
-
-    const byRef = await updateUpstreamCorpus({
-      buildActive: false,
+    const result = await updateUpstreamSnapshot({
       repository: fixture.repository,
-      requestedRef: "fixture-ref",
-      outputDir: outputByRef,
-      generatedAt: fixedGeneratedAt,
-    });
-    const bySha = await updateUpstreamCorpus({
-      buildActive: false,
-      repository: fixture.repository,
-      requestedRef: fixture.commit,
-      outputDir: outputBySha,
-      generatedAt: fixedGeneratedAt,
-    });
-
-    assert.equal(byRef.manifest.upstream.resolvedCommit, fixture.commit);
-    assert.equal(byRef.manifest.upstream.requestedRef, "fixture-ref");
-    assert.equal(bySha.manifest.upstream.resolvedCommit, fixture.commit);
-    assert.equal(bySha.manifest.upstream.requestedRef, fixture.commit);
-    assert.deepEqual(byRef.records, bySha.records);
-  } finally {
-    await rm(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test("generation covers all regular source types with deterministic hashes and EOLs", async () => {
-  const fixture = await createRepositoryFixture();
-  const outputDir = join(fixture.root, "output");
-  try {
-    const result = await updateUpstreamCorpus({
-      buildActive: false,
-      repository: fixture.repository,
-      requestedRef: fixture.commit,
-      outputDir,
-      generatedAt: fixedGeneratedAt,
-    });
-    const manifestText = await readFile(join(outputDir, "manifest.json"), "utf8");
-    const manifest = JSON.parse(manifestText);
-    const corpusText = await readFile(join(outputDir, manifest.corpus.file), "utf8");
-    const records = corpusText.trimEnd().split("\n").map((line) => JSON.parse(line));
-
-    assert.deepEqual(records.map((record) => record.id), [
-      "alpha/SKILL.md",
-      "alpha/references/guide.md",
-      "alpha/scripts/example.js",
-      "alpha/scripts/example.ts",
-      "zeta/SKILL.md",
-    ]);
-    assert.deepEqual(records.map(({ id, kind, format }) => ({ id, kind, format })), [
-      { id: "alpha/SKILL.md", kind: "skill", format: "markdown" },
-      { id: "alpha/references/guide.md", kind: "reference", format: "markdown" },
-      { id: "alpha/scripts/example.js", kind: "script", format: "javascript" },
-      { id: "alpha/scripts/example.ts", kind: "script", format: "typescript" },
-      { id: "zeta/SKILL.md", kind: "skill", format: "markdown" },
-    ]);
-    assert.ok(records.every((record) => record.schemaVersion === 2));
-    assert.ok(records.every((record) => record.sourcePath === record.id));
-    assert.deepEqual([...new Set(records.map((record) => record.skill))], ["alpha", "zeta"]);
-
-    const zeta = records.find((record) => record.id === "zeta/SKILL.md");
-    assert.equal(zeta.text, "# Zeta\nsecond line\n");
-    assert.equal(zeta.lineCount, 3);
-    assert.equal(zeta.contentSha256, sha256(zeta.text));
-    assert.doesNotMatch(corpusText, /\r/u);
-    for (const record of records) {
-      assert.equal(record.contentSha256, sha256(record.text), record.id);
-    }
-
-    assert.deepEqual(manifest, {
-      schemaVersion: 2,
-      generatedAt: fixedGeneratedAt,
-      upstream: {
-        repository: fixture.repository,
-        requestedRef: fixture.commit,
-        resolvedCommit: fixture.commit,
-        sourcePath: "skills",
-        termsUrl: FIGMA_DEVELOPER_TERMS_URL,
-      },
-      corpus: {
-        file: `corpus-${sha256(corpusText)}.jsonl`,
-        recordCount: 5,
-        sha256: sha256(corpusText),
-        contract: "Internal lookup corpus only; agents use the guidance and lookup CLI commands instead of reading upstream files directly.",
-      },
-      includedSkills: ["alpha", "zeta"],
-      outOfScopeSkills: [
-        {
-          skill: "generate-project-plan",
-          reason: "Standalone workflow skill; excluded from the bundled upstream lookup corpus.",
-        },
-        {
-          skill: "video-interaction-mapper",
-          reason: "Standalone workflow skill; excluded from the bundled upstream lookup corpus.",
-        },
-      ],
-      integrity: {
-        algorithm: "sha256",
-        textNormalization: "crlf-to-lf",
-        contentHashes: Object.fromEntries(records.map((record) => [record.id, record.contentSha256])),
-      },
-    });
-  } finally {
-    await rm(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test("raw publication builds the sibling active index before returning", async () => {
-  const fixture = await createRepositoryFixture();
-  const outputDir = join(fixture.root, "upstream-corpus");
-  const activeOutputDir = join(fixture.root, "upstream-active");
-  try {
-    const sourceById = {
-      "alpha/SKILL.md": "# Alpha\n",
-      "alpha/references/guide.md": "# Guide\n",
-      "alpha/scripts/example.js": "export const value = 1;\n",
-      "alpha/scripts/example.ts": "export const value: number = 1;\n",
-      "zeta/SKILL.md": "# Zeta\nsecond line\n",
-    };
-    await mkdir(join(activeOutputDir, "policy"), { recursive: true });
-    await mkdir(join(activeOutputDir, "docs"), { recursive: true });
-    await writeFile(join(activeOutputDir, "docs/alpha-skill.md"), "# Safe Alpha\n", "utf8");
-    await writeFile(join(activeOutputDir, "docs/guide.md"), "# Safe Guide\n", "utf8");
-    await writeFile(join(activeOutputDir, "docs/zeta-skill.md"), "# Safe Zeta\n", "utf8");
-    await writePolicyFragment(activeOutputDir, "alpha", [
-      activePolicyRecord("alpha/SKILL.md", sourceById["alpha/SKILL.md"], "router", "docs/alpha-skill.md"),
-      activePolicyRecord("alpha/references/guide.md", sourceById["alpha/references/guide.md"], "active", "docs/guide.md"),
-      activePolicyRecord("alpha/scripts/example.js", sourceById["alpha/scripts/example.js"], "examples"),
-      activePolicyRecord("alpha/scripts/example.ts", sourceById["alpha/scripts/example.ts"], "api"),
-    ]);
-    await writePolicyFragment(activeOutputDir, "zeta", [
-      activePolicyRecord("zeta/SKILL.md", sourceById["zeta/SKILL.md"], "router", "docs/zeta-skill.md"),
-    ]);
-
-    const result = await updateUpstreamCorpus({
-      repository: fixture.repository,
-      requestedRef: fixture.commit,
-      outputDir,
-      activeOutputDir,
+      requestedRef: "main",
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
       expectedPolicyFragmentCount: 2,
-      generatedAt: fixedGeneratedAt,
+      generatedAt,
     });
+    assert.equal(result.records.length, 5);
+    assert.equal(result.manifest.upstream.resolvedCommit, fixture.commit);
+    assert.equal(result.manifest.corpus.contract.includes("Development-only"), true);
+    assert.deepEqual(result.manifest.includedSkills, ["alpha", "zeta"]);
+    assert.deepEqual(result.manifest.outOfScopeSkills.map(({ skill }) => skill), [
+      "generate-project-plan",
+      "video-interaction-mapper",
+    ]);
+    assert.deepEqual(result.report.summary, {
+      newCount: 5,
+      changedCount: 0,
+      deletedCount: 0,
+      unchangedCount: 0,
+    });
+    assert.deepEqual(result.report.adaptation, {
+      readyCount: 5,
+      pendingCount: 0,
+      retiredCount: 0,
+      pendingRecords: [],
+      retiredRecords: [],
+    });
+    assert.equal(result.report.from, null);
+    assert.equal(result.report.changes.new.some((record) => "text" in record), false);
 
-    assert.equal(result.active.manifest.parent.corpus.sha256, result.manifest.corpus.sha256);
-    assert.equal(result.active.manifest.queryableRecordCount, 4);
-    assert.equal(result.active.manifest.classificationCounts.api, 1);
-    assert.equal(result.active.manifest.pendingCount, 0);
-    const activeManifest = JSON.parse(await readFile(join(activeOutputDir, "manifest.json"), "utf8"));
-    assert.deepEqual(activeManifest, result.active.manifest);
+    const snapshotManifest = JSON.parse(await readFile(join(snapshotRoot, "manifest.json"), "utf8"));
+    const snapshotText = await readFile(join(snapshotRoot, snapshotManifest.corpus.file), "utf8");
+    assert.equal(sha256(snapshotText), snapshotManifest.corpus.sha256);
+    const records = parseJsonl(snapshotText);
+    assert.equal(records.find((record) => record.id === "zeta/SKILL.md").text, "# Zeta\nsecond line\n");
 
-    const alphaPolicyPath = join(activeOutputDir, "policy/alpha.json");
-    const malformedPolicy = JSON.parse(await readFile(alphaPolicyPath, "utf8"));
-    malformedPolicy.unexpected = true;
-    await writeFile(alphaPolicyPath, `${JSON.stringify(malformedPolicy, null, 2)}\n`, "utf8");
-    await assert.rejects(
-      updateUpstreamCorpus({
-        repository: fixture.repository,
-        requestedRef: fixture.commit,
-        outputDir,
-        activeOutputDir,
-        expectedPolicyFragmentCount: 2,
-        generatedAt: fixedGeneratedAt,
-      }),
-      /policy fragment alpha\.json must contain exactly/u,
-    );
-    assert.deepEqual(
-      JSON.parse(await readFile(join(outputDir, "manifest.json"), "utf8")),
-      result.manifest,
-      "raw publication remains valid even though malformed policy makes the update command fail",
-    );
-    assert.deepEqual(
-      JSON.parse(await readFile(join(activeOutputDir, "manifest.json"), "utf8")),
-      activeManifest,
-      "active manifest is not replaced on policy validation failure",
-    );
-
-    delete malformedPolicy.unexpected;
-    await writeFile(alphaPolicyPath, `${JSON.stringify(malformedPolicy, null, 2)}\n`, "utf8");
-    await assert.rejects(
-      updateUpstreamCorpus({
-        repository: fixture.repository,
-        requestedRef: fixture.commit,
-        outputDir,
-        activeOutputDir,
-        expectedPolicyFragmentCount: 2,
-        generatedAt: "2026-07-14T09:10:11.000Z",
-        async activeRenameFile(source, target) {
-          if (target === join(activeOutputDir, "manifest.json")) {
-            throw new Error("injected active manifest rename failure");
-          }
-          await rename(source, target);
-        },
-      }),
-      /injected active manifest rename failure/u,
-    );
-    assert.deepEqual(
-      JSON.parse(await readFile(join(outputDir, "manifest.json"), "utf8")),
-      result.manifest,
-      "raw manifest rolls back when active publication cannot switch generations",
-    );
-    assert.deepEqual(
-      JSON.parse(await readFile(join(activeOutputDir, "manifest.json"), "utf8")),
-      activeManifest,
-      "active manifest remains on the previous generation after a failed switch",
-    );
+    const changesManifest = JSON.parse(await readFile(join(changesRoot, "manifest.json"), "utf8"));
+    const reportText = await readFile(join(changesRoot, changesManifest.report.file), "utf8");
+    assert.equal(sha256(reportText), changesManifest.report.sha256);
+    assert.deepEqual(JSON.parse(reportText), result.report);
+    assert.deepEqual(changesManifest.adaptation, result.report.adaptation);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
 
-test("unknown extensions fail before replacing an existing corpus", async () => {
-  const fixture = await createRepositoryFixture({
-    extraFiles: { "skills/alpha/references/data.json": "{}\n" },
-  });
-  const outputDir = join(fixture.root, "output");
-  try {
-    const oldPair = await seedOldPair(outputDir);
-
-    await assert.rejects(
-      updateUpstreamCorpus({
-        buildActive: false,
-        repository: fixture.repository,
-        requestedRef: fixture.commit,
-        outputDir,
-        generatedAt: fixedGeneratedAt,
-      }),
-      /Unsupported file extension/u,
-    );
-    assert.equal(await readFile(join(outputDir, oldPair.corpusFile), "utf8"), oldPair.corpusText);
-    assert.equal(await readFile(join(outputDir, "manifest.json"), "utf8"), oldPair.manifestText);
-    assert.deepEqual((await readdir(outputDir)).sort(), [oldPair.corpusFile, "manifest.json"].sort());
-  } finally {
-    await rm(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test("a top-level skill without SKILL.md fails without creating output", async () => {
-  const fixture = await createRepositoryFixture({
-    extraFiles: { "skills/orphan/references/guide.md": "# Orphan\n" },
-  });
-  const outputDir = join(fixture.root, "output");
-  try {
-    await assert.rejects(
-      updateUpstreamCorpus({
-        buildActive: false,
-        repository: fixture.repository,
-        requestedRef: fixture.commit,
-        outputDir,
-        generatedAt: fixedGeneratedAt,
-      }),
-      /missing skills\/orphan\/SKILL\.md/u,
-    );
-    await assert.rejects(readFile(join(outputDir, "manifest.json")), { code: "ENOENT" });
-    await assert.rejects(readdir(outputDir), { code: "ENOENT" });
-  } finally {
-    await rm(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test("manifest rename failure preserves the old readable pair without partial temp files", async () => {
+test("new, changed, and deleted upstream files affect only the dev report", async () => {
   const fixture = await createRepositoryFixture();
-  const outputDir = join(fixture.root, "output");
+  const snapshotRoot = join(fixture.root, "dev/upstream-snapshot");
+  const changesRoot = join(fixture.root, "dev/upstream-changes");
+  const canonicalSentinel = join(fixture.root, "skills/figma-workspace/references/canonical-corpus/manifest.json");
   try {
-    const oldPair = await seedOldPair(outputDir);
-    await assert.rejects(
-      updateUpstreamCorpus({
-        buildActive: false,
-        repository: fixture.repository,
-        requestedRef: fixture.commit,
-        outputDir,
-        generatedAt: fixedGeneratedAt,
-        async renameFile(source, target) {
-          if (target === join(outputDir, "manifest.json")) {
-            throw new Error("injected manifest rename failure");
-          }
-          await rename(source, target);
-        },
-      }),
-      /injected manifest rename failure/u,
-    );
-
-    assert.equal(await readFile(join(outputDir, "manifest.json"), "utf8"), oldPair.manifestText);
-    assert.equal(await readFile(join(outputDir, oldPair.corpusFile), "utf8"), oldPair.corpusText);
-    const files = await readdir(outputDir);
-    assert.equal(files.some((file) => file.endsWith(".tmp")), false);
-    const corpusFiles = files.filter((file) => /^corpus-[0-9a-f]{64}\.jsonl$/u.test(file));
-    assert.equal(corpusFiles.length, 2, "the fully published new corpus may remain as a safe orphan");
-    for (const corpusFile of corpusFiles) {
-      const corpusText = await readFile(join(outputDir, corpusFile), "utf8");
-      assert.equal(corpusFile, `corpus-${sha256(corpusText)}.jsonl`);
-    }
-  } finally {
-    await rm(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test("successful manifest switch keeps the old corpus readable and syncs both directory renames", async () => {
-  const fixture = await createRepositoryFixture();
-  const outputDir = join(fixture.root, "output");
-  try {
-    const oldPair = await seedOldPair(outputDir);
-    const syncedDirectories = [];
-    const result = await updateUpstreamCorpus({
-      buildActive: false,
+    await mkdir(dirname(canonicalSentinel), { recursive: true });
+    await writeFile(canonicalSentinel, "canonical-sentinel\n", "utf8");
+    const first = await updateUpstreamSnapshot({
       repository: fixture.repository,
-      requestedRef: fixture.commit,
-      outputDir,
-      generatedAt: fixedGeneratedAt,
-      async syncDirectoryFn(directory) {
-        syncedDirectories.push(directory);
-      },
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt,
     });
+    await writeFile(join(fixture.repository, "skills/alpha/SKILL.md"), "# Alpha revised\n", "utf8");
+    await rm(join(fixture.repository, "skills/alpha/scripts/example.js"));
+    await writeFile(join(fixture.repository, "skills/alpha/references/new.md"), "# New\n", "utf8");
+    git(fixture.repository, ["add", "--all"]);
+    git(fixture.repository, ["commit", "--quiet", "-m", "upstream drift"]);
 
-    const manifest = JSON.parse(await readFile(join(outputDir, "manifest.json"), "utf8"));
-    assert.equal(manifest.corpus.file, result.manifest.corpus.file);
-    assert.notEqual(manifest.corpus.file, oldPair.corpusFile);
-    const corpusText = await readFile(join(outputDir, manifest.corpus.file), "utf8");
-    assert.equal(manifest.corpus.sha256, sha256(corpusText));
-    assert.equal(await readFile(join(outputDir, oldPair.corpusFile), "utf8"), oldPair.corpusText);
-    assert.deepEqual(syncedDirectories, [outputDir, outputDir]);
+    const second = await updateUpstreamSnapshot({
+      repository: fixture.repository,
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt: "2026-07-15T04:05:06.000Z",
+    });
+    assert.deepEqual(second.report.summary, {
+      newCount: 1,
+      changedCount: 1,
+      deletedCount: 1,
+      unchangedCount: 3,
+    });
+    assert.deepEqual(second.report.changes.new.map(({ id }) => id), ["alpha/references/new.md"]);
+    assert.deepEqual(second.report.changes.changed.map(({ id }) => id), ["alpha/SKILL.md"]);
+    assert.deepEqual(second.report.changes.deleted.map(({ id }) => id), ["alpha/scripts/example.js"]);
     assert.deepEqual(
-      (await readdir(outputDir)).sort(),
-      [oldPair.corpusFile, manifest.corpus.file, "manifest.json"].sort(),
+      second.report.adaptation.pendingRecords.map(({ id, drift }) => ({ id, drift })),
+      [
+        { id: "alpha/SKILL.md", drift: "changed" },
+        { id: "alpha/references/new.md", drift: "new" },
+      ],
     );
+    assert.deepEqual(
+      second.report.adaptation.retiredRecords.map(({ id }) => id),
+      ["alpha/scripts/example.js"],
+    );
+    assert.deepEqual(second.changeManifest.adaptation, second.report.adaptation);
+    assert.equal(second.report.from.resolvedCommit, first.manifest.upstream.resolvedCommit);
+    assert.equal(await readFile(canonicalSentinel, "utf8"), "canonical-sentinel\n");
+    assert.equal(
+      (await readdir(snapshotRoot)).includes(first.manifest.corpus.file),
+      true,
+      "older content-addressed snapshot must be retained",
+    );
+
+    const repeated = await updateUpstreamSnapshot({
+      repository: fixture.repository,
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt: "2026-07-16T04:05:06.000Z",
+    });
+    assert.deepEqual(repeated.report.summary, {
+      newCount: 0,
+      changedCount: 0,
+      deletedCount: 0,
+      unchangedCount: 5,
+    });
+    assert.deepEqual(repeated.report.adaptation, second.report.adaptation);
+
+    await writeAcceptedPolicies(fixture.policyRoot, {
+      "alpha/SKILL.md": ["# Alpha revised\n", "router"],
+      "alpha/references/guide.md": ["# Guide\n", "active"],
+      "alpha/references/new.md": ["# New\n", "conditional"],
+      "alpha/scripts/example.ts": ["export const value: number = 1;\n", "api"],
+      "zeta/SKILL.md": ["# Zeta\nsecond line\n", "router"],
+    });
+    const adapted = await updateUpstreamSnapshot({
+      repository: fixture.repository,
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt: "2026-07-17T04:05:06.000Z",
+    });
+    assert.deepEqual(adapted.report.adaptation, {
+      readyCount: 5,
+      pendingCount: 0,
+      retiredCount: 0,
+      pendingRecords: [],
+      retiredRecords: [],
+    });
+    assert.equal(await readFile(canonicalSentinel, "utf8"), "canonical-sentinel\n");
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
 
-async function createRepositoryFixture(options = {}) {
-  const root = await mkdtemp(join(tmpdir(), "figma-corpus-fixture-"));
+test("change-report failure restores the previous snapshot manifest and cleans temporaries", async () => {
+  const fixture = await createRepositoryFixture();
+  const snapshotRoot = join(fixture.root, "dev/upstream-snapshot");
+  const changesRoot = join(fixture.root, "dev/upstream-changes");
+  try {
+    await updateUpstreamSnapshot({
+      repository: fixture.repository,
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt,
+    });
+    const oldSnapshotManifest = await readFile(join(snapshotRoot, "manifest.json"), "utf8");
+    await writeFile(join(fixture.repository, "skills/alpha/SKILL.md"), "# Changed\n", "utf8");
+    git(fixture.repository, ["add", "--all"]);
+    git(fixture.repository, ["commit", "--quiet", "-m", "change"]);
+
+    await assert.rejects(
+      updateUpstreamSnapshot({
+        repository: fixture.repository,
+        snapshotRoot,
+        changesRoot,
+        policyRoot: fixture.policyRoot,
+        expectedPolicyFragmentCount: 2,
+        generatedAt: "2026-07-15T04:05:06.000Z",
+        async changesRenameFile(source, target) {
+          if (target === join(changesRoot, "manifest.json")) {
+            throw new Error("injected change manifest failure");
+          }
+          await rename(source, target);
+        },
+      }),
+      /injected change manifest failure/u,
+    );
+    assert.equal(await readFile(join(snapshotRoot, "manifest.json"), "utf8"), oldSnapshotManifest);
+    assert.equal((await readdir(snapshotRoot)).some((file) => file.endsWith(".tmp")), false);
+    assert.equal((await readdir(changesRoot)).some((file) => file.endsWith(".tmp")), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("directory sync failure after change manifest rename rolls back both manifests", async () => {
+  const fixture = await createRepositoryFixture();
+  const snapshotRoot = join(fixture.root, "dev/upstream-snapshot");
+  const changesRoot = join(fixture.root, "dev/upstream-changes");
+  try {
+    await updateUpstreamSnapshot({
+      repository: fixture.repository,
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt,
+    });
+    const oldSnapshotManifest = await readFile(join(snapshotRoot, "manifest.json"), "utf8");
+    const oldChangesManifest = await readFile(join(changesRoot, "manifest.json"), "utf8");
+    await writeFile(join(fixture.repository, "skills/alpha/SKILL.md"), "# Changed\n", "utf8");
+    git(fixture.repository, ["add", "--all"]);
+    git(fixture.repository, ["commit", "--quiet", "-m", "change"]);
+
+    let changesSyncCount = 0;
+    await assert.rejects(
+      updateUpstreamSnapshot({
+        repository: fixture.repository,
+        snapshotRoot,
+        changesRoot,
+        policyRoot: fixture.policyRoot,
+        expectedPolicyFragmentCount: 2,
+        generatedAt: "2026-07-15T04:05:06.000Z",
+        async changesSyncDirectoryFn() {
+          changesSyncCount += 1;
+          if (changesSyncCount === 2) {
+            throw new Error("injected post-manifest directory sync failure");
+          }
+        },
+      }),
+      /injected post-manifest directory sync failure/u,
+    );
+    assert.equal(changesSyncCount, 2);
+    assert.equal(await readFile(join(snapshotRoot, "manifest.json"), "utf8"), oldSnapshotManifest);
+    assert.equal(await readFile(join(changesRoot, "manifest.json"), "utf8"), oldChangesManifest);
+    assert.equal((await readdir(snapshotRoot)).some((file) => file.endsWith(".tmp")), false);
+    assert.equal((await readdir(changesRoot)).some((file) => file.endsWith(".tmp")), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+async function createRepositoryFixture() {
+  const root = await mkdtemp(join(tmpdir(), "figma-upstream-snapshot-fixture-"));
   const repository = join(root, "repository");
   await mkdir(repository);
   git(repository, ["init", "--quiet", "--initial-branch=main"]);
-  git(repository, ["config", "user.name", "Corpus Test"]);
-  git(repository, ["config", "user.email", "corpus-test@example.invalid"]);
+  git(repository, ["config", "user.name", "Snapshot Test"]);
+  git(repository, ["config", "user.email", "snapshot-test@example.invalid"]);
   git(repository, ["config", "core.autocrlf", "false"]);
-
   const files = {
     "skills/zeta/SKILL.md": "# Zeta\r\nsecond line\r\n",
     "skills/alpha/SKILL.md": "# Alpha\n",
@@ -405,7 +303,6 @@ async function createRepositoryFixture(options = {}) {
     "skills/alpha/scripts/example.js": "export const value = 1;\n",
     "workflow-skills/video-interaction-mapper/SKILL.md": "# Video\n",
     "workflow-skills/generate-project-plan/SKILL.md": "# Plan\n",
-    ...options.extraFiles,
   };
   for (const [path, content] of Object.entries(files)) {
     const target = join(repository, ...path.split("/"));
@@ -414,58 +311,56 @@ async function createRepositoryFixture(options = {}) {
   }
   git(repository, ["add", "--all"]);
   git(repository, ["commit", "--quiet", "-m", "fixture"]);
-  const commit = git(repository, ["rev-parse", "HEAD"]).stdout.trim();
-  return { root, repository, commit };
+  const policyRoot = join(root, "canonical-policy");
+  await writeAcceptedPolicies(policyRoot, {
+    "alpha/SKILL.md": ["# Alpha\n", "router"],
+    "alpha/references/guide.md": ["# Guide\n", "active"],
+    "alpha/scripts/example.js": ["export const value = 1;\n", "examples"],
+    "alpha/scripts/example.ts": ["export const value: number = 1;\n", "api"],
+    "zeta/SKILL.md": ["# Zeta\nsecond line\n", "router"],
+  });
+  return {
+    root,
+    repository,
+    policyRoot,
+    commit: git(repository, ["rev-parse", "HEAD"]).stdout.trim(),
+  };
+}
+
+async function writeAcceptedPolicies(policyRoot, records) {
+  await mkdir(policyRoot, { recursive: true });
+  const bySkill = new Map();
+  for (const [id, [source, classification]] of Object.entries(records)) {
+    const skill = id.split("/")[0];
+    const skillRecords = bySkill.get(skill) ?? [];
+    skillRecords.push({
+      id,
+      sourceContentSha256: sha256(source),
+      classification,
+    });
+    bySkill.set(skill, skillRecords);
+  }
+  const existing = await readdir(policyRoot);
+  await Promise.all(existing.map((file) => rm(join(policyRoot, file), { force: true })));
+  for (const [skill, skillRecords] of bySkill) {
+    await writeFile(join(policyRoot, `${skill}.json`), `${JSON.stringify({
+      schemaVersion: 1,
+      skill,
+      records: skillRecords,
+    }, null, 2)}\n`, "utf8");
+  }
 }
 
 function git(cwd, args) {
-  const result = spawnSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    windowsHide: true,
-  });
+  const result = spawnSync("git", args, { cwd, encoding: "utf8", windowsHide: true });
   assert.equal(result.status, 0, result.stderr || `git ${args.join(" ")} failed`);
   return result;
 }
 
+function parseJsonl(text) {
+  return text.trimEnd().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
 function sha256(value) {
   return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-async function seedOldPair(outputDir) {
-  const corpusText = `${JSON.stringify({ schemaVersion: 2, id: "old/SKILL.md", text: "# Old\n" })}\n`;
-  const corpusFile = `corpus-${sha256(corpusText)}.jsonl`;
-  const manifestText = `${JSON.stringify({
-    schemaVersion: 2,
-    corpus: {
-      file: corpusFile,
-      sha256: sha256(corpusText),
-    },
-  }, null, 2)}\n`;
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(join(outputDir, corpusFile), corpusText, "utf8");
-  await writeFile(join(outputDir, "manifest.json"), manifestText, "utf8");
-  return { corpusFile, corpusText, manifestText };
-}
-
-async function writePolicyFragment(activeOutputDir, skill, records) {
-  await writeFile(join(activeOutputDir, "policy", `${skill}.json`), `${JSON.stringify({
-    schemaVersion: 1,
-    skill,
-    records,
-  }, null, 2)}\n`, "utf8");
-}
-
-function activePolicyRecord(id, source, classification, mirrorPath) {
-  return {
-    id,
-    sourceContentSha256: sha256(source),
-    classification,
-    state: "ready",
-    ...(mirrorPath === undefined ? {} : { mirrorPath }),
-    sourceContract: "figma-mcp",
-    targetContract: "figma-workspace-cli",
-    surfaces: [],
-    mappingProfile: `${classification}-v1`,
-  };
 }

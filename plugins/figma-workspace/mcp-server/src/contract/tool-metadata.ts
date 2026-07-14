@@ -312,7 +312,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_lookup",
       description:
-        "Targeted lookup helper for compact docs snippets or exact Figma Plugin API symbols. For kind=docs use query; for kind=api use symbol. Use after guidance when exact API/docs context is still needed.",
+        "Targeted lookup helper for compact canonical docs snippets or exact bundled Figma Plugin API symbols. For kind=docs use query; for kind=api use symbol. Use after guidance when exact API/docs context is still needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
@@ -340,7 +340,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_doctor",
       description:
-        "Inspect local project-doc, lookup-corpus, and TypeScript runtime availability and return repair guidance. This command is read-only and does not create a session.",
+        "Inspect local project docs, canonical docs corpus, generated Plugin API index, and TypeScript runtime availability. This command is read-only and does not create a session.",
       inputSchema: objectSchema({}),
     },
     {
@@ -582,7 +582,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     content: stringProperty("Complete selected Markdown document content."),
   }),
   figma_workspace_doctor: toolOutputSchema({
-    runtime: objectProperty("Dynamic lookup-corpus and TypeScript runtime status."),
+    runtime: objectProperty("Dynamic canonical docs corpus, Plugin API index, and TypeScript runtime status."),
     guidance: stringArrayProperty("Repair or reload guidance based on the runtime status."),
   }),
   figma_workspace_sessions: toolOutputSchema({

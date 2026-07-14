@@ -128,7 +128,7 @@ var FIGMA_DIRECT_COMMANDS = {
   },
   "docs:search": {
     command: "lookup",
-    purpose: "Search project and upstream workflow documentation.",
+    purpose: "Search project and canonical workflow documentation.",
     fixedInput: { kind: "docs", scope: "active" },
     position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Documentation search text." },
     options: {
@@ -156,7 +156,7 @@ var FIGMA_DIRECT_COMMANDS = {
   },
   doctor: {
     command: "doctor",
-    purpose: "Inspect project-doc, lookup-corpus, and TypeScript runtime availability.",
+    purpose: "Inspect canonical docs, generated Plugin API index, and TypeScript runtime availability.",
     options: {},
     outputLimit: true,
     examples: [`npm --silent run figma:doctor -- ${STATE_FILE_EXAMPLE}`]

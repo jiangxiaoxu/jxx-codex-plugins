@@ -1,224 +1,184 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { compileFigmaWorkspaceTypescriptSource } from "../dist/runtime/typescript-compiler-runtime.js";
 
 const distRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../dist");
 
-test("runtime accepts CRLF corpus checkout after normalized integrity validation", async () => {
-  await withCopiedRuntime(async (fixture) => {
-    await writeFile(fixture.corpusFile, fixture.corpusText.replace(/\n/gu, "\r\n"), "utf8");
-    const result = runDoctor(fixture.root);
+test("all canonical examples pass the production strict TypeScript preflight", async () => {
+  const canonicalRoot = join(distRoot, "skills", "figma-workspace", "references", "canonical-corpus");
+  const manifest = JSON.parse(await readFile(join(canonicalRoot, "manifest.json"), "utf8"));
+  const records = (await readFile(join(canonicalRoot, manifest.corpus.file), "utf8"))
+    .trimEnd()
+    .split(/\r?\n/u)
+    .map((line) => JSON.parse(line));
+  const examples = records.filter((record) => record.classification === "examples");
+  assert.equal(examples.length, 9);
 
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /^Status: succeeded$/mu);
-    assert.doesNotMatch(result.stdout, /SHA-256|record count|skill inventory/u);
-  });
-});
-
-test("runtime accepts CRLF derived active corpus checkout", async () => {
-  await withCopiedRuntime(async (fixture) => {
-    await writeFile(fixture.activeCorpusFile, fixture.activeCorpusText.replace(/\n/gu, "\r\n"), "utf8");
-    const result = runDoctor(fixture.root);
-
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /^Status: succeeded$/mu);
-    assert.doesNotMatch(result.stdout, /active corpus SHA-256|active content integrity/u);
-  });
-});
-
-test("runtime rejects whole-corpus integrity mismatch", async () => {
-  await withCopiedRuntime(async (fixture) => {
-    await writeFile(fixture.corpusFile, `${fixture.corpusText} `, "utf8");
-    assertDoctorFailure(fixture.root, /corpus SHA-256 does not match/u);
-  });
-});
-
-test("runtime rejects derived active whole-corpus integrity mismatch", async () => {
-  await withCopiedRuntime(async (fixture) => {
-    await writeFile(fixture.activeCorpusFile, `${fixture.activeCorpusText} `, "utf8");
-    assertDoctorFailure(fixture.root, /active corpus SHA-256 does not match/u);
-  });
-});
-
-test("runtime rejects derived record integrity mismatch after whole-corpus hash passes", async () => {
-  await withCopiedRuntime(async (fixture) => {
-    const records = parseRecords(fixture.activeCorpusText);
-    records[0].text += "tampered";
-    await writeActiveCorpusAndManifest(fixture, records);
-    assertDoctorFailure(fixture.root, /active content integrity mismatch/u);
-  });
-});
-
-test("runtime rejects active index with a mismatched raw parent", async () => {
-  await withCopiedRuntime(async (fixture) => {
-    fixture.activeManifest.parent.resolvedCommit = "0".repeat(40);
-    await writeFile(
-      fixture.activeManifestFile,
-      `${JSON.stringify(fixture.activeManifest, null, 2)}\n`,
-      "utf8",
+  for (const example of examples) {
+    const fence = /```(?:ts|typescript)\s*\r?\n([\s\S]*?)\r?\n```/u.exec(example.text);
+    assert.ok(fence, `${example.id} must contain a TypeScript fence`);
+    const compiled = compileFigmaWorkspaceTypescriptSource(
+      example.id.replace(/\.md$/u, ".figma.ts"),
+      fence[1],
+      true,
     );
-    assertDoctorFailure(fixture.root, /active index parent does not match/u);
+    const fatal = compiled.diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
+    assert.deepEqual(fatal, [], `${example.id}: ${fatal.map((diagnostic) => diagnostic.message).join("; ")}`);
+  }
+});
+
+test("canonical runnable workflow snippets pass the production strict TypeScript preflight", async () => {
+  const canonicalRoot = join(distRoot, "skills", "figma-workspace", "references", "canonical-corpus");
+  const manifest = JSON.parse(await readFile(join(canonicalRoot, "manifest.json"), "utf8"));
+  const records = new Map((await readFile(join(canonicalRoot, manifest.corpus.file), "utf8"))
+    .trimEnd()
+    .split(/\r?\n/u)
+    .map((line) => JSON.parse(line))
+    .map((record) => [record.id, record]));
+  const runnableIds = [
+    "figma-generate-design/references/componentization.md",
+    "figma-use-figjam/references/batch-modify.md",
+    "figma-use-figjam/references/create-label.md",
+    "figma-use-figjam/references/create-section.md",
+    "figma-use-figjam/references/create-sticky.md",
+    "figma-use-figjam/references/create-table.md",
+    "figma-use-figjam/references/figjam-colors.md",
+    "figma-use-figjam/references/position-figjam-nodes.md",
+    "figma-use-slides/references/slide-design.md",
+    "figma-use/references/working-with-design-systems/wwds-components--creating.md",
+  ];
+
+  for (const id of runnableIds) {
+    const record = records.get(id);
+    assert.ok(record, `Missing canonical record: ${id}`);
+    const fences = [...record.text.matchAll(/```(?:ts|typescript)\s*\r?\n([\s\S]*?)\r?\n```/gu)];
+    assert.ok(fences.length > 0, `${id} must contain a TypeScript fence`);
+    for (const [index, fence] of fences.entries()) {
+      const compiled = compileFigmaWorkspaceTypescriptSource(`${id}#${index + 1}.figma.ts`, fence[1], true);
+      const fatal = compiled.diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
+      assert.deepEqual(fatal, [], `${id}#${index + 1}: ${fatal.map((diagnostic) => diagnostic.message).join("; ")}`);
+    }
+  }
+});
+
+test("runtime docs and API lookup succeed without any upstream raw snapshot", async () => {
+  await withCopiedRuntime(async (fixture) => {
+    const distFiles = (await readdir(fixture.dist, { recursive: true })).map(normalizePath);
+    assert.equal(distFiles.some((file) => file.includes("upstream-corpus") || file.includes("upstream-active")), false);
+
+    const poisonedRaw = join(fixture.root, "plugins", "figma-workspace", "dev", "upstream-snapshot");
+    await mkdir(poisonedRaw, { recursive: true });
+    await writeFile(join(poisonedRaw, "manifest.json"), "not json\n", "utf8");
+
+    const docs = runLookup(fixture.root, { kind: "docs", query: "loadFontAsync", maxResults: 3 });
+    assert.equal(docs.status, 0, docs.stderr);
+    assert.match(docs.stdout, /^Status: succeeded$/mu);
+    assert.match(docs.stdout, /loadFontAsync/u);
+
+    const api = runLookup(fixture.root, { kind: "api", symbol: "createFrame", maxResults: 3 });
+    assert.equal(api.status, 0, api.stderr);
+    assert.match(api.stdout, /^Status: succeeded$/mu);
+    assert.match(api.stdout, /@figma\/plugin-typings|createFrame/u);
+
+    const doctor = runDoctor(fixture.root);
+    assert.equal(doctor.status, 0, doctor.stderr);
+    assert.match(doctor.stdout, /^Status: succeeded$/mu);
+    assert.doesNotMatch(doctor.stdout, /pending|retired|raw snapshot/iu);
   });
 });
 
-test("API drift remains pending and cannot enter api search", async () => {
+test("examples scope returns only canonical Markdown templates", async () => {
   await withCopiedRuntime(async (fixture) => {
-    const apiId = "figma-use/references/plugin-api-standalone.d.ts";
-    const records = parseRecords(fixture.corpusText);
-    const apiRecord = records.find((record) => record.id === apiId);
-    assert.ok(apiRecord);
-    const previousHash = apiRecord.contentSha256;
-    apiRecord.text += "\ninterface PendingOnlyApiSymbol {}\n";
-    apiRecord.contentSha256 = sha256(apiRecord.text);
-    fixture.manifest.integrity.contentHashes[apiId] = apiRecord.contentSha256;
-    fixture.manifest.upstream.resolvedCommit = "b".repeat(40);
-    await writeRawContentAddressedCorpusAndManifest(fixture, records);
-
-    fixture.activeManifest.parent.resolvedCommit = fixture.manifest.upstream.resolvedCommit;
-    fixture.activeManifest.parent.corpus = {
-      file: fixture.manifest.corpus.file,
-      recordCount: fixture.manifest.corpus.recordCount,
-      sha256: fixture.manifest.corpus.sha256,
-    };
-    delete fixture.activeManifest.integrity.sourceContentHashes[apiId];
-    fixture.activeManifest.pendingCount = 1;
-    fixture.activeManifest.pendingRecords = [{
-      id: apiId,
-      skill: "figma-use",
-      classification: "api",
-      state: "pending",
-      drift: "changed",
-      sourceContentSha256: apiRecord.contentSha256,
-      policySourceContentSha256: previousHash,
-    }];
-    await writeFile(
-      fixture.activeManifestFile,
-      `${JSON.stringify(fixture.activeManifest, null, 2)}\n`,
-      "utf8",
-    );
-
     const lookup = runLookup(fixture.root, {
-      kind: "api",
-      symbol: "PendingOnlyApiSymbol",
-      maxResults: 5,
-      maxSnippetLines: 5,
+      kind: "docs",
+      scope: "examples",
+      query: "explicitly owned orphans reviewed state ledger",
+      maxResults: 1,
+      maxSnippetLines: 3,
     });
     assert.equal(lookup.status, 0, lookup.stderr);
     assert.match(lookup.stdout, /^Status: succeeded$/mu);
-    assert.match(lookup.stdout, /## Results\s+- none/iu);
-
-    const doctor = runDoctor(fixture.root);
-    assert.match(doctor.stdout, /^Status: observed unhealthy$/mu);
-    assert.match(doctor.stdout, /Pending Count:\s+1/iu);
+    assert.match(lookup.stdout, /figma-generate-library\/examples\/cleanup-orphans/u);
+    assert.doesNotMatch(lookup.stdout, /internal:figma-generate-library\/scripts\/cleanupOrphans\.js/u);
   });
 });
 
-test("runtime rejects record integrity mismatch after whole-corpus hash passes", async () => {
+test("runtime accepts CRLF canonical corpus and generated API index", async () => {
   await withCopiedRuntime(async (fixture) => {
-    const records = parseRecords(fixture.corpusText);
+    await writeFile(fixture.canonicalCorpusFile, fixture.canonicalCorpusText.replace(/\n/gu, "\r\n"), "utf8");
+    await writeFile(fixture.apiIndexFile, fixture.apiIndexText.replace(/\n/gu, "\r\n"), "utf8");
+    const result = runDoctor(fixture.root);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^Status: succeeded$/mu);
+  });
+});
+
+test("doctor reports canonical corpus integrity failures", async () => {
+  await withCopiedRuntime(async (fixture) => {
+    await writeFile(fixture.canonicalCorpusFile, `${fixture.canonicalCorpusText} `, "utf8");
+    const result = runDoctor(fixture.root);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^Status: observed unhealthy$/mu);
+    assert.match(result.stdout, /Canonical Figma corpus SHA-256/u);
+  });
+});
+
+test("doctor reports generated API index integrity failures", async () => {
+  await withCopiedRuntime(async (fixture) => {
+    const records = parseRecords(fixture.apiIndexText);
     records[0].text += "tampered";
-    await writeCorpusAndManifest(fixture, records);
-    assertDoctorFailure(fixture.root, /record SHA-256 mismatch/u);
-  });
-});
+    const indexText = `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
+    const indexHash = sha256(indexText);
+    fixture.apiManifest.index.file = `index-${indexHash}.jsonl`;
+    fixture.apiManifest.index.sha256 = indexHash;
+    const changedIndexFile = join(fixture.apiIndexDir, fixture.apiManifest.index.file);
+    await writeFile(changedIndexFile, indexText, "utf8");
+    await writeFile(fixture.apiManifestFile, `${JSON.stringify(fixture.apiManifest, null, 2)}\n`, "utf8");
 
-test("runtime rejects duplicate records", async () => {
-  await withCopiedRuntime(async (fixture) => {
-    const records = parseRecords(fixture.corpusText);
-    records.push(records[0]);
-    fixture.manifest.corpus.recordCount += 1;
-    await writeCorpusAndManifest(fixture, records);
-    assertDoctorFailure(fixture.root, /Duplicate internal Figma upstream corpus record/u);
-  });
-});
-
-test("runtime rejects manifest record-count and skill-inventory drift", async () => {
-  await withCopiedRuntime(async (fixture) => {
-    fixture.manifest.corpus.recordCount += 1;
-    await writeFile(fixture.manifestFile, `${JSON.stringify(fixture.manifest, null, 2)}\n`, "utf8");
-    assertDoctorFailure(fixture.root, /record count does not match/u);
-  });
-
-  await withCopiedRuntime(async (fixture) => {
-    fixture.manifest.includedSkills = fixture.manifest.includedSkills.slice(1);
-    await writeFile(fixture.manifestFile, `${JSON.stringify(fixture.manifest, null, 2)}\n`, "utf8");
-    assertDoctorFailure(fixture.root, /skill inventory does not match/u);
+    const result = runDoctor(fixture.root);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^Status: observed unhealthy$/mu);
+    assert.match(result.stdout, /API index record SHA-256 mismatch/u);
   });
 });
 
 async function withCopiedRuntime(run) {
-  const root = await mkdtemp(join(tmpdir(), "figma-corpus-integrity-"));
+  const root = await mkdtemp(join(tmpdir(), "figma-canonical-runtime-"));
   try {
-    const copiedDist = join(root, "dist");
-    await cp(distRoot, copiedDist, { recursive: true });
-    const corpusDir = join(copiedDist, "skills", "figma-workspace", "references", "upstream-corpus");
-    const manifestFile = join(corpusDir, "manifest.json");
-    const manifest = JSON.parse(await readFile(manifestFile, "utf8"));
-    const corpusFile = join(corpusDir, manifest.corpus.file);
-    const corpusText = (await readFile(corpusFile, "utf8")).replace(/\r\n/gu, "\n");
-    const activeDir = join(copiedDist, "skills", "figma-workspace", "references", "upstream-active");
-    const activeManifestFile = join(activeDir, "manifest.json");
-    const activeManifest = JSON.parse(await readFile(activeManifestFile, "utf8"));
-    const activeCorpusFile = join(activeDir, activeManifest.corpus.file);
-    const activeCorpusText = (await readFile(activeCorpusFile, "utf8")).replace(/\r\n/gu, "\n");
+    const dist = join(root, "dist");
+    await cp(distRoot, dist, { recursive: true });
+
+    const canonicalDir = join(dist, "skills", "figma-workspace", "references", "canonical-corpus");
+    const canonicalManifest = JSON.parse(await readFile(join(canonicalDir, "manifest.json"), "utf8"));
+    const canonicalCorpusFile = join(canonicalDir, canonicalManifest.corpus.file);
+    const canonicalCorpusText = normalizeLineEndings(await readFile(canonicalCorpusFile, "utf8"));
+
+    const apiIndexDir = join(dist, "runtime", "figma-plugin-api-index");
+    const apiManifestFile = join(apiIndexDir, "manifest.json");
+    const apiManifest = JSON.parse(await readFile(apiManifestFile, "utf8"));
+    const apiIndexFile = join(apiIndexDir, apiManifest.index.file);
+    const apiIndexText = normalizeLineEndings(await readFile(apiIndexFile, "utf8"));
+
     await run({
       root,
-      manifest,
-      manifestFile,
-      corpusFile,
-      corpusText,
-      activeDir,
-      activeManifest,
-      activeManifestFile,
-      activeCorpusFile,
-      activeCorpusText,
+      dist,
+      canonicalCorpusFile,
+      canonicalCorpusText,
+      apiIndexDir,
+      apiManifest,
+      apiManifestFile,
+      apiIndexFile,
+      apiIndexText,
     });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}
-
-async function writeActiveCorpusAndManifest(fixture, records) {
-  const corpusText = `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
-  const corpusHash = sha256(corpusText);
-  fixture.activeManifest.corpus.file = `corpus-${corpusHash}.jsonl`;
-  fixture.activeManifest.corpus.sha256 = corpusHash;
-  fixture.activeCorpusFile = join(fixture.activeDir, fixture.activeManifest.corpus.file);
-  await writeFile(fixture.activeCorpusFile, corpusText, "utf8");
-  await writeFile(
-    fixture.activeManifestFile,
-    `${JSON.stringify(fixture.activeManifest, null, 2)}\n`,
-    "utf8",
-  );
-}
-
-async function writeCorpusAndManifest(fixture, records) {
-  const corpusText = `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
-  const corpusHash = sha256(corpusText);
-  fixture.manifest.corpus.file = `corpus-${corpusHash}.jsonl`;
-  fixture.manifest.corpus.sha256 = corpusHash;
-  fixture.corpusFile = join(dirname(fixture.manifestFile), fixture.manifest.corpus.file);
-  await writeFile(fixture.corpusFile, corpusText, "utf8");
-  await writeFile(fixture.manifestFile, `${JSON.stringify(fixture.manifest, null, 2)}\n`, "utf8");
-}
-
-async function writeRawContentAddressedCorpusAndManifest(fixture, records) {
-  const corpusText = `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
-  const corpusHash = sha256(corpusText);
-  fixture.manifest.corpus.file = `corpus-${corpusHash}.jsonl`;
-  fixture.manifest.corpus.sha256 = corpusHash;
-  fixture.corpusFile = join(dirname(fixture.manifestFile), fixture.manifest.corpus.file);
-  await writeFile(fixture.corpusFile, corpusText, "utf8");
-  await writeFile(fixture.manifestFile, `${JSON.stringify(fixture.manifest, null, 2)}\n`, "utf8");
-}
-
-function parseRecords(corpusText) {
-  return corpusText.trimEnd().split("\n").map((line) => JSON.parse(line));
 }
 
 function runDoctor(root) {
@@ -247,11 +207,16 @@ function runCliCommand(root, command, input) {
   });
 }
 
-function assertDoctorFailure(root, expected) {
-  const result = runDoctor(root);
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^Status: observed unhealthy$/mu);
-  assert.match(result.stdout, expected);
+function parseRecords(corpusText) {
+  return corpusText.trimEnd().split("\n").map((line) => JSON.parse(line));
+}
+
+function normalizeLineEndings(value) {
+  return value.replace(/\r\n/gu, "\n");
+}
+
+function normalizePath(value) {
+  return value.replaceAll("\\", "/");
 }
 
 function sha256(value) {

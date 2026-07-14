@@ -1,0 +1,47 @@
+# Circular callout labels in FigJam
+
+Use a label for a one- or two-character step marker such as `1`, `A`, or `10`. It is a fixed-size `SHAPE_WITH_TEXT` ellipse, suitable for a numbered diagram or a legend anchor. For a phrase, status, or any variable-length message, create a normal shape-with-text instead.
+
+## Prepare and run a local script
+
+Place the operation in the task's `.figma.ts` file and execute it with `figma:script:run`, using the persisted FigJam session, `strict: true`, and an absolute state file. Return every created ID. Reserve `figma:eval` for a small, isolated transaction only.
+
+```ts
+// callout-label.figma.ts
+const labelText = '1'
+if (labelText.length === 0 || labelText.length > 2) throw new Error('A label holds one or two characters')
+
+const label = figma.createShapeWithText()
+label.shapeType = 'ELLIPSE'
+const labelFont = label.text.fontName
+if (labelFont === figma.mixed) throw new Error('Label text has mixed fonts')
+await figma.loadFontAsync(labelFont)
+label.text.characters = labelText
+
+const size = labelText.length === 1 ? 48 : 64
+label.resize(size, size)
+label.text.fontSize = 20
+label.fills = [{ type: 'SOLID', color: { r: 0x3d / 255, g: 0xad / 255, b: 0xff / 255 } }]
+label.strokes = [{ type: 'SOLID', color: { r: 0 / 255, g: 0x7a / 255, b: 0xd2 / 255 } }]
+label.text.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }]
+label.x = 120
+label.y = 120
+label.name = `Callout ${labelText}`
+
+return { createdNodeIds: [label.id], label: { id: label.id, text: label.text.characters, size } }
+```
+
+Execute `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`, where the JSON supplies `sessionId`, `inputFile`, `strict: true`, and `surface: "figjam"`.
+
+## Plugin API rules
+
+- Labels use `figma.createShapeWithText()` followed by `shapeType = 'ELLIPSE'`.
+- Load `label.text.fontName` before changing `label.text.characters` or text styling. Shape text commonly defaults to Inter Medium; do not substitute an assumed family/style when editing existing labels.
+- Keep width and height equal. Use 48 by 48 for one character and 64 by 64 for two characters; fixed dimensions preserve the circular marker.
+- Assign fill, stroke, and text fills together. Colors are normalized 0-1 values, so use `hex / 255` for palette-exact values.
+
+## Verify and troubleshoot
+
+Return the ID, text, dimensions, and position. In a read-only script, verify `type === 'SHAPE_WITH_TEXT'`, `shapeType === 'ELLIPSE'`, the text, and `width === height`; capture the diagram area when alignment with its target matters and inspect the image locally.
+
+If text writes fail, load the label's current font and await it before the mutation. If the result is oval, one dimension was changed independently; call `resize(size, size)`. If the content exceeds two characters, use a standard shape-with-text rather than shrinking unreadable label text. Repair any strict preflight diagnostic in the same `.figma.ts` file before rerunning.

@@ -20,6 +20,6 @@ Use this reference to decide between a first-class CLI command and direct offici
 ## Boundaries
 
 - Do not discover or invoke a legacy local MCP server; the CLI is the agent-facing entrypoint.
-- Do not read bundled `upstream-corpus` JSONL files directly. They are internal lookup assets.
+- Do not read bundled `canonical-corpus` or generated Plugin API index files directly. They are internal runtime lookup assets. The development source snapshot is not packaged or available to runtime lookup.
 - Do not use direct upstream calls to bypass local safety checks for script execution or filesystem outputs.
 - Keep writes scoped to the selected file and node, and perform visual QA with `figma:capture` plus `view_image` after visible changes.

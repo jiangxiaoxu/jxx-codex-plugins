@@ -165,25 +165,26 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     const exampleLookup = await client.lookup({
       kind: "docs",
       scope: "examples",
-      query: "cleanupOrphans",
+      query: "explicitly owned orphans reviewed state ledger",
       maxResults: 3,
       maxSnippetLines: 4,
     });
     assert.equal(exampleLookup.ok, true);
     assert.ok(exampleLookup.results.some(
-      (entry) => entry.sourceId.includes("figma-generate-library/scripts/cleanupOrphans.js"),
+      (entry) => entry.sourceId.includes("figma-generate-library/examples/cleanup-orphans"),
     ));
     assert.ok(exampleLookup.results.every((entry) => entry.classification === "examples"));
     assert.ok(exampleLookup.results.every((entry) => entry.nonExecutable === true));
+    assert.ok(exampleLookup.results.every((entry) => !entry.sourceId.includes("/scripts/") && !entry.sourceId.endsWith(".js")));
     const allExampleLookup = await client.lookup({
       kind: "docs",
       scope: "all",
-      query: "cleanupOrphans",
+      query: "explicitly owned orphans reviewed state ledger",
       maxResults: 3,
       maxSnippetLines: 4,
     });
     assert.ok(allExampleLookup.results.some(
-      (entry) => entry.sourceRecordId === "figma-generate-library/scripts/cleanupOrphans.js" && entry.nonExecutable === true,
+      (entry) => entry.sourceId.includes("figma-generate-library/examples/cleanup-orphans") && entry.nonExecutable === true,
     ));
 
     const activeLookup = await client.lookup({
@@ -249,8 +250,45 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     assert.match(JSON.stringify(lookup.results), /createFrame/u);
     assert.ok(lookup.results.every((entry) => entry.classification === "api"));
     assert.ok(lookup.results.every(
-      (entry) => entry.sourceRecordId === "figma-use/references/plugin-api-standalone.d.ts",
+      (entry) => entry.sourceRecordId.startsWith("@figma/plugin-typings/"),
     ));
+    assert.ok(lookup.results.every((entry) => entry.sourceContract === "@figma/plugin-typings"));
+    const detailedApiLookup = await client.lookup({
+      kind: "api",
+      symbol: "createFrame",
+      maxResults: 10,
+      maxSnippetLines: 3,
+    });
+    const pluginApiLines = (await readFile(
+      resolve(import.meta.dirname, "../dist/runtime/figma-plugin-typings/plugin-api.d.ts"),
+      "utf8",
+    )).replace(/\r\n/gu, "\n").split("\n");
+    const createFrameDeclarationLine = pluginApiLines.findIndex(
+      (line) => /^\s*createFrame\(\): FrameNode\s*$/u.test(line),
+    ) + 1;
+    assert.ok(createFrameDeclarationLine > 0);
+    const exactCreateFrame = detailedApiLookup.results.find((entry) =>
+      entry.matchType === "exact-symbol" &&
+      entry.indexedSymbol === "createFrame" &&
+      entry.indexedSourceFile === "plugin-api.d.ts" &&
+      entry.lineStart <= createFrameDeclarationLine &&
+      entry.lineEnd >= createFrameDeclarationLine);
+    assert.ok(exactCreateFrame);
+    assert.match(exactCreateFrame.snippet, /^\s*createFrame\(\): FrameNode\s*$/mu);
+    assert.ok(detailedApiLookup.results.every((entry) =>
+      entry.matchType !== "exact-symbol" || entry.indexedSymbol.toLowerCase() === "createframe"));
+    assert.ok(detailedApiLookup.results.every((entry) =>
+      entry.indexedSymbol === "createFrame" || entry.matchType !== "exact-symbol"));
+    assert.ok(detailedApiLookup.results.some((entry) =>
+      entry.indexedSymbol !== "createFrame" && entry.matchType !== "exact-symbol"));
+    const caseVariantApiLookup = await client.lookup({
+      kind: "api",
+      symbol: "CreateFrame",
+      maxResults: 5,
+      maxSnippetLines: 3,
+    });
+    assert.ok(caseVariantApiLookup.results.length > 0);
+    assert.ok(caseVariantApiLookup.results.every((entry) => entry.matchType !== "exact-symbol"));
     await assert.rejects(
       client.lookup({ kind: "api", scope: "active", symbol: "createFrame" }),
       /scope.*only allowed.*kind.*docs/u,
@@ -294,23 +332,20 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
     assert.equal(typeof doctor.runtime.projectDocs.ok, "boolean");
     assert.equal(typeof doctor.runtime.lookup.ok, "boolean");
     assert.equal(typeof doctor.runtime.typescript.ok, "boolean");
-    assert.equal(doctor.runtime.lookup.repository, "https://github.com/figma/mcp-server-guide.git");
-    assert.match(doctor.runtime.lookup.resolvedCommit, /^[a-f0-9]{40}$/u);
-    assert.match(doctor.runtime.lookup.corpusSha256, /^[a-f0-9]{64}$/u);
-    assert.equal(doctor.runtime.lookup.raw.recordCount, 88);
-    assert.equal(doctor.runtime.lookup.active.recordCount, 87);
-    assert.equal(doctor.runtime.lookup.active.queryableRecordCount, 87);
-    assert.deepEqual(doctor.runtime.lookup.active.classificationCounts, {
+    assert.match(doctor.runtime.lookup.canonical.corpusSha256, /^[a-f0-9]{64}$/u);
+    assert.equal(doctor.runtime.lookup.canonical.recordCount, 87);
+    assert.deepEqual(doctor.runtime.lookup.canonical.classificationCounts, {
       active: 46,
       conditional: 20,
       router: 12,
       examples: 9,
-      api: 1,
     });
-    assert.equal(doctor.runtime.lookup.active.pendingCount, 0);
-    assert.equal(doctor.runtime.lookup.active.staleCount, 0);
-    assert.equal(doctor.runtime.lookup.active.retiredCount, 0);
-    assert.equal(doctor.runtime.lookup.active.parentResolvedCommit, doctor.runtime.lookup.resolvedCommit);
+    assert.equal(doctor.runtime.lookup.api.package, "@figma/plugin-typings");
+    assert.match(doctor.runtime.lookup.api.version, /^\d+\.\d+\.\d+/u);
+    assert.ok(doctor.runtime.lookup.api.recordCount > 0);
+    assert.match(doctor.runtime.lookup.api.indexSha256, /^[a-f0-9]{64}$/u);
+    assert.equal("raw" in doctor.runtime.lookup, false);
+    assert.equal("active" in doctor.runtime.lookup, false);
 
     const summaries = await client.sessionsInfo();
     assert.equal(summaries.sessions[0].id, "saved");

@@ -18996,10 +18996,10 @@ import { readFileSync as readFileSync2 } from "node:fs";
 import { dirname as dirname4, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 function docsSearchFilesForScope(scope) {
-  if (!upstreamActiveCorpusState.ok) {
+  if (!canonicalCorpusState.ok) {
     return scope === "active" || scope === "all" ? [...STATIC_DOCS_SEARCH_FILES] : [];
   }
-  const records = [...upstreamActiveCorpusState.corpus.records.values()];
+  const records = [...canonicalCorpusState.corpus.records.values()];
   const selected = records.filter((record2) => {
     if (scope === "all") {
       return true;
@@ -19012,53 +19012,49 @@ function docsSearchFilesForScope(scope) {
   ];
 }
 function getFigmaWorkspaceLookupRuntimeInfo() {
-  if (!upstreamCorpusState.ok) {
-    return { ...upstreamCorpusState.failure };
+  if (!canonicalCorpusState.ok) {
+    return { ...canonicalCorpusState.failure };
   }
-  if (!upstreamActiveCorpusState.ok) {
-    return { ...upstreamActiveCorpusState.failure };
+  if (!pluginApiIndexState.ok) {
+    return { ...pluginApiIndexState.failure };
   }
-  const activeManifest = upstreamActiveCorpusState.corpus.manifest;
+  const canonicalManifest = canonicalCorpusState.corpus.manifest;
+  const apiManifest = pluginApiIndexState.index.manifest;
   return {
     ok: true,
-    root: upstreamCorpusState.corpus.root,
-    moduleDir: upstreamCorpusState.moduleDir,
-    cwd: upstreamCorpusState.cwd,
-    argv1: upstreamCorpusState.argv1,
-    packageVersion: upstreamCorpusState.packageVersion,
-    recordCount: upstreamCorpusState.corpus.records.size,
-    repository: upstreamCorpusState.corpus.manifest.upstream.repository,
-    requestedRef: upstreamCorpusState.corpus.manifest.upstream.requestedRef,
-    resolvedCommit: upstreamCorpusState.corpus.manifest.upstream.resolvedCommit,
-    corpusSha256: upstreamCorpusState.corpus.manifest.corpus.sha256,
-    raw: {
-      root: upstreamCorpusState.corpus.root,
-      recordCount: upstreamCorpusState.corpus.records.size,
-      corpusSha256: upstreamCorpusState.corpus.manifest.corpus.sha256
+    moduleDir: canonicalCorpusState.moduleDir,
+    cwd: canonicalCorpusState.cwd,
+    argv1: canonicalCorpusState.argv1,
+    packageVersion: canonicalCorpusState.packageVersion,
+    canonical: {
+      root: canonicalCorpusState.corpus.root,
+      recordCount: canonicalManifest.corpus.recordCount,
+      corpusSha256: canonicalManifest.corpus.sha256,
+      classificationCounts: { ...canonicalManifest.classificationCounts },
+      repository: canonicalManifest.source?.repository,
+      resolvedCommit: canonicalManifest.source?.resolvedCommit
     },
-    active: {
-      root: upstreamActiveCorpusState.corpus.root,
-      recordCount: activeManifest.corpus.recordCount,
-      queryableRecordCount: activeManifest.queryableRecordCount,
-      corpusSha256: activeManifest.corpus.sha256,
-      parentResolvedCommit: activeManifest.parent.resolvedCommit,
-      parentCorpusSha256: activeManifest.parent.corpus.sha256,
-      classificationCounts: { ...activeManifest.classificationCounts },
-      pendingCount: activeManifest.pendingCount,
-      staleCount: activeManifest.pendingRecords.filter((record2) => record2.drift === "changed").length,
-      retiredCount: activeManifest.retiredCount,
-      pendingRecords: activeManifest.pendingRecords.map((record2) => ({ ...record2 })),
-      retiredRecords: activeManifest.retiredRecords.map((record2) => ({ ...record2 }))
+    api: {
+      root: pluginApiIndexState.index.root,
+      recordCount: apiManifest.index.recordCount,
+      indexSha256: apiManifest.index.sha256,
+      package: apiManifest.source.package,
+      version: apiManifest.source.version
     }
   };
 }
 async function searchReferenceFiles(options) {
   const useApiCorpus = options.corpus === "api";
-  const corpus = useApiCorpus ? loadUpstreamCorpus() : void 0;
-  const activeCorpus = loadUpstreamActiveCorpus();
+  const canonicalCorpus = useApiCorpus ? void 0 : loadCanonicalCorpus();
+  const apiIndex = useApiCorpus ? loadPluginApiIndex() : void 0;
   const projectDocsRecords = getFigmaWorkspaceProjectDocSearchRecords();
   const queryTokens = tokenizeQuery(options.query);
   const chunks = [];
+  if (apiIndex) {
+    for (const record2 of apiIndex.records.values()) {
+      chunks.push(buildPluginApiReferenceChunk(record2));
+    }
+  }
   for (const file of options.files) {
     const projectDocRecord = projectDocsRecords.get(file);
     if (projectDocRecord) {
@@ -19070,19 +19066,11 @@ async function searchReferenceFiles(options) {
       chunks.push(...buildReferenceChunks(bridgeRecord.id, bridgeRecord.text, staticReferenceMetadata(bridgeRecord.id, bridgeRecord.text)));
       continue;
     }
-    const activeRecord = activeCorpus.records.get(file);
-    if (activeRecord) {
-      chunks.push(...buildReferenceChunks(activeRecord.id, activeRecord.text, activeRecord));
+    const canonicalRecord = canonicalCorpus?.records.get(file);
+    if (canonicalRecord) {
+      chunks.push(...buildReferenceChunks(canonicalRecord.id, canonicalRecord.text, canonicalRecord));
       continue;
     }
-    const record2 = corpus?.records.get(file);
-    if (!record2) {
-      continue;
-    }
-    if (activeCorpus.manifest.integrity.sourceContentHashes[record2.id] !== record2.contentSha256) {
-      continue;
-    }
-    chunks.push(...buildReferenceChunks(record2.id, record2.text, rawReferenceMetadata(record2)));
   }
   const results = scoreReferenceChunks({
     chunks,
@@ -19198,20 +19186,40 @@ function staticReferenceMetadata(id, text) {
     derivedContentSha256: contentSha256
   };
 }
-function rawReferenceMetadata(record2) {
+function pluginApiReferenceMetadata(record2) {
   return {
     classification: "api",
     sourceRecordId: record2.id,
-    sourceContract: "figma-mcp",
+    sourceContract: "@figma/plugin-typings",
     targetContract: "figma-workspace-cli",
-    sanitized: false,
+    sanitized: true,
     sourceContentSha256: record2.contentSha256,
-    derivedContentSha256: record2.contentSha256
+    derivedContentSha256: record2.contentSha256,
+    indexedSymbol: record2.symbol,
+    indexedSourceFile: record2.sourceFile
+  };
+}
+function buildPluginApiReferenceChunk(record2) {
+  const lines = record2.text.split(/\r?\n/u);
+  const text = lines.join("\n");
+  const tokens = tokenizeReferenceText(text);
+  return {
+    id: record2.id,
+    file: record2.id,
+    title: record2.symbol,
+    lineStart: record2.lineStart,
+    lineEnd: record2.lineEnd,
+    text,
+    lines,
+    tokens,
+    tokenCounts: countTokens(tokens),
+    metadata: pluginApiReferenceMetadata(record2),
+    preferredLineIndex: record2.declarationLine - record2.lineStart
   };
 }
 function buildReferenceChunks(file, text, metadata) {
   const lines = text.split(/\r?\n/u);
-  if (file.endsWith(".d.ts")) {
+  if (metadata.classification === "api" || file.endsWith(".d.ts")) {
     return buildDtsReferenceChunks(file, lines, metadata);
   }
   return buildMarkdownReferenceChunks(file, lines, metadata);
@@ -19362,7 +19370,7 @@ function scoreReferenceChunks(options) {
   const exactPattern = options.exactSymbol ? new RegExp(`\\b${escapeRegExp(options.query)}\\b`, "iu") : void 0;
   const scored = options.chunks.map((chunk) => {
     const lowerText = chunk.text.toLowerCase();
-    const exactHit = exactPattern?.test(chunk.text) ?? false;
+    const exactHit = options.exactSymbol ? chunk.metadata.indexedSymbol === options.query : exactPattern?.test(chunk.text) ?? false;
     const phraseHit = lowerText.includes(lowerQuery);
     const tokenHits = options.queryTokens.filter((token) => chunk.tokenCounts.has(token));
     if (!exactHit && !phraseHit && tokenHits.length === 0) {
@@ -19408,7 +19416,7 @@ function calculateBm25Score(options) {
   return score;
 }
 function scoredChunkToResult(entry, options) {
-  const bestLine = findBestSnippetLine(entry.chunk, options);
+  const bestLine = entry.matchType === "exact-symbol" && entry.chunk.preferredLineIndex !== void 0 ? entry.chunk.preferredLineIndex : findBestSnippetLine(entry.chunk, options);
   const contextBefore = Math.floor((options.maxSnippetLines - 1) / 2);
   const start = Math.max(0, bestLine - contextBefore);
   const end = Math.min(entry.chunk.lines.length, start + options.maxSnippetLines);
@@ -19468,122 +19476,35 @@ function countTokens(tokens) {
   }
   return counts;
 }
-function loadUpstreamCorpus() {
-  if (!upstreamCorpusState.ok) {
-    throw new FigmaWorkspaceLookupCorpusUnavailableError(upstreamCorpusState.failure);
+function loadCanonicalCorpus() {
+  if (!canonicalCorpusState.ok) {
+    throw new FigmaWorkspaceLookupCorpusUnavailableError(canonicalCorpusState.failure);
   }
-  return upstreamCorpusState.corpus;
+  return canonicalCorpusState.corpus;
 }
-function loadUpstreamActiveCorpus() {
-  if (!upstreamActiveCorpusState.ok) {
-    throw new FigmaWorkspaceLookupCorpusUnavailableError(upstreamActiveCorpusState.failure);
+function loadPluginApiIndex() {
+  if (!pluginApiIndexState.ok) {
+    throw new FigmaWorkspaceLookupCorpusUnavailableError(pluginApiIndexState.failure);
   }
-  return upstreamActiveCorpusState.corpus;
+  return pluginApiIndexState.index;
 }
-function readUpstreamActiveCorpusState(rawState) {
-  if (!rawState.ok) {
-    return rawState;
-  }
-  const candidates = upstreamActiveCorpusRootCandidates(
-    rawState.corpus.root,
-    rawState.moduleDir,
-    rawState.cwd
-  );
-  try {
-    const root = resolveUpstreamCorpusRoot(candidates);
-    const manifest = parseUpstreamActiveManifest(readFileSync2(resolve4(root, "manifest.json"), "utf8"));
-    const corpus = readUpstreamActiveCorpus(root, manifest, rawState.corpus);
-    return { ok: true, corpus };
-  } catch (error2) {
-    return {
-      ok: false,
-      failure: {
-        ok: false,
-        message: `Unable to locate the derived Figma active index for CLI docs lookup: ${errorMessage(error2)}`,
-        moduleDir: rawState.moduleDir,
-        cwd: rawState.cwd,
-        argv1: rawState.argv1,
-        packageVersion: rawState.packageVersion,
-        attemptedPaths: candidates
-      }
-    };
-  }
-}
-function readUpstreamActiveCorpus(root, manifest, rawCorpus) {
-  if (manifest.parent.repository !== rawCorpus.manifest.upstream.repository || manifest.parent.resolvedCommit !== rawCorpus.manifest.upstream.resolvedCommit || manifest.parent.corpus.file !== rawCorpus.manifest.corpus.file || manifest.parent.corpus.recordCount !== rawCorpus.manifest.corpus.recordCount || manifest.parent.corpus.sha256 !== rawCorpus.manifest.corpus.sha256) {
-    throw new Error("Derived Figma active index parent does not match the bundled raw snapshot.");
-  }
-  const corpusText = normalizeLineEndings(readFileSync2(resolve4(root, manifest.corpus.file), "utf8"));
-  if (sha256(corpusText) !== manifest.corpus.sha256) {
-    throw new Error("Derived Figma active corpus SHA-256 does not match its manifest.");
-  }
-  const records = /* @__PURE__ */ new Map();
-  for (const line of corpusText.split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-    const record2 = parseUpstreamActiveRecord(line);
-    if (records.has(record2.id)) {
-      throw new Error(`Duplicate derived Figma active record: ${record2.id}`);
-    }
-    const source = rawCorpus.records.get(record2.sourceRecordId);
-    if (!source || source.id !== record2.id || source.contentSha256 !== record2.sourceContentSha256 || manifest.integrity.sourceContentHashes[record2.id] !== record2.sourceContentSha256) {
-      throw new Error(`Derived Figma active source integrity mismatch: ${record2.id}`);
-    }
-    if (manifest.integrity.derivedContentHashes[record2.id] !== record2.derivedContentSha256 || sha256(record2.text) !== record2.derivedContentSha256) {
-      throw new Error(`Derived Figma active content integrity mismatch: ${record2.id}`);
-    }
-    if (record2.format === "markdown") {
-      if (source.format !== "markdown" || !record2.sanitized || record2.nonExecutable) {
-        throw new Error(`Derived Figma Markdown record contract mismatch: ${record2.id}`);
-      }
-    } else if (source.format !== "javascript" || record2.classification !== "examples" || record2.sanitized || !record2.nonExecutable) {
-      throw new Error(`Derived Figma example record contract mismatch: ${record2.id}`);
-    }
-    records.set(record2.id, record2);
-  }
-  if (records.size !== manifest.corpus.recordCount || records.size !== manifest.queryableRecordCount || Object.keys(manifest.integrity.derivedContentHashes).length !== records.size) {
-    throw new Error("Derived Figma active corpus record count does not match its manifest.");
-  }
-  const classifiedRecordCount = Object.values(manifest.classificationCounts).reduce((sum, count) => sum + count, 0);
-  if (classifiedRecordCount !== rawCorpus.records.size + manifest.retiredCount) {
-    throw new Error("Derived Figma active classification inventory does not match its parent snapshot.");
-  }
-  for (const [id, sourceHash] of Object.entries(manifest.integrity.sourceContentHashes)) {
-    if (!isSha256(sourceHash) || rawCorpus.records.get(id)?.contentSha256 !== sourceHash) {
-      throw new Error(`Derived Figma active source hash inventory mismatch: ${id}`);
-    }
-  }
-  return { root, manifest, records };
-}
-function upstreamActiveCorpusRootCandidates(rawRoot, moduleDir, cwd) {
-  return [
-    resolve4(rawRoot, "../upstream-active"),
-    resolve4(moduleDir, "../skills/figma-workspace/references/upstream-active"),
-    resolve4(moduleDir, "../../skills/figma-workspace/references/upstream-active"),
-    resolve4(moduleDir, "../../../skills/figma-workspace/references/upstream-active"),
-    resolve4(cwd, "skills/figma-workspace/references/upstream-active"),
-    resolve4(cwd, "plugins/figma-workspace/skills/figma-workspace/references/upstream-active"),
-    resolve4(cwd, "../skills/figma-workspace/references/upstream-active")
-  ];
-}
-function readUpstreamCorpusState() {
+function readCanonicalCorpusState() {
   const moduleDir = dirname4(fileURLToPath3(import.meta.url));
   const cwd = safeProcessCwd2(moduleDir);
   const argv1 = safeProcessArgv1();
   const packageVersion = readNearestPackageVersion(moduleDir);
-  const candidates = upstreamCorpusRootCandidates(moduleDir, cwd);
+  const candidates = canonicalCorpusRootCandidates(moduleDir, cwd);
   try {
-    const root = resolveUpstreamCorpusRoot(candidates);
-    const manifest = parseUpstreamCorpusManifest(readFileSync2(resolve4(root, "manifest.json"), "utf8"));
-    const corpus = readUpstreamCorpus(root, manifest);
+    const root = resolveAssetRoot(candidates, "canonical corpus");
+    const manifest = parseCanonicalCorpusManifest(readFileSync2(resolve4(root, "manifest.json"), "utf8"));
+    const corpus = readCanonicalCorpus(root, manifest);
     return { ok: true, corpus, moduleDir, cwd, argv1, packageVersion };
   } catch (error2) {
     return {
       ok: false,
       failure: {
         ok: false,
-        message: `Unable to locate the internal Figma corpus for CLI docs/API lookup: ${errorMessage(error2)}`,
+        message: `Unable to load the canonical Figma docs corpus for CLI lookup: ${errorMessage(error2)}`,
         moduleDir,
         cwd,
         argv1,
@@ -19593,46 +19514,48 @@ function readUpstreamCorpusState() {
     };
   }
 }
-function readUpstreamCorpus(root, manifest) {
+function readCanonicalCorpus(root, manifest) {
   const corpusText = normalizeLineEndings(readFileSync2(resolve4(root, manifest.corpus.file), "utf8"));
   if (sha256(corpusText) !== manifest.corpus.sha256) {
-    throw new Error("Internal Figma upstream corpus SHA-256 does not match its manifest.");
+    throw new Error("Canonical Figma corpus SHA-256 does not match its manifest.");
   }
   const records = /* @__PURE__ */ new Map();
   for (const line of corpusText.split("\n")) {
     if (!line.trim()) {
       continue;
     }
-    const record2 = parseUpstreamCorpusRecord(line);
+    const record2 = parseCanonicalCorpusRecord(line);
     if (records.has(record2.id)) {
-      throw new Error(`Duplicate internal Figma upstream corpus record: ${record2.id}`);
+      throw new Error(`Duplicate canonical Figma corpus record: ${record2.id}`);
     }
     const expectedHash = manifest.integrity.contentHashes[record2.id];
-    if (expectedHash !== record2.contentSha256 || sha256(record2.text) !== record2.contentSha256) {
-      throw new Error(`Internal Figma upstream corpus record SHA-256 mismatch: ${record2.id}`);
+    if (expectedHash !== record2.derivedContentSha256 || sha256(record2.text) !== record2.derivedContentSha256) {
+      throw new Error(`Canonical Figma corpus record SHA-256 mismatch: ${record2.id}`);
     }
     records.set(record2.id, record2);
   }
   if (records.size !== manifest.corpus.recordCount || Object.keys(manifest.integrity.contentHashes).length !== records.size) {
-    throw new Error("Internal Figma upstream corpus record count does not match its manifest.");
+    throw new Error("Canonical Figma corpus record count does not match its manifest.");
   }
-  const actualSkills = [...new Set([...records.values()].map((record2) => record2.skill))].sort();
-  if (actualSkills.join("\n") !== [...manifest.includedSkills].sort().join("\n")) {
-    throw new Error("Internal Figma upstream corpus skill inventory does not match its manifest.");
+  const actualCounts = countCanonicalClassifications(records.values());
+  for (const classification of canonicalClassifications) {
+    if (actualCounts[classification] !== manifest.classificationCounts[classification]) {
+      throw new Error("Canonical Figma corpus classification inventory does not match its manifest.");
+    }
   }
   return { root, manifest, records };
 }
-function upstreamCorpusRootCandidates(moduleDir, cwd) {
+function canonicalCorpusRootCandidates(moduleDir, cwd) {
   return [
-    resolve4(moduleDir, "../skills/figma-workspace/references/upstream-corpus"),
-    resolve4(moduleDir, "../../skills/figma-workspace/references/upstream-corpus"),
-    resolve4(moduleDir, "../../../skills/figma-workspace/references/upstream-corpus"),
-    resolve4(cwd, "skills/figma-workspace/references/upstream-corpus"),
-    resolve4(cwd, "plugins/figma-workspace/skills/figma-workspace/references/upstream-corpus"),
-    resolve4(cwd, "../skills/figma-workspace/references/upstream-corpus")
+    resolve4(moduleDir, "../skills/figma-workspace/references/canonical-corpus"),
+    resolve4(moduleDir, "../../skills/figma-workspace/references/canonical-corpus"),
+    resolve4(moduleDir, "../../../skills/figma-workspace/references/canonical-corpus"),
+    resolve4(cwd, "skills/figma-workspace/references/canonical-corpus"),
+    resolve4(cwd, "plugins/figma-workspace/skills/figma-workspace/references/canonical-corpus"),
+    resolve4(cwd, "../skills/figma-workspace/references/canonical-corpus")
   ];
 }
-function resolveUpstreamCorpusRoot(candidates) {
+function resolveAssetRoot(candidates, label) {
   for (const candidate of candidates) {
     try {
       readFileSync2(resolve4(candidate, "manifest.json"), "utf8");
@@ -19641,23 +19564,30 @@ function resolveUpstreamCorpusRoot(candidates) {
     }
   }
   throw new Error(
-    "no candidate contained an upstream corpus manifest.json"
+    `no candidate contained a ${label} manifest.json`
   );
 }
-function parseUpstreamCorpusManifest(text) {
+function parseCanonicalCorpusManifest(text) {
   const value = JSON.parse(text);
-  if (!isObject2(value) || value.schemaVersion !== 2 || !isObject2(value.upstream) || !isObject2(value.corpus) || !isObject2(value.integrity) || !isObject2(value.integrity.contentHashes)) {
-    throw new Error("Invalid internal Figma upstream corpus manifest.");
+  if (!isObject2(value) || value.schemaVersion !== 1 || !isObject2(value.corpus) || !isObject2(value.classificationCounts) || !isObject2(value.integrity) || !isObject2(value.integrity.contentHashes)) {
+    throw new Error("Invalid canonical Figma corpus manifest.");
   }
-  const upstream = value.upstream;
   const corpus = value.corpus;
+  const source = value.source;
+  const classificationCounts = value.classificationCounts;
   const integrity = value.integrity;
   const contentHashesValue = integrity.contentHashes;
   if (!isObject2(contentHashesValue)) {
-    throw new Error("Invalid internal Figma upstream corpus manifest.");
+    throw new Error("Invalid canonical Figma corpus manifest.");
   }
-  if (typeof upstream.repository !== "string" || typeof upstream.requestedRef !== "string" || typeof upstream.resolvedCommit !== "string" || !isGitCommitSha(upstream.resolvedCommit) || typeof upstream.sourcePath !== "string" || typeof upstream.termsUrl !== "string" || typeof corpus.file !== "string" || typeof corpus.recordCount !== "number" || !Number.isSafeInteger(corpus.recordCount) || corpus.recordCount < 1 || typeof corpus.sha256 !== "string" || !isSha256(corpus.sha256) || corpus.file !== `corpus-${corpus.sha256}.jsonl` || typeof corpus.contract !== "string" || integrity.algorithm !== "sha256" || integrity.textNormalization !== "crlf-to-lf") {
-    throw new Error("Invalid internal Figma upstream corpus manifest.");
+  if (typeof corpus.file !== "string" || !isNonNegativeInteger(corpus.recordCount) || typeof corpus.sha256 !== "string" || !isSha256(corpus.sha256) || corpus.file !== `corpus-${corpus.sha256}.jsonl` || integrity.algorithm !== "sha256") {
+    throw new Error("Invalid canonical Figma corpus manifest.");
+  }
+  if (source !== void 0 && (!isObject2(source) || typeof source.repository !== "string" || typeof source.resolvedCommit !== "string" || !isGitCommitSha(source.resolvedCommit))) {
+    throw new Error("Invalid canonical Figma corpus provenance.");
+  }
+  if (Object.keys(classificationCounts).length !== canonicalClassifications.length || canonicalClassifications.some((classification) => !isNonNegativeInteger(classificationCounts[classification]))) {
+    throw new Error("Invalid canonical Figma corpus classification counts.");
   }
   const contentHashes = Object.fromEntries(
     Object.entries(contentHashesValue).filter(
@@ -19665,128 +19595,164 @@ function parseUpstreamCorpusManifest(text) {
     )
   );
   if (Object.keys(contentHashes).length !== Object.keys(contentHashesValue).length) {
-    throw new Error("Invalid internal Figma upstream corpus manifest.");
+    throw new Error("Invalid canonical Figma corpus manifest.");
   }
-  const includedSkills = Array.isArray(value.includedSkills) ? value.includedSkills.filter((item) => typeof item === "string") : [];
-  const outOfScopeSkills = Array.isArray(value.outOfScopeSkills) ? value.outOfScopeSkills.filter((item) => isObject2(item) && typeof item.skill === "string" && typeof item.reason === "string") : [];
-  return {
-    schemaVersion: 2,
-    upstream: {
-      repository: upstream.repository,
-      requestedRef: upstream.requestedRef,
-      resolvedCommit: upstream.resolvedCommit,
-      sourcePath: upstream.sourcePath,
-      termsUrl: upstream.termsUrl
-    },
-    corpus: {
-      file: corpus.file,
-      recordCount: corpus.recordCount,
-      sha256: corpus.sha256,
-      contract: corpus.contract
-    },
-    includedSkills,
-    outOfScopeSkills,
-    integrity: {
-      algorithm: "sha256",
-      textNormalization: "crlf-to-lf",
-      contentHashes
-    }
-  };
-}
-function parseUpstreamCorpusRecord(line) {
-  const value = JSON.parse(line);
-  if (!isObject2(value) || value.schemaVersion !== 2 || typeof value.id !== "string" || typeof value.skill !== "string" || typeof value.kind !== "string" || value.format !== "javascript" && value.format !== "markdown" && value.format !== "typescript" || typeof value.sourcePath !== "string" || typeof value.lineCount !== "number" || typeof value.contentSha256 !== "string" || !isSha256(value.contentSha256) || typeof value.text !== "string") {
-    throw new Error("Invalid internal Figma upstream corpus JSONL record.");
-  }
-  return {
-    schemaVersion: 2,
-    id: value.id,
-    skill: value.skill,
-    kind: value.kind,
-    format: value.format,
-    sourcePath: value.sourcePath,
-    lineCount: value.lineCount,
-    contentSha256: value.contentSha256,
-    text: value.text
-  };
-}
-function parseUpstreamActiveManifest(text) {
-  const value = JSON.parse(text);
-  if (!isObject2(value) || value.schemaVersion !== 1 || typeof value.generatedAt !== "string" || !isObject2(value.parent) || !isObject2(value.parent.corpus) || !isObject2(value.corpus) || !isObject2(value.classificationCounts) || !Array.isArray(value.pendingRecords) || !Array.isArray(value.retiredRecords) || value.pendingRecords.some((record2) => !isObject2(record2)) || value.retiredRecords.some((record2) => !isObject2(record2)) || !isObject2(value.integrity) || !isObject2(value.integrity.sourceContentHashes) || !isObject2(value.integrity.derivedContentHashes)) {
-    throw new Error("Invalid derived Figma active manifest.");
-  }
-  const parent = value.parent;
-  const parentCorpus = parent.corpus;
-  const corpus = value.corpus;
-  const classificationCountsValue = value.classificationCounts;
-  const integrity = value.integrity;
-  if (typeof parent.repository !== "string" || typeof parent.resolvedCommit !== "string" || !isGitCommitSha(parent.resolvedCommit) || typeof parentCorpus.file !== "string" || !isNonNegativeInteger(parentCorpus.recordCount) || typeof parentCorpus.sha256 !== "string" || !isSha256(parentCorpus.sha256) || typeof corpus.file !== "string" || !isNonNegativeInteger(corpus.recordCount) || typeof corpus.sha256 !== "string" || !isSha256(corpus.sha256) || corpus.file !== `corpus-${corpus.sha256}.jsonl` || !isNonNegativeInteger(value.queryableRecordCount) || !isNonNegativeInteger(value.pendingCount) || !isNonNegativeInteger(value.retiredCount) || value.pendingCount !== value.pendingRecords.length || value.retiredCount !== value.retiredRecords.length || integrity.algorithm !== "sha256") {
-    throw new Error("Invalid derived Figma active manifest.");
-  }
-  const classifications = ["active", "conditional", "router", "examples", "api"];
-  if (Object.keys(classificationCountsValue).length !== classifications.length || classifications.some((classification) => !isNonNegativeInteger(classificationCountsValue[classification]))) {
-    throw new Error("Invalid derived Figma active classification counts.");
-  }
-  const sourceContentHashes = parseHashInventory(
-    integrity.sourceContentHashes,
-    "source"
-  );
-  const derivedContentHashes = parseHashInventory(
-    integrity.derivedContentHashes,
-    "derived"
-  );
   return {
     schemaVersion: 1,
-    generatedAt: value.generatedAt,
-    parent: {
-      repository: parent.repository,
-      resolvedCommit: parent.resolvedCommit,
-      corpus: {
-        file: parentCorpus.file,
-        recordCount: parentCorpus.recordCount,
-        sha256: parentCorpus.sha256
-      }
-    },
+    generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : void 0,
+    source: isObject2(source) ? {
+      repository: source.repository,
+      resolvedCommit: source.resolvedCommit
+    } : void 0,
     corpus: {
       file: corpus.file,
       recordCount: corpus.recordCount,
       sha256: corpus.sha256
     },
-    queryableRecordCount: value.queryableRecordCount,
-    pendingCount: value.pendingCount,
-    retiredCount: value.retiredCount,
     classificationCounts: Object.fromEntries(
-      classifications.map((classification) => [classification, classificationCountsValue[classification]])
+      canonicalClassifications.map((classification) => [classification, classificationCounts[classification]])
     ),
-    pendingRecords: value.pendingRecords.filter(isObject2),
-    retiredRecords: value.retiredRecords.filter(isObject2),
     integrity: {
       algorithm: "sha256",
-      sourceContentHashes,
-      derivedContentHashes
+      contentHashes
     }
   };
 }
-function parseUpstreamActiveRecord(line) {
+function parseCanonicalCorpusRecord(line) {
   const value = JSON.parse(line);
-  if (!isObject2(value) || value.schemaVersion !== 1 || typeof value.id !== "string" || typeof value.sourceRecordId !== "string" || !isUpstreamActiveClassification(value.classification) || value.classification === "api" || value.format !== "javascript" && value.format !== "markdown" || typeof value.sourceContract !== "string" || value.sourceContract !== "figma-mcp" || typeof value.targetContract !== "string" || value.targetContract !== "figma-workspace-cli" || typeof value.sanitized !== "boolean" || typeof value.nonExecutable !== "boolean" || typeof value.sourceContentSha256 !== "string" || !isSha256(value.sourceContentSha256) || typeof value.derivedContentSha256 !== "string" || !isSha256(value.derivedContentSha256) || typeof value.text !== "string") {
-    throw new Error("Invalid derived Figma active JSONL record.");
+  const contentSha256 = isObject2(value) && typeof value.contentSha256 === "string" ? value.contentSha256 : isObject2(value) && typeof value.derivedContentSha256 === "string" ? value.derivedContentSha256 : void 0;
+  if (!isObject2(value) || value.schemaVersion !== 1 || typeof value.id !== "string" || !isCanonicalClassification(value.classification) || value.format !== "markdown" && value.format !== "typescript" || typeof value.sanitized !== "boolean" || value.sanitized !== true || typeof contentSha256 !== "string" || !isSha256(contentSha256) || typeof value.text !== "string") {
+    throw new Error("Invalid canonical Figma corpus JSONL record.");
   }
-  if (value.format === "markdown" && value.classification !== "active" && value.classification !== "conditional" && value.classification !== "router") {
-    throw new Error("Invalid derived Figma Markdown classification.");
+  if (value.classification === "examples" && value.nonExecutable !== true || value.format !== "markdown") {
+    throw new Error("Invalid canonical Figma corpus record contract.");
   }
   return {
     schemaVersion: 1,
     id: value.id,
-    sourceRecordId: value.sourceRecordId,
+    sourceRecordId: typeof value.sourceRecordId === "string" ? value.sourceRecordId : value.id,
     classification: value.classification,
     format: value.format,
-    sourceContract: value.sourceContract,
-    targetContract: value.targetContract,
-    sanitized: value.sanitized,
-    nonExecutable: value.nonExecutable,
-    sourceContentSha256: value.sourceContentSha256,
-    derivedContentSha256: value.derivedContentSha256,
+    sourceContract: typeof value.sourceContract === "string" ? value.sourceContract : "canonical-mirror",
+    targetContract: typeof value.targetContract === "string" ? value.targetContract : "figma-workspace-cli",
+    sanitized: true,
+    nonExecutable: value.nonExecutable === true,
+    sourceContentSha256: typeof value.sourceContentSha256 === "string" && isSha256(value.sourceContentSha256) ? value.sourceContentSha256 : contentSha256,
+    derivedContentSha256: contentSha256,
+    text: value.text
+  };
+}
+function countCanonicalClassifications(records) {
+  const counts = { active: 0, conditional: 0, router: 0, examples: 0 };
+  for (const record2 of records) {
+    counts[record2.classification] += 1;
+  }
+  return counts;
+}
+function isCanonicalClassification(value) {
+  return value === "active" || value === "conditional" || value === "router" || value === "examples";
+}
+function readPluginApiIndexState() {
+  const moduleDir = dirname4(fileURLToPath3(import.meta.url));
+  const cwd = safeProcessCwd2(moduleDir);
+  const argv1 = safeProcessArgv1();
+  const packageVersion = readNearestPackageVersion(moduleDir);
+  const candidates = pluginApiIndexRootCandidates(moduleDir, cwd);
+  try {
+    const root = resolveAssetRoot(candidates, "Plugin API symbol index");
+    const manifest = parsePluginApiIndexManifest(readFileSync2(resolve4(root, "manifest.json"), "utf8"));
+    return { ok: true, index: readPluginApiIndex(root, manifest) };
+  } catch (error2) {
+    return {
+      ok: false,
+      failure: {
+        ok: false,
+        message: `Unable to load the generated Figma Plugin API symbol index: ${errorMessage(error2)}`,
+        moduleDir,
+        cwd,
+        argv1,
+        packageVersion,
+        attemptedPaths: candidates
+      }
+    };
+  }
+}
+function pluginApiIndexRootCandidates(moduleDir, cwd) {
+  return [
+    resolve4(moduleDir, "figma-plugin-api-index"),
+    resolve4(moduleDir, "../runtime/figma-plugin-api-index"),
+    resolve4(cwd, "dist/runtime/figma-plugin-api-index"),
+    resolve4(cwd, "mcp-server/dist/runtime/figma-plugin-api-index"),
+    resolve4(cwd, "plugins/figma-workspace/mcp-server/dist/runtime/figma-plugin-api-index")
+  ];
+}
+function readPluginApiIndex(root, manifest) {
+  for (const source of manifest.source.files) {
+    const sourceText = normalizeLineEndings(readFileSync2(resolve4(root, "../figma-plugin-typings", source.file), "utf8"));
+    if (sha256(sourceText) !== source.sha256) {
+      throw new Error(`Bundled Figma Plugin API typings SHA-256 mismatch: ${source.file}`);
+    }
+  }
+  const indexText = normalizeLineEndings(readFileSync2(resolve4(root, manifest.index.file), "utf8"));
+  if (sha256(indexText) !== manifest.index.sha256) {
+    throw new Error("Generated Figma Plugin API index SHA-256 does not match its manifest.");
+  }
+  const records = /* @__PURE__ */ new Map();
+  for (const line of indexText.split("\n")) {
+    if (!line.trim()) continue;
+    const record2 = parsePluginApiIndexRecord(line);
+    if (records.has(record2.id)) throw new Error(`Duplicate Figma Plugin API index record: ${record2.id}`);
+    if (manifest.integrity.contentHashes[record2.id] !== record2.contentSha256 || sha256(record2.text) !== record2.contentSha256) {
+      throw new Error(`Figma Plugin API index record SHA-256 mismatch: ${record2.id}`);
+    }
+    records.set(record2.id, record2);
+  }
+  if (records.size !== manifest.index.recordCount || Object.keys(manifest.integrity.contentHashes).length !== records.size) {
+    throw new Error("Figma Plugin API index record count does not match its manifest.");
+  }
+  return { root, manifest, records };
+}
+function parsePluginApiIndexManifest(text) {
+  const value = JSON.parse(text);
+  if (!isObject2(value) || value.schemaVersion !== 1 || !isObject2(value.source) || value.source.package !== "@figma/plugin-typings" || typeof value.source.version !== "string" || !Array.isArray(value.source.files) || !isObject2(value.index) || !isObject2(value.integrity) || value.integrity.algorithm !== "sha256" || !isObject2(value.integrity.contentHashes)) {
+    throw new Error("Invalid generated Figma Plugin API index manifest.");
+  }
+  const sourceFiles = value.source.files.filter((entry) => isObject2(entry) && typeof entry.file === "string" && typeof entry.sha256 === "string" && isSha256(entry.sha256));
+  if (sourceFiles.length !== value.source.files.length || typeof value.index.file !== "string" || !isNonNegativeInteger(value.index.recordCount) || typeof value.index.sha256 !== "string" || !isSha256(value.index.sha256) || value.index.file !== `index-${value.index.sha256}.jsonl`) {
+    throw new Error("Invalid generated Figma Plugin API index manifest.");
+  }
+  return {
+    schemaVersion: 1,
+    source: {
+      package: "@figma/plugin-typings",
+      version: value.source.version,
+      files: sourceFiles
+    },
+    index: {
+      file: value.index.file,
+      recordCount: value.index.recordCount,
+      sha256: value.index.sha256
+    },
+    integrity: {
+      algorithm: "sha256",
+      contentHashes: parseHashInventory(value.integrity.contentHashes, "API index")
+    }
+  };
+}
+function parsePluginApiIndexRecord(line) {
+  const value = JSON.parse(line);
+  if (!isObject2(value) || value.schemaVersion !== 1 || typeof value.id !== "string" || typeof value.symbol !== "string" || typeof value.sourceFile !== "string" || !isPositiveInteger(value.declarationLine) || !isPositiveInteger(value.lineStart) || !isPositiveInteger(value.lineEnd) || value.declarationLine < value.lineStart || value.declarationLine > value.lineEnd || value.lineEnd < value.lineStart || typeof value.contentSha256 !== "string" || !isSha256(value.contentSha256) || typeof value.text !== "string") {
+    throw new Error("Invalid generated Figma Plugin API index JSONL record.");
+  }
+  return {
+    schemaVersion: 1,
+    id: value.id,
+    symbol: value.symbol,
+    sourceFile: value.sourceFile,
+    declarationLine: value.declarationLine,
+    lineStart: value.lineStart,
+    lineEnd: value.lineEnd,
+    contentSha256: value.contentSha256,
     text: value.text
   };
 }
@@ -19800,11 +19766,11 @@ function parseHashInventory(value, label) {
   }
   return result;
 }
-function isUpstreamActiveClassification(value) {
-  return value === "active" || value === "conditional" || value === "router" || value === "examples" || value === "api";
-}
 function isNonNegativeInteger(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+function isPositiveInteger(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 function normalizeLineEndings(value) {
   return value.replace(/\r\n/gu, "\n");
@@ -19857,7 +19823,7 @@ function safeProcessArgv1() {
 function errorMessage(error2) {
   return error2 instanceof Error ? error2.message : String(error2);
 }
-var DEFAULT_DOCS_SEARCH_MAX_RESULTS, DEFAULT_DOCS_SEARCH_SNIPPET_LINES, MAX_DOCS_SEARCH_RESULTS, MAX_DOCS_SEARCH_SNIPPET_LINES, DEFAULT_REFERENCE_CONTEXT_SNIPPETS, MAX_LOOKUP_QUERY_LENGTH, MAX_REFERENCE_CHUNK_LINES, REFERENCE_CHUNK_OVERLAP_LINES, BRIDGE_DOCS_SEARCH_FILES, STATIC_DOCS_SEARCH_FILES, API_LOOKUP_FILES, FigmaWorkspaceLookupCorpusUnavailableError, upstreamCorpusState, upstreamActiveCorpusState, DOCS_SEARCH_ALLOWLIST, BRIDGE_DOCS_RECORDS;
+var DEFAULT_DOCS_SEARCH_MAX_RESULTS, DEFAULT_DOCS_SEARCH_SNIPPET_LINES, MAX_DOCS_SEARCH_RESULTS, MAX_DOCS_SEARCH_SNIPPET_LINES, DEFAULT_REFERENCE_CONTEXT_SNIPPETS, MAX_LOOKUP_QUERY_LENGTH, MAX_REFERENCE_CHUNK_LINES, REFERENCE_CHUNK_OVERLAP_LINES, BRIDGE_DOCS_SEARCH_FILES, STATIC_DOCS_SEARCH_FILES, FigmaWorkspaceLookupCorpusUnavailableError, canonicalClassifications, canonicalCorpusState, pluginApiIndexState, DOCS_SEARCH_ALLOWLIST, BRIDGE_DOCS_RECORDS;
 var init_doc_search = __esm({
   "src/runtime/doc-search.ts"() {
     "use strict";
@@ -19880,9 +19846,6 @@ var init_doc_search = __esm({
       ...FIGMA_WORKSPACE_PROJECT_DOC_FILES,
       ...BRIDGE_DOCS_SEARCH_FILES
     ];
-    API_LOOKUP_FILES = [
-      "figma-use/references/plugin-api-standalone.d.ts"
-    ];
     FigmaWorkspaceLookupCorpusUnavailableError = class extends Error {
       failure;
       constructor(failure) {
@@ -19891,8 +19854,9 @@ var init_doc_search = __esm({
         this.failure = failure;
       }
     };
-    upstreamCorpusState = readUpstreamCorpusState();
-    upstreamActiveCorpusState = readUpstreamActiveCorpusState(upstreamCorpusState);
+    canonicalClassifications = ["active", "conditional", "router", "examples"];
+    canonicalCorpusState = readCanonicalCorpusState();
+    pluginApiIndexState = readPluginApiIndexState();
     DOCS_SEARCH_ALLOWLIST = docsSearchFilesForScope("active");
     BRIDGE_DOCS_RECORDS = createBridgeDocsRecords();
   }
@@ -43758,14 +43722,12 @@ function handleDoctor(_args) {
   const projectDocs = getFigmaWorkspaceProjectDocsRuntimeInfo();
   const lookup = getFigmaWorkspaceLookupRuntimeInfo();
   const typescript2 = getFigmaWorkspaceTypescriptRuntimeInfo();
-  const activeIndexHealthy = lookup.ok && lookup.active.pendingCount === 0 && lookup.active.retiredCount === 0;
-  const ok = projectDocs.ok && activeIndexHealthy && typescript2.ok;
+  const ok = projectDocs.ok && lookup.ok && typescript2.ok;
   return {
     ok,
     runtime: { projectDocs, lookup, typescript: typescript2 },
-    guidance: ok ? ["Project docs, raw snapshot, active index, and TypeScript runtime assets are available."] : [
+    guidance: ok ? ["Project docs, canonical docs corpus, generated Plugin API index, and TypeScript runtime assets are available."] : [
       "Compare attemptedPaths with the installed plugin cache, then rebuild or reinstall the Figma Workspace plugin if assets are missing.",
-      "Review active-index pending, stale, and retired records before publishing; pending records are not queryable.",
       "Reload the Codex app or CLI process after updating the plugin because runtime assets are loaded at process startup."
     ]
   };
@@ -46397,7 +46359,7 @@ async function handleLookup(args) {
     const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
     const matches = await searchReferenceFiles({
       query: symbol,
-      files: API_LOOKUP_FILES,
+      files: [],
       maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
       maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
       exactSymbol: true,
@@ -46406,7 +46368,7 @@ async function handleLookup(args) {
     const payload = {
       ok: true,
       results: matches.results,
-      guidance: "Results are capped BM25-ranked Plugin API chunks with opaque source ids, matchType, and confidence. Exact symbol matches are boosted. Bundled corpus files are not returned as documents."
+      guidance: "Results are capped BM25-ranked Plugin API chunks from the generated bundled typings index, with opaque source ids, matchType, and confidence. Exact symbol matches are boosted."
     };
     return makeJsonToolResult(payload);
   } catch (error2) {
@@ -46415,7 +46377,7 @@ async function handleLookup(args) {
         ok: false,
         results: [],
         diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error2)]),
-        guidance: "Lookup corpus is unavailable in this CLI process. Rebuild the mcp-server dist after confirming the plugin source contains bundled corpus files, then start a new CLI command.",
+        guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the mcp-server dist after confirming those bundled assets exist, then start a new CLI command.",
         runtime: error2.failure
       });
     }
@@ -46438,7 +46400,7 @@ function lookupCorpusDiagnostic(error2) {
       `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`
     ].join("; "),
-    suggestion: "Rebuild the mcp-server dist if bundled corpus files are missing, then rerun the CLI command with the same --session-file.",
+    suggestion: "Rebuild the mcp-server dist if canonical docs or generated Plugin API index assets are missing, then rerun the CLI command with the same --session-file.",
     docsHint: "Figma Workspace CLI: lookup --help"
   };
 }
@@ -50148,7 +50110,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_workspace_lookup",
-      description: "Targeted lookup helper for compact docs snippets or exact Figma Plugin API symbols. For kind=docs use query; for kind=api use symbol. Use after guidance when exact API/docs context is still needed.",
+      description: "Targeted lookup helper for compact canonical docs snippets or exact bundled Figma Plugin API symbols. For kind=docs use query; for kind=api use symbol. Use after guidance when exact API/docs context is still needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
@@ -50174,7 +50136,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_workspace_doctor",
-      description: "Inspect local project-doc, lookup-corpus, and TypeScript runtime availability and return repair guidance. This command is read-only and does not create a session.",
+      description: "Inspect local project docs, canonical docs corpus, generated Plugin API index, and TypeScript runtime availability. This command is read-only and does not create a session.",
       inputSchema: objectSchema({})
     },
     {
@@ -50413,7 +50375,7 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     content: stringProperty("Complete selected Markdown document content.")
   }),
   figma_workspace_doctor: toolOutputSchema({
-    runtime: objectProperty("Dynamic lookup-corpus and TypeScript runtime status."),
+    runtime: objectProperty("Dynamic canonical docs corpus, Plugin API index, and TypeScript runtime status."),
     guidance: stringArrayProperty("Repair or reload guidance based on the runtime status.")
   }),
   figma_workspace_sessions: toolOutputSchema({
