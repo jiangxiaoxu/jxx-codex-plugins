@@ -49,10 +49,8 @@ export {
 } from "../upstream/remote-mcp-client.js";
 export {
   FIGMA_WORKSPACE_DEFAULT_SESSION_ID,
-  assertSafeFigmaWorkspaceCode,
   createFigmaWorkspaceClient,
   createFigmaWorkspaceSessionStore,
-  diagnoseFigmaWorkspaceCode,
   type FigmaWorkspaceApplyAssetManifestArguments,
   type FigmaWorkspaceApplyAssetManifestResult,
   type FigmaWorkspaceAssetManifestAsset,
@@ -65,7 +63,6 @@ export {
   type FigmaWorkspaceClientOptions,
   type FigmaWorkspaceCompactScriptMetadata,
   type FigmaWorkspaceDiagnostic,
-  type FigmaWorkspaceDiagnosticsOptions,
   type FigmaWorkspaceDiagnosticSeverity,
   type FigmaWorkspaceDownloadedAssetFile,
   type FigmaWorkspaceDownloadAssetsArguments,

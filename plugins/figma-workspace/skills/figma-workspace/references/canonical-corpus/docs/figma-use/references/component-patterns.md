@@ -247,28 +247,14 @@ This works for icons, avatars, badges, or any swappable nested element.
 
 ### List all existing components across all pages
 
-`figma:design-system` (CLI command) is an option for published components. For on-canvas components, **don't loop pages inside one script** — even for read-only discovery.
-
-**Prefer the two-step fan-out:**
+`figma:design-system` (CLI command) is an option for published components. For on-canvas components, use a document-wide indexed query when the task needs every page:
 
 ```javascript
-// Step 1 — one cheap `.figma.ts` script call, no page switch. Returns the page IDs to fan out over.
-return figma.root.children.map(p => ({ id: p.id, name: p.name }));
+const matches = figma.root.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] });
+return matches.map(n => ({ pageName: n.parent?.name, name: n.name, type: n.type, id: n.id }));
 ```
 
-Save one `.figma.ts` script for each target page, then run each explicitly with `figma:script:run`.
-
-```javascript
-// Step 2 — one script per page, currentPage set exactly once.
-// Run the saved scripts explicitly; do not loop pages inside one script.
-const page = await figma.getNodeByIdAsync(PAGE_ID); // PAGE_ID supplied by caller
-await figma.setCurrentPageAsync(page);
-// Indexed type lookup — much faster than findAll with a side-effect predicate.
-const matches = page.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] });
-return matches.map(n => ({ pageName: page.name, name: n.name, type: n.type, id: n.id }));
-```
-
-See [gotchas.md](gotchas.md) for the full page-scoping rule.
+For page-dependent operations, a script may switch across multiple pages with awaited `setCurrentPageAsync()` calls. Keep the sequence explicit and account for document size when choosing between one document-wide script and multiple smaller transactions. See [gotchas.md](gotchas.md) for page-scoping performance tradeoffs.
 
 ### Inspect an existing component set's variant naming pattern
 
@@ -281,22 +267,11 @@ return { variantNames, propDefs };
 
 ### Find existing components in the file
 
-`figma:design-system` is an option for published components. For on-canvas components, use the two-step fan-out from the section above — **don't loop pages inside one script.**
-
-**Step 1** — one cheap `.figma.ts` script run returns page IDs:
+`figma:design-system` is an option for published components. For on-canvas components, query the document root when cross-page coverage is intended:
 
 ```javascript
-return figma.root.children.map(p => ({ id: p.id, name: p.name }));
-```
-
-**Step 2** — save one `.figma.ts` script per page and run it explicitly with `figma:script:run`.
-
-```javascript
-const page = await figma.getNodeByIdAsync(PAGE_ID);
-await figma.setCurrentPageAsync(page);
-// Indexed type lookup — much faster than findAll with a side-effect predicate.
-const components = page.findAllWithCriteria({ types: ['COMPONENT'] });
-return components.map(n => ({ name: n.name, id: n.id, page: page.name, w: n.width, h: n.height }));
+const components = figma.root.findAllWithCriteria({ types: ['COMPONENT'] });
+return components.map(n => ({ name: n.name, id: n.id, page: n.parent?.name, w: n.width, h: n.height }));
 ```
 
 ## Importing Components by Key (Team Libraries)

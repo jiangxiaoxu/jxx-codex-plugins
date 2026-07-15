@@ -146,6 +146,18 @@ test("every command-specific help exposes its canonical input JSON schema", () =
   assert.match(runScriptHelp, /"scriptPath"/u);
   assert.match(runScriptHelp, /"required": \[/u);
   assert.match(runScriptHelp, /--inline-result-limit <bytes>/u);
+
+  const inspectHelp = createFigmaWorkspaceCommandHelp("inspect");
+  assert.match(inspectHelp, /"enum": \[\s*"inspect",\s*"style"\s*\]/u);
+  assert.doesNotMatch(inspectHelp, /"validate"|\$handle|"handle"|handles/u);
+
+  const sessionsHelp = createFigmaWorkspaceCommandHelp("sessions");
+  assert.doesNotMatch(sessionsHelp, /withHandles|handles|\$handle/u);
+
+  const evalHelp = createFigmaWorkspaceCommandHelp("eval");
+  assert.doesNotMatch(evalHelp, /allowDangerousOperations|handleUpdates/u);
+
+  assert.doesNotMatch(runScriptHelp, /allowDangerousOperations|handleUpdates/u);
 });
 
 test("Restricted Markdown formatter expands nested objects, arrays, and fenced values", () => {
@@ -909,6 +921,24 @@ test("atomic session writes preserve the previous file and clean temporary files
     );
     assert.equal(await readFile(sessionFile, "utf8"), previous);
     assert.equal((await readdir(tempDir)).some((entry) => entry.endsWith(".tmp")), false);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("legacy handle session files fail closed without migration", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-cli-legacy-state-"));
+  try {
+    const sessionFile = resolve(tempDir, "session.json");
+    await writeFile(sessionFile, JSON.stringify([{
+      id: "legacy",
+      fileKey: "LegacyFileKey",
+      handles: { hero: "1:2" },
+    }]), "utf8");
+
+    const result = await runCli(["sessions", "--session-file", sessionFile], { cwd: tempDir });
+    assert.notEqual(result.code, FIGMA_WORKSPACE_CLI_EXIT_SUCCESS);
+    assert.match(result.stderr, /legacy|handle|state file|new state file/u);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

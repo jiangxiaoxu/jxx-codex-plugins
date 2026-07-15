@@ -116,11 +116,11 @@ test("direct commands map positional options into canonical runtime input", asyn
   });
 
   assert.equal(await runFigmaCli([
-    "sessions:read", "default", "--with-handles", "--with-history", "--state-file", testStateFile,
+    "sessions:read", "default", "--with-history", "--state-file", testStateFile,
   ], { ...output.dependencies, runCli }), 0);
   assert.deepEqual(invocations[1], {
     args: ["sessions", "--input", "-", "--session-file", testStateFile],
-    input: { sessionId: "default", includeHandles: true, includeHistory: true },
+    input: { sessionId: "default", includeHistory: true },
   });
 
   assert.equal(await runFigmaCli([
@@ -220,7 +220,13 @@ test("optimized help declares positional and option omitted states, repeatabilit
 
   const inspect = createCommandOutput();
   assert.equal(await runFigmaCli(["inspect", "--help"], inspect.dependencies), 0);
-  assert.match(inspect.stdout(), /--handle <name>.*Default: unset\. Repeatable: yes\./u);
+  assert.match(inspect.stdout(), /--mode <inspect\|style>/u);
+  assert.doesNotMatch(inspect.stdout(), /--handle|validate|\$handle|handles/u);
+
+  const sessionsRead = createCommandOutput();
+  assert.equal(await runFigmaCli(["sessions:read", "--help"], sessionsRead.dependencies), 0);
+  assert.match(sessionsRead.stdout(), /--with-history/u);
+  assert.doesNotMatch(sessionsRead.stdout(), /--with-handles|handles|\$handle/u);
 
   const json = createCommandOutput();
   assert.equal(await runFigmaCli(["eval", "--help"], json.dependencies), 0);
@@ -277,9 +283,16 @@ test("direct command validation rejects ambiguous or malformed options without r
     [["guidance", "text", "--surface", "canvas"], /must be one of/u],
     [["guidance", "text.font", "--mode", "card"], /must be one of/u],
     [["guidance", "text", "--card-limit", "9"], /must be at most 8/u],
-    [["inspect", "$hero", "--depth", "0"], /must be at least 1/u],
+    [["inspect", "123:456", "--depth", "0"], /must be at least 1/u],
+    [["inspect", "$hero"], /\$selection|\$currentPage|node id|node URL|fileKey|target/u],
     [["libraries", "--offset", "-1"], /must be at least 0/u],
-    [["sessions:read", "default", "--with-handles", "--with-handles"], /Duplicate option/u],
+    [["sessions:read", "default", "--with-handles"], /Unknown option/u],
+    [["inspect", "123:456", "--handle", "hero"], /Unknown option/u],
+    [["inspect", "123:456", "--mode", "validate"], /must be one of: inspect, style/u],
+    [["eval", "--input", "eval.json", "--mode", "write"], /Unknown option/u],
+    [["eval", "--input", "eval.json", "--allow-dangerous-operations"], /Unknown option/u],
+    [["eval", "--input", "eval.json", "--handle-updates", "replace"], /Unknown option/u],
+    [["script:run", "--input", "script.json", "--allow-dangerous-operations"], /Unknown option/u],
     [["doctor", "unexpected"], /Unexpected argument/u],
     [["api:search", "two", "arguments"], /accepts one <symbol>/u],
     [["api:search", "--", "one", "two"], /accepts one <symbol>/u],
@@ -406,9 +419,7 @@ test("JSON commands validate optimized output limits before runtime", async () =
 });
 
 test("plugin-root npm script starts the bundled CLI", () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli, "npm_execpath must be available when the plugin test runs through npm");
-  const result = spawnSync(process.execPath, [npmCli, "--silent", "run", "figma:help"], {
+  const result = runNpm(["--silent", "run", "figma:help"], {
     cwd: fileURLToPath(new URL("../", import.meta.url)),
     encoding: "utf8",
   });
@@ -418,8 +429,6 @@ test("plugin-root npm script starts the bundled CLI", () => {
 });
 
 test("all public figma npm scripts expose banner-free subprocess help", async () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli);
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const figmaScripts = Object.keys(packageJson.scripts).filter((scriptName) => (
     scriptName === "figma" || scriptName.startsWith("figma:")
@@ -427,7 +436,7 @@ test("all public figma npm scripts expose banner-free subprocess help", async ()
 
   assert.equal(figmaScripts.length, 35);
   for (const scriptName of figmaScripts) {
-    const result = spawnSync(process.execPath, [npmCli, "--silent", "run", scriptName, "--", "--help"], {
+    const result = runNpm(["--silent", "run", scriptName, "--", "--help"], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
       encoding: "utf8",
     });
@@ -440,9 +449,7 @@ test("all public figma npm scripts expose banner-free subprocess help", async ()
 });
 
 test("root figma CLI dispatches the same canonical command", () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli);
-  const result = spawnSync(process.execPath, [npmCli, "--silent", "run", "figma", "--", "api:search", "-h"], {
+  const result = runNpm(["--silent", "run", "figma", "--", "api:search", "-h"], {
     cwd: fileURLToPath(new URL("../", import.meta.url)),
     encoding: "utf8",
   });
@@ -454,9 +461,7 @@ test("root figma CLI dispatches the same canonical command", () => {
 });
 
 test("figma:raw keeps the transport schema escape hatch", () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli);
-  const result = spawnSync(process.execPath, [npmCli, "--silent", "run", "figma:raw", "--", "lookup", "--help"], {
+  const result = runNpm(["--silent", "run", "figma:raw", "--", "lookup", "--help"], {
     cwd: fileURLToPath(new URL("../", import.meta.url)),
     encoding: "utf8",
   });
@@ -467,8 +472,6 @@ test("figma:raw keeps the transport schema escape hatch", () => {
 });
 
 test("figma:raw command help takes precedence over invalid or I/O-bound options", () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli);
   const cases = [
     ["lookup", "--input", "definitely-missing.json", "--help"],
     ["lookup", "--unknown", "value", "-h"],
@@ -476,7 +479,7 @@ test("figma:raw command help takes precedence over invalid or I/O-bound options"
   ];
 
   for (const args of cases) {
-    const result = spawnSync(process.execPath, [npmCli, "--silent", "run", "figma:raw", "--", ...args], {
+    const result = runNpm(["--silent", "run", "figma:raw", "--", ...args], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
       encoding: "utf8",
     });
@@ -488,9 +491,7 @@ test("figma:raw command help takes precedence over invalid or I/O-bound options"
 });
 
 test("npm package includes runtime surfaces and excludes local state and source tests", async () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli);
-  const result = spawnSync(process.execPath, [npmCli, "pack", "--dry-run", "--json"], {
+  const result = runNpm(["pack", "--dry-run", "--json"], {
     cwd: fileURLToPath(new URL("../", import.meta.url)),
     encoding: "utf8",
   });
@@ -568,11 +569,9 @@ test("generated project docs are visible to Git and packed", () => {
 });
 
 test("packed plugin preserves Restricted Markdown stdout without npm banners", async () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli);
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-pack-"));
   try {
-    const pack = spawnSync(process.execPath, [npmCli, "pack", "--json", "--pack-destination", tempDir], {
+    const pack = runNpm(["pack", "--json", "--pack-destination", tempDir], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
       encoding: "utf8",
     });
@@ -585,7 +584,7 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
     });
     assert.equal(extract.status, 0, extract.stderr);
 
-    const result = spawnSync(process.execPath, [npmCli, "--silent", "run", "figma:help"], {
+    const result = runNpm(["--silent", "run", "figma:help"], {
       cwd: join(extractDir, "package"),
       encoding: "utf8",
     });
@@ -594,9 +593,8 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
     assert.doesNotMatch(result.stdout, /^>/mu);
     assert.equal(result.stderr, "");
 
-    const docsResult = spawnSync(
-      process.execPath,
-      [npmCli, "--silent", "run", "figma:docs:read", "--", "project:overview", "--state-file", join(tempDir, "state.json")],
+    const docsResult = runNpm(
+      ["--silent", "run", "figma:docs:read", "--", "project:overview", "--state-file", join(tempDir, "state.json")],
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(docsResult.status, 0, docsResult.stderr);
@@ -606,27 +604,24 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
     assert.doesNotMatch(docsResult.stdout, /^>/mu);
     assert.equal(docsResult.stderr, "");
 
-    const catalogResult = spawnSync(
-      process.execPath,
-      [npmCli, "--silent", "run", "figma:docs:catalog", "--", "--task-family", "code-connect", "--state-file", join(tempDir, "state.json")],
+    const catalogResult = runNpm(
+      ["--silent", "run", "figma:docs:catalog", "--", "--task-family", "code-connect", "--state-file", join(tempDir, "state.json")],
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(catalogResult.status, 0, catalogResult.stderr);
     assert.match(catalogResult.stdout, /canonical:figma-code-connect\/references\/api\.md/u);
     assert.equal(catalogResult.stderr, "");
 
-    const searchResult = spawnSync(
-      process.execPath,
-      [npmCli, "--silent", "run", "figma:docs:search", "--", "code connect advanced patterns", "--task-family", "code-connect", "--state-file", join(tempDir, "state.json")],
+    const searchResult = runNpm(
+      ["--silent", "run", "figma:docs:search", "--", "code connect advanced patterns", "--task-family", "code-connect", "--state-file", join(tempDir, "state.json")],
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(searchResult.status, 0, searchResult.stderr);
     assert.match(searchResult.stdout, /Task Family: code-connect/u);
     assert.equal(searchResult.stderr, "");
 
-    const canonicalReadResult = spawnSync(
-      process.execPath,
-      [npmCli, "--silent", "run", "figma:docs:read", "--", "canonical:figma-code-connect/references/api.md", "--state-file", join(tempDir, "state.json")],
+    const canonicalReadResult = runNpm(
+      ["--silent", "run", "figma:docs:read", "--", "canonical:figma-code-connect/references/api.md", "--state-file", join(tempDir, "state.json")],
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(canonicalReadResult.status, 0, canonicalReadResult.stderr);
@@ -637,9 +632,8 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
     assert.match(canonicalReadSidecar.content, /Code Connect Template API Reference/u);
     assert.equal(canonicalReadResult.stderr, "");
 
-    const apiResult = spawnSync(
-      process.execPath,
-      [npmCli, "--silent", "run", "figma:api:search", "--", "figma.variables.createVariableCollection", "--state-file", join(tempDir, "state.json")],
+    const apiResult = runNpm(
+      ["--silent", "run", "figma:api:search", "--", "figma.variables.createVariableCollection", "--state-file", join(tempDir, "state.json")],
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(apiResult.status, 0, apiResult.stderr);
@@ -652,12 +646,10 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
 });
 
 test("npm direct command script returns runtime Markdown without npm banners", async () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli);
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-command-"));
   try {
-    const result = spawnSync(process.execPath, [
-      npmCli, "--silent", "run", "figma:docs:read", "--", "project:overview", "--state-file", join(tempDir, "state.json"),
+    const result = runNpm([
+      "--silent", "run", "figma:docs:read", "--", "project:overview", "--state-file", join(tempDir, "state.json"),
     ], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
       encoding: "utf8",
@@ -674,12 +666,10 @@ test("npm direct command script returns runtime Markdown without npm banners", a
 });
 
 test("representative guidance stays within the default inline budget", async () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli);
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-guidance-budget-"));
   try {
-    const result = spawnSync(process.execPath, [
-      npmCli, "--silent", "run", "figma:guidance", "--", "text font loadFontAsync",
+    const result = runNpm([
+      "--silent", "run", "figma:guidance", "--", "text font loadFontAsync",
       "--state-file", join(tempDir, "state.json"),
     ], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
@@ -696,13 +686,11 @@ test("representative guidance stays within the default inline budget", async () 
 });
 
 test("optimized command sidecars stay under the explicit state-file owner", async () => {
-  const npmCli = process.env.npm_execpath;
-  assert.ok(npmCli);
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-sidecar-owner-"));
   try {
     const stateFile = join(tempDir, "state.json");
-    const result = spawnSync(process.execPath, [
-      npmCli, "--silent", "run", "figma:guidance", "--", "layout", "--state-file", stateFile,
+    const result = runNpm([
+      "--silent", "run", "figma:guidance", "--", "layout", "--state-file", stateFile,
       "--max-inline-bytes", "0",
     ], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
@@ -1199,4 +1187,12 @@ function createCommandOutput() {
     stdout: () => stdout,
     stderr: () => stderr,
   };
+}
+
+function runNpm(args, options = {}) {
+  const npmCli = process.env.npm_execpath;
+  if (npmCli) {
+    return spawnSync(process.execPath, [npmCli, ...args], options);
+  }
+  return spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", args, options);
 }

@@ -8,25 +8,23 @@ Use this reference when root CLI help is not enough to choose a workflow. Comman
 - Edit the generated `.figma.ts` file in the task workspace.
 - Run `figma:script:run -- --input <json-file|-> --state-file <absolute-path>` with `sessionId`, `inputFile`, `strict: true`, and `surface`; diagnostics and compiled payload preflight run before upstream execution.
 - If preflight diagnostics fail, repair the same file and rerun it.
-- Return a compact JSON value from the `.figma.ts` script with changed node ids, handles, and validation notes. The CLI renders that runtime value into its Restricted Markdown result; CLI stdout itself is not JSON.
+- Return a compact JSON value from the `.figma.ts` script with changed node ids and validation notes. The CLI renders that runtime value into its Restricted Markdown result; CLI stdout itself is not JSON.
 
 ## Script Shape
 
 - `.figma.ts` files are async TypeScript script bodies executed in Figma Plugin API context after strict preflight.
-- Use native Plugin API for advanced work and `$` helpers for common agent tasks.
-- Common helpers include `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.capture`, `$.imageAsset`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`. Use native Figma Plugin API for node creation, querying, and auto layout.
-- Helper access must be static so runtime injection can be analyzed: use `$.helper(...)`, `$["helper"](...)`, or explicit destructuring; avoid dynamic `$[name]`, aliasing `$`, object rest destructuring, and local `$` declarations.
-- Use `figma:guidance -- <query> --state-file <absolute-path>` for on-demand `helperProfiles` when choosing between selection, text, layout, assets, capture/QA, repair, and clone/rebuild helpers.
-- Prefer `$.select` over direct selection mutation.
-- Validate stale handles with `figma:inspect -- <target> --mode validate --state-file <absolute-path>` before reusing them.
+- Use native Plugin API for all editing, node traversal, selection, layout, assets, cloning, and advanced work. `$` is a frozen, non-callable namespace with only `$.text` and `$.capture`.
+- Use `await $.text({ target?, parent?, text, font? })` for font-safe text creation or replacement. `target` and `parent` accept a real node or raw node ID and are mutually exclusive. With no `target`, the helper creates a TextNode. An explicit font is loaded before mutation; a mixed-font target without an explicit font fails closed.
+- Use `figma:guidance -- <query> --state-file <absolute-path>` for task routing, workflow profiles, and Plugin API lookup hints.
+- There is no helper-selection analysis or semantic AST policy. Valid Plugin API operations are forwarded after TypeScript preflight; use direct Plugin API calls when they express the intended edit.
 
 ## Workflow Add-ons
 
 - Use `figma:metadata` for broad layer-tree discovery before detailed style, fill, or text inspection. File-binding commands accept `--session-id`, `--state-file`, `--workspace`, and `--max-inline-bytes`; node-scoped file-binding commands also accept `--file` when explicit file context is preferable. `figma:inspect` is the exception: it accepts session/state options but reuses the session's existing file context and omits `--workspace` and `--file`.
-- Use `figma:inspect` only after `figma:open` or `figma:task:prepare` has bound file context. Its positional target is string-only: `$selection`, `$currentPage`, a stored handle, raw node id, or node URL string. Repeat `--handle <name>` to validate multiple handles.
+- Use `figma:inspect` only after `figma:open` or `figma:task:prepare` has bound file context. Its positional target is string-only: `$selection`, `$currentPage`, a raw node id, or node URL string. It supports inspection and style reads, not handle validation.
 - Use `figma:guidance` for wrapper profiles and workflow graph nodes when sequencing design-context, motion, or video calls.
 - Follow wrapper `guidanceRef.query` with `figma:guidance` when a thin wrapper output needs detailed next-step guidance.
-- Use `figma:design-system`, `figma:libraries`, and `figma:variables` for official design-system context. Repeat `--library <key>` to scope design-system search. Variable defs intentionally does not accept client hints; use design context for client-specific output. Node-scoped commands accept raw node ids, node URLs, or `$handles`; use the corresponding JSON command for structured targets.
+- Use `figma:design-system`, `figma:libraries`, and `figma:variables` for official design-system context. Repeat `--library <key>` to scope design-system search. Variable defs intentionally does not accept client hints; use design context for client-specific output. Node-scoped commands accept raw node ids, node URLs, or structured `{ fileKey, nodeId }` targets where supported.
 - Use `figma:assets:apply` for large local generated image assets. Create target rectangles in the script first, then upload/fill through the manifest.
 - Use `figma:assets:download` for official asset download workflows.
 - Use `figma:capture` for final visual QA captures saved as local PNG files. Use its command help for screenshot tuning; use `figma:upstream:call` for uncovered official screenshot parameters.

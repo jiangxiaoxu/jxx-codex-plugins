@@ -31,7 +31,7 @@ Choose commands by question:
 - `figma:design-system` searches for existing component and token conventions; use repeatable `--library` filters when the owning library is known.
 - `figma:libraries` identifies available local and published sources before duplicating assets.
 - `figma:variables` inventories collections, modes, aliases, scopes, and values for token work.
-- `figma:inspect` validates a known target or handle after discovery.
+- `figma:inspect` validates a known raw node ID after discovery.
 - `figma:api:search` answers exact TypeScript Plugin API questions such as a property shape or method name. It is not a substitute for reading the design system.
 
 ## Translate intent, not just appearance

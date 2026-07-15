@@ -34,7 +34,7 @@ return {
 | Delete a slide | `slide.remove()` | Empty rows remain and may need an explicit cleanup decision. |
 | Reorder | `getSlideGrid` and `setSlideGrid` | Never clone the slide grid: `SlideGridNode.clone()` throws at runtime. |
 
-For changes that mix layout and lifecycle, do the structural operation first and return created ids/handles from the script. Use another focused script run for dense content changes, so a failed layout edit does not obscure whether the deck order changed.
+For changes that mix layout and lifecycle, do the structural operation first and return created raw node IDs from the script. Use another focused script run for dense content changes, so a failed layout edit does not obscure whether the deck order changed.
 
 ## Validate before reporting success
 

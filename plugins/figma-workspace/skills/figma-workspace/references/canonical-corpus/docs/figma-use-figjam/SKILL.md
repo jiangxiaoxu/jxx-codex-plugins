@@ -6,10 +6,10 @@ Use this reference with the Figma Workspace CLI. Put a native Figma Plugin API a
 
 ## Inspecting FigJam Files
 
-Use `figma:metadata` for broad file structure, then `figma:inspect` for targeted nodes. They provide the IDs and handles needed by later scripts.
+Use `figma:metadata` for broad file structure, then `figma:inspect` for targeted nodes. They provide the raw node IDs needed by later scripts.
 
 - Inspect existing board structure before writing a script that targets current nodes.
-- Return IDs, handles, and validation notes from each script; `console.log` is not an agent result channel.
+- Return raw node IDs and validation notes from each script; `console.log` is not an agent result channel.
 - For visual checks, use `figma:capture` with a valid node reference and inspect the resulting image.
 - If an earlier script did not return an ID, repeat `figma:metadata` and `figma:inspect` rather than guessing or scanning a broad tree in a mutation script.
 
@@ -27,7 +27,7 @@ Every FigJam text mutation (sticky/shape/label/table cell/connector text, standa
 
 ## Adding Images to a FigJam Board
 
-Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for downloads. Do not treat `figma.createImage()` or `figma.createImageAsync()` as FigJam upload entry points. Place or fill target nodes through the prepared asset manifest, then validate with `figma:capture`.
+Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for downloads. Native scripts may also create an `Image` with `figma.createImage(data)` or `figma.createImageAsync(src)` and use its hash in an `IMAGE` paint. Validate the result with `figma:capture`.
 
 ## Reference Docs
 

@@ -24,7 +24,7 @@ Use this reference to choose a public `figma:*` command before opening its CLI h
 
 ## Planning And Reference
 
-- Use `figma:guidance` with concise English canonical keywords and an explicit known surface. Its compact result has route status/confidence, cards, API references, guardrails, summaries, reference context, and typed public `nextActions`.
+- Use `figma:guidance` with concise English canonical keywords and an explicit known surface. Its compact result has route status/confidence, cards, API references, helper/wrapper/workflow summaries, reference context, and typed public `nextActions`.
 - Use `figma:docs:list` for project documents. Read returned `project:<topic>` IDs with `figma:docs:read`.
 - Use `figma:docs:catalog` to discover canonical task families and records. Read returned `canonical:<record-id>` IDs with `figma:docs:read`.
 - Use `figma:docs:search` with default `--scope auto`. Its `--surface` and `--task-family` options are hard filters; explicit scopes are `active|conditional|router|examples|all`. Auto routing never includes examples.

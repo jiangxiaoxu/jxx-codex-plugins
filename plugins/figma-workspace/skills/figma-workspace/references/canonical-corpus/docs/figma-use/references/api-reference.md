@@ -257,17 +257,17 @@ const svgNode = figma.createNodeFromSvg('<svg>...</svg>')
 
 ## Images
 
-**`figma:assets:apply` is the ONLY supported way to upload images into a Figma file** — Design, FigJam, and Slides all share this path. **Do NOT use `figma.createImage()` or `figma.createImageAsync()` from inside `.figma.ts` script.** Both are unsupported as image-upload entry points and will be removed from agent flows; `.figma.ts` script has no network access (so `createImageAsync(src)` cannot fetch URLs) and bytes inside the script are not durable assets in the file.
+The native Plugin API supports `figma.createImage(data)` for PNG, JPEG, or GIF bytes and `figma.createImageAsync(src)` for a supported image URL. Both return an `Image` whose hash can be used in an `IMAGE` paint. `figma:assets:apply` is the host-managed path for prepared local assets and manifest-driven placement.
 
-Run `figma:assets:apply` with a prepared asset manifest as JSON input; it is the supported asset-application command. Read its help and the raw transport schema before preparing the manifest because the JSON contract, upload instructions, and placement fields are authoritative there.
+When using `figma:assets:apply`, provide a prepared asset manifest as JSON input. Read its help before preparing the manifest because the JSON contract, upload instructions, and placement fields are authoritative there.
 
 ```text
 npm --silent run figma:assets:apply -- --input <asset-manifest.json> --state-file <absolute-path>
 ```
 
-### Re-using an existing imageHash (not an upload)
+### Re-using an existing imageHash
 
-Once an image is in the file via `figma:assets:apply`, you can reference its `imageHash` from another node without re-uploading. This is the only legitimate use of an `imageHash` inside `.figma.ts` script:
+Once an image is in the file, you can reference its `imageHash` from another node without recreating the image:
 
 ```js
 // Re-using an imageHash that already exists on another node in the file

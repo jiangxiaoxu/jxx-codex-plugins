@@ -1,6 +1,6 @@
 {
   "name": "figma-workspace",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Independent npm command entrypoints and a shared typed Node.js runtime for file-based Figma workspace automation.",
   "author": {
     "name": "Local developer"
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Figma Workspace",
     "shortDescription": "Automate Figma through independent npm commands and a shared typed runtime.",
-    "longDescription": "Provides independent plugin-root npm command entrypoints backed by one shared typed Node.js runtime for repairable .figma.ts workflows, project docs, persisted sessions and handles, live upstream discovery, diagnostics, assets, captures, guidance, and lookup. Direct commands expose task-shaped arguments, JSON commands expose input, state, and output controls, and transport-level JSON commands remain isolated behind figma:raw.",
+    "longDescription": "Provides independent plugin-root npm command entrypoints backed by one shared typed Node.js runtime for repairable .figma.ts workflows, project docs, persisted session context and history, live upstream discovery, diagnostics, assets, captures, guidance, and lookup. Direct commands expose task-shaped arguments, JSON commands expose input, state, and output controls, and transport-level JSON commands remain isolated behind figma:raw.",
     "developerName": "jiangxiaoxu",
     "category": "Developer Tools",
     "capabilities": [

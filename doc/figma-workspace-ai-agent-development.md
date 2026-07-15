@@ -8,7 +8,7 @@ This document is for AI agents maintaining `figma-workspace`. It is not the user
 - The plugin does not register or expose a local MCP server. Do not route agents through deferred tool discovery, legacy underscore-named workspace tools, or MCP resource URIs.
 - The official Figma remote MCP is an internal transport behind the CLI. It is not the agent-facing contract.
 - Every executing optimized command requires an explicit fully qualified absolute `--state-file`; its parent owns result sidecars. The raw transport CLI requires either a fully qualified absolute `--session-file` or a fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE` and has no current-directory default.
-- Local `.figma.ts` files, native Figma Plugin API, compact `$` helpers, workspace files, asset manifests, capture output, task plans, canonical project Markdown, guidance, and compact docs/API lookup remain the supported workflow.
+- Local `.figma.ts` files, native Figma Plugin API, the two compact `$` helpers, workspace files, asset manifests, capture output, task plans, canonical project Markdown, guidance, and compact docs/API lookup remain the supported workflow.
 - Keep state and workspace files in a Git-ignored project-local `.figma-workspace/` or an explicitly selected Figma task-artifact directory. Do not infer that an injected writable workspace root is generic task storage; capability-specific output roots remain exclusive to their capability.
 - Runtime workflow lookup reads only the plugin-owned `skills/figma-workspace/references/canonical-corpus/`. Its v2 manifest validates 87 content-addressed records and the single shared English route catalog: 46 `active`, 20 `conditional`, 12 `router`, and 9 non-executable `examples`. Every record publishes task family, surfaces, mapping profile, title, and summary. Neither the complete upstream source snapshot nor upstream source text is packaged or read at runtime.
 - `figma:api:search` reads the v2 plugin-owned symbol index generated during build from bundled `@figma/plugin-typings`; it records declaration symbols, direct owners, kinds, and qualified aliases and is independent of the development snapshot.
@@ -40,7 +40,8 @@ The optimized command option families are intentional:
 - Guidance, docs, API, doctor, and upstream list/read need no existing Figma file context, but still require `--state-file`. Direct file-context commands also expose `--session-id`.
 - Every executing command exposes `--max-inline-bytes`.
 - Docs/API search expose `--limit` and `--snippet-lines`; `figma:docs:search` exposes `--scope auto|active|conditional|router|examples|all`, defaults to `auto`, and accepts hard `--surface` and `--task-family` filters. Guidance exposes `--card-limit`, hard `--surface`, and validated `--workflow` filtering.
-- File-binding commands expose `--workspace`; design-system exposes repeatable `--library`; sessions read exposes `--with-handles` and `--with-history`. Inspect intentionally reuses context already bound to the selected session, omits `--workspace` and `--file`, and exposes repeatable `--handle`.
+- File-binding commands expose `--workspace`; design-system exposes repeatable `--library`; sessions read exposes `--with-history`. Inspect intentionally reuses context already bound to the selected session, omits `--workspace` and `--file`, and supports only inspection and style reads.
+- `figma:open` has no handle input. `figma:eval` has no `mode`, `allowDangerousOperations`, or `handleUpdates` input. `figma:script:run` has no `allowDangerousOperations` input. `figma:inspect` has no validate mode or `--handle`. Node-scoped commands accept raw node IDs, node URLs, or structured `{ fileKey, nodeId }` targets where supported; `$handle` strings and `{ handle }` targets are rejected.
 
 The raw transport runtime behind `figma:raw` consists of these 22 commands:
 
@@ -55,7 +56,7 @@ The raw transport runtime behind `figma:raw` consists of these 22 commands:
 | `run-task-plan` | Execute a prepared task plan. |
 | `prepare-task` | Create a repairable task workspace. |
 | `guidance` | Get task-oriented workflow guidance. |
-| `inspect` | Inspect style, structure, or handle validity. |
+| `inspect` | Inspect style or structure. |
 | `get-metadata` | Fetch and stage file metadata. |
 | `get-design-context` | Fetch design implementation context. |
 | `get-motion-context` | Fetch motion context. |
@@ -66,7 +67,7 @@ The raw transport runtime behind `figma:raw` consists of these 22 commands:
 | `lookup` | Search compact local API and workflow references. |
 | `docs` | List or read canonical project Markdown topics. |
 | `doctor` | Diagnose the canonical corpus, generated Plugin API index, project docs, and TypeScript runtime assets. |
-| `sessions` | Read persisted session summaries, handles, and history. |
+| `sessions` | Read persisted session summaries and history. |
 | `upstream-tools` | List or describe the live official upstream tool schema. |
 
 Pin these facts when changing the CLI surface:
@@ -116,7 +117,10 @@ Generated output under `mcp-server/dist/` is checked in and must remain synchron
 
 - `prepare-task` receives an absolute `workspaceDir` and creates a repairable `.figma.ts` task under `<workspaceDir>/<fileKey-or-fileSlug>/`.
 - `run-script-file` performs strict TypeScript preflight before upstream execution. Diagnostics should identify source lines and block fatal payloads.
-- Native Figma Plugin API is the primary scripting surface; `$` helpers maintain stable workflow semantics for handles, text, checkpoints, inspection, queued local capture, assets, placement, replacement, and cloning. `$.capture` records at most 8 compact node requests in the script envelope; after successful execution the host reuses the `figma:capture` implementation, saves PNG files, and returns their paths in `captures[]` without sending image bytes through script JSON.
+- Native Figma Plugin API is the primary scripting surface. `$` is a frozen, non-callable namespace with exactly `$.text` and `$.capture`. `$.text({ target?, parent?, text, font? })` accepts real nodes or raw node IDs, enforces mutually exclusive `target`/`parent`, creates a TextNode without a target, loads an explicit font before applying text, and rejects a mixed-font target without an explicit font. `$.capture` records at most 8 compact node requests in the script envelope; after successful execution the host reuses the `figma:capture` implementation, saves PNG files, and returns their paths in `captures[]` without sending image bytes through script JSON.
+- Inline eval and `.figma.ts` use the same fixed helper bootstrap. There is no helper AST selection, dependency expansion, dynamic helper-access diagnostic, `injectedHelpers`, or `helperApiVersion` response field.
+- TypeScript parse/type errors and bundled Plugin API typings block script execution. The runtime does not add semantic AST policy or diagnostics for valid Plugin API operations, including destructive edits, `eval`, `fetch`, dynamic import, root scans, PluginData, image creation, direct selection mutation, or page switches.
+- Keep hard runtime boundaries: a wrapped script over 50,000 UTF-8 bytes fails closed; state/session, input, workspace, and output paths are validated; queued capture validates its compact envelope and PNG output; inline results use a 4,096-byte default and 10,000-byte cap with complete atomic sidecars; state writes use local locking and atomic rename.
 - `get-metadata` precedes targeted `inspect` when broad structure discovery is needed.
 - First-class commands remain preferred for design context, motion, design-system search, libraries, variables, assets, downloads, and capture.
 - `call-upstream-tool` is reserved for raw or uncovered official capabilities such as Code Connect writes, shader reads, and `export_video`.
@@ -160,7 +164,7 @@ npm test
 
 `tests/workspace-mcp-server.test.mjs` now exercises the typed-client runtime behind the CLI. `tests/build-output.test.mjs` exercises the built CLI, including help, all 22 command mappings, project-doc staging, JSON file/stdin input, Restricted Markdown stdout, doctor observation classification, domain failure and interrupt exits, stderr failures, atomic state/sidecar writes, and cross-process persistence.
 
-Transport session-path tests should cover fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`, fully qualified absolute explicit `--session-file`, explicit-option precedence, missing-path rejection, relative-path rejection, and current-drive-rooted rejection. Command runtime tests should pin the required fully qualified absolute optimized `--state-file`, its mapping to transport `--session-file`, `--session-id`, `--max-inline-bytes`, query limits, workspace/library filters, sessions expansions, and repeated handles. Routing tests must cover all 12 English task families, non-English/OOV ambiguity, hard surface filtering, strict explicit scopes, catalog-to-read closure, compact payload limits, and qualified API aliases. Runtime tests should continue covering structured failures and representative `.figma.ts`, asset, capture, guidance, lookup, and upstream delegation flows. Live upstream checks remain separate from deterministic offline tests.
+Transport session-path tests should cover fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`, fully qualified absolute explicit `--session-file`, explicit-option precedence, missing-path rejection, relative-path rejection, and current-drive-rooted rejection. Command runtime tests should pin the required fully qualified absolute optimized `--state-file`, its mapping to transport `--session-file`, `--session-id`, `--max-inline-bytes`, query limits, workspace/library filters, and session history expansion. Routing tests must cover all 12 English task families, non-English/OOV ambiguity, hard surface filtering, strict explicit scopes, catalog-to-read closure, compact payload limits, and qualified API aliases. Runtime tests should cover the fixed two-helper bootstrap, text and capture contracts, removed handle/guardrail inputs, hard boundary failures, and representative `.figma.ts`, asset, guidance, lookup, and upstream delegation flows. Live upstream checks remain separate from deterministic offline tests.
 
 Also run repository validators for the skill and plugin plus `git diff --check` when those surfaces change.
 

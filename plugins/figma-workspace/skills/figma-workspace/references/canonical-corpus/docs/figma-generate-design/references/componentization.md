@@ -73,6 +73,6 @@ Keep the main component in a dedicated local-components area or safely outside t
 
 ## Verify the delivered structure
 
-After `figma:script:run`, use `figma:inspect` on the returned node ids or handles to confirm the component and instance relationship, then use `figma:capture` for visual QA of the consuming screen. Inspect the captured local image with `view_image`; an instance tree that is structurally correct but has clipped content, unexpected fixed sizing, or a visible component staging area is not complete.
+After `figma:script:run`, use `figma:inspect` on the returned raw node IDs to confirm the component and instance relationship, then use `figma:capture` for visual QA of the consuming screen. Inspect the captured local image with `view_image`; an instance tree that is structurally correct but has clipped content, unexpected fixed sizing, or a visible component staging area is not complete.
 
-Failure boundaries are deliberate: fatal TypeScript diagnostics mean the script did not execute; a stale handle requires re-inspection before reuse; and an unavailable library component is not permission to approximate its internals. For a large migration, split the work into small repairable script runs and validate each repeated unit before replacing the next one.
+Failure boundaries are deliberate: fatal TypeScript diagnostics mean the script did not execute; an unavailable raw node ID requires re-inspection before reuse; and an unavailable library component is not permission to approximate its internals. For a large migration, split the work into small repairable script runs and validate each repeated unit before replacing the next one.

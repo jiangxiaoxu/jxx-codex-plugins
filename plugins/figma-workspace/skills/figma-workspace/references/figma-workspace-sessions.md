@@ -1,6 +1,6 @@
 # Figma Workspace Sessions
 
-Use this reference when file context, handles, or cross-process continuity matters. CLI help and runtime schemas remain authoritative for arguments.
+Use this reference when file context or cross-process continuity matters. CLI help and runtime schemas remain authoritative for arguments.
 
 ## State File Selection
 
@@ -10,17 +10,16 @@ Use this reference when file context, handles, or cross-process continuity matte
 
 ## Opening And Reusing Context
 
-- Use `figma:sessions:list -- --state-file <absolute-path>` for compact persisted summaries. Use `figma:sessions:read -- <session-id> --state-file <absolute-path>` with `--with-handles` or `--with-history` only when needed.
+- Use `figma:sessions:list -- --state-file <absolute-path>` for compact persisted summaries. Use `figma:sessions:read -- <session-id> --state-file <absolute-path>` with `--with-history` only when needed.
 - Run `figma:open` with JSON containing the intended Figma file or URL to create or update a session.
-- Commands that accept a raw node id or `$handle` need state-file context to determine the file and accept `--session-id` to select the logical workspace session.
+- Commands that accept a raw node id need state-file context to determine the file and accept `--session-id` to select the logical workspace session.
 - A node URL or structured `{ fileKey, nodeId }` target can provide file context directly where the command supports that target form.
 - Keep separate state files for unrelated files or concurrent tasks to avoid accidental context changes.
 
-## Handles And Recovery
+## Recovery
 
-- Handles persist agent-friendly node references in local session state; they are not PluginData stored in the Figma document.
-- Validate a handle with `figma:inspect -- <target> --mode validate --state-file <absolute-path>` before relying on it after structural changes or a later process.
-- Use `$.remember` and `$.forget` deliberately, and return changed node ids or handles from repairable scripts.
+- Persisted state holds file context and session history, not agent-managed node handles. Pass raw node IDs, node URLs, or structured `{ fileKey, nodeId }` targets where a command supports them.
+- A legacy state file containing handle fields is rejected. Preserve it for diagnosis, then reopen with a new explicit, task-specific state path.
 - If a state file is malformed or points at the wrong file, stop the mutation, preserve the file for diagnosis, and reopen with an explicit, task-specific state path.
 - Do not parse the session JSON directly as an agent contract; use the read-only session commands so schema and locking stay owned by the CLI.
 

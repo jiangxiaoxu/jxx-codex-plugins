@@ -6,13 +6,13 @@
 
 - Component properties and variant creation pitfalls
 - Paint, color, and variable binding pitfalls
-- Page context and plugin lifecycle pitfalls (set current page once per `.figma.ts` script run; split multi-page work across calls)
+- Page context and plugin lifecycle pitfalls
 - Auto Layout and sizing order pitfalls (including HUG/FILL interactions, and TEXT nodes that ignore FILL and collapse to a zero-width thread)
 - Variant layout and geometry pitfalls
 - Canonical text-edit recipe + font loading and text/typography pitfalls
 - Sequential awaits — batch independent async calls with `Promise.all` (including `import*ByKeyAsync` families)
 - Prefer indexed lookups (`getNodeByIdAsync`, `findAllWithCriteria`, `node.query`) over `findAll`/`findOne` full-tree scans
-- Scope traversal to the smallest known ancestor (never `figma.root.findAll`; prefer `someFrame.findAllWithCriteria` over `figma.currentPage.findAllWithCriteria`)
+- Scope traversal to the smallest useful ancestor
 - Variable scopes and mode pitfalls
 - Node cleanup and empty-fill pitfalls
 - "no such property" errors — reading or calling members not defined on the node type
@@ -188,16 +188,12 @@ await figma.setCurrentPageAsync(targetPage)
 const page = figma.currentPage  // works
 ```
 
-## Set current page once per `.figma.ts` script run
+## Order work that depends on page context
 
-**A `.figma.ts` script must call `setCurrentPageAsync` at most once.** Never loop over `figma.root.children` and switch pages inside one script.
-
-**The rule is the same for reads and writes:** if work spans multiple pages, save one script per target page and run each explicitly with `figma:script:run`.
-
-Use one absolute state file per saved script. Do not rely on assistant-message or tool-call parallelism.
+`setCurrentPageAsync` changes global page context. Await each switch before accessing that page, and keep dependent page operations ordered. Multi-page scripts are valid Plugin API workflows.
 
 ```js
-// WRONG — one script switches pages on every iteration; reloads the file N times sequentially
+// VALID — traverse pages sequentially when the task genuinely spans them.
 const componentsByPage = {}
 for (const page of figma.root.children) {
   await figma.setCurrentPageAsync(page)
@@ -206,27 +202,24 @@ for (const page of figma.root.children) {
 return componentsByPage
 ```
 
-Instead, do it in two steps and parallelize step 2:
+For a large document, returning page IDs first and running smaller page-specific scripts can improve retry granularity:
 
 ```js
-// CORRECT — step 1: cheap, no page switch. Return the page IDs you'll fan out over.
+// Optional discovery step: return page IDs for later focused work.
 return figma.root.children.map(p => ({ id: p.id, name: p.name }))
 ```
 
-Then save one page-specific `.figma.ts` script and run it explicitly with `figma:script:run` for each page:
+Then use a page-specific script where that decomposition is useful:
 
 ```js
-// CORRECT — step 2: one call per page, currentPage set exactly once.
-// Do not loop pages inside one script.
+// Optional focused step for one selected page.
 const page = await figma.getNodeByIdAsync(PAGE_ID)  // PAGE_ID supplied by caller
 await figma.setCurrentPageAsync(page)
 // ... read or mutate this page ...
 return { pageId: page.id, components: page.findAllWithCriteria({ types: ['COMPONENT'] }).map(n => n.id) }
 ```
 
-This applies to discovery, mutation, component-set creation, and audits. Keep each script scoped to one page; do not assume a cross-page script is atomic.
-
-The same rule generalizes to *any* traversal: scope it to the smallest known ancestor — see [Scope traversal to the smallest known ancestor](#scope-traversal-to-the-smallest-known-ancestor).
+Choose a single multi-page script or multiple focused scripts based on mutation coupling, result size, and recovery needs. The same performance consideration applies to traversal scope; see [Scope traversal to the smallest known ancestor](#scope-traversal-to-the-smallest-known-ancestor).
 
 ## `figma:metadata` operates on one subtree — discover pages explicitly
 
@@ -252,20 +245,20 @@ figma.notify("Done!")
 return "Done!"
 ```
 
-## `getPluginData()` / `setPluginData()` are not supported
+## Choose private or shared plugin data deliberately
 
-These APIs are not available in `.figma.ts` script. Use `getSharedPluginData()` / `setSharedPluginData()` instead (these ARE supported), or track nodes by returning IDs.
+`getPluginData()` / `setPluginData()` store values private to the executing plugin. `getSharedPluginData()` / `setSharedPluginData()` use an explicit namespace and are readable by other plugins. Both APIs are available in `.figma.ts`; choose based on the intended ownership and visibility.
 
 ```js
-// WRONG — not supported in `.figma.ts` script
+// Private to the executing plugin.
 node.setPluginData('my_key', 'my_value')
 const val = node.getPluginData('my_key')
 
-// CORRECT — use shared plugin data (requires a namespace)
+// Shared plugin data requires a namespace.
 node.setSharedPluginData('my_namespace', 'my_key', 'my_value')
 const val = node.getSharedPluginData('my_namespace', 'my_key')
 
-// ALSO CORRECT — return node IDs and track them across calls
+// Raw node IDs can also connect explicit follow-up calls.
 const rect = figma.createRectangle()
 return { nodeId: rect.id }
 // Then pass nodeId as a string literal in the next `.figma.ts` script call
@@ -495,25 +488,23 @@ Every `findAll` / `findOne` / `findAllWithCriteria` walks the entire subtree of 
 |---|---|
 | `someFrame.findAllWithCriteria(...)` | one frame's subtree |
 | `figma.currentPage.findAllWithCriteria(...)` | one page (every loaded node on it) |
-| `figma.root.findAllWithCriteria(...)` | **every loaded page in the document** — only safe on tiny files |
+| `figma.root.findAllWithCriteria(...)` | every loaded page in the document |
 
 **Rule: scope traversal to the smallest known ancestor.** If you have a specific frame's ID, search inside that frame. If you have a section, search inside that section. Drop back to `figma.currentPage` only when the work is genuinely page-wide.
 
 ```js
-// WRONG — walks every loaded page in the document
+// Document-wide traversal when the task requires it.
 const all = figma.root.findAllWithCriteria({ types: ['INSTANCE'] })
 
-// BETTER — one page only
+// Page-scoped traversal.
 const onPage = figma.currentPage.findAllWithCriteria({ types: ['INSTANCE'] })
 
-// BEST — when you have the parent frame's ID, search just that subtree
+// Subtree-scoped traversal when a parent frame is already known.
 const frame = await figma.getNodeByIdAsync(FRAME_ID)
 const inFrame = frame.findAllWithCriteria({ types: ['INSTANCE'] })
 ```
 
-**Never use `figma.root.findAll(...)` in a `.figma.ts` script.** It walks every page that has been loaded into memory and forces every other page to load if not already in memory — the worst-case traversal.
-
-**Never loop `figma.root.children` calling `setCurrentPageAsync(page)` and then `page.findAll(...)`** — that repeats whole-page scans and page switches. If work spans multiple pages, save one `.figma.ts` script per page and run each explicitly.
+`figma.root.findAll(...)` and `figma.root.findAllWithCriteria(...)` are valid document-wide operations. Their cost grows with the loaded document, so use root scope when document-wide coverage is part of the task. Likewise, switching pages and scanning each page is appropriate for explicit cross-page work; await each switch and account for the repeated traversal cost.
 
 When you don't have a frame ID handy, capture one from a parent call and pass it to subsequent calls — `getNodeByIdAsync(id).findAllWithCriteria(...)` beats `figma.currentPage.findAllWithCriteria(...)` every time the target subtree is smaller than the page.
 

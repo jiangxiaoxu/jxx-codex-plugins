@@ -237,6 +237,7 @@ export async function runFigmaWorkspaceCli(
       : undefined;
     try {
       const sessions = await (dependencies.loadSessions ?? readFigmaWorkspaceSessions)(sessionFile);
+      assertNoLegacySessionHandles(sessions);
       const client = (dependencies.createClient ?? createFigmaWorkspaceClient)({
         ...dependencies.clientOptions,
         initialSessions: sessions,
@@ -323,6 +324,7 @@ export async function readFigmaWorkspaceSessions(path: string): Promise<FigmaWor
   } catch (error) {
     throw new FigmaWorkspaceCliUsageError(`Session file is not valid JSON: ${formatCliError(error)}`);
   }
+  assertNoLegacySessionHandles(value);
   if (!Array.isArray(value) || !value.every(isFigmaWorkspaceSession)) {
     throw new FigmaWorkspaceCliUsageError("Session file must contain a FigmaWorkspaceSession array.");
   }
@@ -1060,10 +1062,21 @@ function isFigmaWorkspaceSession(value: unknown): value is FigmaWorkspaceSession
     && typeof value.createdAt === "string"
     && typeof value.updatedAt === "string"
     && isStringRecord(value.knownPages)
-    && isStringRecord(value.handles)
     && Array.isArray(value.lastDiagnostics)
     && Array.isArray(value.history)
     && value.history.every((entry) => isRecord(entry) && Array.isArray(entry.nodeIds));
+}
+
+function assertNoLegacySessionHandles(value: unknown): void {
+  if (!Array.isArray(value)) {
+    return;
+  }
+  const legacySession = value.find((session) => isRecord(session) && Object.hasOwn(session, "handles"));
+  if (legacySession !== undefined) {
+    throw new FigmaWorkspaceCliUsageError(
+      "Session file contains the removed legacy handles field. Create and use a new state file.",
+    );
+  }
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
