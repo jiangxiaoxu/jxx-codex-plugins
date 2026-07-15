@@ -103,6 +103,195 @@ test("typed eval delegates through use_figma and returns compact output", async 
   }
 });
 
+test("typed eval processes queued $.capture requests into local PNG files", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-eval-capture-"));
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lP2PAAAAAElFTkSuQmCC", "base64");
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name, args }) => {
+      if (name === "use_figma") {
+        assert.match(args.code, /\$\.capture = async function capture/u);
+        assert.doesNotMatch(args.code, /\$\.screenshot|node\.screenshot/u);
+        return { content: [{ type: "text", text: JSON.stringify({
+          ok: true,
+          __figmaRepl: {
+            sessionId: "queued-eval",
+            handles: {},
+            captureRequests: [{
+              requestId: "capture-1",
+              nodeId: "22:7",
+              imageFile: "queued-eval.png",
+              maxDimension: 1600,
+              contentsOnly: true,
+            }],
+          },
+          result: { frameId: "22:7" },
+        }) }] };
+      }
+      assert.equal(name, "get_screenshot");
+      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:7", maxDimension: 1600, contentsOnly: true });
+      return { content: [{ type: "image", mimeType: "image/png", data: png.toString("base64") }] };
+    }, {
+      tools: [
+        {
+          name: "use_figma",
+          description: "Execute JavaScript in Figma.",
+          inputSchema: {
+            type: "object",
+            properties: { code: { type: "string" }, description: { type: "string" }, fileKey: { type: "string" } },
+            required: ["code", "fileKey"],
+          },
+        },
+        {
+          name: "get_screenshot",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileKey: { type: "string" },
+              nodeId: { type: "string" },
+              maxDimension: { type: "integer" },
+              contentsOnly: { type: "boolean" },
+            },
+            required: ["fileKey", "nodeId"],
+          },
+        },
+      ],
+    }),
+  });
+  try {
+    await client.open({
+      sessionId: "queued-eval",
+      file: "https://www.figma.com/design/file123/Test",
+      workspaceDir: tempDir,
+      connect: false,
+    });
+    const result = await client.eval({
+      sessionId: "queued-eval",
+      code: "const frame = figma.createFrame(); return $.capture(frame, { maxDimension: 1600 });",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.scriptExecutionSucceeded, true);
+    assert.equal(result.captureProcessingSucceeded, true);
+    assert.equal(result.upstream.result.frameId, "22:7");
+    assert.equal(result.captures.length, 1);
+    assert.equal(result.captures[0].requestId, "capture-1");
+    assert.equal(result.captures[0].imageFile, resolve(tempDir, "file123", "queued-eval.png"));
+    assert.equal((await readFile(result.captures[0].imageFile)).subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["use_figma", "get_screenshot"]);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("typed eval rejects a capture envelope when $.capture was not selected", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name }) => {
+      assert.equal(name, "use_figma");
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: true,
+        __figmaRepl: {
+          sessionId: "oversized-captures",
+          handles: {},
+          captureRequests: [{ requestId: "capture-1", nodeId: "1:1" }],
+        },
+        result: { frameId: "1:1" },
+      }) }] };
+    }),
+  });
+  try {
+    const result = await client.eval({
+      sessionId: "oversized-captures",
+      code: "return { frameId: figma.currentPage.children[0]?.id };",
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.scriptExecutionSucceeded, true);
+    assert.equal(result.captureProcessingSucceeded, false);
+    assert.match(result.retryGuidance, /Do not rerun/u);
+    assert.equal(result.upstream.result.frameId, "1:1");
+    assert.equal(result.captures.length, 1);
+    assert.equal(result.captures[0].requestId, "capture-envelope");
+    assert.equal(result.captures[0].upstreamError.code, "FIGMA_WORKSPACE_CAPTURE_REQUEST_INVALID");
+    assert.ok(result.outputFiles?.debugFile?.path);
+    assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["use_figma"]);
+  } finally {
+    await client.close();
+  }
+});
+
+test("typed eval rejects absolute imageFile paths from queued capture envelopes", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-eval-capture-path-"));
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name }) => {
+      assert.equal(name, "use_figma");
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: true,
+        __figmaRepl: {
+          sessionId: "unsafe-capture-path",
+          handles: {},
+          captureRequests: [{
+            requestId: "capture-1",
+            nodeId: "1:1",
+            imageFile: resolve(tempDir, "outside.png"),
+          }],
+        },
+        result: { frameId: "1:1" },
+      }) }] };
+    }),
+  });
+  try {
+    const result = await client.eval({
+      sessionId: "unsafe-capture-path",
+      code: "return $.capture(figma.currentPage.children[0]);",
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.scriptExecutionSucceeded, true);
+    assert.equal(result.captureProcessingSucceeded, false);
+    assert.equal(result.captures[0].requestId, "capture-envelope");
+    assert.match(result.captures[0].upstreamError.message, /workspace-relative/u);
+    assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["use_figma"]);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("typed eval enforces the host limit on authorized queued captures", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name }) => {
+      assert.equal(name, "use_figma");
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: true,
+        __figmaRepl: {
+          sessionId: "oversized-captures",
+          handles: {},
+          captureRequests: Array.from({ length: 9 }, (_, index) => ({
+            requestId: `capture-${index + 1}`,
+            nodeId: `${index + 1}:1`,
+          })),
+        },
+        result: { frameId: "1:1" },
+      }) }] };
+    }),
+  });
+  try {
+    const result = await client.eval({
+      sessionId: "oversized-captures",
+      code: "return $.capture(figma.currentPage.children[0]);",
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.captureProcessingSucceeded, false);
+    assert.equal(result.captures[0].upstreamError.code, "FIGMA_WORKSPACE_CAPTURE_REQUEST_INVALID");
+    assert.match(result.captures[0].upstreamError.message, /8-request host limit/u);
+    assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["use_figma"]);
+  } finally {
+    await client.close();
+  }
+});
+
 test("guidance and lookup run locally against staged runtime assets", async () => {
   const calls = [];
   const client = createFigmaWorkspaceClient({ client: createFakeUpstream(calls) });
@@ -116,6 +305,7 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     assert.equal("suggestions" in guidance, false);
     assert.doesNotMatch(JSON.stringify(guidance), /"text"\s*:/u);
     assert.doesNotMatch(JSON.stringify(guidance), /figma_workspace_/u);
+    assert.doesNotMatch(JSON.stringify(guidance), /\$\.screenshot|node\.screenshot|SceneNode\.screenshot/u);
 
     const inferredSlidesGuidance = await client.guidance({ query: "slides presentation" });
     assert.equal(inferredSlidesGuidance.route.surface, "slides");
@@ -132,7 +322,7 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       ["motion implementation", "motion-implementation", "canonical:figma-implement-motion/SKILL.md"],
       ["swiftui design to code", "swiftui", "canonical:figma-swiftui/SKILL.md"],
       ["figjam board", "figjam", "canonical:figma-use-figjam/SKILL.md"],
-      ["motion design", "motion", "canonical:figma-use-motion/SKILL.md"],
+      ["motion design", "motion", "canonical:figma-use-motion/references/motion-patterns.md"],
       ["slides presentation", "slides", "canonical:figma-use-slides/references/slide-lifecycle.md"],
       ["design editing", "design-editing", "canonical:figma-use/SKILL.md"],
     ];
@@ -443,6 +633,25 @@ test("runScriptFile blocks TypeScript diagnostics before upstream execution", as
   }
 });
 
+test("runScriptFile rejects script-only screenshot methods before upstream execution", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-script-screenshot-"));
+  const scriptPath = resolve(tempDir, "unsupported-screenshot.figma.ts");
+  await writeFile(scriptPath, "const frame = figma.createFrame();\nawait frame.screenshot();\nreturn frame.id;\n", "utf8");
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: createFakeUpstream(calls) });
+  try {
+    const result = await client.runScriptFile({ scriptPath });
+    assert.equal(result.ok, false);
+    assert.equal(result.phase, "preflight");
+    assert.equal(result.executed, false);
+    assert.ok(result.diagnostics.some((diagnostic) => /screenshot/u.test(diagnostic.message)));
+    assert.deepEqual(calls, []);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("successful runScriptFile transpiles TypeScript and delegates to use_figma", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-script-success-"));
   const scriptPath = resolve(tempDir, "success.figma.ts");
@@ -471,6 +680,91 @@ test("successful runScriptFile transpiles TypeScript and delegates to use_figma"
     assert.equal(result.executed, true);
     assert.equal(result.upstream.result.frameId, "30:1");
     assert.deepEqual(calls.map((entry) => entry[0]), ["connect", "listTools", "callTool"]);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runScriptFile preserves script success when a queued capture fails", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-script-capture-failure-"));
+  const scriptPath = resolve(tempDir, "capture-failure.figma.ts");
+  await writeFile(scriptPath, [
+    "const frame = figma.createFrame();",
+    "await $.capture(frame);",
+    "return { frameId: frame.id };",
+  ].join("\n"), "utf8");
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name }) => {
+      if (name === "use_figma") {
+        return { content: [{ type: "text", text: JSON.stringify({
+          ok: true,
+          __figmaRepl: {
+            sessionId: "queued-script-failure",
+            handles: {},
+            captureRequests: [{ requestId: "capture-1", nodeId: "30:1" }],
+          },
+          result: { frameId: "30:1" },
+        }) }] };
+      }
+      assert.equal(name, "get_screenshot");
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: false,
+        error: {
+          code: "CAPTURE_FAILED",
+          message: `Screenshot unavailable. ${"图".repeat(1000)}`,
+          details: { secretMarker: "must-not-reach-public-capture-result", payload: "x".repeat(20_000) },
+        },
+      }) }] };
+    }, {
+      tools: [
+        {
+          name: "use_figma",
+          description: "Execute JavaScript in Figma.",
+          inputSchema: {
+            type: "object",
+            properties: { code: { type: "string" }, description: { type: "string" }, fileKey: { type: "string" } },
+            required: ["code", "fileKey"],
+          },
+        },
+        {
+          name: "get_screenshot",
+          inputSchema: {
+            type: "object",
+            properties: { fileKey: { type: "string" }, nodeId: { type: "string" } },
+            required: ["fileKey", "nodeId"],
+          },
+        },
+      ],
+    }),
+  });
+  try {
+    await client.open({
+      sessionId: "queued-script-failure",
+      file: "https://www.figma.com/design/file123/Test",
+      workspaceDir: tempDir,
+      connect: false,
+    });
+    const result = await client.runScriptFile({
+      sessionId: "queued-script-failure",
+      scriptPath,
+      strict: true,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.phase, "execute");
+    assert.equal(result.executed, true);
+    assert.equal(result.scriptExecutionSucceeded, true);
+    assert.equal(result.captureProcessingSucceeded, false);
+    assert.match(result.retryGuidance, /Do not rerun/u);
+    assert.equal(result.upstream.result.frameId, "30:1");
+    assert.equal(result.captures[0].ok, false);
+    assert.equal(result.captures[0].upstreamError.code, "CAPTURE_FAILED");
+    assert.ok(Buffer.byteLength(result.captures[0].upstreamError.message, "utf8") <= 600);
+    assert.equal("details" in result.captures[0].upstreamError, false);
+    assert.doesNotMatch(JSON.stringify(result.captures), /must-not-reach-public-capture-result/u);
+    assert.ok(result.outputFiles?.debugFile?.path);
+    assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["use_figma", "get_screenshot"]);
   } finally {
     await client.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -702,6 +996,16 @@ test("runtime code diagnostics and helper selection remain available", () => {
   );
   assert.equal(selection.helperNames.has("inspect"), true);
   assert.equal(selection.injectedHelpers.includes("$.inspect"), true);
+  const captureSelection = resolveFigmaWorkspaceScriptHelperSelection(
+    "return $.capture(figma.currentPage.children[0], { maxDimension: 1600 });",
+  );
+  assert.equal(captureSelection.helperNames.has("capture"), true);
+  assert.equal(captureSelection.injectedHelpers.includes("$.capture"), true);
+  const unsupportedScreenshot = resolveFigmaWorkspaceScriptHelperSelection(
+    "return $.screenshot(figma.currentPage);",
+  );
+  assert.equal(unsupportedScreenshot.helperNames.has("screenshot"), false);
+  assert.equal(unsupportedScreenshot.injectedHelpers.includes("$.screenshot"), false);
   const wrapper = buildFigmaEvalScript({
     session: {
       id: "main",
@@ -712,6 +1016,17 @@ test("runtime code diagnostics and helper selection remain available", () => {
   });
   assert.match(wrapper, /figma\.currentPage\.id/u);
   assert.match(wrapper, /__figmaRepl/u);
+  assert.doesNotMatch(wrapper, /\$\.screenshot|node\.screenshot/u);
+  const captureWrapper = buildFigmaEvalScript({
+    session: {
+      id: "capture",
+      handles: {},
+      knownPages: {},
+    },
+    code: "return $.capture(figma.currentPage.children[0]);",
+  });
+  assert.match(captureWrapper, /\$\.capture = async function capture/u);
+  assert.doesNotMatch(captureWrapper, /\$\.screenshot|node\.screenshot/u);
 });
 
 test("typed client validates an absolute OAuth cache path", async () => {

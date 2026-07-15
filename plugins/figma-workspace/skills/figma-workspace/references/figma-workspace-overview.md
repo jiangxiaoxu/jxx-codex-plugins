@@ -20,7 +20,7 @@ Use this reference to choose a public `figma:*` command before opening its CLI h
 
 - Use `figma:metadata` for broad structure discovery and `figma:inspect` for targeted validation.
 - Use `figma:design-context`, `figma:motion-context`, `figma:design-system`, `figma:libraries`, and `figma:variables` for first-class official reads.
-- Use `figma:assets:apply` for prepared local image assets, `figma:assets:download` for official asset downloads, and `figma:capture` followed by `view_image` for visual QA.
+- Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for official asset downloads. Use standalone `figma:capture` when the node id is known, or queued `$.capture` when a script creates or resolves the target; inspect every saved PNG with `view_image`.
 
 ## Planning And Reference
 

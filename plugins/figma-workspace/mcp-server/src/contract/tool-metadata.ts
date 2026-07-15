@@ -63,7 +63,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_eval",
       description:
-        "Small ephemeral JavaScript Plugin API call for quick reads or tightly scoped updates only. Recommended input: { sessionId, code, mode, surface }. By default code is parsed and executed as JavaScript; pass typescript:true only when inline TypeScript annotations should be compiled first. Use prepare-task + run-script-file for repairable TypeScript scripts, multi-step work, and large structured results.",
+        "Small ephemeral JavaScript Plugin API call for quick reads or tightly scoped updates only. Recommended input: { sessionId, code, mode, surface }. By default code is parsed and executed as JavaScript; pass typescript:true only when inline TypeScript annotations should be compiled first. Use await $.capture(target, options?) to queue local PNG files returned under captures[] after successful execution. Use prepare-task + run-script-file for repairable TypeScript scripts, multi-step work, and large structured results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id. Defaults to 'default'."),
@@ -79,7 +79,7 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_run_script_file",
       description:
-        "Primary file-based TypeScript workflow for Figma Workspace. Recommended workspace call: { sessionId, inputFile, strict, surface }. The tool only accepts .figma.ts files, strict-checks them with Figma Plugin API typings, and compiles the upstream payload internally before execution. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
+        "Primary file-based TypeScript workflow for Figma Workspace. Recommended workspace call: { sessionId, inputFile, strict, surface }. The tool only accepts .figma.ts files, strict-checks them with Figma Plugin API typings, and compiles the upstream payload internally before execution. Use await $.capture(target, options?) to queue up to 8 local PNG files returned under captures[] after successful script execution. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id or task name. Defaults to 'default'."),
@@ -342,7 +342,7 @@ export function createReplToolDescriptions(
         surface: enumProperty(["design", "figjam", "slides"], "Docs-only hard surface filter. It is invalid with kind=api and never falls back across surfaces."),
         taskFamily: enumProperty(FIGMA_WORKSPACE_TASK_FAMILIES, "Docs-only hard canonical task-family filter. It is invalid with kind=api and takes precedence over inferred routing."),
         query: stringProperty(`Required for kind=docs. Use English task keywords, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
-        symbol: stringProperty(`Required for kind=api. Accepts bare or supported qualified Plugin API symbols, for example createFrame, figma.createFrame(), SceneNode.screenshot, or figma.variables.createVariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
+        symbol: stringProperty(`Required for kind=api. Accepts bare or supported qualified Plugin API symbols, for example createFrame, figma.createFrame(), ExportMixin.exportAsync, or figma.variables.createVariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
         maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
         maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`),
       }, ["kind"]),
@@ -396,10 +396,14 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_workspace_eval: toolOutputSchema({
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    scriptExecutionSucceeded: booleanProperty("True when the Plugin API script finished successfully before queued capture post-processing."),
+    captureProcessingSucceeded: booleanProperty("Present when $.capture queued work. False means the script succeeded but at least one local PNG capture failed."),
+    retryGuidance: stringProperty("Explicit recovery guidance when capture post-processing failed after successful script execution."),
     diagnostics: arrayProperty("Preflight diagnostics when warnings or failures are present."),
     repairPlan: jsonProperty("Agent-facing repair plan with status, summary, and deduplicated steps containing occurrences with line:column labels."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    captures: arrayProperty("Compact queued capture results in request order. Successful entries include requestId, nodeId, and local imageFile; failed entries include upstreamError. Image bytes are never returned."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
       ["debugFile", "upstreamFile"],
@@ -410,6 +414,9 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     phase: enumProperty(["preflight", "execute"], "Execution phase represented by this result. preflight means diagnostics blocked upstream execution; execute means upstream Figma was called."),
     executed: booleanProperty("Whether upstream Figma execution was attempted."),
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    scriptExecutionSucceeded: booleanProperty("True when the Plugin API script finished successfully before queued capture post-processing."),
+    captureProcessingSucceeded: booleanProperty("Present when $.capture queued work. False means the script succeeded but at least one local PNG capture failed."),
+    retryGuidance: stringProperty("Explicit recovery guidance when capture post-processing failed after successful script execution."),
     diagnostics: arrayProperty("Script and wrapper diagnostics when warnings or failures are present."),
     repairPlan: jsonProperty("Agent-facing repair plan returned only when diagnostics or preflight blockers are actionable."),
     script: scriptMetadataProperty("Compact script metadata. Clean inputFile success returns only inputFile; preflight/failure keeps repair details."),
@@ -418,6 +425,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
       ["debugFile", "upstreamFile", "compiledScriptFile"],
     ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    captures: arrayProperty("Compact queued capture results in request order. Successful entries include requestId, nodeId, and local imageFile; failed entries include upstreamError. Image bytes are never returned."),
     upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public script results."),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),

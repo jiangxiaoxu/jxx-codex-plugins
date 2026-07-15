@@ -33,6 +33,15 @@ test("all canonical examples pass the production strict TypeScript preflight", a
   }
 });
 
+test("canonical agent docs do not advertise script screenshot extensions", async () => {
+  const canonicalRoot = join(distRoot, "skills", "figma-workspace", "references", "canonical-corpus");
+  const manifest = JSON.parse(await readFile(join(canonicalRoot, "manifest.json"), "utf8"));
+  const corpus = await readFile(join(canonicalRoot, manifest.corpus.file), "utf8");
+  assert.doesNotMatch(corpus, /\$\.screenshot|(?:node|frame)\.screenshot|SceneNode\.screenshot/u);
+  assert.match(corpus, /figma:capture/u);
+  assert.match(corpus, /exportAsync/u);
+});
+
 test("canonical runnable workflow snippets pass the production strict TypeScript preflight", async () => {
   const canonicalRoot = join(distRoot, "skills", "figma-workspace", "references", "canonical-corpus");
   const manifest = JSON.parse(await readFile(join(canonicalRoot, "manifest.json"), "utf8"));

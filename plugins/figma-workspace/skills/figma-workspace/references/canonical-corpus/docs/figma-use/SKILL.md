@@ -98,7 +98,7 @@ Available in Slides mode: Rectangle, Frame, Component, Text, Ellipse, Star, Line
 
 **Design-only APIs (not just node types):** `figma.createPage()` is available only in Design files (`figma.com/design/...`). In both FigJam (`figma.com/board/...`) and Slides (`figma.com/slides/...`) it throws `TypeError: figma.createPage no such property 'createPage' on the figma global object`. Do not emit `figma.createPage()` in FigJam or Slides workflows.
 
-> **Slides note:** There is no dedicated read tool for Slides files yet. Use `.figma.ts` script with read-only scripts for inspection (see Section 6 "Inspect first" pattern), and `figma:capture` / `await node.screenshot()` for visual context. For Slides-specific API guidance, use `figma:guidance` and `figma:api:search` with the `slides` surface.
+> **Slides note:** There is no dedicated read tool for Slides files yet. Use read-only `.figma.ts` scripts for inspection (see Section 6 "Inspect first" pattern), and use `figma:capture` or queued `$.capture()` for visual context. For Slides-specific API guidance, use `figma:guidance` and `figma:api:search` with the `slides` surface.
 
 ## 5. Efficient APIs — Prefer These Over Verbose Alternatives
 
@@ -233,26 +233,28 @@ frame.placeholder = false
 
 When building complex layouts, set `placeholder = true` on sections before populating them, then set `placeholder = false` on each section as it's completed.
 
-### `await node.screenshot(opts?)` — inline screenshots
+### `await $.capture(target, options?)` - queued local captures
 
-Capture a node as a PNG and return it inline in the response. Eliminates the need for a separate `figma:capture` call.
+Queue a node capture without returning image bytes through the script JSON result. After the script succeeds, the CLI invokes the same host-side implementation as `figma:capture`, saves each PNG locally, and adds the completed results to the command's top-level `captures[]`.
 
 ```js
-// Take a screenshot of a frame (returned inline in the tool response)
-await frame.screenshot()
+const frame = figma.createFrame()
+frame.name = "Card"
 
-// Custom scale (default auto-scales: 0.5x or capped so max dimension ≤ 1024px)
-await frame.screenshot({ scale: 2 })
+const ticket = await $.capture(frame, {
+  maxDimension: 1600,
+  contentsOnly: false,
+  imageFile: "card.png",
+})
 
-// Include overlapping content from sibling nodes
-await frame.screenshot({ contentsOnly: false })
+return { frameId: frame.id, captureRequestId: ticket.requestId }
 ```
 
-**When to use:** After creating or modifying nodes, call `screenshot()` to visually verify the result within the same script. No need for a separate `figma:capture` call.
+The returned ticket contains only `requestId` and `nodeId`; the local `imageFile` is available after host-side post-processing. An explicitly supplied `imageFile` must be workspace-relative. A single script may queue at most 8 captures. Use standalone `figma:capture` when the node id is already known. Do not use inline screenshot methods or return PNG bytes/base64 from the script.
 
-**Auto-naming:** The image caption includes node metadata — `"Card (300x150 at 0,60).png"` — giving spatial context without parsing the image.
+If capture post-processing fails, the command reports `scriptExecutionSucceeded: true`, `captureProcessingSucceeded: false`, and `retryGuidance`. The script already completed and may have changed Figma; do not rerun it to recover the image. Retry the affected node with standalone `figma:capture`.
 
-**Default scaling:** Uses 0.5x scale, but automatically caps so the largest output dimension never exceeds 1024px. Explicit `{ scale: N }` bypasses the cap.
+Native `exportAsync()` is separate: use it only when the script genuinely needs exported PNG, JPG, SVG, PDF, or other bytes/string for data processing, not for CLI visual QA.
 
 ## 6. Incremental Workflow (How to Avoid Bugs)
 
@@ -267,9 +269,9 @@ The most common cause of bugs is trying to do too much in a single `.figma.ts` s
 
 1. **Inspect first.** Before creating anything, run a read-only `.figma.ts` script to discover what already exists in the file — pages, components, variables, naming conventions. Match what's there.
 2. **Build the skeleton.** Create the top-level structure with placeholder sections. Set `placeholder = true` on each section so the user sees progress.
-3. **Fill in sections incrementally.** In each subsequent call, populate one section and set its `placeholder = false` when done. Take a `screenshot()` to verify.
+3. **Fill in sections incrementally.** In each subsequent call, populate one section and set its `placeholder = false` when done. Queue `$.capture()` at meaningful visual checkpoints.
 4. **Return IDs from every call.** Always `return` created node IDs, variable IDs, collection IDs as objects (e.g. `return { createdNodeIds: [...] }`). You'll need these as inputs to subsequent calls.
-5. **Validate after each step.** Use `figma:metadata` to verify structure (counts, names, hierarchy, positions). Use `await node.screenshot()` inline or `figma:capture` after major milestones to catch visual issues.
+5. **Validate after each step.** Use `figma:metadata` to verify structure (counts, names, hierarchy, positions). Use queued `$.capture()` or standalone `figma:capture` after major milestones to catch visual issues, then inspect every saved PNG.
 6. **Fix before moving on.** If validation reveals a problem, fix it before proceeding to the next step. Don't build on a broken foundation.
 
 ### Suggested step order for complex tasks

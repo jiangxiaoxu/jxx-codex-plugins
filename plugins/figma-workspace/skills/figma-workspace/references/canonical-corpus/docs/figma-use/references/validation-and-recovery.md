@@ -11,7 +11,7 @@
 
 ## `figma:metadata` vs `figma:capture`
 
-After each `.figma.ts` script run, validate results using the right tool for the job. Do NOT reach for `figma:capture` every time — it is expensive and should be reserved for visual checks.
+After each `.figma.ts` script run, validate results using the right tool for the job. Do NOT capture every intermediate state; reserve PNG rendering for meaningful visual checks.
 
 ### `figma:metadata` — Use for intermediate validation (preferred)
 
@@ -37,9 +37,11 @@ ComponentSet node to verify all 120 children exist with correct names, sizes, an
 - After binding variables — to verify node properties (use `.figma.ts` script to read bound variables if needed)
 - Between multi-step workflows — to confirm step N succeeded before starting step N+1
 
-### `figma:capture` — Use after each major creation milestone
+### `figma:capture` and `$.capture` — Use after each major creation milestone
 
-`figma:capture` renders a pixel-accurate image. It is the only way to verify visual correctness (colors, typography rendering, effects, variable mode resolution). It is slower and produces large responses, so don't call it after every single `.figma.ts` script — but do call it after each major milestone to catch visual problems early.
+The capture workflow renders a pixel-accurate local PNG. It is the only way to verify visual correctness (colors, typography rendering, effects, variable mode resolution). It is slower than structural reads, so do not capture after every small operation; capture each major milestone instead.
+
+Use standalone `figma:capture` when the node id is already known. If a script creates or resolves the target, call `await $.capture(target, options?)`; the helper queues host-side capture work after the script succeeds and the CLI returns completed local paths under `captures[]`. Queue at most 8 captures per execution, never return image bytes/base64 in the script result, and inspect every saved PNG.
 
 **When to use `figma:capture`:**
 - **After creating a component set** — verify variants look correct, grid is readable, nothing is collapsed or overlapping

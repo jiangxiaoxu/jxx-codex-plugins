@@ -39,6 +39,17 @@ interface FigmaWorkspaceCheckpointOptions {
   readonly depth?: number;
 }
 
+interface FigmaWorkspaceCaptureOptions {
+  readonly imageFile?: string;
+  readonly maxDimension?: number;
+  readonly contentsOnly?: boolean;
+}
+
+interface FigmaWorkspaceCaptureTicket {
+  readonly requestId: string;
+  readonly nodeId: string;
+}
+
 interface FigmaWorkspaceNodeSummary {
   readonly id?: string;
   readonly type?: string;
@@ -185,7 +196,7 @@ interface FigmaWorkspaceDollar {
   replaceGeneratedFrame(options: FigmaWorkspaceReplaceGeneratedFrameOptions): Promise<FigmaWorkspaceReplaceGeneratedFrameResult>;
   imageAsset(options: FigmaWorkspaceImageAssetOptions): Promise<SceneNode>;
   inspect(target: FigmaWorkspaceTarget, depth?: number): Promise<FigmaWorkspaceNodeSummary | readonly FigmaWorkspaceNodeSummary[] | null>;
-  screenshot(target: FigmaWorkspaceTarget, options?: ExportSettings): Promise<Uint8Array>;
+  capture(target: FigmaWorkspaceTarget, options?: FigmaWorkspaceCaptureOptions): Promise<FigmaWorkspaceCaptureTicket>;
   cloneNodeTree(target: FigmaWorkspaceTarget, options?: FigmaWorkspaceCloneNodeTreeOptions): Promise<FigmaWorkspaceCloneNodeTreeResult>;
   cloneNodeTree(options: FigmaWorkspaceCloneNodeTreeOptions): Promise<FigmaWorkspaceCloneNodeTreeResult>;
   checkpoint(name: string, targets?: FigmaWorkspaceNodeTarget, options?: FigmaWorkspaceCheckpointOptions): Promise<FigmaWorkspaceCheckpointResult>;

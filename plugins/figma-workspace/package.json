@@ -60,7 +60,7 @@
     "update:upstream-snapshot": "node scripts/update-upstream-corpus.mjs update-upstream-snapshot",
     "build:canonical-corpus": "node scripts/update-upstream-corpus.mjs build-canonical-corpus",
     "start": "node scripts/commands/figma-start.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

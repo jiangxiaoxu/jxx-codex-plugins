@@ -41,9 +41,9 @@ Search and guidance payloads expose compact public metadata and byte-limited sni
 1. Choose an absolute `--state-file` and reuse it for the task.
 2. Use guidance, catalog, docs search/read, and API lookup to establish the right surface and workflow.
 3. Use `figma:task:prepare` to create a repairable `.figma.ts` workspace.
-4. Edit the script using native Figma Plugin API and injected `$` helpers, then run `figma:script:run` with `strict: true`.
+4. Edit the script using native Figma Plugin API and injected `$` helpers, then run `figma:script:run` with `strict: true`. Use `await $.capture(target, options?)` to queue up to 8 local PNG captures for nodes created or resolved inside the script; completed paths are returned under `captures[]` after successful script execution.
 5. Repair fatal preflight diagnostics before execution. Use first-class context, metadata, inspect, asset, and capture commands as needed.
-6. Inspect every generated or edited image, including `figma:capture` PNG output, with `view_image`.
+6. Inspect every generated or edited image, including standalone `figma:capture` and queued `$.capture` PNG output, with `view_image`.
 
 Use `figma:upstream:list` or `figma:upstream:read` before `figma:upstream:call` for capabilities with no first-class wrapper.
 
