@@ -46,34 +46,30 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_open",
       description:
-        "Context helper for creating or updating a local Figma Workspace session. Recommended input: { sessionId, file, surface }. Use prepare-task + run-script-file for the primary file workflow; use open for lightweight session context, handle import, file binding, or upstream auth connection without tool discovery.",
+        "Context helper for creating or updating a local Figma Workspace session. Recommended input: { sessionId, file, surface }. Use prepare-task + run-script-file for the primary file workflow; use open for lightweight file binding or upstream auth connection without tool discovery.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Stable local session id. Defaults to 'default'."),
         label: stringProperty("Human-readable session label."),
         file: stringProperty("Optional Figma file URL or raw file key stored in local session metadata. When present, workspaceDir is required to bind a file-context workspace."),
         workspaceDir: stringProperty("Required absolute local workspace directory when file is present. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
-        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface; blocks mismatched Design/FigJam/Slides usage later."),
+        surface: enumProperty(["design", "figjam", "slides"], "Figma surface stored in session metadata."),
         currentPageId: stringProperty("Optional current Figma page id stored in local session metadata."),
-        reset: booleanProperty("Reset local handles and history for this session before opening."),
+        reset: booleanProperty("Reset local history and task state for this session before opening."),
         connect: booleanProperty("Connect to upstream Figma MCP during open without listing tools. Defaults to true.", { default: true }),
-        handles: objectProperty("Advanced bootstrap/import only: initial local handles, for example {\"$header\": \"12:34\"}."),
       }),
     },
     {
       name: "figma_workspace_eval",
       description:
-        "Small ephemeral JavaScript Plugin API call for quick reads or tightly scoped updates only. Recommended input: { sessionId, code, mode, surface }. By default code is parsed and executed as JavaScript; pass typescript:true only when inline TypeScript annotations should be compiled first. Use await $.capture(target, options?) to queue local PNG files returned under captures[] after successful execution. Use prepare-task + run-script-file for repairable TypeScript scripts, multi-step work, and large structured results.",
+        "Small ephemeral JavaScript Plugin API call for quick reads or tightly scoped updates only. Recommended input: { sessionId, code, surface }. By default code is parsed and executed as JavaScript; pass typescript:true only when inline TypeScript annotations should be compiled first. Use await $.capture(target, options?) to queue local PNG files returned under captures[] after successful execution. Use prepare-task + run-script-file for repairable TypeScript scripts, multi-step work, and large structured results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id. Defaults to 'default'."),
         code: stringProperty("JavaScript Plugin API body executed inside an async function in the Figma context. Use return to send structured output. TypeScript-only syntax requires typescript:true."),
         typescript: booleanProperty("Compile inline code as TypeScript before execution. Defaults false; leave unset for JavaScript eval.", { default: false }),
-        mode: enumProperty(["read", "write"], "Use read to reject likely mutations before dispatch. Defaults to write."),
-        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this call."),
-        allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only; does not bypass API contract, surface, or read-mode diagnostics."),
+        surface: enumProperty(["design", "figjam", "slides"], "Figma surface associated with this call."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
-        handleUpdates: objectProperty("Advanced handle-import/repair escape hatch merged into the local session before running code. It is not read back from upstream.result.handleUpdates; persist script-created handles with $.remember(...) or by returning a top-level handles object."),
       }, ["code"]),
     },
     {
@@ -85,10 +81,9 @@ export function createReplToolDescriptions(
         sessionId: stringProperty("Local workspace session id or task name. Defaults to 'default'."),
         scriptPath: stringProperty("Advanced absolute .figma.ts path escape hatch only. Prefer inputFile after prepare-task creates a file-context workspace."),
         inputFile: stringProperty("Recommended workspace .figma.ts script file name after prepare-task; preferred over scriptPath for agents."),
-        strict: booleanProperty("Promote warning diagnostics to fatal and reject before upstream execution."),
-        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface for this script."),
+        strict: booleanProperty("Request strict TypeScript preflight with bundled Figma Plugin API typings. TypeScript diagnostics reject execution."),
+        surface: enumProperty(["design", "figjam", "slides"], "Figma surface associated with this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
-        allowDangerousOperations: booleanProperty("Allow dynamic/destructive guarded patterns only after reviewing the exact file."),
         inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.result/upstream.text only. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
       }, { anyOf: [requiredBranch("scriptPath"), requiredBranch("inputFile")] }),
     },
@@ -102,8 +97,17 @@ export function createReplToolDescriptions(
         manifestPath: stringProperty("Recommended manifest file path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of assets or an object with assets."),
         assets: {
           type: "array",
-          description: "Advanced inline asset entries. Prefer manifestPath. Each entry uses { path, target }; target accepts a node id, node URL, local handle like $hero, or { handle: \"$hero\" }.",
-          items: { type: "object", additionalProperties: true },
+          description: "Advanced inline asset entries. Prefer manifestPath. Each entry uses { path, target }; target accepts a raw node id, node URL, or { fileKey, nodeId }.",
+          items: {
+            type: "object",
+            properties: {
+              path: stringProperty("Local asset path."),
+              target: nodeScopedTargetProperty("Raw node id, node URL, or exact { fileKey, nodeId } target."),
+              name: stringProperty("Optional asset display name."),
+              metadata: objectProperty("Optional asset metadata."),
+            },
+            additionalProperties: true,
+          },
         },
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload. Missing or incomplete validation records make the workflow fail with outputFiles.debugFile instead of silently succeeding.", { default: true }),
       }, { anyOf: [requiredBranch("manifestPath"), requiredBranch("assets")] }),
@@ -114,7 +118,7 @@ export function createReplToolDescriptions(
         "Workflow add-on for official Figma asset downloads. Recommended call: { sessionId, targets:[{ target, name?, defaultFormat?, defaultScale? }], outputDir? }. Use manifestPath only for batch files shaped as { targets:[...] }; the tool always calls upstream download_assets, saves exported plus raw/source files locally, and writes debug JSON only on failure.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for fileKey, handles, workspace defaults, and history. Defaults to 'default'."),
+        sessionId: stringProperty("Local workspace session id used for fileKey, workspace defaults, and history. Defaults to 'default'."),
         targets: {
           type: "array",
           description: "Recommended target list. Single-target calls still use targets: [{ target }]. Mutually exclusive with manifestPath.",
@@ -131,9 +135,7 @@ export function createReplToolDescriptions(
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id used for file context and history. Defaults to 'default'."),
-        target: {
-          description: `Target node to capture. ${NODE_SCOPED_TARGET_SHAPES}`,
-        },
+        target: nodeScopedTargetProperty(`Target node to capture. ${NODE_SCOPED_TARGET_SHAPES}`),
         imageFile: stringProperty("Optional local PNG output path. Extensionless or non-.png values normalize to .png. Omitted imageFile auto-generates capture-<timestamp>.png."),
         maxDimension: numberProperty("Optional official get_screenshot maxDimension forwarded upstream when explicitly supplied.", { type: "integer", minimum: 1, maximum: 65536 }),
         contentsOnly: booleanProperty("Optional official get_screenshot contentsOnly flag forwarded upstream when explicitly supplied."),
@@ -190,18 +192,13 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_inspect",
       description:
-        "Core read-side inspection command for $selection, $currentPage, stored handles, validation, and compact style audits. Requires a file-context session because it executes fixed upstream use_figma; call open or prepare-task first. Recommended inputs: { sessionId, target } or { sessionId, mode:\"style\", target }.",
+        "Core read-side inspection command for $selection, $currentPage, raw node ids, node URLs, and compact style audits. Requires a file-context session because it executes fixed upstream use_figma; call open or prepare-task first. Recommended inputs: { sessionId, target } or { sessionId, mode:\"style\", target }.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id with file context. Defaults to 'default'."),
-        mode: enumProperty(["inspect", "validate", "style"], "Use inspect for target summaries, validate for cached handle status, or style for compact visual-token audits. Defaults to inspect."),
-        target: stringProperty("String-only target: $selection, $currentPage, a stored handle like $header, a raw node id, or a node URL string. Defaults to $selection. Do not pass { fileKey, nodeId }."),
+        mode: enumProperty(["inspect", "style"], "Use inspect for target summaries or style for compact visual-token audits. Defaults to inspect."),
+        target: inspectTargetProperty("String-only target: $selection, $currentPage, a raw node id, or a node URL. Defaults to $selection. Do not pass { fileKey, nodeId }."),
         depth: numberProperty("Child summary depth. Defaults to 2."),
-        handles: {
-          type: "array",
-          description: "Optional handle names or raw node ids to validate. Defaults to all cached handles.",
-          items: { type: "string" },
-        },
       }),
     },
     {
@@ -210,13 +207,11 @@ export function createReplToolDescriptions(
         "Metadata-first read tool for broad Figma layer-tree discovery. Calls official upstream get_metadata, converts returned XML into a compact JSON node tree, then attempts one batched read-only use_figma readback to enrich nodes with supported lock/layout-state fields. Small converted JSON trees are returned inline; oversized trees are written to outputFiles.metadataFile. Recommended calls: { sessionId, target? } after opening/preparing file context, { file, target? }, or { target:{ fileKey, nodeId } }. Use inspect/eval afterward for fills, text, visual tokens, or targeted operation-state validation.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
+        sessionId: stringProperty("Local workspace session id used for file context, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
         workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
-        target: {
-          description: `Optional metadata root. ${NODE_SCOPED_TARGET_SHAPES} Also accepts $currentPage or a single-node $selection, which are resolved with a read-only use_figma call before official get_metadata. Other dynamic selectors are rejected.`,
-        },
-        nodeId: stringProperty("Optional raw Figma node id. Prefer target for handles, node URLs, $currentPage, or $selection."),
+        target: nodeScopedTargetProperty(`Optional metadata root. ${NODE_SCOPED_TARGET_SHAPES}`),
+        nodeId: stringProperty("Optional raw Figma node id. Prefer target for node URLs or explicit { fileKey, nodeId } context."),
         clientLanguages: stringProperty("Optional official get_metadata clientLanguages hint. Sent upstream only when explicitly supplied."),
         clientFrameworks: stringProperty("Optional official get_metadata clientFrameworks hint. Sent upstream only when explicitly supplied."),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
@@ -229,12 +224,10 @@ export function createReplToolDescriptions(
         "Thin first-class wrapper for official upstream get_design_context. Recommended calls: { sessionId, target } after opening or preparing file context, { file, target }, or { target:{ fileKey, nodeId } }. Returns the generic upstream envelope without normalizing official design-context payloads.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
+        sessionId: stringProperty("Local workspace session id used for file context, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target is omitted."),
         workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
-        target: {
-          description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
-        },
+        target: nodeScopedTargetProperty(`Required target node. ${NODE_SCOPED_TARGET_SHAPES}`),
         clientLanguages: stringProperty("Optional official get_design_context clientLanguages hint. Sent upstream only when explicitly supplied."),
         clientFrameworks: stringProperty("Optional official get_design_context clientFrameworks hint. Sent upstream only when explicitly supplied."),
         forceCode: booleanProperty("Optional official get_design_context flag forwarded upstream when explicitly supplied."),
@@ -250,12 +243,10 @@ export function createReplToolDescriptions(
         "Thin first-class wrapper for official upstream get_motion_context. Recommended calls: { sessionId, target, recursive? } after opening or preparing file context, { file, target, recursive? }, or { target:{ fileKey, nodeId }, recursive? }. Returns keyframe/motion data through the generic upstream envelope without bridge-owned normalization.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
+        sessionId: stringProperty("Local workspace session id used for file context, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target is omitted."),
         workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
-        target: {
-          description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
-        },
+        target: nodeScopedTargetProperty(`Required target node. ${NODE_SCOPED_TARGET_SHAPES}`),
         recursive: booleanProperty("Optional official get_motion_context flag for descendant motion data."),
         clientLanguages: stringProperty("Optional official get_motion_context clientLanguages hint. Sent upstream only when explicitly supplied."),
         clientFrameworks: stringProperty("Optional official get_motion_context clientFrameworks hint. Sent upstream only when explicitly supplied."),
@@ -302,12 +293,10 @@ export function createReplToolDescriptions(
         "Thin first-class wrapper for official upstream get_variable_defs. Recommended calls: { sessionId, target } after opening or preparing file context, { file, target }, or { target:{ fileKey, nodeId } }. Returns the generic upstream envelope in upstream.result/upstream.text plus a minimal session summary.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        sessionId: stringProperty("Local workspace session id used for file context, handles, workspace defaults, and history. Defaults to 'default'."),
+        sessionId: stringProperty("Local workspace session id used for file context, workspace defaults, and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. A node-id in the URL is used as the target when target/nodeId is omitted."),
         workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
-        target: {
-          description: `Required target node. ${NODE_SCOPED_TARGET_SHAPES}`,
-        },
+        target: nodeScopedTargetProperty(`Required target node. ${NODE_SCOPED_TARGET_SHAPES}`),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
       }, { anyOf: [requiredBranch("target"), requiredBranch("file")] }),
@@ -369,10 +358,9 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_sessions",
       description:
-        "Inspect persisted Figma Workspace sessions without mutating them. Omit sessionId for compact summaries; pass it for detail, with optional handles and history expansion.",
+        "Inspect persisted Figma Workspace sessions without mutating them. Omit sessionId for compact summaries; pass it for detail with optional history expansion.",
       inputSchema: objectSchema({
         sessionId: stringProperty("Optional exact session id. Omit to list compact summaries."),
-        includeHandles: booleanProperty("Include the full handle map for one selected session. Defaults to false.", { default: false }),
         includeHistory: booleanProperty("Include full history entries for one selected session. Defaults to false.", { default: false }),
       }),
     },
@@ -391,17 +379,17 @@ export function createReplToolDescriptions(
 
 const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   figma_workspace_open: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     diagnostics: arrayProperty("Session diagnostics when warnings or failures are present."),
   }),
   figma_workspace_eval: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     scriptExecutionSucceeded: booleanProperty("True when the Plugin API script finished successfully before queued capture post-processing."),
     captureProcessingSucceeded: booleanProperty("Present when $.capture queued work. False means the script succeeded but at least one local PNG capture failed."),
     retryGuidance: stringProperty("Explicit recovery guidance when capture post-processing failed after successful script execution."),
     diagnostics: arrayProperty("Preflight diagnostics when warnings or failures are present."),
     repairPlan: jsonProperty("Agent-facing repair plan with status, summary, and deduplicated steps containing occurrences with line:column labels."),
-    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
+    upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaWorkspace metadata is removed from public eval results."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     captures: arrayProperty("Compact queued capture results in request order. Successful entries include requestId, nodeId, and local imageFile; failed entries include upstreamError. Image bytes are never returned."),
     outputFiles: outputFilesProperty(
@@ -413,7 +401,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   figma_workspace_run_script_file: toolOutputSchema({
     phase: enumProperty(["preflight", "execute"], "Execution phase represented by this result. preflight means diagnostics blocked upstream execution; execute means upstream Figma was called."),
     executed: booleanProperty("Whether upstream Figma execution was attempted."),
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     scriptExecutionSucceeded: booleanProperty("True when the Plugin API script finished successfully before queued capture post-processing."),
     captureProcessingSucceeded: booleanProperty("Present when $.capture queued work. False means the script succeeded but at least one local PNG capture failed."),
     retryGuidance: stringProperty("Explicit recovery guidance when capture post-processing failed after successful script execution."),
@@ -426,11 +414,11 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
     captures: arrayProperty("Compact queued capture results in request order. Successful entries include requestId, nodeId, and local imageFile; failed entries include upstreamError. Image bytes are never returned."),
-    upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public script results."),
+    upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaWorkspace metadata is removed from public script results."),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_workspace_apply_asset_manifest: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     assets: compactAssetResultsProperty("Compact per-asset upload/fill results. Successful submitUrl POSTs expose compact upload evidence without raw submit URLs."),
     diagnostics: arrayProperty("Manifest loading, upload, application, or validation diagnostics when present."),
     validation: objectProperty("Optional target validation result."),
@@ -438,7 +426,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     failures: arrayProperty("Per-asset or validation failures."),
   }),
   figma_workspace_download_assets: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     outputDir: stringProperty("Local directory containing per-target download folders."),
     targets: compactDownloadAssetResultsProperty("Compact per-target download results."),
     diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
@@ -446,7 +434,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     outputFiles: outputFilesProperty("Debug files written on demand for failures.", ["debugFile"]),
   }),
   figma_workspace_capture_node: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     imageFile: stringProperty("Absolute local PNG screenshot path when capture succeeded."),
     nodeId: stringProperty("Captured Figma node id."),
     bytes: numberProperty("Saved PNG file size in bytes."),
@@ -456,7 +444,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
   }),
   figma_workspace_run_task_plan: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     stopped: booleanProperty("Whether execution stopped before remaining steps."),
     steps: arrayProperty("Compact per-step execution summaries with per-step outputReferences when a step produced files for later references."),
     outputFiles: outputFilesProperty("Files written for plan result output.", ["debugFile"]),
@@ -464,7 +452,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_workspace_prepare_task: toolOutputSchema({
     task: objectProperty("Prepared task workspace and script file."),
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only; task.workspace remains the full prepared workspace shape."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir; task.workspace remains the full prepared workspace shape."),
     taskChange: taskChangeProperty("Previous/current task file pointers and whether the session active task changed."),
     next: stringArrayProperty("Suggested next actions."),
   }),
@@ -482,8 +470,8 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     nextActions: arrayProperty("At most six typed next actions. Each action has a public npm commandId such as figma:docs:search or figma:api:search, validated args, reason, and priority. Internal transport tool names and raw MCP names are never emitted."),
   }),
   figma_workspace_inspect: toolOutputSchema({
-    session: objectProperty("Read-only local workspace session summary: id, fileKey, surface, and optional sessionDir; handleChanges is omitted."),
-    diagnostics: arrayProperty("Read-mode diagnostics when warnings or failures are present."),
+    session: objectProperty("Read-only local workspace session summary: id, fileKey, surface, and optional sessionDir."),
+    diagnostics: arrayProperty("Inspection diagnostics when warnings or failures are present."),
     target: stringProperty("Inspected target selector or node id when returned by the inspect mode."),
     summary: jsonProperty("Compact inspected node or selection summary when returned by the inspect mode."),
     targetSummary: objectProperty("Compact target identity and bounds for mode=style."),
@@ -493,11 +481,10 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     offset: numberProperty("Style audit batch offset when returned by upstream."),
     style: inspectStyleAuditProperty("Compact visual-token/style audit for mode=style."),
     truncated: objectProperty("Style audit omitted counts keyed by clipped category, returned only when inline style samples were clipped."),
-    validations: inspectHandleValidationsProperty("Handle validation results for mode=validate."),
     upstreamError: objectProperty("Normalized upstream failure details when inspection failed."),
   }),
   figma_workspace_get_metadata: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     fileKey: stringProperty("Figma file key sent to official get_metadata."),
     nodeId: stringProperty("Optional Figma node id sent to official get_metadata."),
     metadata: objectProperty("Metadata conversion summary. metadata.json contains the compact converted node tree with supported lock/layout-state fields merged when it fits inline; oversized JSON is available from outputFiles.metadataFile."),
@@ -512,7 +499,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when metadata.json exceeds the byte limit."),
   }),
   figma_workspace_get_design_context: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     fileKey: stringProperty("Figma file key sent to official get_design_context."),
     nodeId: stringProperty("Figma node id sent to official get_design_context."),
     diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
@@ -527,7 +514,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_workspace_get_motion_context: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     fileKey: stringProperty("Figma file key sent to official get_motion_context."),
     nodeId: stringProperty("Figma node id sent to official get_motion_context."),
     diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
@@ -542,7 +529,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_workspace_search_design_system: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     fileKey: stringProperty("Figma file key sent to official search_design_system."),
     query: stringProperty("Search query sent upstream."),
     diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
@@ -556,7 +543,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_workspace_get_libraries: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     fileKey: stringProperty("Figma file key sent to official get_libraries."),
     offset: numberProperty("Pagination offset sent upstream when supplied."),
     diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
@@ -570,7 +557,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_workspace_get_variable_defs: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     fileKey: stringProperty("Figma file key sent to official get_variable_defs."),
     nodeId: stringProperty("Figma node id sent to official get_variable_defs."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
@@ -583,7 +570,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_workspace_call_upstream_tool: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     toolName: stringProperty("Upstream official Figma MCP tool name called."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success. Raw official JSON top-level ok is consumed and removed from upstream.result; raw JSON without top-level ok remains as upstream.result."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
@@ -622,7 +609,7 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_workspace_sessions: toolOutputSchema({
     sessions: arrayProperty("Compact summaries for all persisted sessions."),
-    session: objectProperty("Selected persisted session detail with optional handles and history."),
+    session: objectProperty("Selected persisted session detail with optional history."),
   }),
   figma_workspace_upstream_tools: toolOutputSchema({
     tools: arrayProperty("Compact live official Figma MCP tool directory."),
@@ -693,6 +680,40 @@ function stringProperty(description: string): Record<string, unknown> {
   return { type: "string", description };
 }
 
+function nodeScopedTargetProperty(description: string): Record<string, unknown> {
+  return {
+    description,
+    oneOf: [
+      {
+        type: "string",
+        minLength: 1,
+        pattern: "^(?!\\$)(?=.*\\S)",
+      },
+      {
+        type: "object",
+        properties: {
+          fileKey: { ...stringProperty("Figma file key."), minLength: 1, pattern: ".*\\S.*" },
+          nodeId: { ...stringProperty("Figma node id."), minLength: 1, pattern: ".*\\S.*" },
+        },
+        required: ["fileKey", "nodeId"],
+        additionalProperties: false,
+      },
+    ],
+  };
+}
+
+function inspectTargetProperty(description: string): Record<string, unknown> {
+  return {
+    type: "string",
+    description,
+    minLength: 1,
+    anyOf: [
+      { enum: ["$selection", "$currentPage"] },
+      { pattern: "^(?!\\$)(?=.*\\S)" },
+    ],
+  };
+}
+
 function booleanProperty(description: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return { type: "boolean", description, ...extra };
 }
@@ -745,9 +766,9 @@ function taskPlanStepProperty(description: string): Record<string, unknown> {
 function downloadAssetTargetProperty(): Record<string, unknown> {
   return {
     type: "object",
-    description: "One Figma target for official download_assets. Use target for node id, node URL, local handle, or { handle }.",
+    description: "One Figma target for official download_assets. Use target for a raw node id, node URL, or { fileKey, nodeId }.",
     properties: {
-      target: jsonProperty("Required target. Accepts a node id, node URL, local handle like $hero, or object like { handle: \"$hero\" }."),
+      target: nodeScopedTargetProperty("Required raw node id, node URL, or exact { fileKey, nodeId } target."),
       name: stringProperty("Optional display name used for the local target folder slug and result readability."),
       defaultFormat: enumProperty(["png", "jpg", "svg", "pdf"], "Optional official download_assets defaultFormat forwarded upstream."),
       defaultScale: numberProperty("Optional official download_assets defaultScale forwarded upstream. Must be from 0.01 to 4.", { minimum: 0.01, maximum: 4 }),
@@ -807,7 +828,7 @@ function upstreamEnvelopeProperty(description: string): Record<string, unknown> 
     properties: {
       kind: enumProperty(["json", "text", "unknown"], "Upstream output representation kind."),
       ok: booleanProperty("Effective upstream success: false for upstream call failures and false when a consumed shaped business result has top-level ok:false."),
-      result: jsonProperty("Public parsed upstream JSON result when kind is json and the field is not omitted inline. Payloads containing bridge-internal __figmaRepl metadata are unwrapped to their business result; raw official JSON with top-level ok consumes and removes that ok, while raw JSON without top-level ok remains unchanged. When ok=false, result.source preserves failure provenance as call or business."),
+      result: jsonProperty("Public parsed upstream JSON result when kind is json and the field is not omitted inline. Payloads containing bridge-internal __figmaWorkspace metadata are unwrapped to their business result; raw official JSON with top-level ok consumes and removes that ok, while raw JSON without top-level ok remains unchanged. When ok=false, result.source preserves failure provenance as call or business."),
       text: stringProperty("Upstream text output when kind is text and the field is not omitted inline."),
       upstreamError: objectProperty("Normalized upstream error when available."),
     },
@@ -876,7 +897,6 @@ function compactAssetResultsProperty(description: string): Record<string, unknow
         ok: booleanProperty("Whether this asset operation succeeded."),
         path: stringProperty("Local asset path."),
         targetNodeId: stringProperty("Resolved target Figma node id."),
-        handle: stringProperty("Local handle associated with the target when available."),
         name: stringProperty("Asset display name when available."),
         validation: objectProperty("Compact target validation result."),
         upstreamError: objectProperty("Compact per-asset upstream error."),
@@ -895,7 +915,6 @@ function compactDownloadAssetResultsProperty(description: string): Record<string
       properties: {
         ok: booleanProperty("Whether this target download succeeded."),
         targetNodeId: stringProperty("Resolved Figma target node id."),
-        handle: stringProperty("Local handle associated with the target when available."),
         name: stringProperty("Target display name when available."),
         outputDir: stringProperty("Per-target local output directory."),
         downloadedFiles: {
@@ -968,28 +987,6 @@ function inspectStyleAuditProperty(description: string): Record<string, unknown>
       effects: arrayProperty("Compact effect samples."),
     },
     additionalProperties: true,
-  };
-}
-
-function inspectHandleValidationsProperty(description: string): Record<string, unknown> {
-  return {
-    type: "array",
-    description,
-    items: {
-      type: "object",
-      properties: {
-        handle: stringProperty("Requested handle or node id."),
-        status: stringProperty("Validation status: valid, missing, or stale."),
-        id: stringProperty("Resolved node id when valid."),
-        type: stringProperty("Resolved node type when valid."),
-        name: stringProperty("Resolved node name when valid."),
-        locked: booleanProperty("Resolved node locked state when available."),
-        layoutMode: stringProperty("Resolved auto-layout mode when available."),
-        layoutPositioning: stringProperty("Resolved child layout positioning when available."),
-        error: stringProperty("Validation error text when stale."),
-      },
-      additionalProperties: true,
-    },
   };
 }
 

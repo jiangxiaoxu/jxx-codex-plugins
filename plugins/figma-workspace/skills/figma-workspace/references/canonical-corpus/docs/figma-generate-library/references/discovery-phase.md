@@ -259,7 +259,7 @@ const result = componentSets.map(cs => ({
 return { componentSets: result, count: result.length };
 ```
 
-Note: do not iterate `figma.root.children` and switch `setCurrentPageAsync` inside one mutation script. Use `figma:metadata` for broad discovery and keep any follow-up `.figma.ts` work focused on one page at a time.
+For cross-page work, iterate `figma.root.children` in order and await each `setCurrentPageAsync` call before touching that page. `figma:metadata` remains useful for a lightweight inventory before deciding whether one multi-page script or several focused scripts better fit the task.
 
 ### List All Styles
 

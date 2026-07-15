@@ -12,7 +12,7 @@ npm --silent run figma:design-system -- "primary button" --file <figma-url-or-fi
 npm --silent run figma:libraries -- --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
 ```
 
-Use `figma:variables` to inspect collections, modes, variable scopes, aliases, and current values. Use `figma:design-system` to identify the component and semantic convention that owns the choice; use `figma:libraries` to distinguish local tokens from reusable library sources. When broad file discovery is needed, use `figma:metadata`, then use `figma:inspect` for the specific target node or handle. Use `figma:api:search` only if the exact Plugin API binding method or property type is uncertain.
+Use `figma:variables` to inspect collections, modes, variable scopes, aliases, and current values. Use `figma:design-system` to identify the component and semantic convention that owns the choice; use `figma:libraries` to distinguish local tokens from reusable library sources. When broad file discovery is needed, use `figma:metadata`, then use `figma:inspect` for the specific raw node ID. Use `figma:api:search` only if the exact Plugin API binding method or property type is uncertain.
 
 ## Select the right layer and mode
 

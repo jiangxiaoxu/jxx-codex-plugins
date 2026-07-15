@@ -9,8 +9,8 @@ Text style 是可复用的排版契约: font family、style、size、line height
 ```text
 npm --silent run figma:libraries -- --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
 npm --silent run figma:design-system -- "heading body typography" --styles --variables --library <library-key> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:metadata -- <text-node-id-or-handle> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:variables -- <text-node-id-or-handle> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:metadata -- <text-node-id> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:variables -- <text-node-id> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
 npm --silent run figma:api:search -- loadFontAsync --state-file C:/work/project/.figma-workspace/state.json
 ```
 

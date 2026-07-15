@@ -28,7 +28,7 @@ Use concise English canonical keywords for `figma:guidance` and `figma:docs:sear
 
 The 12 stable task families are `code-connect`, `create-file`, `design-to-code`, `design-generation`, `diagram`, `library-generation`, `motion-implementation`, `swiftui`, `figjam`, `motion`, `slides`, and `design-editing`.
 
-- `figma:guidance` returns a compact DTO with route status/confidence, cards, query hints, API references, guardrails, summaries, reference context, and typed `nextActions`. Agent-visible command IDs are always public `figma:*` npm scripts.
+- `figma:guidance` returns a compact DTO with route status/confidence, cards, query hints, API references, helper/wrapper/workflow summaries, reference context, and typed `nextActions`. Agent-visible command IDs are always public `figma:*` npm scripts.
 - `figma:docs:list` returns stable `project:<topic>` IDs for project Markdown. `figma:docs:catalog` lists the 12 family summaries or filtered canonical records with `canonical:<record-id>` IDs. `figma:docs:read` accepts only those namespaces and returns complete content, using a sidecar for large documents.
 - `figma:docs:search` defaults to `--scope auto`. A matched route searches only project/bridge docs and surface-compatible active, conditional, and router records in the resolved family. Examples never enter automatic search; request `--scope examples` explicitly.
 - `--surface design|figjam|slides` and `--task-family` are hard filters. Explicit `--scope active|conditional|router|examples|all` is strict.
@@ -46,6 +46,15 @@ Search and guidance payloads expose compact public metadata and byte-limited sni
 6. Inspect every generated or edited image, including standalone `figma:capture` and queued `$.capture` PNG output, with `view_image`.
 
 Use `figma:upstream:list` or `figma:upstream:read` before `figma:upstream:call` for capabilities with no first-class wrapper.
+
+## Script Helpers And Boundaries
+
+`$` is a frozen, non-callable namespace with exactly two helpers:
+
+- `await $.text({ target?, parent?, text, font? })` creates or updates text with font loading. `target` and `parent` accept a real node or raw node ID and are mutually exclusive. When a target is omitted, it creates a TextNode. Mixed-font targets require an explicit font.
+- `await $.capture(target, { imageFile?, maxDimension?, contentsOnly? })` queues up to eight host-side PNG captures and returns an in-script ticket. The final CLI result, not the ticket, provides local image paths under `captures[]`.
+
+Use native Figma Plugin API for all other operations, including node traversal, selection, layout, asset construction, cloning, PluginData, page switching, and destructive edits. Script preflight enforces TypeScript and bundled Plugin API typings, but does not impose semantic AST policy on valid Plugin API calls. The runtime still enforces payload size, state/session and workspace path containment, capture validation, and atomic sidecar output boundaries.
 
 ## Canonical Corpus And API Index
 

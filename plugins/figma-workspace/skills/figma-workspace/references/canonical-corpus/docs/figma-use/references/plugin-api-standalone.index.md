@@ -204,7 +204,7 @@ type BaseNode   (L10913) = DocumentNode | PageNode | SceneNode
 | `PublishableMixin`           | L7875 | `description`, `key`, `getPublishStatusAsync()`                                                 |
 | `VariantMixin`               | L8182 | `variantProperties`                                                                             |
 | `ComponentPropertiesMixin`   | L8229 | `componentProperties`, `addComponentProperty()`                                                 |
-| `PluginDataMixin`            | L5443 | `getSharedPluginData()`, `setSharedPluginData()` supported; `getPluginData()`, `setPluginData()` **NOT supported** |
+| `PluginDataMixin`            | L5443 | Private `getPluginData()` / `setPluginData()` and namespaced `getSharedPluginData()` / `setSharedPluginData()` |
 | `FramePrototypingMixin`      | L7651 | `overflowDirection`, `numberOfFixedChildren`                                                    |
 | `BaseFrameMixin`             | L7939 | ChildrenMixin + LayoutMixin + AutoLayoutMixin + GeometryMixin + …                               |
 | `DefaultFrameMixin`          | L7997 | BaseFrameMixin + FramePrototypingMixin + ReactionMixin                                          |

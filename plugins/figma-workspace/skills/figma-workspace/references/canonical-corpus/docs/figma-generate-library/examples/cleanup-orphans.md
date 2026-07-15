@@ -7,7 +7,7 @@ Remove scene nodes and local variables that belong to an abandoned build only wh
 - Build the allowlists from IDs returned by the interrupted run or an audited ledger. Do not reconstruct or guess IDs.
 - Review each listed object in Figma before removal, especially parent nodes: removing a parent also removes its descendants.
 - Leave at least one page in the document. The script refuses to remove the final page.
-- Treat this as destructive. The normal preflight blocks `remove()` until the execution input explicitly allows dangerous operations after review.
+- The `dryRun` switch belongs to this example and is not a Figma Workspace preflight requirement.
 
 ## Script
 
@@ -75,8 +75,7 @@ Run `npm --silent run figma:script:run -- --help` first. Use this JSON input for
   "sessionId": "YOUR_SESSION_ID",
   "inputFile": "cleanup-orphans.figma.ts",
   "strict": true,
-  "surface": "design",
-  "allowDangerousOperations": true
+  "surface": "design"
 }
 ```
 
@@ -86,4 +85,4 @@ Then execute it with the chosen absolute state file:
 npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/cleanup-orphans.json --state-file C:/work/project/.figma-workspace/state.json
 ```
 
-`allowDangerousOperations` permits the reviewed destructive code to pass preflight; it does not make cleanup safe or automatic. This example is not automatically executable: replace every placeholder, keep `dryRun` enabled until the returned plan exactly matches your review, and only then change it to `false`. Rerun only the same reviewed script and verify the returned IDs before proceeding.
+This example is not automatically executable: replace every placeholder, keep `dryRun` enabled until the returned plan exactly matches your review, and only then change it to `false`. Rerun only the same reviewed script and verify the returned IDs before proceeding.

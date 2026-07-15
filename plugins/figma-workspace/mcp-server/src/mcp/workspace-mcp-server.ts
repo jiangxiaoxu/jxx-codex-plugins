@@ -44,19 +44,12 @@ import {
 import { resolveTaskRoute, type TaskRouteResult } from "../runtime/task-routing.js";
 import type { FigmaWorkspacePublicCommandId } from "../runtime/public-command-registry.js";
 import {
-  assertSafeFigmaWorkspaceCode,
   compileFigmaWorkspaceEvalCode,
   compileFigmaWorkspaceScriptFile,
   createFigmaWorkspaceRepairPlan,
-  diagnoseFigmaWorkspaceCode,
-  diagnoseFigmaWorkspaceContext,
   diagnoseWrappedScriptSize,
   getFigmaWorkspaceTypescriptRuntimeInfo,
-  resolveFigmaWorkspaceScriptHelperSelection as resolveFigmaWorkspaceScriptHelperSelectionInternal,
-  throwIfFatalDiagnostics,
-  toFigmaWorkspaceFileDiagnostics,
   type FigmaWorkspaceDiagnostic,
-  type FigmaWorkspaceDiagnosticsOptions,
   type FigmaWorkspaceDiagnosticSeverity,
   type FigmaWorkspaceFileDiagnostic,
   type FigmaWorkspaceRepairPlan,
@@ -165,10 +158,6 @@ function defaultTaskWorkspaceRoot(): string {
   return readProcessEnv(TASK_WORKSPACE_ROOT_ENV) ?? resolve(tmpdir(), "figma-workspace", "tasks");
 }
 
-export {
-  assertSafeFigmaWorkspaceCode,
-  diagnoseFigmaWorkspaceCode,
-};
 /**
  * @internal Missing-file matcher used by cleanup regression tests.
  * This is not a stable package API.
@@ -176,18 +165,12 @@ export {
 export { isFigmaWorkspaceMissingFileErrorForTesting };
 
 /**
- * @internal Internal-facing helper-selection utility for tests and payload debugging.
- * This is not a stable MCP tool input contract, and callers cannot use it to configure helper injection.
- */
-export const resolveFigmaWorkspaceScriptHelperSelection = resolveFigmaWorkspaceScriptHelperSelectionInternal;
-/**
  * @internal Internal wrapper contract registry used by parity tests.
  * This is not a stable MCP tool input or response contract.
  */
 export const FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS = FIGMA_WORKSPACE_WRAPPER_CONTRACTS;
 export type {
   FigmaWorkspaceDiagnostic,
-  FigmaWorkspaceDiagnosticsOptions,
   FigmaWorkspaceDiagnosticSeverity,
   FigmaWorkspaceFileDiagnostic,
   FigmaWorkspaceSurface,
@@ -221,26 +204,6 @@ const DEFAULT_EVAL_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_worksp
 const DEFAULT_EVAL_TOOL_NAME = requireWrapperUpstreamToolName(DEFAULT_EVAL_CONTRACT);
 const DEFAULT_EVAL_ARGUMENT_NAME = requireWrapperUpstreamProperty(DEFAULT_EVAL_CONTRACT, "code");
 const DEFAULT_EVAL_DESCRIPTION = "Figma Workspace Plugin API execution";
-export const FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES = [
-  "remember",
-  "forget",
-  "resolveId",
-  "node",
-  "select",
-  "cloneNodeTree",
-  "text",
-  "findFreeSlot",
-  "placeNode",
-  "replaceGeneratedFrame",
-  "inspect",
-  "capture",
-  "imageAsset",
-  "checkpoint",
-] as const;
-
-type FigmaWorkspaceEvalCommonHelperName = (typeof FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES)[number];
-type FigmaWorkspaceEvalHelperPath = "$" | `$.${FigmaWorkspaceEvalCommonHelperName}`;
-
 const DEFAULT_HISTORY_LIMIT = 50;
 const DEFAULT_INLINE_RESULT_LIMIT = 4_000;
 const MAX_INLINE_RESULT_LIMIT = 10_000;
@@ -422,11 +385,6 @@ export interface FigmaWorkspacePublicWorkspace {
   };
 }
 
-export interface FigmaWorkspaceHandleChanges {
-  updated: string[];
-  removed: string[];
-}
-
 export interface FigmaWorkspacePublicSession {
   [key: string]: unknown;
   id: string;
@@ -439,7 +397,6 @@ export interface FigmaWorkspacePublicSession {
   surface?: FigmaWorkspaceSurface;
   knownPages: Record<string, string>;
   currentPageId?: string;
-  handles: Record<string, string>;
   lastDiagnostics: FigmaWorkspaceDiagnostic[];
   workspace?: FigmaWorkspacePublicWorkspace;
 }
@@ -450,7 +407,6 @@ export interface FigmaWorkspaceCompactSession {
   fileKey?: string;
   surface?: FigmaWorkspaceSurface;
   sessionDir?: string;
-  handleChanges: FigmaWorkspaceHandleChanges;
 }
 
 export interface FigmaWorkspaceToolResultBase {
@@ -534,7 +490,6 @@ export interface FigmaWorkspaceAssetManifestItem {
   ok: boolean;
   path: string;
   targetNodeId: string;
-  handle?: string;
   name?: string;
   validation?: unknown;
   upstreamError?: FigmaWorkspacePublicUpstreamError;
@@ -561,7 +516,6 @@ export interface FigmaWorkspaceDownloadAssetsTargetResult {
   [key: string]: unknown;
   ok: boolean;
   targetNodeId: string;
-  handle?: string;
   name?: string;
   outputDir: string;
   downloadedFiles: FigmaWorkspaceDownloadedAssetFile[];
@@ -752,7 +706,6 @@ type FigmaWorkspaceMetadataNativeFields = Partial<Record<FigmaWorkspaceMetadataE
 
 const FIGMA_METADATA_ENRICHMENT_BATCH_SIZE = 80;
 const FIGMA_INSPECT_STYLE_BATCH_SIZE = 80;
-const FIGMA_INSPECT_VALIDATE_BATCH_SIZE = 80;
 const FIGMA_ASSET_APPLICATION_BATCH_SIZE = 80;
 const FIGMA_ASSET_VALIDATION_BATCH_SIZE = 80;
 
@@ -896,7 +849,6 @@ export interface FigmaWorkspaceSession {
   surface?: FigmaWorkspaceSurface;
   knownPages: Record<string, string>;
   currentPageId?: string;
-  handles: Record<string, string>;
   lastDiagnostics: FigmaWorkspaceDiagnostic[];
   history: FigmaWorkspaceHistoryEntry[];
   workspace?: FigmaWorkspaceSessionWorkspace;
@@ -954,7 +906,6 @@ interface NormalizedAssetManifest {
 interface NormalizedAssetManifestAsset {
   path: string;
   targetNodeId: string;
-  handle?: string;
   fileKey?: string;
   nodeUrl?: string;
   scaleMode?: string;
@@ -968,7 +919,6 @@ interface NormalizedDownloadAssetsManifest {
 
 interface NormalizedDownloadAssetsTarget {
   targetNodeId: string;
-  handle?: string;
   fileKey?: string;
   name?: string;
   defaultFormat?: "png" | "jpg" | "svg" | "pdf";
@@ -1006,6 +956,9 @@ export function createFigmaWorkspaceSessionStore(options: {
   const sessions = new Map<string, FigmaWorkspaceSession>();
 
   for (const initialSession of options.initialSessions ?? []) {
+    if (Object.prototype.hasOwnProperty.call(initialSession, "handles")) {
+      throw new Error("Legacy Figma Workspace session state contains removed handles. Use a new state file.");
+    }
     const session = cloneSession(initialSession);
     const id = sanitizeSessionId(session.id);
     if (id !== session.id) {
@@ -1027,7 +980,6 @@ export function createFigmaWorkspaceSessionStore(options: {
       createdAt: now,
       updatedAt: now,
       knownPages: {},
-      handles: {},
       lastDiagnostics: [],
       history: [],
     };
@@ -1248,7 +1200,7 @@ function handleSessions(
   }
   return {
     ok: true,
-    session: sessionDetail(session, args.includeHandles === true, args.includeHistory === true),
+    session: sessionDetail(session, args.includeHistory === true),
   };
 }
 
@@ -1315,15 +1267,7 @@ async function handleOpen(
   } else if (derivedSurface) {
     session.surface = derivedSurface;
   }
-  const openDiagnostics = diagnoseFigmaWorkspaceContext({
-    expectedSurface,
-    derivedSurface,
-    fileUrl: session.fileUrl,
-  });
-  session.lastDiagnostics = openDiagnostics;
-  const handleChanges = isStringRecord(args.handles)
-    ? updateSessionHandles(session, args.handles)
-    : emptyHandleChanges();
+  session.lastDiagnostics = [];
   bindOpenWorkspaceIfAvailable(session, args);
   touchSession(session);
 
@@ -1332,7 +1276,7 @@ async function handleOpen(
   }
   const payload = removeUndefined({
     ok: true,
-    session: responseSession(session, handleChanges),
+    session: responseSession(session),
     diagnostics: diagnosticsForResponse(session.lastDiagnostics),
   }) as Record<string, unknown>;
   return makeJsonToolResult(payload);
@@ -1350,73 +1294,51 @@ async function handleEval(
     throw new Error('Tool argument "code" is required and must be a string.');
   }
   const session = runtime.sessions.getOrCreate(args.sessionId);
-  let handleChanges = isStringRecord(args.handleUpdates)
-    ? updateSessionHandles(session, args.handleUpdates)
-    : emptyHandleChanges();
-  const mode = args.mode ?? "write";
   const expectedSurface = normalizeSurface(args.surface) ?? session.surface;
   if (expectedSurface) {
     session.surface = expectedSurface;
   }
-  const diagnosticOptions: FigmaWorkspaceDiagnosticsOptions = {
-    allowDangerousOperations: Boolean(args.allowDangerousOperations),
-    mode,
-    expectedSurface,
-  };
   const preparedCode = args.typescript === true
     ? compileFigmaWorkspaceEvalCode({ code: args.code })
     : { code: args.code, diagnostics: [] };
-  const hasParseError = preparedCode.diagnostics.some((diagnostic) => diagnostic.code === "FIGMA_WORKSPACE_PARSE_ERROR");
-  const runtimeDiagnostics = hasParseError
-    ? []
-    : toFigmaWorkspaceFileDiagnostics(
-      "<inline eval>",
-      preparedCode.code,
-      diagnoseFigmaWorkspaceCode(preparedCode.code, diagnosticOptions),
-      diagnosticOptions,
-    );
-  const diagnostics = [...preparedCode.diagnostics, ...runtimeDiagnostics];
+  const diagnostics = preparedCode.diagnostics;
   session.lastDiagnostics = diagnostics;
   const fatalDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity === "fatal");
   if (fatalDiagnostics.length > 0) {
     touchSession(session);
     return makeJsonToolResult({
       ok: false,
-      session: responseSession(session, handleChanges),
+      session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
     });
   }
 
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
-  const captureRequestsAllowed = resolveFigmaWorkspaceScriptHelperSelection(preparedCode.code).helperNames.has("capture");
   const script = buildFigmaEvalScript({
     session,
     code: preparedCode.code,
-    mode,
   });
   const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
   const parsed = parseUpstreamToolResult(upstream);
-  handleChanges = mergeHandleChanges(handleChanges, updateSessionFromParsedResult(session, parsed.json));
+  updateSessionFromParsedResult(session, parsed.json);
   const captureBatch = parsed.upstreamError
     ? { ok: true, requested: false } satisfies FigmaWorkspaceQueuedCaptureBatchResult
     : await executeQueuedCaptureRequests({
       parsedJson: parsed.json,
       session,
       runtime,
-      captureRequestsAllowed,
     });
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
     tool: "figma_workspace_eval",
-    mode,
     summary: summarizeParsedResult(parsed),
     nodeIds: collectNodeIds(parsed.json),
   });
   const resultPayload = removeUndefined({
     ok: !parsed.upstreamError && captureBatch.ok,
-    session: responseSession(session, handleChanges),
+    session: responseSession(session),
     scriptExecutionSucceeded: !parsed.upstreamError,
     captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : undefined,
     retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : undefined,
@@ -1724,19 +1646,15 @@ async function executeRunScriptFile(
     source,
     targetPageId: args.targetPageId,
     expectedSurface,
-    allowDangerousOperations: Boolean(args.allowDangerousOperations),
     strict: Boolean(args.strict),
   });
   const wrappedScript = buildFigmaEvalScript({
     session,
     code: compiled.code,
-    mode: "write",
-    includeEvalHelpers: false,
-    scriptInjectedHelpers: compiled.metadata.injectedHelpers,
   });
   const diagnostics = [
     ...compiled.diagnostics,
-    ...diagnoseWrappedScriptSize(scriptPath, wrappedScript, Boolean(args.strict)),
+    ...diagnoseWrappedScriptSize(scriptPath, wrappedScript),
   ];
   session.lastDiagnostics = diagnostics;
   const scriptMetadata = {
@@ -1855,12 +1773,11 @@ async function executeRunScriptFile(
     };
     return payload;
   }
-  const handleChanges = updateSessionFromParsedResult(session, parsed.json);
+  updateSessionFromParsedResult(session, parsed.json);
   const captureBatch = await executeQueuedCaptureRequests({
     parsedJson: parsed.json,
     session,
     runtime,
-    captureRequestsAllowed: compiled.metadata.injectedHelpers.includes("$.capture"),
   });
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
@@ -1875,7 +1792,7 @@ async function executeRunScriptFile(
     ok: captureBatch.ok,
     phase: "execute",
     executed: true,
-    session: responseSession(session, handleChanges),
+    session: responseSession(session),
     scriptExecutionSucceeded: true,
     captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : undefined,
     retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : undefined,
@@ -1981,7 +1898,6 @@ async function executeApplyAssetManifest(
         ok,
         path: asset.path,
         targetNodeId: asset.targetNodeId,
-        handle: asset.handle,
         name: asset.name,
         upload: uploadSummary,
         upstreamError,
@@ -2004,7 +1920,6 @@ async function executeApplyAssetManifest(
         failures.push({
           path: asset.path,
           targetNodeId: asset.targetNodeId,
-          handle: asset.handle,
           upstreamError,
         });
       }
@@ -2015,7 +1930,6 @@ async function executeApplyAssetManifest(
         ok: false,
         path: asset.path,
         targetNodeId: asset.targetNodeId,
-        handle: asset.handle,
         name: asset.name,
         upstreamError: responseError,
       };
@@ -2034,7 +1948,6 @@ async function executeApplyAssetManifest(
       failures.push({
         path: asset.path,
         targetNodeId: asset.targetNodeId,
-        handle: asset.handle,
         upstreamError: responseError,
       });
     }
@@ -2221,7 +2134,6 @@ async function executeDownloadAssets(
       const entry = removeUndefined({
         ok,
         targetNodeId: target.targetNodeId,
-        handle: target.handle,
         name: target.name,
         outputDir: targetOutputDir,
         downloadedFiles: compactDownloadedFiles(downloadedFiles),
@@ -2245,7 +2157,6 @@ async function executeDownloadAssets(
       if (!ok) {
         failures.push(removeUndefined({
           targetNodeId: target.targetNodeId,
-          handle: target.handle,
           name: target.name,
           outputDir: targetOutputDir,
           upstreamError,
@@ -2260,7 +2171,6 @@ async function executeDownloadAssets(
       const entry = removeUndefined({
         ok: false,
         targetNodeId: target.targetNodeId,
-        handle: target.handle,
         name: target.name,
         outputDir: targetOutputDir,
         downloadedFiles: [],
@@ -2279,7 +2189,6 @@ async function executeDownloadAssets(
       targetDetails.push(detail);
       failures.push(removeUndefined({
         targetNodeId: target.targetNodeId,
-        handle: target.handle,
         name: target.name,
         outputDir: targetOutputDir,
         upstreamError: responseError,
@@ -2372,7 +2281,6 @@ function normalizeDownloadAssetTarget(
     : undefined;
   return {
     targetNodeId,
-    handle: targetResolution.handle,
     fileKey,
     name: asOptionalString(record.name),
     defaultFormat,
@@ -2438,7 +2346,7 @@ function uniqueDownloadTargetSlug(
   index: number,
   used: Set<string>,
 ): string {
-  const base = slugifyTaskName(target.name || target.handle || target.targetNodeId || `target-${index + 1}`);
+  const base = slugifyTaskName(target.name || target.targetNodeId || `target-${index + 1}`);
   let candidate = base || `target-${index + 1}`;
   let suffix = 2;
   while (used.has(candidate)) {
@@ -2774,15 +2682,10 @@ async function executeQueuedCaptureRequests(options: {
   parsedJson: unknown;
   session: FigmaWorkspaceSession;
   runtime: FigmaWorkspaceRuntime;
-  captureRequestsAllowed: boolean;
 }): Promise<FigmaWorkspaceQueuedCaptureBatchResult> {
   let requests: FigmaWorkspaceQueuedCaptureRequest[];
   try {
-    requests = extractQueuedCaptureRequests(
-      options.parsedJson,
-      options.session,
-      options.captureRequestsAllowed,
-    );
+    requests = extractQueuedCaptureRequests(options.parsedJson, options.session);
   } catch (error) {
     return {
       ok: false,
@@ -2837,12 +2740,11 @@ async function executeQueuedCaptureRequests(options: {
 function extractQueuedCaptureRequests(
   value: unknown,
   session: Pick<FigmaWorkspaceSession, "id">,
-  captureRequestsAllowed: boolean,
 ): FigmaWorkspaceQueuedCaptureRequest[] {
-  if (!isRecord(value) || value.ok !== true || !Object.prototype.hasOwnProperty.call(value, "__figmaRepl")) {
+  if (!isRecord(value) || value.ok !== true || !Object.prototype.hasOwnProperty.call(value, "__figmaWorkspace")) {
     return [];
   }
-  const repl = value.__figmaRepl;
+  const repl = value.__figmaWorkspace;
   if (!isRecord(repl) || repl.sessionId !== session.id) {
     throw new Error("Queued capture envelope did not match the active Figma Workspace session.");
   }
@@ -2851,9 +2753,6 @@ function extractQueuedCaptureRequests(
   }
   if (!Array.isArray(repl.captureRequests)) {
     throw new Error("Queued capture envelope captureRequests must be an array.");
-  }
-  if (!captureRequestsAllowed && repl.captureRequests.length > 0) {
-    throw new Error("Queued capture envelope was not authorized by a statically selected $.capture helper.");
   }
   if (repl.captureRequests.length > MAX_QUEUED_CAPTURE_REQUESTS) {
     throw new Error(`Queued capture envelope exceeds the ${MAX_QUEUED_CAPTURE_REQUESTS}-request host limit.`);
@@ -2873,7 +2772,7 @@ function extractQueuedCaptureRequests(
       throw new Error(`Queued capture request ${index + 1} has an invalid requestId.`);
     }
     const nodeId = asOptionalString(value.nodeId);
-    if (!nodeId || nodeId.length > 512 || /[\u0000-\u001f\u007f]/u.test(nodeId)) {
+    if (!nodeId || nodeId.startsWith("$") || nodeId.length > 512 || /[\u0000-\u001f\u007f]/u.test(nodeId)) {
       throw new Error(`Queued capture request ${requestId} has an invalid nodeId.`);
     }
     const imageFile = value.imageFile;
@@ -3410,6 +3309,15 @@ function guidanceQuerySource(
   return undefined;
 }
 
+function assertInspectFileContext(session: FigmaWorkspaceSession): void {
+  if (session.fileKey || extractFigmaFileKey(session.fileUrl)) {
+    return;
+  }
+  throw new Error(
+    'inspect requires file context. Call open or prepare-task first. target must be "$selection", "$currentPage", a raw node id, or node URL.',
+  );
+}
+
 async function handleInspect(
   args: FigmaWorkspaceInspectArguments,
   runtime: {
@@ -3418,9 +3326,6 @@ async function handleInspect(
     upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
   },
 ): Promise<Record<string, unknown>> {
-  if (args.mode === "validate") {
-    return makeJsonToolResult(await executeValidateHandles(args, runtime));
-  }
   if (args.mode === "style") {
     return makeJsonToolResult(await executeInspectStyle(args, runtime));
   }
@@ -3437,19 +3342,19 @@ async function handleInspect(
     "} else if (__target === '$currentPage') {",
     "  __value = figma.currentPage;",
     "} else {",
-    "  __value = await $(__target);",
+    "  __value = await __figmaWorkspaceResolveNode(__target, 'figma:inspect target');",
     "}",
     "return {",
     "  target: __target,",
     "  mode: 'inspect',",
-    "  summary: Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth),",
+    "  summary: Array.isArray(__value) ? __value.map((node) => __figmaWorkspaceSummarizeNode(node, __depth)) : __figmaWorkspaceSummarizeNode(__value, __depth),",
     "};",
   ].join("\n");
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
   const upstream = await callUpstreamEval(
     runtime.client,
     evalSettings,
-    buildFigmaEvalScript({ session, code, mode: "read" }),
+    buildFigmaEvalScript({ session, code }),
   );
   const parsed = parseUpstreamToolResult(upstream);
   updateSessionFromParsedResult(session, parsed.json);
@@ -3486,15 +3391,9 @@ async function executeInspectStyle(
     target,
     depth,
     includeSummary: true,
-    includeHandles: false,
   });
-  const diagnostics = diagnoseFigmaWorkspaceCode(code, {
-    mode: "read",
-    generatedCode: true,
-    expectedSurface: session.surface,
-  });
+  const diagnostics: FigmaWorkspaceDiagnostic[] = [];
   session.lastDiagnostics = diagnostics;
-  throwIfFatalDiagnostics(diagnostics);
   const evalSettings = await resolveEvalSettings(session, args, runtime);
   const parsed = await readInspectStyleWithAdaptiveBatches({
     target,
@@ -3527,7 +3426,6 @@ function buildInspectStyleCode(options: {
   offset?: number;
   limit?: number;
   includeSummary: boolean;
-  includeHandles: boolean;
 }): string {
   const limitLiteral = options.limit === undefined ? "undefined" : literal(options.limit);
   return [
@@ -3536,14 +3434,13 @@ function buildInspectStyleCode(options: {
     `const __offset = ${literal(options.offset ?? 0)};`,
     `const __limit = ${limitLiteral};`,
     `const __includeSummary = ${literal(options.includeSummary)};`,
-    `const __includeHandles = ${literal(options.includeHandles)};`,
     "let __value;",
     "if (__target === '$selection') {",
     "  __value = figma.currentPage.selection;",
     "} else if (__target === '$currentPage') {",
     "  __value = figma.currentPage;",
     "} else {",
-    "  __value = await $(__target);",
+    "  __value = await __figmaWorkspaceResolveNode(__target, 'figma:inspect target');",
     "}",
     "function __hex(__color) {",
     "  const __r = Math.max(0, Math.min(255, Math.round((__color.r || 0) * 255)));",
@@ -3636,8 +3533,7 @@ function buildInspectStyleCode(options: {
     "  styleCounts: { topColors: Object.keys(__colorCounts).length, textStyles: __textStyleCount, imageNodes: __imageNodeCount, strokes: __strokeCount, effects: __effectCount },",
     "  style: { topColors: __topColors, textStyles: __textStyles, imageNodes: __imageNodes, strokes: __strokes, effects: __effects },",
     "};",
-    "if (__includeSummary) __result.summary = Array.isArray(__value) ? __value.map((node) => summarizeNode(node, __depth)) : summarizeNode(__value, __depth);",
-    "if (__includeHandles) __result.handles = __figmaRepl.handles;",
+    "if (__includeSummary) __result.summary = Array.isArray(__value) ? __value.map((node) => __figmaWorkspaceSummarizeNode(node, __depth)) : __figmaWorkspaceSummarizeNode(__value, __depth);",
     "return __result;",
   ].join("\n");
 }
@@ -3658,9 +3554,7 @@ async function readInspectStyleWithAdaptiveBatches(options: {
         target: options.target,
         depth: options.depth,
         includeSummary: true,
-        includeHandles: true,
       }),
-      mode: "read",
     }),
   );
   const parsed = parseUpstreamToolResult(upstream);
@@ -3735,9 +3629,7 @@ async function readInspectStyleChunk(options: {
         offset: options.offset,
         limit: options.limit,
         includeSummary: options.includeSummary,
-        includeHandles: false,
       }),
-      mode: "read",
     }),
   );
   const parsed = parseUpstreamToolResult(upstream);
@@ -3871,172 +3763,6 @@ function appendCappedRecords(target: Record<string, unknown>[], value: unknown, 
   }
 }
 
-async function executeValidateHandles(
-  args: FigmaWorkspaceInspectArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  const session = runtime.sessions.getOrCreate(asOptionalString(args.sessionId));
-  assertInspectFileContext(session);
-  const requested = Array.isArray(args.handles)
-    ? args.handles.filter((item): item is string => typeof item === "string" && item.length > 0)
-    : Object.keys(session.handles);
-  const diagnostics = diagnoseFigmaWorkspaceCode(buildInspectValidateHandlesCode(requested, session.handles), {
-    mode: "read",
-    generatedCode: true,
-    expectedSurface: session.surface,
-  });
-  session.lastDiagnostics = diagnostics;
-  throwIfFatalDiagnostics(diagnostics);
-  const evalSettings = await resolveEvalSettings(session, args, runtime);
-  const validationResult = await readInspectHandleValidationsInBatches({
-    requested,
-    knownHandles: session.handles,
-    session,
-    client: runtime.client,
-    evalSettings,
-  });
-  updateSessionFromParsedResult(session, validationResult.parsedJson);
-  runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
-    at: new Date().toISOString(),
-    tool: "figma_workspace_inspect",
-    mode: "validate",
-    summary: `Validated ${requested.length} Figma Workspace handle(s).`,
-    nodeIds: collectNodeIds(validationResult.parsedJson),
-  });
-  const payload = validationResult.upstreamError
-    ? {
-        ok: false,
-        session: responseReadOnlySession(session),
-        mode: "validate",
-        diagnostics: optionalDiagnosticsForResponse(diagnostics),
-        upstreamError: responseUpstreamError(validationResult.upstreamError),
-      }
-    : {
-        ok: true,
-        session: responseReadOnlySession(session),
-        mode: "validate",
-        diagnostics: optionalDiagnosticsForResponse(diagnostics),
-        validations: validationResult.validations,
-      };
-  return payload;
-}
-
-interface InspectHandleValidationBatchResult {
-  parsedJson: unknown;
-  validations: Record<string, unknown>[];
-  validatedNodeIds: string[];
-  upstreamError?: FigmaWorkspaceUpstreamError;
-}
-
-async function readInspectHandleValidationsInBatches(options: {
-  requested: string[];
-  knownHandles: Record<string, string>;
-  session: FigmaWorkspaceSession;
-  client: FigmaUpstreamMcpProxyClient;
-  evalSettings: EvalSettings;
-}): Promise<InspectHandleValidationBatchResult> {
-  const validations: Record<string, unknown>[] = [];
-  const validatedNodeIds: string[] = [];
-  for (const chunk of chunkArray(options.requested, FIGMA_INSPECT_VALIDATE_BATCH_SIZE)) {
-    const chunkResult = await readInspectHandleValidationChunk({
-      ...options,
-      requested: chunk,
-    });
-    if (chunkResult.upstreamError) {
-      return chunkResult;
-    }
-    validations.push(...chunkResult.validations);
-    validatedNodeIds.push(...chunkResult.validatedNodeIds);
-  }
-  const parsedJson = { result: { validations, validatedNodeIds } };
-  return { parsedJson, validations, validatedNodeIds };
-}
-
-async function readInspectHandleValidationChunk(options: {
-  requested: string[];
-  knownHandles: Record<string, string>;
-  session: FigmaWorkspaceSession;
-  client: FigmaUpstreamMcpProxyClient;
-  evalSettings: EvalSettings;
-}): Promise<InspectHandleValidationBatchResult> {
-  const upstream = await callUpstreamEval(
-    options.client,
-    options.evalSettings,
-    buildFigmaEvalScript({
-      session: options.session,
-      code: buildInspectValidateHandlesCode(options.requested, options.knownHandles),
-      mode: "read",
-    }),
-  );
-  const parsed = parseUpstreamToolResult(upstream);
-  if (parsed.upstreamError) {
-    if (parsed.upstreamError.code === "FIGMA_UPSTREAM_TRUNCATED" && options.requested.length > 1) {
-      const midpoint = Math.ceil(options.requested.length / 2);
-      const left = await readInspectHandleValidationChunk({ ...options, requested: options.requested.slice(0, midpoint) });
-      if (left.upstreamError) return left;
-      const right = await readInspectHandleValidationChunk({ ...options, requested: options.requested.slice(midpoint) });
-      if (right.upstreamError) return right;
-      const validations = [...left.validations, ...right.validations];
-      const validatedNodeIds = [...left.validatedNodeIds, ...right.validatedNodeIds];
-      return { parsedJson: { result: { validations, validatedNodeIds } }, validations, validatedNodeIds };
-    }
-    return { parsedJson: parsed.json, validations: [], validatedNodeIds: [], upstreamError: parsed.upstreamError };
-  }
-  const result = asRecord(asRecord(parsed.json).result);
-  const validations = Array.isArray(result.validations) ? result.validations.filter(isRecord) : [];
-  const validatedNodeIds = Array.isArray(result.validatedNodeIds)
-    ? result.validatedNodeIds.filter((item): item is string => typeof item === "string")
-    : validations.map((item) => asOptionalString(item.id)).filter((item): item is string => item !== undefined);
-  return { parsedJson: parsed.json, validations, validatedNodeIds };
-}
-
-function buildInspectValidateHandlesCode(requested: string[], knownHandles: Record<string, string>): string {
-  return [
-    `const __requestedHandles = ${literal(requested)};`,
-    `const __knownHandles = ${literal(knownHandles)};`,
-    "const __validations = [];",
-    "for (const __name of __requestedHandles) {",
-    "  const __isHandle = typeof __name === 'string' && __name.startsWith('$');",
-    "  if (__isHandle && !__knownHandles[__name]) {",
-    "    __validations.push({ handle: __name, status: 'missing' });",
-    "    continue;",
-    "  }",
-    "  try {",
-    "    const __node = await $(__name);",
-    "    __validations.push({ handle: __name, status: 'valid', id: __node.id, type: __node.type, name: __node.name, locked: 'locked' in __node ? __node.locked : undefined, layoutMode: 'layoutMode' in __node ? __node.layoutMode : undefined, layoutPositioning: 'layoutPositioning' in __node ? __node.layoutPositioning : undefined });",
-    "  } catch (__error) {",
-    "    __validations.push({ handle: __name, status: 'stale', error: String(__error && __error.message ? __error.message : __error) });",
-    "  }",
-    "}",
-    "return { validations: __validations, validatedNodeIds: __validations.filter((item) => item.status === 'valid').map((item) => item.id) };",
-  ].join("\n");
-}
-
-function assertInspectFileContext(session: FigmaWorkspaceSession): void {
-  if (session.fileKey || extractFigmaFileKey(session.fileUrl)) {
-    return;
-  }
-  throw new Error(
-    'inspect requires file context. Call open or prepare-task first. target must be a string such as "$selection", "$currentPage", a stored handle, raw node id, or node URL; do not pass { fileKey, nodeId }.',
-  );
-}
-
-async function handleCallUpstreamTool(
-  args: FigmaWorkspaceCallUpstreamToolArguments,
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    sessions: FigmaWorkspaceSessionStore;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  },
-): Promise<Record<string, unknown>> {
-  return makeJsonToolResult(await executeCallUpstreamTool(args, runtime));
-}
-
 async function handleGetMetadata(
   args: FigmaWorkspaceGetMetadataArguments,
   runtime: {
@@ -4144,7 +3870,7 @@ async function executeGetMetadata(
 async function resolveGetMetadataRequest(
   args: FigmaWorkspaceGetMetadataArguments,
   session: FigmaWorkspaceSession,
-  runtime: {
+  _runtime: {
     client: FigmaUpstreamMcpProxyClient;
     upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
   },
@@ -4155,66 +3881,8 @@ async function resolveGetMetadataRequest(
     toolName: "figma_workspace_get_metadata",
     targetFallback: args.nodeId ?? extractFigmaNodeId(args.file),
     fileKeyError: 'get-metadata requires a Figma file key. Pass "file" or open a session with file context first.',
-    allowDynamicSelectors: ["$currentPage", "$selection"],
   });
-  const { fileKey, nodeId } = requested;
-  if (nodeId?.startsWith("$")) {
-    return resolveGetMetadataDynamicSelector({ fileKey, selector: nodeId, session, runtime });
-  }
-  return { fileKey, nodeId };
-}
-
-async function resolveGetMetadataDynamicSelector(options: {
-  fileKey: string;
-  selector: string;
-  session: FigmaWorkspaceSession;
-  runtime: {
-    client: FigmaUpstreamMcpProxyClient;
-    upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
-  };
-}): Promise<{ fileKey: string; nodeId: string }> {
-  const { fileKey, selector, session, runtime } = options;
-  if (selector !== "$currentPage" && selector !== "$selection") {
-    throw new Error(`get-metadata cannot resolve target "${selector}" as a cached handle or supported dynamic selector. Pass a raw node id, node URL, cached handle, $currentPage, or a single-node $selection.`);
-  }
-  const code = [
-    `const __selector = ${literal(selector)};`,
-    "let __node;",
-    "if (__selector === '$currentPage') {",
-    "  __node = figma.currentPage;",
-    "} else {",
-    "  const __selection = figma.currentPage.selection;",
-    "  if (__selection.length !== 1) {",
-    "    throw new Error(`$selection must contain exactly one node for get-metadata; found ${__selection.length}.`);",
-    "  }",
-    "  __node = __selection[0];",
-    "}",
-    "return {",
-    "  target: __selector,",
-    "  nodeId: __node.id,",
-    "  nodeType: __node.type,",
-    "  name: __node.name,",
-    "  handles: __figmaRepl.handles,",
-    "};",
-  ].join("\n");
-  const evalSettings = await resolveEvalSettings(session, {}, runtime);
-  const upstream = await callUpstreamEval(
-    runtime.client,
-    evalSettings,
-    buildFigmaEvalScript({ session, code, mode: "read" }),
-  );
-  const parsed = parseUpstreamToolResult(upstream);
-  updateSessionFromParsedResult(session, parsed.json);
-  if (parsed.upstreamError) {
-    throw new Error(`get-metadata failed to resolve dynamic selector "${selector}": ${parsed.upstreamError.message}`);
-  }
-  const parsedRecord = asRecord(parsed.json);
-  const resultRecord = asRecord(parsedRecord.result);
-  const resolvedNodeId = asOptionalString(resultRecord.nodeId);
-  if (!resolvedNodeId) {
-    throw new Error(`get-metadata failed to resolve dynamic selector "${selector}" to a node id.`);
-  }
-  return { fileKey, nodeId: resolvedNodeId };
+  return { fileKey: requested.fileKey, nodeId: requested.nodeId };
 }
 
 async function handleGetDesignContext(
@@ -4448,7 +4116,7 @@ function resolveRequiredNodeScopedRequest(
   });
   const nodeId = requested.nodeId;
   if (!nodeId) {
-    throw new Error(`${toolName} requires "target". Pass a raw node id, node URL, or cached handle.`);
+    throw new Error(`${toolName} requires "target". Pass a raw node id, node URL, or { fileKey, nodeId } target.`);
   }
   return { fileKey: requested.fileKey, nodeId };
 }
@@ -4588,11 +4256,9 @@ async function selectNodeForSelectionDependentWrapper(options: {
   const evalSettings = await resolveEvalSettings(options.session, {}, options.runtime);
   const script = buildFigmaEvalScript({
     session: options.session,
-    mode: "write",
-    includeEvalHelpers: false,
     code: [
       `const __nodeId = ${literal(options.nodeId)};`,
-      "const __node = await getNodeById(__nodeId);",
+      "const __node = await __figmaWorkspaceGetNodeById(__nodeId);",
       "const __nodeType = __node && __node.type;",
       "if (__nodeType === 'PAGE' || __nodeType === 'DOCUMENT') {",
       "  return { selected: false, reason: 'unsupported-container-target', nodeId: __nodeId, nodeType: __nodeType, name: __node.name, childCount: Array.isArray(__node.children) ? __node.children.length : undefined };",
@@ -4942,7 +4608,6 @@ function sessionDirectoryEntry(session: FigmaWorkspaceSession): Record<string, u
     fileKey: session.fileKey,
     surface: session.surface,
     sessionDir: session.workspace?.sessionDir,
-    handleCount: Object.keys(session.handles).length,
     historyCount: session.history.length,
     updatedAt: session.updatedAt,
   }) as Record<string, unknown>;
@@ -4950,7 +4615,6 @@ function sessionDirectoryEntry(session: FigmaWorkspaceSession): Record<string, u
 
 function sessionDetail(
   session: FigmaWorkspaceSession,
-  includeHandles: boolean,
   includeHistory: boolean,
 ): Record<string, unknown> {
   return removeUndefined({
@@ -4962,7 +4626,6 @@ function sessionDetail(
     knownPages: session.knownPages,
     lastDiagnostics: session.lastDiagnostics,
     workspace: session.workspace,
-    handles: includeHandles ? session.handles : undefined,
     history: includeHistory ? session.history : undefined,
   }) as Record<string, unknown>;
 }
@@ -5020,71 +4683,41 @@ function upstreamToolRequiredProperties(tool: UpstreamToolInfo): Set<string> {
  * This is not a stable CLI input contract; callers should use eval or run-script-file.
  */
 export function buildFigmaEvalScript(options: {
-  session: Pick<FigmaWorkspaceSession, "id" | "handles" | "currentPageId" | "fileUrl" | "fileKey" | "surface" | "knownPages">;
+  session: Pick<FigmaWorkspaceSession, "id" | "currentPageId" | "knownPages">;
   code: string;
-  mode?: "read" | "write";
-  includeEvalHelpers?: boolean;
-  scriptInjectedHelpers?: readonly string[];
 }): string {
-  const includeEvalHelpers = options.includeEvalHelpers !== false;
-  const evalInjectedHelpers = includeEvalHelpers
-    ? resolveFigmaWorkspaceScriptHelperSelection(options.code).injectedHelpers
-    : undefined;
-  return `${createFigmaWorkspacePrelude(
-    options.session,
-    options.mode ?? "write",
-    includeEvalHelpers,
-    options.scriptInjectedHelpers,
-    evalInjectedHelpers,
-  )}
-async function __figmaReplUserMain() {
+  return `${createFigmaWorkspacePrelude(options.session)}
+async function __figmaWorkspaceUserMain() {
 ${options.code}
 }
 
-const __figmaReplResult = await __figmaReplUserMain();
+const __figmaWorkspaceResult = await __figmaWorkspaceUserMain();
 return {
   ok: true,
-  __figmaRepl: {
-    sessionId: __figmaRepl.sessionId,
-    handles: __figmaRepl.handles,
-    fileKey: __figmaRepl.fileKey,
-    surface: __figmaRepl.surface,
+  __figmaWorkspace: {
+    sessionId: __figmaWorkspace.sessionId,
     currentPageId: figma.currentPage && figma.currentPage.id,
     knownPages: Object.fromEntries(figma.root.children.map((page) => [page.id, page.name])),
-    mode: __figmaRepl.mode,
-    captureRequests: __figmaRepl.captureRequests
+    captureRequests: __figmaWorkspace.captureRequests
   },
-  result: __figmaReplResult
+  result: __figmaWorkspaceResult
 };`;
 }
 
 function createFigmaWorkspacePrelude(
-  session: Pick<FigmaWorkspaceSession, "id" | "handles" | "currentPageId" | "fileUrl" | "fileKey" | "surface" | "knownPages">,
-  mode: "read" | "write",
-  includeEvalHelpers: boolean,
-  scriptInjectedHelpers?: readonly string[],
-  evalInjectedHelpers?: readonly string[],
+  session: Pick<FigmaWorkspaceSession, "id" | "currentPageId" | "knownPages">,
 ): string {
-  let prelude = `const __figmaRepl = {
+  return `const __figmaWorkspace = {
   sessionId: ${literal(session.id)},
-  mode: ${literal(mode)},
-  fileUrl: ${literal(session.fileUrl)},
-  fileKey: ${literal(session.fileKey)},
-  surface: ${literal(session.surface)},
   currentPageId: ${literal(session.currentPageId)},
   knownPages: ${literal(session.knownPages ?? {})},
-  handles: ${literal(session.handles ?? {})},
   captureRequests: []
 };
 
-function normalizeHandleName(name) {
-  if (typeof name !== "string" || !name) {
-    throw new Error("A non-empty handle name or Figma node id is required.");
+async function __figmaWorkspaceGetNodeById(id) {
+  if (typeof id !== "string" || !id || id.startsWith("$")) {
+    throw new Error("Expected a raw Figma node id.");
   }
-  return name.startsWith("$") ? name : "$" + name;
-}
-
-async function getNodeById(id) {
   const node = typeof figma.getNodeByIdAsync === "function"
     ? await figma.getNodeByIdAsync(id)
     : figma.getNodeById(id);
@@ -5094,571 +4727,22 @@ async function getNodeById(id) {
   return node;
 }
 
-async function $(nameOrId) {
-  if (nameOrId === "$currentPage") return figma.currentPage;
-  if (nameOrId === "$selection") return figma.currentPage.selection;
-  if (nameOrId && typeof nameOrId === "object" && "type" in nameOrId && "id" in nameOrId) {
-    return nameOrId;
-  }
-  const key = typeof nameOrId === "string" && nameOrId.startsWith("$")
-    ? nameOrId
-    : undefined;
-  const id = key && __figmaRepl.handles[key] ? __figmaRepl.handles[key] : nameOrId;
-  if (typeof id !== "string") {
-    throw new Error("Expected a handle or Figma node id string.");
-  }
-  return getNodeById(id);
-}
-
-function remember(name, nodeOrId) {
-  const key = normalizeHandleName(name);
-  const id = typeof nodeOrId === "string" ? nodeOrId : nodeOrId && nodeOrId.id;
-  if (typeof id !== "string") {
-    throw new Error("remember(name, nodeOrId) requires a node or node id.");
-  }
-  __figmaRepl.handles[key] = id;
-  return id;
-}
-
-function forget(name) {
-  const key = normalizeHandleName(name);
-  delete __figmaRepl.handles[key];
-}
-
-function pageForNode(node) {
-  let current = node;
-  while (current && current.type !== "PAGE" && current.parent) {
-    current = current.parent;
-  }
-  return current && current.type === "PAGE" ? current : null;
-}
-
-async function selectNodesForRepl(targets = "$selection", options = {}) {
-  const input = Array.isArray(targets) ? targets : [targets];
-  const nodes = [];
-  for (const target of input) {
-    const resolved = target && typeof target === "object" && "type" in target ? target : await $(target);
-    const list = Array.isArray(resolved) ? resolved : [resolved];
-    for (const node of list) {
-      if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
-        throw new Error("$.select targets must resolve to selectable scene nodes.");
-      }
-      nodes.push(node);
+async function __figmaWorkspaceResolveNode(value, label) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (typeof value.id !== "string" || !value.id || typeof value.type !== "string") {
+      throw new Error(label + " must be a real Figma node or raw node id.");
     }
+    return __figmaWorkspaceGetNodeById(value.id);
   }
-  if (nodes.length === 0 && options.allowEmpty !== true) {
-    throw new Error("$.select resolved no nodes; pass { allowEmpty: true } to intentionally clear selection.");
+  if (typeof value !== "string" || !value || value.startsWith("$")) {
+    throw new Error(label + " must be a real Figma node or raw node id.");
   }
-  if (nodes.length === 0) {
-    figma.currentPage.selection = [];
-    return { selectedNodeIds: [], summaries: [] };
-  }
-  const targetPage = pageForNode(nodes[0]);
-  if (!targetPage) {
-    throw new Error("$.select target is not attached to a page.");
-  }
-  for (const node of nodes) {
-    const page = pageForNode(node);
-    if (!page || page.id !== targetPage.id) {
-      throw new Error("$.select cannot select nodes from multiple pages at once.");
-    }
-  }
-  if (figma.currentPage.id !== targetPage.id) {
-    await figma.setCurrentPageAsync(targetPage);
-  }
-  figma.currentPage.selection = nodes;
-  if (nodes.length > 0 && options.zoom !== false) figma.viewport.scrollAndZoomIntoView(nodes);
-  return {
-    selectedNodeIds: nodes.map((node) => node.id),
-    summaries: nodes.map((node) => summarizeNode(node, options.depth || 0)),
-  };
+  return __figmaWorkspaceGetNodeById(value);
 }
 
-function resolveSceneNodeForPlacement(value, name) {
-  if (!value) throw new Error(name + " is required.");
-  if (typeof value === "object" && "type" in value) return value;
-  return $(value);
-}
-
-function canPositionNode(node) {
-  return node && "x" in node && "y" in node && "width" in node && "height" in node;
-}
-
-function readPlacementSize(input, fallback) {
-  const source = input && typeof input === "object" ? input : {};
-  return {
-    width: readFiniteNumber(source.width ?? fallback.width, "size.width"),
-    height: readFiniteNumber(source.height ?? fallback.height, "size.height"),
-  };
-}
-
-function nodeBounds(node) {
-  return { x: node.x, y: node.y, width: node.width, height: node.height };
-}
-
-function boundsIntersect(a, b) {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
-}
-
-async function resolvePlacementParent(inputParent, node) {
-  if (inputParent) return await resolveSceneNodeForPlacement(inputParent, "placement.parent");
-  return node && node.parent ? node.parent : figma.currentPage;
-}
-
-async function findFreeSlotForRepl(options = {}) {
-  const input = options || {};
-  const preferred = input.preferred || input.position || {};
-  const parent = await resolvePlacementParent(input.parent);
-  const size = readPlacementSize(input.size, { width: 1, height: 1 });
-  const gap = input.gap === undefined ? 40 : readFiniteNumber(input.gap, "gap");
-  const direction = String(input.direction || "down");
-  let x = readFiniteNumber(preferred.x ?? 0, "preferred.x");
-  let y = readFiniteNumber(preferred.y ?? 0, "preferred.y");
-  let shiftedSlots = 0;
-  let collidedNodeIds = [];
-  const children = "children" in parent
-    ? Array.from(parent.children).filter((child) => child.visible !== false && canPositionNode(child) && child !== input.exclude)
-    : [];
-  for (let attempt = 0; attempt < 500; attempt++) {
-    const candidate = { x, y, width: size.width, height: size.height };
-    const collisions = children.filter((child) => boundsIntersect(candidate, nodeBounds(child)));
-    if (collisions.length === 0) {
-      return { x, y, width: size.width, height: size.height, shiftedSlots, collidedNodeIds };
-    }
-    collidedNodeIds = collisions.map((child) => child.id);
-    shiftedSlots += 1;
-    if (direction === "right") x += size.width + gap;
-    else if (direction === "left") x -= size.width + gap;
-    else if (direction === "up") y -= size.height + gap;
-    else y += size.height + gap;
-  }
-  throw new Error("$.findFreeSlot could not find a free slot after 500 attempts.");
-}
-
-async function placeNodeForRepl(target, options = {}) {
-  const node = await resolveSceneNodeForPlacement(target, "$.placeNode target");
-  if (!canPositionNode(node)) {
-    throw new Error("$.placeNode target must resolve to a positionable scene node.");
-  }
-  const input = options || {};
-  const preferred = input.preferred || input.position || { x: node.x, y: node.y };
-  let placement = { x: preferred.x, y: preferred.y, shiftedSlots: 0, collidedNodeIds: [] };
-  if (input.avoidOverlap) {
-    placement = await findFreeSlotForRepl({ ...input, preferred, size: input.size || nodeBounds(node), parent: input.parent, exclude: node });
-  }
-  node.x = readFiniteNumber(placement.x, "placement.x");
-  node.y = readFiniteNumber(placement.y, "placement.y");
-  if (input.as) remember(input.as, node);
-  return placement;
-}
-
-async function replaceGeneratedFrameForRepl(options = {}) {
-  const input = options || {};
-  const name = String(input.name || "");
-  if (!name) throw new Error("$.replaceGeneratedFrame requires an exact name.");
-  const guardPrefixes = input.guardPrefix ? [String(input.guardPrefix)] : ["Variant ", "Codex Generated ", "Generated "];
-  if (!guardPrefixes.some((prefix) => name.startsWith(prefix))) {
-    throw new Error("$.replaceGeneratedFrame name must start with guardPrefix or one of: Variant , Codex Generated , Generated .");
-  }
-  const parent = input.parent
-    ? await resolveSceneNodeForPlacement(input.parent, "$.replaceGeneratedFrame parent")
-    : figma.currentPage;
-  if (!parent || !("appendChild" in parent)) {
-    throw new Error("$.replaceGeneratedFrame requires a writable parent.");
-  }
-  const children = "children" in parent ? Array.from(parent.children) : [];
-  const existingFrames = children.filter((child) => child.type === "FRAME" && child.name === name);
-  const frame = figma.createFrame();
-  frame.name = name;
-  if (input.size !== undefined) setNodeSizeFromInput(frame, input.size);
-  if (input.position !== undefined) setNodePositionFromInput(frame, input.position);
-  const firstExisting = existingFrames[0];
-  const insertIndex = firstExisting ? children.indexOf(firstExisting) : -1;
-  if (firstExisting && input.size === undefined) frame.resize(firstExisting.width, firstExisting.height);
-  if (firstExisting && input.position === undefined) {
-    frame.x = firstExisting.x;
-    frame.y = firstExisting.y;
-  }
-  if (insertIndex >= 0 && "insertChild" in parent) parent.insertChild(insertIndex, frame);
-  else parent.appendChild(frame);
-  for (const existing of existingFrames) existing.remove();
-  if (input.placement && input.placement.avoidOverlap) {
-    await placeNodeForRepl(frame, { ...input.placement, size: nodeBounds(frame), exclude: frame });
-  }
-  if (input.as) remember(input.as, frame);
-  const selection = input.select === false ? undefined : await selectNodesForRepl([frame], { zoom: input.zoom !== false, depth: 0 });
-  return {
-    replaced: existingFrames.map((node) => node.id),
-    frame: summarizeNode(frame, input.depth || 0),
-    selectedNodeIds: selection ? selection.selectedNodeIds : [],
-    handle: input.as,
-  };
-}
-
-async function cloneNodeTreeForRepl(targetOrOptions, maybeOptions = {}) {
-  const looksLikeOptions = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions) && !("type" in targetOrOptions);
-  const input = looksLikeOptions ? targetOrOptions : { source: targetOrOptions, ...maybeOptions };
-  const sourceValue = input.source || input.target;
-  const source = sourceValue && typeof sourceValue === "object" && "type" in sourceValue ? sourceValue : await $(sourceValue);
-  if (!source || source.type === "DOCUMENT" || source.type === "PAGE") {
-    throw new Error("$.cloneNodeTree source must resolve to a scene node.");
-  }
-  const parent = input.parent ? await $(input.parent) : source.parent;
-  if (!parent || !("appendChild" in parent)) {
-    throw new Error("$.cloneNodeTree requires a writable parent.");
-  }
-  const cloneLog = [];
-  const fallbackWholeSubtrees = [];
-  const preserveInstanceSubtrees = input.preserveInstanceSubtrees !== false;
-  function getChildren(node) {
-    return "children" in node ? Array.from(node.children) : [];
-  }
-  function cloneOuterToInner(sourceNode, depth = 0) {
-    const clone = sourceNode.clone();
-    clone.name = sourceNode.name;
-    cloneLog.push({
-      depth,
-      sourceId: sourceNode.id,
-      sourceName: sourceNode.name,
-      sourceType: sourceNode.type,
-      cloneId: clone.id,
-    });
-    if (preserveInstanceSubtrees && sourceNode.type === "INSTANCE") {
-      fallbackWholeSubtrees.push({
-        sourceId: sourceNode.id,
-        sourceName: sourceNode.name,
-        sourceType: sourceNode.type,
-        cloneId: clone.id,
-        reason: "Preserved instance subtree whole; Figma does not allow safe rebuild of internal instance children.",
-      });
-      return clone;
-    }
-    if ("children" in clone) {
-      try {
-        for (const child of Array.from(clone.children)) child.remove();
-      } catch (error) {
-        fallbackWholeSubtrees.push({
-          sourceId: sourceNode.id,
-          sourceName: sourceNode.name,
-          sourceType: sourceNode.type,
-          cloneId: clone.id,
-          reason: error instanceof Error ? error.message : String(error),
-        });
-        return clone;
-      }
-    }
-    if ("appendChild" in clone) {
-      for (const sourceChild of getChildren(sourceNode)) {
-        clone.appendChild(cloneOuterToInner(sourceChild, depth + 1));
-      }
-    }
-    return clone;
-  }
-  const rootClone = cloneOuterToInner(source, 0);
-  parent.appendChild(rootClone);
-  if (input.name !== undefined) rootClone.name = String(input.name);
-  if (input.position !== undefined) {
-    setNodePositionFromInput(rootClone, input.position);
-  } else if (input.offset !== undefined && "x" in rootClone && "y" in rootClone) {
-    rootClone.x = source.x + readFiniteNumber(input.offset.x || 0, "offset.x");
-    rootClone.y = source.y + readFiniteNumber(input.offset.y || 0, "offset.y");
-  } else if (input.placement !== "none" && "x" in rootClone && "y" in rootClone) {
-    const gap = input.gap === undefined ? 80 : readFiniteNumber(input.gap, "gap");
-    const placement = input.placement || "right";
-    if (placement === "left") {
-      rootClone.x = source.x - rootClone.width - gap;
-      rootClone.y = source.y;
-    } else if (placement === "below") {
-      rootClone.x = source.x;
-      rootClone.y = source.y + source.height + gap;
-    } else if (placement === "above") {
-      rootClone.x = source.x;
-      rootClone.y = source.y - rootClone.height - gap;
-    } else {
-      rootClone.x = source.x + source.width + gap;
-      rootClone.y = source.y;
-    }
-  }
-  if (input.as) remember(input.as, rootClone);
-  const selection = input.select === false ? undefined : await selectNodesForRepl([rootClone], { zoom: input.zoom !== false, depth: 0 });
-  return {
-    source: summarizeNode(source, input.depth || 0),
-    clone: summarizeNode(rootClone, input.depth || 0),
-    copiedNodeCount: cloneLog.length,
-    order: cloneLog,
-    fallbackWholeSubtrees,
-    selectedNodeIds: selection ? selection.selectedNodeIds : [],
-    handle: input.as,
-  };
-}
-
-function solidPaint(input, opacity = 1) {
-  const color = normalizeRgb(input);
-  return {
-    type: "SOLID",
-    color,
-    opacity,
-  };
-}
-
-function normalizePaintList(value) {
-  if (Array.isArray(value)) {
-    return value;
-  }
-  return [solidPaint(value)];
-}
-
-function normalizeRgb(input) {
-  if (typeof input === "string") {
-    const hex = input.replace(/^#/, "");
-    if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
-      throw new Error("Expected a #RRGGBB color string.");
-    }
-    return {
-      r: parseInt(hex.slice(0, 2), 16) / 255,
-      g: parseInt(hex.slice(2, 4), 16) / 255,
-      b: parseInt(hex.slice(4, 6), 16) / 255,
-    };
-  }
-  if (input && typeof input === "object") {
-    const scale = Math.max(input.r ?? 0, input.g ?? 0, input.b ?? 0) > 1 ? 255 : 1;
-    return {
-      r: Number(input.r ?? 0) / scale,
-      g: Number(input.g ?? 0) / scale,
-      b: Number(input.b ?? 0) / scale,
-    };
-  }
-  throw new Error("Expected a color string or RGB object.");
-}
-
-function normalizeRgba(input) {
-  const rgb = normalizeRgb(input);
-  const alpha = input && typeof input === "object" && input.a !== undefined
-    ? Number(input.a)
-    : 1;
-  return { ...rgb, a: alpha };
-}
-
-function resolveHandleId(nameOrId) {
-  if (typeof nameOrId === "string" && nameOrId.startsWith("$")) {
-    const id = __figmaRepl.handles[nameOrId];
-    if (typeof id !== "string") {
-      throw new Error("Unknown local handle: " + nameOrId);
-    }
-    return id;
-  }
-  if (typeof nameOrId !== "string" || !nameOrId) {
-    throw new Error("Expected a non-empty handle or id string.");
-  }
-  return nameOrId;
-}
-
-function readFiniteNumber(value, name) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) {
-    throw new Error(name + " must be a finite number.");
-  }
-  return number;
-}
-
-function setNodeSizeFromInput(node, size) {
-  const input = size && typeof size === "object" ? size : {};
-  setNodeSize(node, readFiniteNumber(input.width, "size.width"), readFiniteNumber(input.height, "size.height"));
-}
-
-function setNodePositionFromInput(node, position) {
-  const input = position && typeof position === "object" ? position : {};
-  if (input.x !== undefined) node.x = readFiniteNumber(input.x, "position.x");
-  if (input.y !== undefined) node.y = readFiniteNumber(input.y, "position.y");
-}
-
-function applyAppearance(node, appearance) {
-  if (!appearance || typeof appearance !== "object") return;
-  if (appearance.fills !== undefined) node.fills = normalizePaintList(appearance.fills);
-  if (appearance.fill !== undefined) node.fills = normalizePaintList(appearance.fill);
-  if (appearance.color !== undefined) node.fills = normalizePaintList(appearance.color);
-  if (appearance.strokes !== undefined) node.strokes = normalizePaintList(appearance.strokes);
-  if (appearance.stroke !== undefined) node.strokes = normalizePaintList(appearance.stroke);
-  if (appearance.opacity !== undefined) node.opacity = readFiniteNumber(appearance.opacity, "appearance.opacity");
-  if (appearance.strokeWeight !== undefined) node.strokeWeight = readFiniteNumber(appearance.strokeWeight, "appearance.strokeWeight");
-  if (appearance.cornerRadius !== undefined && "cornerRadius" in node) {
-    node.cornerRadius = readFiniteNumber(appearance.cornerRadius, "appearance.cornerRadius");
-  }
-  for (const key of ["topLeftRadius", "topRightRadius", "bottomLeftRadius", "bottomRightRadius"]) {
-    if (appearance[key] !== undefined && key in node) node[key] = readFiniteNumber(appearance[key], "appearance." + key);
-  }
-  if (appearance.effects !== undefined) node.effects = appearance.effects;
-  if (appearance.blendMode !== undefined) node.blendMode = appearance.blendMode;
-}
-
-function applyConstraints(node, constraints) {
-  if (!constraints || typeof constraints !== "object") return;
-  if (!("constraints" in node)) {
-    throw new Error("Node does not support constraints: " + node.id);
-  }
-  node.constraints = {
-    horizontal: constraints.horizontal ?? node.constraints.horizontal,
-    vertical: constraints.vertical ?? node.constraints.vertical,
-  };
-}
-
-function fontFromHelperInput(font) {
-  const input = font && typeof font === "object" ? font : {};
-  return {
-    family: typeof input.family === "string" ? input.family : "Inter",
-    style: typeof input.style === "string" ? input.style : "Regular",
-  };
-}
-
-async function applyTextHelper(node, options) {
-  if (node.type !== "TEXT") {
-    throw new Error("Text helper can only apply to TEXT nodes.");
-  }
-  const font = fontFromHelperInput(options && options.font);
-  await loadFont(font);
-  node.fontName = font;
-  if (options && options.font && typeof options.font === "object" && options.font.size !== undefined) {
-    node.fontSize = readFiniteNumber(options.font.size, "font.size");
-  }
-  node.characters = String(options && options.text !== undefined ? options.text : "");
-  if (options && options.style) {
-    await applyStyleReference(node, options.style);
-  }
-}
-
-function setNodeSize(node, width, height) {
-  if (typeof node.resizeWithoutConstraints === "function") {
-    node.resizeWithoutConstraints(width, height);
-  } else if (typeof node.resize === "function") {
-    node.resize(width, height);
-  } else {
-    throw new Error("Node does not support resize(): " + node.id);
-  }
-}
-
-async function loadFont(font) {
-  await figma.loadFontAsync(font);
-  return font;
-}
-
-async function loadNodeFont(node) {
-  if (node.fontName && typeof node.fontName === "object" && !Array.isArray(node.fontName)) {
-    await figma.loadFontAsync(node.fontName);
-    return node.fontName;
-  }
-  const fallback = { family: "Inter", style: "Regular" };
-  await figma.loadFontAsync(fallback);
-  node.fontName = fallback;
-  return fallback;
-}
-
-function applyCollectionModes(collection, modes) {
-  const result = {};
-  const requested = Array.isArray(modes) ? modes : [];
-  if (requested.length === 0) {
-    for (const mode of collection.modes || []) result[mode.name] = mode.modeId;
-    return result;
-  }
-  requested.forEach((mode, index) => {
-    const name = typeof mode === "string" ? mode : String(mode && mode.name ? mode.name : "Mode " + (index + 1));
-    if (index === 0 && collection.modes && collection.modes[0]) {
-      collection.renameMode(collection.modes[0].modeId, name);
-      result[name] = collection.modes[0].modeId;
-    } else {
-      result[name] = collection.addMode(name);
-    }
-  });
-  return result;
-}
-
-async function resolveVariableCollection(handleOrId) {
-  const id = resolveHandleId(handleOrId);
-  if (figma.variables && typeof figma.variables.getVariableCollectionByIdAsync === "function") {
-    const collection = await figma.variables.getVariableCollectionByIdAsync(id);
-    if (collection) return collection;
-  }
-  if (figma.variables && typeof figma.variables.getVariableCollectionById === "function") {
-    const collection = figma.variables.getVariableCollectionById(id);
-    if (collection) return collection;
-  }
-  throw new Error("Variable collection not found: " + id);
-}
-
-async function resolveVariable(handleOrId) {
-  const id = resolveHandleId(handleOrId);
-  if (figma.variables && typeof figma.variables.getVariableByIdAsync === "function") {
-    const variable = await figma.variables.getVariableByIdAsync(id);
-    if (variable) return variable;
-  }
-  if (figma.variables && typeof figma.variables.getVariableById === "function") {
-    const variable = figma.variables.getVariableById(id);
-    if (variable) return variable;
-  }
-  throw new Error("Variable not found: " + id);
-}
-
-function resolveCollectionModeId(collection, modeNameOrId) {
-  const modes = collection.modes || [];
-  if (typeof modeNameOrId === "string" && modeNameOrId) {
-    const exact = modes.find((mode) => mode.modeId === modeNameOrId || mode.name === modeNameOrId);
-    if (!exact) throw new Error("Variable collection mode not found: " + modeNameOrId);
-    return exact.modeId;
-  }
-  if (!modes[0]) throw new Error("Variable collection has no modes: " + collection.id);
-  return modes[0].modeId;
-}
-
-function bindVariableToNode(node, variable, binding) {
-  const field = binding && binding.field ? String(binding.field) : undefined;
-  const paint = binding && binding.paint ? String(binding.paint) : undefined;
-  if (paint === "fills" || field === "fills" || field === "fill" || field === "color") {
-    const basePaint = Array.isArray(node.fills) && node.fills[0] ? node.fills[0] : solidPaint("#000000");
-    node.fills = [figma.variables.setBoundVariableForPaint(basePaint, "color", variable)];
-    return;
-  }
-  if (paint === "strokes" || field === "strokes" || field === "stroke") {
-    const basePaint = Array.isArray(node.strokes) && node.strokes[0] ? node.strokes[0] : solidPaint("#000000");
-    node.strokes = [figma.variables.setBoundVariableForPaint(basePaint, "color", variable)];
-    return;
-  }
-  if (!field) {
-    throw new Error("bindVariable requires field or paint.");
-  }
-  if (typeof node.setBoundVariable !== "function") {
-    throw new Error("Node does not support setBoundVariable: " + node.id);
-  }
-  node.setBoundVariable(field, variable);
-}
-
-async function applyTextStyleHelper(style, options) {
-  const font = fontFromHelperInput(options && options.font);
-  await loadFont(font);
-  style.fontName = font;
-  if (options && options.fontSize !== undefined) style.fontSize = readFiniteNumber(options.fontSize, "fontSize");
-  if (options && options.lineHeight !== undefined) style.lineHeight = options.lineHeight;
-  if (options && options.letterSpacing !== undefined) style.letterSpacing = options.letterSpacing;
-  if (options && options.fills !== undefined) style.fills = normalizePaintList(options.fills);
-}
-
-async function applyStyleReference(node, style) {
-  if (!style || typeof style !== "object") return;
-  if (style.textStyle || style.textStyleId) {
-    node.textStyleId = resolveHandleId(style.textStyle || style.textStyleId);
-  }
-  if (style.fillStyle || style.fillStyleId) {
-    node.fillStyleId = resolveHandleId(style.fillStyle || style.fillStyleId);
-  }
-  if (style.strokeStyle || style.strokeStyleId) {
-    node.strokeStyleId = resolveHandleId(style.strokeStyle || style.strokeStyleId);
-  }
-  if (style.effectStyle || style.effectStyleId) {
-    node.effectStyleId = resolveHandleId(style.effectStyle || style.effectStyleId);
-  }
-}
-
-function summarizeNode(node, depth = 1) {
+function __figmaWorkspaceSummarizeNode(node, depth = 1) {
   if (!node) return null;
-  if (Array.isArray(node)) return node.map((child) => summarizeNode(child, depth));
+  if (Array.isArray(node)) return node.map((child) => __figmaWorkspaceSummarizeNode(child, depth));
   const read = (key) => key in node ? node[key] : undefined;
   const summary = {
     id: node.id,
@@ -5676,128 +4760,90 @@ function summarizeNode(node, depth = 1) {
     children: undefined,
   };
   if (depth > 0 && "children" in node && Array.isArray(node.children)) {
-    summary.children = node.children.slice(0, 30).map((child) => summarizeNode(child, depth - 1));
+    summary.children = node.children.slice(0, 30).map((child) => __figmaWorkspaceSummarizeNode(child, depth - 1));
   }
   return summary;
 }
 
-const __figmaReplEvalCheckpoints = [];
-$.handles = __figmaRepl.handles;
-$.remember = remember;
-$.forget = forget;
-$.resolveId = resolveHandleId;
-$.node = $;
-$.select = selectNodesForRepl;
-$.cloneNodeTree = cloneNodeTreeForRepl;
-$.findFreeSlot = findFreeSlotForRepl;
-$.placeNode = placeNodeForRepl;
-$.replaceGeneratedFrame = replaceGeneratedFrameForRepl;
-$.text = async function text(targetOrOptions, textValue, options = {}) {
-  const input = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions)
-    ? targetOrOptions
-    : { target: targetOrOptions, text: textValue, ...options };
+function __figmaWorkspaceFontName(font) {
+  if (!font || typeof font !== "object" || Array.isArray(font)) {
+    throw new Error("$.text font must be an object.");
+  }
+  if (Object.keys(font).some((key) => key !== "family" && key !== "style")) {
+    throw new Error("$.text font supports only family and style.");
+  }
+  if (typeof font.family !== "string" || !font.family || typeof font.style !== "string" || !font.style) {
+    throw new Error("$.text font requires non-empty family and style.");
+  }
+  return { family: font.family, style: font.style };
+}
+
+async function __figmaWorkspaceText(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("$.text requires one options object.");
+  }
+  const allowedKeys = new Set(["target", "parent", "text", "font"]);
+  if (Object.keys(input).some((key) => !allowedKeys.has(key))) {
+    throw new Error("$.text supports only target, parent, text, and font.");
+  }
+  if (!Object.prototype.hasOwnProperty.call(input, "text") || typeof input.text !== "string") {
+    throw new Error("$.text requires text as a string.");
+  }
+  if (input.target !== undefined && input.parent !== undefined) {
+    throw new Error("$.text target and parent are mutually exclusive.");
+  }
+
   let node;
-  if (input.target) {
-    node = await $(input.target);
-    if (node.type !== "TEXT") throw new Error("$.text target must resolve to a TEXT node.");
+  if (input.target !== undefined) {
+    node = await __figmaWorkspaceResolveNode(input.target, "$.text target");
+    if (node.type !== "TEXT") {
+      throw new Error("$.text target must resolve to a TEXT node.");
+    }
   } else {
     node = figma.createText();
-    if (input.parent) {
-      const parent = await $(input.parent);
+    if (input.parent !== undefined) {
+      const parent = await __figmaWorkspaceResolveNode(input.parent, "$.text parent");
+      if (!parent || typeof parent.appendChild !== "function") {
+        throw new Error("$.text parent must support appendChild().");
+      }
       parent.appendChild(node);
     } else {
       figma.currentPage.appendChild(node);
     }
   }
-  const font = input.font || (input.fontFamily || input.fontStyle ? { family: input.fontFamily || "Inter", style: input.fontStyle || "Regular" } : undefined);
-  if (font) {
-    const fontName = fontFromHelperInput(font);
-    await loadFont(fontName);
-    node.fontName = fontName;
-    if (font.size !== undefined) node.fontSize = readFiniteNumber(font.size, "font.size");
+
+  if (input.font !== undefined) {
+    const font = __figmaWorkspaceFontName(input.font);
+    await figma.loadFontAsync(font);
+    node.fontName = font;
   } else {
-    await loadNodeFont(node);
-  }
-  if (input.text !== undefined) node.characters = String(input.text);
-  if (input.name !== undefined) node.name = String(input.name);
-  if (input.appearance !== undefined) applyAppearance(node, input.appearance);
-  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
-  if (input.size !== undefined) setNodeSizeFromInput(node, input.size);
-  if (input.as) remember(input.as, node);
-  return node;
-};
-${includeEvalHelpers ? `
-function __figmaReplDecodeBase64(input) {
-  const source = String(input || "").replace(/^data:[^,]+,/u, "").replace(/\\s+/gu, "");
-  if (!source) throw new Error("$.imageAsset requires a non-empty base64 string or bytes array.");
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  const clean = source.replace(/=+$/u, "");
-  const bytes = [];
-  let buffer = 0;
-  let bits = 0;
-  for (const char of clean) {
-    const value = alphabet.indexOf(char);
-    if (value < 0) throw new Error("$.imageAsset received invalid base64 data.");
-    buffer = (buffer << 6) | value;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      bytes.push((buffer >> bits) & 0xff);
+    const font = node.fontName;
+    if (!font || typeof font === "symbol" || typeof font !== "object" || Array.isArray(font)) {
+      throw new Error("$.text cannot update mixed fonts without an explicit font.");
     }
+    await figma.loadFontAsync(font);
   }
-  return new Uint8Array(bytes);
+  node.characters = input.text;
+  return node;
 }
-$.imageAsset = async function imageAsset(options = {}) {
-  const input = typeof options === "string" ? { base64: options } : (options || {});
-  const bytes = input.bytes instanceof Uint8Array
-    ? input.bytes
-    : Array.isArray(input.bytes)
-      ? new Uint8Array(input.bytes)
-      : __figmaReplDecodeBase64(input.base64);
-  const image = figma.createImage(bytes);
-  const node = input.target ? await $(input.target) : figma.createRectangle();
-  if (!("fills" in node)) throw new Error("$.imageAsset target must support fills.");
-  if (!input.target) {
-    if (input.parent) {
-      const parent = await $(input.parent);
-      parent.appendChild(node);
-    } else {
-      figma.currentPage.appendChild(node);
-    }
-  }
-  if (input.name !== undefined) node.name = String(input.name);
-  if (input.size !== undefined) {
-    setNodeSizeFromInput(node, input.size);
-  } else if (!input.target) {
-    node.resize(160, 160);
-  }
-  if (input.position !== undefined) setNodePositionFromInput(node, input.position);
-  const scaleMode = String(input.scaleMode || input.fit || "FILL").toUpperCase();
-  if (!["FILL", "FIT", "CROP", "TILE"].includes(scaleMode)) {
-    throw new Error("$.imageAsset scaleMode must be FILL, FIT, CROP, or TILE.");
-  }
-  const paint = { type: "IMAGE", scaleMode, imageHash: image.hash };
-  if (input.opacity !== undefined) paint.opacity = readFiniteNumber(input.opacity, "opacity");
-  node.fills = [paint];
-  if (input.as) remember(input.as, node);
-  return node;
-};
-$.inspect = async function inspect(target, depth = 1) {
-  return summarizeNode(await $(target), depth);
-};
-$.capture = async function capture(target, options = {}) {
-  const node = await $(target);
+
+async function __figmaWorkspaceCapture(target, options = {}) {
+  const node = await __figmaWorkspaceResolveNode(target, "$.capture target");
   if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
     throw new Error("$.capture target must resolve to a scene node.");
   }
   if (!options || typeof options !== "object" || Array.isArray(options)) {
     throw new Error("$.capture options must be an object.");
   }
-  if (__figmaRepl.captureRequests.length >= ${MAX_QUEUED_CAPTURE_REQUESTS}) {
+  const allowedKeys = new Set(["imageFile", "maxDimension", "contentsOnly"]);
+  if (Object.keys(options).some((key) => !allowedKeys.has(key))) {
+    throw new Error("$.capture options support only imageFile, maxDimension, and contentsOnly.");
+  }
+  if (__figmaWorkspace.captureRequests.length >= ${MAX_QUEUED_CAPTURE_REQUESTS}) {
     throw new Error("$.capture supports at most ${MAX_QUEUED_CAPTURE_REQUESTS} requests per execution.");
   }
   const request = {
-    requestId: "capture-" + String(__figmaRepl.captureRequests.length + 1),
+    requestId: "capture-" + String(__figmaWorkspace.captureRequests.length + 1),
     nodeId: node.id,
   };
   if (options.imageFile !== undefined) {
@@ -5825,153 +4871,15 @@ $.capture = async function capture(target, options = {}) {
     }
     request.contentsOnly = options.contentsOnly;
   }
-  __figmaRepl.captureRequests.push(request);
+  __figmaWorkspace.captureRequests.push(request);
   return { requestId: request.requestId, nodeId: request.nodeId };
-};
-` : ""}
-$.checkpoint = async function checkpoint(name, targets = [], options = {}) {
-  const input = Array.isArray(targets) ? targets : [targets];
-  const summaries = [];
-  for (const target of input) summaries.push(summarizeNode(await $(target), options.depth ?? 1));
-  const entry = { name: String(name || "checkpoint"), summaries, handles: { ...__figmaRepl.handles } };
-  __figmaReplEvalCheckpoints.push(entry);
-  return entry;
-};
-$.checkpoints = __figmaReplEvalCheckpoints;`;
-  if (!includeEvalHelpers) {
-    prelude = stripFigmaWorkspacePreludeEvalHelperAssignments(prelude);
-    if (scriptInjectedHelpers) {
-      prelude = stripFigmaWorkspacePreludeForScriptHelpers(prelude, new Set(scriptInjectedHelpers));
-    }
-  } else if (evalInjectedHelpers) {
-    prelude = stripFigmaWorkspacePreludeForEvalHelpers(prelude, new Set(evalInjectedHelpers));
-  }
-  return prelude;
 }
 
-function stripFigmaWorkspacePreludeEvalHelperAssignments(source: string): string {
-  return replaceDelimitedSource(
-    source,
-    "const __figmaReplEvalCheckpoints = [];",
-    "$.checkpoints = __figmaReplEvalCheckpoints;",
-    "",
-    { includeEndMarker: true },
-  );
+const $ = Object.freeze({
+  text: __figmaWorkspaceText,
+  capture: __figmaWorkspaceCapture,
+});`;
 }
-
-function stripFigmaWorkspacePreludeForEvalHelpers(source: string, injectedHelpers: Set<string>): string {
-  let prelude = source;
-  const has = (helper: string) => injectedHelpers.has(`$.${helper}`);
-  const removeLine = (line: string) => {
-    prelude = prelude.replace(`${line}\n`, "");
-  };
-  const needsSelect = has("select") || has("cloneNodeTree") || has("replaceGeneratedFrame");
-  const needsPlacement = has("findFreeSlot") || has("placeNode") || has("replaceGeneratedFrame");
-  const needsPlaceNode = has("placeNode") || has("replaceGeneratedFrame");
-  const needsReplaceGeneratedFrame = has("replaceGeneratedFrame");
-  const needsClone = has("cloneNodeTree");
-  const needsReadFiniteNumber = has("text") || has("imageAsset") || needsPlacement || needsClone;
-  const needsSizeInput = has("text") || has("imageAsset") || needsReplaceGeneratedFrame;
-  const needsPositionInput = has("text") || has("imageAsset") || needsReplaceGeneratedFrame || needsClone;
-  const needsAppearance = has("text");
-  const needsText = has("text");
-  const needsResolveHandleId = has("resolveId") || has("node") || needsText;
-
-  if (!needsSelect) prelude = replaceDelimitedSource(prelude, "async function selectNodesForRepl", "function resolveSceneNodeForPlacement", "");
-  if (!needsPlacement) {
-    prelude = replaceDelimitedSource(prelude, "function resolveSceneNodeForPlacement", "async function cloneNodeTreeForRepl", "");
-  } else {
-    if (!needsPlaceNode) prelude = replaceDelimitedSource(prelude, "async function placeNodeForRepl", "async function replaceGeneratedFrameForRepl", "");
-    if (!needsReplaceGeneratedFrame) prelude = replaceDelimitedSource(prelude, "async function replaceGeneratedFrameForRepl", "async function cloneNodeTreeForRepl", "");
-  }
-  if (!needsClone) prelude = replaceDelimitedSource(prelude, "async function cloneNodeTreeForRepl", "function solidPaint", "");
-  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function solidPaint", "function resolveHandleId", "");
-  else prelude = replaceDelimitedSource(prelude, "function normalizeRgba", "function resolveHandleId", "");
-  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function readFiniteNumber", "");
-  if (!needsReadFiniteNumber) prelude = replaceDelimitedSource(prelude, "function readFiniteNumber", "function setNodeSizeFromInput", "");
-  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSizeFromInput", "function setNodePositionFromInput", "");
-  if (!needsPositionInput) prelude = replaceDelimitedSource(prelude, "function setNodePositionFromInput", "function applyAppearance", "");
-  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function applyAppearance", "function applyConstraints", "");
-  prelude = replaceDelimitedSource(prelude, "function applyConstraints", "function fontFromHelperInput", "");
-  if (!needsText) {
-    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function setNodeSize", "");
-  } else {
-    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function setNodeSize", "");
-  }
-  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSize", "async function loadFont", "");
-  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function loadFont", "function applyCollectionModes", "");
-  prelude = replaceDelimitedSource(prelude, "function applyCollectionModes", "async function applyStyleReference", "");
-  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function applyStyleReference", "function summarizeNode", "");
-
-  if (!has("handles")) removeLine("$.handles = __figmaRepl.handles;");
-  if (!has("remember")) removeLine("$.remember = remember;");
-  if (!has("forget")) removeLine("$.forget = forget;");
-  if (!has("resolveId")) removeLine("$.resolveId = resolveHandleId;");
-  if (!has("node")) removeLine("$.node = $;");
-  if (!has("select")) removeLine("$.select = selectNodesForRepl;");
-  if (!has("cloneNodeTree")) removeLine("$.cloneNodeTree = cloneNodeTreeForRepl;");
-  if (!has("findFreeSlot")) removeLine("$.findFreeSlot = findFreeSlotForRepl;");
-  if (!has("placeNode")) removeLine("$.placeNode = placeNodeForRepl;");
-  if (!has("replaceGeneratedFrame")) removeLine("$.replaceGeneratedFrame = replaceGeneratedFrameForRepl;");
-  if (!has("text")) prelude = replaceDelimitedSource(prelude, "$.text = async function text", "function __figmaReplDecodeBase64", "");
-  if (!has("imageAsset")) prelude = replaceDelimitedSource(prelude, "function __figmaReplDecodeBase64", "$.inspect = async function inspect", "");
-  if (!has("inspect")) prelude = replaceDelimitedSource(prelude, "$.inspect = async function inspect", "$.capture = async function capture", "");
-  if (!has("capture")) prelude = replaceDelimitedSource(prelude, "$.capture = async function capture", "$.checkpoint = async function checkpoint", "");
-  if (!has("checkpoint")) {
-    prelude = prelude.replace("const __figmaReplEvalCheckpoints = [];\n", "");
-    prelude = replaceDelimitedSource(prelude, "$.checkpoint = async function checkpoint", "$.checkpoints = __figmaReplEvalCheckpoints;", "", { includeEndMarker: true });
-  }
-  return prelude;
-}
-
-function stripFigmaWorkspacePreludeForScriptHelpers(source: string, injectedHelpers: Set<string>): string {
-  let prelude = source;
-  const has = (helper: string) => injectedHelpers.has(`$.${helper}`);
-  const needsSummary = has("select") || has("inspect") || has("cloneNodeTree") || has("checkpoint") || has("replaceGeneratedFrame");
-  const needsReadFiniteNumber = has("text") || has("imageAsset") || has("cloneNodeTree") || has("placeNode") || has("findFreeSlot") || has("replaceGeneratedFrame");
-  const needsSizeInput = has("text") || has("imageAsset") || has("replaceGeneratedFrame");
-  const needsPositionInput = has("text") || has("imageAsset") || has("cloneNodeTree") || has("replaceGeneratedFrame");
-  const needsAppearance = has("text");
-  const needsText = has("text");
-  const needsResolveHandleId = has("resolveId") || has("node") || needsText;
-
-  prelude = replaceDelimitedSource(prelude, "async function selectNodesForRepl", "function solidPaint", "");
-  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function solidPaint", "function resolveHandleId", "");
-  else prelude = replaceDelimitedSource(prelude, "function normalizeRgba", "function resolveHandleId", "");
-  if (!needsResolveHandleId) prelude = replaceDelimitedSource(prelude, "function resolveHandleId", "function readFiniteNumber", "");
-  if (!needsReadFiniteNumber) prelude = replaceDelimitedSource(prelude, "function readFiniteNumber", "function setNodeSizeFromInput", "");
-  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSizeFromInput", "function setNodePositionFromInput", "");
-  if (!needsPositionInput) prelude = replaceDelimitedSource(prelude, "function setNodePositionFromInput", "function applyAppearance", "");
-  if (!needsAppearance) prelude = replaceDelimitedSource(prelude, "function applyAppearance", "function applyConstraints", "");
-  prelude = replaceDelimitedSource(prelude, "function applyConstraints", "function fontFromHelperInput", "");
-  if (!needsText) {
-    prelude = replaceDelimitedSource(prelude, "function fontFromHelperInput", "function setNodeSize", "");
-  } else {
-    prelude = replaceDelimitedSource(prelude, "async function applyTextHelper", "function setNodeSize", "");
-  }
-  if (!needsSizeInput) prelude = replaceDelimitedSource(prelude, "function setNodeSize", "async function loadFont", "");
-  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function loadFont", "function applyCollectionModes", "");
-  prelude = replaceDelimitedSource(prelude, "function applyCollectionModes", "async function applyStyleReference", "");
-  if (!needsText) prelude = replaceDelimitedSource(prelude, "async function applyStyleReference", "function summarizeNode", "");
-  if (!needsSummary) prelude = replaceDelimitedSource(prelude, "function summarizeNode", "", "", { removeToEnd: true });
-  return prelude;
-}
-
-function replaceDelimitedSource(
-  source: string,
-  startMarker: string,
-  endMarker: string,
-  replacement: string,
-  options: { includeEndMarker?: boolean; removeToEnd?: boolean } = {},
-): string {
-  const start = source.indexOf(startMarker);
-  if (start < 0) return source;
-  const end = options.removeToEnd ? source.length : source.indexOf(endMarker, start + startMarker.length);
-  if (end < 0 || end < start) return source;
-  const endOffset = options.includeEndMarker ? endMarker.length : 0;
-  return `${source.slice(0, start)}${replacement}${source.slice(end + endOffset)}`;
-}
-
 async function loadAssetManifest(
   args: FigmaWorkspaceApplyAssetManifestArguments,
   session: FigmaWorkspaceSession,
@@ -6057,7 +4965,6 @@ function normalizeManifestAsset(
   return {
     path,
     targetNodeId: resolvedTargetNodeId,
-    handle: targetResolution.handle,
     fileKey: session.fileKey ?? extractFigmaFileKey(session.fileUrl),
     nodeUrl: asOptionalString(record.nodeUrl) ?? asOptionalString(record.url) ?? buildFigmaNodeUrl(session, resolvedTargetNodeId),
     scaleMode: asOptionalString(record.scaleMode),
@@ -6089,13 +4996,6 @@ function assertRemovedManifestAssetFields(record: Record<string, unknown>, index
   const targetAliases = ["targetNodeId", "nodeId", "targetHandle", "targetId"].filter((field) => record[field] !== undefined);
   if (targetAliases.length > 0) {
     throw new Error(`Asset manifest entry ${index} field "${targetAliases.join("/")}" was removed. Use "target".`);
-  }
-  const targetRecord = isRecord(record.target) ? record.target : undefined;
-  if (targetRecord) {
-    const nestedAliases = ["nodeId", "targetNodeId", "targetHandle", "targetId"].filter((field) => targetRecord[field] !== undefined);
-    if (nestedAliases.length > 0) {
-      throw new Error(`Asset manifest entry ${index} target field "${nestedAliases.join("/")}" was removed. Use "handle".`);
-    }
   }
   if (record.toolName !== undefined || record.arguments !== undefined || record.refresh !== undefined) {
     throw new Error(`Asset manifest entry ${index} fields "toolName/arguments/refresh" were removed. Use call-upstream-tool.`);
@@ -6351,7 +5251,6 @@ async function applyAssetManifestApplicationChunk(options: {
     buildFigmaEvalScript({
       session: options.session,
       code: buildAssetManifestApplicationCode(options.candidates),
-      mode: "write",
     }),
   );
   const parsed = parseUpstreamToolResult(upstream);
@@ -6399,7 +5298,7 @@ function compactName(name) {
 }
 for (const asset of assetFills) {
   try {
-    const node = await getNodeById(asset.targetNodeId);
+    const node = await __figmaWorkspaceGetNodeById(asset.targetNodeId);
     if (!node) {
       applications.push({
         targetNodeId: asset.targetNodeId,
@@ -6499,7 +5398,7 @@ function findAssetManifestApplicationResult(
     }
   }
   for (const [key, item] of Object.entries(record)) {
-    if (priorityKeys.includes(key) || key === "__figmaRepl") {
+    if (priorityKeys.includes(key) || key === "__figmaWorkspace") {
       continue;
     }
     const nested = findAssetManifestApplicationResult(item, depth + 1, `${sourcePath}.${key}`);
@@ -6647,7 +5546,6 @@ async function readAssetManifestTargetValidationChunk(options: {
     buildFigmaEvalScript({
       session: options.session,
       code: buildAssetManifestTargetValidationCode(options.targetNodeIds),
-      mode: "read",
     }),
   );
   const parsed = parseUpstreamToolResult(upstream);
@@ -6681,7 +5579,7 @@ function buildAssetManifestTargetValidationCode(targetNodeIds: string[]): string
 const validations = [];
 for (const targetNodeId of targetNodeIds) {
   try {
-    const node = await getNodeById(targetNodeId);
+    const node = await __figmaWorkspaceGetNodeById(targetNodeId);
     if (!node) {
       validations.push({
         targetNodeId,
@@ -6761,7 +5659,7 @@ function findAssetManifestValidationResult(
     }
   }
   for (const [key, item] of Object.entries(record)) {
-    if (priorityKeys.includes(key) || key === "__figmaRepl") {
+    if (priorityKeys.includes(key) || key === "__figmaWorkspace") {
       continue;
     }
     const nested = findAssetManifestValidationResult(item, depth + 1, `${sourcePath}.${key}`);
@@ -6988,11 +5886,6 @@ function createTaskPlanStepReference(options: {
   const result = asRecord(upstreamPayload);
   const nestedResult = isRecord(result.result) ? asRecord(result.result) : result;
   const session = asRecord(options.result.session);
-  const handles =
-    isRecord(session.handles) ? session.handles :
-      isRecord(result.handles) ? result.handles :
-        isRecord(nestedResult.handles) ? nestedResult.handles :
-          undefined;
   return {
     id: options.id,
     index: options.index,
@@ -7001,7 +5894,6 @@ function createTaskPlanStepReference(options: {
     ok: options.ok,
     upstream: Object.keys(upstream).length > 0 ? upstream : undefined,
     nodeIds: collectNodeIds(options.result),
-    handles,
     assets: options.result.assets,
     downloadTargets: options.result.targets,
     downloadOutputDir: options.result.outputDir,
@@ -7186,8 +6078,6 @@ async function readMetadataNativeFieldsChunk(options: {
     options.evalSettings,
     buildFigmaEvalScript({
       session: options.session,
-      mode: "read",
-      includeEvalHelpers: false,
       code: buildMetadataEnrichmentReadbackCode(options.nodeIds),
     }),
   );
@@ -7505,11 +6395,7 @@ function applyWorkspaceFileContextArgs(
   } else if (derivedSurface) {
     session.surface = derivedSurface;
   }
-  session.lastDiagnostics = diagnoseFigmaWorkspaceContext({
-    expectedSurface,
-    derivedSurface,
-    fileUrl: session.fileUrl,
-  });
+  session.lastDiagnostics = [];
 }
 
 function deriveFileSlug(
@@ -7591,47 +6477,15 @@ function createTaskScriptTemplate(taskName: string, scriptName: string, args: Fi
     scriptName.endsWith(".figma.ts")
       ? "// TypeScript is strict-checked with Figma Plugin API typings before execution."
       : undefined,
-    "// Use $ helpers plus native Figma Plugin API calls and return compact JSON.",
+    "// Use native Figma Plugin API calls, $.text, and $.capture; return compact JSON.",
     args.taskName ? `// Task: ${String(args.taskName)}` : undefined,
     args.surface ? `// Surface: ${String(args.surface)}` : undefined,
     args.targetPageId ? `// Suggested targetPageId: ${String(args.targetPageId)}` : undefined,
     "",
-    "const checkpoint = await $.checkpoint('start', ['$currentPage'], { depth: 0 });",
-    "return { checkpoint, handles: $.handles };",
+    "const changedNodeIds: string[] = [];",
+    "return { changedNodeIds };",
     "",
   ].filter((line): line is string => line !== undefined).join("\n");
-}
-
-const FIGMA_WORKSPACE_EVAL_HELPER_DESCRIPTIONS: Record<FigmaWorkspaceEvalHelperPath, string> = {
-  "$": "Resolve a cached handle like $card, $selection, $currentPage, or a raw Figma node id.",
-  "$.remember": "Store a handle name for a node or node id in the current workspace session.",
-  "$.forget": "Remove a stored handle from the current workspace session.",
-  "$.resolveId": "Resolve a cached handle or raw node id string to a Figma node id.",
-  "$.node": "Resolve a cached handle or raw node id to the Figma node.",
-  "$.select": "Resolve handles/node ids, validate selectable scene nodes, update selection, and optionally zoom.",
-  "$.cloneNodeTree": "Copy a source node beside itself with outer-to-inner cloning and instance-subtree preservation.",
-  "$.text": "Create or update a text node with font loading and optional handle storage.",
-  "$.findFreeSlot": "Find a non-overlapping slot in one parent using a preferred x/y, fixed size, gap, and direction.",
-  "$.placeNode": "Move a node to an explicit or non-overlapping generated slot and return placement metadata.",
-  "$.replaceGeneratedFrame": "Safely replace generated top-level FRAME nodes whose names match a guarded prefix.",
-  "$.inspect": "Resolve a handle or node id and return a compact node summary.",
-  "$.capture": "Queue a scene-node capture for host-side figma:capture processing; returns a lightweight request ticket and the command result includes the local image path.",
-  "$.imageAsset": "Create or update an image-fill rectangle from small generated PNG/JPEG base64 or byte arrays; use upload_assets/upstream asset fill workflow for large files.",
-  "$.checkpoint": "Return handle and node summaries at repair-friendly points.",
-};
-
-function evalHelperPath(name: FigmaWorkspaceEvalCommonHelperName): FigmaWorkspaceEvalHelperPath {
-  return `$.${name}` as FigmaWorkspaceEvalHelperPath;
-}
-
-function createEvalHelperPathList(): FigmaWorkspaceEvalHelperPath[] {
-  return ["$", ...FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES.map(evalHelperPath)];
-}
-
-function createEvalHelperDescriptionsPayload(): Record<FigmaWorkspaceEvalHelperPath, string> {
-  return Object.fromEntries(
-    createEvalHelperPathList().map((name) => [name, FIGMA_WORKSPACE_EVAL_HELPER_DESCRIPTIONS[name]]),
-  ) as Record<FigmaWorkspaceEvalHelperPath, string>;
 }
 
 function createFileWorkflowPayload(): Record<string, unknown> {
@@ -7644,7 +6498,7 @@ function createFileWorkflowPayload(): Record<string, unknown> {
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.ts files.",
       "Run figma:script:run with strict preflight and repair every fatal diagnostic before retrying.",
-      "Keep transactions small, return compact changed ids and handles, and finish with figma:capture plus visual inspection when content changed.",
+      "Keep transactions small, return compact changed node IDs, and finish with figma:capture plus visual inspection when content changed.",
     ],
   };
 }
@@ -7811,228 +6665,6 @@ function createToolTierPayload(): Record<string, unknown> {
     advancedEscapeHatches: {
       summary: "Use for short ephemeral calls, raw upstream behavior checks, or explicit upstream-only capabilities.",
       tools: ["figma_workspace_eval", "figma_workspace_call_upstream_tool"],
-    },
-  };
-}
-
-function createToolArgumentGuidancePayload(): Record<string, unknown> {
-  const nodeScopedTargetGuidance = FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION;
-  return {
-    title: {
-      optional: true,
-      preferSupplying: false,
-      schemaDescription: "Optional display label only; validated as a string but not saved, defaulted, or used for task/file naming.",
-      guidance: "title is optional display-only call metadata for Codex/UI. The runtime validates it when supplied but does not store it, synthesize defaults from it, pass it upstream, or use it for task/file naming.",
-      examples: [
-        "Capture the hero variant for visual QA",
-        "Run the token audit script",
-        "Apply generated assets to product cards",
-      ],
-    },
-    prepareTask: {
-      tool: "prepare-task",
-      tier: "normalPath",
-      recommendedCalls: {
-        workspaceFromFile: { file: "<figma file URL or file key>", taskName: "<task-name>", workspaceDir: "<Git-ignored project .figma-workspace or explicit Figma task-artifact dir>", surface: "design" },
-      },
-      advancedArguments: ["fileSlug", "fileName", "template", "overwrite"],
-      requiredArguments: ["taskName", "workspaceDir"],
-      avoidUnless: {
-        workspaceDir: "Do not use the plugin install/cache path or a capability-specific output root. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory.",
-        fileName: "Use fileName only when the generated <task>.figma.ts name is unsuitable.",
-        overwrite: "Use only after deciding that replacing an existing script/result pair is intended.",
-      },
-    },
-    open: {
-      tool: "figma_workspace_open",
-      tier: "contextAndLookup",
-      recommendedCalls: {
-        session: { sessionId: "<session>", file: "<figma file URL or file key>", workspaceDir: "<Git-ignored project .figma-workspace or explicit Figma task-artifact dir>", surface: "design" },
-      },
-      advancedArguments: ["connect", "handles"],
-      requiredArguments: ["workspaceDir when file is present"],
-      avoidUnless: {
-        workspaceDir: "Do not use the plugin install/cache path or a capability-specific output root. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory.",
-        connect: "Leave at the default true unless intentionally updating only local metadata; open connects without listing tools, and call-upstream-tool discovers official upstream tools when needed.",
-        handles: "Use only when importing known node ids into a new session; prefer $.remember from scripts.",
-      },
-    },
-    eval: {
-      tool: "figma_workspace_eval",
-      tier: "advancedEscapeHatches",
-      guidance: "Use only for small ephemeral calls. Use prepare-task + run-script-file for repairable scripts, multi-step work, and large structured results.",
-      recommendedCalls: {
-        read: { sessionId: "<session>", code: "<return compact JSON>", mode: "read", surface: "design" },
-        write: { sessionId: "<session>", code: "<return compact JSON>", mode: "write", surface: "design" },
-      },
-      advancedArguments: ["inlineResultLimit", "allowDangerousOperations", "handleUpdates"],
-      avoidUnless: {
-        debugFiles: "Do not request JSON result files; debug files are generated on demand for failures and inline omissions.",
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits.",
-        allowDangerousOperations: "Use only after reviewing the exact code; it does not bypass API contract, surface, or read-mode guards.",
-        handleUpdates: "Use only for pre-run handle import/repair. It is not read back from upstream.result.handleUpdates; persist script-created handles with $.remember(...) or by returning top-level handles.",
-      },
-    },
-    inspect: {
-      tool: "figma_workspace_inspect",
-      tier: "normalPath",
-      guidance: "Requires a file-context session because it executes upstream use_figma. Open or prepare with file first; target is string-only ($selection, $currentPage, handle, raw node id, or node URL), not { fileKey, nodeId }.",
-      recommendedCalls: {
-        inspectTarget: { sessionId: "<session>", target: "$selection" },
-        inspectStyle: { sessionId: "<session>", mode: "style", target: "$selection" },
-        validateHandles: { sessionId: "<session>", mode: "validate" },
-      },
-      advancedArguments: ["handles"],
-      avoidUnless: {
-        handles: "Pass handles only to validate a subset; omit to validate all cached handles.",
-      },
-    },
-    getMetadata: {
-      tool: "figma_workspace_get_metadata",
-      tier: "contextAndLookup",
-      guidance: `Use for broad recursive layer-tree discovery before detailed style/fill/text inspection. ${nodeScopedTargetGuidance} It calls official get_metadata, converts XML to compact JSON, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small trees inline, and writes oversized trees to outputFiles.metadataFile.`,
-      recommendedCalls: {
-        fromSession: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>" },
-        fromCurrentPage: { sessionId: "<session>", target: "$currentPage" },
-        fromSingleSelection: { sessionId: "<session>", target: "$selection" },
-        fromFile: { file: "<figma file URL or file key>", workspaceDir: "<absolute workspace dir>", target: "<node id>" },
-        fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
-        fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
-      },
-      advancedArguments: ["inlineResultLimit", "refresh", "clientLanguages", "clientFrameworks"],
-      avoidUnless: {
-        dynamicSelectors: "Use $currentPage or single-node $selection only when metadata should root at the live page or selected node; inspect first when selection may contain zero or multiple nodes.",
-        inlineResultLimit: "Use only for converted metadata.json payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces metadata.json to outputFiles.metadataFile only.",
-        refresh: "Use only for upstream tool-cache debug.",
-      },
-    },
-    designContext: {
-      tool: "figma_workspace_get_design_context",
-      tier: "contextAndLookup",
-      guidance: `Use for official design-to-code context when implementation, parity review, Code Connect, or SwiftUI handoff needs upstream generated structure. ${nodeScopedTargetGuidance} The bridge preserves the official payload inside the generic upstream envelope.`,
-      recommendedCalls: {
-        fromSession: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>" },
-        fromFile: { file: "<figma file URL or file key>", workspaceDir: "<absolute workspace dir>", target: "<node id>" },
-        fromKnownStack: { file: "<figma file URL or file key>", workspaceDir: "<absolute workspace dir>", target: "<node id>", clientLanguages: "typescript", clientFrameworks: "react" },
-        fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
-        fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
-      },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "workspaceDir", "clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
-      avoidUnless: {
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
-        refresh: "Use only for upstream tool-cache debug.",
-        forceCode: "Use only when explicitly forcing upstream generated code output is useful for the task.",
-        disableCodeConnect: "Use only when Code Connect mappings are known to be irrelevant or misleading for this read.",
-        excludeScreenshot: "Use only when reducing upstream payload size matters more than screenshot context.",
-      },
-    },
-    motionContext: {
-      tool: "figma_workspace_get_motion_context",
-      tier: "contextAndLookup",
-      guidance: `Use for official animation/keyframe context. ${nodeScopedTargetGuidance} Pair with figma_workspace_get_design_context by node id; preserve upstream motion payloads as authoritative animation data.`,
-      recommendedCalls: {
-        fromSession: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>", recursive: true },
-        fromFile: { file: "<figma file URL or file key>", target: "<node id>", recursive: true },
-        fromHandleObject: { sessionId: "<session>", target: { handle: "$hero" }, recursive: true },
-        fromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" }, recursive: true },
-      },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "workspaceDir", "recursive", "clientLanguages", "clientFrameworks"],
-      avoidUnless: {
-        recursive: "Use when descendant motion is needed; omit for a single-node motion read.",
-        clientHints: "Pass clientLanguages/clientFrameworks only when the implementation target is known.",
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
-        refresh: "Use only for upstream tool-cache debug.",
-      },
-    },
-    designSystem: {
-      tier: "contextAndLookup",
-      guidance: `Use the dedicated design-system wrappers when a task needs official Figma design-system search, library listing, or variable definitions. Variable-def targets accept the same node-scoped shapes: ${nodeScopedTargetGuidance} They preserve the generic upstream envelope and minimal session summary.`,
-      tools: ["figma_workspace_search_design_system", "figma_workspace_get_libraries", "figma_workspace_get_variable_defs"],
-      recommendedCalls: {
-        search: { sessionId: "<session>", query: "<component, variable, or token query>" },
-        libraries: { sessionId: "<session>" },
-        variableDefs: { sessionId: "<session>", target: "<raw node id, node URL, or $handle>" },
-        variableDefsFromHandleObject: { sessionId: "<session>", target: { handle: "$hero" } },
-        variableDefsFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" } },
-      },
-      advancedArguments: ["inlineResultLimit", "refresh", "file", "workspaceDir"],
-      avoidUnless: {
-        callUpstreamTool: FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only.",
-        refresh: "Use only for upstream tool-cache debug.",
-      },
-    },
-    assetManifest: {
-      tool: "figma_workspace_apply_asset_manifest",
-      tier: "workflowAddOns",
-      recommendedCalls: {
-        applyManifest: { sessionId: "<session>", manifestPath: "<assets>.json" },
-      },
-      advancedArguments: ["assets"],
-      avoidUnless: {
-        assets: "Prefer manifestPath for repeatable local-file workflows; inline assets are for generated one-off plans.",
-      },
-    },
-    downloadAssets: {
-      tool: "figma_workspace_download_assets",
-      tier: "workflowAddOns",
-      recommendedCalls: {
-        downloadTargets: { sessionId: "<session>", targets: [{ target: "$target", defaultFormat: "png" }], outputDir: "<downloads>" },
-      },
-      preferredArguments: ["targets", "manifestPath", "outputDir"],
-      avoidUnless: {
-        manifestPath: "Use only for repeatable batch files shaped as { targets: [...] }; inline targets are clearer for one-off calls.",
-        outputDir: "Omit for the default <slug>.downloads directory unless downstream steps need a specific path.",
-        debugFiles: "Do not request JSON result files; debug files are generated on demand for failures.",
-      },
-    },
-    captureNode: {
-      tool: "figma_workspace_capture_node",
-      tier: "normalPath",
-      guidance: "Use for final visual QA captures. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly.",
-      recommendedCalls: {
-        captureFromSession: { sessionId: "<session>", target: "$target", imageFile: "<capture>.png" },
-        captureFromNodeUrl: { target: "<figma node URL>", imageFile: "<capture>.png" },
-        captureFromObjectTarget: { target: { fileKey: "<figma file key>", nodeId: "<node id>" }, imageFile: "<capture>.png", maxDimension: 1600, contentsOnly: true },
-      },
-      advancedArguments: ["maxDimension", "contentsOnly"],
-    },
-    taskPlan: {
-      tool: "figma_workspace_run_task_plan",
-      tier: "workflowAddOns",
-      recommendedCalls: {
-        filePlan: { sessionId: "<session>", planPath: "<plan>.json" },
-      },
-      advancedArguments: ["steps"],
-      avoidUnless: {
-        steps: "Prefer planPath for repeatable workflows; inline steps are for generated one-off plans.",
-        stepArgs: "Each step must use { type, args }; put tool-specific fields inside args, not at the step top level.",
-      },
-    },
-    guidance: {
-      tool: "figma_workspace_guidance",
-      tier: "contextAndLookup",
-      preferredArguments: ["query", "mode", "surface"],
-    },
-    lookup: {
-      tool: "figma_workspace_lookup",
-      tier: "contextAndLookup",
-      preferredArguments: { docs: ["kind=docs", "query"], api: ["kind=api", "symbol"] },
-      resultSizeControls: ["maxResults", "maxSnippetLines"],
-    },
-    callUpstreamTool: {
-      tool: "figma_workspace_call_upstream_tool",
-      tier: "advancedEscapeHatches",
-      guidance: `Explicit upstream escape hatch for official Figma MCP capabilities, including shader effect/fill reads and raw upstream behavior checks. Use call-upstream-tool --help for the command contract; prefer dedicated CLI commands for ${COVERED_UPSTREAM_TOOL_NAMES_TEXT}.`,
-      recommendedCalls: {
-        explicit: { sessionId: "<session>", toolName: "<uncovered official upstream tool>", arguments: {} },
-      },
-      advancedArguments: ["inlineResultLimit", "refresh"],
-      avoidUnless: {
-        debugFiles: "Do not request JSON result files; debug files are generated on demand for failures and inline omissions.",
-        inlineResultLimit: "Use only for inline payload-size control in bytes. Defaults to 4 KB, capped at 10 KB, and 0 forces configurable inline fields to outputFiles only; it does not bypass upstream Figma payload limits.",
-        refresh: "Use only for upstream tool-cache debug.",
-      },
     },
   };
 }
@@ -8235,14 +6867,8 @@ function primaryFixForUpstreamError(error: FigmaWorkspaceUpstreamError): string 
     return "Check the upstream Figma MCP connection and retry the same Figma Workspace MCP call after the upstream issue is resolved.";
   }
   const message = error.message.toLowerCase();
-  if (message.includes("remove") && (message.includes("instance") || message.includes("children") || message.includes("subtree"))) {
-    return "Use $.replaceGeneratedFrame({ name }) for guarded generated-frame replacement, or $.cloneNodeTree({ source, placement: 'right' }) for copy/rebuild workflows.";
-  }
   if (message.includes("font") || message.includes("characters")) {
     return "Load the target font with figma.loadFontAsync or use $.text before changing TextNode characters.";
-  }
-  if (message.includes("selection")) {
-    return "Use $.select([...]) or explicit node ids/handles instead of direct figma.currentPage.selection access.";
   }
   return "Open the paired .figma.ts file, repair the upstream Plugin API error, then rerun the same script with strict=true.";
 }
@@ -8308,17 +6934,10 @@ function firstBalancedJsonSlice(text: string): string | undefined {
   return undefined;
 }
 
-function updateSessionFromParsedResult(session: FigmaWorkspaceSession, value: unknown): FigmaWorkspaceHandleChanges {
+function updateSessionFromParsedResult(session: FigmaWorkspaceSession, value: unknown): void {
   const record = asRecord(value);
-  const repl = asRecord(record.__figmaRepl);
+  const repl = asRecord(record.__figmaWorkspace);
   const result = asRecord(record.result);
-  let handleChanges = emptyHandleChanges();
-  if (isStringRecord(repl.handles)) {
-    handleChanges = mergeHandleChanges(handleChanges, replaceSessionHandles(session, repl.handles));
-  }
-  if (isStringRecord(result.handles)) {
-    handleChanges = mergeHandleChanges(handleChanges, updateSessionHandles(session, result.handles));
-  }
   if (isStringRecord(repl.knownPages)) {
     session.knownPages = { ...session.knownPages, ...repl.knownPages };
   }
@@ -8334,7 +6953,6 @@ function updateSessionFromParsedResult(session: FigmaWorkspaceSession, value: un
     session.surface = surface;
   }
   touchSession(session);
-  return handleChanges;
 }
 
 function collectNodeIds(value: unknown): string[] {
@@ -8403,14 +7021,12 @@ function dedupeDiagnostics(diagnostics: FigmaWorkspaceDiagnostic[]): FigmaWorksp
 
 function responseSession(
   session: FigmaWorkspaceSession,
-  handleChanges: FigmaWorkspaceHandleChanges = emptyHandleChanges(),
 ): Record<string, unknown> {
   return removeUndefined({
     id: session.id,
     fileKey: session.fileKey,
     surface: session.surface,
     sessionDir: session.workspace?.sessionDir,
-    handleChanges,
   }) as Record<string, unknown>;
 }
 
@@ -8528,7 +7144,6 @@ function inspectInlineResultFields(parsed: ParsedUpstreamToolResult, fallbackMod
   const result = {
     ...asRecord(asRecord(parsed.json).result),
   };
-  delete result.handles;
   if (fallbackMode === "inspect") {
     return removeUndefined({
       ...result,
@@ -8544,7 +7159,6 @@ function inspectInlineResultFields(parsed: ParsedUpstreamToolResult, fallbackMod
     ...result,
     mode: "style",
     summary: undefined,
-    handles: undefined,
     limit: undefined,
     styleCounts: undefined,
     targetSummary,
@@ -8624,7 +7238,7 @@ function upstreamEnvelope(
 
 function shapePublicUpstreamResult(value: unknown): { result: unknown; consumedOk?: boolean } {
   const record = asRecord(value);
-  if (!Object.prototype.hasOwnProperty.call(record, "__figmaRepl")) {
+  if (!Object.prototype.hasOwnProperty.call(record, "__figmaWorkspace")) {
     return consumeTopLevelOk(value);
   }
   if (Object.prototype.hasOwnProperty.call(record, "result")) {
@@ -8632,7 +7246,7 @@ function shapePublicUpstreamResult(value: unknown): { result: unknown; consumedO
   }
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(record)) {
-    if (key !== "__figmaRepl" && key !== "ok") {
+    if (key !== "__figmaWorkspace" && key !== "ok") {
       result[key] = item;
     }
   }
@@ -8685,7 +7299,6 @@ function publicSession(
     surface: session.surface,
     knownPages: session.knownPages,
     currentPageId: session.currentPageId,
-    handles: session.handles,
     workspace: session.workspace ? responseWorkspace(session.workspace) : undefined,
     lastDiagnostics: session.lastDiagnostics,
     history: includeHistory ? session.history.slice(-historyLimit) : undefined,
@@ -8696,7 +7309,6 @@ function cloneSession(session: FigmaWorkspaceSession): FigmaWorkspaceSession {
   return {
     ...session,
     knownPages: { ...session.knownPages },
-    handles: { ...session.handles },
     workspace: session.workspace ? {
       ...session.workspace,
       files: { ...session.workspace.files },
@@ -8709,65 +7321,8 @@ function cloneSession(session: FigmaWorkspaceSession): FigmaWorkspaceSession {
   };
 }
 
-function emptyHandleChanges(): FigmaWorkspaceHandleChanges {
-  return { updated: [], removed: [] };
-}
-
-function mergeHandleChanges(
-  left: FigmaWorkspaceHandleChanges,
-  right: FigmaWorkspaceHandleChanges,
-): FigmaWorkspaceHandleChanges {
-  return {
-    updated: sortedUnique([...left.updated, ...right.updated].filter((name) => !right.removed.includes(name))),
-    removed: sortedUnique([...left.removed, ...right.removed].filter((name) => !right.updated.includes(name))),
-  };
-}
-
-function updateSessionHandles(session: FigmaWorkspaceSession, handles: Record<string, string>): FigmaWorkspaceHandleChanges {
-  const updated: string[] = [];
-  for (const [name, id] of Object.entries(handles)) {
-    if (typeof id === "string" && id.length > 0) {
-      const handle = normalizeLocalHandleName(name);
-      if (session.handles[handle] !== id) {
-        session.handles[handle] = id;
-        updated.push(handle);
-      }
-    }
-  }
-  if (updated.length > 0) {
-    touchSession(session);
-  }
-  return { updated: sortedUnique(updated), removed: [] };
-}
-
-function replaceSessionHandles(session: FigmaWorkspaceSession, handles: Record<string, string>): FigmaWorkspaceHandleChanges {
-  const nextHandles: Record<string, string> = {};
-  for (const [name, id] of Object.entries(handles)) {
-    if (typeof id === "string" && id.length > 0) {
-      nextHandles[normalizeLocalHandleName(name)] = id;
-    }
-  }
-  const updated = Object.entries(nextHandles)
-    .filter(([name, id]) => session.handles[name] !== id)
-    .map(([name]) => name);
-  const removed = Object.keys(session.handles)
-    .filter((name) => nextHandles[name] === undefined);
-  if (updated.length > 0 || removed.length > 0) {
-    session.handles = nextHandles;
-    touchSession(session);
-  }
-  return {
-    updated: sortedUnique(updated),
-    removed: sortedUnique(removed),
-  };
-}
-
 function sortedUnique(values: string[]): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
-}
-
-function normalizeLocalHandleName(name: string): string {
-  return name.startsWith("$") ? name : `$${name}`;
 }
 
 function resolveSessionNodeInput(input: string | undefined, session: FigmaWorkspaceSession): string | undefined {
@@ -8780,10 +7335,9 @@ function resolveWrapperNodeTarget(options: {
   toolName: LocalWorkspaceToolName;
   targetFallback?: unknown;
   requireNode?: boolean;
-  allowDynamicSelectors?: readonly string[];
   fileKeyError?: string;
   targetError?: string;
-}): { fileKey: string; nodeId?: string; handle?: string } {
+}): { fileKey: string; nodeId?: string } {
   const fileReference = parseFigmaFileReference(options.args.file);
   const targetInput = options.args.target ?? options.targetFallback ?? extractFigmaNodeId(options.args.file);
   const target = resolveSessionTargetInput(targetInput, options.session);
@@ -8797,35 +7351,26 @@ function resolveWrapperNodeTarget(options: {
   }
   const nodeId = target.nodeId;
   if (options.requireNode && !nodeId) {
-    throw new Error(options.targetError ?? `${options.toolName} requires "target". Pass a raw node id, node URL, or cached handle.`);
+    throw new Error(options.targetError ?? `${options.toolName} requires "target". Pass a raw node id, node URL, or { fileKey, nodeId } target.`);
   }
-  if (nodeId?.startsWith("$") && !options.allowDynamicSelectors?.includes(nodeId)) {
-    throw new Error(`${options.toolName} cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, or cached handle.`);
+  if (nodeId?.startsWith("$")) {
+    throw new Error(`${options.toolName} cannot resolve dynamic selector "${nodeId}". Pass a raw node id, node URL, or { fileKey, nodeId } target.`);
   }
-  return { fileKey, nodeId, handle: target.handle };
+  return { fileKey, nodeId };
 }
 
-function resolveSessionTargetInput(input: unknown, session: FigmaWorkspaceSession): { nodeId?: string; handle?: string; fileKey?: string } {
+function resolveSessionTargetInput(input: unknown, _session: FigmaWorkspaceSession): { nodeId?: string; fileKey?: string } {
   if (isRecord(input)) {
-    const explicitHandle = asOptionalString(input.handle) ?? asOptionalString(input.targetHandle);
-    const explicitFileKey =
-      asOptionalString(input.fileKey) ??
-      extractFigmaFileKey(asOptionalString(input.url)) ??
-      extractFigmaFileKey(asOptionalString(input.nodeUrl)) ??
-      extractFigmaFileKey(asOptionalString(input.target));
-    const nodeValue =
-      explicitHandle ??
-      asOptionalString(input.nodeId) ??
-      asOptionalString(input.targetNodeId) ??
-      asOptionalString(input.target) ??
-      asOptionalString(input.id) ??
-      asOptionalString(input.url) ??
-      asOptionalString(input.nodeUrl);
-    const resolved = resolveSessionTargetInput(nodeValue, session);
-    return {
-      ...resolved,
-      fileKey: explicitFileKey ?? resolved.fileKey,
-    };
+    const allowedKeys = new Set(["fileKey", "nodeId"]);
+    if (Object.keys(input).some((key) => !allowedKeys.has(key))) {
+      throw new Error('Structured node targets support only { fileKey, nodeId }.');
+    }
+    const fileKey = asOptionalString(input.fileKey);
+    const nodeId = asOptionalString(input.nodeId);
+    if (!fileKey || !nodeId || nodeId.startsWith("$")) {
+      throw new Error('Structured node targets require non-empty fileKey and raw nodeId strings.');
+    }
+    return { fileKey, nodeId };
   }
   const value = asOptionalString(input);
   if (!value) {
@@ -8836,22 +7381,11 @@ function resolveSessionTargetInput(input: unknown, session: FigmaWorkspaceSessio
     return {};
   }
   if (trimmed.startsWith("$")) {
-    const handle = normalizeLocalHandleName(trimmed);
-    return {
-      nodeId: session.handles[handle] ?? trimmed,
-      handle,
-    };
+    return { nodeId: trimmed };
   }
   const fromUrl = extractFigmaNodeId(trimmed);
   if (fromUrl) {
     return { nodeId: fromUrl, fileKey: extractFigmaFileKey(trimmed) };
-  }
-  const handle = normalizeLocalHandleName(trimmed);
-  if (session.handles[handle]) {
-    return {
-      nodeId: session.handles[handle],
-      handle,
-    };
   }
   return { nodeId: trimmed };
 }

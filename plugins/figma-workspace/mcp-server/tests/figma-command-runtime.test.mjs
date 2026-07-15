@@ -31,7 +31,7 @@ test("direct command parsing maps typed input and optimized global arguments", a
   const calls = [];
   const output = createOutput();
   const exitCode = await runFigmaCommand("inspect", [
-    "$hero", "--mode", "validate", "--depth", "2", "--handle", "title", "--handle", "body",
+    "123:456", "--mode", "style", "--depth", "2",
     "--session-id", "workspace", "--state-file", stateFile, "--max-inline-bytes", "512",
   ], {
     ...output.dependencies,
@@ -44,9 +44,33 @@ test("direct command parsing maps typed input and optimized global arguments", a
   assert.deepEqual(calls, [{
     argv: ["inspect", "--input", "-", "--session-file", stateFile, "--inline-result-limit", "512"],
     input: {
-      target: "$hero", mode: "validate", depth: 2, handles: ["title", "body"], sessionId: "workspace",
+      target: "123:456", mode: "style", depth: 2, sessionId: "workspace",
     },
   }]);
+});
+
+test("removed handle and policy options fail as optimized CLI usage errors", async () => {
+  const cases = [
+    ["sessions:read", ["default", "--with-handles"]],
+    ["inspect", ["123:456", "--handle", "hero"]],
+    ["inspect", ["123:456", "--mode", "validate"]],
+    ["eval", ["--input", "eval.json", "--mode", "write"]],
+    ["eval", ["--input", "eval.json", "--allow-dangerous-operations"]],
+    ["eval", ["--input", "eval.json", "--handle-updates", "replace"]],
+    ["script:run", ["--input", "script.json", "--allow-dangerous-operations"]],
+  ];
+
+  for (const [commandName, args] of cases) {
+    const output = createOutput();
+    assert.equal(await runFigmaCommand(commandName, [
+      ...args,
+      "--state-file", stateFile,
+    ], {
+      ...output.dependencies,
+      runCli: async () => assert.fail(`${commandName} must reject removed options before runtime`),
+    }), 2, `${commandName} ${args.join(" ")}`);
+    assert.match(output.stderr, /Unknown option|must be one of: inspect, style/u);
+  }
 });
 
 test("direct parsing supports option order and an exact positional separator", async () => {
@@ -275,9 +299,21 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   assert.match(json.stdout, /--state-file <path>.*Required\./u);
   assert.match(json.stdout, /--max-inline-bytes <bytes>.*Default: input inlineResultLimit when present, otherwise 4096\./u);
 
-  const repeatable = createOutput();
-  assert.equal(await runFigmaCommand("inspect", ["--help"], repeatable.dependencies), 0);
-  assert.match(repeatable.stdout, /--handle <name>.*Default: unset\. Repeatable: yes\./u);
+  const inspect = createOutput();
+  assert.equal(await runFigmaCommand("inspect", ["--help"], inspect.dependencies), 0);
+  assert.match(inspect.stdout, /--mode <inspect\|style>/u);
+  assert.doesNotMatch(inspect.stdout, /--handle|validate|\$handle|handles/u);
+
+  const sessionsRead = createOutput();
+  assert.equal(await runFigmaCommand("sessions:read", ["--help"], sessionsRead.dependencies), 0);
+  assert.match(sessionsRead.stdout, /--with-history/u);
+  assert.doesNotMatch(sessionsRead.stdout, /--with-handles|handles|\$handle/u);
+
+  for (const commandName of ["open", "eval", "script:run"]) {
+    const output = createOutput();
+    assert.equal(await runFigmaCommand(commandName, ["--help"], output.dependencies), 0);
+    assert.doesNotMatch(output.stdout, /allowDangerousOperations|allow-dangerous-operations|handleUpdates|handle-updates|handles/u, commandName);
+  }
 
   const docsSearch = createOutput();
   assert.equal(await runFigmaCommand("docs:search", ["--help"], docsSearch.dependencies), 0);

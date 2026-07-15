@@ -8,8 +8,6 @@ import {
   buildFigmaEvalScript,
   createFigmaWorkspaceClient,
   createFigmaWorkspaceSessionStore,
-  diagnoseFigmaWorkspaceCode,
-  resolveFigmaWorkspaceScriptHelperSelection,
 } from "../dist/index.js";
 
 test("neutral entrypoints expose the typed client and CLI contract", async () => {
@@ -22,21 +20,21 @@ test("neutral entrypoints expose the typed client and CLI contract", async () =>
   assert.equal("createFigmaWorkspaceMcpServer" in root, false);
 });
 
-test("session store clones initial state and caps history", () => {
+test("session store clones initial state and caps history without local handles", () => {
   const initial = {
     id: "main",
     slug: "main",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     knownPages: { Home: "1:2" },
-    handles: { hero: "2:3" },
     lastDiagnostics: [],
     history: [],
   };
   const store = createFigmaWorkspaceSessionStore({ initialSessions: [initial], historyLimit: 2 });
-  initial.handles.hero = "changed";
+  initial.knownPages.Home = "changed";
   const session = store.get("main");
-  assert.equal(session.handles.hero, "2:3");
+  assert.equal(session.knownPages.Home, "1:2");
+  assert.equal("handles" in session, false);
   for (let index = 0; index < 3; index += 1) {
     store.rememberHistory(session, {
       id: String(index),
@@ -47,6 +45,10 @@ test("session store clones initial state and caps history", () => {
     });
   }
   assert.deepEqual(store.list()[0].history.map((entry) => entry.id), ["1", "2"]);
+  assert.throws(
+    () => createFigmaWorkspaceSessionStore({ initialSessions: [{ ...initial, handles: { hero: "2:3" } }] }),
+    /legacy.*handles|handles.*no longer supported/iu,
+  );
 });
 
 test("typed client opens a workspace without contacting upstream", async () => {
@@ -71,6 +73,40 @@ test("typed client opens a workspace without contacting upstream", async () => {
   }
 });
 
+test("typed client rejects removed handle and semantic-guardrail inputs", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: createFakeUpstream(calls) });
+  try {
+    await assert.rejects(
+      client.open({ handles: { hero: "1:2" }, connect: false }),
+      /handles.*removed|local handles.*no longer supported/iu,
+    );
+    await assert.rejects(
+      client.eval({ code: "return true;", mode: "read" }),
+      /mode.*removed/iu,
+    );
+    await assert.rejects(
+      client.eval({ code: "return true;", allowDangerousOperations: true }),
+      /allowDangerousOperations.*removed/iu,
+    );
+    await assert.rejects(
+      client.eval({ code: "return true;", handleUpdates: { hero: "1:2" } }),
+      /handleUpdates.*removed|local handles.*no longer supported/iu,
+    );
+    await assert.rejects(
+      client.runScriptFile({ scriptPath: "unused.figma.ts", allowDangerousOperations: true }),
+      /allowDangerousOperations.*removed/iu,
+    );
+    await assert.rejects(
+      client.inspect({ mode: "validate" }),
+      /mode.*inspect.*style|must be one of/iu,
+    );
+    assert.deepEqual(calls, []);
+  } finally {
+    await client.close();
+  }
+});
+
 test("typed eval delegates through use_figma and returns compact output", async () => {
   const calls = [];
   const upstream = createFakeUpstream(calls, ({ name, args }) => {
@@ -82,7 +118,7 @@ test("typed eval delegates through use_figma and returns compact output", async 
         type: "text",
         text: JSON.stringify({
           ok: true,
-          __figmaRepl: { sessionId: "main", handles: { selected: "1:2" } },
+          __figmaWorkspace: { sessionId: "main", currentPageId: "1:2", knownPages: {}, captureRequests: [] },
           result: { selected: "1:2" },
         }),
       }],
@@ -103,6 +139,67 @@ test("typed eval delegates through use_figma and returns compact output", async 
   }
 });
 
+test("typed eval exposes font-safe $.text for node objects and raw ids", async () => {
+  const mock = createTextHelperFigmaMock();
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, async ({ name, args }) => {
+      assert.equal(name, "use_figma");
+      const payload = await executeWrappedFigmaScript(args.code, mock.figma);
+      return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+    }),
+  });
+  try {
+    const result = await client.eval({
+      sessionId: "text-helper",
+      code: [
+        "const objectTarget = await figma.getNodeByIdAsync('text:node');",
+        "const createdOnPage = await $.text({ text: 'Created on page' });",
+        "const createdInParent = await $.text({ parent: 'parent:1', text: 'Created in parent', font: { family: 'Roboto', style: 'Bold' } });",
+        "const updatedById = await $.text({ target: 'text:raw', text: 'Updated by id' });",
+        "const updatedByNode = await $.text({ target: objectTarget, text: 'Updated by node', font: { family: 'Work Sans', style: 'Semi Bold' } });",
+        "const errors = {};",
+        "try { await $.text({ target: 'text:raw', parent: 'parent:1', text: 'invalid' }); } catch (error) { errors.targetParent = error.message; }",
+        "try { await $.text({ target: 'text:raw' }); } catch (error) { errors.missingText = error.message; }",
+        "try { await $.text({ target: 'text:mixed', text: 'invalid' }); } catch (error) { errors.mixedFont = error.message; }",
+        "try { await $.text({ target: ({ id: 'missing:fake', type: 'TEXT' }), text: 'invalid' }); } catch (error) { errors.fakeNode = error.message; }",
+        "try { await $.text({ target: '$legacy', text: 'invalid' }); } catch (error) { errors.legacyHandle = error.message; }",
+        "try { $(); } catch (error) { errors.nonCallable = error.message; }",
+        "return {",
+        "  createdOnPage: createdOnPage.id,",
+        "  createdInParent: createdInParent.id,",
+        "  updatedById: updatedById.id,",
+        "  updatedByNode: updatedByNode.id,",
+        "  helperKeys: Object.keys($),",
+        "  frozen: Object.isFrozen($),",
+        "  errors,",
+        "};",
+      ].join("\n"),
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.upstream.result.helperKeys, ["text", "capture"]);
+    assert.equal(result.upstream.result.frozen, true);
+    assert.equal(mock.nodes.get("text:raw").characters, "Updated by id");
+    assert.equal(mock.nodes.get("text:node").characters, "Updated by node");
+    assert.equal(mock.nodes.get(result.upstream.result.createdInParent).parent, mock.nodes.get("parent:1"));
+    assert.equal(mock.nodes.get(result.upstream.result.createdOnPage).parent, mock.figma.currentPage);
+    assert.deepEqual(mock.loadedFonts, [
+      { family: "Inter", style: "Regular" },
+      { family: "Roboto", style: "Bold" },
+      { family: "Inter", style: "Medium" },
+      { family: "Work Sans", style: "Semi Bold" },
+    ]);
+    assert.match(result.upstream.result.errors.targetParent, /mutually exclusive/u);
+    assert.match(result.upstream.result.errors.missingText, /requires text as a string/u);
+    assert.match(result.upstream.result.errors.mixedFont, /mixed fonts/u);
+    assert.match(result.upstream.result.errors.fakeNode, /not found/u);
+    assert.match(result.upstream.result.errors.legacyHandle, /raw node id/u);
+    assert.match(result.upstream.result.errors.nonCallable, /not a function/u);
+  } finally {
+    await client.close();
+  }
+});
+
 test("typed eval processes queued $.capture requests into local PNG files", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-eval-capture-"));
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lP2PAAAAAElFTkSuQmCC", "base64");
@@ -110,13 +207,15 @@ test("typed eval processes queued $.capture requests into local PNG files", asyn
   const client = createFigmaWorkspaceClient({
     client: createFakeUpstream(calls, ({ name, args }) => {
       if (name === "use_figma") {
-        assert.match(args.code, /\$\.capture = async function capture/u);
+        assert.match(args.code, /async function __figmaWorkspaceCapture\(target, options = \{\}\)/u);
+        assert.match(args.code, /const \$ = Object\.freeze/u);
         assert.doesNotMatch(args.code, /\$\.screenshot|node\.screenshot/u);
         return { content: [{ type: "text", text: JSON.stringify({
           ok: true,
-          __figmaRepl: {
+          __figmaWorkspace: {
             sessionId: "queued-eval",
-            handles: {},
+            currentPageId: "1:1",
+            knownPages: {},
             captureRequests: [{
               requestId: "capture-1",
               nodeId: "22:7",
@@ -184,39 +283,61 @@ test("typed eval processes queued $.capture requests into local PNG files", asyn
   }
 });
 
-test("typed eval rejects a capture envelope when $.capture was not selected", async () => {
+test("typed eval accepts a valid queued capture envelope without source authorization", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-eval-envelope-"));
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lP2PAAAAAElFTkSuQmCC", "base64");
   const calls = [];
   const client = createFigmaWorkspaceClient({
     client: createFakeUpstream(calls, ({ name }) => {
-      assert.equal(name, "use_figma");
-      return { content: [{ type: "text", text: JSON.stringify({
-        ok: true,
-        __figmaRepl: {
-          sessionId: "oversized-captures",
-          handles: {},
-          captureRequests: [{ requestId: "capture-1", nodeId: "1:1" }],
+      if (name === "use_figma") {
+        return { content: [{ type: "text", text: JSON.stringify({
+          ok: true,
+          __figmaWorkspace: {
+            sessionId: "capture-envelope",
+            currentPageId: "1:1",
+            knownPages: {},
+            captureRequests: [{ requestId: "capture-1", nodeId: "1:1", imageFile: "envelope.png" }],
+          },
+          result: { frameId: "1:1" },
+        }) }] };
+      }
+      assert.equal(name, "get_screenshot");
+      return { content: [{ type: "image", mimeType: "image/png", data: png.toString("base64") }] };
+    }, {
+      tools: [
+        {
+          name: "use_figma",
+          inputSchema: { type: "object", properties: { code: { type: "string" }, fileKey: { type: "string" } }, required: ["code", "fileKey"] },
         },
-        result: { frameId: "1:1" },
-      }) }] };
+        {
+          name: "get_screenshot",
+          inputSchema: { type: "object", properties: { fileKey: { type: "string" }, nodeId: { type: "string" } }, required: ["fileKey", "nodeId"] },
+        },
+      ],
     }),
   });
   try {
+    await client.open({
+      sessionId: "capture-envelope",
+      file: "https://www.figma.com/design/file123/Test",
+      workspaceDir: tempDir,
+      connect: false,
+    });
     const result = await client.eval({
-      sessionId: "oversized-captures",
+      sessionId: "capture-envelope",
       code: "return { frameId: figma.currentPage.children[0]?.id };",
     });
-    assert.equal(result.ok, false);
+    assert.equal(result.ok, true);
     assert.equal(result.scriptExecutionSucceeded, true);
-    assert.equal(result.captureProcessingSucceeded, false);
-    assert.match(result.retryGuidance, /Do not rerun/u);
+    assert.equal(result.captureProcessingSucceeded, true);
     assert.equal(result.upstream.result.frameId, "1:1");
     assert.equal(result.captures.length, 1);
-    assert.equal(result.captures[0].requestId, "capture-envelope");
-    assert.equal(result.captures[0].upstreamError.code, "FIGMA_WORKSPACE_CAPTURE_REQUEST_INVALID");
-    assert.ok(result.outputFiles?.debugFile?.path);
-    assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["use_figma"]);
+    assert.equal(result.captures[0].requestId, "capture-1");
+    assert.equal(result.captures[0].imageFile, resolve(tempDir, "file123", "envelope.png"));
+    assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["use_figma", "get_screenshot"]);
   } finally {
     await client.close();
+    await rm(tempDir, { recursive: true, force: true });
   }
 });
 
@@ -228,9 +349,10 @@ test("typed eval rejects absolute imageFile paths from queued capture envelopes"
       assert.equal(name, "use_figma");
       return { content: [{ type: "text", text: JSON.stringify({
         ok: true,
-        __figmaRepl: {
+        __figmaWorkspace: {
           sessionId: "unsafe-capture-path",
-          handles: {},
+          currentPageId: "1:1",
+          knownPages: {},
           captureRequests: [{
             requestId: "capture-1",
             nodeId: "1:1",
@@ -258,16 +380,91 @@ test("typed eval rejects absolute imageFile paths from queued capture envelopes"
   }
 });
 
-test("typed eval enforces the host limit on authorized queued captures", async () => {
+test("typed eval rejects malformed queued capture envelopes before host capture", async () => {
+  const cases = [
+    {
+      name: "session mismatch",
+      envelope: { sessionId: "other-session", captureRequests: [] },
+      message: /active Figma Workspace session/u,
+    },
+    {
+      name: "non-array requests",
+      envelope: { sessionId: "capture-malformed", captureRequests: {} },
+      message: /must be an array/u,
+    },
+    {
+      name: "unknown request field",
+      envelope: { sessionId: "capture-malformed", captureRequests: [{ requestId: "capture-1", nodeId: "1:1", extra: true }] },
+      message: /unsupported fields/u,
+    },
+    {
+      name: "out-of-order request id",
+      envelope: { sessionId: "capture-malformed", captureRequests: [{ requestId: "capture-2", nodeId: "1:1" }] },
+      message: /invalid requestId/u,
+    },
+    {
+      name: "legacy node id",
+      envelope: { sessionId: "capture-malformed", captureRequests: [{ requestId: "capture-1", nodeId: "$legacy" }] },
+      message: /invalid nodeId/u,
+    },
+    {
+      name: "path traversal",
+      envelope: { sessionId: "capture-malformed", captureRequests: [{ requestId: "capture-1", nodeId: "1:1", imageFile: "../escape.png" }] },
+      message: /workspace-relative/u,
+    },
+    {
+      name: "invalid dimension",
+      envelope: { sessionId: "capture-malformed", captureRequests: [{ requestId: "capture-1", nodeId: "1:1", maxDimension: 0 }] },
+      message: /invalid maxDimension/u,
+    },
+    {
+      name: "invalid boolean",
+      envelope: { sessionId: "capture-malformed", captureRequests: [{ requestId: "capture-1", nodeId: "1:1", contentsOnly: "yes" }] },
+      message: /invalid contentsOnly/u,
+    },
+  ];
+
+  for (const testCase of cases) {
+    const calls = [];
+    const client = createFigmaWorkspaceClient({
+      client: createFakeUpstream(calls, ({ name }) => {
+        assert.equal(name, "use_figma", testCase.name);
+        return { content: [{ type: "text", text: JSON.stringify({
+          ok: true,
+          __figmaWorkspace: testCase.envelope,
+          result: { frameId: "1:1" },
+        }) }] };
+      }),
+    });
+    try {
+      const result = await client.eval({
+        sessionId: "capture-malformed",
+        code: "return { frameId: '1:1' };",
+      });
+      assert.equal(result.ok, false, testCase.name);
+      assert.equal(result.scriptExecutionSucceeded, true, testCase.name);
+      assert.equal(result.captureProcessingSucceeded, false, testCase.name);
+      assert.equal(result.captures[0].requestId, "capture-envelope", testCase.name);
+      assert.equal(result.captures[0].upstreamError.code, "FIGMA_WORKSPACE_CAPTURE_REQUEST_INVALID", testCase.name);
+      assert.match(result.captures[0].upstreamError.message, testCase.message, testCase.name);
+      assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["use_figma"], testCase.name);
+    } finally {
+      await client.close();
+    }
+  }
+});
+
+test("typed eval enforces the host limit on validated queued captures", async () => {
   const calls = [];
   const client = createFigmaWorkspaceClient({
     client: createFakeUpstream(calls, ({ name }) => {
       assert.equal(name, "use_figma");
       return { content: [{ type: "text", text: JSON.stringify({
         ok: true,
-        __figmaRepl: {
+        __figmaWorkspace: {
           sessionId: "oversized-captures",
-          handles: {},
+          currentPageId: "1:1",
+          knownPages: {},
           captureRequests: Array.from({ length: 9 }, (_, index) => ({
             requestId: `capture-${index + 1}`,
             nodeId: `${index + 1}:1`,
@@ -552,7 +749,6 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
       knownPages: {},
-      handles: { hero: "1:2" },
       lastDiagnostics: [],
       history: [{ id: "h1", at: "2026-01-02T00:00:00.000Z", tool: "eval", summary: "read", nodeIds: [] }],
     }],
@@ -591,12 +787,12 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
 
     const summaries = await client.sessionsInfo();
     assert.equal(summaries.sessions[0].id, "saved");
-    assert.equal(summaries.sessions[0].handleCount, 1);
+    assert.equal("handleCount" in summaries.sessions[0], false);
     const detail = await client.sessionsInfo({ sessionId: "saved" });
-    assert.equal(detail.session.handles, undefined);
+    assert.equal("handles" in detail.session, false);
     assert.equal(detail.session.history, undefined);
-    const expanded = await client.sessionsInfo({ sessionId: "saved", includeHandles: true, includeHistory: true });
-    assert.deepEqual(expanded.session.handles, { hero: "1:2" });
+    const expanded = await client.sessionsInfo({ sessionId: "saved", includeHistory: true });
+    assert.equal("handles" in expanded.session, false);
     assert.equal(expanded.session.history.length, 1);
     assert.equal(client.sessions.list().length, 1);
 
@@ -625,7 +821,6 @@ test("runScriptFile blocks TypeScript diagnostics before upstream execution", as
     assert.equal(result.executed, false);
     assert.ok(result.diagnostics.length > 0);
     assert.doesNotMatch(JSON.stringify(result.diagnostics), /figma_workspace_/);
-    assert.ok(result.diagnostics.some((diagnostic) => diagnostic.docsHint.startsWith("lookup kind=api")));
     assert.deepEqual(calls, []);
   } finally {
     await client.close();
@@ -652,6 +847,110 @@ test("runScriptFile rejects script-only screenshot methods before upstream execu
   }
 });
 
+test("runScriptFile forwards valid Plugin API operations without semantic policy diagnostics", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-script-native-api-"));
+  const scriptPath = resolve(tempDir, "native-api.figma.ts");
+  await writeFile(scriptPath, [
+    "const node = figma.createRectangle();",
+    "const component = figma.createComponent();",
+    "const instance = component.createInstance();",
+    "node.setPluginData('owner', 'agent');",
+    "const matches = figma.root.findAll((candidate) => candidate.type === 'RECTANGLE');",
+    "figma.createImage(new Uint8Array([137, 80, 78, 71]));",
+    "figma.currentPage.selection = [node];",
+    "await figma.setCurrentPageAsync(figma.currentPage);",
+    "await fetch('https://example.com/resource');",
+    "const moduleName: string = 'data:text/javascript,export default 1';",
+    "await import(moduleName);",
+    "eval('1 + 1');",
+    "figma.flatten([node]);",
+    "instance.detachInstance();",
+    "node.remove();",
+    "return { matchCount: matches.length };",
+  ].join("\n"), "utf8");
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name, args }) => {
+      assert.equal(name, "use_figma");
+      assert.match(args.code, /root\.findAll/u);
+      assert.match(args.code, /fetch\(/u);
+      assert.match(args.code, /\.remove\(\)/u);
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: true,
+        __figmaWorkspace: { sessionId: "native-api", currentPageId: "1:1", knownPages: {}, captureRequests: [] },
+        result: { matchCount: 1 },
+      }) }] };
+    }),
+  });
+  try {
+    const result = await client.runScriptFile({ sessionId: "native-api", scriptPath, strict: true });
+    assert.equal(result.ok, true);
+    assert.equal(result.executed, true);
+    assert.deepEqual(result.diagnostics ?? [], []);
+    assert.equal(result.upstream.result.matchCount, 1);
+    assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["use_figma"]);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runScriptFile accepts exactly 50,000 wrapped UTF-8 bytes and rejects 50,001", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-script-size-"));
+  const scriptPath = resolve(tempDir, "size-boundary.figma.ts");
+  const baselineSource = "/* */\nreturn null;\n";
+  await writeFile(scriptPath, baselineSource, "utf8");
+  const calls = [];
+  const wrappedByteLengths = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name, args }) => {
+      assert.equal(name, "use_figma");
+      wrappedByteLengths.push(Buffer.byteLength(args.code, "utf8"));
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: true,
+        __figmaWorkspace: {
+          sessionId: "size-boundary",
+          currentPageId: "1:1",
+          knownPages: {},
+          captureRequests: [],
+        },
+        result: null,
+      }) }] };
+    }),
+  });
+  try {
+    const baseline = await client.runScriptFile({ sessionId: "size-boundary", scriptPath, strict: true });
+    assert.equal(baseline.ok, true);
+    assert.equal(wrappedByteLengths.length, 1);
+    let paddingLength = 50_000 - wrappedByteLengths[0];
+    assert.ok(paddingLength > 0);
+
+    await writeFile(scriptPath, `/*${"x".repeat(paddingLength)} */\nreturn null;\n`, "utf8");
+    const calibration = await client.runScriptFile({ sessionId: "size-boundary", scriptPath, strict: true });
+    assert.equal(calibration.ok, true);
+    paddingLength += 50_000 - wrappedByteLengths.at(-1);
+
+    if (wrappedByteLengths.at(-1) !== 50_000) {
+      await writeFile(scriptPath, `/*${"x".repeat(paddingLength)} */\nreturn null;\n`, "utf8");
+      const exact = await client.runScriptFile({ sessionId: "size-boundary", scriptPath, strict: true });
+      assert.equal(exact.ok, true);
+    }
+    assert.equal(wrappedByteLengths.at(-1), 50_000);
+    const acceptedCallCount = wrappedByteLengths.length;
+
+    await writeFile(scriptPath, `/*${"x".repeat(paddingLength + 1)} */\nreturn null;\n`, "utf8");
+    const oversized = await client.runScriptFile({ sessionId: "size-boundary", scriptPath, strict: true });
+    assert.equal(oversized.ok, false);
+    assert.equal(oversized.phase, "preflight");
+    assert.equal(oversized.executed, false);
+    assert.ok(oversized.diagnostics.some((diagnostic) => diagnostic.code === "FIGMA_WORKSPACE_SCRIPT_PAYLOAD_TOO_LARGE"));
+    assert.equal(wrappedByteLengths.length, acceptedCallCount);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("successful runScriptFile transpiles TypeScript and delegates to use_figma", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-script-success-"));
   const scriptPath = resolve(tempDir, "success.figma.ts");
@@ -668,7 +967,7 @@ test("successful runScriptFile transpiles TypeScript and delegates to use_figma"
       assert.doesNotMatch(args.code, /: FrameNode|as const/u);
       return { content: [{ type: "text", text: JSON.stringify({
         ok: true,
-        __figmaRepl: { sessionId: "script-success", handles: {} },
+        __figmaWorkspace: { sessionId: "script-success", currentPageId: "1:1", knownPages: {}, captureRequests: [] },
         result: { frameId: "30:1" },
       }) }] };
     }),
@@ -700,9 +999,10 @@ test("runScriptFile preserves script success when a queued capture fails", async
       if (name === "use_figma") {
         return { content: [{ type: "text", text: JSON.stringify({
           ok: true,
-          __figmaRepl: {
+          __figmaWorkspace: {
             sessionId: "queued-script-failure",
-            handles: {},
+            currentPageId: "1:1",
+            knownPages: {},
             captureRequests: [{ requestId: "capture-1", nodeId: "30:1" }],
           },
           result: { frameId: "30:1" },
@@ -848,6 +1148,50 @@ test("captureNode writes a deterministic PNG returned by get_screenshot", async 
   }
 });
 
+test("captureNode fails closed for explicit non-PNG MIME types and malformed PNG payloads", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-capture-invalid-"));
+  const validPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lP2PAAAAAElFTkSuQmCC", "base64");
+  const invalidPayloads = [
+    { name: "explicit non-PNG MIME", mimeType: "image/jpeg", data: validPng, message: /image\/png.*image\/jpeg/iu },
+    { name: "short PNG", mimeType: "image/png", data: validPng.subarray(0, 24), message: /IHDR chunk is incomplete/iu },
+    { name: "forged IHDR", mimeType: "image/png", data: Buffer.concat([validPng.subarray(0, 8), Buffer.from([0, 0, 0, 13]), Buffer.from("JUNK"), validPng.subarray(16)]), message: /IHDR chunk is missing or invalid/iu },
+    { name: "zero dimensions", mimeType: "image/png", data: Buffer.from(validPng).fill(0, 16, 24), message: /width and height must be positive/iu },
+  ];
+  try {
+    for (const fixture of invalidPayloads) {
+      const outputFile = resolve(tempDir, `${fixture.name}.png`);
+      const calls = [];
+      const client = createFigmaWorkspaceClient({
+        client: createFakeUpstream(calls, () => ({
+          content: [{ type: "image", mimeType: fixture.mimeType, data: fixture.data.toString("base64") }],
+        }), {
+          tools: [{
+            name: "get_screenshot",
+            inputSchema: {
+              type: "object",
+              properties: { fileKey: { type: "string" }, nodeId: { type: "string" } },
+              required: ["fileKey", "nodeId"],
+            },
+          }],
+        }),
+      });
+      try {
+        const result = await client.captureNode({
+          target: { fileKey: "file123", nodeId: "22:7" },
+          imageFile: outputFile,
+        });
+        assert.equal(result.ok, false, fixture.name);
+        assert.match(result.upstreamError.message, fixture.message, fixture.name);
+        await assert.rejects(readFile(outputFile));
+      } finally {
+        await client.close();
+      }
+    }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("runTaskPlan stops after a structured upstream failure", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-plan-"));
   const previousTaskRoot = process.env.FIGMA_WORKSPACE_TASK_ROOT;
@@ -922,18 +1266,25 @@ test("metadata, design context, and inspect use typed official-tool wrappers", a
       sessionId: "context-test",
       file: "https://www.figma.com/design/ContextFileKey012/Test",
       workspaceDir: tempDir,
-      handles: { "$root": "1:2" },
       connect: false,
     });
-    const metadata = await client.getMetadata({ sessionId: "context-test", target: "$root" });
+    const metadata = await client.getMetadata({ sessionId: "context-test", target: "1:2" });
     assert.equal(metadata.ok, true);
     assert.equal(metadata.metadata.json.root.nodeId, "1:2");
-    const design = await client.getDesignContext({ sessionId: "context-test", target: "$root" });
+    const design = await client.getDesignContext({ sessionId: "context-test", target: "1:2" });
     assert.equal(design.ok, true);
     assert.equal(design.upstream.result.code, "<div />");
-    const inspect = await client.inspect({ sessionId: "context-test", target: "$root" });
+    const inspect = await client.inspect({ sessionId: "context-test", target: "1:2" });
     assert.equal(inspect.ok, true);
     assert.equal(inspect.summary.locked, true);
+    await assert.rejects(
+      client.getMetadata({ sessionId: "context-test", target: "$root" }),
+      /no longer accepts local handles|raw node id/iu,
+    );
+    await assert.rejects(
+      client.getDesignContext({ sessionId: "context-test", target: { handle: "$root" } }),
+      /no longer accepts local handles|nodeId/iu,
+    );
   } finally {
     await client.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -986,47 +1337,59 @@ test("typed prepareTask creates a local .figma.ts workspace without upstream", a
   }
 });
 
-test("runtime code diagnostics and helper selection remain available", () => {
-  const diagnostics = diagnoseFigmaWorkspaceCode("await fetch('https://example.com'); figma.root.findAll();", { mode: "write" });
-  assert.ok(diagnostics.some((diagnostic) => diagnostic.code === "FIGMA_WORKSPACE_NETWORK_ACCESS"));
-  assert.doesNotMatch(JSON.stringify(diagnostics), /figma_workspace_/);
-
-  const selection = resolveFigmaWorkspaceScriptHelperSelection(
-    "return $.inspect(figma.currentPage);",
-  );
-  assert.equal(selection.helperNames.has("inspect"), true);
-  assert.equal(selection.injectedHelpers.includes("$.inspect"), true);
-  const captureSelection = resolveFigmaWorkspaceScriptHelperSelection(
-    "return $.capture(figma.currentPage.children[0], { maxDimension: 1600 });",
-  );
-  assert.equal(captureSelection.helperNames.has("capture"), true);
-  assert.equal(captureSelection.injectedHelpers.includes("$.capture"), true);
-  const unsupportedScreenshot = resolveFigmaWorkspaceScriptHelperSelection(
-    "return $.screenshot(figma.currentPage);",
-  );
-  assert.equal(unsupportedScreenshot.helperNames.has("screenshot"), false);
-  assert.equal(unsupportedScreenshot.injectedHelpers.includes("$.screenshot"), false);
+test("buildFigmaEvalScript always injects one frozen non-callable two-helper namespace", () => {
   const wrapper = buildFigmaEvalScript({
     session: {
       id: "main",
-      handles: {},
       knownPages: {},
     },
     code: "return figma.currentPage.id;",
   });
   assert.match(wrapper, /figma\.currentPage\.id/u);
-  assert.match(wrapper, /__figmaRepl/u);
-  assert.doesNotMatch(wrapper, /\$\.screenshot|node\.screenshot/u);
-  const captureWrapper = buildFigmaEvalScript({
-    session: {
-      id: "capture",
-      handles: {},
-      knownPages: {},
-    },
-    code: "return $.capture(figma.currentPage.children[0]);",
+  assert.match(wrapper, /const \$ = Object\.freeze\(\{\s*text: __figmaWorkspaceText,\s*capture: __figmaWorkspaceCapture,?\s*\}\);/u);
+  assert.match(wrapper, /async function __figmaWorkspaceText\(input\)/u);
+  assert.match(wrapper, /async function __figmaWorkspaceCapture\(target, options = \{\}\)/u);
+  assert.match(wrapper, /__figmaWorkspace/u);
+  assert.doesNotMatch(wrapper, /function\s+\$\s*\(|const\s+\$\s*=\s*(?:async\s*)?\(/u);
+  assert.doesNotMatch(
+    wrapper,
+    /\$\.(?:handles|remember|forget|resolveId|node|select|inspect|checkpoint|checkpoints|imageAsset|findFreeSlot|placeNode|replaceGeneratedFrame|cloneNodeTree|screenshot)|node\.screenshot|injectedHelpers|helperApiVersion/u,
+  );
+  assert.doesNotMatch(wrapper, /\bhandles\b/u);
+});
+
+test("eval and .figma.ts execution inject byte-identical helper bootstrap", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-shared-bootstrap-"));
+  const scriptPath = resolve(tempDir, "shared-bootstrap.figma.ts");
+  await writeFile(scriptPath, "return 2;\n", "utf8");
+  const wrappedScripts = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream([], ({ name, args }) => {
+      assert.equal(name, "use_figma");
+      wrappedScripts.push(args.code);
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: true,
+        __figmaWorkspace: {
+          sessionId: "shared-bootstrap",
+          knownPages: {},
+          captureRequests: [],
+        },
+        result: wrappedScripts.length,
+      }) }] };
+    }),
   });
-  assert.match(captureWrapper, /\$\.capture = async function capture/u);
-  assert.doesNotMatch(captureWrapper, /\$\.screenshot|node\.screenshot/u);
+  try {
+    assert.equal((await client.eval({ sessionId: "shared-bootstrap", code: "return 1;" })).ok, true);
+    assert.equal((await client.runScriptFile({ sessionId: "shared-bootstrap", scriptPath, strict: true })).ok, true);
+    assert.equal(wrappedScripts.length, 2);
+    const marker = "\nasync function __figmaWorkspaceUserMain()";
+    const bootstraps = wrappedScripts.map((source) => source.slice(0, source.indexOf(marker)));
+    assert.ok(bootstraps.every((bootstrap) => bootstrap.length > 0));
+    assert.equal(bootstraps[0], bootstraps[1]);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("typed client validates an absolute OAuth cache path", async () => {
@@ -1077,4 +1440,90 @@ function createFakeUpstream(calls, callTool = () => {
       return callTool({ name, args });
     },
   };
+}
+
+async function executeWrappedFigmaScript(source, figma) {
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  return new AsyncFunction("figma", source)(figma);
+}
+
+function createTextHelperFigmaMock() {
+  const nodes = new Map();
+  const loadedFonts = [];
+  let createdCount = 0;
+  const attach = (parent, node) => {
+    if (node.parent && Array.isArray(node.parent.children)) {
+      node.parent.children = node.parent.children.filter((child) => child !== node);
+    }
+    node.parent = parent;
+    parent.children.push(node);
+  };
+  const currentPage = {
+    id: "page:1",
+    type: "PAGE",
+    name: "Page 1",
+    children: [],
+    appendChild(node) {
+      attach(this, node);
+    },
+  };
+  const parent = {
+    id: "parent:1",
+    type: "FRAME",
+    name: "Parent",
+    children: [],
+    appendChild(node) {
+      attach(this, node);
+    },
+  };
+  const rawText = {
+    id: "text:raw",
+    type: "TEXT",
+    name: "Raw target",
+    fontName: { family: "Inter", style: "Medium" },
+    characters: "Before",
+  };
+  const objectText = {
+    id: "text:node",
+    type: "TEXT",
+    name: "Node target",
+    fontName: { family: "Inter", style: "Regular" },
+    characters: "Before",
+  };
+  const mixedText = {
+    id: "text:mixed",
+    type: "TEXT",
+    name: "Mixed target",
+    fontName: Symbol("mixed"),
+    characters: "Mixed",
+  };
+  for (const node of [currentPage, parent, rawText, objectText, mixedText]) {
+    nodes.set(node.id, node);
+  }
+  const figma = {
+    currentPage,
+    root: { id: "0:0", type: "DOCUMENT", name: "Document", children: [currentPage] },
+    createText() {
+      createdCount += 1;
+      const node = {
+        id: `text:created-${createdCount}`,
+        type: "TEXT",
+        name: "",
+        fontName: { family: "Inter", style: "Regular" },
+        characters: "",
+      };
+      nodes.set(node.id, node);
+      return node;
+    },
+    async getNodeByIdAsync(id) {
+      return nodes.get(id) ?? null;
+    },
+    getNodeById(id) {
+      return nodes.get(id) ?? null;
+    },
+    async loadFontAsync(font) {
+      loadedFonts.push({ ...font });
+    },
+  };
+  return { figma, loadedFonts, nodes };
 }

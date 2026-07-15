@@ -9,14 +9,14 @@
 ```text
 npm --silent run figma:libraries -- --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
 npm --silent run figma:design-system -- "button action" --components --variables --styles --library <library-key> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:variables -- <node-id-or-handle> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:metadata -- <node-id-or-handle> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:variables -- <node-id> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:metadata -- <node-id> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
 ```
 
 - `figma:libraries` 用于列出可用库和取得库 key; 只在需要限定来源时把 key 传给 `figma:design-system --library`。
 - `figma:design-system` 用于搜索可复用的组件、样式和变量。先复用匹配的库资产, 不要创建同名替代品。
 - `figma:variables` 用于确认目标或节点已有的 token 绑定和 mode; 它不替代组件结构检查。
-- `figma:metadata` 先取得宽泛的层级、组件和实例线索; 拿到目标 id 或 handle 后再做针对性工作。
+- `figma:metadata` 先取得宽泛的层级、组件和实例线索; 拿到目标 raw node ID 后再做针对性工作。
 - `figma:api:search` 只在需要精确 Plugin API 符号、属性或返回类型时使用, 例如 `componentPropertyDefinitions`、`combineAsVariants` 或 `createComponent`。
 
 ```text

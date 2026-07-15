@@ -1,5 +1,12 @@
 import type { FigmaWorkspaceSurface } from "../runtime/script-runner.js";
 
+export interface FigmaWorkspaceExplicitNodeTarget {
+  fileKey: string;
+  nodeId: string;
+}
+
+export type FigmaWorkspaceNodeTarget = string | FigmaWorkspaceExplicitNodeTarget;
+
 export interface FigmaWorkspaceOpenArguments {
   [key: string]: unknown;
   title?: string;
@@ -11,7 +18,6 @@ export interface FigmaWorkspaceOpenArguments {
   currentPageId?: string;
   reset?: boolean;
   connect?: boolean;
-  handles?: Record<string, string>;
 }
 
 export interface FigmaWorkspaceEvalArguments {
@@ -20,10 +26,7 @@ export interface FigmaWorkspaceEvalArguments {
   sessionId?: string;
   code: string;
   typescript?: boolean;
-  mode?: "read" | "write";
   surface?: FigmaWorkspaceSurface;
-  allowDangerousOperations?: boolean;
-  handleUpdates?: Record<string, string>;
   inlineResultLimit?: number;
 }
 
@@ -36,14 +39,13 @@ export interface FigmaWorkspaceRunScriptFileArguments {
   strict?: boolean;
   surface?: FigmaWorkspaceSurface;
   targetPageId?: string;
-  allowDangerousOperations?: boolean;
   inlineResultLimit?: number;
 }
 
 export interface FigmaWorkspaceAssetManifestAsset {
   [key: string]: unknown;
   path?: string;
-  target?: unknown;
+  target?: FigmaWorkspaceNodeTarget;
   nodeUrl?: string;
   url?: string;
   name?: string;
@@ -61,7 +63,7 @@ export interface FigmaWorkspaceApplyAssetManifestArguments {
 
 export interface FigmaWorkspaceDownloadAssetsTarget {
   [key: string]: unknown;
-  target?: unknown;
+  target?: FigmaWorkspaceNodeTarget;
   name?: string;
   defaultFormat?: "png" | "jpg" | "svg" | "pdf";
   defaultScale?: number;
@@ -80,7 +82,7 @@ export interface FigmaWorkspaceCaptureNodeArguments {
   [key: string]: unknown;
   title?: string;
   sessionId?: string;
-  target: unknown;
+  target: FigmaWorkspaceNodeTarget;
   imageFile?: string;
   maxDimension?: number;
   contentsOnly?: boolean;
@@ -117,7 +119,7 @@ export interface FigmaWorkspaceGetMetadataArguments {
   sessionId?: string;
   file?: string;
   workspaceDir?: string;
-  target?: unknown;
+  target?: FigmaWorkspaceNodeTarget;
   nodeId?: string;
   refresh?: boolean;
   inlineResultLimit?: number;
@@ -131,7 +133,7 @@ export interface FigmaWorkspaceGetDesignContextArguments {
   sessionId?: string;
   file?: string;
   workspaceDir?: string;
-  target?: unknown;
+  target?: FigmaWorkspaceNodeTarget;
   refresh?: boolean;
   inlineResultLimit?: number;
   clientLanguages?: string;
@@ -147,7 +149,7 @@ export interface FigmaWorkspaceGetMotionContextArguments {
   sessionId?: string;
   file?: string;
   workspaceDir?: string;
-  target?: unknown;
+  target?: FigmaWorkspaceNodeTarget;
   recursive?: boolean;
   clientLanguages?: string;
   clientFrameworks?: string;
@@ -190,7 +192,7 @@ export interface FigmaWorkspaceGetVariableDefsArguments {
   sessionId?: string;
   file?: string;
   workspaceDir?: string;
-  target?: unknown;
+  target?: FigmaWorkspaceNodeTarget;
   refresh?: boolean;
   inlineResultLimit?: number;
 }
@@ -262,7 +264,6 @@ export interface FigmaWorkspaceDoctorArguments {
 export interface FigmaWorkspaceSessionsArguments {
   [key: string]: unknown;
   sessionId?: string;
-  includeHandles?: boolean;
   includeHistory?: boolean;
 }
 
@@ -287,17 +288,15 @@ export interface FigmaWorkspaceInspectArguments {
   [key: string]: unknown;
   title?: string;
   sessionId?: string;
-  mode?: "inspect" | "validate" | "style";
+  mode?: "inspect" | "style";
   target?: string;
   depth?: number;
-  handles?: string[];
 }
 
 const FIGMA_WORKSPACE_SURFACES = ["design", "figjam", "slides"] as const satisfies readonly FigmaWorkspaceSurface[];
-const FIGMA_WORKSPACE_EVAL_MODES = ["read", "write"] as const;
 const FIGMA_WORKSPACE_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as const;
 const FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS = ["design-implementation-context", "motion-implementation"] as const satisfies readonly FigmaWorkspaceGuidanceWorkflow[];
-const FIGMA_WORKSPACE_INSPECT_MODES = ["inspect", "validate", "style"] as const;
+const FIGMA_WORKSPACE_INSPECT_MODES = ["inspect", "style"] as const;
 const FIGMA_WORKSPACE_LOOKUP_KINDS = ["docs", "api"] as const;
 const FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES = [
   "auto",
@@ -377,7 +376,7 @@ export function asOpenArgs(args: unknown): FigmaWorkspaceOpenArguments {
     "currentPageId",
   ]);
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
-  assertOptionalRecord(record, "handles");
+  assertRemovedHandleArguments(record, ["handles"]);
   return record;
 }
 
@@ -390,10 +389,10 @@ export function asEvalArgs(args: unknown): FigmaWorkspaceEvalArguments {
     "code",
     "sessionId",
   ]);
-  assertOptionalEnum(record, "mode", FIGMA_WORKSPACE_EVAL_MODES);
+  assertRemovedHandleArguments(record, ["handleUpdates"]);
+  assertRemovedArgumentsWithoutReplacement(record, ["mode", "allowDangerousOperations"]);
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
   assertOptionalBooleanFields(record, ["typescript"]);
-  assertOptionalRecord(record, "handleUpdates");
   return record;
 }
 
@@ -404,6 +403,7 @@ export function asRunScriptFileArgs(args: unknown): FigmaWorkspaceRunScriptFileA
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertRemovedRunScriptOutputLayoutArguments(record);
   assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertRemovedArgumentsWithoutReplacement(record, ["allowDangerousOperations"]);
   assertOptionalStringFields(record, [
     "sessionId",
     "scriptPath",
@@ -519,20 +519,20 @@ export function asInspectArgs(args: unknown): FigmaWorkspaceInspectArguments {
   ]);
   assertOptionalInspectTarget(record.target);
   assertOptionalEnum(record, "mode", FIGMA_WORKSPACE_INSPECT_MODES);
-  const handles = assertOptionalArray(record, "handles");
-  handles?.forEach((handle, index) => {
-    if (typeof handle !== "string") {
-      throw new Error(`Tool argument "handles[${index}]" must be a string.`);
-    }
-  });
+  assertRemovedHandleArguments(record, ["handles"]);
   return record;
 }
 
 function assertOptionalInspectTarget(value: unknown): void {
-  if (value === undefined || typeof value === "string") {
+  if (value === undefined) {
     return;
   }
-  throw new Error('Tool argument "target" must be a string selector, handle, node id, or node URL. Do not pass { fileKey, nodeId } to figma_workspace_inspect.');
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error('Tool argument "target" must be $selection, $currentPage, a raw node id, or a node URL string.');
+  }
+  if (value.startsWith("$") && value !== "$selection" && value !== "$currentPage") {
+    throw new Error('Tool argument "target" no longer accepts local handles. Use $selection, $currentPage, a raw node id, or a node URL.');
+  }
 }
 
 export function asCallUpstreamToolArgs(args: unknown): FigmaWorkspaceCallUpstreamToolArguments {
@@ -702,7 +702,8 @@ export function asDoctorArgs(args: unknown): FigmaWorkspaceDoctorArguments {
 export function asSessionsArgs(args: unknown): FigmaWorkspaceSessionsArguments {
   const record = parseToolArgs<FigmaWorkspaceSessionsArguments>(args);
   assertOptionalStringFields(record, ["sessionId"]);
-  assertOptionalBooleanFields(record, ["includeHandles", "includeHistory"]);
+  assertRemovedHandleArguments(record, ["includeHandles"]);
+  assertOptionalBooleanFields(record, ["includeHistory"]);
   return record;
 }
 
@@ -866,7 +867,7 @@ function assertOptionalDownloadAssetTargets(record: Record<string, unknown>): Fi
       throw new Error(`Tool argument "${targetName}.defaultScale" must be a number from 0.01 to 4.`);
     }
     return {
-      target: target.target,
+      target: target.target as FigmaWorkspaceNodeTarget | undefined,
       name: target.name as string | undefined,
       defaultFormat: defaultFormat as FigmaWorkspaceDownloadAssetsTarget["defaultFormat"],
       defaultScale: defaultScale as number | undefined,
@@ -879,26 +880,13 @@ function assertOptionalTargetValue(value: unknown, displayName: string): void {
     return;
   }
   if (typeof value === "string") {
+    assertNodeTargetString(value, displayName);
     return;
   }
   if (!isRecord(value)) {
-    throw new Error(`Tool argument "${displayName}" must be a string or object.`);
+    throw new Error(`Tool argument "${displayName}" must be a raw node id, node URL, or { fileKey, nodeId }.`);
   }
-  assertRemovedArguments(
-    value,
-    ["targetNodeId", "targetHandle", "targetId"],
-    "{ fileKey, nodeId } or handle",
-    `${displayName}.targetNodeId/targetHandle/targetId`,
-  );
-  assertOptionalStringFieldsWithPrefix(value, displayName, [
-    "fileKey",
-    "handle",
-    "nodeId",
-    "target",
-    "id",
-    "url",
-    "nodeUrl",
-  ]);
+  assertExplicitNodeTarget(value, displayName);
 }
 
 function assertOptionalIntegerRange(record: Record<string, unknown>, key: string, min: number, max: number): void {
@@ -934,23 +922,52 @@ function assertOptionalExportVideoConstraint(value: unknown): void {
 }
 
 function assertOptionalCaptureTargetValue(value: unknown, displayName: string): void {
-  if (value === undefined || typeof value === "string") {
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value === "string") {
+    assertNodeTargetString(value, displayName);
     return;
   }
   if (!isRecord(value)) {
-    throw new Error(`Tool argument "${displayName}" must be a string or object.`);
+    throw new Error(`Tool argument "${displayName}" must be a raw node id, node URL, or { fileKey, nodeId }.`);
   }
-  assertOptionalStringFieldsWithPrefix(value, displayName, [
-    "fileKey",
-    "handle",
-    "targetHandle",
-    "nodeId",
-    "targetNodeId",
-    "target",
-    "id",
-    "url",
-    "nodeUrl",
-  ]);
+  assertExplicitNodeTarget(value, displayName);
+}
+
+function assertNodeTargetString(value: string, displayName: string): void {
+  if (value.trim() === "") {
+    throw new Error(`Tool argument "${displayName}" must not be empty.`);
+  }
+  if (value.startsWith("$")) {
+    throw new Error(`Tool argument "${displayName}" no longer accepts local handles. Use a raw node id, node URL, or { fileKey, nodeId }.`);
+  }
+}
+
+function assertExplicitNodeTarget(value: Record<string, unknown>, displayName: string): asserts value is Record<string, unknown> & FigmaWorkspaceExplicitNodeTarget {
+  const fields = Object.keys(value);
+  const extraFields = fields.filter((field) => field !== "fileKey" && field !== "nodeId");
+  if (extraFields.length > 0
+    || typeof value.fileKey !== "string"
+    || value.fileKey.trim() === ""
+    || typeof value.nodeId !== "string"
+    || value.nodeId.trim() === "") {
+    throw new Error(`Tool argument "${displayName}" object must contain exactly non-empty string fileKey and nodeId fields.`);
+  }
+}
+
+function assertRemovedHandleArguments(record: Record<string, unknown>, fields: readonly string[]): void {
+  const removed = fields.filter((field) => record[field] !== undefined);
+  if (removed.length > 0) {
+    throw new Error(`Tool argument "${removed.join("/")}" was removed because local handles are no longer supported.`);
+  }
+}
+
+function assertRemovedArgumentsWithoutReplacement(record: Record<string, unknown>, fields: readonly string[]): void {
+  const removed = fields.filter((field) => record[field] !== undefined);
+  if (removed.length > 0) {
+    throw new Error(`Tool argument "${removed.join("/")}" was removed.`);
+  }
 }
 
 export function asTaskPlanSteps(value: unknown, displayName = "steps"): FigmaWorkspaceTaskPlanStep[] {

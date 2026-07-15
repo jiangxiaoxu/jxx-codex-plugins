@@ -22,7 +22,9 @@ Agents invoke the plugin-root scripts, not this package directly. The public con
 - Every optimized command requires a fully qualified absolute `--state-file`; its parent owns the `results/` sidecar directory.
 - Typed results render Restricted Markdown. They are not JSON. Oversized complete results use `outputFiles.cliResultFile`.
 
-`figma:eval` and `figma:script:run` expose `await $.capture(target, options?)` for nodes created or resolved in the script. It queues at most 8 compact requests; after successful script execution the host reuses the `figma:capture` implementation, writes local PNG files, and returns compact results under `captures[]`. The helper never returns image bytes or a local path inside the running script.
+`figma:eval` and `figma:script:run` expose a frozen, non-callable `$` namespace with two helpers only. `await $.text({ target?, parent?, text, font? })` creates or updates text after loading an explicit font, or rejects mixed-font text without one. `await $.capture(target, options?)` queues at most 8 compact requests; after successful script execution the host reuses the `figma:capture` implementation, writes local PNG files, and returns compact results under `captures[]`. Capture tickets never return image bytes or a local path inside the running script.
+
+The script runtime uses TypeScript and bundled Plugin API typings as preflight, without semantic AST policy for valid Plugin API calls. It continues to enforce the 50,000-byte wrapped payload limit, state/session and workspace path validation, capture envelope and PNG validation, inline-result/sidecar limits, and atomic local writes.
 
 Use `npm --silent` and a command's generated `--help` as the public usage source. Agent-facing values must use public `figma:*` command IDs, never internal `figma_workspace_*` operation IDs or raw transport command names.
 

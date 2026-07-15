@@ -37,7 +37,7 @@ Compress the task into concise English canonical keywords before calling `figma:
 
 The stable task families are `code-connect`, `create-file`, `design-to-code`, `design-generation`, `diagram`, `library-generation`, `motion-implementation`, `swiftui`, `figjam`, `motion`, `slides`, and `design-editing`.
 
-1. Run `figma:guidance -- <english-keywords> --surface <design|figjam|slides> --state-file <absolute-path>` before non-trivial work. The returned compact DTO contains `route`, cards, query hints, Plugin API references, guardrails, helper/wrapper/workflow summaries, reference context, and typed `nextActions`. Follow its public `commandId` values.
+1. Run `figma:guidance -- <english-keywords> --surface <design|figjam|slides> --state-file <absolute-path>` before non-trivial work. The returned compact DTO contains `route`, cards, query hints, Plugin API references, helper/wrapper/workflow summaries, reference context, and typed `nextActions`. Follow its public `commandId` values.
 2. Run `figma:docs:list` for project documents. It returns stable `project:<topic>` IDs. Read them only with `figma:docs:read -- project:<topic>`.
 3. Run `figma:docs:catalog` to browse the 12 task-family summaries. Add `--task-family`, `--surface`, or `--classification active|conditional|router|examples` to obtain canonical records. Read a returned `canonical:<record-id>` with `figma:docs:read`.
 4. Run `figma:docs:search -- <english-keywords>` with its default `--scope auto`. Auto routing searches only project/bridge docs and compatible active, conditional, and router records from the resolved family. It never includes examples automatically. If examples are needed, explicitly pass `--scope examples`.
@@ -61,20 +61,21 @@ Use `figma:metadata` for broad layer-tree discovery before `figma:inspect`. Pref
 ## Script And Workspace Contract
 
 - Write an ordinary async TypeScript body in `.figma.ts`. Use native Figma Plugin API for node creation, querying, layout, and advanced behavior.
-- Common helpers include `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.capture`, `$.imageAsset`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`.
-- Keep each transaction small and repairable. Return compact JSON with changed node IDs, handles, and validation notes.
-- Prefer `$.select` over direct selection mutation. Validate stale handles with `figma:inspect` before reuse.
-- For large generated assets, create target rectangles in the script and use `figma:assets:apply`; reserve `$.imageAsset` for small inline PNG/JPEG data.
+- `$` is a frozen, non-callable namespace with exactly two helpers: `$.text` and `$.capture`. Use native Figma Plugin API for node creation, querying, layout, selection, assets, cloning, and all advanced behavior.
+- `$.text({ target?, parent?, text, font? })` accepts a real node or raw node ID, creates a TextNode when `target` is omitted, and loads an explicit font before applying text. `target` and `parent` are mutually exclusive. Mixed fonts without an explicit font fail closed.
+- Keep each transaction small and repairable. Return compact JSON with changed node IDs and validation notes.
+- For large generated assets, create target rectangles in the script and use `figma:assets:apply`.
 - For visual QA, use `await $.capture(target, options?)` when the target is created or resolved inside the script. It queues a host-side `figma:capture` operation after the script succeeds; read the local PNG path from the final command result's `captures[]`, then inspect it with `view_image`. Use standalone `figma:capture` when the node id is already known.
 - If queued capture post-processing fails, `scriptExecutionSucceeded: true`, `captureProcessingSucceeded: false`, and `retryGuidance` mean the script already ran and may have mutated Figma. Do not rerun the creation/edit script; retry the affected node with standalone `figma:capture`.
 - Use native `exportAsync()` only when a `.figma.ts` script genuinely needs PNG, JPG, SVG, PDF, or other exported bytes/string. It is not a CLI visual-QA path, and raw export data must not be returned as a large JSON array.
+- Script preflight enforces TypeScript and the bundled Plugin API typings. It does not impose semantic AST policy on valid Plugin API operations such as selection changes, page switches, PluginData, root searches, image creation, or destructive edits. Keep mutations intentional and verify visible changes with capture.
 
 ## Reference Topics
 
 - Read [overview](references/figma-workspace-overview.md) for capability and command selection.
 - Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, assets, inspection, and response semantics.
 - Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for the routing contract and exact lookup examples.
-- Read [safety](references/figma-workspace-safety.md) for destructive operations, fonts, surfaces, and visual QA guardrails.
+- Read [safety](references/figma-workspace-safety.md) for non-bypassable TypeScript, payload, path, capture, and output boundaries.
 - Read [diagnostics](references/figma-workspace-diagnostics.md) for corpus, API-index, and installed-asset repairs.
 - Read [sessions](references/figma-workspace-sessions.md) for persisted state and recovery.
 - Read [upstream tools](references/figma-workspace-upstream-tools.md) before official escape-hatch discovery and invocation.

@@ -15,11 +15,11 @@ Use this reference to choose between `figma:guidance`, `figma:docs:catalog`, `fi
 npm --silent run figma:guidance -- "text font loadFontAsync" --surface design --state-file C:/work/project/.figma-workspace/state.json
 ```
 
-- Guidance returns a compact typed DTO: `route`, cards, `queryHints`, Plugin API references, guardrails, helper/wrapper/workflow summaries, up to two reference contexts, and typed `nextActions`.
+- Guidance returns a compact typed DTO: `route`, cards, `queryHints`, Plugin API references, helper/wrapper/workflow summaries, up to two reference contexts, and typed `nextActions`.
 - Each next action has a public npm `commandId`, validated arguments, a reason, and a priority. Do not use or repeat internal operation names or raw transport commands.
 - API references use `displayExpression`, `lookupQuery`, optional `ownerHint`, and `symbolKind`. Send `lookupQuery` directly to `figma:api:search`.
-- Use `--workflow <id>` only with an ID returned by guidance. Unknown IDs are usage errors. Use `--mode plan` only when a compact execution plan is needed.
-- Treat guardrails as task-specific risk notes. Keep `$` helper references static: use `$.helper(...)`, `$["helper"](...)`, or explicit destructuring; avoid dynamic `$[name]`, aliasing `$`, object rest destructuring, and local `$` declarations.
+- Use `--workflow <id>` only with an ID returned by guidance. Unknown IDs are usage errors.
+- Guidance may identify the two injected helpers, `$.text` and `$.capture`. `$` is a frozen, non-callable namespace, and no helper-selection analysis is required.
 
 ## Docs Catalog, Search, And Read
 

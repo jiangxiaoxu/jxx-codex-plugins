@@ -229,10 +229,10 @@ function targetSpec(
       label: "target",
       omitted: UNSET_VALUE,
       repeatable: false,
-      description: "Node id, node URL, or $handle. A node-scoped --file URL can supply the target instead.",
+      description: "Raw node id or node URL. A node-scoped --file URL can supply the target instead.",
     },
     options: { ...fileContextOptions(), ...extraOptions },
-    examples: [`npm --silent run figma:${npmScriptForCommand(command)} -- '$hero' --session-id default ${STATE_FILE_EXAMPLE}`],
+    examples: [`npm --silent run figma:${npmScriptForCommand(command)} -- '12:34' --session-id default ${STATE_FILE_EXAMPLE}`],
   };
 }
 
@@ -283,7 +283,7 @@ export const FIGMA_DIRECT_COMMANDS = {
       "--limit": integerOption("maxResults", "<n>", "Maximum returned snippets from 1 to 10.", { min: 1, max: 10 }),
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 }),
     },
-    outputLimit: true, examples: [`npm --silent run figma:docs:search -- "session handles recovery" --limit 5 ${STATE_FILE_EXAMPLE}`],
+    outputLimit: true, examples: [`npm --silent run figma:docs:search -- "session recovery" --limit 5 ${STATE_FILE_EXAMPLE}`],
   },
   "api:search": {
     command: "lookup", purpose: "Search exact or near-exact Figma Plugin API symbol documentation.", fixedInput: { kind: "api" },
@@ -303,13 +303,12 @@ export const FIGMA_DIRECT_COMMANDS = {
     outputLimit: true, examples: [`npm --silent run figma:sessions:list -- ${STATE_FILE_EXAMPLE}`],
   },
   "sessions:read": {
-    command: "sessions", purpose: "Read one persisted session with optional handles and history.",
+    command: "sessions", purpose: "Read one persisted session with optional history.",
     position: { key: "sessionId", label: "session-id", omitted: { state: "required" }, repeatable: false, description: "Exact persisted session id." },
     options: {
-      "--with-handles": booleanOption("includeHandles", "Include the full handle map."),
       "--with-history": booleanOption("includeHistory", "Include full history entries."),
     },
-    outputLimit: true, examples: [`npm --silent run figma:sessions:read -- default --with-handles ${STATE_FILE_EXAMPLE}`],
+    outputLimit: true, examples: [`npm --silent run figma:sessions:read -- default --with-history ${STATE_FILE_EXAMPLE}`],
   },
   "upstream:list": {
     command: "upstream-tools", purpose: "List the live official Figma upstream tool directory.",
@@ -323,15 +322,14 @@ export const FIGMA_DIRECT_COMMANDS = {
     outputLimit: true, examples: [`npm --silent run figma:upstream:read -- whoami --refresh ${STATE_FILE_EXAMPLE}`],
   },
   inspect: {
-    command: "inspect", purpose: "Inspect or validate a target using direct positional syntax.",
+    command: "inspect", purpose: "Inspect a target or read a compact style audit using direct positional syntax.",
     sessionId: true, outputLimit: true,
-    position: { key: "target", label: "target", omitted: UNSET_VALUE, repeatable: false, description: "Node id, node URL, or $handle." },
+    position: { key: "target", label: "target", omitted: UNSET_VALUE, repeatable: false, description: "Raw node id, node URL, $selection, or $currentPage." },
     options: {
-      "--mode": enumOption("mode", ["inspect", "validate", "style"], "Inspection mode."),
+      "--mode": enumOption("mode", ["inspect", "style"], "Inspection mode."),
       "--depth": integerOption("depth", "<n>", "Positive traversal depth.", { min: 1 }),
-      "--handle": repeatOption("handles", "<name>", "Handle name or node id to validate; repeat as needed."),
     },
-    examples: [`npm --silent run figma:inspect -- '$hero' --mode validate --session-id default ${STATE_FILE_EXAMPLE}`],
+    examples: [`npm --silent run figma:inspect -- '$selection' --mode inspect --session-id default ${STATE_FILE_EXAMPLE}`],
   },
   metadata: targetSpec("get-metadata", "Read broad Figma metadata for an optional target."),
   "design-context": targetSpec("get-design-context", "Read official design implementation context.", {

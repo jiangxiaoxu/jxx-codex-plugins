@@ -223,14 +223,16 @@ async function writeCaptureImageOutputFile(
 }
 
 function normalizeCaptureImageMimeType(value: unknown): CaptureImageMimeType | undefined {
-  if (typeof value !== "string") {
+  if (typeof value !== "string" || value.trim().length === 0) {
     return undefined;
   }
   const mimeType = value.split(";")[0]?.trim().toLowerCase();
   if (mimeType === "image/png") {
     return mimeType;
   }
-  return undefined;
+  throw new Error(
+    `Capture image output currently supports official image/png screenshot payloads only; upstream returned ${mimeType || "an invalid content type"}.`,
+  );
 }
 
 function detectCaptureImageMimeType(buffer: Buffer): CaptureImageMimeType | undefined {
@@ -240,14 +242,22 @@ function detectCaptureImageMimeType(buffer: Buffer): CaptureImageMimeType | unde
   return undefined;
 }
 
-function readPngDimensions(buffer: Buffer): { width: number; height: number } | undefined {
-  if (!isPngBuffer(buffer) || buffer.length < 24) {
-    return undefined;
+function readPngDimensions(buffer: Buffer): { width: number; height: number } {
+  if (!isPngBuffer(buffer)) {
+    throw new Error("Capture image payload is not a valid PNG: the PNG signature is missing or invalid.");
   }
-  return {
-    width: buffer.readUInt32BE(16),
-    height: buffer.readUInt32BE(20),
-  };
+  if (buffer.length < 33) {
+    throw new Error("Capture image payload is not a valid PNG: the IHDR chunk is incomplete.");
+  }
+  if (buffer.readUInt32BE(8) !== 13 || buffer.subarray(12, 16).toString("ascii") !== "IHDR") {
+    throw new Error("Capture image payload is not a valid PNG: the required IHDR chunk is missing or invalid.");
+  }
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  if (width === 0 || height === 0) {
+    throw new Error("Capture image payload is not a valid PNG: IHDR width and height must be positive integers.");
+  }
+  return { width, height };
 }
 
 function isPngBuffer(buffer: Buffer): boolean {

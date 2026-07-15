@@ -11,7 +11,7 @@ Read `references/plugin-api-standalone.index.md` before searching the companion 
 1.  **Use `return` to send data back.** The return value is JSON-serialized automatically (objects, arrays, strings, numbers). Do NOT call `figma.closePlugin()` or wrap code in an async IIFE — this is handled for you.
 2.  **Write a TypeScript script body with top-level `await` and `return`.** Save it in a local `.figma.ts` file and execute it explicitly with `figma:script:run`; JavaScript snippets in references are input material to adapt, not files to run directly.
 3.  `figma.notify()` **throws "not implemented"** — never use it
-3a. `getPluginData()` / `setPluginData()` are **not supported** in `.figma.ts` script — do not use them. Use `getSharedPluginData()` / `setSharedPluginData()` instead (these ARE supported), or track node IDs by returning them and passing them to subsequent calls.
+3a. `getPluginData()` / `setPluginData()` store data private to the executing plugin. `getSharedPluginData()` / `setSharedPluginData()` use an explicit namespace when data must be shared across plugins. Choose the storage model that matches the ownership requirement.
 4.  `console.log()` is NOT returned — use `return` for output
 5.  **Work incrementally in small steps.** Break large operations into multiple `.figma.ts` script run. Validate after each step. This is the single most important practice for avoiding bugs.
 6.  Colors are **0–1 range** (not 0–255): `{r: 1, g: 0, b: 0}` = red
@@ -46,25 +46,19 @@ await figma.setCurrentPageAsync(targetPage);
 // targetPage.children is now populated
 ```
 
-### Call `setCurrentPageAsync` at most once per `.figma.ts` script run
+### Multiple page switches
 
-**One script must switch pages at most once.** Never loop over `figma.root.children` and switch pages inside the loop.
-
-If the work spans multiple pages, prepare one `.figma.ts` script per target page. Run each explicitly with `figma:script:run` and its own absolute state file; each script sets `currentPage` exactly once.
-
-Do not rely on tool-message parallelism. Keep each page-specific script small and run it explicitly through the CLI.
+`setCurrentPageAsync` changes global page context and returns a Promise, so page switches and the work that depends on each page must stay ordered. A single script may traverse multiple pages when that matches the task.
 
 ```js
-// AVOID — switches pages N times in one script, reloads the file each time
+// Traverse pages in order because each operation depends on the active page.
 for (const page of figma.root.children) {
   await figma.setCurrentPageAsync(page);
   // ... touch this page ...
 }
-
-// PREFER — discover page IDs, then save one page-specific .figma.ts script per page.
 ```
 
-For multi-page work, keep each run scoped to one target page. See [gotchas.md](references/gotchas.md) for traversal guidance.
+For large documents, smaller page-specific scripts can still be easier to retry and inspect. See [gotchas.md](references/gotchas.md) for traversal performance guidance.
 
 ### Across script runs
 
@@ -262,7 +256,7 @@ The most common cause of bugs is trying to do too much in a single `.figma.ts` s
 
 ### Key rules
 
-- **At most 10 logical operations per `.figma.ts` script run.** A "logical operation" is creating a node, setting its properties, and parenting it. If you need to create 20 nodes, split across 2-3 calls. **Slides override:** in Slides files, slides are isolated subtrees — the relevant limit is complexity per slide, not total nodes across slides. Building 3–5 new slides in one call is safe, and so is applying the same edit (e.g. adding a footer, recoloring a heading) across every slide in the deck in a single call. See [figma-use-slides](../figma-use-slides/SKILL.md) for the deck-building workflow.
+- **Choose transaction size for recoverability and payload cost.** The runtime does not impose an operation-count policy. Split work when a smaller transaction is easier to retry or inspect; keep related independent edits together when one script is clearer. Slides are isolated subtrees, so deck work may naturally batch several slides or apply one edit across the deck. See [figma-use-slides](../figma-use-slides/SKILL.md) for the deck-building workflow.
 - **Build top-down, starting with placeholders.** Create the outer structure first with `placeholder = true` on each section, then incrementally replace placeholders with real content in subsequent calls.
 
 ### The pattern
@@ -371,22 +365,15 @@ return pages.join('\n');
 
 **List existing components across all pages:**
 
-`figma:design-system` is an option for published components. For on-canvas components, use the two-step fan-out — **don't loop pages inside one script.**
-
-Step 1: one read-only `.figma.ts` script to get page IDs:
+`figma:design-system` is an option for published components. For on-canvas components, a document-wide indexed query directly returns cross-page results:
 ```js
-return figma.root.children.map(p => ({ id: p.id, name: p.name }));
-```
-
-Step 2: save one `.figma.ts` script for each target page and run each explicitly with `figma:script:run`.
-```js
-const page = await figma.getNodeByIdAsync(PAGE_ID);
-await figma.setCurrentPageAsync(page);
 // findAllWithCriteria uses an indexed type lookup — hundreds of times faster
 // than the findAll(n => n.type === '…') side-effect-in-predicate antipattern.
-const matches = page.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] });
-return matches.map(n => ({ page: page.name, name: n.name, type: n.type, id: n.id }));
+const matches = figma.root.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] });
+return matches.map(n => ({ page: n.parent?.name, name: n.name, type: n.type, id: n.id }));
 ```
+
+Multi-page scripts are valid. If an operation depends on `figma.currentPage`, await each `setCurrentPageAsync()` call and keep dependent work ordered.
 
 **List existing variable collections and their conventions:**
 ```js

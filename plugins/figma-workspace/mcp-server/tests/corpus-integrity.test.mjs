@@ -33,13 +33,24 @@ test("all canonical examples pass the production strict TypeScript preflight", a
   }
 });
 
-test("canonical agent docs do not advertise script screenshot extensions", async () => {
+test("canonical agent docs publish only current runtime capabilities", async () => {
   const canonicalRoot = join(distRoot, "skills", "figma-workspace", "references", "canonical-corpus");
   const manifest = JSON.parse(await readFile(join(canonicalRoot, "manifest.json"), "utf8"));
   const corpus = await readFile(join(canonicalRoot, manifest.corpus.file), "utf8");
   assert.doesNotMatch(corpus, /\$\.screenshot|(?:node|frame)\.screenshot|SceneNode\.screenshot/u);
+  assert.doesNotMatch(corpus, /getPluginData[^\n]{0,160}not supported|setPluginData[^\n]{0,160}not supported/iu);
+  assert.doesNotMatch(corpus, /(?:do not|never) use[^\n]{0,120}(?:figma\.)?createImage/iu);
+  assert.doesNotMatch(corpus, /never (?:scan|search)[^\n]{0,120}figma\.root/iu);
+  assert.doesNotMatch(corpus, /(?:do not|never)[^\n]{0,120}switch[^\n]{0,80}page[^\n]{0,80}(?:more than once|multiple times)/iu);
+  assert.doesNotMatch(corpus, /(?:do not|don't)[^\n]{0,120}loop pages inside one script|at most \d+ logical operations per/iu);
+  assert.doesNotMatch(corpus, /id\/handle|\$handle|handle alias/iu);
   assert.match(corpus, /figma:capture/u);
   assert.match(corpus, /exportAsync/u);
+  assert.match(corpus, /Both APIs are available in `\.figma\.ts`/u);
+  assert.match(corpus, /Multi-page scripts are valid Plugin API workflows/u);
+  assert.match(corpus, /runtime does not impose an operation-count policy/u);
+  assert.match(corpus, /figma\.root\.findAll[^\n]{0,160}valid document-wide operations/u);
+  assert.match(corpus, /native Plugin API supports `figma\.createImage\(data\)`/u);
 });
 
 test("canonical runnable workflow snippets pass the production strict TypeScript preflight", async () => {

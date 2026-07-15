@@ -73,7 +73,7 @@ return { createdNodeIds: [rect.id] };
 
 ## Adding images to a slide
 
-Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for downloads. Do not treat `figma.createImage()` or `figma.createImageAsync()` as Slides upload entry points. Place or fill target nodes through the prepared asset manifest, then validate with `figma:capture`.
+Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for downloads. Native scripts may also create an `Image` with `figma.createImage(data)` or `figma.createImageAsync(src)` and use its hash in an `IMAGE` paint. Validate the resulting slide with `figma:capture`.
 
 ## Using auto-layout within slides
 

@@ -569,8 +569,8 @@ function createBridgeDocsRecords(): Map<string, { id: string; text: string }> {
   const wrapperTools = "get-design-context, get-motion-context";
   const upstreamTools = "get_design_context, get_motion_context, export_video, list_shader_effects, get_shader_effect, list_shader_fills, get_shader_fill";
   const workflowIds = "design-implementation-context, motion-implementation, video-export";
-  const helperCategories = "selection: $.select, $.inspect; text: $.text; placement: $.placeNode, $.findFreeSlot; assets: $.imageAsset; capture: $.capture; repair: $.checkpoint, $.remember, $.forget; clone: $.cloneNodeTree, $.replaceGeneratedFrame";
-  const helperHardRules = "Use static helper references only: $.text(...), $[\"text\"](...), or explicit destructuring such as const { text } = $. Do not use dynamic $[name], alias $, object rest destructuring, or local $ declarations. Native Figma Plugin API remains valid for advanced work. $.imageAsset is only for small inline PNG/JPEG; larger files use asset manifest/upload flow.";
+  const helperCategories = "text: $.text; capture: $.capture";
+  const helperHardRules = "The frozen `$` namespace exposes only `$.text` and `$.capture`. Native Figma Plugin API calls remain available for all other work.";
   return new Map([
     [
       "bridge/guidance-ref.md",
@@ -608,7 +608,7 @@ function createBridgeDocsRecords(): Map<string, { id: string; text: string }> {
           "The `guidance` CLI command's `helperProfiles` field returns on-demand `$` helper guidance with useWhen, avoidWhen, allowedPatterns, forbiddenPatterns, API symbols, lookup hints, and compact examples.",
           `Helper categories: ${helperCategories}.`,
           `Hard rules: ${helperHardRules}`,
-          "Use helper profiles for helper selection and static-reference rules; native Figma Plugin API remains valid for advanced work when helpers are too narrow.",
+          "Use helper profiles for the two runtime helpers; use the native Figma Plugin API for all other work.",
         ].join("\n"),
       },
     ],

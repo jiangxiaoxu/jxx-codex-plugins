@@ -4,7 +4,7 @@
 
 ## 先准备脚本
 
-先用 `figma:metadata` 了解文件结构，并用 `figma:inspect` 确认目标 section、table 或节点的 id/handle。为任务准备一个本地 `.figma.ts` 文件。执行命令需要同一个绝对 `--state-file`，脚本输入同时指定已持久化的 `sessionId`、脚本路径和 `strict: true`：
+先用 `figma:metadata` 了解文件结构，并用 `figma:inspect` 确认目标 section、table 或节点的 raw node ID。为任务准备一个本地 `.figma.ts` 文件。执行命令需要同一个绝对 `--state-file`，脚本输入同时指定已持久化的 `sessionId`、脚本路径和 `strict: true`：
 
 ```json
 {
