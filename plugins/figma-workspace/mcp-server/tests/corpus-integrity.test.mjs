@@ -129,6 +129,23 @@ test("doctor reports canonical corpus integrity failures", async () => {
   });
 });
 
+test("doctor rejects route catalog top-level schema drift even when hashes match", async () => {
+  await withCopiedRuntime(async (fixture) => {
+    const routeFile = join(fixture.canonicalDir, fixture.canonicalManifest.routeCatalog.file);
+    const routeCatalog = JSON.parse(await readFile(routeFile, "utf8"));
+    routeCatalog.unexpected = true;
+    const routeText = `${JSON.stringify(routeCatalog, null, 2)}\n`;
+    fixture.canonicalManifest.routeCatalog.sha256 = sha256(routeText);
+    await writeFile(routeFile, routeText, "utf8");
+    await writeFile(fixture.canonicalManifestFile, `${JSON.stringify(fixture.canonicalManifest, null, 2)}\n`, "utf8");
+
+    const result = runDoctor(fixture.root);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^Status: observed unhealthy$/mu);
+    assert.match(result.stdout, /route catalog must contain exactly/u);
+  });
+});
+
 test("doctor reports generated API index integrity failures", async () => {
   await withCopiedRuntime(async (fixture) => {
     const records = parseRecords(fixture.apiIndexText);
@@ -155,7 +172,8 @@ async function withCopiedRuntime(run) {
     await cp(distRoot, dist, { recursive: true });
 
     const canonicalDir = join(dist, "skills", "figma-workspace", "references", "canonical-corpus");
-    const canonicalManifest = JSON.parse(await readFile(join(canonicalDir, "manifest.json"), "utf8"));
+    const canonicalManifestFile = join(canonicalDir, "manifest.json");
+    const canonicalManifest = JSON.parse(await readFile(canonicalManifestFile, "utf8"));
     const canonicalCorpusFile = join(canonicalDir, canonicalManifest.corpus.file);
     const canonicalCorpusText = normalizeLineEndings(await readFile(canonicalCorpusFile, "utf8"));
 
@@ -168,6 +186,9 @@ async function withCopiedRuntime(run) {
     await run({
       root,
       dist,
+      canonicalDir,
+      canonicalManifest,
+      canonicalManifestFile,
       canonicalCorpusFile,
       canonicalCorpusText,
       apiIndexDir,

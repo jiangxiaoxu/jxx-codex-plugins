@@ -71,6 +71,24 @@ function fileContextOptions() {
     "--refresh": booleanOption("refresh", "Refresh upstream data when supported.")
   };
 }
+var FIGMA_TASK_FAMILIES = [
+  "code-connect",
+  "create-file",
+  "design-to-code",
+  "design-generation",
+  "diagram",
+  "library-generation",
+  "motion-implementation",
+  "swiftui",
+  "figjam",
+  "motion",
+  "slides",
+  "design-editing"
+];
+var FIGMA_GUIDANCE_WORKFLOWS = [
+  "design-implementation-context",
+  "motion-implementation"
+];
 var SCRIPT_NAMES_BY_TRANSPORT_COMMAND = {
   "get-metadata": "metadata",
   "get-design-context": "design-context",
@@ -105,7 +123,7 @@ var FIGMA_DIRECT_COMMANDS = {
     options: {
       "--mode": enumOption("mode", ["guidance", "plan"], "Guidance mode. Use the JSON escape hatch for card or catalog mode."),
       "--surface": enumOption("surface", ["design", "figjam", "slides"], "Expected Figma surface."),
-      "--workflow": stringOption("workflow", "<id>", "Optional workflow id."),
+      "--workflow": enumOption("workflow", FIGMA_GUIDANCE_WORKFLOWS, "Existing workflow id used to filter workflow and wrapper summaries."),
       "--card-limit": integerOption("maxCards", "<n>", "Maximum returned cards from 1 to 8.", { min: 1, max: 8 })
     },
     outputLimit: true,
@@ -114,28 +132,45 @@ var FIGMA_DIRECT_COMMANDS = {
   "docs:list": {
     command: "docs",
     purpose: "List canonical project Markdown topics.",
+    fixedInput: { mode: "list" },
     options: {},
     outputLimit: true,
     examples: [`npm --silent run figma:docs:list -- ${STATE_FILE_EXAMPLE}`]
   },
+  "docs:catalog": {
+    command: "docs",
+    purpose: "Browse canonical task families or filtered canonical document records.",
+    fixedInput: { mode: "catalog" },
+    options: {
+      "--task-family": enumOption("taskFamily", FIGMA_TASK_FAMILIES, "Canonical task family. Omit to list task-family summaries."),
+      "--surface": enumOption("surface", ["design", "figjam", "slides"], "Required canonical document surface."),
+      "--classification": enumOption("classification", ["active", "conditional", "router", "examples"], "Canonical document classification."),
+      "--limit": integerOption("limit", "<n>", "Maximum returned catalog entries from 1 to 100.", { min: 1, max: 100 })
+    },
+    outputLimit: true,
+    examples: [`npm --silent run figma:docs:catalog -- --task-family code-connect --surface design --limit 20 ${STATE_FILE_EXAMPLE}`]
+  },
   "docs:read": {
     command: "docs",
-    purpose: "Read one complete canonical project Markdown topic.",
-    position: { key: "topic", label: "topic", omitted: { state: "required" }, repeatable: false, description: "Topic returned by figma:docs:list." },
+    purpose: "Read one complete project or canonical Markdown document.",
+    fixedInput: { mode: "read" },
+    position: { key: "id", label: "doc-id", omitted: { state: "required" }, repeatable: false, description: "Stable project: or canonical: id returned by figma:docs:list or figma:docs:catalog." },
     options: {},
     outputLimit: true,
-    examples: [`npm --silent run figma:docs:read -- workflow ${STATE_FILE_EXAMPLE}`]
+    examples: [`npm --silent run figma:docs:read -- project:workflow ${STATE_FILE_EXAMPLE}`]
   },
   "docs:search": {
     command: "lookup",
-    purpose: "Search project and canonical workflow documentation.",
-    fixedInput: { kind: "docs", scope: "active" },
+    purpose: "Search project and canonical workflow documentation with automatic task routing.",
+    fixedInput: { kind: "docs", scope: "auto" },
     position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Documentation search text." },
     options: {
       "--scope": {
-        ...enumOption("scope", ["active", "conditional", "examples", "all"], "Documentation lookup scope."),
-        omitted: { state: "default", value: "active" }
+        ...enumOption("scope", ["auto", "active", "conditional", "router", "examples", "all"], "Documentation lookup scope."),
+        omitted: { state: "default", value: "auto" }
       },
+      "--surface": enumOption("surface", ["design", "figjam", "slides"], "Required documentation surface."),
+      "--task-family": enumOption("taskFamily", FIGMA_TASK_FAMILIES, "Required canonical task family."),
       "--limit": integerOption("maxResults", "<n>", "Maximum returned snippets from 1 to 10.", { min: 1, max: 10 }),
       "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 })
     },
@@ -257,7 +292,7 @@ var FIGMA_JSON_COMMANDS = {
   "upstream:call": { command: "call-upstream-tool", purpose: "Invoke one uncovered official upstream capability.", inputRequired: true }
 };
 var FIGMA_COMMAND_FAMILIES = {
-  docs: ["docs:list", "docs:read", "docs:search"],
+  docs: ["docs:list", "docs:catalog", "docs:read", "docs:search"],
   api: ["api:search"],
   sessions: ["sessions:list", "sessions:read"],
   upstream: ["upstream:list", "upstream:read", "upstream:call"]
@@ -622,7 +657,9 @@ function formatError(error) {
 export {
   FIGMA_COMMAND_FAMILIES,
   FIGMA_DIRECT_COMMANDS,
+  FIGMA_GUIDANCE_WORKFLOWS,
   FIGMA_JSON_COMMANDS,
+  FIGMA_TASK_FAMILIES,
   formatDirectHelp,
   formatFamilyHelp,
   formatJsonHelp,

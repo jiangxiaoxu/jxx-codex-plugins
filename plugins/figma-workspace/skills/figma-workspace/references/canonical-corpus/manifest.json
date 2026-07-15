@@ -1,16 +1,43 @@
 {
-  "schemaVersion": 1,
-  "generatedAt": "2026-07-14T07:41:06.557Z",
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-15T05:50:20.672Z",
   "corpus": {
-    "file": "corpus-548677dec6e8152a07034128692e5faeb52c9db67f821369cd1a5d6f0d103f39.jsonl",
+    "file": "corpus-c5fffe36ed7c98bbf48a61a51b1d1047eaf539022a668d98c05fd3fcc157e34f.jsonl",
     "recordCount": 87,
-    "sha256": "548677dec6e8152a07034128692e5faeb52c9db67f821369cd1a5d6f0d103f39"
+    "sha256": "c5fffe36ed7c98bbf48a61a51b1d1047eaf539022a668d98c05fd3fcc157e34f"
   },
-  "classificationCounts": {
-    "active": 46,
-    "conditional": 20,
-    "router": 12,
-    "examples": 9
+  "routeCatalog": {
+    "file": "routes.json",
+    "schemaVersion": 1,
+    "routeCount": 12,
+    "sha256": "d23f1c45013c10645337578af7a7e6875b203614256b6fc1bf412c6ad0e36a45"
+  },
+  "inventories": {
+    "classifications": {
+      "active": 46,
+      "conditional": 20,
+      "examples": 9,
+      "router": 12
+    },
+    "surfaces": {
+      "design": 58,
+      "figjam": 23,
+      "slides": 8
+    },
+    "taskFamilies": {
+      "code-connect": 3,
+      "create-file": 1,
+      "design-editing": 20,
+      "design-generation": 3,
+      "design-to-code": 1,
+      "diagram": 8,
+      "figjam": 14,
+      "library-generation": 17,
+      "motion": 3,
+      "motion-implementation": 7,
+      "slides": 7,
+      "swiftui": 3
+    }
   },
   "reviewWarnings": [],
   "integrity": {

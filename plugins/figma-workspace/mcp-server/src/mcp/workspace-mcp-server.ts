@@ -11,13 +11,14 @@ import {
 import {
   DEFAULT_DOCS_SEARCH_MAX_RESULTS,
   DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
-  DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
   MAX_DOCS_SEARCH_RESULTS,
   MAX_DOCS_SEARCH_SNIPPET_LINES,
   MAX_LOOKUP_QUERY_LENGTH,
   FigmaWorkspaceLookupCorpusUnavailableError,
-  docsSearchFilesForScope,
+  getFigmaWorkspaceCanonicalTaskRoutes,
   getFigmaWorkspaceLookupRuntimeInfo,
+  listFigmaWorkspaceCanonicalCatalog,
+  readFigmaWorkspaceCanonicalDoc,
   type ReferenceSearchResult,
   normalizeLookupQuery,
   normalizeLookupRankingQuery,
@@ -26,10 +27,7 @@ import {
 import {
   FIGMA_WORKSPACE_API_CARDS,
   FIGMA_WORKSPACE_COMMON_TASK_LABELS,
-  FIGMA_WORKSPACE_HELPER_PROFILES,
   FIGMA_WORKSPACE_INTENT_EXAMPLE_QUERIES,
-  FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES,
-  FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH,
   chooseApiCardsForIntent,
   chooseHelperProfilesForIntent,
   chooseWrapperLookupProfilesForIntent,
@@ -38,10 +36,13 @@ import {
   selectWrapperWorkflowGraph,
   type FigmaWorkspaceApiCard,
   type FigmaWorkspaceHelperProfile,
+  type FigmaWorkspacePluginApiReference,
   type FigmaWorkspaceWrapperLookupProfile,
   type FigmaWorkspaceWrapperWorkflow,
   uniqueStrings,
 } from "../runtime/guidance-catalog.js";
+import { resolveTaskRoute, type TaskRouteResult } from "../runtime/task-routing.js";
+import type { FigmaWorkspacePublicCommandId } from "../runtime/public-command-registry.js";
 import {
   assertSafeFigmaWorkspaceCode,
   compileFigmaWorkspaceEvalCode,
@@ -118,7 +119,6 @@ import {
   readFigmaWorkspaceProjectDoc,
 } from "../runtime/project-docs.js";
 import {
-  LOCAL_WORKSPACE_TOOL_NAMES,
   isLocalWorkspaceToolName,
   normalizeTaskPlanStepType as normalizeTaskPlanStepTypeAlias,
   type LocalWorkspaceToolName,
@@ -607,20 +607,26 @@ export interface FigmaWorkspacePrepareTaskResult extends FigmaWorkspaceToolResul
 }
 
 export interface FigmaWorkspaceGuidanceResult extends FigmaWorkspaceToolResultBase {
+  route?: TaskRouteResult;
   workflow?: Record<string, unknown>;
   steps?: string[];
-  recommendedTools?: string[];
-  suggestedCards?: string[];
+  recommendedTools?: FigmaWorkspacePublicCommandId[];
   wrapperProfiles?: Array<Record<string, unknown>>;
   workflowGraph?: Array<Record<string, unknown>>;
   cards?: Array<Record<string, unknown>>;
-  catalogSize?: number;
   guidance?: string;
-  recommendedCards?: string[];
   queryHints?: string[];
-  apiSymbols?: string[];
+  apiReferences?: FigmaWorkspacePluginApiReference[];
   guardrails?: string[];
-  suggestions?: Record<string, unknown>;
+  referenceContext?: ReferenceSearchResult[];
+  nextActions?: FigmaWorkspaceNextAction[];
+}
+
+export interface FigmaWorkspaceNextAction {
+  commandId: FigmaWorkspacePublicCommandId;
+  args: Record<string, string | number | boolean>;
+  reason: string;
+  priority: number;
 }
 
 export interface FigmaWorkspaceInspectResult extends FigmaWorkspaceToolResultBase {
@@ -771,19 +777,31 @@ export interface FigmaWorkspaceGetMetadataResult extends FigmaWorkspaceToolResul
 }
 
 export interface FigmaWorkspaceLookupResult extends FigmaWorkspaceToolResultBase {
-  scope?: "active" | "conditional" | "examples" | "all";
+  requestedScope?: "auto" | "active" | "conditional" | "router" | "examples" | "all";
+  effectiveScopes?: string[];
+  route?: TaskRouteResult;
   results: ReferenceSearchResult[];
+  nextActions?: FigmaWorkspaceNextAction[];
   diagnostics?: FigmaWorkspaceDiagnostic[];
   guidance: string;
   runtime?: Record<string, unknown>;
 }
 
 export interface FigmaWorkspaceDocsResult extends FigmaWorkspaceToolResultBase {
+  mode: "list" | "catalog" | "read";
   topics?: ReturnType<typeof listFigmaWorkspaceProjectDocs>;
-  topic?: string;
+  taskFamilies?: ReturnType<typeof listFigmaWorkspaceCanonicalCatalog>;
+  records?: ReturnType<typeof listFigmaWorkspaceCanonicalCatalog>;
+  id?: string;
+  kind?: "project" | "canonical";
   title?: string;
   description?: string;
-  sourceId?: string;
+  summary?: string;
+  classification?: string;
+  taskFamily?: string;
+  surfaces?: string[];
+  mappingProfile?: string;
+  nonExecutable?: boolean;
   content?: string;
 }
 
@@ -1146,7 +1164,7 @@ export function createFigmaWorkspaceClient(
       parseJsonToolResult<FigmaWorkspaceLookupResult>(
         await handleLookup(asLookupArgs(withDefaultTitle(args, "Look up Figma Workspace reference"))),
       ),
-    docs: async (args = {}) => handleDocs(asDocsArgs(args)),
+    docs: async (args) => handleDocs(asDocsArgs(args)),
     doctor: async (args = {}) => handleDoctor(asDoctorArgs(args)),
     sessionsInfo: async (args = {}) => handleSessions(asSessionsArgs(args), runtime.sessions),
     upstreamTools: async (args = {}) => handleUpstreamTools(asUpstreamToolsArgs(args), runtime.upstreamToolCache),
@@ -1154,10 +1172,24 @@ export function createFigmaWorkspaceClient(
 }
 
 function handleDocs(args: FigmaWorkspaceDocsArguments): FigmaWorkspaceDocsResult {
-  const topic = asOptionalString(args.topic);
-  return topic
-    ? { ok: true, ...readFigmaWorkspaceProjectDoc(topic) }
-    : { ok: true, topics: listFigmaWorkspaceProjectDocs() };
+  if (args.mode === "list") {
+    return { ok: true, mode: "list", topics: listFigmaWorkspaceProjectDocs() };
+  }
+  if (args.mode === "catalog") {
+    const catalog = listFigmaWorkspaceCanonicalCatalog({
+      taskFamily: args.taskFamily,
+      surface: args.surface,
+      classification: args.classification,
+      limit: args.limit,
+    });
+    return args.taskFamily === undefined
+      ? { ok: true, mode: "catalog", taskFamilies: catalog }
+      : { ok: true, mode: "catalog", records: catalog };
+  }
+  const doc = args.id.startsWith("project:")
+    ? readFigmaWorkspaceProjectDoc(args.id)
+    : readFigmaWorkspaceCanonicalDoc(args.id);
+  return { ok: true, mode: "read", ...doc };
 }
 
 function handleDoctor(_args: FigmaWorkspaceDoctorArguments): FigmaWorkspaceDoctorResult {
@@ -2876,11 +2908,11 @@ async function handlePrepareTask(
       },
       next: [
         "Edit the .figma.ts file in this task folder.",
-        "Run run-script-file; it strict-checks TypeScript and preflights diagnostics before upstream execution.",
+        "Run figma:script:run; it strict-checks TypeScript and preflights diagnostics before upstream execution.",
         "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions.",
       ],
     };
-    return makeJsonToolResult(toCliFacingGuidanceValue(payload));
+    return makeJsonToolResult(payload);
   } catch (error) {
     if (session && sessionSnapshot) {
       restorePrepareTaskSessionState(session, sessionSnapshot);
@@ -2985,111 +3017,97 @@ async function handleGuidance(
   const cardSource = args.card;
   const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
   const mode = args.mode ?? (cardSource ? "card" : querySource ? "guidance" : "catalog");
-  if (mode === "plan") {
-    const planIntent = querySource
-      ? normalizeLookupRankingQuery(querySource.value, querySource.name)
-      : "figma file task";
-    const payload = {
-      ok: true,
-      workflow: createFileWorkflowPayload(),
-      steps: [
-        "Prepare or reuse a task workspace with prepare-task.",
-        "Write the transaction in a local .figma.ts file using $ helpers and native Figma Plugin API calls.",
-        "Call run-script-file with strict=true, surface, inputFile, and inlineResultLimit.",
-        "If preflight diagnostics fail, repair local file/line diagnostics and rerun the same script file.",
-        "Inspect the paired .result.json file first when inline results are capped.",
-      ],
-      recommendedTools: [
-        "prepare-task",
-        "figma_workspace_guidance",
-        "run-script-file",
-        "figma_workspace_inspect",
-      ],
-      suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id),
-      helperProfiles: createPublicHelperProfilePayloads(chooseHelperProfilesForIntent(planIntent, 4)),
-      wrapperProfiles: createPublicWrapperProfilePayloads(chooseWrapperLookupProfilesForIntent(planIntent, 4)),
-      workflowGraph: createPublicWrapperWorkflowPayloads(
-        selectWrapperWorkflowGraph(
-          uniqueStrings(chooseWrapperLookupProfilesForIntent(planIntent, 4).flatMap((profile) => profile.workflowIds), 4),
-          4,
-        ),
-      ),
-    };
-    return makeJsonToolResult(toCliFacingGuidanceValue(payload));
-  }
   const intent = querySource
     ? normalizeLookupRankingQuery(querySource.value, querySource.name)
     : undefined;
   const cardQuery = typeof cardSource === "string"
     ? normalizeLookupQuery(cardSource, "card or query")
     : undefined;
+  const routingQuery = intent ?? cardQuery ?? "";
+  const route = resolveTaskRoute({
+    query: routingQuery,
+    routes: getFigmaWorkspaceCanonicalTaskRoutes(),
+    requestedSurface: args.surface,
+  });
+  const effectiveSurface = args.surface ?? route.surface;
   const cards = mode === "catalog"
-    ? FIGMA_WORKSPACE_API_CARDS.slice(0, maxCards)
+    ? FIGMA_WORKSPACE_API_CARDS
+      .filter((card) => effectiveSurface === undefined || card.surface === "any" || card.surface === effectiveSurface)
+      .slice(0, maxCards)
     : cardQuery
-    ? searchApiCards(cardQuery, maxCards)
+    ? searchApiCards(cardQuery, maxCards, effectiveSurface)
     : intent
-      ? chooseApiCardsForIntent(intent, maxCards)
-      : FIGMA_WORKSPACE_API_CARDS.slice(0, maxCards);
+      ? chooseApiCardsForIntent(intent, maxCards, effectiveSurface)
+      : [];
   const context = intent
     ? await searchReferenceFiles({
-        query: intent,
-        files: docsSearchFilesForScope("active"),
-        maxResults: DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
-        maxSnippetLines: 4,
+        query: route.status === "matched" ? route.canonicalQuery ?? intent : intent,
+        scope: "auto",
+        surface: effectiveSurface,
+        taskFamily: route.status === "matched" ? route.taskFamily : undefined,
+        effectiveScopes: route.effectiveScopes,
+        maxResults: 2,
+        maxSnippetLines: 3,
         exactSymbol: false,
       })
     : { results: [] };
-  const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
-  const wrapperProfiles = createPublicWrapperProfilePayloads(
-    chooseWrapperLookupProfilesForIntent(intent ?? cardQuery, 4),
-  );
+  let selectedWorkflows = args.workflow
+    ? selectWrapperWorkflowGraph([args.workflow], 1)
+    : undefined;
+  if (args.workflow && selectedWorkflows?.length === 0) {
+    throw new Error(`Unknown Figma Workspace guidance workflow "${args.workflow}".`);
+  }
+  let selectedWrapperProfiles = chooseWrapperLookupProfilesForIntent(intent ?? cardQuery, 3);
+  if (args.workflow) {
+    selectedWrapperProfiles = selectedWrapperProfiles.filter((profile) => profile.workflowIds.includes(args.workflow as string));
+  }
+  const wrapperProfiles = createPublicWrapperProfilePayloads(selectedWrapperProfiles);
   const helperProfiles = createPublicHelperProfilePayloads(
-    chooseHelperProfilesForIntent(intent ?? cardQuery, 4),
+    chooseHelperProfilesForIntent(intent ?? cardQuery, 3),
   );
+  if (!selectedWorkflows) {
+    const selectedWorkflowIds = uniqueStrings(
+      selectedWrapperProfiles.flatMap((profile) => profile.workflowIds),
+      1,
+    );
+    selectedWorkflows = selectedWorkflowIds.length > 0
+      ? selectWrapperWorkflowGraph(selectedWorkflowIds, 1)
+      : [];
+  }
+  const apiReferences = uniqueApiReferences(cards.flatMap((card) => card.apiReferences), 8);
+  const referenceContext = context.results.map((result) => ({
+    ...result,
+    snippet: truncateUtf8(result.snippet, 300),
+  }));
+  const nextActions = createGuidanceNextActions({
+    query: intent ?? cardQuery ?? "figma workspace",
+    route,
+    referenceContext,
+    apiReferences,
+  });
   const payload = {
     ok: true,
+    route,
     cards: cards.map(createPublicApiCardPayload),
-    catalogSize: FIGMA_WORKSPACE_API_CARDS.length,
-    guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, guardrails, and pitfalls for .figma.ts file workflows.",
-    recommendedCards: cards.map((card) => card.id),
-    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
-    apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
-    guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 8),
+    apiReferences,
+    guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 6),
     helperProfiles,
     wrapperProfiles,
-    workflowGraph: createPublicWrapperWorkflowPayloads(
-      selectWrapperWorkflowGraph(uniqueStrings(wrapperProfiles.flatMap((profile) => profile.workflowIds as string[]), 4), 4),
-    ),
-    suggestions,
+    workflowGraph: createPublicWrapperWorkflowPayloads(selectedWorkflows),
+    referenceContext,
+    nextActions,
+    ...(mode === "plan" ? {
+      workflow: createFileWorkflowPayload(),
+      steps: [
+        "Prepare or reuse a task workspace with figma:task:prepare.",
+        "Write a small repairable .figma.ts transaction.",
+        "Run figma:script:run with strict preflight and repair diagnostics before retrying.",
+      ],
+      recommendedTools: ["figma:task:prepare", "figma:guidance", "figma:script:run", "figma:inspect"] satisfies FigmaWorkspacePublicCommandId[],
+    } : {}),
   };
-  return makeJsonToolResult(toCliFacingGuidanceValue(payload));
-}
-
-const CLI_GUIDANCE_OPERATION_REPLACEMENTS = LOCAL_WORKSPACE_TOOL_NAMES.map((operation) => [
-  operation,
-  operation.slice("figma_workspace_".length).replaceAll("_", "-"),
-] as const);
-
-function toCliFacingGuidanceValue(value: unknown): unknown {
-  if (typeof value === "string") {
-    let result = value;
-    for (const [operation, command] of CLI_GUIDANCE_OPERATION_REPLACEMENTS) {
-      result = result.replaceAll(operation, command);
-    }
-    return result
-      .replaceAll("prepare_task", "prepare-task")
-      .replaceAll("run_script_file", "run-script-file")
-      .replaceAll("structuredContent.imageFile", "imageFile");
-  }
-  if (Array.isArray(value)) {
-    return value.map(toCliFacingGuidanceValue);
-  }
-  if (!isRecord(value)) {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [key, toCliFacingGuidanceValue(entry)]),
-  );
+  return makeJsonToolResult(payload);
 }
 
 function guidanceQuerySource(
@@ -4395,10 +4413,25 @@ async function handleLookup(
   try {
     if (args.kind === "docs") {
       const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
-      const scope = args.scope ?? "active";
+      const requestedScope = args.scope ?? "auto";
+      const route = resolveTaskRoute({
+        query,
+        routes: getFigmaWorkspaceCanonicalTaskRoutes(),
+        requestedSurface: args.surface,
+        explicitTaskFamily: args.taskFamily,
+      });
+      const effectiveScopes = requestedScope === "auto"
+        ? route.effectiveScopes
+        : requestedScope === "all"
+          ? ["active", "conditional", "router", "examples"] as const
+          : [requestedScope];
+      const selectedTaskFamily = args.taskFamily ?? (route.status === "matched" ? route.taskFamily : undefined);
       const matches = await searchReferenceFiles({
         query,
-        files: docsSearchFilesForScope(scope),
+        scope: requestedScope,
+        surface: args.surface,
+        taskFamily: selectedTaskFamily,
+        effectiveScopes,
         maxResults: normalizeBoundedInteger(
           args.maxResults,
           DEFAULT_DOCS_SEARCH_MAX_RESULTS,
@@ -4412,10 +4445,13 @@ async function handleLookup(
       });
       const payload = {
         ok: true,
-        scope,
+        requestedScope,
+        effectiveScopes,
+        route,
         results: matches.results,
+        nextActions: createDocsLookupNextActions({ query, route, results: matches.results }),
         guidance:
-          "Use these capped BM25-ranked chunks as compact context. Run a narrower lookup query or kind=api lookup when more detail is needed.",
+          "Use these compact routed snippets, then run figma:docs:read with an exact project: or canonical: id for complete context.",
       };
       return makeJsonToolResult(payload);
     }
@@ -4425,7 +4461,6 @@ async function handleLookup(
     const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
     const matches = await searchReferenceFiles({
       query: symbol,
-      files: [],
       maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
       maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
       exactSymbol: true,
@@ -4433,9 +4468,11 @@ async function handleLookup(
     });
     const payload = {
       ok: true,
+      normalizedSymbol: matches.normalizedSymbol,
+      ownerHint: matches.ownerHint,
       results: matches.results,
       guidance:
-        "Results are capped BM25-ranked Plugin API chunks from the generated bundled typings index, with opaque source ids, matchType, and confidence. Exact symbol matches are boosted.",
+        "Results are compact declarations from the generated bundled typings index. Qualified aliases and direct owner matches rank before bare-symbol fallbacks.",
     };
     return makeJsonToolResult(payload);
   } catch (error) {
@@ -4450,6 +4487,46 @@ async function handleLookup(
     }
     throw error;
   }
+}
+
+function createDocsLookupNextActions(options: {
+  query: string;
+  route: TaskRouteResult;
+  results: ReferenceSearchResult[];
+}): FigmaWorkspaceNextAction[] {
+  const actions: FigmaWorkspaceNextAction[] = [];
+  const firstDocId = options.results.find((result) =>
+    result.docId?.startsWith("project:") || result.docId?.startsWith("canonical:"))?.docId;
+  if (firstDocId) {
+    actions.push({
+      commandId: "figma:docs:read",
+      args: { id: firstDocId },
+      reason: "Read the top document in full.",
+      priority: 1,
+    });
+  }
+  if (options.route.status === "ambiguous" || options.route.status === "none") {
+    const taskFamily = options.route.candidateTaskFamilies[0];
+    actions.push({
+      commandId: "figma:docs:catalog",
+      args: taskFamily ? { taskFamily } : {},
+      reason: "Choose an exact canonical task family.",
+      priority: actions.length + 1,
+    });
+  }
+  if (/\b(?:example|sample|template)\b/iu.test(options.query)) {
+    actions.push({
+      commandId: "figma:docs:search",
+      args: {
+        query: options.route.canonicalQuery ?? options.query,
+        scope: "examples",
+        ...(options.route.taskFamily ? { taskFamily: options.route.taskFamily } : {}),
+      },
+      reason: "Examples require an explicit examples scope.",
+      priority: actions.length + 1,
+    });
+  }
+  return actions.slice(0, 6);
 }
 
 function countRecords(value: unknown): number {
@@ -7230,66 +7307,16 @@ function createEvalHelperDescriptionsPayload(): Record<FigmaWorkspaceEvalHelperP
 
 function createFileWorkflowPayload(): Record<string, unknown> {
   return {
-    primaryTool: "run-script-file",
+    primaryCommandId: "figma:script:run",
     fileExtension: ".figma.ts",
-    supportedFileExtensions: [".figma.ts"],
-    prepareTool: "prepare-task",
-    planTool: "figma_workspace_guidance",
-    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts for file-context work; select workspaceDir according to workspaceDirGuidance, and the CLI does not append another figma-workspace segment",
-    outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
-    workflowTools: ["figma_workspace_get_metadata", "figma_workspace_inspect", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan"],
-    helpers: createEvalHelperPathList(),
+    commandOrder: ["figma:task:prepare", "figma:script:run", "figma:inspect", "figma:capture"],
+    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts",
     workspaceDirGuidance: "Always pass an explicit absolute workspaceDir for prepare/open/file-scoped calls that need local workspace files. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. Do not treat capability-specific output roots as generic task storage.",
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.ts files.",
-      "Initialize a file workspace once with an explicit workspaceDir selected according to workspaceDirGuidance, then keep task scripts in that file-context folder.",
-      "Run run-script-file directly; it strict-checks .figma.ts files with Figma Plugin API typings, compiles the upstream payload internally, and preflights file-aware diagnostics before upstream calls.",
-      "Keep each .figma.ts transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The file runner and eval wrapper parse script ASTs and inject only referenced $ helpers plus required dependencies; eval defaults to JavaScript and compiles TypeScript only when typescript:true is supplied. Scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; session state and handles persist in the CLI --session-file.",
-      "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
-      "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
-      "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.ts and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
-      "Use figma_workspace_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
-      "Use figma_workspace_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
-      "Use figma_workspace_capture_node to write final visual QA captures to local PNG files. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
-      "Use figma_workspace_run_task_plan for sequential file-plan workflows that combine preflighted script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
-      "Use figma_workspace_get_metadata for broad layer-tree discovery: target can be a raw node id, node URL, cached handle, $currentPage, single-node $selection, or target:{ fileKey, nodeId }. It calls official get_metadata, converts XML to compact JSON, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
-      "Use inspect only after the session has file context from open or prepare-task. It executes upstream use_figma; target must be a string such as $selection, $currentPage, a handle, raw node id, or node URL, not { fileKey, nodeId }.",
-      "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
-      "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
-      "For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot; avoid covering primary controls, text, or content that visual QA must inspect.",
-      "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
-      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are returned only when non-empty, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
-      "When upstream execution fails after preflight, outputFiles.compiledScriptFile points to a *.failure.compiled.txt payload with a failure header for line-aware repair; preflight failures and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing.",
+      "Run figma:script:run with strict preflight and repair every fatal diagnostic before retrying.",
+      "Keep transactions small, return compact changed ids and handles, and finish with figma:capture plus visual inspection when content changed.",
     ],
-  };
-}
-
-function createIntentSuggestions(
-  intent: string,
-  maxCards: number,
-  referenceContext: ReferenceSearchResult[] = [],
-): Record<string, unknown> {
-  const cards = chooseApiCardsForIntent(intent, maxCards);
-  const recommendedCards = cards.map((card) => card.id);
-  return {
-    cards: cards.map(createPublicApiCardPayload),
-    recommendedCards,
-    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
-    apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
-    guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
-    matchType: cards.length > 0 ? "api-card" : "bm25",
-    confidence: cards.length > 0 ? "high" : "medium",
-    referenceContext,
-    workflow: createFileWorkflowPayload(),
-    toolOrder: [
-      "prepare-task",
-      "figma_workspace_guidance",
-      "figma_workspace_lookup(kind=api)",
-      "run-script-file",
-      "figma_workspace_inspect",
-    ],
-    referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_workspace_lookup kind=api query when exact API details are still missing.",
   };
 }
 
@@ -7297,16 +7324,10 @@ function createPublicHelperProfilePayloads(
   profiles: FigmaWorkspaceHelperProfile[],
 ): Array<Record<string, unknown>> {
   return profiles.map((profile) => ({
-    helper: profile.id,
-    category: profile.category,
+    id: profile.id,
     helpers: profile.helpers,
-    useWhen: profile.useWhen,
-    avoidWhen: profile.avoidWhen,
-    allowedPatterns: profile.allowedPatterns,
-    forbiddenPatterns: profile.forbiddenPatterns,
-    apiSymbols: profile.apiSymbols,
-    lookupHints: profile.lookupHints,
-    example: profile.example,
+    publicCommandIds: profile.publicCommandIds,
+    lookupHints: profile.lookupHints.slice(0, 1),
   }));
 }
 
@@ -7314,24 +7335,13 @@ function createPublicWrapperProfilePayloads(
   profiles: FigmaWorkspaceWrapperLookupProfile[],
 ): Array<Record<string, unknown>> {
   return profiles.map((profile) => ({
-    tool: profile.tool,
+    commandId: profile.commandId,
     upstreamTool: profile.upstreamTool,
     workflowIds: profile.workflowIds,
-    intents: profile.intents.slice(0, 5),
-    suggestedLookups: {
-      docs: profile.docsQueries.slice(0, 3),
-      api: profile.apiSymbols.slice(0, 4),
-    },
-    suggestedTools: profile.suggestedTools,
-    nextSteps: profile.nextSteps,
-  }));
-}
-
-function createCompactWrapperProfilePayloads(): Array<Record<string, unknown>> {
-  return FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES.map((profile) => ({
-    tool: profile.tool,
-    upstreamTool: profile.upstreamTool,
-    workflowIds: profile.workflowIds,
+    suggestedCommandIds: profile.suggestedCommandIds,
+    ...(profile.suggestedUpstreamTools.length > 0
+      ? { suggestedUpstreamTools: profile.suggestedUpstreamTools }
+      : {}),
   }));
 }
 
@@ -7340,38 +7350,94 @@ function createPublicWrapperWorkflowPayloads(
 ): Array<Record<string, unknown>> {
   return workflows.map((workflow) => ({
     id: workflow.id,
-    title: workflow.title,
-    tools: workflow.tools,
-    sequence: workflow.sequence,
-    guardrails: workflow.guardrails,
-  }));
-}
-
-function createCompactWrapperWorkflowPayloads(): Array<Record<string, unknown>> {
-  return FIGMA_WORKSPACE_WRAPPER_WORKFLOW_GRAPH.map((workflow) => ({
-    id: workflow.id,
-    tools: workflow.tools,
+    commandIds: workflow.commandIds,
+    upstreamTools: workflow.upstreamTools,
   }));
 }
 
 function createWrapperGuidanceRef(toolName: string): FigmaWorkspaceWrapperGuidanceRef | undefined {
-  const profile = findWrapperLookupProfile(toolName);
+  const commandId = toolName === "figma_workspace_get_design_context"
+    ? "figma:design-context"
+    : toolName === "figma_workspace_get_motion_context"
+      ? "figma:motion-context"
+      : undefined;
+  const profile = commandId ? findWrapperLookupProfile(commandId) : undefined;
   if (!profile) {
     return undefined;
   }
   return {
     source: "guidance",
-    query: [profile.tool, profile.upstreamTool, ...profile.workflowIds].join(" "),
+    query: [profile.commandId, profile.upstreamTool, ...profile.workflowIds].join(" "),
     workflowIds: profile.workflowIds,
   };
 }
 
 function createPublicApiCardPayload(card: FigmaWorkspaceApiCard): Record<string, unknown> {
-  const { avoid, ...publicCard } = card;
   return {
-    ...publicCard,
-    guardrails: avoid,
+    id: card.id,
+    title: card.title,
+    surface: card.surface,
   };
+}
+
+function uniqueApiReferences(
+  references: FigmaWorkspaceApiCard["apiReferences"],
+  maxItems: number,
+): FigmaWorkspaceApiCard["apiReferences"] {
+  const seen = new Set<string>();
+  const results: FigmaWorkspaceApiCard["apiReferences"] = [];
+  for (const reference of references) {
+    if (seen.has(reference.lookupQuery)) continue;
+    seen.add(reference.lookupQuery);
+    results.push(reference);
+    if (results.length >= maxItems) break;
+  }
+  return results;
+}
+
+function createGuidanceNextActions(options: {
+  query: string;
+  route: TaskRouteResult;
+  referenceContext: ReferenceSearchResult[];
+  apiReferences: FigmaWorkspacePluginApiReference[];
+}): FigmaWorkspaceNextAction[] {
+  const actions = createDocsLookupNextActions({
+    query: options.query,
+    route: options.route,
+    results: options.referenceContext,
+  });
+  for (const reference of options.apiReferences.slice(0, 1)) {
+    actions.push({
+      commandId: "figma:api:search",
+      args: { symbol: reference.lookupQuery },
+      reason: `Read the exact declaration for ${reference.displayExpression}.`,
+      priority: actions.length + 1,
+    });
+  }
+  if (actions.length === 0) {
+    actions.push({
+      commandId: "figma:docs:search",
+      args: {
+        query: options.route.canonicalQuery ?? options.query,
+        scope: "auto",
+        ...(options.route.taskFamily ? { taskFamily: options.route.taskFamily } : {}),
+      },
+      reason: "Run a focused canonical docs search.",
+      priority: 1,
+    });
+  }
+  return actions.slice(0, 6).map((action, index) => ({ ...action, priority: index + 1 }));
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+  const suffix = "...";
+  let result = "";
+  for (const character of value) {
+    if (Buffer.byteLength(result + character + suffix, "utf8") > maxBytes) break;
+    result += character;
+  }
+  return `${result}${suffix}`;
 }
 
 function slugifyTaskName(value: unknown): string {

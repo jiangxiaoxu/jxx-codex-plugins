@@ -22,6 +22,22 @@ const DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4_000;
 const MAX_INLINE_RESULT_LIMIT_BYTES = 10_000;
 const NODE_SCOPED_TARGET_SHAPES = FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION;
 const COVERED_UPSTREAM_TOOLS = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
+const FIGMA_WORKSPACE_DOCS_SCOPES = ["auto", "active", "conditional", "router", "examples", "all"];
+const FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS = ["active", "conditional", "router", "examples"];
+const FIGMA_WORKSPACE_TASK_FAMILIES = [
+  "code-connect",
+  "create-file",
+  "design-to-code",
+  "design-generation",
+  "diagram",
+  "library-generation",
+  "motion-implementation",
+  "swiftui",
+  "figjam",
+  "motion",
+  "slides",
+  "design-editing",
+];
 
 export function createReplToolDescriptions(
   options: ReplToolDescriptionOptions,
@@ -160,14 +176,14 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_guidance",
       description:
-        "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { query, surface }. Use BM25-style keyword queries before writing .figma.ts; pair with lookup only when exact docs/API snippets are needed.",
+        "Planning and routing helper for compact workflow guidance, curated Plugin API cards, or catalog metadata. Recommended call: { query, surface }. surface is a hard Design/FigJam/Slides route filter, never a cross-surface fallback. In plan mode workflow must name a supported workflow and filters the returned workflow graph and wrapper profiles. Use English task keywords before writing .figma.ts; use figma:docs:search or figma:api:search only when exact reference context is still needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query fields."),
         card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
-        query: stringProperty(`BM25-style keyword search query, for example text font loadFontAsync or components variants properties. Hard limit ${options.maxLookupQueryLength} characters.`),
-        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
-        workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
+        query: stringProperty(`English task keywords used for deterministic route resolution, for example text font loadFontAsync or components variants properties. Hard limit ${options.maxLookupQueryLength} characters.`),
+        surface: enumProperty(["design", "figjam", "slides"], "Optional hard route filter. Results may use this surface or an explicitly surface-agnostic record only."),
+        workflow: stringProperty("Optional exact supported workflow id for plan mode. An unknown id is a usage error; when supplied it filters workflowGraph and wrapperProfiles."),
         maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4."),
       }),
     },
@@ -312,19 +328,21 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_lookup",
       description:
-        "Targeted lookup helper for compact canonical docs snippets or exact bundled Figma Plugin API symbols. For kind=docs use query; for kind=api use symbol. Use after guidance when exact API/docs context is still needed.",
+        "Targeted lookup helper for compact canonical documentation snippets or exact bundled Figma Plugin API declarations. For kind=docs use English query with automatic task routing by default; for kind=api use symbol, including supported qualified expressions. Use after figma:guidance when exact docs/API context is still needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
         scope: {
           ...enumProperty(
-            ["active", "conditional", "examples", "all"],
-            "Docs-only lookup scope. Defaults to active.",
+            FIGMA_WORKSPACE_DOCS_SCOPES,
+            "Docs-only lookup scope. Defaults to auto, which resolves the task family and surface without including examples. An explicit scope is strict.",
           ),
-          default: "active",
+          default: "auto",
         },
-        query: stringProperty(`Recommended for kind=docs keyword lookup, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
-        symbol: stringProperty(`Recommended for kind=api exact Plugin API lookup, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
+        surface: enumProperty(["design", "figjam", "slides"], "Docs-only hard surface filter. It is invalid with kind=api and never falls back across surfaces."),
+        taskFamily: enumProperty(FIGMA_WORKSPACE_TASK_FAMILIES, "Docs-only hard canonical task-family filter. It is invalid with kind=api and takes precedence over inferred routing."),
+        query: stringProperty(`Required for kind=docs. Use English task keywords, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
+        symbol: stringProperty(`Required for kind=api. Accepts bare or supported qualified Plugin API symbols, for example createFrame, figma.createFrame(), SceneNode.screenshot, or figma.variables.createVariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
         maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
         maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`),
       }, ["kind"]),
@@ -332,10 +350,15 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_docs",
       description:
-        "Read bundled Figma Workspace project documentation. Omit topic to list available topics; pass one topic to return the complete document content.",
+        "Raw documentation contract behind figma:docs:list, figma:docs:catalog, and figma:docs:read. mode=list returns project-document summaries with project:<topic> ids. mode=catalog returns task-family summaries when unfiltered, or canonical record metadata when taskFamily is supplied; catalog accepts optional surface, classification, and limit filters. mode=read requires an exact namespaced id: project:<topic> or canonical:<record-id>.",
       inputSchema: objectSchema({
-        topic: stringProperty("Optional project documentation topic. Omit to list topic metadata."),
-      }),
+        mode: enumProperty(["list", "catalog", "read"], "Required documentation operation mode."),
+        id: stringProperty("Required only for mode=read. Exact stable namespaced id returned by list/catalog: project:<topic> or canonical:<record-id>. Paths, chunk source ids, and legacy source ids are rejected."),
+        taskFamily: enumProperty(FIGMA_WORKSPACE_TASK_FAMILIES, "Optional mode=catalog canonical task-family filter. Omit it to return task-family summaries."),
+        surface: enumProperty(["design", "figjam", "slides"], "Optional mode=catalog hard surface filter."),
+        classification: enumProperty(FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS, "Optional mode=catalog canonical classification filter."),
+        limit: numberProperty("Optional mode=catalog result limit from 1 through 100.", { type: "integer", minimum: 1, maximum: 100 }),
+      }, ["mode"]),
     },
     {
       name: "figma_workspace_doctor",
@@ -438,21 +461,17 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     next: stringArrayProperty("Suggested next actions."),
   }),
   figma_workspace_guidance: toolOutputSchema({
-    workflow: objectProperty("Preferred file workflow payload for plan mode."),
-    steps: stringArrayProperty("Plan-mode workflow steps."),
-    recommendedTools: stringArrayProperty("Plan-mode recommended tools."),
-    suggestedCards: stringArrayProperty("Plan-mode suggested compact card ids."),
-    helperProfiles: arrayProperty("Relevant $ helper profiles with useWhen, avoidWhen, static reference rules, lookup hints, and examples."),
-    wrapperProfiles: arrayProperty("Relevant first-class wrapper lookup profiles with suggested lookups, tools, and next steps."),
-    workflowGraph: arrayProperty("Relevant wrapper workflow graph nodes."),
-    cards: arrayProperty("Compact curated API cards."),
-    catalogSize: numberProperty("Total curated API card count when returned."),
-    guidance: stringProperty("Compact follow-up guidance text when returned."),
-    recommendedCards: stringArrayProperty("Recommended curated card ids."),
-    queryHints: stringArrayProperty("Suggested docs/API search hints."),
-    apiSymbols: stringArrayProperty("Suggested exact API symbols."),
-    guardrails: stringArrayProperty("Task-specific guardrails."),
-    suggestions: guidanceSuggestionsProperty("Ranked task/card suggestions with compact context."),
+    route: objectProperty("Resolved task route: status (matched, ambiguous, fallback, or none), confidence, requested/effective surface, candidate task families, effective scopes, normalized English query, and reason."),
+    cards: arrayProperty("At most the requested compact curated API cards, filtered to the resolved surface and route."),
+    catalogSize: numberProperty("Total curated API card count when mode=catalog returns cards."),
+    queryHints: stringArrayProperty("At most eight compact English docs/API lookup hints."),
+    apiReferences: arrayProperty("At most eight Plugin API references. Each reference has displayExpression, lookupQuery, ownerHint when known, and symbolKind. lookupQuery is directly consumable by figma:api:search."),
+    guardrails: stringArrayProperty("At most six task-specific guardrails."),
+    helperProfiles: arrayProperty("At most three compact $ helper profiles relevant to the resolved route."),
+    wrapperProfiles: arrayProperty("At most three compact first-class wrapper profiles filtered by the requested workflow."),
+    workflowGraph: arrayProperty("Compact workflow graph summaries filtered by the requested workflow and resolved route."),
+    referenceContext: arrayProperty("At most two compact routed reference snippets. Entries expose a stable namespaced document id, title, classification, taskFamily, surfaces, line range, match type, confidence, and capped snippet; never full corpus text."),
+    nextActions: arrayProperty("At most six typed next actions. Each action has a public npm commandId such as figma:docs:search or figma:api:search, validated args, reason, and priority. Internal transport tool names and raw MCP names are never emitted."),
   }),
   figma_workspace_inspect: toolOutputSchema({
     session: objectProperty("Read-only local workspace session summary: id, fileKey, surface, and optional sessionDir; handleChanges is omitted."),
@@ -568,18 +587,26 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit."),
   }),
   figma_workspace_lookup: toolOutputSchema({
-    results: arrayProperty("Ranked compact corpus snippets."),
+    scope: enumProperty(FIGMA_WORKSPACE_DOCS_SCOPES, "Effective docs scope when kind=docs."),
+    route: objectProperty("Automatic docs route result when kind=docs: status, confidence, requested/effective surface, candidate task families, effective scopes, normalized English query, and reason."),
+    results: arrayProperty("Ranked compact results only. Documentation entries expose a stable public id (canonical:<record-id> or project:<topic>), title, classification, taskFamily, surfaces, line range, match type, confidence, and capped snippet. Plugin API entries expose their public symbol id, title, declaration kind, owner metadata, match type, confidence, and capped snippet. No result includes corpus text, hashes, absolute paths, or internal JSONL metadata."),
     diagnostics: arrayProperty("Lookup corpus diagnostics when local reference assets are unavailable."),
-    guidance: stringProperty("Compact follow-up guidance."),
+    nextActions: arrayProperty("Typed public follow-up actions with commandId, args, reason, and priority. commandId is an installed figma:* npm script id."),
     runtime: objectProperty("Runtime lookup corpus metadata when lookup assets are unavailable."),
   }),
   figma_workspace_docs: toolOutputSchema({
-    topics: arrayProperty("Available project documentation topic metadata when topic is omitted."),
-    topic: stringProperty("Selected project documentation topic."),
-    title: stringProperty("Selected document title."),
-    description: stringProperty("Selected document summary."),
-    sourceId: stringProperty("Stable project-document source id."),
-    content: stringProperty("Complete selected Markdown document content."),
+    mode: enumProperty(["list", "catalog", "read"], "Completed documentation operation mode."),
+    topics: arrayProperty("Project-document summaries returned by mode=list. Each entry has a stable project:<topic> id, title, and description."),
+    taskFamilies: arrayProperty("Task-family summaries returned by unfiltered mode=catalog."),
+    records: arrayProperty("Canonical document metadata returned by filtered mode=catalog. Every record exposes canonical:<record-id>, title, summary, classification, taskFamily, and surfaces."),
+    id: stringProperty("Selected stable namespaced id returned by mode=read: project:<topic> or canonical:<record-id>."),
+    title: stringProperty("Selected canonical or project document title returned by mode=read."),
+    summary: stringProperty("Selected canonical or project document summary returned by mode=read."),
+    classification: enumProperty(FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS, "Selected canonical document classification returned by mode=read."),
+    taskFamily: enumProperty(FIGMA_WORKSPACE_TASK_FAMILIES, "Selected canonical task family returned by mode=read."),
+    surfaces: stringArrayProperty("Selected canonical document supported surfaces returned by mode=read."),
+    nonExecutable: booleanProperty("Whether the selected canonical document is a non-executable example template."),
+    content: stringProperty("Complete selected Markdown document content returned by mode=read. Oversized typed CLI output uses its normal result sidecar without truncating the document."),
   }),
   figma_workspace_doctor: toolOutputSchema({
     runtime: objectProperty("Dynamic canonical docs corpus, Plugin API index, and TypeScript runtime status."),
@@ -905,34 +932,6 @@ function compactTaskPlanFailuresProperty(description: string): Record<string, un
       },
       additionalProperties: true,
     },
-  };
-}
-
-function guidanceSuggestionsProperty(description: string): Record<string, unknown> {
-  return {
-    type: "object",
-    description,
-    properties: {
-      recommendedCards: stringArrayProperty("Recommended curated API card ids."),
-      queryHints: stringArrayProperty("Suggested docs/API search hints."),
-      apiSymbols: stringArrayProperty("Suggested exact API symbols."),
-        guardrails: stringArrayProperty("Task-specific guardrails."),
-      referenceContext: {
-        type: "array",
-        description: "Compact ranked reference snippets used for suggestions.",
-        items: {
-          type: "object",
-          properties: {
-            sourceId: stringProperty("Opaque reference source id."),
-            title: stringProperty("Reference result title."),
-            snippet: stringProperty("Compact reference snippet."),
-            matchType: stringProperty("Reference match type."),
-          },
-          additionalProperties: true,
-        },
-      },
-    },
-    additionalProperties: true,
   };
 }
 

@@ -80,7 +80,7 @@ test("plugin manifest exposes the CLI skill without a local MCP server", async (
     Object.keys(expectedEntrypoints).sort(),
     "package figma scripts must exactly match the exported typed and family namespaces",
   );
-  assert.equal(Object.keys(actualFigmaScripts).length, 34);
+  assert.equal(Object.keys(actualFigmaScripts).length, 35);
   const scriptEntrypoints = [];
   for (const [scriptName, entrypoint] of Object.entries(expectedEntrypoints)) {
     const expected = `node scripts/commands/${entrypoint}`;
@@ -160,7 +160,7 @@ test("direct commands map positional options into canonical runtime input", asyn
 
 test("every command accepts -h and --help before runtime validation", async () => {
   const commandNames = [
-    "guidance", "docs:list", "docs:read", "docs:search", "api:search", "doctor",
+    "guidance", "docs:list", "docs:catalog", "docs:read", "docs:search", "api:search", "doctor",
     "sessions:list", "sessions:read", "upstream:list", "upstream:read", "inspect",
     "metadata", "design-context", "motion-context", "variables", "design-system", "libraries",
     "open", "eval", "script:run", "assets:apply", "assets:download", "capture",
@@ -182,7 +182,7 @@ test("every command accepts -h and --help before runtime validation", async () =
 
 test("command help exposes only optimized command-relevant option names", async () => {
   const commandNames = [
-    "guidance", "docs:list", "docs:read", "docs:search", "api:search", "doctor",
+    "guidance", "docs:list", "docs:catalog", "docs:read", "docs:search", "api:search", "doctor",
     "sessions:list", "sessions:read", "upstream:list", "upstream:read", "inspect",
     "metadata", "design-context", "motion-context", "variables", "design-system", "libraries",
     "open", "eval", "script:run", "assets:apply", "assets:download", "capture",
@@ -210,7 +210,7 @@ test("optimized help declares positional and option omitted states, repeatabilit
   assert.equal(await runFigmaCli(["guidance", "--help"], guidance.dependencies), 0);
   assert.match(guidance.stdout(), /<query>.*Required\./u);
   assert.match(guidance.stdout(), /--state-file <path>.*Required\./u);
-  assert.match(guidance.stdout(), /--workflow <id>.*Default: unset\./u);
+  assert.match(guidance.stdout(), /--workflow <design-implementation-context\|motion-implementation>.*Default: unset\./u);
   assert.match(guidance.stdout(), /--card-limit <n>.*Range: 1 to 8\./u);
   assert.match(guidance.stdout(), /--max-inline-bytes <bytes>.*Default: 4096\..*Range: 0 to 10000\./u);
 
@@ -425,7 +425,7 @@ test("all public figma npm scripts expose banner-free subprocess help", async ()
     scriptName === "figma" || scriptName.startsWith("figma:")
   ));
 
-  assert.equal(figmaScripts.length, 34);
+  assert.equal(figmaScripts.length, 35);
   for (const scriptName of figmaScripts) {
     const result = spawnSync(process.execPath, [npmCli, "--silent", "run", scriptName, "--", "--help"], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
@@ -499,6 +499,10 @@ test("npm package includes runtime surfaces and excludes local state and source 
   const report = JSON.parse(result.stdout);
   assert.equal(report.length, 1);
   const paths = report[0].files.map(({ path }) => path.replaceAll("\\", "/"));
+  const corpusManifest = JSON.parse(await readFile(
+    new URL("../skills/figma-workspace/references/canonical-corpus/manifest.json", import.meta.url),
+    "utf8",
+  ));
   for (const requiredPath of [
     ".codex-plugin/plugin.json",
     "mcp-server/dist/cli/figma-command-runtime.js",
@@ -511,6 +515,12 @@ test("npm package includes runtime surfaces and excludes local state and source 
     "mcp-server/dist/skills/figma-workspace/references/figma-workspace-diagnostics.md",
     "mcp-server/dist/skills/figma-workspace/references/figma-workspace-sessions.md",
     "mcp-server/dist/skills/figma-workspace/references/figma-workspace-upstream-tools.md",
+    "skills/figma-workspace/references/canonical-corpus/manifest.json",
+    "skills/figma-workspace/references/canonical-corpus/routes.json",
+    `skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
+    "mcp-server/dist/skills/figma-workspace/references/canonical-corpus/manifest.json",
+    "mcp-server/dist/skills/figma-workspace/references/canonical-corpus/routes.json",
+    `mcp-server/dist/skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
   ]) {
     assert.ok(paths.includes(requiredPath), `packed files must include ${requiredPath}`);
   }
@@ -523,6 +533,15 @@ test("npm package includes runtime surfaces and excludes local state and source 
   }
   assert.equal(paths.some((path) => path.split("/").includes(".figma-workspace")), false);
   assert.equal(paths.some((path) => path.includes("/src/") || path.includes("/tests/")), false);
+  assert.equal(paths.some((path) => /canonical-corpus\/(?:policy|docs)\//u.test(path)), false);
+  assert.equal(paths.some((path) => path.includes("dev/upstream-")), false);
+  assert.deepEqual(
+    paths.filter((path) => /canonical-corpus\/corpus-[a-f0-9]{64}\.jsonl$/u.test(path)).sort(),
+    [
+      `mcp-server/dist/skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
+      `skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
+    ],
+  );
 });
 
 test("generated project docs are visible to Git and packed", () => {
@@ -577,7 +596,7 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
 
     const docsResult = spawnSync(
       process.execPath,
-      [npmCli, "--silent", "run", "figma:docs:read", "--", "overview", "--state-file", join(tempDir, "state.json")],
+      [npmCli, "--silent", "run", "figma:docs:read", "--", "project:overview", "--state-file", join(tempDir, "state.json")],
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(docsResult.status, 0, docsResult.stderr);
@@ -586,6 +605,47 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
     assert.match(docsResult.stdout, /# Figma Workspace Overview/u);
     assert.doesNotMatch(docsResult.stdout, /^>/mu);
     assert.equal(docsResult.stderr, "");
+
+    const catalogResult = spawnSync(
+      process.execPath,
+      [npmCli, "--silent", "run", "figma:docs:catalog", "--", "--task-family", "code-connect", "--state-file", join(tempDir, "state.json")],
+      { cwd: join(extractDir, "package"), encoding: "utf8" },
+    );
+    assert.equal(catalogResult.status, 0, catalogResult.stderr);
+    assert.match(catalogResult.stdout, /canonical:figma-code-connect\/references\/api\.md/u);
+    assert.equal(catalogResult.stderr, "");
+
+    const searchResult = spawnSync(
+      process.execPath,
+      [npmCli, "--silent", "run", "figma:docs:search", "--", "code connect advanced patterns", "--task-family", "code-connect", "--state-file", join(tempDir, "state.json")],
+      { cwd: join(extractDir, "package"), encoding: "utf8" },
+    );
+    assert.equal(searchResult.status, 0, searchResult.stderr);
+    assert.match(searchResult.stdout, /Task Family: code-connect/u);
+    assert.equal(searchResult.stderr, "");
+
+    const canonicalReadResult = spawnSync(
+      process.execPath,
+      [npmCli, "--silent", "run", "figma:docs:read", "--", "canonical:figma-code-connect/references/api.md", "--state-file", join(tempDir, "state.json")],
+      { cwd: join(extractDir, "package"), encoding: "utf8" },
+    );
+    assert.equal(canonicalReadResult.status, 0, canonicalReadResult.stderr);
+    const canonicalReadPath = /^Path: (.+\.json)$/mu.exec(canonicalReadResult.stdout)?.[1];
+    assert.ok(canonicalReadPath, canonicalReadResult.stdout);
+    const canonicalReadSidecar = JSON.parse(await readFile(canonicalReadPath, "utf8"));
+    assert.equal(canonicalReadSidecar.id, "canonical:figma-code-connect/references/api.md");
+    assert.match(canonicalReadSidecar.content, /Code Connect Template API Reference/u);
+    assert.equal(canonicalReadResult.stderr, "");
+
+    const apiResult = spawnSync(
+      process.execPath,
+      [npmCli, "--silent", "run", "figma:api:search", "--", "figma.variables.createVariableCollection", "--state-file", join(tempDir, "state.json")],
+      { cwd: join(extractDir, "package"), encoding: "utf8" },
+    );
+    assert.equal(apiResult.status, 0, apiResult.stderr);
+    assert.match(apiResult.stdout, /Normalized Symbol: createVariableCollection/u);
+    assert.match(apiResult.stdout, /Owner Match: true/u);
+    assert.equal(apiResult.stderr, "");
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -597,7 +657,7 @@ test("npm direct command script returns runtime Markdown without npm banners", a
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-command-"));
   try {
     const result = spawnSync(process.execPath, [
-      npmCli, "--silent", "run", "figma:docs:read", "--", "overview", "--state-file", join(tempDir, "state.json"),
+      npmCli, "--silent", "run", "figma:docs:read", "--", "project:overview", "--state-file", join(tempDir, "state.json"),
     ], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
       encoding: "utf8",
@@ -607,6 +667,28 @@ test("npm direct command script returns runtime Markdown without npm banners", a
     assert.match(result.stdout, /^# figma-workspace docs$/mu);
     assert.match(result.stdout, /^Status: succeeded$/mu);
     assert.doesNotMatch(result.stdout, /^>/mu);
+    assert.equal(result.stderr, "");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("representative guidance stays within the default inline budget", async () => {
+  const npmCli = process.env.npm_execpath;
+  assert.ok(npmCli);
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-guidance-budget-"));
+  try {
+    const result = spawnSync(process.execPath, [
+      npmCli, "--silent", "run", "figma:guidance", "--", "text font loadFontAsync",
+      "--state-file", join(tempDir, "state.json"),
+    ], {
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      encoding: "utf8",
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(Buffer.byteLength(result.stdout, "utf8") <= 4096, `guidance output was ${Buffer.byteLength(result.stdout, "utf8")} bytes`);
+    assert.doesNotMatch(result.stdout, /Cli Result File/u);
     assert.equal(result.stderr, "");
   } finally {
     await rm(tempDir, { recursive: true, force: true });

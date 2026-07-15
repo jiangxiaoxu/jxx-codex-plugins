@@ -195,13 +195,33 @@ export interface FigmaWorkspaceGetVariableDefsArguments {
   inlineResultLimit?: number;
 }
 
-export type FigmaWorkspaceDocsLookupScope = "active" | "conditional" | "examples" | "all";
+export type FigmaWorkspaceDocsLookupScope = "auto" | "active" | "conditional" | "router" | "examples" | "all";
+
+export type FigmaWorkspaceTaskFamily =
+  | "code-connect"
+  | "create-file"
+  | "design-to-code"
+  | "design-generation"
+  | "diagram"
+  | "library-generation"
+  | "motion-implementation"
+  | "swiftui"
+  | "figjam"
+  | "motion"
+  | "slides"
+  | "design-editing";
+
+export type FigmaWorkspaceGuidanceWorkflow =
+  | "design-implementation-context"
+  | "motion-implementation";
 
 export interface FigmaWorkspaceLookupArguments {
   [key: string]: unknown;
   title?: string;
   kind: "docs" | "api";
   scope?: FigmaWorkspaceDocsLookupScope;
+  surface?: FigmaWorkspaceSurface;
+  taskFamily?: FigmaWorkspaceTaskFamily;
   query?: string;
   symbol?: string;
   maxResults?: number;
@@ -223,10 +243,17 @@ export interface FigmaWorkspacePrepareTaskArguments {
   overwrite?: boolean;
 }
 
-export interface FigmaWorkspaceDocsArguments {
-  [key: string]: unknown;
-  topic?: string;
-}
+export type FigmaWorkspaceDocsArguments =
+  | { [key: string]: unknown; mode: "list" }
+  | {
+    [key: string]: unknown;
+    mode: "catalog";
+    taskFamily?: FigmaWorkspaceTaskFamily;
+    surface?: FigmaWorkspaceSurface;
+    classification?: Exclude<FigmaWorkspaceDocsLookupScope, "auto" | "all">;
+    limit?: number;
+  }
+  | { [key: string]: unknown; mode: "read"; id: string };
 
 export interface FigmaWorkspaceDoctorArguments {
   [key: string]: unknown;
@@ -252,7 +279,7 @@ export interface FigmaWorkspaceGuidanceArguments {
   card?: string;
   query?: string;
   surface?: FigmaWorkspaceSurface;
-  workflow?: string;
+  workflow?: FigmaWorkspaceGuidanceWorkflow;
   maxCards?: number;
 }
 
@@ -269,14 +296,33 @@ export interface FigmaWorkspaceInspectArguments {
 const FIGMA_WORKSPACE_SURFACES = ["design", "figjam", "slides"] as const satisfies readonly FigmaWorkspaceSurface[];
 const FIGMA_WORKSPACE_EVAL_MODES = ["read", "write"] as const;
 const FIGMA_WORKSPACE_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as const;
+const FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS = ["design-implementation-context", "motion-implementation"] as const satisfies readonly FigmaWorkspaceGuidanceWorkflow[];
 const FIGMA_WORKSPACE_INSPECT_MODES = ["inspect", "validate", "style"] as const;
 const FIGMA_WORKSPACE_LOOKUP_KINDS = ["docs", "api"] as const;
 const FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES = [
+  "auto",
   "active",
   "conditional",
+  "router",
   "examples",
   "all",
 ] as const satisfies readonly FigmaWorkspaceDocsLookupScope[];
+const FIGMA_WORKSPACE_TASK_FAMILIES = [
+  "code-connect",
+  "create-file",
+  "design-to-code",
+  "design-generation",
+  "diagram",
+  "library-generation",
+  "motion-implementation",
+  "swiftui",
+  "figjam",
+  "motion",
+  "slides",
+  "design-editing",
+] as const satisfies readonly FigmaWorkspaceTaskFamily[];
+const FIGMA_WORKSPACE_DOCS_MODES = ["list", "catalog", "read"] as const;
+const FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS = ["active", "conditional", "router", "examples"] as const;
 const FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"] as const;
 
 function assertRemovedFileReferenceFields(record: Record<string, unknown>): void {
@@ -458,9 +504,10 @@ export function asGuidanceArgs(args: unknown): FigmaWorkspaceGuidanceArguments {
   const record = parseToolArgs<FigmaWorkspaceGuidanceArguments>(args);
   assertRemovedArguments(record, ["intent", "goal", "task"], "query");
   assertRemovedArguments(record, ["expectedSurface"], "surface");
-  assertOptionalStringFields(record, ["card", "query", "workflow"]);
+  assertOptionalStringFields(record, ["card", "query"]);
   assertOptionalEnum(record, "mode", FIGMA_WORKSPACE_GUIDANCE_MODES);
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalEnum(record, "workflow", FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS);
   return record;
 }
 
@@ -614,16 +661,38 @@ export function asLookupArgs(args: unknown): FigmaWorkspaceLookupArguments {
     throw new Error('Tool argument "scope" is only allowed when "kind" is "docs".');
   }
   if (record.kind === "docs" && record.scope === undefined) {
-    record.scope = "active";
+    record.scope = "auto";
   }
+  if (record.kind !== "docs" && (record.surface !== undefined || record.taskFamily !== undefined)) {
+    throw new Error('Tool arguments "surface" and "taskFamily" are only allowed when "kind" is "docs".');
+  }
+  assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalEnum(record, "taskFamily", FIGMA_WORKSPACE_TASK_FAMILIES);
   assertOptionalStringFields(record, ["query", "symbol"]);
   return record;
 }
 
 export function asDocsArgs(args: unknown): FigmaWorkspaceDocsArguments {
-  const record = parseToolArgs<FigmaWorkspaceDocsArguments>(args);
-  assertOptionalStringFields(record, ["topic"]);
-  return record;
+  const record = parseToolArgs<Record<string, unknown>>(args);
+  assertOptionalEnum(record, "mode", FIGMA_WORKSPACE_DOCS_MODES);
+  if (record.mode === "list") {
+    return record as FigmaWorkspaceDocsArguments;
+  }
+  if (record.mode === "catalog") {
+    assertOptionalEnum(record, "taskFamily", FIGMA_WORKSPACE_TASK_FAMILIES);
+    assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
+    assertOptionalEnum(record, "classification", FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS);
+    assertOptionalIntegerRange(record, "limit", 1, 100);
+    return record as FigmaWorkspaceDocsArguments;
+  }
+  if (record.mode === "read") {
+    assertOptionalStringFields(record, ["id"]);
+    if (typeof record.id !== "string" || record.id.trim().length === 0) {
+      throw new Error('Tool argument "id" is required when docs mode is "read".');
+    }
+    return record as FigmaWorkspaceDocsArguments;
+  }
+  throw new Error('Tool argument "mode" must be one of: list, catalog, read.');
 }
 
 export function asDoctorArgs(args: unknown): FigmaWorkspaceDoctorArguments {

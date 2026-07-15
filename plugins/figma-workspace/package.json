@@ -12,7 +12,12 @@
     "mcp-server/README.md",
     "mcp-server/scripts/login-figma-http.mjs",
     "scripts",
-    "skills"
+    "skills/figma-workspace/SKILL.md",
+    "skills/figma-workspace/agents/openai.yaml",
+    "skills/figma-workspace/references/*.md",
+    "skills/figma-workspace/references/canonical-corpus/manifest.json",
+    "skills/figma-workspace/references/canonical-corpus/routes.json",
+    "skills/figma-workspace/references/canonical-corpus/corpus-*.jsonl"
   ],
   "scripts": {
     "figma": "node scripts/commands/figma.mjs",
@@ -21,6 +26,7 @@
     "figma:raw:help": "node scripts/commands/figma-raw-help.mjs",
     "figma:docs": "node scripts/commands/figma-docs.mjs",
     "figma:docs:list": "node scripts/commands/figma-docs-list.mjs",
+    "figma:docs:catalog": "node scripts/commands/figma-docs-catalog.mjs",
     "figma:docs:read": "node scripts/commands/figma-docs-read.mjs",
     "figma:docs:search": "node scripts/commands/figma-docs-search.mjs",
     "figma:api": "node scripts/commands/figma-api.mjs",

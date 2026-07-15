@@ -18846,29 +18846,28 @@ import { readFileSync } from "node:fs";
 import { dirname as dirname3, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function listFigmaWorkspaceProjectDocs() {
-  return PROJECT_DOC_DEFINITIONS.map(({ topic, title, description }) => ({ topic, title, description }));
+  return PROJECT_DOC_DEFINITIONS.map(({ id, title, description }) => ({ id, title, description }));
 }
-function readFigmaWorkspaceProjectDoc(topic) {
-  const normalizedTopic = topic.trim().toLowerCase();
-  const definition = PROJECT_DOC_DEFINITIONS.find((candidate) => candidate.topic === normalizedTopic);
+function readFigmaWorkspaceProjectDoc(id) {
+  const definition = PROJECT_DOC_DEFINITIONS.find((candidate) => candidate.id === id);
   if (!definition) {
     throw new Error(
-      `Unknown Figma Workspace project doc topic "${topic}". Available topics: ${FIGMA_WORKSPACE_PROJECT_DOC_TOPICS.join(", ")}.`
+      `Unknown Figma Workspace project doc id "${id}". Available ids: ${FIGMA_WORKSPACE_PROJECT_DOC_IDS.join(", ")}.`
     );
   }
   const root = resolveProjectDocsRoot();
   return {
-    topic: definition.topic,
+    id: definition.id,
+    kind: "project",
     title: definition.title,
     description: definition.description,
-    sourceId: definition.sourceId,
     content: readFileSync(resolve3(root, definition.fileName), "utf8")
   };
 }
 function getFigmaWorkspaceProjectDocSearchRecords() {
   return new Map(PROJECT_DOC_DEFINITIONS.map((definition) => {
-    const doc = readFigmaWorkspaceProjectDoc(definition.topic);
-    return [definition.fileName, { id: doc.sourceId, text: doc.content }];
+    const doc = readFigmaWorkspaceProjectDoc(definition.id);
+    return [definition.fileName, { id: doc.id, text: doc.content }];
   }));
 }
 function getFigmaWorkspaceProjectDocsRuntimeInfo() {
@@ -18879,7 +18878,7 @@ function getFigmaWorkspaceProjectDocsRuntimeInfo() {
     return {
       ok: true,
       root: resolveProjectDocsRootFromCandidates(attemptedPaths),
-      topics: FIGMA_WORKSPACE_PROJECT_DOC_TOPICS
+      ids: FIGMA_WORKSPACE_PROJECT_DOC_IDS
     };
   } catch (error2) {
     return {
@@ -18926,7 +18925,7 @@ function safeProcessCwd(fallback) {
     return fallback;
   }
 }
-var PROJECT_DOC_DEFINITIONS, FIGMA_WORKSPACE_PROJECT_DOC_TOPICS, FIGMA_WORKSPACE_PROJECT_DOC_FILES;
+var PROJECT_DOC_DEFINITIONS, FIGMA_WORKSPACE_PROJECT_DOC_TOPICS, FIGMA_WORKSPACE_PROJECT_DOC_IDS, FIGMA_WORKSPACE_PROJECT_DOC_FILES;
 var init_project_docs = __esm({
   "src/runtime/project-docs.ts"() {
     "use strict";
@@ -18936,57 +18935,438 @@ var init_project_docs = __esm({
         title: "Overview and capabilities",
         description: "Choose the CLI capability that matches a Figma workspace task.",
         fileName: "figma-workspace-overview.md",
-        sourceId: "project:overview"
+        id: "project:overview"
       },
       {
         topic: "workflow",
         title: "Workflow",
         description: "Run the primary .figma.ts workflow and its supporting commands.",
         fileName: "figma-workspace-workflow.md",
-        sourceId: "project:workflow"
+        id: "project:workflow"
       },
       {
         topic: "guidance-and-lookup",
         title: "Guidance and lookup",
-        description: "Use guidance cards and targeted project or upstream reference lookup.",
+        description: "Use guidance cards and targeted project or canonical reference lookup.",
         fileName: "figma-workspace-guidance-and-lookup.md",
-        sourceId: "project:guidance-and-lookup"
+        id: "project:guidance-and-lookup"
       },
       {
         topic: "safety",
         title: "Safety",
         description: "Apply file-editing, scripting, asset, and visual-QA guardrails.",
         fileName: "figma-workspace-safety.md",
-        sourceId: "project:safety"
+        id: "project:safety"
       },
       {
         topic: "diagnostics",
         title: "Diagnostics",
         description: "Interpret preflight, runtime, and lookup diagnostics and repair failures.",
         fileName: "figma-workspace-diagnostics.md",
-        sourceId: "project:diagnostics"
+        id: "project:diagnostics"
       },
       {
         topic: "sessions",
         title: "Sessions",
         description: "Open, persist, select, and recover CLI workspace sessions.",
         fileName: "figma-workspace-sessions.md",
-        sourceId: "project:sessions"
+        id: "project:sessions"
       },
       {
         topic: "upstream-tools",
         title: "Upstream tools",
         description: "Choose first-class wrappers or call uncovered official Figma capabilities.",
         fileName: "figma-workspace-upstream-tools.md",
-        sourceId: "project:upstream-tools"
+        id: "project:upstream-tools"
       }
     ];
     FIGMA_WORKSPACE_PROJECT_DOC_TOPICS = PROJECT_DOC_DEFINITIONS.map(
       (definition) => definition.topic
     );
+    FIGMA_WORKSPACE_PROJECT_DOC_IDS = PROJECT_DOC_DEFINITIONS.map(
+      (definition) => definition.id
+    );
     FIGMA_WORKSPACE_PROJECT_DOC_FILES = PROJECT_DOC_DEFINITIONS.map(
       (definition) => definition.fileName
     );
+  }
+});
+
+// src/runtime/task-routing.ts
+function normalizeTaskRoutingQuery(value) {
+  return value.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim().replace(/\s+/gu, " ");
+}
+function parseTaskRoutingCatalog(value) {
+  const catalog = requireRecord(value, "task route catalog");
+  const keys = Object.keys(catalog).sort();
+  if (keys.length !== 2 || keys[0] !== "routes" || keys[1] !== "schemaVersion") {
+    throw new Error("Task route catalog must contain exactly: routes, schemaVersion.");
+  }
+  if (catalog.schemaVersion !== 1) {
+    throw new Error("Task route catalog schemaVersion must be 1.");
+  }
+  return {
+    schemaVersion: 1,
+    routes: parseTaskRouteDefinitions(catalog.routes, "task route catalog routes")
+  };
+}
+function parseTaskRouteDefinitions(value, context = "task route catalog") {
+  if (!Array.isArray(value)) {
+    throw new Error(`${context} must be an array.`);
+  }
+  if (value.length !== TASK_FAMILIES.length) {
+    throw new Error(`${context} must contain exactly ${TASK_FAMILIES.length} routes.`);
+  }
+  const routes = value.map((entry, index) => parseTaskRouteDefinition(entry, `${context}[${index}]`));
+  const families = new Set(routes.map((route) => route.taskFamily));
+  const missingFamilies = TASK_FAMILIES.filter((family) => !families.has(family));
+  if (families.size !== TASK_FAMILIES.length || missingFamilies.length > 0) {
+    throw new Error(`${context} must contain each stable task family exactly once. Missing: ${missingFamilies.join(", ") || "none"}.`);
+  }
+  for (let index = 1; index < routes.length; index += 1) {
+    if (routes[index - 1].taskFamily >= routes[index].taskFamily) {
+      throw new Error(`${context} must be strictly sorted by taskFamily.`);
+    }
+  }
+  const aliasOwners = /* @__PURE__ */ new Map();
+  for (const route of routes) {
+    for (const alias of route.aliases) {
+      const normalized = normalizeTaskRoutingQuery(alias);
+      const owner = aliasOwners.get(normalized);
+      if (owner) {
+        throw new Error(`${context} alias "${normalized}" is duplicated by ${owner} and ${route.taskFamily}.`);
+      }
+      aliasOwners.set(normalized, route.taskFamily);
+    }
+  }
+  return routes;
+}
+function resolveTaskRoute(options) {
+  if (typeof options.query !== "string") {
+    throw new Error("Task routing query must be a string.");
+  }
+  if (options.requestedSurface !== void 0 && !TASK_SURFACE_SET.has(options.requestedSurface)) {
+    throw new Error(`Unknown requested task surface: ${String(options.requestedSurface)}.`);
+  }
+  if (options.explicitTaskFamily !== void 0 && !TASK_FAMILY_SET.has(options.explicitTaskFamily)) {
+    throw new Error(`Unknown explicit task family: ${String(options.explicitTaskFamily)}.`);
+  }
+  const normalizedQuery = normalizeTaskRoutingQuery(options.query);
+  const normalizedRoutes = normalizeRoutes(options.routes);
+  const compatibleRoutes = normalizedRoutes.filter(({ route }) => options.requestedSurface === void 0 || route.surfaces.includes(options.requestedSurface));
+  if (options.explicitTaskFamily !== void 0) {
+    const selected = compatibleRoutes.find(({ route }) => route.taskFamily === options.explicitTaskFamily);
+    if (!selected) {
+      return noRouteResult({
+        normalizedQuery,
+        requestedSurface: options.requestedSurface,
+        reason: options.requestedSurface ? `Explicit task family ${options.explicitTaskFamily} is not compatible with requested surface ${options.requestedSurface}.` : `Explicit task family ${options.explicitTaskFamily} is not present in the route catalog.`,
+        confidence: "none"
+      });
+    }
+    return selectedRouteResult(selected.route, {
+      status: "matched",
+      confidence: "high",
+      normalizedQuery,
+      requestedSurface: options.requestedSurface,
+      matchKind: "explicit",
+      reason: `Explicit task family ${selected.route.taskFamily} overrides query inference.`
+    });
+  }
+  if (!normalizedQuery) {
+    return noRouteResult({
+      normalizedQuery,
+      requestedSurface: options.requestedSurface,
+      reason: "Query contains no normalized English routing tokens.",
+      confidence: "none"
+    });
+  }
+  const queryTokens = normalizedQuery.split(" ");
+  const queryTokenSet = new Set(queryTokens);
+  if (options.requestedSurface !== void 0) {
+    const conflict = incompatibleSurfaceMatch(
+      normalizedQuery,
+      queryTokens,
+      queryTokenSet,
+      normalizedRoutes,
+      options.requestedSurface
+    );
+    if (conflict) {
+      return noRouteResult({
+        normalizedQuery,
+        requestedSurface: options.requestedSurface,
+        reason: conflict,
+        confidence: "low"
+      });
+    }
+  }
+  const exactMatches = strongestExactMatches(collectExactMatches(normalizedQuery, queryTokens, compatibleRoutes));
+  if (exactMatches.length > 0) {
+    return resolveMatchedCandidates({
+      candidates: exactMatches,
+      normalizedQuery,
+      requestedSurface: options.requestedSurface,
+      matchKind: "exact-alias",
+      confidence: "high",
+      reason: "Matched the longest contiguous route alias."
+    });
+  }
+  const multiTokenMatches = collectMultiTokenMatches(queryTokenSet, compatibleRoutes);
+  if (multiTokenMatches.length > 0) {
+    return resolveMatchedCandidates({
+      candidates: multiTokenMatches,
+      normalizedQuery,
+      requestedSurface: options.requestedSurface,
+      matchKind: "multi-token",
+      confidence: "medium",
+      reason: "Matched a unique route using multiple English query tokens."
+    });
+  }
+  const singleTokenMatches = collectSingleTokenMatches(queryTokenSet, compatibleRoutes);
+  if (singleTokenMatches.length > 0) {
+    return resolveMatchedCandidates({
+      candidates: singleTokenMatches,
+      normalizedQuery,
+      requestedSurface: options.requestedSurface,
+      matchKind: "single-token",
+      confidence: "low",
+      status: "fallback",
+      reason: "Only a single routing token matched; use the candidate as a low-confidence fallback."
+    });
+  }
+  return noRouteResult({
+    normalizedQuery,
+    requestedSurface: options.requestedSurface,
+    reason: "No task route matched the normalized English query.",
+    confidence: "low"
+  });
+}
+function incompatibleSurfaceMatch(normalizedQuery, queryTokens, queryTokenSet, routes, requestedSurface) {
+  const exactMatches = strongestExactMatches(collectExactMatches(normalizedQuery, queryTokens, routes));
+  if (exactMatches.length > 0) {
+    return exactMatches.some(({ route }) => route.surfaces.includes(requestedSurface)) ? void 0 : `Strongest exact task route is not compatible with requested surface ${requestedSurface}.`;
+  }
+  const multiTokenMatches = collectMultiTokenMatches(queryTokenSet, routes);
+  if (multiTokenMatches.length > 0) {
+    return multiTokenMatches.some(({ route }) => route.surfaces.includes(requestedSurface)) ? void 0 : `Multi-token task route is not compatible with requested surface ${requestedSurface}.`;
+  }
+  const singleTokenMatches = collectSingleTokenMatches(queryTokenSet, routes);
+  if (singleTokenMatches.length > 0 && !singleTokenMatches.some(({ route }) => route.surfaces.includes(requestedSurface))) {
+    return `Single-token task route is not compatible with requested surface ${requestedSurface}.`;
+  }
+  return void 0;
+}
+function parseTaskRouteDefinition(value, context) {
+  const route = requireRecord(value, context);
+  const keys = Object.keys(route).sort();
+  if (keys.length !== ROUTE_KEYS.length || keys.some((key, index) => key !== ROUTE_KEYS[index])) {
+    throw new Error(`${context} must contain exactly: ${ROUTE_KEYS.join(", ")}.`);
+  }
+  if (typeof route.taskFamily !== "string" || !TASK_FAMILY_SET.has(route.taskFamily)) {
+    throw new Error(`${context}.taskFamily is not a stable task family.`);
+  }
+  if (typeof route.skill !== "string" || !route.skill.trim()) {
+    throw new Error(`${context}.skill must be a non-empty string.`);
+  }
+  const canonicalQuery = requireEnglishPhrase(route.canonicalQuery, `${context}.canonicalQuery`);
+  const surfaces = parseSurfaces(route.surfaces, `${context}.surfaces`);
+  const aliases = parseAliases(route.aliases, `${context}.aliases`);
+  return {
+    taskFamily: route.taskFamily,
+    skill: route.skill.trim(),
+    surfaces,
+    canonicalQuery,
+    aliases
+  };
+}
+function parseSurfaces(value, context) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${context} must be a non-empty array.`);
+  }
+  const surfaces = [];
+  for (const entry of value) {
+    if (typeof entry !== "string" || !TASK_SURFACE_SET.has(entry)) {
+      throw new Error(`${context} contains an unknown surface: ${String(entry)}.`);
+    }
+    if (surfaces.includes(entry)) {
+      throw new Error(`${context} must not contain duplicate surfaces.`);
+    }
+    surfaces.push(entry);
+  }
+  return surfaces;
+}
+function parseAliases(value, context) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${context} must be a non-empty array.`);
+  }
+  const aliases = value.map((entry, index) => requireEnglishPhrase(entry, `${context}[${index}]`));
+  const normalized = aliases.map(normalizeTaskRoutingQuery);
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error(`${context} contains duplicate normalized aliases.`);
+  }
+  return aliases;
+}
+function requireEnglishPhrase(value, context) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${context} must be a non-empty string.`);
+  }
+  if (!normalizeTaskRoutingQuery(value)) {
+    throw new Error(`${context} must contain English routing tokens.`);
+  }
+  return value.trim();
+}
+function requireRecord(value, context) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${context} must be an object.`);
+  }
+  return value;
+}
+function normalizeRoutes(routes) {
+  return routes.map((route) => {
+    if (!TASK_FAMILY_SET.has(route.taskFamily)) {
+      throw new Error(`Route contains unknown task family: ${String(route.taskFamily)}.`);
+    }
+    const phrases = [...route.aliases, route.canonicalQuery].map((phrase) => normalizeTaskRoutingQuery(phrase)).filter((phrase) => phrase.length > 0).filter((phrase, index, all) => all.indexOf(phrase) === index).map((phrase) => ({ value: phrase, tokens: phrase.split(" ") }));
+    return { route, phrases };
+  }).sort((left, right) => compareTaskFamily(left.route.taskFamily, right.route.taskFamily));
+}
+function collectExactMatches(normalizedQuery, queryTokens, routes) {
+  const paddedQuery = ` ${normalizedQuery} `;
+  const matches = [];
+  for (const route of routes) {
+    for (const phrase of route.phrases) {
+      if (phrase.tokens.length <= queryTokens.length && paddedQuery.includes(` ${phrase.value} `)) {
+        matches.push({ route: route.route, phrase });
+      }
+    }
+  }
+  return matches;
+}
+function collectMultiTokenMatches(queryTokens, routes) {
+  const matches = [];
+  for (const route of routes) {
+    const phrases = route.phrases.filter((phrase) => phrase.tokens.length > 1 && phrase.tokens.every((token) => queryTokens.has(token)));
+    const best = strongestPhrase(phrases);
+    if (best) matches.push({ route: route.route, phrase: best });
+  }
+  return matches;
+}
+function strongestExactMatches(matches) {
+  if (matches.length === 0) return [];
+  const longestTokenCount = Math.max(...matches.map((match) => match.phrase.tokens.length));
+  const tokenLongest = matches.filter((match) => match.phrase.tokens.length === longestTokenCount);
+  const longestLength = Math.max(...tokenLongest.map((match) => match.phrase.value.length));
+  return tokenLongest.filter((match) => match.phrase.value.length === longestLength);
+}
+function collectSingleTokenMatches(queryTokens, routes) {
+  const matches = [];
+  for (const route of routes) {
+    const phrases = route.phrases.filter((phrase) => phrase.tokens.some((token) => queryTokens.has(token)));
+    const best = strongestPhrase(phrases);
+    if (best) matches.push({ route: route.route, phrase: best });
+  }
+  return matches;
+}
+function strongestPhrase(phrases) {
+  return [...phrases].sort((left, right) => right.tokens.length - left.tokens.length || right.value.length - left.value.length || compareText(left.value, right.value))[0];
+}
+function resolveMatchedCandidates(options) {
+  const byFamily = /* @__PURE__ */ new Map();
+  for (const candidate of options.candidates) {
+    const current2 = byFamily.get(candidate.route.taskFamily);
+    if (!current2 || comparePhrases(candidate.phrase, current2.phrase) < 0) {
+      byFamily.set(candidate.route.taskFamily, candidate);
+    }
+  }
+  const candidates = [...byFamily.values()].sort((left, right) => compareTaskFamily(left.route.taskFamily, right.route.taskFamily));
+  if (candidates.length !== 1) {
+    return {
+      status: "ambiguous",
+      confidence: "low",
+      surface: options.requestedSurface ?? uniqueSurface(candidates.map(({ route }) => route)),
+      candidateTaskFamilies: candidates.map(({ route }) => route.taskFamily),
+      effectiveScopes: ["router"],
+      normalizedQuery: options.normalizedQuery,
+      matchKind: options.matchKind,
+      reason: `${options.reason} Multiple task families remain compatible.`
+    };
+  }
+  const selected = candidates[0];
+  const surface = options.requestedSurface ?? uniqueSurface([selected.route]);
+  const confidence = surface === void 0 && options.confidence !== "low" ? "low" : options.confidence;
+  return selectedRouteResult(selected.route, {
+    status: options.status ?? "matched",
+    confidence,
+    normalizedQuery: options.normalizedQuery,
+    requestedSurface: options.requestedSurface,
+    matchKind: options.matchKind,
+    matchedAlias: selected.phrase.value,
+    reason: surface === void 0 ? `${options.reason} The route spans multiple surfaces, so confidence is reduced.` : options.reason
+  });
+}
+function selectedRouteResult(route, options) {
+  return {
+    status: options.status,
+    confidence: options.confidence,
+    surface: options.requestedSurface ?? (route.surfaces.length === 1 ? route.surfaces[0] : void 0),
+    taskFamily: route.taskFamily,
+    skill: route.skill,
+    candidateTaskFamilies: [route.taskFamily],
+    effectiveScopes: options.status === "matched" ? [...TASK_ROUTING_AUTO_SCOPES] : ["active"],
+    normalizedQuery: options.normalizedQuery,
+    canonicalQuery: route.canonicalQuery,
+    matchKind: options.matchKind,
+    matchedAlias: options.matchedAlias,
+    reason: options.reason
+  };
+}
+function noRouteResult(options) {
+  return {
+    status: "none",
+    confidence: options.confidence,
+    surface: options.requestedSurface,
+    candidateTaskFamilies: [],
+    effectiveScopes: ["active"],
+    normalizedQuery: options.normalizedQuery,
+    reason: options.reason
+  };
+}
+function uniqueSurface(routes) {
+  const surfaces = new Set(routes.flatMap((route) => route.surfaces));
+  return surfaces.size === 1 ? [...surfaces][0] : void 0;
+}
+function compareTaskFamily(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function comparePhrases(left, right) {
+  return right.tokens.length - left.tokens.length || right.value.length - left.value.length || compareText(left.value, right.value);
+}
+function compareText(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+var TASK_FAMILIES, TASK_SURFACES, TASK_ROUTING_AUTO_SCOPES, TASK_FAMILY_SET, TASK_SURFACE_SET, ROUTE_KEYS;
+var init_task_routing = __esm({
+  "src/runtime/task-routing.ts"() {
+    "use strict";
+    TASK_FAMILIES = [
+      "code-connect",
+      "create-file",
+      "design-to-code",
+      "design-generation",
+      "diagram",
+      "library-generation",
+      "motion-implementation",
+      "swiftui",
+      "figjam",
+      "motion",
+      "slides",
+      "design-editing"
+    ];
+    TASK_SURFACES = ["design", "figjam", "slides"];
+    TASK_ROUTING_AUTO_SCOPES = ["active", "conditional", "router"];
+    TASK_FAMILY_SET = new Set(TASK_FAMILIES);
+    TASK_SURFACE_SET = new Set(TASK_SURFACES);
+    ROUTE_KEYS = ["aliases", "canonicalQuery", "skill", "surfaces", "taskFamily"];
   }
 });
 
@@ -18995,21 +19375,60 @@ import { createHash } from "node:crypto";
 import { readFileSync as readFileSync2 } from "node:fs";
 import { dirname as dirname4, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
-function docsSearchFilesForScope(scope) {
+function docsSearchFilesForScope(scope, filters = {}) {
+  const effectiveScopeSet = scope === "auto" ? new Set(
+    (filters.effectiveScopes ?? ["active"]).filter((classification) => classification !== "examples")
+  ) : void 0;
+  const includeStaticDocs = scope === "auto" || (scope === "active" || scope === "all") && filters.surface === void 0 && filters.taskFamily === void 0;
   if (!canonicalCorpusState.ok) {
-    return scope === "active" || scope === "all" ? [...STATIC_DOCS_SEARCH_FILES] : [];
+    return includeStaticDocs ? [...STATIC_DOCS_SEARCH_FILES] : [];
   }
   const records = [...canonicalCorpusState.corpus.records.values()];
   const selected = records.filter((record2) => {
-    if (scope === "all") {
-      return true;
-    }
-    return record2.classification === scope;
+    const scopeMatches = scope === "all" || (scope === "auto" ? effectiveScopeSet?.has(record2.classification) === true : record2.classification === scope);
+    return scopeMatches && (filters.surface === void 0 || record2.surfaces?.includes(filters.surface)) && (filters.taskFamily === void 0 || record2.taskFamily === filters.taskFamily);
   });
   return [
-    ...scope === "active" || scope === "all" ? STATIC_DOCS_SEARCH_FILES : [],
+    ...includeStaticDocs ? STATIC_DOCS_SEARCH_FILES : [],
     ...selected.map((record2) => record2.id)
   ];
+}
+function getFigmaWorkspaceCanonicalTaskRoutes() {
+  return loadCanonicalCorpus().routes.map((route) => ({
+    ...route,
+    surfaces: [...route.surfaces],
+    aliases: [...route.aliases]
+  }));
+}
+function listFigmaWorkspaceCanonicalCatalog(options = {}) {
+  const corpus = loadCanonicalCorpus();
+  const limit = normalizeCatalogLimit(options.limit);
+  if (options.taskFamily === void 0) {
+    return corpus.routes.filter((route) => options.surface === void 0 || route.surfaces.includes(options.surface)).map((route) => ({
+      taskFamily: route.taskFamily,
+      skill: route.skill,
+      surfaces: [...route.surfaces],
+      canonicalQuery: route.canonicalQuery,
+      aliases: [...route.aliases],
+      recordCount: [...corpus.records.values()].filter((record2) => record2.taskFamily === route.taskFamily && (options.surface === void 0 || record2.surfaces?.includes(options.surface)) && (options.classification === void 0 || record2.classification === options.classification)).length
+    })).filter((summary) => options.classification === void 0 || summary.recordCount > 0).slice(0, limit);
+  }
+  return [...corpus.records.values()].filter((record2) => record2.taskFamily === options.taskFamily).filter((record2) => options.surface === void 0 || record2.surfaces?.includes(options.surface)).filter((record2) => options.classification === void 0 || record2.classification === options.classification).sort((left, right) => compareAscii(left.id, right.id)).slice(0, limit).map(canonicalRecordSummary);
+}
+function readFigmaWorkspaceCanonicalDoc(id) {
+  if (!/^canonical:[^\\/:]+(?:\/[^\\/:]+)*$/u.test(id) || id.includes("..") || id.includes("#")) {
+    throw unknownCanonicalDocId(id);
+  }
+  const recordId = id.slice("canonical:".length);
+  const record2 = loadCanonicalCorpus().records.get(recordId);
+  if (!record2) {
+    throw unknownCanonicalDocId(id);
+  }
+  return {
+    ...canonicalRecordSummary(record2),
+    kind: "canonical",
+    content: record2.text
+  };
 }
 function getFigmaWorkspaceLookupRuntimeInfo() {
   if (!canonicalCorpusState.ok) {
@@ -19030,7 +19449,12 @@ function getFigmaWorkspaceLookupRuntimeInfo() {
       root: canonicalCorpusState.corpus.root,
       recordCount: canonicalManifest.corpus.recordCount,
       corpusSha256: canonicalManifest.corpus.sha256,
-      classificationCounts: { ...canonicalManifest.classificationCounts },
+      inventories: {
+        classifications: { ...canonicalManifest.inventories.classifications },
+        surfaces: { ...canonicalManifest.inventories.surfaces },
+        taskFamilies: { ...canonicalManifest.inventories.taskFamilies }
+      },
+      routeCount: canonicalManifest.routeCatalog.routeCount,
       repository: canonicalManifest.source?.repository,
       resolvedCommit: canonicalManifest.source?.resolvedCommit
     },
@@ -19048,14 +19472,21 @@ async function searchReferenceFiles(options) {
   const canonicalCorpus = useApiCorpus ? void 0 : loadCanonicalCorpus();
   const apiIndex = useApiCorpus ? loadPluginApiIndex() : void 0;
   const projectDocsRecords = getFigmaWorkspaceProjectDocSearchRecords();
-  const queryTokens = tokenizeQuery(options.query);
+  const apiQuery = useApiCorpus ? parsePluginApiLookupQuery(options.query, apiIndex) : void 0;
+  const rankingQuery = apiQuery?.normalizedSymbol ?? options.query;
+  const queryTokens = tokenizeQuery(rankingQuery);
   const chunks = [];
   if (apiIndex) {
     for (const record2 of apiIndex.records.values()) {
       chunks.push(buildPluginApiReferenceChunk(record2));
     }
   }
-  for (const file of options.files) {
+  const files = options.files ?? (useApiCorpus ? [] : docsSearchFilesForScope(options.scope ?? "auto", {
+    surface: options.surface,
+    taskFamily: options.taskFamily,
+    effectiveScopes: options.effectiveScopes
+  }));
+  for (const file of files) {
     const projectDocRecord = projectDocsRecords.get(file);
     if (projectDocRecord) {
       chunks.push(...buildReferenceChunks(projectDocRecord.id, projectDocRecord.text, staticReferenceMetadata(projectDocRecord.id, projectDocRecord.text)));
@@ -19068,22 +19499,30 @@ async function searchReferenceFiles(options) {
     }
     const canonicalRecord = canonicalCorpus?.records.get(file);
     if (canonicalRecord) {
-      chunks.push(...buildReferenceChunks(canonicalRecord.id, canonicalRecord.text, canonicalRecord));
+      chunks.push(...buildReferenceChunks(
+        canonicalRecord.id,
+        canonicalRecord.text,
+        canonicalReferenceMetadata(canonicalRecord)
+      ));
       continue;
     }
   }
   const results = scoreReferenceChunks({
     chunks,
-    query: options.query,
+    query: rankingQuery,
     queryTokens,
     maxSnippetLines: options.maxSnippetLines,
-    exactSymbol: Boolean(options.exactSymbol)
+    exactSymbol: Boolean(options.exactSymbol),
+    apiQuery
   });
-  results.sort((left, right) => right.score - left.score || left.sourceId.localeCompare(right.sourceId) || left.lineStart - right.lineStart);
+  results.sort((left, right) => right.score - left.score || compareAscii(left.taskFamily ?? "", right.taskFamily ?? "") || compareAscii(referenceResultId(left), referenceResultId(right)) || left.lineStart - right.lineStart);
+  const deduplicated = deduplicateResultsByPublicRecord(results);
   return {
     maxResults: options.maxResults,
     maxSnippetLines: options.maxSnippetLines,
-    results: results.slice(0, options.maxResults)
+    normalizedSymbol: apiQuery?.normalizedSymbol,
+    ownerHint: apiQuery?.ownerHint,
+    results: deduplicated.slice(0, options.maxResults).map(({ score: _score, ...result }) => result)
   };
 }
 function normalizeLookupQuery(value, name) {
@@ -19175,28 +19614,32 @@ function tokenizeQuery(query) {
   return query.toLowerCase().split(/[^a-z0-9_$:.-]+/u).map((token) => token.trim()).filter((token) => token.length >= 2);
 }
 function staticReferenceMetadata(id, text) {
-  const contentSha256 = sha256(normalizeLineEndings(text));
+  const heading = /^#\s+(.+)$/mu.exec(text)?.[1]?.trim();
   return {
     classification: "active",
-    sourceRecordId: id,
-    sourceContract: "figma-workspace-docs",
-    targetContract: "figma-workspace-cli",
-    sanitized: false,
-    sourceContentSha256: contentSha256,
-    derivedContentSha256: contentSha256
+    publicId: id.startsWith("project:") ? id : `bridge:${id.slice("bridge/".length).replace(/\.md$/u, "")}`,
+    title: heading ?? id
   };
 }
 function pluginApiReferenceMetadata(record2) {
   return {
     classification: "api",
-    sourceRecordId: record2.id,
-    sourceContract: "@figma/plugin-typings",
-    targetContract: "figma-workspace-cli",
-    sanitized: true,
-    sourceContentSha256: record2.contentSha256,
-    derivedContentSha256: record2.contentSha256,
+    publicId: `api:${record2.id}`,
+    title: record2.ownerSymbol ? `${record2.ownerSymbol}.${record2.symbol}` : record2.symbol,
     indexedSymbol: record2.symbol,
-    indexedSourceFile: record2.sourceFile
+    ownerSymbol: record2.ownerSymbol ?? void 0,
+    declarationKind: record2.declarationKind,
+    qualifiedAliases: [...record2.qualifiedAliases]
+  };
+}
+function canonicalReferenceMetadata(record2) {
+  return {
+    classification: record2.classification,
+    publicId: `canonical:${record2.id}`,
+    title: record2.title,
+    taskFamily: record2.taskFamily,
+    surfaces: [...record2.surfaces],
+    nonExecutable: record2.nonExecutable ? true : void 0
   };
 }
 function buildPluginApiReferenceChunk(record2) {
@@ -19355,6 +19798,49 @@ function extractDtsChunkTitle(line) {
   const match = /^(?:export\s+)?(?:declare\s+)?(?:(interface|type|class|enum|namespace)\s+([$A-Z_a-z][$\w]*)|(?:readonly\s+)?([$A-Z_a-z][$\w]*)\??\s*(?:\(|:))/u.exec(normalized);
   return match ? match[2] ?? match[3] : void 0;
 }
+function parsePluginApiLookupQuery(query, index) {
+  const normalizedInput = query.trim().replace(/;\s*$/u, "").replace(/\(\s*\)\s*$/u, "").trim();
+  const segments = normalizedInput.split(".");
+  if (segments.length === 0 || segments.some((segment) => !/^[$A-Z_a-z][$\w]*$/u.test(segment))) {
+    return {
+      normalizedInput,
+      normalizedSymbol: normalizedInput,
+      ownerKnown: false
+    };
+  }
+  const normalizedSymbol = segments.at(-1) ?? normalizedInput;
+  const ownerHint = segments.length > 1 ? segments.slice(0, -1).join(".") : void 0;
+  const knownOwners = /* @__PURE__ */ new Set();
+  for (const record2 of index?.records.values() ?? []) {
+    if (["interface", "type-alias", "class", "enum", "namespace"].includes(record2.declarationKind)) {
+      knownOwners.add(record2.symbol);
+    }
+    if (record2.ownerSymbol) knownOwners.add(record2.ownerSymbol);
+    for (const alias of record2.qualifiedAliases) {
+      const owner = alias.slice(0, -(record2.symbol.length + 1));
+      if (owner) knownOwners.add(owner);
+    }
+  }
+  return {
+    normalizedInput,
+    normalizedSymbol,
+    ownerHint,
+    ownerKnown: ownerHint !== void 0 && knownOwners.has(ownerHint)
+  };
+}
+function pluginApiExactMatch(metadata, query) {
+  if (metadata.classification !== "api" || metadata.indexedSymbol !== query.normalizedSymbol) {
+    return { exact: false };
+  }
+  if (query.ownerHint === void 0) {
+    return { exact: true };
+  }
+  const directOwnerMatch = metadata.ownerSymbol === query.ownerHint || metadata.qualifiedAliases?.includes(query.normalizedInput) === true;
+  if (directOwnerMatch) {
+    return { exact: true, ownerMatch: true };
+  }
+  return query.ownerKnown ? { exact: true, ownerMatch: false } : { exact: false };
+}
 function scoreReferenceChunks(options) {
   if (options.queryTokens.length === 0 || options.chunks.length === 0) {
     return [];
@@ -19370,7 +19856,8 @@ function scoreReferenceChunks(options) {
   const exactPattern = options.exactSymbol ? new RegExp(`\\b${escapeRegExp(options.query)}\\b`, "iu") : void 0;
   const scored = options.chunks.map((chunk) => {
     const lowerText = chunk.text.toLowerCase();
-    const exactHit = options.exactSymbol ? chunk.metadata.indexedSymbol === options.query : exactPattern?.test(chunk.text) ?? false;
+    const apiExact = options.apiQuery ? pluginApiExactMatch(chunk.metadata, options.apiQuery) : void 0;
+    const exactHit = options.exactSymbol ? options.apiQuery ? apiExact?.exact === true : chunk.metadata.indexedSymbol === options.query : exactPattern?.test(chunk.text) ?? false;
     const phraseHit = lowerText.includes(lowerQuery);
     const tokenHits = options.queryTokens.filter((token) => chunk.tokenCounts.has(token));
     if (!exactHit && !phraseHit && tokenHits.length === 0) {
@@ -19383,13 +19870,14 @@ function scoreReferenceChunks(options) {
       documentCount: options.chunks.length,
       averageLength
     });
-    const score = bm25 + (exactHit ? 12 : 0) + (phraseHit ? 4 : 0) + (chunk.file.endsWith(".d.ts") && exactHit ? 2 : 0);
+    const score = bm25 + (exactHit ? apiExact?.ownerMatch === true ? 18 : 12 : 0) + (phraseHit ? 4 : 0) + (chunk.file.endsWith(".d.ts") && exactHit ? 2 : 0);
     const matchType = exactHit ? "exact-symbol" : phraseHit ? "phrase" : "token";
     return {
       chunk,
       score,
       matchType,
-      confidence: confidenceForReferenceScore(score, matchType)
+      confidence: confidenceForReferenceScore(score, matchType),
+      ownerMatch: apiExact?.ownerMatch
     };
   }).filter((entry) => entry !== void 0);
   return scored.map((entry) => scoredChunkToResult(entry, {
@@ -19420,27 +19908,28 @@ function scoredChunkToResult(entry, options) {
   const contextBefore = Math.floor((options.maxSnippetLines - 1) / 2);
   const start = Math.max(0, bestLine - contextBefore);
   const end = Math.min(entry.chunk.lines.length, start + options.maxSnippetLines);
-  const snippet = entry.chunk.lines.slice(start, end).join("\n").slice(0, 2400);
+  const snippet = truncateUtf8(entry.chunk.lines.slice(start, end).join("\n"), MAX_PUBLIC_SNIPPET_BYTES);
+  const metadata = entry.chunk.metadata;
   return {
-    sourceId: publicReferenceSourceId(entry.chunk.file, entry.chunk.id),
     lineStart: entry.chunk.lineStart + start,
     lineEnd: entry.chunk.lineStart + end - 1,
     score: Number(entry.score.toFixed(3)),
     matchType: entry.matchType,
     confidence: entry.confidence,
-    chunkTitle: entry.chunk.title,
     snippet,
-    ...entry.chunk.metadata
+    classification: metadata.classification,
+    title: metadata.title,
+    ...metadata.classification === "api" ? {
+      apiId: metadata.publicId,
+      ownerMatch: entry.ownerMatch
+    } : {
+      docId: metadata.publicId,
+      title: metadata.title,
+      taskFamily: metadata.taskFamily,
+      surfaces: metadata.surfaces === void 0 ? void 0 : [...metadata.surfaces],
+      nonExecutable: metadata.nonExecutable
+    }
   };
-}
-function publicReferenceSourceId(file, chunkId) {
-  if (file.startsWith("project:")) {
-    const chunk2 = chunkId.split(":").pop() ?? "chunk";
-    return `${file}#${chunk2}`;
-  }
-  const normalized = file.replace(/\/references\//gu, "/").replace(/\/SKILL\.md$/u, "/skill").replace(/\.(?:md|d\.ts)$/u, "").replace(/[^A-Za-z0-9_:/.-]+/gu, "-");
-  const chunk = chunkId.split(":").pop() ?? "chunk";
-  return `internal:${normalized}#${chunk}`;
 }
 function findBestSnippetLine(chunk, options) {
   const lowerQuery = options.query.toLowerCase();
@@ -19475,6 +19964,57 @@ function countTokens(tokens) {
     counts.set(token, (counts.get(token) ?? 0) + 1);
   }
   return counts;
+}
+function deduplicateResultsByPublicRecord(results) {
+  const seen = /* @__PURE__ */ new Set();
+  return results.filter((result) => {
+    const id = referenceResultId(result);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+function referenceResultId(result) {
+  return result.docId ?? result.apiId ?? "";
+}
+function compareAscii(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function truncateUtf8(value, maximumBytes) {
+  if (Buffer.byteLength(value, "utf8") <= maximumBytes) return value;
+  let result = "";
+  let bytes = 0;
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (bytes + characterBytes > maximumBytes) break;
+    result += character;
+    bytes += characterBytes;
+  }
+  return result;
+}
+function normalizeCatalogLimit(value) {
+  if (value === void 0) return 100;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 100) {
+    throw new Error("Canonical catalog limit must be an integer from 1 to 100.");
+  }
+  return value;
+}
+function canonicalRecordSummary(record2) {
+  return {
+    id: `canonical:${record2.id}`,
+    title: record2.title,
+    summary: record2.summary,
+    classification: record2.classification,
+    taskFamily: record2.taskFamily,
+    surfaces: [...record2.surfaces],
+    mappingProfile: record2.mappingProfile,
+    nonExecutable: record2.nonExecutable === true
+  };
+}
+function unknownCanonicalDocId(id) {
+  return new Error(
+    `Unknown canonical Figma doc id "${id}". Use figma:docs:catalog to discover exact canonical:<record-id> values.`
+  );
 }
 function loadCanonicalCorpus() {
   if (!canonicalCorpusState.ok) {
@@ -19515,6 +20055,15 @@ function readCanonicalCorpusState() {
   }
 }
 function readCanonicalCorpus(root, manifest) {
+  const routeCatalogText = readFileSync2(resolve4(root, manifest.routeCatalog.file), "utf8");
+  if (sha256(routeCatalogText) !== manifest.routeCatalog.sha256) {
+    throw new Error("Canonical Figma route catalog SHA-256 does not match its manifest.");
+  }
+  const routeCatalogValue = JSON.parse(routeCatalogText);
+  const routes = parseTaskRoutingCatalog(routeCatalogValue).routes;
+  if (routes.length !== manifest.routeCatalog.routeCount) {
+    throw new Error("Canonical Figma route count does not match its manifest.");
+  }
   const corpusText = normalizeLineEndings(readFileSync2(resolve4(root, manifest.corpus.file), "utf8"));
   if (sha256(corpusText) !== manifest.corpus.sha256) {
     throw new Error("Canonical Figma corpus SHA-256 does not match its manifest.");
@@ -19529,7 +20078,7 @@ function readCanonicalCorpus(root, manifest) {
       throw new Error(`Duplicate canonical Figma corpus record: ${record2.id}`);
     }
     const expectedHash = manifest.integrity.contentHashes[record2.id];
-    if (expectedHash !== record2.derivedContentSha256 || sha256(record2.text) !== record2.derivedContentSha256) {
+    if (expectedHash !== record2.contentSha256 || sha256(record2.text) !== record2.contentSha256) {
       throw new Error(`Canonical Figma corpus record SHA-256 mismatch: ${record2.id}`);
     }
     records.set(record2.id, record2);
@@ -19539,11 +20088,23 @@ function readCanonicalCorpus(root, manifest) {
   }
   const actualCounts = countCanonicalClassifications(records.values());
   for (const classification of canonicalClassifications) {
-    if (actualCounts[classification] !== manifest.classificationCounts[classification]) {
+    if (actualCounts[classification] !== manifest.inventories.classifications[classification]) {
       throw new Error("Canonical Figma corpus classification inventory does not match its manifest.");
     }
   }
-  return { root, manifest, records };
+  const actualSurfaces = countCanonicalSurfaces(records.values());
+  for (const surface of canonicalSurfaces) {
+    if (actualSurfaces[surface] !== manifest.inventories.surfaces[surface]) {
+      throw new Error("Canonical Figma corpus surface inventory does not match its manifest.");
+    }
+  }
+  const actualTaskFamilies = countCanonicalTaskFamilies(records.values());
+  for (const taskFamily of canonicalTaskFamilies) {
+    if (actualTaskFamilies[taskFamily] !== manifest.inventories.taskFamilies[taskFamily]) {
+      throw new Error("Canonical Figma corpus task-family inventory does not match its manifest.");
+    }
+  }
+  return { root, manifest, routes, records };
 }
 function canonicalCorpusRootCandidates(moduleDir, cwd) {
   return [
@@ -19569,25 +20130,28 @@ function resolveAssetRoot(candidates, label) {
 }
 function parseCanonicalCorpusManifest(text) {
   const value = JSON.parse(text);
-  if (!isObject2(value) || value.schemaVersion !== 1 || !isObject2(value.corpus) || !isObject2(value.classificationCounts) || !isObject2(value.integrity) || !isObject2(value.integrity.contentHashes)) {
+  if (!isObject2(value) || value.schemaVersion !== 2 || !isObject2(value.corpus) || !isObject2(value.routeCatalog) || !isObject2(value.inventories) || !isObject2(value.inventories.classifications) || !isObject2(value.inventories.surfaces) || !isObject2(value.inventories.taskFamilies) || !isObject2(value.integrity) || !isObject2(value.integrity.contentHashes)) {
     throw new Error("Invalid canonical Figma corpus manifest.");
   }
   const corpus = value.corpus;
+  const routeCatalog = value.routeCatalog;
   const source = value.source;
-  const classificationCounts = value.classificationCounts;
+  const classifications = value.inventories.classifications;
+  const surfaces = value.inventories.surfaces;
+  const taskFamilies = value.inventories.taskFamilies;
   const integrity = value.integrity;
   const contentHashesValue = integrity.contentHashes;
   if (!isObject2(contentHashesValue)) {
     throw new Error("Invalid canonical Figma corpus manifest.");
   }
-  if (typeof corpus.file !== "string" || !isNonNegativeInteger(corpus.recordCount) || typeof corpus.sha256 !== "string" || !isSha256(corpus.sha256) || corpus.file !== `corpus-${corpus.sha256}.jsonl` || integrity.algorithm !== "sha256") {
+  if (typeof corpus.file !== "string" || !isNonNegativeInteger(corpus.recordCount) || typeof corpus.sha256 !== "string" || !isSha256(corpus.sha256) || corpus.file !== `corpus-${corpus.sha256}.jsonl` || routeCatalog.file !== "routes.json" || routeCatalog.schemaVersion !== 1 || !isPositiveInteger(routeCatalog.routeCount) || typeof routeCatalog.sha256 !== "string" || !isSha256(routeCatalog.sha256) || integrity.algorithm !== "sha256") {
     throw new Error("Invalid canonical Figma corpus manifest.");
   }
   if (source !== void 0 && (!isObject2(source) || typeof source.repository !== "string" || typeof source.resolvedCommit !== "string" || !isGitCommitSha(source.resolvedCommit))) {
     throw new Error("Invalid canonical Figma corpus provenance.");
   }
-  if (Object.keys(classificationCounts).length !== canonicalClassifications.length || canonicalClassifications.some((classification) => !isNonNegativeInteger(classificationCounts[classification]))) {
-    throw new Error("Invalid canonical Figma corpus classification counts.");
+  if (!isExactNonNegativeInventory(classifications, canonicalClassifications) || !isExactNonNegativeInventory(surfaces, canonicalSurfaces) || !isExactNonNegativeInventory(taskFamilies, canonicalTaskFamilies)) {
+    throw new Error("Invalid canonical Figma corpus inventories.");
   }
   const contentHashes = Object.fromEntries(
     Object.entries(contentHashesValue).filter(
@@ -19598,7 +20162,7 @@ function parseCanonicalCorpusManifest(text) {
     throw new Error("Invalid canonical Figma corpus manifest.");
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: typeof value.generatedAt === "string" ? value.generatedAt : void 0,
     source: isObject2(source) ? {
       repository: source.repository,
@@ -19609,9 +20173,17 @@ function parseCanonicalCorpusManifest(text) {
       recordCount: corpus.recordCount,
       sha256: corpus.sha256
     },
-    classificationCounts: Object.fromEntries(
-      canonicalClassifications.map((classification) => [classification, classificationCounts[classification]])
-    ),
+    routeCatalog: {
+      file: routeCatalog.file,
+      schemaVersion: 1,
+      routeCount: routeCatalog.routeCount,
+      sha256: routeCatalog.sha256
+    },
+    inventories: {
+      classifications: pickInventory(classifications, canonicalClassifications),
+      surfaces: pickInventory(surfaces, canonicalSurfaces),
+      taskFamilies: pickInventory(taskFamilies, canonicalTaskFamilies)
+    },
     integrity: {
       algorithm: "sha256",
       contentHashes
@@ -19620,25 +20192,29 @@ function parseCanonicalCorpusManifest(text) {
 }
 function parseCanonicalCorpusRecord(line) {
   const value = JSON.parse(line);
-  const contentSha256 = isObject2(value) && typeof value.contentSha256 === "string" ? value.contentSha256 : isObject2(value) && typeof value.derivedContentSha256 === "string" ? value.derivedContentSha256 : void 0;
-  if (!isObject2(value) || value.schemaVersion !== 1 || typeof value.id !== "string" || !isCanonicalClassification(value.classification) || value.format !== "markdown" && value.format !== "typescript" || typeof value.sanitized !== "boolean" || value.sanitized !== true || typeof contentSha256 !== "string" || !isSha256(contentSha256) || typeof value.text !== "string") {
+  if (!isObject2(value) || value.schemaVersion !== 2 || typeof value.id !== "string" || !isSafeCanonicalRecordId(value.id) || typeof value.title !== "string" || !value.title.trim() || Array.from(value.title).length > 120 || typeof value.summary !== "string" || !value.summary.trim() || Array.from(value.summary).length > 240 || !isCanonicalClassification(value.classification) || !isTaskFamily(value.taskFamily) || !isCanonicalSurfaceArray(value.surfaces) || !isCanonicalMappingProfile(value.mappingProfile) || value.format !== "markdown" || value.sanitized !== true || typeof value.sourceRecordId !== "string" || !value.sourceRecordId || typeof value.sourceContract !== "string" || !value.sourceContract || typeof value.targetContract !== "string" || !value.targetContract || typeof value.contentSha256 !== "string" || !isSha256(value.contentSha256) || typeof value.text !== "string") {
     throw new Error("Invalid canonical Figma corpus JSONL record.");
   }
-  if (value.classification === "examples" && value.nonExecutable !== true || value.format !== "markdown") {
+  if (value.classification === "examples" && value.nonExecutable !== true || value.classification !== "examples" && value.nonExecutable !== void 0) {
     throw new Error("Invalid canonical Figma corpus record contract.");
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: value.id,
-    sourceRecordId: typeof value.sourceRecordId === "string" ? value.sourceRecordId : value.id,
+    publicId: `canonical:${value.id}`,
+    title: value.title,
+    summary: value.summary,
+    sourceRecordId: value.sourceRecordId,
     classification: value.classification,
+    taskFamily: value.taskFamily,
+    surfaces: [...value.surfaces],
+    mappingProfile: value.mappingProfile,
     format: value.format,
-    sourceContract: typeof value.sourceContract === "string" ? value.sourceContract : "canonical-mirror",
-    targetContract: typeof value.targetContract === "string" ? value.targetContract : "figma-workspace-cli",
+    sourceContract: value.sourceContract,
+    targetContract: value.targetContract,
     sanitized: true,
     nonExecutable: value.nonExecutable === true,
-    sourceContentSha256: typeof value.sourceContentSha256 === "string" && isSha256(value.sourceContentSha256) ? value.sourceContentSha256 : contentSha256,
-    derivedContentSha256: contentSha256,
+    contentSha256: value.contentSha256,
     text: value.text
   };
 }
@@ -19649,8 +20225,32 @@ function countCanonicalClassifications(records) {
   }
   return counts;
 }
+function countCanonicalSurfaces(records) {
+  const counts = { design: 0, figjam: 0, slides: 0 };
+  for (const record2 of records) {
+    for (const surface of record2.surfaces) counts[surface] += 1;
+  }
+  return counts;
+}
+function countCanonicalTaskFamilies(records) {
+  const counts = Object.fromEntries(canonicalTaskFamilies.map((family) => [family, 0]));
+  for (const record2 of records) counts[record2.taskFamily] += 1;
+  return counts;
+}
 function isCanonicalClassification(value) {
   return value === "active" || value === "conditional" || value === "router" || value === "examples";
+}
+function isTaskFamily(value) {
+  return typeof value === "string" && canonicalTaskFamilies.includes(value);
+}
+function isCanonicalSurfaceArray(value) {
+  return Array.isArray(value) && value.length > 0 && value.every((surface) => typeof surface === "string" && canonicalSurfaces.includes(surface)) && new Set(value).size === value.length;
+}
+function isCanonicalMappingProfile(value) {
+  return typeof value === "string" && canonicalMappingProfiles.includes(value);
+}
+function isSafeCanonicalRecordId(value) {
+  return !value.startsWith("/") && !value.includes("\\") && !value.includes("#") && value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 function readPluginApiIndexState() {
   const moduleDir = dirname4(fileURLToPath3(import.meta.url));
@@ -19714,15 +20314,15 @@ function readPluginApiIndex(root, manifest) {
 }
 function parsePluginApiIndexManifest(text) {
   const value = JSON.parse(text);
-  if (!isObject2(value) || value.schemaVersion !== 1 || !isObject2(value.source) || value.source.package !== "@figma/plugin-typings" || typeof value.source.version !== "string" || !Array.isArray(value.source.files) || !isObject2(value.index) || !isObject2(value.integrity) || value.integrity.algorithm !== "sha256" || !isObject2(value.integrity.contentHashes)) {
+  if (!isObject2(value) || value.schemaVersion !== 2 || !isObject2(value.source) || value.source.package !== "@figma/plugin-typings" || typeof value.source.version !== "string" || !Array.isArray(value.source.files) || !isObject2(value.index) || !isObject2(value.integrity) || value.integrity.algorithm !== "sha256" || !isObject2(value.integrity.contentHashes)) {
     throw new Error("Invalid generated Figma Plugin API index manifest.");
   }
-  const sourceFiles = value.source.files.filter((entry) => isObject2(entry) && typeof entry.file === "string" && typeof entry.sha256 === "string" && isSha256(entry.sha256));
-  if (sourceFiles.length !== value.source.files.length || typeof value.index.file !== "string" || !isNonNegativeInteger(value.index.recordCount) || typeof value.index.sha256 !== "string" || !isSha256(value.index.sha256) || value.index.file !== `index-${value.index.sha256}.jsonl`) {
+  const sourceFiles = value.source.files.filter((entry) => isObject2(entry) && (entry.file === "index.d.ts" || entry.file === "plugin-api.d.ts") && typeof entry.sha256 === "string" && isSha256(entry.sha256));
+  if (sourceFiles.length !== value.source.files.length || sourceFiles.length !== 2 || new Set(sourceFiles.map((entry) => entry.file)).size !== sourceFiles.length || typeof value.index.file !== "string" || !isNonNegativeInteger(value.index.recordCount) || typeof value.index.sha256 !== "string" || !isSha256(value.index.sha256) || value.index.file !== `index-${value.index.sha256}.jsonl`) {
     throw new Error("Invalid generated Figma Plugin API index manifest.");
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     source: {
       package: "@figma/plugin-typings",
       version: value.source.version,
@@ -19741,13 +20341,16 @@ function parsePluginApiIndexManifest(text) {
 }
 function parsePluginApiIndexRecord(line) {
   const value = JSON.parse(line);
-  if (!isObject2(value) || value.schemaVersion !== 1 || typeof value.id !== "string" || typeof value.symbol !== "string" || typeof value.sourceFile !== "string" || !isPositiveInteger(value.declarationLine) || !isPositiveInteger(value.lineStart) || !isPositiveInteger(value.lineEnd) || value.declarationLine < value.lineStart || value.declarationLine > value.lineEnd || value.lineEnd < value.lineStart || typeof value.contentSha256 !== "string" || !isSha256(value.contentSha256) || typeof value.text !== "string") {
+  if (!isObject2(value) || value.schemaVersion !== 2 || typeof value.id !== "string" || typeof value.symbol !== "string" || !isPluginApiIdentifier(value.symbol) || value.ownerSymbol !== null && (typeof value.ownerSymbol !== "string" || !isPluginApiIdentifier(value.ownerSymbol)) || !isPluginApiDeclarationKind(value.declarationKind) || !Array.isArray(value.qualifiedAliases) || value.qualifiedAliases.some((alias) => typeof alias !== "string" || !alias.endsWith(`.${value.symbol}`) || alias.split(".").some((segment) => !isPluginApiIdentifier(segment))) || new Set(value.qualifiedAliases).size !== value.qualifiedAliases.length || typeof value.sourceFile !== "string" || !isPositiveInteger(value.declarationLine) || !isPositiveInteger(value.lineStart) || !isPositiveInteger(value.lineEnd) || value.declarationLine < value.lineStart || value.declarationLine > value.lineEnd || value.lineEnd < value.lineStart || typeof value.contentSha256 !== "string" || !isSha256(value.contentSha256) || typeof value.text !== "string") {
     throw new Error("Invalid generated Figma Plugin API index JSONL record.");
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: value.id,
     symbol: value.symbol,
+    ownerSymbol: value.ownerSymbol,
+    declarationKind: value.declarationKind,
+    qualifiedAliases: [...value.qualifiedAliases],
     sourceFile: value.sourceFile,
     declarationLine: value.declarationLine,
     lineStart: value.lineStart,
@@ -19765,6 +20368,18 @@ function parseHashInventory(value, label) {
     result[id] = hash;
   }
   return result;
+}
+function isPluginApiDeclarationKind(value) {
+  return typeof value === "string" && pluginApiDeclarationKinds.includes(value);
+}
+function isPluginApiIdentifier(value) {
+  return /^[$A-Z_a-z][$\w]*$/u.test(value);
+}
+function isExactNonNegativeInventory(value, keys) {
+  return Object.keys(value).length === keys.length && keys.every((key) => isNonNegativeInteger(value[key]));
+}
+function pickInventory(value, keys) {
+  return Object.fromEntries(keys.map((key) => [key, value[key]]));
 }
 function isNonNegativeInteger(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -19823,19 +20438,20 @@ function safeProcessArgv1() {
 function errorMessage(error2) {
   return error2 instanceof Error ? error2.message : String(error2);
 }
-var DEFAULT_DOCS_SEARCH_MAX_RESULTS, DEFAULT_DOCS_SEARCH_SNIPPET_LINES, MAX_DOCS_SEARCH_RESULTS, MAX_DOCS_SEARCH_SNIPPET_LINES, DEFAULT_REFERENCE_CONTEXT_SNIPPETS, MAX_LOOKUP_QUERY_LENGTH, MAX_REFERENCE_CHUNK_LINES, REFERENCE_CHUNK_OVERLAP_LINES, BRIDGE_DOCS_SEARCH_FILES, STATIC_DOCS_SEARCH_FILES, FigmaWorkspaceLookupCorpusUnavailableError, canonicalClassifications, canonicalCorpusState, pluginApiIndexState, DOCS_SEARCH_ALLOWLIST, BRIDGE_DOCS_RECORDS;
+var DEFAULT_DOCS_SEARCH_MAX_RESULTS, DEFAULT_DOCS_SEARCH_SNIPPET_LINES, MAX_DOCS_SEARCH_RESULTS, MAX_DOCS_SEARCH_SNIPPET_LINES, MAX_LOOKUP_QUERY_LENGTH, MAX_REFERENCE_CHUNK_LINES, REFERENCE_CHUNK_OVERLAP_LINES, MAX_PUBLIC_SNIPPET_BYTES, BRIDGE_DOCS_SEARCH_FILES, STATIC_DOCS_SEARCH_FILES, FigmaWorkspaceLookupCorpusUnavailableError, canonicalClassifications, canonicalSurfaces, canonicalTaskFamilies, canonicalMappingProfiles, pluginApiDeclarationKinds, canonicalCorpusState, pluginApiIndexState, DOCS_SEARCH_ALLOWLIST, BRIDGE_DOCS_RECORDS;
 var init_doc_search = __esm({
   "src/runtime/doc-search.ts"() {
     "use strict";
     init_project_docs();
+    init_task_routing();
     DEFAULT_DOCS_SEARCH_MAX_RESULTS = 5;
     DEFAULT_DOCS_SEARCH_SNIPPET_LINES = 3;
     MAX_DOCS_SEARCH_RESULTS = 10;
     MAX_DOCS_SEARCH_SNIPPET_LINES = 8;
-    DEFAULT_REFERENCE_CONTEXT_SNIPPETS = 2;
     MAX_LOOKUP_QUERY_LENGTH = 120;
     MAX_REFERENCE_CHUNK_LINES = 24;
     REFERENCE_CHUNK_OVERLAP_LINES = 4;
+    MAX_PUBLIC_SNIPPET_BYTES = 1200;
     BRIDGE_DOCS_SEARCH_FILES = [
       "bridge/guidance-ref.md",
       "bridge/wrapper-profiles.md",
@@ -19855,6 +20471,46 @@ var init_doc_search = __esm({
       }
     };
     canonicalClassifications = ["active", "conditional", "router", "examples"];
+    canonicalSurfaces = ["design", "figjam", "slides"];
+    canonicalTaskFamilies = [
+      "code-connect",
+      "create-file",
+      "design-editing",
+      "design-generation",
+      "design-to-code",
+      "diagram",
+      "figjam",
+      "library-generation",
+      "motion",
+      "motion-implementation",
+      "slides",
+      "swiftui"
+    ];
+    canonicalMappingProfiles = [
+      "canonical-typescript-example",
+      "code-connect",
+      "design-to-code",
+      "exact-plugin-api",
+      "figjam",
+      "motion",
+      "plugin-api",
+      "slides",
+      "upstream-capability"
+    ];
+    pluginApiDeclarationKinds = [
+      "interface",
+      "type-alias",
+      "class",
+      "enum",
+      "enum-member",
+      "namespace",
+      "function",
+      "variable",
+      "method",
+      "property",
+      "getter",
+      "setter"
+    ];
     canonicalCorpusState = readCanonicalCorpusState();
     pluginApiIndexState = readPluginApiIndexState();
     DOCS_SEARCH_ALLOWLIST = docsSearchFilesForScope("active");
@@ -19863,46 +20519,56 @@ var init_doc_search = __esm({
 });
 
 // src/runtime/guidance-catalog.ts
-function searchApiCards(query, maxCards) {
-  const tokens = tokenizeCatalogQuery(query);
-  const lowerQuery = query.toLowerCase();
-  return FIGMA_WORKSPACE_API_CARDS.map((card) => ({
+function isApiCardSurfaceCompatible(card, requestedSurface) {
+  return card.surface === "any" || card.surface === requestedSurface;
+}
+function filterApiCardsBySurface(cards, requestedSurface) {
+  return cards.filter((card) => isApiCardSurfaceCompatible(card, requestedSurface));
+}
+function searchApiCards(query, maxCards, requestedSurface) {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) {
+    return [];
+  }
+  const tokens = tokenizeCatalogQuery(normalizedQuery);
+  const lowerQuery = normalizedQuery.toLowerCase();
+  const candidates = requestedSurface ? filterApiCardsBySurface(FIGMA_WORKSPACE_API_CARDS, requestedSurface) : FIGMA_WORKSPACE_API_CARDS;
+  return candidates.map((card) => ({
     card,
     score: scoreApiCard(card, tokens, lowerQuery)
-  })).filter((entry) => entry.score > 0).sort((left, right) => right.score - left.score || left.card.id.localeCompare(right.card.id)).slice(0, maxCards).map((entry) => entry.card);
+  })).filter((entry) => entry.score >= 20).sort((left, right) => right.score - left.score || left.card.id.localeCompare(right.card.id)).slice(0, maxCards).map((entry) => entry.card);
 }
-function chooseApiCardsForIntent(intent, maxCards) {
-  const cards = searchApiCards(intent, maxCards);
-  return cards.length > 0 ? cards : FIGMA_WORKSPACE_API_CARDS.slice(0, maxCards);
+function chooseApiCardsForIntent(intent, maxCards, requestedSurface) {
+  return searchApiCards(intent, maxCards, requestedSurface);
 }
-function findWrapperLookupProfile(tool) {
-  return FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES.find((profile) => profile.tool === tool);
+function findWrapperLookupProfile(commandId) {
+  return FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES.find((profile) => profile.commandId === commandId);
 }
 function chooseWrapperLookupProfilesForIntent(intent, maxProfiles) {
   const query = intent?.trim();
   if (!query) {
-    return FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES.slice(0, maxProfiles);
+    return [];
   }
   const tokens = tokenizeCatalogQuery(query);
   const lowerQuery = query.toLowerCase();
   const ranked = FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES.map((profile) => ({
     profile,
     score: scoreWrapperLookupProfile(profile, tokens, lowerQuery)
-  })).filter((entry) => entry.score > 0).sort((left, right) => right.score - left.score || left.profile.tool.localeCompare(right.profile.tool)).slice(0, maxProfiles).map((entry) => entry.profile);
-  return ranked.length > 0 ? ranked : FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES.slice(0, maxProfiles);
+  })).filter((entry) => entry.score >= 20).sort((left, right) => right.score - left.score || left.profile.commandId.localeCompare(right.profile.commandId)).slice(0, maxProfiles).map((entry) => entry.profile);
+  return ranked;
 }
 function chooseHelperProfilesForIntent(intent, maxProfiles) {
   const query = intent?.trim();
   if (!query) {
-    return FIGMA_WORKSPACE_HELPER_PROFILES.slice(0, maxProfiles);
+    return [];
   }
   const tokens = tokenizeCatalogQuery(query);
   const lowerQuery = query.toLowerCase();
   const ranked = FIGMA_WORKSPACE_HELPER_PROFILES.map((profile) => ({
     profile,
     score: scoreHelperProfile(profile, tokens, lowerQuery)
-  })).filter((entry) => entry.score > 0).sort((left, right) => right.score - left.score || left.profile.id.localeCompare(right.profile.id)).slice(0, maxProfiles).map((entry) => entry.profile);
-  return ranked.length > 0 ? ranked : FIGMA_WORKSPACE_HELPER_PROFILES.slice(0, maxProfiles);
+  })).filter((entry) => entry.score >= 20).sort((left, right) => right.score - left.score || left.profile.id.localeCompare(right.profile.id)).slice(0, maxProfiles).map((entry) => entry.profile);
+  return ranked;
 }
 function selectWrapperWorkflowGraph(workflowIds, maxWorkflows) {
   if (!workflowIds || workflowIds.length === 0) {
@@ -19935,8 +20601,13 @@ function scoreApiCard(card, tokens, lowerQuery) {
     card.surface,
     ...card.intents,
     ...card.helpers,
-    ...card.pluginApi,
-    ...card.apiSymbols,
+    ...card.publicCommandIds,
+    ...card.upstreamTools,
+    ...card.apiReferences.flatMap((reference) => [
+      reference.displayExpression,
+      reference.lookupQuery,
+      reference.ownerHint ?? ""
+    ]),
     ...card.queryHints,
     ...card.avoid,
     ...card.pitfalls
@@ -19944,15 +20615,20 @@ function scoreApiCard(card, tokens, lowerQuery) {
   return (lowerId === lowerQuery ? 120 : 0) + (lowerId.startsWith(`${lowerQuery}.`) ? 100 : 0) + (haystack.includes(lowerQuery) ? 50 : 0) + tokens.filter((token) => haystack.includes(token)).length * 10;
 }
 function scoreWrapperLookupProfile(profile, tokens, lowerQuery) {
-  const lowerTool = profile.tool.toLowerCase();
+  const lowerTool = profile.commandId.toLowerCase();
   const haystack = [
-    profile.tool,
+    profile.commandId,
     profile.upstreamTool,
     ...profile.workflowIds,
     ...profile.intents,
     ...profile.docsQueries,
-    ...profile.apiSymbols,
-    ...profile.suggestedTools,
+    ...profile.apiReferences.flatMap((reference) => [
+      reference.displayExpression,
+      reference.lookupQuery,
+      reference.ownerHint ?? ""
+    ]),
+    ...profile.suggestedCommandIds,
+    ...profile.suggestedUpstreamTools,
     ...profile.nextSteps
   ].join(" ").toLowerCase();
   return (lowerTool === lowerQuery ? 120 : 0) + (profile.upstreamTool.toLowerCase() === lowerQuery ? 110 : 0) + (haystack.includes(lowerQuery) ? 50 : 0) + tokens.filter((token) => haystack.includes(token)).length * 10;
@@ -19967,7 +20643,12 @@ function scoreHelperProfile(profile, tokens, lowerQuery) {
     ...profile.avoidWhen,
     ...profile.allowedPatterns,
     ...profile.forbiddenPatterns,
-    ...profile.apiSymbols,
+    ...profile.publicCommandIds,
+    ...profile.apiReferences.flatMap((reference) => [
+      reference.displayExpression,
+      reference.lookupQuery,
+      reference.ownerHint ?? ""
+    ]),
     ...profile.lookupHints,
     profile.example ?? ""
   ].join(" ").toLowerCase();
@@ -19989,7 +20670,12 @@ var init_guidance_catalog = __esm({
         avoidWhen: ["Root-wide scans in large files.", "Direct selection mutation when $.select can validate targets."],
         allowedPatterns: ['await $.select(["$hero"])', 'await $["inspect"]("$hero")', "const { inspect, select } = $"],
         forbiddenPatterns: ["$[helperName](...)", "const helper = $", "const { select, ...rest } = $", "const $ = {}"],
-        apiSymbols: ["figma.currentPage.selection", "ChildrenMixin.findAll", "figma.getNodeByIdAsync"],
+        publicCommandIds: ["figma:inspect"],
+        apiReferences: [
+          { displayExpression: "figma.currentPage.selection", lookupQuery: "PluginAPI.currentPage", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "findAll", lookupQuery: "ChildrenMixin.findAll", ownerHint: "ChildrenMixin", symbolKind: "plugin-api" },
+          { displayExpression: "figma.getNodeByIdAsync", lookupQuery: "PluginAPI.getNodeByIdAsync", ownerHint: "PluginAPI", symbolKind: "plugin-api" }
+        ],
         lookupHints: ["scoped findAll", "select remembered handle", "inspect cached handle"],
         example: 'const node = figma.currentPage.findAll((candidate) => candidate.name === "Hero")[0]; if (node) $.remember("$hero", node); await $.select(["$hero"]);'
       },
@@ -20001,7 +20687,13 @@ var init_guidance_catalog = __esm({
         avoidWhen: ["Changing TextNode.characters manually before loading fonts.", "Guessing unavailable font family/style pairs."],
         allowedPatterns: ["await $.text({ parent, text, font, as })", "const { text } = $"],
         forbiddenPatterns: ["$[name](...)", "const helpers = $", "const { text, ...rest } = $", "const $ = {}"],
-        apiSymbols: ["figma.createText", "figma.loadFontAsync", "TextNode.characters", "TextNode.fontName"],
+        publicCommandIds: ["figma:api:search", "figma:script:run"],
+        apiReferences: [
+          { displayExpression: "figma.createText()", lookupQuery: "PluginAPI.createText", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.loadFontAsync()", lookupQuery: "PluginAPI.loadFontAsync", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "text.characters", lookupQuery: "TextNode.characters", ownerHint: "TextNode", symbolKind: "plugin-api" },
+          { displayExpression: "text.fontName", lookupQuery: "TextNode.fontName", ownerHint: "TextNode", symbolKind: "plugin-api" }
+        ],
         lookupHints: ["text font loadFontAsync", "create text node", "set characters safely"],
         example: 'await $.text({ parent: "$card", text: "Settings", font: { family: "Inter", style: "Bold", size: 20 }, as: "$title" });'
       },
@@ -20013,7 +20705,13 @@ var init_guidance_catalog = __esm({
         avoidWhen: ["Using placement helpers as a substitute for native auto-layout modeling.", "Absolute placement for content that should be auto layout."],
         allowedPatterns: ["await $.findFreeSlot({ parent, size, preferred })", 'await $.placeNode("$frame", { preferred, avoidOverlap: true })'],
         forbiddenPatterns: ["dynamic helper lookup", "local $ declarations"],
-        apiSymbols: ["figma.createFrame", "figma.createRectangle", "AutoLayoutMixin.layoutMode", "SceneNode.resize"],
+        publicCommandIds: ["figma:api:search", "figma:script:run"],
+        apiReferences: [
+          { displayExpression: "figma.createFrame()", lookupQuery: "PluginAPI.createFrame", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.createRectangle()", lookupQuery: "PluginAPI.createRectangle", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "frame.layoutMode", lookupQuery: "AutoLayoutMixin.layoutMode", ownerHint: "AutoLayoutMixin", symbolKind: "plugin-api" },
+          { displayExpression: "node.resize()", lookupQuery: "SceneNode.resize", ownerHint: "SceneNode", symbolKind: "plugin-api" }
+        ],
         lookupHints: ["auto layout Plugin API", "place node free slot"],
         example: 'const frame = figma.createFrame(); frame.resize(320, 180); $.remember("$panel", frame); await $.placeNode("$panel", { avoidOverlap: true });'
       },
@@ -20025,7 +20723,13 @@ var init_guidance_catalog = __esm({
         avoidWhen: ["Large local assets or generated files.", "Slides upload paths or payloads likely to exceed MCP limits."],
         allowedPatterns: ["await $.imageAsset({ base64, parent, size, position, as })", "create rectangles first, then use the apply-asset-manifest CLI command for large files"],
         forbiddenPatterns: ["large base64 payloads in $.imageAsset", "using $.imageAsset instead of upload_assets for local files"],
-        apiSymbols: ["figma.createImage", "Image.hash", "ImagePaint", "MinimalFillsMixin.fills"],
+        publicCommandIds: ["figma:api:search", "figma:assets:apply"],
+        apiReferences: [
+          { displayExpression: "figma.createImage()", lookupQuery: "PluginAPI.createImage", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "image.hash", lookupQuery: "Image.hash", ownerHint: "Image", symbolKind: "plugin-api" },
+          { displayExpression: "ImagePaint", lookupQuery: "ImagePaint", symbolKind: "plugin-api" },
+          { displayExpression: "node.fills", lookupQuery: "MinimalFillsMixin.fills", ownerHint: "MinimalFillsMixin", symbolKind: "plugin-api" }
+        ],
         lookupHints: ["image fill helper", "asset manifest upload_assets", "create image fill"],
         example: 'await $.imageAsset({ base64, parent: "$card", size: { width: 160, height: 90 }, as: "$preview" });'
       },
@@ -20036,8 +20740,12 @@ var init_guidance_catalog = __esm({
         useWhen: ["Capture opportunistic screenshot bytes from a script for a node that supports node.screenshot().", "Collect quick visual evidence inside a repairable script."],
         avoidWhen: ["Final visual QA that needs a local PNG path.", "Assuming inline MCP media can be visually inspected by the agent."],
         allowedPatterns: ['const bytes = await $.screenshot("$hero", { format: "PNG" })', "const { screenshot } = $"],
-        forbiddenPatterns: ["dynamic helper lookup", "using $.screenshot when the capture-node CLI command should write a PNG file"],
-        apiSymbols: ["SceneNode.screenshot", "ExportSettingsImage", "figma_workspace_capture_node"],
+        forbiddenPatterns: ["dynamic helper lookup", "using $.screenshot when figma:capture should write a PNG file"],
+        publicCommandIds: ["figma:capture"],
+        apiReferences: [
+          { displayExpression: "node.exportAsync()", lookupQuery: "ExportMixin.exportAsync", ownerHint: "ExportMixin", symbolKind: "plugin-api" },
+          { displayExpression: "ExportSettingsImage", lookupQuery: "ExportSettingsImage", symbolKind: "plugin-api" }
+        ],
         lookupHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
         example: 'const screenshotBytes = Array.from(await $.screenshot("$hero", { format: "PNG" }));'
       },
@@ -20049,7 +20757,11 @@ var init_guidance_catalog = __esm({
         avoidWhen: ["Using a handle string as the checkpoint name.", "Returning huge node trees instead of bounded summaries."],
         allowedPatterns: ['await $.checkpoint("after-layout", ["$panel"], { depth: 1 })', 'await $.remember("$panel", node)', 'await $.forget("$old")'],
         forbiddenPatterns: ['$.checkpoint("$panel") as a target shortcut', "dynamic helper lookup"],
-        apiSymbols: ["figma.currentPage", "BaseNode.id"],
+        publicCommandIds: ["figma:inspect"],
+        apiReferences: [
+          { displayExpression: "figma.currentPage", lookupQuery: "PluginAPI.currentPage", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "node.id", lookupQuery: "BaseNodeMixin.id", ownerHint: "BaseNodeMixin", symbolKind: "plugin-api" }
+        ],
         lookupHints: ["checkpoint handles", "remember node handle", "repairPlan handles"],
         example: 'return await $.checkpoint("panel-ready", ["$panel"], { depth: 1 });'
       },
@@ -20061,33 +20773,40 @@ var init_guidance_catalog = __esm({
         avoidWhen: ["Rebuilding internal children of InstanceNode.", "Deleting arbitrary user-authored frames."],
         allowedPatterns: ['await $.cloneNodeTree({ source: "$card", placement: "right", as: "$copy" })', "await $.replaceGeneratedFrame({ name, replacement })"],
         forbiddenPatterns: ["raw remove() for generated-frame swaps", "$.replaceGeneratedFrame without guarded name"],
-        apiSymbols: ["SceneNode.clone", "ChildrenMixin.appendChild", "BaseNodeMixin.remove"],
+        publicCommandIds: ["figma:script:run"],
+        apiReferences: [
+          { displayExpression: "node.clone()", lookupQuery: "SceneNode.clone", ownerHint: "SceneNode", symbolKind: "plugin-api" },
+          { displayExpression: "parent.appendChild()", lookupQuery: "ChildrenMixin.appendChild", ownerHint: "ChildrenMixin", symbolKind: "plugin-api" },
+          { displayExpression: "node.remove()", lookupQuery: "BaseNodeMixin.remove", ownerHint: "BaseNodeMixin", symbolKind: "plugin-api" }
+        ],
         lookupHints: ["clone node tree", "preserve instance subtree", "replace generated frame"],
         example: 'const copy = await $.cloneNodeTree({ source: "$card", placement: "right", as: "$cardCopy" });'
       }
     ];
     FIGMA_WORKSPACE_WRAPPER_LOOKUP_PROFILES = [
       {
-        tool: "figma_workspace_get_design_context",
+        commandId: "figma:design-context",
         upstreamTool: "get_design_context",
         workflowIds: ["design-implementation-context"],
         intents: ["implementation", "design context", "handoff", "parity", "swiftui"],
         docsQueries: ["get design context implementation", "design parity review", "swiftui design context"],
-        apiSymbols: ["get_design_context", "figma_workspace_get_design_context"],
-        suggestedTools: ["figma_workspace_get_motion_context", "figma_workspace_capture_node", "figma_workspace_lookup"],
+        apiReferences: [],
+        suggestedCommandIds: ["figma:motion-context", "figma:capture", "figma:docs:search"],
+        suggestedUpstreamTools: [],
         nextSteps: [
           "Use upstream.result as official reference context, then adapt to project components and tokens.",
           "Capture the target node when visual QA or parity review needs evidence."
         ]
       },
       {
-        tool: "figma_workspace_get_motion_context",
+        commandId: "figma:motion-context",
         upstreamTool: "get_motion_context",
         workflowIds: ["motion-implementation"],
         intents: ["motion", "animation", "keyframes", "timeline"],
         docsQueries: ["motion context implementation", "motion keyframes gotchas", "recursive motion context"],
-        apiSymbols: ["get_motion_context", "figma_workspace_get_motion_context"],
-        suggestedTools: ["figma_workspace_get_design_context", "figma_workspace_call_upstream_tool", "figma_workspace_lookup"],
+        apiReferences: [],
+        suggestedCommandIds: ["figma:design-context", "figma:upstream:call", "figma:docs:search"],
+        suggestedUpstreamTools: ["export_video"],
         nextSteps: [
           "Pair motion data with design context for the same node before coding animation.",
           "Preserve upstream timing, easing, and transform-origin values as authoritative motion data."
@@ -20099,10 +20818,11 @@ var init_guidance_catalog = __esm({
         id: "design-implementation-context",
         title: "Design implementation context",
         intents: ["implementation", "handoff", "parity", "swiftui"],
-        tools: ["figma_workspace_get_design_context", "figma_workspace_capture_node", "figma_workspace_lookup"],
+        commandIds: ["figma:design-context", "figma:capture", "figma:docs:search"],
+        upstreamTools: ["get_design_context", "get_screenshot"],
         sequence: [
           "Open or prepare a session with file context.",
-          "Run the get-design-context CLI command for the target node.",
+          "Run figma:design-context for the target node.",
           "Capture the node when visual evidence is needed.",
           "Use lookup only for missing framework, API, or workflow details."
         ],
@@ -20112,11 +20832,12 @@ var init_guidance_catalog = __esm({
         id: "motion-implementation",
         title: "Motion implementation",
         intents: ["motion", "animation", "keyframes", "video"],
-        tools: ["figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_call_upstream_tool"],
+        commandIds: ["figma:design-context", "figma:motion-context", "figma:upstream:call"],
+        upstreamTools: ["get_design_context", "get_motion_context", "export_video"],
         sequence: [
           "Read design context for structure and assets.",
           "Read motion context for animated-node inventory and keyframes.",
-          "Use the call-upstream-tool CLI command with export_video only when frame sampling is needed."
+          "Run figma:upstream:call with export_video only when frame sampling is needed."
         ],
         guardrails: ["Preserve upstream motion values as authoritative.", "Poll with jobId instead of starting duplicate exports."]
       }
@@ -20128,8 +20849,14 @@ var init_guidance_catalog = __esm({
         intents: ["create", "frame", "rectangle", "ui", "layout"],
         surface: "design",
         helpers: ["$.checkpoint"],
-        pluginApi: ["figma.createFrame", "figma.createRectangle", "resize", "appendChild"],
-        apiSymbols: ["figma.createFrame", "figma.createRectangle", "SceneNode.resize", "ChildrenMixin.appendChild"],
+        publicCommandIds: ["figma:script:run", "figma:api:search"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "figma.createFrame()", lookupQuery: "PluginAPI.createFrame", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.createRectangle()", lookupQuery: "PluginAPI.createRectangle", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "node.resize()", lookupQuery: "SceneNode.resize", ownerHint: "SceneNode", symbolKind: "plugin-api" },
+          { displayExpression: "parent.appendChild()", lookupQuery: "ChildrenMixin.appendChild", ownerHint: "ChildrenMixin", symbolKind: "plugin-api" }
+        ],
         queryHints: ["create frame or rectangle", "resize node before layout", "append child to frame"],
         avoid: ["Root-wide construction without handles", "Changing layout-sensitive size after applying auto layout"],
         pitfalls: ["Set size before auto-layout if fixed dimensions matter.", "Remember handles with `as` for later repair."]
@@ -20139,9 +20866,15 @@ var init_guidance_catalog = __esm({
         title: "Text and font-safe edits",
         intents: ["text", "font", "copy", "label", "typography"],
         surface: "design",
-        helpers: ["$.text", "lookup CLI command with kind=api"],
-        pluginApi: ["figma.createText", "figma.loadFontAsync", "TextNode.characters"],
-        apiSymbols: ["figma.createText", "figma.loadFontAsync", "TextNode.characters", "TextNode.fontName"],
+        helpers: ["$.text"],
+        publicCommandIds: ["figma:api:search", "figma:script:run"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "figma.createText()", lookupQuery: "PluginAPI.createText", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.loadFontAsync()", lookupQuery: "PluginAPI.loadFontAsync", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "text.characters", lookupQuery: "TextNode.characters", ownerHint: "TextNode", symbolKind: "plugin-api" },
+          { displayExpression: "text.fontName", lookupQuery: "TextNode.fontName", ownerHint: "TextNode", symbolKind: "plugin-api" }
+        ],
         queryHints: ["load font before changing text", "create text node", "set characters safely"],
         avoid: ["Changing TextNode.characters before loadFontAsync", "Guessing unavailable font style names"],
         pitfalls: ["Always load the target font before changing characters or fontName.", "Use text styles for reusable typography."]
@@ -20151,9 +20884,15 @@ var init_guidance_catalog = __esm({
         title: "Auto layout",
         intents: ["layout", "spacing", "padding", "stack", "responsive"],
         surface: "design",
-        helpers: ["lookup CLI command with kind=api", "run-script-file CLI command"],
-        pluginApi: ["layoutMode", "itemSpacing", "paddingLeft", "primaryAxisSizingMode"],
-        apiSymbols: ["AutoLayoutMixin.layoutMode", "AutoLayoutMixin.itemSpacing", "AutoLayoutMixin.paddingLeft", "AutoLayoutMixin.primaryAxisSizingMode"],
+        helpers: [],
+        publicCommandIds: ["figma:api:search", "figma:script:run"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "frame.layoutMode", lookupQuery: "AutoLayoutMixin.layoutMode", ownerHint: "AutoLayoutMixin", symbolKind: "plugin-api" },
+          { displayExpression: "frame.itemSpacing", lookupQuery: "AutoLayoutMixin.itemSpacing", ownerHint: "AutoLayoutMixin", symbolKind: "plugin-api" },
+          { displayExpression: "frame.paddingLeft", lookupQuery: "AutoLayoutMixin.paddingLeft", ownerHint: "AutoLayoutMixin", symbolKind: "plugin-api" },
+          { displayExpression: "frame.primaryAxisSizingMode", lookupQuery: "AutoLayoutMixin.primaryAxisSizingMode", ownerHint: "AutoLayoutMixin", symbolKind: "plugin-api" }
+        ],
         queryHints: ["auto layout frame", "padding item spacing", "responsive stack"],
         avoid: ["Lowercase layout mode values", "Applying auto layout to unsupported node types"],
         pitfalls: ["Use valid uppercase layout modes.", "Apply layout to frames, components, or component sets only.", "Auto-layout parents can reposition or grow children; set child layoutPositioning to ABSOLUTE only under an auto-layout parent."]
@@ -20163,9 +20902,16 @@ var init_guidance_catalog = __esm({
         title: "Variables and bindings",
         intents: ["variable", "variables", "bind", "binding", "token", "color", "theme", "mode"],
         surface: "design",
-        helpers: ["lookup CLI command with kind=api", "run-script-file CLI command"],
-        pluginApi: ["figma.variables.createVariableCollection", "figma.variables.createVariable", "setValueForMode", "setBoundVariable"],
-        apiSymbols: ["figma.variables.createVariableCollection", "figma.variables.createVariable", "Variable.setValueForMode", "VariablesAPI.setBoundVariableForPaint", "SceneNodeMixin.setBoundVariable"],
+        helpers: [],
+        publicCommandIds: ["figma:api:search", "figma:script:run", "figma:variables"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "figma.variables.createVariableCollection()", lookupQuery: "VariablesAPI.createVariableCollection", ownerHint: "VariablesAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.variables.createVariable()", lookupQuery: "VariablesAPI.createVariable", ownerHint: "VariablesAPI", symbolKind: "plugin-api" },
+          { displayExpression: "variable.setValueForMode()", lookupQuery: "Variable.setValueForMode", ownerHint: "Variable", symbolKind: "plugin-api" },
+          { displayExpression: "figma.variables.setBoundVariableForPaint()", lookupQuery: "VariablesAPI.setBoundVariableForPaint", ownerHint: "VariablesAPI", symbolKind: "plugin-api" },
+          { displayExpression: "node.setBoundVariable()", lookupQuery: "SceneNodeMixin.setBoundVariable", ownerHint: "SceneNodeMixin", symbolKind: "plugin-api" }
+        ],
         queryHints: ["create variable collection", "bind color variable to fill", "set variable value for mode"],
         avoid: ["Binding raw values instead of Variable objects", "Assuming every node field is variable-bindable"],
         pitfalls: ["Variable APIs require Design files.", "Use native Plugin API calls in .figma.ts for token creation and binding."]
@@ -20175,9 +20921,16 @@ var init_guidance_catalog = __esm({
         title: "Create and apply styles",
         intents: ["style", "styles", "paint", "typography", "library", "apply style"],
         surface: "design",
-        helpers: ["lookup CLI command with kind=api", "run-script-file CLI command"],
-        pluginApi: ["figma.createTextStyle", "figma.createPaintStyle", "TextNode.textStyleId", "fills"],
-        apiSymbols: ["figma.createTextStyle", "figma.createPaintStyle", "TextNode.textStyleId", "TextNode.setTextStyleIdAsync", "MinimalFillsMixin.fills"],
+        helpers: [],
+        publicCommandIds: ["figma:api:search", "figma:script:run"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "figma.createTextStyle()", lookupQuery: "PluginAPI.createTextStyle", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.createPaintStyle()", lookupQuery: "PluginAPI.createPaintStyle", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "text.textStyleId", lookupQuery: "TextNode.textStyleId", ownerHint: "TextNode", symbolKind: "plugin-api" },
+          { displayExpression: "text.setTextStyleIdAsync()", lookupQuery: "TextNode.setTextStyleIdAsync", ownerHint: "TextNode", symbolKind: "plugin-api" },
+          { displayExpression: "node.fills", lookupQuery: "MinimalFillsMixin.fills", ownerHint: "MinimalFillsMixin", symbolKind: "plugin-api" }
+        ],
         queryHints: ["create text style", "apply paint style", "set textStyleId"],
         avoid: ["Publishing assumptions for local styles", "Changing style font properties without loading fonts"],
         pitfalls: ["Style creation is local to the file until published.", "Load fonts before setting text style font names."]
@@ -20187,9 +20940,15 @@ var init_guidance_catalog = __esm({
         title: "Components and variants",
         intents: ["component", "components", "variant", "variants", "component set", "design system"],
         surface: "design",
-        helpers: ["lookup CLI command with kind=api", "run-script-file CLI command"],
-        pluginApi: ["figma.createComponent", "figma.combineAsVariants", "ComponentNode.createInstance"],
-        apiSymbols: ["figma.createComponent", "figma.combineAsVariants", "ComponentNode.createInstance", "ComponentSetNode"],
+        helpers: [],
+        publicCommandIds: ["figma:api:search", "figma:script:run", "figma:design-system"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "figma.createComponent()", lookupQuery: "PluginAPI.createComponent", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.combineAsVariants()", lookupQuery: "PluginAPI.combineAsVariants", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "component.createInstance()", lookupQuery: "ComponentNode.createInstance", ownerHint: "ComponentNode", symbolKind: "plugin-api" },
+          { displayExpression: "ComponentSetNode", lookupQuery: "ComponentSetNode", symbolKind: "plugin-api" }
+        ],
         queryHints: ["create component", "combine as variants", "component set"],
         avoid: ["Combining non-component nodes as variants", "Creating instances before remembering the source component"],
         pitfalls: ["Variant combining requires component nodes.", "Use handles for source components before creating instances."]
@@ -20199,9 +20958,10 @@ var init_guidance_catalog = __esm({
         title: "Figma-to-code implementation workflow",
         intents: ["implement", "implementation", "handoff", "figma to code", "production code", "design context"],
         surface: "design",
-        helpers: ["get-design-context CLI command", "capture-node CLI command", "guidance CLI command", "lookup CLI command with kind=docs"],
-        pluginApi: ["official get_design_context", "official get_screenshot"],
-        apiSymbols: ["get_design_context", "get_screenshot", "figma_workspace_get_design_context", "figma_workspace_capture_node"],
+        helpers: [],
+        publicCommandIds: ["figma:design-context", "figma:capture", "figma:guidance", "figma:docs:search"],
+        upstreamTools: ["get_design_context", "get_screenshot"],
+        apiReferences: [],
         queryHints: ["get design context before implementation", "capture node screenshot before coding", "reuse project tokens and components"],
         avoid: ["Implementing from memory without design context and screenshot evidence", "Copying generated Tailwind/code output without adapting to project conventions"],
         pitfalls: ["Prefer first-class context wrappers; use upstream escape hatches when raw upstream behavior or uncovered tools are needed.", "Treat upstream code output as a reference, then map to local components, tokens, a11y, and framework conventions.", "Record visible or technical deviations explicitly."]
@@ -20211,21 +20971,28 @@ var init_guidance_catalog = __esm({
         title: "Motion implementation workflow",
         intents: ["motion", "animation", "animate", "keyframe", "timeline", "export video"],
         surface: "design",
-        helpers: ["figma_workspace_get_design_context", "figma_workspace_get_motion_context", "figma_workspace_call_upstream_tool", "figma_workspace_capture_node"],
-        pluginApi: ["official get_motion_context", "official get_design_context", "official export_video via the call-upstream-tool CLI command"],
-        apiSymbols: ["get_motion_context", "get_design_context", "export_video", "figma_workspace_get_motion_context", "figma_workspace_call_upstream_tool"],
+        helpers: [],
+        publicCommandIds: ["figma:design-context", "figma:motion-context", "figma:upstream:call", "figma:capture"],
+        upstreamTools: ["get_motion_context", "get_design_context", "export_video"],
+        apiReferences: [],
         queryHints: ["pair motion context with design context by node id", "recursive motion context", "export video poll jobId"],
         avoid: ["Inferring animation from a static screenshot", "Dropping motion nodes that are plain elements in design context", "Claiming a local video file before upstream returns one"],
-        pitfalls: ["Treat get_motion_context as authoritative for animated-node inventory, timing, easing, and keyframes.", "Use the call-upstream-tool CLI command with export_video only when frame sampling is worth the upstream render cost.", "Poll with jobId rather than starting duplicate renders."]
+        pitfalls: ["Treat get_motion_context as authoritative for animated-node inventory, timing, easing, and keyframes.", "Run figma:upstream:call with export_video only when frame sampling is worth the upstream render cost.", "Poll with jobId rather than starting duplicate renders."]
       },
       {
         id: "instances.properties",
         title: "Instance properties",
         intents: ["instance", "instances", "property", "properties", "component property", "set properties", "variant property"],
         surface: "design",
-        helpers: ["lookup CLI command with kind=api", "run-script-file CLI command"],
-        pluginApi: ["InstanceNode.componentProperties", "InstanceNode.setProperties", "ComponentNode.componentPropertyDefinitions"],
-        apiSymbols: ["InstanceNode.componentProperties", "InstanceNode.setProperties", "ComponentNode.componentPropertyDefinitions", "ComponentPropertiesMixin"],
+        helpers: [],
+        publicCommandIds: ["figma:api:search", "figma:script:run"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "instance.componentProperties", lookupQuery: "InstanceNode.componentProperties", ownerHint: "InstanceNode", symbolKind: "plugin-api" },
+          { displayExpression: "instance.setProperties()", lookupQuery: "InstanceNode.setProperties", ownerHint: "InstanceNode", symbolKind: "plugin-api" },
+          { displayExpression: "component.componentPropertyDefinitions", lookupQuery: "ComponentNode.componentPropertyDefinitions", ownerHint: "ComponentNode", symbolKind: "plugin-api" },
+          { displayExpression: "ComponentPropertiesMixin", lookupQuery: "ComponentPropertiesMixin", symbolKind: "plugin-api" }
+        ],
         queryHints: ["set instance properties", "read component property definitions", "variant property values"],
         avoid: ["Using display labels instead of property keys with #uid suffixes", "Assuming setProperties throws when a key is wrong"],
         pitfalls: ["Read componentPropertyDefinitions before setProperties.", "TEXT, BOOLEAN, and INSTANCE_SWAP property names can include #uid suffixes."]
@@ -20235,21 +21002,32 @@ var init_guidance_catalog = __esm({
         title: "Code Connect component templates",
         intents: ["code connect", "codeconnect", "template", "mapping", "published component", "component mapping"],
         surface: "design",
-        helpers: ["call-upstream-tool CLI command with get_code_connect_map", "get-design-context CLI command", "lookup CLI command with kind=docs"],
-        pluginApi: ["official get_code_connect_map", "official Code Connect suggestions", "component properties"],
-        apiSymbols: ["get_code_connect_map", "get_design_context", "figma_workspace_get_design_context", "ComponentNode", "ComponentSetNode"],
+        helpers: [],
+        publicCommandIds: ["figma:upstream:call", "figma:design-context", "figma:docs:search"],
+        upstreamTools: ["get_code_connect_map", "get_code_connect_suggestions", "get_design_context"],
+        apiReferences: [
+          { displayExpression: "ComponentNode", lookupQuery: "ComponentNode", symbolKind: "plugin-api" },
+          { displayExpression: "ComponentSetNode", lookupQuery: "ComponentSetNode", symbolKind: "plugin-api" }
+        ],
         queryHints: ["confirm published component or component set", "read component property context", "map candidate code components"],
         avoid: ["Creating templates for unpublished or ambiguous component targets", "Choosing between multiple code candidates without documenting criteria"],
-        pitfalls: ["Use upstream Code Connect suggestions through the call-upstream-tool CLI command before writing parserless templates.", "If the Figma target or code component choice is ambiguous, ask for confirmation before creating template files."]
+        pitfalls: ["Use upstream Code Connect suggestions through figma:upstream:call before writing parserless templates.", "If the Figma target or code component choice is ambiguous, ask for confirmation before creating template files."]
       },
       {
         id: "images.fill",
         title: "Image fills and generated assets",
         intents: ["image", "images", "fill", "asset", "assets", "png", "jpeg", "upload", "generated"],
         surface: "design",
-        helpers: ["$.imageAsset", "$.findFreeSlot", "$.placeNode", "$.replaceGeneratedFrame", "figma_workspace_apply_asset_manifest", "figma_workspace_run_task_plan"],
-        pluginApi: ["figma.createImage", "Image.hash", "fills", "ImagePaint"],
-        apiSymbols: ["figma.createImage", "figma.createImageAsync", "Image.hash", "ImagePaint", "MinimalFillsMixin.fills"],
+        helpers: ["$.imageAsset", "$.findFreeSlot", "$.placeNode", "$.replaceGeneratedFrame"],
+        publicCommandIds: ["figma:assets:apply", "figma:task:run", "figma:api:search"],
+        upstreamTools: ["upload_assets"],
+        apiReferences: [
+          { displayExpression: "figma.createImage()", lookupQuery: "PluginAPI.createImage", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.createImageAsync()", lookupQuery: "PluginAPI.createImageAsync", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "image.hash", lookupQuery: "Image.hash", ownerHint: "Image", symbolKind: "plugin-api" },
+          { displayExpression: "ImagePaint", lookupQuery: "ImagePaint", symbolKind: "plugin-api" },
+          { displayExpression: "node.fills", lookupQuery: "MinimalFillsMixin.fills", ownerHint: "MinimalFillsMixin", symbolKind: "plugin-api" }
+        ],
         queryHints: ["create image fill", "upload local asset manifest", "official upload_assets", "set rectangle fills to image hash"],
         avoid: ["Embedding large base64 images in use_figma code payloads", "Using figma.createImage as a Slides upload path"],
         pitfalls: ["Use $.imageAsset for small inline images only.", "For large generated files, create target rectangles and use the apply-asset-manifest CLI command with upload_assets.", "Use $.replaceGeneratedFrame when swapping a generated frame for a repaired version."]
@@ -20259,21 +21037,29 @@ var init_guidance_catalog = __esm({
         title: "Screenshot capture and visual QA",
         intents: ["capture", "screenshot", "qa", "visual", "review", "inspect image"],
         surface: "any",
-        helpers: ["figma_workspace_capture_node", "$.screenshot", "figma_workspace_run_task_plan"],
-        pluginApi: ["node.screenshot", "ExportSettingsImage"],
-        apiSymbols: ["SceneNode.screenshot", "ExportSettingsImage", "figma.viewport"],
+        helpers: ["$.screenshot"],
+        publicCommandIds: ["figma:capture", "figma:task:run"],
+        upstreamTools: ["get_screenshot"],
+        apiReferences: [
+          { displayExpression: "node.exportAsync()", lookupQuery: "ExportMixin.exportAsync", ownerHint: "ExportMixin", symbolKind: "plugin-api" },
+          { displayExpression: "ExportSettingsImage", lookupQuery: "ExportSettingsImage", symbolKind: "plugin-api" },
+          { displayExpression: "figma.viewport", lookupQuery: "PluginAPI.viewport", ownerHint: "PluginAPI", symbolKind: "plugin-api" }
+        ],
         queryHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
         avoid: ["Treating opportunistic $.screenshot as final QA when no image payload is returned", "Relying only on inline MCP image payloads"],
-        pitfalls: ["Prefer the capture-node CLI command for final QA files.", "Inspect the saved local image/result when layout correctness matters."]
+        pitfalls: ["Prefer figma:capture for final QA files.", "Inspect the saved local image/result when layout correctness matters."]
       },
       {
         id: "review.design-parity",
         title: "Design parity review",
         intents: ["parity", "review", "regression", "visual review", "screenshot compare", "implementation review"],
         surface: "any",
-        helpers: ["capture-node CLI command", "inspect CLI command with mode=style", "get-design-context CLI command"],
-        pluginApi: ["official get_design_context", "node.screenshot", "style inspection"],
-        apiSymbols: ["get_design_context", "figma_workspace_get_design_context", "figma_workspace_capture_node", "figma_workspace_inspect", "SceneNode.screenshot"],
+        helpers: [],
+        publicCommandIds: ["figma:capture", "figma:inspect", "figma:design-context"],
+        upstreamTools: ["get_design_context", "get_screenshot"],
+        apiReferences: [
+          { displayExpression: "node.exportAsync()", lookupQuery: "ExportMixin.exportAsync", ownerHint: "ExportMixin", symbolKind: "plugin-api" }
+        ],
         queryHints: ["compare implemented UI to Figma screenshot", "audit spacing typography tokens assets", "order visible regressions by severity"],
         avoid: ["Guessing parity without screenshot or design context evidence", "Prioritizing code style over visible regressions and interaction mismatches"],
         pitfalls: ["Request or capture missing visual/context evidence before judging parity.", "Call out token misuse, spacing drift, typography drift, and asset substitutions with severity."]
@@ -20283,9 +21069,16 @@ var init_guidance_catalog = __esm({
         title: "FigJam board APIs",
         intents: ["figjam", "board", "sticky", "connector", "shape with text", "brainstorm"],
         surface: "figjam",
-        helpers: ["open CLI command with surface=figjam", "lookup CLI command with kind=api"],
-        pluginApi: ["figma.createSticky", "figma.createConnector", "figma.createShapeWithText"],
-        apiSymbols: ["figma.createSticky", "figma.createConnector", "figma.createShapeWithText", "StickyNode", "ConnectorNode"],
+        helpers: [],
+        publicCommandIds: ["figma:open", "figma:api:search"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "figma.createSticky()", lookupQuery: "PluginAPI.createSticky", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.createConnector()", lookupQuery: "PluginAPI.createConnector", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.createShapeWithText()", lookupQuery: "PluginAPI.createShapeWithText", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "StickyNode", lookupQuery: "StickyNode", symbolKind: "plugin-api" },
+          { displayExpression: "ConnectorNode", lookupQuery: "ConnectorNode", symbolKind: "plugin-api" }
+        ],
         queryHints: ["create sticky notes", "connect FigJam nodes", "surface figjam"],
         avoid: ["Running Design-only frame/component APIs in FigJam sessions", "Opening a FigJam board with surface design"],
         pitfalls: ["Open with surface='figjam'.", "FigJam creation APIs are surface-specific."]
@@ -20295,9 +21088,17 @@ var init_guidance_catalog = __esm({
         title: "Slides deck APIs",
         intents: ["slides", "slide", "deck", "presentation", "speaker notes", "slide row"],
         surface: "slides",
-        helpers: ["open CLI command with surface=slides", "lookup CLI command with kind=api", "capture-node CLI command"],
-        pluginApi: ["figma.createSlide", "figma.createSlideRow", "figma.getSlideGrid", "figma.setSlideGrid"],
-        apiSymbols: ["figma.createSlide", "figma.createSlideRow", "figma.getSlideGrid", "figma.setSlideGrid", "SlideNode", "SlideRowNode"],
+        helpers: [],
+        publicCommandIds: ["figma:open", "figma:api:search", "figma:capture"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "figma.createSlide()", lookupQuery: "PluginAPI.createSlide", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.createSlideRow()", lookupQuery: "PluginAPI.createSlideRow", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.getSlideGrid()", lookupQuery: "PluginAPI.getSlideGrid", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "figma.setSlideGrid()", lookupQuery: "PluginAPI.setSlideGrid", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "SlideNode", lookupQuery: "SlideNode", symbolKind: "plugin-api" },
+          { displayExpression: "SlideRowNode", lookupQuery: "SlideRowNode", symbolKind: "plugin-api" }
+        ],
         queryHints: ["create slide", "organize slide grid", "surface slides"],
         avoid: ["Calling figma.createPage in Slides", "Using figma.createImage as a Slides upload entrypoint"],
         pitfalls: ["Slides use slide grid APIs instead of createPage.", "Use upload/capture tooling for images and visual review."]
@@ -20307,12 +21108,17 @@ var init_guidance_catalog = __esm({
         title: "Selection, query, and inspection",
         intents: ["find", "select", "inspect", "query", "validate"],
         surface: "any",
-        helpers: ["$.select", "$.inspect", "inspect CLI command with mode=validate"],
-        pluginApi: ["figma.currentPage.selection", "findAll", "getNodeByIdAsync"],
-        apiSymbols: ["figma.currentPage.selection", "ChildrenMixin.findAll", "figma.getNodeByIdAsync"],
+        helpers: ["$.select", "$.inspect"],
+        publicCommandIds: ["figma:inspect", "figma:api:search"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "figma.currentPage.selection", lookupQuery: "PluginAPI.currentPage", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "findAll()", lookupQuery: "ChildrenMixin.findAll", ownerHint: "ChildrenMixin", symbolKind: "plugin-api" },
+          { displayExpression: "figma.getNodeByIdAsync()", lookupQuery: "PluginAPI.getNodeByIdAsync", ownerHint: "PluginAPI", symbolKind: "plugin-api" }
+        ],
         queryHints: ["scoped findAll", "select remembered handle", "validate cached handles"],
         avoid: ["Root-wide figma.root.findAll scans", "Direct selection mutation in repairable scripts"],
-        pitfalls: ["Avoid root-wide searches in large files.", "Use native scoped queries or the inspect CLI command for discovery.", "Use $.select instead of direct figma.currentPage.selection writes.", "Validate stale handles before mutation."]
+        pitfalls: ["Avoid root-wide searches in large files.", "Use native scoped queries or figma:inspect for discovery.", "Use $.select instead of direct figma.currentPage.selection writes.", "Validate stale handles before mutation."]
       },
       {
         id: "clone",
@@ -20320,8 +21126,13 @@ var init_guidance_catalog = __esm({
         intents: ["clone", "copy", "duplicate", "side by side", "preserve instance"],
         surface: "design",
         helpers: ["$.cloneNodeTree", "$.findFreeSlot", "$.placeNode", "$.replaceGeneratedFrame", "$.select", "$.checkpoint"],
-        pluginApi: ["SceneNode.clone", "appendChild", "remove"],
-        apiSymbols: ["SceneNode.clone", "ChildrenMixin.appendChild", "BaseNodeMixin.remove"],
+        publicCommandIds: ["figma:script:run", "figma:api:search"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "node.clone()", lookupQuery: "SceneNode.clone", ownerHint: "SceneNode", symbolKind: "plugin-api" },
+          { displayExpression: "parent.appendChild()", lookupQuery: "ChildrenMixin.appendChild", ownerHint: "ChildrenMixin", symbolKind: "plugin-api" },
+          { displayExpression: "node.remove()", lookupQuery: "BaseNodeMixin.remove", ownerHint: "BaseNodeMixin", symbolKind: "plugin-api" }
+        ],
         queryHints: ["clone node tree", "preserve instance subtree", "duplicate beside source", "replace generated frame"],
         avoid: ["Rebuilding internal children of an InstanceNode", "Losing handles for cloned roots"],
         pitfalls: ["Clone outer-to-inner when rebuilding children.", "Preserve instance subtrees whole; Figma does not allow rebuilding internal instance children."]
@@ -20331,9 +21142,14 @@ var init_guidance_catalog = __esm({
         title: "Page targeting",
         intents: ["page", "surface", "current page", "navigation"],
         surface: "any",
-        helpers: ["targetPageId", "figma_workspace_open"],
-        pluginApi: ["figma.setCurrentPageAsync", "PageNode"],
-        apiSymbols: ["figma.setCurrentPageAsync", "PageNode", "figma.currentPage"],
+        helpers: ["targetPageId"],
+        publicCommandIds: ["figma:open", "figma:api:search"],
+        upstreamTools: [],
+        apiReferences: [
+          { displayExpression: "figma.setCurrentPageAsync()", lookupQuery: "PluginAPI.setCurrentPageAsync", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
+          { displayExpression: "PageNode", lookupQuery: "PageNode", symbolKind: "plugin-api" },
+          { displayExpression: "figma.currentPage", lookupQuery: "PluginAPI.currentPage", ownerHint: "PluginAPI", symbolKind: "plugin-api" }
+        ],
         queryHints: ["switch current page once", "targetPageId", "page-scoped script"],
         avoid: ["Assigning figma.currentPage directly", "Multiple page switches in one transaction"],
         pitfalls: ["Do not assign `figma.currentPage` directly.", "Use one page switch per transaction."]
@@ -42001,9 +42817,10 @@ function asGuidanceArgs(args) {
   const record2 = parseToolArgs(args);
   assertRemovedArguments(record2, ["intent", "goal", "task"], "query");
   assertRemovedArguments(record2, ["expectedSurface"], "surface");
-  assertOptionalStringFields(record2, ["card", "query", "workflow"]);
+  assertOptionalStringFields(record2, ["card", "query"]);
   assertOptionalEnum(record2, "mode", FIGMA_WORKSPACE_GUIDANCE_MODES);
   assertOptionalEnum(record2, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalEnum(record2, "workflow", FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS);
   return record2;
 }
 function asInspectArgs(args) {
@@ -42147,15 +42964,37 @@ function asLookupArgs(args) {
     throw new Error('Tool argument "scope" is only allowed when "kind" is "docs".');
   }
   if (record2.kind === "docs" && record2.scope === void 0) {
-    record2.scope = "active";
+    record2.scope = "auto";
   }
+  if (record2.kind !== "docs" && (record2.surface !== void 0 || record2.taskFamily !== void 0)) {
+    throw new Error('Tool arguments "surface" and "taskFamily" are only allowed when "kind" is "docs".');
+  }
+  assertOptionalEnum(record2, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalEnum(record2, "taskFamily", FIGMA_WORKSPACE_TASK_FAMILIES);
   assertOptionalStringFields(record2, ["query", "symbol"]);
   return record2;
 }
 function asDocsArgs(args) {
   const record2 = parseToolArgs(args);
-  assertOptionalStringFields(record2, ["topic"]);
-  return record2;
+  assertOptionalEnum(record2, "mode", FIGMA_WORKSPACE_DOCS_MODES);
+  if (record2.mode === "list") {
+    return record2;
+  }
+  if (record2.mode === "catalog") {
+    assertOptionalEnum(record2, "taskFamily", FIGMA_WORKSPACE_TASK_FAMILIES);
+    assertOptionalEnum(record2, "surface", FIGMA_WORKSPACE_SURFACES);
+    assertOptionalEnum(record2, "classification", FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS);
+    assertOptionalIntegerRange(record2, "limit", 1, 100);
+    return record2;
+  }
+  if (record2.mode === "read") {
+    assertOptionalStringFields(record2, ["id"]);
+    if (typeof record2.id !== "string" || record2.id.trim().length === 0) {
+      throw new Error('Tool argument "id" is required when docs mode is "read".');
+    }
+    return record2;
+  }
+  throw new Error('Tool argument "mode" must be one of: list, catalog, read.');
 }
 function asDoctorArgs(args) {
   return parseToolArgs(args);
@@ -42433,21 +43272,40 @@ function withDefaultTitle(args, _title) {
   }
   return args;
 }
-var FIGMA_WORKSPACE_SURFACES, FIGMA_WORKSPACE_EVAL_MODES, FIGMA_WORKSPACE_GUIDANCE_MODES, FIGMA_WORKSPACE_INSPECT_MODES, FIGMA_WORKSPACE_LOOKUP_KINDS, FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES, FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS;
+var FIGMA_WORKSPACE_SURFACES, FIGMA_WORKSPACE_EVAL_MODES, FIGMA_WORKSPACE_GUIDANCE_MODES, FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS, FIGMA_WORKSPACE_INSPECT_MODES, FIGMA_WORKSPACE_LOOKUP_KINDS, FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES, FIGMA_WORKSPACE_TASK_FAMILIES, FIGMA_WORKSPACE_DOCS_MODES, FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS, FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS;
 var init_tool_args = __esm({
   "src/contract/tool-args.ts"() {
     "use strict";
     FIGMA_WORKSPACE_SURFACES = ["design", "figjam", "slides"];
     FIGMA_WORKSPACE_EVAL_MODES = ["read", "write"];
     FIGMA_WORKSPACE_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"];
+    FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS = ["design-implementation-context", "motion-implementation"];
     FIGMA_WORKSPACE_INSPECT_MODES = ["inspect", "validate", "style"];
     FIGMA_WORKSPACE_LOOKUP_KINDS = ["docs", "api"];
     FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES = [
+      "auto",
       "active",
       "conditional",
+      "router",
       "examples",
       "all"
     ];
+    FIGMA_WORKSPACE_TASK_FAMILIES = [
+      "code-connect",
+      "create-file",
+      "design-to-code",
+      "design-generation",
+      "diagram",
+      "library-generation",
+      "motion-implementation",
+      "swiftui",
+      "figjam",
+      "motion",
+      "slides",
+      "design-editing"
+    ];
+    FIGMA_WORKSPACE_DOCS_MODES = ["list", "catalog", "read"];
+    FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS = ["active", "conditional", "router", "examples"];
     FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"];
   }
 });
@@ -43708,15 +44566,27 @@ function createFigmaWorkspaceClient(options = {}) {
     lookup: async (args) => parseJsonToolResult(
       await handleLookup(asLookupArgs(withDefaultTitle(args, "Look up Figma Workspace reference")))
     ),
-    docs: async (args = {}) => handleDocs(asDocsArgs(args)),
+    docs: async (args) => handleDocs(asDocsArgs(args)),
     doctor: async (args = {}) => handleDoctor(asDoctorArgs(args)),
     sessionsInfo: async (args = {}) => handleSessions(asSessionsArgs(args), runtime.sessions),
     upstreamTools: async (args = {}) => handleUpstreamTools(asUpstreamToolsArgs(args), runtime.upstreamToolCache)
   };
 }
 function handleDocs(args) {
-  const topic = asOptionalString2(args.topic);
-  return topic ? { ok: true, ...readFigmaWorkspaceProjectDoc(topic) } : { ok: true, topics: listFigmaWorkspaceProjectDocs() };
+  if (args.mode === "list") {
+    return { ok: true, mode: "list", topics: listFigmaWorkspaceProjectDocs() };
+  }
+  if (args.mode === "catalog") {
+    const catalog = listFigmaWorkspaceCanonicalCatalog({
+      taskFamily: args.taskFamily,
+      surface: args.surface,
+      classification: args.classification,
+      limit: args.limit
+    });
+    return args.taskFamily === void 0 ? { ok: true, mode: "catalog", taskFamilies: catalog } : { ok: true, mode: "catalog", records: catalog };
+  }
+  const doc = args.id.startsWith("project:") ? readFigmaWorkspaceProjectDoc(args.id) : readFigmaWorkspaceCanonicalDoc(args.id);
+  return { ok: true, mode: "read", ...doc };
 }
 function handleDoctor(_args) {
   const projectDocs = getFigmaWorkspaceProjectDocsRuntimeInfo();
@@ -45190,11 +46060,11 @@ async function handlePrepareTask(args, runtime) {
       },
       next: [
         "Edit the .figma.ts file in this task folder.",
-        "Run run-script-file; it strict-checks TypeScript and preflights diagnostics before upstream execution.",
+        "Run figma:script:run; it strict-checks TypeScript and preflights diagnostics before upstream execution.",
         "Debug JSON files are generated on demand for failures, diagnostics, and inline omissions."
       ]
     };
-    return makeJsonToolResult(toCliFacingGuidanceValue(payload));
+    return makeJsonToolResult(payload);
   } catch (error2) {
     if (session && sessionSnapshot) {
       restorePrepareTaskSessionState(session, sessionSnapshot);
@@ -45262,88 +46132,79 @@ async function handleGuidance(args) {
   const cardSource = args.card;
   const maxCards = normalizeBoundedInteger(args.maxCards, 4, 8);
   const mode = args.mode ?? (cardSource ? "card" : querySource ? "guidance" : "catalog");
-  if (mode === "plan") {
-    const planIntent = querySource ? normalizeLookupRankingQuery(querySource.value, querySource.name) : "figma file task";
-    const payload2 = {
-      ok: true,
-      workflow: createFileWorkflowPayload(),
-      steps: [
-        "Prepare or reuse a task workspace with prepare-task.",
-        "Write the transaction in a local .figma.ts file using $ helpers and native Figma Plugin API calls.",
-        "Call run-script-file with strict=true, surface, inputFile, and inlineResultLimit.",
-        "If preflight diagnostics fail, repair local file/line diagnostics and rerun the same script file.",
-        "Inspect the paired .result.json file first when inline results are capped."
-      ],
-      recommendedTools: [
-        "prepare-task",
-        "figma_workspace_guidance",
-        "run-script-file",
-        "figma_workspace_inspect"
-      ],
-      suggestedCards: chooseApiCardsForIntent(planIntent, 4).map((card) => card.id),
-      helperProfiles: createPublicHelperProfilePayloads(chooseHelperProfilesForIntent(planIntent, 4)),
-      wrapperProfiles: createPublicWrapperProfilePayloads(chooseWrapperLookupProfilesForIntent(planIntent, 4)),
-      workflowGraph: createPublicWrapperWorkflowPayloads(
-        selectWrapperWorkflowGraph(
-          uniqueStrings(chooseWrapperLookupProfilesForIntent(planIntent, 4).flatMap((profile) => profile.workflowIds), 4),
-          4
-        )
-      )
-    };
-    return makeJsonToolResult(toCliFacingGuidanceValue(payload2));
-  }
   const intent = querySource ? normalizeLookupRankingQuery(querySource.value, querySource.name) : void 0;
   const cardQuery = typeof cardSource === "string" ? normalizeLookupQuery(cardSource, "card or query") : void 0;
-  const cards = mode === "catalog" ? FIGMA_WORKSPACE_API_CARDS.slice(0, maxCards) : cardQuery ? searchApiCards(cardQuery, maxCards) : intent ? chooseApiCardsForIntent(intent, maxCards) : FIGMA_WORKSPACE_API_CARDS.slice(0, maxCards);
+  const routingQuery = intent ?? cardQuery ?? "";
+  const route = resolveTaskRoute({
+    query: routingQuery,
+    routes: getFigmaWorkspaceCanonicalTaskRoutes(),
+    requestedSurface: args.surface
+  });
+  const effectiveSurface = args.surface ?? route.surface;
+  const cards = mode === "catalog" ? FIGMA_WORKSPACE_API_CARDS.filter((card) => effectiveSurface === void 0 || card.surface === "any" || card.surface === effectiveSurface).slice(0, maxCards) : cardQuery ? searchApiCards(cardQuery, maxCards, effectiveSurface) : intent ? chooseApiCardsForIntent(intent, maxCards, effectiveSurface) : [];
   const context = intent ? await searchReferenceFiles({
-    query: intent,
-    files: docsSearchFilesForScope("active"),
-    maxResults: DEFAULT_REFERENCE_CONTEXT_SNIPPETS,
-    maxSnippetLines: 4,
+    query: route.status === "matched" ? route.canonicalQuery ?? intent : intent,
+    scope: "auto",
+    surface: effectiveSurface,
+    taskFamily: route.status === "matched" ? route.taskFamily : void 0,
+    effectiveScopes: route.effectiveScopes,
+    maxResults: 2,
+    maxSnippetLines: 3,
     exactSymbol: false
   }) : { results: [] };
-  const suggestions = createIntentSuggestions(intent ?? cardQuery ?? "common figma workflow", maxCards, context.results);
-  const wrapperProfiles = createPublicWrapperProfilePayloads(
-    chooseWrapperLookupProfilesForIntent(intent ?? cardQuery, 4)
-  );
+  let selectedWorkflows = args.workflow ? selectWrapperWorkflowGraph([args.workflow], 1) : void 0;
+  if (args.workflow && selectedWorkflows?.length === 0) {
+    throw new Error(`Unknown Figma Workspace guidance workflow "${args.workflow}".`);
+  }
+  let selectedWrapperProfiles = chooseWrapperLookupProfilesForIntent(intent ?? cardQuery, 3);
+  if (args.workflow) {
+    selectedWrapperProfiles = selectedWrapperProfiles.filter((profile) => profile.workflowIds.includes(args.workflow));
+  }
+  const wrapperProfiles = createPublicWrapperProfilePayloads(selectedWrapperProfiles);
   const helperProfiles = createPublicHelperProfilePayloads(
-    chooseHelperProfilesForIntent(intent ?? cardQuery, 4)
+    chooseHelperProfilesForIntent(intent ?? cardQuery, 3)
   );
+  if (!selectedWorkflows) {
+    const selectedWorkflowIds = uniqueStrings(
+      selectedWrapperProfiles.flatMap((profile) => profile.workflowIds),
+      1
+    );
+    selectedWorkflows = selectedWorkflowIds.length > 0 ? selectWrapperWorkflowGraph(selectedWorkflowIds, 1) : [];
+  }
+  const apiReferences = uniqueApiReferences(cards.flatMap((card) => card.apiReferences), 8);
+  const referenceContext = context.results.map((result) => ({
+    ...result,
+    snippet: truncateUtf82(result.snippet, 300)
+  }));
+  const nextActions = createGuidanceNextActions({
+    query: intent ?? cardQuery ?? "figma workspace",
+    route,
+    referenceContext,
+    apiReferences
+  });
   const payload = {
     ok: true,
+    route,
     cards: cards.map(createPublicApiCardPayload),
-    catalogSize: FIGMA_WORKSPACE_API_CARDS.length,
-    guidance: "Use this compact guidance before broader docs/API lookup; each card exposes queryHints, apiSymbols, guardrails, and pitfalls for .figma.ts file workflows.",
-    recommendedCards: cards.map((card) => card.id),
-    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
-    apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
-    guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
+    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 8),
+    apiReferences,
+    guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 6),
     helperProfiles,
     wrapperProfiles,
-    workflowGraph: createPublicWrapperWorkflowPayloads(
-      selectWrapperWorkflowGraph(uniqueStrings(wrapperProfiles.flatMap((profile) => profile.workflowIds), 4), 4)
-    ),
-    suggestions
+    workflowGraph: createPublicWrapperWorkflowPayloads(selectedWorkflows),
+    referenceContext,
+    nextActions,
+    ...mode === "plan" ? {
+      workflow: createFileWorkflowPayload(),
+      steps: [
+        "Prepare or reuse a task workspace with figma:task:prepare.",
+        "Write a small repairable .figma.ts transaction.",
+        "Run figma:script:run with strict preflight and repair diagnostics before retrying."
+      ],
+      recommendedTools: ["figma:task:prepare", "figma:guidance", "figma:script:run", "figma:inspect"]
+    } : {}
   };
-  return makeJsonToolResult(toCliFacingGuidanceValue(payload));
-}
-function toCliFacingGuidanceValue(value) {
-  if (typeof value === "string") {
-    let result = value;
-    for (const [operation, command] of CLI_GUIDANCE_OPERATION_REPLACEMENTS) {
-      result = result.replaceAll(operation, command);
-    }
-    return result.replaceAll("prepare_task", "prepare-task").replaceAll("run_script_file", "run-script-file").replaceAll("structuredContent.imageFile", "imageFile");
-  }
-  if (Array.isArray(value)) {
-    return value.map(toCliFacingGuidanceValue);
-  }
-  if (!isRecord5(value)) {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [key, toCliFacingGuidanceValue(entry)])
-  );
+  return makeJsonToolResult(payload);
 }
 function guidanceQuerySource(args) {
   if (typeof args.query === "string") {
@@ -46330,10 +47191,21 @@ async function handleLookup(args) {
   try {
     if (args.kind === "docs") {
       const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
-      const scope = args.scope ?? "active";
+      const requestedScope = args.scope ?? "auto";
+      const route = resolveTaskRoute({
+        query,
+        routes: getFigmaWorkspaceCanonicalTaskRoutes(),
+        requestedSurface: args.surface,
+        explicitTaskFamily: args.taskFamily
+      });
+      const effectiveScopes = requestedScope === "auto" ? route.effectiveScopes : requestedScope === "all" ? ["active", "conditional", "router", "examples"] : [requestedScope];
+      const selectedTaskFamily = args.taskFamily ?? (route.status === "matched" ? route.taskFamily : void 0);
       const matches2 = await searchReferenceFiles({
         query,
-        files: docsSearchFilesForScope(scope),
+        scope: requestedScope,
+        surface: args.surface,
+        taskFamily: selectedTaskFamily,
+        effectiveScopes,
         maxResults: normalizeBoundedInteger(
           args.maxResults,
           DEFAULT_DOCS_SEARCH_MAX_RESULTS,
@@ -46347,9 +47219,12 @@ async function handleLookup(args) {
       });
       const payload2 = {
         ok: true,
-        scope,
+        requestedScope,
+        effectiveScopes,
+        route,
         results: matches2.results,
-        guidance: "Use these capped BM25-ranked chunks as compact context. Run a narrower lookup query or kind=api lookup when more detail is needed."
+        nextActions: createDocsLookupNextActions({ query, route, results: matches2.results }),
+        guidance: "Use these compact routed snippets, then run figma:docs:read with an exact project: or canonical: id for complete context."
       };
       return makeJsonToolResult(payload2);
     }
@@ -46359,7 +47234,6 @@ async function handleLookup(args) {
     const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
     const matches = await searchReferenceFiles({
       query: symbol,
-      files: [],
       maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
       maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
       exactSymbol: true,
@@ -46367,8 +47241,10 @@ async function handleLookup(args) {
     });
     const payload = {
       ok: true,
+      normalizedSymbol: matches.normalizedSymbol,
+      ownerHint: matches.ownerHint,
       results: matches.results,
-      guidance: "Results are capped BM25-ranked Plugin API chunks from the generated bundled typings index, with opaque source ids, matchType, and confidence. Exact symbol matches are boosted."
+      guidance: "Results are compact declarations from the generated bundled typings index. Qualified aliases and direct owner matches rank before bare-symbol fallbacks."
     };
     return makeJsonToolResult(payload);
   } catch (error2) {
@@ -46383,6 +47259,40 @@ async function handleLookup(args) {
     }
     throw error2;
   }
+}
+function createDocsLookupNextActions(options) {
+  const actions = [];
+  const firstDocId = options.results.find((result) => result.docId?.startsWith("project:") || result.docId?.startsWith("canonical:"))?.docId;
+  if (firstDocId) {
+    actions.push({
+      commandId: "figma:docs:read",
+      args: { id: firstDocId },
+      reason: "Read the top document in full.",
+      priority: 1
+    });
+  }
+  if (options.route.status === "ambiguous" || options.route.status === "none") {
+    const taskFamily = options.route.candidateTaskFamilies[0];
+    actions.push({
+      commandId: "figma:docs:catalog",
+      args: taskFamily ? { taskFamily } : {},
+      reason: "Choose an exact canonical task family.",
+      priority: actions.length + 1
+    });
+  }
+  if (/\b(?:example|sample|template)\b/iu.test(options.query)) {
+    actions.push({
+      commandId: "figma:docs:search",
+      args: {
+        query: options.route.canonicalQuery ?? options.query,
+        scope: "examples",
+        ...options.route.taskFamily ? { taskFamily: options.route.taskFamily } : {}
+      },
+      reason: "Examples require an explicit examples scope.",
+      priority: actions.length + 1
+    });
+  }
+  return actions.slice(0, 6);
 }
 function countRecords(value) {
   return Array.isArray(value) ? value.filter(isRecord5).length : 0;
@@ -48711,125 +49621,111 @@ function createTaskScriptTemplate(taskName, scriptName, args) {
     ""
   ].filter((line) => line !== void 0).join("\n");
 }
-function evalHelperPath(name) {
-  return `$.${name}`;
-}
-function createEvalHelperPathList() {
-  return ["$", ...FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES.map(evalHelperPath)];
-}
 function createFileWorkflowPayload() {
   return {
-    primaryTool: "run-script-file",
+    primaryCommandId: "figma:script:run",
     fileExtension: ".figma.ts",
-    supportedFileExtensions: [".figma.ts"],
-    prepareTool: "prepare-task",
-    planTool: "figma_workspace_guidance",
-    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts for file-context work; select workspaceDir according to workspaceDirGuidance, and the CLI does not append another figma-workspace segment",
-    outputFiles: ["inputFile", "debugFile", "upstreamFile", "inlineResultLimit"],
-    workflowTools: ["figma_workspace_get_metadata", "figma_workspace_inspect", "figma_workspace_apply_asset_manifest", "figma_workspace_download_assets", "figma_workspace_capture_node", "figma_workspace_run_task_plan"],
-    helpers: createEvalHelperPathList(),
+    commandOrder: ["figma:task:prepare", "figma:script:run", "figma:inspect", "figma:capture"],
+    workspaceLayout: "<workspaceDir>/<fileKey-or-fileSlug>/<taskName>.figma.ts",
     workspaceDirGuidance: "Always pass an explicit absolute workspaceDir for prepare/open/file-scoped calls that need local workspace files. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. Do not treat capability-specific output roots as generic task storage.",
     guidance: [
       "Keep non-trivial Plugin API work in local .figma.ts files.",
-      "Initialize a file workspace once with an explicit workspaceDir selected according to workspaceDirGuidance, then keep task scripts in that file-context folder.",
-      "Run run-script-file directly; it strict-checks .figma.ts files with Figma Plugin API typings, compiles the upstream payload internally, and preflights file-aware diagnostics before upstream calls.",
-      "Keep each .figma.ts transaction below the upstream code payload limit; split large screens into skeleton, asset-target, upload-fill, and fix scripts.",
-      "The file runner and eval wrapper parse script ASTs and inject only referenced $ helpers plus required dependencies; eval defaults to JavaScript and compiles TypeScript only when typescript:true is supplied. Scripts that use only native Plugin API avoid the helper runtime. Public file-script metadata stays compact; session state and handles persist in the CLI --session-file.",
-      "Dynamic $ helper access is disabled because helper injection must be statically knowable: avoid $[name] / $name-style helper lookup, const { ...rest } = $, aliasing $, or declaring a local $; use static $.helper(...), literal $['helper'](...), or explicit const { helper } = $ destructuring.",
-      "Use $ helpers for common edits and native Figma Plugin API calls for advanced work.",
-      "Use $.imageAsset({ base64, parent, size, position, as }) for small generated PNG/JPEG assets. For large assets, create target rectangles in .figma.ts and route through official upload_assets/upstream asset fill workflow to avoid MCP payload limits.",
-      "Use figma_workspace_apply_asset_manifest for target-rectangle plus local-file asset upload/fill orchestration when large assets should stay out of script payloads; target fields accept local handles and official upload_assets is adapted when advertised.",
-      "Use figma_workspace_download_assets for official download_assets workflows that save exported renders and raw/source images for one or more targets into local per-target folders.",
-      "Use figma_workspace_capture_node to write final visual QA captures to local PNG files. Raw node id / $handle string targets require an open/prepare file-context session; node URL targets or target:{ fileKey, nodeId } can supply file context directly. Extensionless or non-.png imageFile values normalize to .png. Capture results return the screenshot path in structuredContent.imageFile.",
-      "Use figma_workspace_run_task_plan for sequential file-plan workflows that combine preflighted script execution, manifest/upload_assets application, download_assets, captures, and upstream calls; it remains the explicit plan-level debug/audit file exception and capture steps can be referenced with {{steps.stepId.imageFile}}.",
-      "Use figma_workspace_get_metadata for broad layer-tree discovery: target can be a raw node id, node URL, cached handle, $currentPage, single-node $selection, or target:{ fileKey, nodeId }. It calls official get_metadata, converts XML to compact JSON, enriches supported lock/layout-state fields with one read-only use_figma readback, returns small metadata.json results inline, and writes oversized JSON to outputFiles.metadataFile.",
-      "Use inspect only after the session has file context from open or prepare-task. It executes upstream use_figma; target must be a string such as $selection, $currentPage, a handle, raw node id, or node URL, not { fileKey, nodeId }.",
-      "Use $.cloneNodeTree for side-by-side copy workflows that need outer-to-inner cloning and preserved instance subtrees.",
-      "Use $.findFreeSlot, $.placeNode, and $.replaceGeneratedFrame for predictable generated-frame placement and guarded replacement without raw remove().",
-      "For visible audit markers or temporary verification labels, place them outside the inspected frame or in a confirmed free slot; avoid covering primary controls, text, or content that visual QA must inspect.",
-      "Debug JSON result files are generated on demand for failures, diagnostics, and inline omissions; clean success does not write JSON result files for eval, script, upstream-tool, asset-manifest, or download-assets calls.",
-      "Tool responses are structured-first: JSON data is in structuredContent and content is empty. File-script public upstream JSON stays in upstream.result with consumed top-level ok removed, bridge-internal __figmaRepl metadata is removed, non-JSON upstream output stays in upstream.text, diagnostics are returned only when non-empty, debug file pointers use outputFiles.debugFile, and upstream sidecars use outputFiles.upstreamFile.",
-      "When upstream execution fails after preflight, outputFiles.compiledScriptFile points to a *.failure.compiled.txt payload with a failure header for line-aware repair; preflight failures and successful executions do not return compiledScript, and each run deletes the prior failure compiled file for the same output context before continuing."
+      "Run figma:script:run with strict preflight and repair every fatal diagnostic before retrying.",
+      "Keep transactions small, return compact changed ids and handles, and finish with figma:capture plus visual inspection when content changed."
     ]
-  };
-}
-function createIntentSuggestions(intent, maxCards, referenceContext = []) {
-  const cards = chooseApiCardsForIntent(intent, maxCards);
-  const recommendedCards = cards.map((card) => card.id);
-  return {
-    cards: cards.map(createPublicApiCardPayload),
-    recommendedCards,
-    queryHints: uniqueStrings(cards.flatMap((card) => card.queryHints), 12),
-    apiSymbols: uniqueStrings(cards.flatMap((card) => card.apiSymbols), 16),
-    guardrails: uniqueStrings(cards.flatMap((card) => card.avoid), 12),
-    matchType: cards.length > 0 ? "api-card" : "bm25",
-    confidence: cards.length > 0 ? "high" : "medium",
-    referenceContext,
-    workflow: createFileWorkflowPayload(),
-    toolOrder: [
-      "prepare-task",
-      "figma_workspace_guidance",
-      "figma_workspace_lookup(kind=api)",
-      "run-script-file",
-      "figma_workspace_inspect"
-    ],
-    referenceGuidance: "Use cards first for common intent; use BM25 snippets as compact context and run a narrower figma_workspace_lookup kind=api query when exact API details are still missing."
   };
 }
 function createPublicHelperProfilePayloads(profiles) {
   return profiles.map((profile) => ({
-    helper: profile.id,
-    category: profile.category,
+    id: profile.id,
     helpers: profile.helpers,
-    useWhen: profile.useWhen,
-    avoidWhen: profile.avoidWhen,
-    allowedPatterns: profile.allowedPatterns,
-    forbiddenPatterns: profile.forbiddenPatterns,
-    apiSymbols: profile.apiSymbols,
-    lookupHints: profile.lookupHints,
-    example: profile.example
+    publicCommandIds: profile.publicCommandIds,
+    lookupHints: profile.lookupHints.slice(0, 1)
   }));
 }
 function createPublicWrapperProfilePayloads(profiles) {
   return profiles.map((profile) => ({
-    tool: profile.tool,
+    commandId: profile.commandId,
     upstreamTool: profile.upstreamTool,
     workflowIds: profile.workflowIds,
-    intents: profile.intents.slice(0, 5),
-    suggestedLookups: {
-      docs: profile.docsQueries.slice(0, 3),
-      api: profile.apiSymbols.slice(0, 4)
-    },
-    suggestedTools: profile.suggestedTools,
-    nextSteps: profile.nextSteps
+    suggestedCommandIds: profile.suggestedCommandIds,
+    ...profile.suggestedUpstreamTools.length > 0 ? { suggestedUpstreamTools: profile.suggestedUpstreamTools } : {}
   }));
 }
 function createPublicWrapperWorkflowPayloads(workflows) {
   return workflows.map((workflow) => ({
     id: workflow.id,
-    title: workflow.title,
-    tools: workflow.tools,
-    sequence: workflow.sequence,
-    guardrails: workflow.guardrails
+    commandIds: workflow.commandIds,
+    upstreamTools: workflow.upstreamTools
   }));
 }
 function createWrapperGuidanceRef(toolName) {
-  const profile = findWrapperLookupProfile(toolName);
+  const commandId = toolName === "figma_workspace_get_design_context" ? "figma:design-context" : toolName === "figma_workspace_get_motion_context" ? "figma:motion-context" : void 0;
+  const profile = commandId ? findWrapperLookupProfile(commandId) : void 0;
   if (!profile) {
     return void 0;
   }
   return {
     source: "guidance",
-    query: [profile.tool, profile.upstreamTool, ...profile.workflowIds].join(" "),
+    query: [profile.commandId, profile.upstreamTool, ...profile.workflowIds].join(" "),
     workflowIds: profile.workflowIds
   };
 }
 function createPublicApiCardPayload(card) {
-  const { avoid, ...publicCard } = card;
   return {
-    ...publicCard,
-    guardrails: avoid
+    id: card.id,
+    title: card.title,
+    surface: card.surface
   };
+}
+function uniqueApiReferences(references, maxItems) {
+  const seen = /* @__PURE__ */ new Set();
+  const results = [];
+  for (const reference of references) {
+    if (seen.has(reference.lookupQuery)) continue;
+    seen.add(reference.lookupQuery);
+    results.push(reference);
+    if (results.length >= maxItems) break;
+  }
+  return results;
+}
+function createGuidanceNextActions(options) {
+  const actions = createDocsLookupNextActions({
+    query: options.query,
+    route: options.route,
+    results: options.referenceContext
+  });
+  for (const reference of options.apiReferences.slice(0, 1)) {
+    actions.push({
+      commandId: "figma:api:search",
+      args: { symbol: reference.lookupQuery },
+      reason: `Read the exact declaration for ${reference.displayExpression}.`,
+      priority: actions.length + 1
+    });
+  }
+  if (actions.length === 0) {
+    actions.push({
+      commandId: "figma:docs:search",
+      args: {
+        query: options.route.canonicalQuery ?? options.query,
+        scope: "auto",
+        ...options.route.taskFamily ? { taskFamily: options.route.taskFamily } : {}
+      },
+      reason: "Run a focused canonical docs search.",
+      priority: 1
+    });
+  }
+  return actions.slice(0, 6).map((action, index) => ({ ...action, priority: index + 1 }));
+}
+function truncateUtf82(value, maxBytes) {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+  const suffix = "...";
+  let result = "";
+  for (const character of value) {
+    if (Buffer.byteLength(result + character + suffix, "utf8") > maxBytes) break;
+    result += character;
+  }
+  return `${result}${suffix}`;
 }
 function slugifyTaskName2(value) {
   const source = typeof value === "string" ? value : "figma-task";
@@ -49659,13 +50555,14 @@ function normalizeBoundedInteger(value, fallback, max) {
 function literal4(value) {
   return JSON.stringify(value);
 }
-var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, resolveFigmaWorkspaceScriptHelperSelection2, FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_INSPECT_VALIDATE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, CLI_GUIDANCE_OPERATION_REPLACEMENTS, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
+var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, resolveFigmaWorkspaceScriptHelperSelection2, FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_INSPECT_VALIDATE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
 var init_workspace_mcp_server = __esm({
   "src/mcp/workspace-mcp-server.ts"() {
     "use strict";
     init_remote_mcp_client();
     init_doc_search();
     init_guidance_catalog();
+    init_task_routing();
     init_script_runner();
     init_tool_args();
     init_project_docs();
@@ -49740,10 +50637,6 @@ var init_workspace_mcp_server = __esm({
     FIGMA_INSPECT_VALIDATE_BATCH_SIZE = 80;
     FIGMA_ASSET_APPLICATION_BATCH_SIZE = 80;
     FIGMA_ASSET_VALIDATION_BATCH_SIZE = 80;
-    CLI_GUIDANCE_OPERATION_REPLACEMENTS = LOCAL_WORKSPACE_TOOL_NAMES.map((operation) => [
-      operation,
-      operation.slice("figma_workspace_".length).replaceAll("_", "-")
-    ]);
     UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER = [
       "capture",
       "design-context",
@@ -49841,6 +50734,22 @@ var DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4e3;
 var MAX_INLINE_RESULT_LIMIT_BYTES = 1e4;
 var NODE_SCOPED_TARGET_SHAPES = FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION;
 var COVERED_UPSTREAM_TOOLS = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
+var FIGMA_WORKSPACE_DOCS_SCOPES = ["auto", "active", "conditional", "router", "examples", "all"];
+var FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS2 = ["active", "conditional", "router", "examples"];
+var FIGMA_WORKSPACE_TASK_FAMILIES2 = [
+  "code-connect",
+  "create-file",
+  "design-to-code",
+  "design-generation",
+  "diagram",
+  "library-generation",
+  "motion-implementation",
+  "swiftui",
+  "figjam",
+  "motion",
+  "slides",
+  "design-editing"
+];
 function createReplToolDescriptions(options) {
   const tools = [
     {
@@ -49967,14 +50876,14 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_workspace_guidance",
-      description: "Planning and routing helper for compact workflow guidance, curated API cards, or catalog metadata. Recommended call: { query, surface }. Use BM25-style keyword queries before writing .figma.ts; pair with lookup only when exact docs/API snippets are needed.",
+      description: "Planning and routing helper for compact workflow guidance, curated Plugin API cards, or catalog metadata. Recommended call: { query, surface }. surface is a hard Design/FigJam/Slides route filter, never a cross-surface fallback. In plan mode workflow must name a supported workflow and filters the returned workflow graph and wrapper profiles. Use English task keywords before writing .figma.ts; use figma:docs:search or figma:api:search only when exact reference context is still needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
         mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query fields."),
         card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
-        query: stringProperty(`BM25-style keyword search query, for example text font loadFontAsync or components variants properties. Hard limit ${options.maxLookupQueryLength} characters.`),
-        surface: enumProperty(["design", "figjam", "slides"], "Expected Figma surface."),
-        workflow: stringProperty("Preferred workflow for plan mode. Defaults to script-file."),
+        query: stringProperty(`English task keywords used for deterministic route resolution, for example text font loadFontAsync or components variants properties. Hard limit ${options.maxLookupQueryLength} characters.`),
+        surface: enumProperty(["design", "figjam", "slides"], "Optional hard route filter. Results may use this surface or an explicitly surface-agnostic record only."),
+        workflow: stringProperty("Optional exact supported workflow id for plan mode. An unknown id is a usage error; when supplied it filters workflowGraph and wrapperProfiles."),
         maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4.")
       })
     },
@@ -50110,29 +51019,36 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_workspace_lookup",
-      description: "Targeted lookup helper for compact canonical docs snippets or exact bundled Figma Plugin API symbols. For kind=docs use query; for kind=api use symbol. Use after guidance when exact API/docs context is still needed.",
+      description: "Targeted lookup helper for compact canonical documentation snippets or exact bundled Figma Plugin API declarations. For kind=docs use English query with automatic task routing by default; for kind=api use symbol, including supported qualified expressions. Use after figma:guidance when exact docs/API context is still needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
         kind: enumProperty(["docs", "api"], "Lookup corpus. Use docs for workflow snippets or api for exact Plugin API symbols."),
         scope: {
           ...enumProperty(
-            ["active", "conditional", "examples", "all"],
-            "Docs-only lookup scope. Defaults to active."
+            FIGMA_WORKSPACE_DOCS_SCOPES,
+            "Docs-only lookup scope. Defaults to auto, which resolves the task family and surface without including examples. An explicit scope is strict."
           ),
-          default: "active"
+          default: "auto"
         },
-        query: stringProperty(`Recommended for kind=docs keyword lookup, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
-        symbol: stringProperty(`Recommended for kind=api exact Plugin API lookup, for example createFrame, loadFontAsync, VariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
+        surface: enumProperty(["design", "figjam", "slides"], "Docs-only hard surface filter. It is invalid with kind=api and never falls back across surfaces."),
+        taskFamily: enumProperty(FIGMA_WORKSPACE_TASK_FAMILIES2, "Docs-only hard canonical task-family filter. It is invalid with kind=api and takes precedence over inferred routing."),
+        query: stringProperty(`Required for kind=docs. Use English task keywords, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
+        symbol: stringProperty(`Required for kind=api. Accepts bare or supported qualified Plugin API symbols, for example createFrame, figma.createFrame(), SceneNode.screenshot, or figma.variables.createVariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
         maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
         maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`)
       }, ["kind"])
     },
     {
       name: "figma_workspace_docs",
-      description: "Read bundled Figma Workspace project documentation. Omit topic to list available topics; pass one topic to return the complete document content.",
+      description: "Raw documentation contract behind figma:docs:list, figma:docs:catalog, and figma:docs:read. mode=list returns project-document summaries with project:<topic> ids. mode=catalog returns task-family summaries when unfiltered, or canonical record metadata when taskFamily is supplied; catalog accepts optional surface, classification, and limit filters. mode=read requires an exact namespaced id: project:<topic> or canonical:<record-id>.",
       inputSchema: objectSchema({
-        topic: stringProperty("Optional project documentation topic. Omit to list topic metadata.")
-      })
+        mode: enumProperty(["list", "catalog", "read"], "Required documentation operation mode."),
+        id: stringProperty("Required only for mode=read. Exact stable namespaced id returned by list/catalog: project:<topic> or canonical:<record-id>. Paths, chunk source ids, and legacy source ids are rejected."),
+        taskFamily: enumProperty(FIGMA_WORKSPACE_TASK_FAMILIES2, "Optional mode=catalog canonical task-family filter. Omit it to return task-family summaries."),
+        surface: enumProperty(["design", "figjam", "slides"], "Optional mode=catalog hard surface filter."),
+        classification: enumProperty(FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS2, "Optional mode=catalog canonical classification filter."),
+        limit: numberProperty("Optional mode=catalog result limit from 1 through 100.", { type: "integer", minimum: 1, maximum: 100 })
+      }, ["mode"])
     },
     {
       name: "figma_workspace_doctor",
@@ -50231,21 +51147,17 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     next: stringArrayProperty("Suggested next actions.")
   }),
   figma_workspace_guidance: toolOutputSchema({
-    workflow: objectProperty("Preferred file workflow payload for plan mode."),
-    steps: stringArrayProperty("Plan-mode workflow steps."),
-    recommendedTools: stringArrayProperty("Plan-mode recommended tools."),
-    suggestedCards: stringArrayProperty("Plan-mode suggested compact card ids."),
-    helperProfiles: arrayProperty("Relevant $ helper profiles with useWhen, avoidWhen, static reference rules, lookup hints, and examples."),
-    wrapperProfiles: arrayProperty("Relevant first-class wrapper lookup profiles with suggested lookups, tools, and next steps."),
-    workflowGraph: arrayProperty("Relevant wrapper workflow graph nodes."),
-    cards: arrayProperty("Compact curated API cards."),
-    catalogSize: numberProperty("Total curated API card count when returned."),
-    guidance: stringProperty("Compact follow-up guidance text when returned."),
-    recommendedCards: stringArrayProperty("Recommended curated card ids."),
-    queryHints: stringArrayProperty("Suggested docs/API search hints."),
-    apiSymbols: stringArrayProperty("Suggested exact API symbols."),
-    guardrails: stringArrayProperty("Task-specific guardrails."),
-    suggestions: guidanceSuggestionsProperty("Ranked task/card suggestions with compact context.")
+    route: objectProperty("Resolved task route: status (matched, ambiguous, fallback, or none), confidence, requested/effective surface, candidate task families, effective scopes, normalized English query, and reason."),
+    cards: arrayProperty("At most the requested compact curated API cards, filtered to the resolved surface and route."),
+    catalogSize: numberProperty("Total curated API card count when mode=catalog returns cards."),
+    queryHints: stringArrayProperty("At most eight compact English docs/API lookup hints."),
+    apiReferences: arrayProperty("At most eight Plugin API references. Each reference has displayExpression, lookupQuery, ownerHint when known, and symbolKind. lookupQuery is directly consumable by figma:api:search."),
+    guardrails: stringArrayProperty("At most six task-specific guardrails."),
+    helperProfiles: arrayProperty("At most three compact $ helper profiles relevant to the resolved route."),
+    wrapperProfiles: arrayProperty("At most three compact first-class wrapper profiles filtered by the requested workflow."),
+    workflowGraph: arrayProperty("Compact workflow graph summaries filtered by the requested workflow and resolved route."),
+    referenceContext: arrayProperty("At most two compact routed reference snippets. Entries expose a stable namespaced document id, title, classification, taskFamily, surfaces, line range, match type, confidence, and capped snippet; never full corpus text."),
+    nextActions: arrayProperty("At most six typed next actions. Each action has a public npm commandId such as figma:docs:search or figma:api:search, validated args, reason, and priority. Internal transport tool names and raw MCP names are never emitted.")
   }),
   figma_workspace_inspect: toolOutputSchema({
     session: objectProperty("Read-only local workspace session summary: id, fileKey, surface, and optional sessionDir; handleChanges is omitted."),
@@ -50361,18 +51273,26 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
   }),
   figma_workspace_lookup: toolOutputSchema({
-    results: arrayProperty("Ranked compact corpus snippets."),
+    scope: enumProperty(FIGMA_WORKSPACE_DOCS_SCOPES, "Effective docs scope when kind=docs."),
+    route: objectProperty("Automatic docs route result when kind=docs: status, confidence, requested/effective surface, candidate task families, effective scopes, normalized English query, and reason."),
+    results: arrayProperty("Ranked compact results only. Documentation entries expose a stable public id (canonical:<record-id> or project:<topic>), title, classification, taskFamily, surfaces, line range, match type, confidence, and capped snippet. Plugin API entries expose their public symbol id, title, declaration kind, owner metadata, match type, confidence, and capped snippet. No result includes corpus text, hashes, absolute paths, or internal JSONL metadata."),
     diagnostics: arrayProperty("Lookup corpus diagnostics when local reference assets are unavailable."),
-    guidance: stringProperty("Compact follow-up guidance."),
+    nextActions: arrayProperty("Typed public follow-up actions with commandId, args, reason, and priority. commandId is an installed figma:* npm script id."),
     runtime: objectProperty("Runtime lookup corpus metadata when lookup assets are unavailable.")
   }),
   figma_workspace_docs: toolOutputSchema({
-    topics: arrayProperty("Available project documentation topic metadata when topic is omitted."),
-    topic: stringProperty("Selected project documentation topic."),
-    title: stringProperty("Selected document title."),
-    description: stringProperty("Selected document summary."),
-    sourceId: stringProperty("Stable project-document source id."),
-    content: stringProperty("Complete selected Markdown document content.")
+    mode: enumProperty(["list", "catalog", "read"], "Completed documentation operation mode."),
+    topics: arrayProperty("Project-document summaries returned by mode=list. Each entry has a stable project:<topic> id, title, and description."),
+    taskFamilies: arrayProperty("Task-family summaries returned by unfiltered mode=catalog."),
+    records: arrayProperty("Canonical document metadata returned by filtered mode=catalog. Every record exposes canonical:<record-id>, title, summary, classification, taskFamily, and surfaces."),
+    id: stringProperty("Selected stable namespaced id returned by mode=read: project:<topic> or canonical:<record-id>."),
+    title: stringProperty("Selected canonical or project document title returned by mode=read."),
+    summary: stringProperty("Selected canonical or project document summary returned by mode=read."),
+    classification: enumProperty(FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS2, "Selected canonical document classification returned by mode=read."),
+    taskFamily: enumProperty(FIGMA_WORKSPACE_TASK_FAMILIES2, "Selected canonical task family returned by mode=read."),
+    surfaces: stringArrayProperty("Selected canonical document supported surfaces returned by mode=read."),
+    nonExecutable: booleanProperty("Whether the selected canonical document is a non-executable example template."),
+    content: stringProperty("Complete selected Markdown document content returned by mode=read. Oversized typed CLI output uses its normal result sidecar without truncating the document.")
   }),
   figma_workspace_doctor: toolOutputSchema({
     runtime: objectProperty("Dynamic canonical docs corpus, Plugin API index, and TypeScript runtime status."),
@@ -50647,33 +51567,6 @@ function compactTaskPlanFailuresProperty(description) {
       },
       additionalProperties: true
     }
-  };
-}
-function guidanceSuggestionsProperty(description) {
-  return {
-    type: "object",
-    description,
-    properties: {
-      recommendedCards: stringArrayProperty("Recommended curated API card ids."),
-      queryHints: stringArrayProperty("Suggested docs/API search hints."),
-      apiSymbols: stringArrayProperty("Suggested exact API symbols."),
-      guardrails: stringArrayProperty("Task-specific guardrails."),
-      referenceContext: {
-        type: "array",
-        description: "Compact ranked reference snippets used for suggestions.",
-        items: {
-          type: "object",
-          properties: {
-            sourceId: stringProperty("Opaque reference source id."),
-            title: stringProperty("Reference result title."),
-            snippet: stringProperty("Compact reference snippet."),
-            matchType: stringProperty("Reference match type.")
-          },
-          additionalProperties: true
-        }
-      }
-    },
-    additionalProperties: true
   };
 }
 function wrapperGuidanceRefProperty(description) {
