@@ -372,8 +372,8 @@ export type FigmaDirectCommandName = keyof typeof FIGMA_DIRECT_COMMANDS;
 
 export const FIGMA_JSON_COMMANDS = {
   open: { command: "open", purpose: "Create or reopen persisted Figma workspace context.", inputRequired: false },
-  eval: { command: "eval", purpose: "Run a small native Plugin API transaction.", inputRequired: true },
-  "script:run": { command: "run-script-file", purpose: "Preflight and execute a local .figma.ts file.", inputRequired: true },
+  eval: { command: "eval", purpose: "Run a small native Plugin API transaction with optional queued local captures.", inputRequired: true },
+  "script:run": { command: "run-script-file", purpose: "Preflight and execute a local .figma.ts file with optional queued local captures.", inputRequired: true },
   "assets:apply": { command: "apply-asset-manifest", purpose: "Apply a prepared local asset manifest.", inputRequired: true },
   "assets:download": { command: "download-assets", purpose: "Download official Figma assets to local files.", inputRequired: true },
   capture: { command: "capture-node", purpose: "Capture a Figma node to a local PNG file.", inputRequired: true },

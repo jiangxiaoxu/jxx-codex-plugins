@@ -233,7 +233,7 @@ export const FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES = [
   "placeNode",
   "replaceGeneratedFrame",
   "inspect",
-  "screenshot",
+  "capture",
   "imageAsset",
   "checkpoint",
 ] as const;
@@ -244,6 +244,10 @@ type FigmaWorkspaceEvalHelperPath = "$" | `$.${FigmaWorkspaceEvalCommonHelperNam
 const DEFAULT_HISTORY_LIMIT = 50;
 const DEFAULT_INLINE_RESULT_LIMIT = 4_000;
 const MAX_INLINE_RESULT_LIMIT = 10_000;
+const MAX_QUEUED_CAPTURE_REQUESTS = 8;
+const QUEUED_CAPTURE_ERROR_MESSAGE_BYTES = 600;
+const QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES = 300;
+const QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE = "Script execution succeeded and may have mutated Figma. Do not rerun it just because capture post-processing failed; retry the affected node with figma:capture.";
 const APPLY_ASSET_MANIFEST_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_apply_asset_manifest");
 const DOWNLOAD_ASSETS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_download_assets");
 const CAPTURE_NODE_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_capture_node");
@@ -467,6 +471,10 @@ export interface FigmaWorkspaceUpstreamBackedResult extends FigmaWorkspaceToolRe
 
 export interface FigmaWorkspaceEvalResult extends FigmaWorkspaceUpstreamBackedResult {
   session: FigmaWorkspaceCompactSession;
+  scriptExecutionSucceeded?: boolean;
+  captureProcessingSucceeded?: boolean;
+  retryGuidance?: string;
+  captures?: FigmaWorkspaceQueuedCaptureResult[];
   diagnostics?: FigmaWorkspaceDiagnostic[];
   repairPlan?: FigmaWorkspaceRepairPlan;
   outputFiles?: FigmaWorkspaceOutputFiles;
@@ -495,6 +503,10 @@ export interface FigmaWorkspaceRunScriptFileResult extends FigmaWorkspaceToolRes
   phase: "preflight" | "execute";
   executed: boolean;
   session: FigmaWorkspaceCompactSession;
+  scriptExecutionSucceeded?: boolean;
+  captureProcessingSucceeded?: boolean;
+  retryGuidance?: string;
+  captures?: FigmaWorkspaceQueuedCaptureResult[];
   diagnostics?: FigmaWorkspaceDiagnostic[];
   script?: FigmaWorkspaceCompactScriptMetadata;
   outputFiles?: FigmaWorkspaceOutputFiles;
@@ -502,6 +514,19 @@ export interface FigmaWorkspaceRunScriptFileResult extends FigmaWorkspaceToolRes
   upstreamError?: FigmaWorkspacePublicUpstreamError;
   repairPlan?: FigmaWorkspaceRepairPlan;
   inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
+}
+
+export interface FigmaWorkspaceQueuedCaptureResult {
+  [key: string]: unknown;
+  requestId: string;
+  ok: boolean;
+  nodeId?: string;
+  imageFile?: string;
+  bytes?: number;
+  width?: number;
+  height?: number;
+  diagnostics?: FigmaWorkspaceDiagnostic[];
+  upstreamError?: FigmaWorkspacePublicUpstreamError;
 }
 
 export interface FigmaWorkspaceAssetManifestItem {
@@ -1364,6 +1389,7 @@ async function handleEval(
   }
 
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
+  const captureRequestsAllowed = resolveFigmaWorkspaceScriptHelperSelection(preparedCode.code).helperNames.has("capture");
   const script = buildFigmaEvalScript({
     session,
     code: preparedCode.code,
@@ -1372,6 +1398,14 @@ async function handleEval(
   const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
   const parsed = parseUpstreamToolResult(upstream);
   handleChanges = mergeHandleChanges(handleChanges, updateSessionFromParsedResult(session, parsed.json));
+  const captureBatch = parsed.upstreamError
+    ? { ok: true, requested: false } satisfies FigmaWorkspaceQueuedCaptureBatchResult
+    : await executeQueuedCaptureRequests({
+      parsedJson: parsed.json,
+      session,
+      runtime,
+      captureRequestsAllowed,
+    });
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -1381,8 +1415,12 @@ async function handleEval(
     nodeIds: collectNodeIds(parsed.json),
   });
   const resultPayload = removeUndefined({
-    ok: !parsed.upstreamError,
+    ok: !parsed.upstreamError && captureBatch.ok,
     session: responseSession(session, handleChanges),
+    scriptExecutionSucceeded: !parsed.upstreamError,
+    captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : undefined,
+    retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : undefined,
+    captures: captureBatch.captures,
     diagnostics: diagnosticsForResponse(diagnostics),
     repairPlan: repairPlanForResponse(diagnostics),
     ...upstreamResultFields({
@@ -1397,6 +1435,7 @@ async function handleEval(
     parsed,
     resultPayload,
     inlineResultLimit: args.inlineResultLimit,
+    forceOutputFile: !captureBatch.ok,
     writeOutputFiles: (upstreamEnvelopePayload) => writeEvalResultFiles({
       session,
       resultPayload,
@@ -1429,6 +1468,10 @@ async function writeEvalResultFiles(options: {
         fields: {
           diagnosticsCount: countArrayField(options.resultPayload.diagnostics),
           repairPlan: options.resultPayload.repairPlan,
+          scriptExecutionSucceeded: options.resultPayload.scriptExecutionSucceeded,
+          captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
+          retryGuidance: options.resultPayload.retryGuidance,
+          captures: options.resultPayload.captures,
         },
       }),
     )),
@@ -1600,6 +1643,10 @@ function createRunScriptResultFilePayload(options: {
       diagnostics: options.diagnostics.length > 0 ? options.diagnostics : undefined,
       repairPlan: options.resultPayload.repairPlan,
       script,
+      scriptExecutionSucceeded: options.resultPayload.scriptExecutionSucceeded,
+      captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
+      retryGuidance: options.resultPayload.retryGuidance,
+      captures: options.resultPayload.captures,
       resultSummary: options.parsed ? summarizeParsedResult(options.parsed) : undefined,
       nodeIds: options.parsed ? collectNodeIds(options.parsed.json) : undefined,
     },
@@ -1809,6 +1856,12 @@ async function executeRunScriptFile(
     return payload;
   }
   const handleChanges = updateSessionFromParsedResult(session, parsed.json);
+  const captureBatch = await executeQueuedCaptureRequests({
+    parsedJson: parsed.json,
+    session,
+    runtime,
+    captureRequestsAllowed: compiled.metadata.injectedHelpers.includes("$.capture"),
+  });
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: new Date().toISOString(),
@@ -1819,10 +1872,14 @@ async function executeRunScriptFile(
   });
 
   const resultPayload = removeUndefined({
-    ok: true,
+    ok: captureBatch.ok,
     phase: "execute",
     executed: true,
     session: responseSession(session, handleChanges),
+    scriptExecutionSucceeded: true,
+    captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : undefined,
+    retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : undefined,
+    captures: captureBatch.captures,
     diagnostics: optionalDiagnosticsForResponse(diagnostics),
     repairPlan: repairPlanForResponse(diagnostics),
     script: successScript,
@@ -1834,7 +1891,7 @@ async function executeRunScriptFile(
     inlineResultLimit,
     ["upstream.result", "upstream.text"],
   );
-  const needsOutputFile = diagnostics.length > 0 || isRecord(limitedPayload.inlineResultLimit);
+  const needsOutputFile = diagnostics.length > 0 || !captureBatch.ok || isRecord(limitedPayload.inlineResultLimit);
   const outputFiles = needsOutputFile
     ? await addUpstreamSidecar(await outputWriter.write({
       result: createRunScriptResultFilePayload({
@@ -2697,6 +2754,240 @@ function resolveCaptureOutputFile(args: FigmaWorkspaceCaptureNodeArguments, sess
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve(root, "capture-results", session.slug, fileName);
+}
+
+interface FigmaWorkspaceQueuedCaptureRequest {
+  requestId: string;
+  nodeId: string;
+  imageFile?: string;
+  maxDimension?: number;
+  contentsOnly?: boolean;
+}
+
+interface FigmaWorkspaceQueuedCaptureBatchResult {
+  ok: boolean;
+  requested: boolean;
+  captures?: FigmaWorkspaceQueuedCaptureResult[];
+}
+
+async function executeQueuedCaptureRequests(options: {
+  parsedJson: unknown;
+  session: FigmaWorkspaceSession;
+  runtime: FigmaWorkspaceRuntime;
+  captureRequestsAllowed: boolean;
+}): Promise<FigmaWorkspaceQueuedCaptureBatchResult> {
+  let requests: FigmaWorkspaceQueuedCaptureRequest[];
+  try {
+    requests = extractQueuedCaptureRequests(
+      options.parsedJson,
+      options.session,
+      options.captureRequestsAllowed,
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      requested: true,
+      captures: [{
+        requestId: "capture-envelope",
+        ok: false,
+        upstreamError: responseUpstreamError({
+          message: error instanceof Error ? error.message : String(error),
+          code: "FIGMA_WORKSPACE_CAPTURE_REQUEST_INVALID",
+        }) as FigmaWorkspacePublicUpstreamError,
+      }],
+    };
+  }
+  if (requests.length === 0) {
+    return { ok: true, requested: false };
+  }
+
+  const captures: FigmaWorkspaceQueuedCaptureResult[] = [];
+  for (const [index, request] of requests.entries()) {
+    try {
+      const imageFile = resolveQueuedCaptureOutputFile(
+        options.session,
+        request.requestId,
+        index,
+        request.imageFile,
+      );
+      const result = await executeCaptureNodeForTool({
+        sessionId: options.session.id,
+        target: request.nodeId,
+        imageFile,
+        maxDimension: request.maxDimension,
+        contentsOnly: request.contentsOnly,
+      }, options.runtime);
+      captures.push(compactQueuedCaptureResult(request.requestId, result));
+    } catch (error) {
+      captures.push({
+        requestId: request.requestId,
+        ok: false,
+        nodeId: request.nodeId,
+        upstreamError: compactQueuedCaptureError(normalizeCaughtUpstreamError(error)),
+      });
+    }
+  }
+  return {
+    ok: captures.every((capture) => capture.ok),
+    requested: true,
+    captures,
+  };
+}
+
+function extractQueuedCaptureRequests(
+  value: unknown,
+  session: Pick<FigmaWorkspaceSession, "id">,
+  captureRequestsAllowed: boolean,
+): FigmaWorkspaceQueuedCaptureRequest[] {
+  if (!isRecord(value) || value.ok !== true || !Object.prototype.hasOwnProperty.call(value, "__figmaRepl")) {
+    return [];
+  }
+  const repl = value.__figmaRepl;
+  if (!isRecord(repl) || repl.sessionId !== session.id) {
+    throw new Error("Queued capture envelope did not match the active Figma Workspace session.");
+  }
+  if (!Object.prototype.hasOwnProperty.call(repl, "captureRequests")) {
+    return [];
+  }
+  if (!Array.isArray(repl.captureRequests)) {
+    throw new Error("Queued capture envelope captureRequests must be an array.");
+  }
+  if (!captureRequestsAllowed && repl.captureRequests.length > 0) {
+    throw new Error("Queued capture envelope was not authorized by a statically selected $.capture helper.");
+  }
+  if (repl.captureRequests.length > MAX_QUEUED_CAPTURE_REQUESTS) {
+    throw new Error(`Queued capture envelope exceeds the ${MAX_QUEUED_CAPTURE_REQUESTS}-request host limit.`);
+  }
+
+  const requests: FigmaWorkspaceQueuedCaptureRequest[] = [];
+  for (const [index, value] of repl.captureRequests.entries()) {
+    if (!isRecord(value)) {
+      throw new Error(`Queued capture request ${index + 1} must be an object.`);
+    }
+    const allowedKeys = new Set(["requestId", "nodeId", "imageFile", "maxDimension", "contentsOnly"]);
+    if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
+      throw new Error(`Queued capture request ${index + 1} contains unsupported fields.`);
+    }
+    const requestId = `capture-${index + 1}`;
+    if (value.requestId !== requestId) {
+      throw new Error(`Queued capture request ${index + 1} has an invalid requestId.`);
+    }
+    const nodeId = asOptionalString(value.nodeId);
+    if (!nodeId || nodeId.length > 512 || /[\u0000-\u001f\u007f]/u.test(nodeId)) {
+      throw new Error(`Queued capture request ${requestId} has an invalid nodeId.`);
+    }
+    const imageFile = value.imageFile;
+    if (
+      imageFile !== undefined
+      && (
+        typeof imageFile !== "string"
+        || imageFile.length === 0
+        || imageFile.length > 32_768
+        || imageFile.includes("\0")
+        || isAbsolute(imageFile)
+        || imageFile.includes("..")
+        || /^[A-Za-z]:/u.test(imageFile)
+        || imageFile.startsWith("\\\\")
+      )
+    ) {
+      throw new Error(`Queued capture request ${requestId} imageFile must be a safe workspace-relative path.`);
+    }
+    const maxDimension = value.maxDimension;
+    if (
+      maxDimension !== undefined
+      && (!Number.isInteger(maxDimension) || (maxDimension as number) < 1 || (maxDimension as number) > 65_536)
+    ) {
+      throw new Error(`Queued capture request ${requestId} has an invalid maxDimension.`);
+    }
+    const contentsOnly = value.contentsOnly;
+    if (contentsOnly !== undefined && typeof contentsOnly !== "boolean") {
+      throw new Error(`Queued capture request ${requestId} has an invalid contentsOnly value.`);
+    }
+    requests.push(removeUndefined({
+      requestId,
+      nodeId,
+      imageFile,
+      maxDimension,
+      contentsOnly,
+    }) as unknown as FigmaWorkspaceQueuedCaptureRequest);
+  }
+  return requests;
+}
+
+function resolveQueuedCaptureOutputFile(
+  session: FigmaWorkspaceSession,
+  requestId: string,
+  index: number,
+  requestedImageFile?: string,
+): string {
+  const timestamp = new Date().toISOString().replace(/[^\dTZ]/gu, "");
+  const uniqueSuffix = randomUUID().slice(0, 8);
+  const fileName = `capture-${timestamp}-${index + 1}-${requestId}-${uniqueSuffix}`;
+  const selectedFileName = requestedImageFile ?? fileName;
+  if (session.workspace) {
+    return resolveWorkspaceFile(session.workspace.sessionDir, selectedFileName, "imageFile");
+  }
+  const root = defaultTaskWorkspaceRoot();
+  if (!isAbsolute(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolveWorkspaceFile(resolve(root, "capture-results", session.slug), selectedFileName, "imageFile");
+}
+
+function compactQueuedCaptureResult(
+  requestId: string,
+  result: Record<string, unknown>,
+): FigmaWorkspaceQueuedCaptureResult {
+  const upstreamError = isRecord(result.upstreamError) && typeof result.upstreamError.message === "string"
+    ? compactQueuedCaptureError(result.upstreamError)
+    : undefined;
+  const diagnostics = compactQueuedCaptureDiagnostics(result.diagnostics);
+  return removeUndefined({
+    requestId,
+    ok: result.ok === true,
+    nodeId: asOptionalString(result.nodeId),
+    imageFile: asOptionalString(result.imageFile),
+    bytes: typeof result.bytes === "number" ? result.bytes : undefined,
+    width: typeof result.width === "number" ? result.width : undefined,
+    height: typeof result.height === "number" ? result.height : undefined,
+    diagnostics,
+    upstreamError,
+  }) as unknown as FigmaWorkspaceQueuedCaptureResult;
+}
+
+function compactQueuedCaptureError(error: unknown): FigmaWorkspacePublicUpstreamError {
+  const record = asRecord(error);
+  return removeUndefined({
+    message: truncateUtf8(asOptionalString(record.message) ?? "Queued capture failed.", QUEUED_CAPTURE_ERROR_MESSAGE_BYTES),
+    code: asOptionalString(record.code)
+      ? truncateUtf8(asOptionalString(record.code) as string, 120)
+      : undefined,
+  }) as FigmaWorkspacePublicUpstreamError;
+}
+
+function compactQueuedCaptureDiagnostics(value: unknown): FigmaWorkspaceDiagnostic[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const diagnostics = value
+    .filter(isRecord)
+    .slice(0, 2)
+    .flatMap((diagnostic) => {
+      const code = asOptionalString(diagnostic.code);
+      const severity = diagnostic.severity === "fatal" || diagnostic.severity === "warning"
+        ? diagnostic.severity
+        : undefined;
+      const message = asOptionalString(diagnostic.message);
+      const suggestion = asOptionalString(diagnostic.suggestion);
+      const docsHint = asOptionalString(diagnostic.docsHint);
+      if (!code || !severity || !message || !suggestion || !docsHint) return [];
+      return [{
+        code: truncateUtf8(code, 120),
+        severity,
+        message: truncateUtf8(message, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES),
+        suggestion: truncateUtf8(suggestion, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES),
+        docsHint: truncateUtf8(docsHint, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES),
+      } satisfies FigmaWorkspaceDiagnostic];
+    });
+  return diagnostics.length > 0 ? diagnostics : undefined;
 }
 
 async function handleRunTaskPlan(
@@ -4760,7 +5051,8 @@ return {
     surface: __figmaRepl.surface,
     currentPageId: figma.currentPage && figma.currentPage.id,
     knownPages: Object.fromEntries(figma.root.children.map((page) => [page.id, page.name])),
-    mode: __figmaRepl.mode
+    mode: __figmaRepl.mode,
+    captureRequests: __figmaRepl.captureRequests
   },
   result: __figmaReplResult
 };`;
@@ -4781,7 +5073,8 @@ function createFigmaWorkspacePrelude(
   surface: ${literal(session.surface)},
   currentPageId: ${literal(session.currentPageId)},
   knownPages: ${literal(session.knownPages ?? {})},
-  handles: ${literal(session.handles ?? {})}
+  handles: ${literal(session.handles ?? {})},
+  captureRequests: []
 };
 
 function normalizeHandleName(name) {
@@ -5492,12 +5785,48 @@ $.imageAsset = async function imageAsset(options = {}) {
 $.inspect = async function inspect(target, depth = 1) {
   return summarizeNode(await $(target), depth);
 };
-$.screenshot = async function screenshot(target, options = {}) {
+$.capture = async function capture(target, options = {}) {
   const node = await $(target);
-  if (!node || typeof node.screenshot !== "function") {
-    throw new Error("$.screenshot target does not support node.screenshot().");
+  if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+    throw new Error("$.capture target must resolve to a scene node.");
   }
-  return await node.screenshot(options);
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("$.capture options must be an object.");
+  }
+  if (__figmaRepl.captureRequests.length >= ${MAX_QUEUED_CAPTURE_REQUESTS}) {
+    throw new Error("$.capture supports at most ${MAX_QUEUED_CAPTURE_REQUESTS} requests per execution.");
+  }
+  const request = {
+    requestId: "capture-" + String(__figmaRepl.captureRequests.length + 1),
+    nodeId: node.id,
+  };
+  if (options.imageFile !== undefined) {
+    if (
+      typeof options.imageFile !== "string"
+      || !options.imageFile
+      || options.imageFile.includes("..")
+      || /^[A-Za-z]:/.test(options.imageFile)
+      || options.imageFile.charCodeAt(0) === 47
+      || options.imageFile.charCodeAt(0) === 92
+    ) {
+      throw new Error("$.capture imageFile must be a safe workspace-relative path.");
+    }
+    request.imageFile = options.imageFile;
+  }
+  if (options.maxDimension !== undefined) {
+    if (!Number.isInteger(options.maxDimension) || options.maxDimension < 1 || options.maxDimension > 65536) {
+      throw new Error("$.capture maxDimension must be an integer from 1 to 65536.");
+    }
+    request.maxDimension = options.maxDimension;
+  }
+  if (options.contentsOnly !== undefined) {
+    if (typeof options.contentsOnly !== "boolean") {
+      throw new Error("$.capture contentsOnly must be a boolean.");
+    }
+    request.contentsOnly = options.contentsOnly;
+  }
+  __figmaRepl.captureRequests.push(request);
+  return { requestId: request.requestId, nodeId: request.nodeId };
 };
 ` : ""}
 $.checkpoint = async function checkpoint(name, targets = [], options = {}) {
@@ -5586,8 +5915,8 @@ function stripFigmaWorkspacePreludeForEvalHelpers(source: string, injectedHelper
   if (!has("replaceGeneratedFrame")) removeLine("$.replaceGeneratedFrame = replaceGeneratedFrameForRepl;");
   if (!has("text")) prelude = replaceDelimitedSource(prelude, "$.text = async function text", "function __figmaReplDecodeBase64", "");
   if (!has("imageAsset")) prelude = replaceDelimitedSource(prelude, "function __figmaReplDecodeBase64", "$.inspect = async function inspect", "");
-  if (!has("inspect")) prelude = replaceDelimitedSource(prelude, "$.inspect = async function inspect", "$.screenshot = async function screenshot", "");
-  if (!has("screenshot")) prelude = replaceDelimitedSource(prelude, "$.screenshot = async function screenshot", "$.checkpoint = async function checkpoint", "");
+  if (!has("inspect")) prelude = replaceDelimitedSource(prelude, "$.inspect = async function inspect", "$.capture = async function capture", "");
+  if (!has("capture")) prelude = replaceDelimitedSource(prelude, "$.capture = async function capture", "$.checkpoint = async function checkpoint", "");
   if (!has("checkpoint")) {
     prelude = prelude.replace("const __figmaReplEvalCheckpoints = [];\n", "");
     prelude = replaceDelimitedSource(prelude, "$.checkpoint = async function checkpoint", "$.checkpoints = __figmaReplEvalCheckpoints;", "", { includeEndMarker: true });
@@ -7286,7 +7615,7 @@ const FIGMA_WORKSPACE_EVAL_HELPER_DESCRIPTIONS: Record<FigmaWorkspaceEvalHelperP
   "$.placeNode": "Move a node to an explicit or non-overlapping generated slot and return placement metadata.",
   "$.replaceGeneratedFrame": "Safely replace generated top-level FRAME nodes whose names match a guarded prefix.",
   "$.inspect": "Resolve a handle or node id and return a compact node summary.",
-  "$.screenshot": "Attempt a target node screenshot when upstream supports node.screenshot(); fall back to official screenshot tools for final QA if no image payload is returned.",
+  "$.capture": "Queue a scene-node capture for host-side figma:capture processing; returns a lightweight request ticket and the command result includes the local image path.",
   "$.imageAsset": "Create or update an image-fill rectangle from small generated PNG/JPEG base64 or byte arrays; use upload_assets/upstream asset fill workflow for large files.",
   "$.checkpoint": "Return handle and node summaries at repair-friendly points.",
 };
@@ -8154,6 +8483,7 @@ async function shapeUpstreamBackedResponse(options: {
   parsed: ParsedUpstreamToolResult;
   resultPayload: Record<string, unknown>;
   inlineResultLimit: unknown;
+  forceOutputFile?: boolean;
   writeOutputFiles: (upstream: Record<string, unknown>) => Promise<FigmaWorkspaceOutputFiles>;
 }): Promise<Record<string, unknown>> {
   const inlineResultLimit = normalizeInlineResultLimit(options.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
@@ -8162,7 +8492,9 @@ async function shapeUpstreamBackedResponse(options: {
     inlineResultLimit,
     [...options.contract.outputPolicy.inlineLimitFields],
   );
-  const needsOutputFile = options.parsed.upstreamError || isRecord(limitedPayload.inlineResultLimit);
+  const needsOutputFile = options.forceOutputFile === true
+    || options.parsed.upstreamError
+    || isRecord(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
   }

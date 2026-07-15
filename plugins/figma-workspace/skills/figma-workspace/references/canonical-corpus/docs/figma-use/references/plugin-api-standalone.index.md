@@ -448,7 +448,6 @@ Video                   VersionHistoryResult    FindAllCriteria
 | `node.query(selector)`        | `QueryResult`     | CSS-like selector search within subtree |
 | `node.matches(selector)`      | `boolean`         | Test if node matches a selector |
 | `node.set(props)`             | `this`            | Set multiple properties at once, chainable |
-| `await node.screenshot(opts?)` | `Promise<void>`  | Capture PNG inline in tool response |
 | `node.placeholder`            | `boolean`         | Show/hide shimmer overlay |
 
 ### figma.io Namespace
@@ -462,4 +461,3 @@ Video                   VersionHistoryResult    FindAllCriteria
 | Type                | Description |
 | ------------------- | ----------- |
 | `QueryResult`       | Iterable result from `node.query()` with `.first()`, `.last()`, `.each()`, `.map()`, `.filter()`, `.values()`, `.set()`, `.query()` |
-| `ScreenshotOptions` | `{ scale?: number, contentsOnly?: boolean }` |

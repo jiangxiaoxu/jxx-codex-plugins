@@ -72,7 +72,7 @@ export type FigmaWorkspaceScriptHelperName =
   | "replaceGeneratedFrame"
   | "imageAsset"
   | "inspect"
-  | "screenshot"
+  | "capture"
   | "cloneNodeTree"
   | "checkpoint";
 
@@ -247,7 +247,7 @@ const FIGMA_WORKSPACE_SCRIPT_HELPERS: readonly FigmaWorkspaceScriptHelperName[] 
   "replaceGeneratedFrame",
   "imageAsset",
   "inspect",
-  "screenshot",
+  "capture",
   "cloneNodeTree",
   "checkpoint",
 ];
@@ -674,12 +674,48 @@ $.inspect = async function inspect(target, depth = 1) {
   const node = await $(target);
   return summarizeNode(node, depth);
 };
-$.screenshot = async function screenshot(target, options = {}) {
+$.capture = async function capture(target, options = {}) {
   const node = await $(target);
-  if (!node || typeof node.screenshot !== "function") {
-    throw new Error("$.screenshot target does not support node.screenshot().");
+  if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+    throw new Error("$.capture target must resolve to a scene node.");
   }
-  return await node.screenshot(options);
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("$.capture options must be an object.");
+  }
+  if (__figmaRepl.captureRequests.length >= 8) {
+    throw new Error("$.capture supports at most 8 requests per script execution.");
+  }
+  const request = {
+    requestId: "capture-" + String(__figmaRepl.captureRequests.length + 1),
+    nodeId: node.id,
+  };
+  if (options.imageFile !== undefined) {
+    if (
+      typeof options.imageFile !== "string"
+      || !options.imageFile
+      || options.imageFile.includes("..")
+      || /^[A-Za-z]:/.test(options.imageFile)
+      || options.imageFile.charCodeAt(0) === 47
+      || options.imageFile.charCodeAt(0) === 92
+    ) {
+      throw new Error("$.capture imageFile must be a safe workspace-relative path.");
+    }
+    request.imageFile = options.imageFile;
+  }
+  if (options.maxDimension !== undefined) {
+    if (!Number.isInteger(options.maxDimension) || options.maxDimension < 1 || options.maxDimension > 65536) {
+      throw new Error("$.capture maxDimension must be an integer from 1 to 65536.");
+    }
+    request.maxDimension = options.maxDimension;
+  }
+  if (options.contentsOnly !== undefined) {
+    if (typeof options.contentsOnly !== "boolean") {
+      throw new Error("$.capture contentsOnly must be a boolean.");
+    }
+    request.contentsOnly = options.contentsOnly;
+  }
+  __figmaRepl.captureRequests.push(request);
+  return { requestId: request.requestId, nodeId: request.nodeId };
 };
 $.cloneNodeTree = async function cloneNodeTree(targetOrOptions, maybeOptions = {}) {
   const looksLikeOptions = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions) && !("type" in targetOrOptions);
@@ -832,10 +868,10 @@ $.checkpoints = __figmaReplScriptCheckpoints;`;
     );
   }
   if (!options.helperNames.has("inspect")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.inspect = async function inspect", "$.screenshot = async function screenshot", "");
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.inspect = async function inspect", "$.capture = async function capture", "");
   }
-  if (!options.helperNames.has("screenshot")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.screenshot = async function screenshot", "$.cloneNodeTree = async function cloneNodeTree", "");
+  if (!options.helperNames.has("capture")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.capture = async function capture", "$.cloneNodeTree = async function cloneNodeTree", "");
   }
   if (!options.helperNames.has("cloneNodeTree")) {
     bootstrap = replaceHelperBootstrapBlock(

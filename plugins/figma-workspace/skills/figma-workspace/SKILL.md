@@ -53,7 +53,7 @@ Canonical corpus records and API search results are compact public metadata and 
 3. For login, credential refresh, or auth repair, follow Figma Login below.
 4. Call `figma:task:prepare` once with JSON containing a Figma URL or key, slug-style `taskName`, absolute `workspaceDir`, and surface when needed.
 5. Edit the generated `.figma.ts`, then call `figma:script:run` with `strict: true`. Repair every fatal preflight diagnostic before rerunning.
-6. Use `figma:assets:apply`, `figma:assets:download`, `figma:capture`, or `figma:task:run` for assets, exports, visual QA, and repeatable workflows.
+6. Use `figma:assets:apply`, `figma:assets:download`, `figma:capture`, or `figma:task:run` for assets, visual QA, and repeatable workflows.
 7. Inspect every generated or edited image, including a capture PNG, with `view_image` before reporting visual success.
 
 Use `figma:metadata` for broad layer-tree discovery before `figma:inspect`. Prefer first-class context, motion, library, variable, and design-system commands. Use `figma:upstream:list` or `figma:upstream:read` before the `figma:upstream:call` escape hatch.
@@ -61,10 +61,13 @@ Use `figma:metadata` for broad layer-tree discovery before `figma:inspect`. Pref
 ## Script And Workspace Contract
 
 - Write an ordinary async TypeScript body in `.figma.ts`. Use native Figma Plugin API for node creation, querying, layout, and advanced behavior.
-- Common helpers include `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`.
+- Common helpers include `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.capture`, `$.imageAsset`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`.
 - Keep each transaction small and repairable. Return compact JSON with changed node IDs, handles, and validation notes.
 - Prefer `$.select` over direct selection mutation. Validate stale handles with `figma:inspect` before reuse.
 - For large generated assets, create target rectangles in the script and use `figma:assets:apply`; reserve `$.imageAsset` for small inline PNG/JPEG data.
+- For visual QA, use `await $.capture(target, options?)` when the target is created or resolved inside the script. It queues a host-side `figma:capture` operation after the script succeeds; read the local PNG path from the final command result's `captures[]`, then inspect it with `view_image`. Use standalone `figma:capture` when the node id is already known.
+- If queued capture post-processing fails, `scriptExecutionSucceeded: true`, `captureProcessingSucceeded: false`, and `retryGuidance` mean the script already ran and may have mutated Figma. Do not rerun the creation/edit script; retry the affected node with standalone `figma:capture`.
+- Use native `exportAsync()` only when a `.figma.ts` script genuinely needs PNG, JPG, SVG, PDF, or other exported bytes/string. It is not a CLI visual-QA path, and raw export data must not be returned as a large JSON array.
 
 ## Reference Topics
 

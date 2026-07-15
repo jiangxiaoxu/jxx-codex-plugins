@@ -14,7 +14,7 @@ Use this reference when root CLI help is not enough to choose a workflow. Comman
 
 - `.figma.ts` files are async TypeScript script bodies executed in Figma Plugin API context after strict preflight.
 - Use native Plugin API for advanced work and `$` helpers for common agent tasks.
-- Common helpers include `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.imageAsset`, `$.screenshot`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`. Use native Figma Plugin API for node creation, querying, and auto layout.
+- Common helpers include `$.text`, `$.select`, `$.checkpoint`, `$.remember`, `$.forget`, `$.inspect`, `$.capture`, `$.imageAsset`, `$.cloneNodeTree`, `$.findFreeSlot`, `$.placeNode`, and `$.replaceGeneratedFrame`. Use native Figma Plugin API for node creation, querying, and auto layout.
 - Helper access must be static so runtime injection can be analyzed: use `$.helper(...)`, `$["helper"](...)`, or explicit destructuring; avoid dynamic `$[name]`, aliasing `$`, object rest destructuring, and local `$` declarations.
 - Use `figma:guidance -- <query> --state-file <absolute-path>` for on-demand `helperProfiles` when choosing between selection, text, layout, assets, capture/QA, repair, and clone/rebuild helpers.
 - Prefer `$.select` over direct selection mutation.
@@ -30,6 +30,9 @@ Use this reference when root CLI help is not enough to choose a workflow. Comman
 - Use `figma:assets:apply` for large local generated image assets. Create target rectangles in the script first, then upload/fill through the manifest.
 - Use `figma:assets:download` for official asset download workflows.
 - Use `figma:capture` for final visual QA captures saved as local PNG files. Use its command help for screenshot tuning; use `figma:upstream:call` for uncovered official screenshot parameters.
+- When the target is created or resolved inside a `.figma.ts` script, call `await $.capture(target, { imageFile?, maxDimension?, contentsOnly? })`. `imageFile`, when supplied, must be a safe workspace-relative path. The helper queues at most 8 host-side captures; after the script succeeds, the CLI runs the same capture implementation and returns local paths under `captures[]`. The helper's ticket does not contain image bytes or an in-script file path.
+- A queued capture failure sets `scriptExecutionSucceeded: true` and `captureProcessingSucceeded: false` with explicit `retryGuidance`. The script may already have changed Figma; do not rerun it just to recover the image. Retry the affected node with standalone `figma:capture`.
+- Do not use inline screenshot methods. When a script genuinely needs PNG, JPG, SVG, PDF, or other export bytes/string for data processing, use native `exportAsync()` for that script-local purpose; do not return large raw export data in the script JSON result.
 - Use `figma:task:run` only for repeatable multi-step script, asset, download, capture, and upstream-tool workflows.
 
 ## Payload And Output Files

@@ -116,7 +116,7 @@ Generated output under `mcp-server/dist/` is checked in and must remain synchron
 
 - `prepare-task` receives an absolute `workspaceDir` and creates a repairable `.figma.ts` task under `<workspaceDir>/<fileKey-or-fileSlug>/`.
 - `run-script-file` performs strict TypeScript preflight before upstream execution. Diagnostics should identify source lines and block fatal payloads.
-- Native Figma Plugin API is the primary scripting surface; `$` helpers maintain stable workflow semantics for handles, text, checkpoints, inspection, assets, placement, replacement, and cloning.
+- Native Figma Plugin API is the primary scripting surface; `$` helpers maintain stable workflow semantics for handles, text, checkpoints, inspection, queued local capture, assets, placement, replacement, and cloning. `$.capture` records at most 8 compact node requests in the script envelope; after successful execution the host reuses the `figma:capture` implementation, saves PNG files, and returns their paths in `captures[]` without sending image bytes through script JSON.
 - `get-metadata` precedes targeted `inspect` when broad structure discovery is needed.
 - First-class commands remain preferred for design context, motion, design-system search, libraries, variables, assets, downloads, and capture.
 - `call-upstream-tool` is reserved for raw or uncovered official capabilities such as Code Connect writes, shader reads, and `export_video`.

@@ -19552,7 +19552,7 @@ function createBridgeDocsRecords() {
   const wrapperTools = "get-design-context, get-motion-context";
   const upstreamTools = "get_design_context, get_motion_context, export_video, list_shader_effects, get_shader_effect, list_shader_fills, get_shader_fill";
   const workflowIds = "design-implementation-context, motion-implementation, video-export";
-  const helperCategories = "selection: $.select, $.inspect; text: $.text; placement: $.placeNode, $.findFreeSlot; assets: $.imageAsset; capture: $.screenshot; repair: $.checkpoint, $.remember, $.forget; clone: $.cloneNodeTree, $.replaceGeneratedFrame";
+  const helperCategories = "selection: $.select, $.inspect; text: $.text; placement: $.placeNode, $.findFreeSlot; assets: $.imageAsset; capture: $.capture; repair: $.checkpoint, $.remember, $.forget; clone: $.cloneNodeTree, $.replaceGeneratedFrame";
   const helperHardRules = 'Use static helper references only: $.text(...), $["text"](...), or explicit destructuring such as const { text } = $. Do not use dynamic $[name], alias $, object rest destructuring, or local $ declarations. Native Figma Plugin API remains valid for advanced work. $.imageAsset is only for small inline PNG/JPEG; larger files use asset manifest/upload flow.';
   return /* @__PURE__ */ new Map([
     [
@@ -20736,18 +20736,15 @@ var init_guidance_catalog = __esm({
       {
         id: "capture",
         category: "capture",
-        helpers: ["$.screenshot"],
-        useWhen: ["Capture opportunistic screenshot bytes from a script for a node that supports node.screenshot().", "Collect quick visual evidence inside a repairable script."],
-        avoidWhen: ["Final visual QA that needs a local PNG path.", "Assuming inline MCP media can be visually inspected by the agent."],
-        allowedPatterns: ['const bytes = await $.screenshot("$hero", { format: "PNG" })', "const { screenshot } = $"],
-        forbiddenPatterns: ["dynamic helper lookup", "using $.screenshot when figma:capture should write a PNG file"],
+        helpers: ["$.capture"],
+        useWhen: ["Queue one or more node captures during a repairable script.", "Save local PNG evidence immediately after the script succeeds."],
+        avoidWhen: ["The node id is already known and a standalone figma:capture call is simpler.", "Exporting bytes or strings for script-local data processing."],
+        allowedPatterns: ['await $.capture("$hero")', 'await $.capture(frame, { maxDimension: 1600, imageFile: "hero.png" })'],
+        forbiddenPatterns: ["inline screenshot methods", "returning PNG bytes or base64 in the script result", "more than 8 capture requests in one execution"],
         publicCommandIds: ["figma:capture"],
-        apiReferences: [
-          { displayExpression: "node.exportAsync()", lookupQuery: "ExportMixin.exportAsync", ownerHint: "ExportMixin", symbolKind: "plugin-api" },
-          { displayExpression: "ExportSettingsImage", lookupQuery: "ExportSettingsImage", symbolKind: "plugin-api" }
-        ],
-        lookupHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
-        example: 'const screenshotBytes = Array.from(await $.screenshot("$hero", { format: "PNG" }));'
+        apiReferences: [],
+        lookupHints: ["queue capture after script", "write screenshot to imageFile", "visual QA warnings"],
+        example: 'const ticket = await $.capture("$hero", { maxDimension: 1600 });'
       },
       {
         id: "repair",
@@ -21037,17 +21034,13 @@ var init_guidance_catalog = __esm({
         title: "Screenshot capture and visual QA",
         intents: ["capture", "screenshot", "qa", "visual", "review", "inspect image"],
         surface: "any",
-        helpers: ["$.screenshot"],
+        helpers: ["$.capture"],
         publicCommandIds: ["figma:capture", "figma:task:run"],
         upstreamTools: ["get_screenshot"],
-        apiReferences: [
-          { displayExpression: "node.exportAsync()", lookupQuery: "ExportMixin.exportAsync", ownerHint: "ExportMixin", symbolKind: "plugin-api" },
-          { displayExpression: "ExportSettingsImage", lookupQuery: "ExportSettingsImage", symbolKind: "plugin-api" },
-          { displayExpression: "figma.viewport", lookupQuery: "PluginAPI.viewport", ownerHint: "PluginAPI", symbolKind: "plugin-api" }
-        ],
+        apiReferences: [],
         queryHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
-        avoid: ["Treating opportunistic $.screenshot as final QA when no image payload is returned", "Relying only on inline MCP image payloads"],
-        pitfalls: ["Prefer figma:capture for final QA files.", "Inspect the saved local image/result when layout correctness matters."]
+        avoid: ["Calling inline screenshot methods inside .figma.ts scripts", "Returning image bytes or base64 through the script JSON result"],
+        pitfalls: ["Use $.capture to queue a capture when the target is created or resolved inside the script; use figma:capture when the node id is already known.", "Inspect every saved local image when layout correctness matters."]
       },
       {
         id: "review.design-parity",
@@ -41554,12 +41547,48 @@ $.inspect = async function inspect(target, depth = 1) {
   const node = await $(target);
   return summarizeNode(node, depth);
 };
-$.screenshot = async function screenshot(target, options = {}) {
+$.capture = async function capture(target, options = {}) {
   const node = await $(target);
-  if (!node || typeof node.screenshot !== "function") {
-    throw new Error("$.screenshot target does not support node.screenshot().");
+  if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+    throw new Error("$.capture target must resolve to a scene node.");
   }
-  return await node.screenshot(options);
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("$.capture options must be an object.");
+  }
+  if (__figmaRepl.captureRequests.length >= 8) {
+    throw new Error("$.capture supports at most 8 requests per script execution.");
+  }
+  const request = {
+    requestId: "capture-" + String(__figmaRepl.captureRequests.length + 1),
+    nodeId: node.id,
+  };
+  if (options.imageFile !== undefined) {
+    if (
+      typeof options.imageFile !== "string"
+      || !options.imageFile
+      || options.imageFile.includes("..")
+      || /^[A-Za-z]:/.test(options.imageFile)
+      || options.imageFile.charCodeAt(0) === 47
+      || options.imageFile.charCodeAt(0) === 92
+    ) {
+      throw new Error("$.capture imageFile must be a safe workspace-relative path.");
+    }
+    request.imageFile = options.imageFile;
+  }
+  if (options.maxDimension !== undefined) {
+    if (!Number.isInteger(options.maxDimension) || options.maxDimension < 1 || options.maxDimension > 65536) {
+      throw new Error("$.capture maxDimension must be an integer from 1 to 65536.");
+    }
+    request.maxDimension = options.maxDimension;
+  }
+  if (options.contentsOnly !== undefined) {
+    if (typeof options.contentsOnly !== "boolean") {
+      throw new Error("$.capture contentsOnly must be a boolean.");
+    }
+    request.contentsOnly = options.contentsOnly;
+  }
+  __figmaRepl.captureRequests.push(request);
+  return { requestId: request.requestId, nodeId: request.nodeId };
 };
 $.cloneNodeTree = async function cloneNodeTree(targetOrOptions, maybeOptions = {}) {
   const looksLikeOptions = targetOrOptions && typeof targetOrOptions === "object" && !Array.isArray(targetOrOptions) && !("type" in targetOrOptions);
@@ -41712,10 +41741,10 @@ $.checkpoints = __figmaReplScriptCheckpoints;`;
     );
   }
   if (!options.helperNames.has("inspect")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.inspect = async function inspect", "$.screenshot = async function screenshot", "");
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.inspect = async function inspect", "$.capture = async function capture", "");
   }
-  if (!options.helperNames.has("screenshot")) {
-    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.screenshot = async function screenshot", "$.cloneNodeTree = async function cloneNodeTree", "");
+  if (!options.helperNames.has("capture")) {
+    bootstrap = replaceHelperBootstrapBlock(bootstrap, "$.capture = async function capture", "$.cloneNodeTree = async function cloneNodeTree", "");
   }
   if (!options.helperNames.has("cloneNodeTree")) {
     bootstrap = replaceHelperBootstrapBlock(
@@ -42485,7 +42514,7 @@ var init_script_runner = __esm({
       "replaceGeneratedFrame",
       "imageAsset",
       "inspect",
-      "screenshot",
+      "capture",
       "cloneNodeTree",
       "checkpoint"
     ];
@@ -44722,6 +44751,7 @@ async function handleEval(args, runtime) {
     });
   }
   const evalSettings = await resolveEvalSettings(session, args, runtime);
+  const captureRequestsAllowed = resolveFigmaWorkspaceScriptHelperSelection2(preparedCode.code).helperNames.has("capture");
   const script = buildFigmaEvalScript({
     session,
     code: preparedCode.code,
@@ -44730,6 +44760,12 @@ async function handleEval(args, runtime) {
   const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
   const parsed = parseUpstreamToolResult(upstream);
   handleChanges = mergeHandleChanges(handleChanges, updateSessionFromParsedResult(session, parsed.json));
+  const captureBatch = parsed.upstreamError ? { ok: true, requested: false } : await executeQueuedCaptureRequests({
+    parsedJson: parsed.json,
+    session,
+    runtime,
+    captureRequestsAllowed
+  });
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -44739,8 +44775,12 @@ async function handleEval(args, runtime) {
     nodeIds: collectNodeIds(parsed.json)
   });
   const resultPayload = removeUndefined3({
-    ok: !parsed.upstreamError,
+    ok: !parsed.upstreamError && captureBatch.ok,
     session: responseSession(session, handleChanges),
+    scriptExecutionSucceeded: !parsed.upstreamError,
+    captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : void 0,
+    retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : void 0,
+    captures: captureBatch.captures,
     diagnostics: diagnosticsForResponse(diagnostics),
     repairPlan: repairPlanForResponse(diagnostics),
     ...upstreamResultFields({
@@ -44755,6 +44795,7 @@ async function handleEval(args, runtime) {
     parsed,
     resultPayload,
     inlineResultLimit: args.inlineResultLimit,
+    forceOutputFile: !captureBatch.ok,
     writeOutputFiles: (upstreamEnvelopePayload) => writeEvalResultFiles({
       session,
       resultPayload,
@@ -44774,7 +44815,11 @@ async function writeEvalResultFiles(options) {
         upstream: options.upstream,
         fields: {
           diagnosticsCount: countArrayField(options.resultPayload.diagnostics),
-          repairPlan: options.resultPayload.repairPlan
+          repairPlan: options.resultPayload.repairPlan,
+          scriptExecutionSucceeded: options.resultPayload.scriptExecutionSucceeded,
+          captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
+          retryGuidance: options.resultPayload.retryGuidance,
+          captures: options.resultPayload.captures
         }
       })
     ))
@@ -44904,6 +44949,10 @@ function createRunScriptResultFilePayload(options) {
       diagnostics: options.diagnostics.length > 0 ? options.diagnostics : void 0,
       repairPlan: options.resultPayload.repairPlan,
       script,
+      scriptExecutionSucceeded: options.resultPayload.scriptExecutionSucceeded,
+      captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
+      retryGuidance: options.resultPayload.retryGuidance,
+      captures: options.resultPayload.captures,
       resultSummary: options.parsed ? summarizeParsedResult(options.parsed) : void 0,
       nodeIds: options.parsed ? collectNodeIds(options.parsed.json) : void 0
     }
@@ -45101,6 +45150,12 @@ async function executeRunScriptFile(args, runtime) {
     return payload2;
   }
   const handleChanges = updateSessionFromParsedResult(session, parsed.json);
+  const captureBatch = await executeQueuedCaptureRequests({
+    parsedJson: parsed.json,
+    session,
+    runtime,
+    captureRequestsAllowed: compiled.metadata.injectedHelpers.includes("$.capture")
+  });
   runtime.sessions.rememberHistory(session, {
     id: randomUUID(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -45110,10 +45165,14 @@ async function executeRunScriptFile(args, runtime) {
     nodeIds: collectNodeIds(parsed.json)
   });
   const resultPayload = removeUndefined3({
-    ok: true,
+    ok: captureBatch.ok,
     phase: "execute",
     executed: true,
     session: responseSession(session, handleChanges),
+    scriptExecutionSucceeded: true,
+    captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : void 0,
+    retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : void 0,
+    captures: captureBatch.captures,
     diagnostics: optionalDiagnosticsForResponse(diagnostics),
     repairPlan: repairPlanForResponse(diagnostics),
     script: successScript,
@@ -45125,7 +45184,7 @@ async function executeRunScriptFile(args, runtime) {
     inlineResultLimit,
     ["upstream.result", "upstream.text"]
   );
-  const needsOutputFile = diagnostics.length > 0 || isRecord5(limitedPayload.inlineResultLimit);
+  const needsOutputFile = diagnostics.length > 0 || !captureBatch.ok || isRecord5(limitedPayload.inlineResultLimit);
   const outputFiles = needsOutputFile ? await addUpstreamSidecar(await outputWriter.write({
     result: createRunScriptResultFilePayload({
       session,
@@ -45872,6 +45931,177 @@ function resolveCaptureOutputFile(args, session) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
   return resolve6(root, "capture-results", session.slug, fileName);
+}
+async function executeQueuedCaptureRequests(options) {
+  let requests;
+  try {
+    requests = extractQueuedCaptureRequests(
+      options.parsedJson,
+      options.session,
+      options.captureRequestsAllowed
+    );
+  } catch (error2) {
+    return {
+      ok: false,
+      requested: true,
+      captures: [{
+        requestId: "capture-envelope",
+        ok: false,
+        upstreamError: responseUpstreamError({
+          message: error2 instanceof Error ? error2.message : String(error2),
+          code: "FIGMA_WORKSPACE_CAPTURE_REQUEST_INVALID"
+        })
+      }]
+    };
+  }
+  if (requests.length === 0) {
+    return { ok: true, requested: false };
+  }
+  const captures = [];
+  for (const [index, request] of requests.entries()) {
+    try {
+      const imageFile = resolveQueuedCaptureOutputFile(
+        options.session,
+        request.requestId,
+        index,
+        request.imageFile
+      );
+      const result = await executeCaptureNodeForTool({
+        sessionId: options.session.id,
+        target: request.nodeId,
+        imageFile,
+        maxDimension: request.maxDimension,
+        contentsOnly: request.contentsOnly
+      }, options.runtime);
+      captures.push(compactQueuedCaptureResult(request.requestId, result));
+    } catch (error2) {
+      captures.push({
+        requestId: request.requestId,
+        ok: false,
+        nodeId: request.nodeId,
+        upstreamError: compactQueuedCaptureError(normalizeCaughtUpstreamError(error2))
+      });
+    }
+  }
+  return {
+    ok: captures.every((capture) => capture.ok),
+    requested: true,
+    captures
+  };
+}
+function extractQueuedCaptureRequests(value, session, captureRequestsAllowed) {
+  if (!isRecord5(value) || value.ok !== true || !Object.prototype.hasOwnProperty.call(value, "__figmaRepl")) {
+    return [];
+  }
+  const repl = value.__figmaRepl;
+  if (!isRecord5(repl) || repl.sessionId !== session.id) {
+    throw new Error("Queued capture envelope did not match the active Figma Workspace session.");
+  }
+  if (!Object.prototype.hasOwnProperty.call(repl, "captureRequests")) {
+    return [];
+  }
+  if (!Array.isArray(repl.captureRequests)) {
+    throw new Error("Queued capture envelope captureRequests must be an array.");
+  }
+  if (!captureRequestsAllowed && repl.captureRequests.length > 0) {
+    throw new Error("Queued capture envelope was not authorized by a statically selected $.capture helper.");
+  }
+  if (repl.captureRequests.length > MAX_QUEUED_CAPTURE_REQUESTS) {
+    throw new Error(`Queued capture envelope exceeds the ${MAX_QUEUED_CAPTURE_REQUESTS}-request host limit.`);
+  }
+  const requests = [];
+  for (const [index, value2] of repl.captureRequests.entries()) {
+    if (!isRecord5(value2)) {
+      throw new Error(`Queued capture request ${index + 1} must be an object.`);
+    }
+    const allowedKeys = /* @__PURE__ */ new Set(["requestId", "nodeId", "imageFile", "maxDimension", "contentsOnly"]);
+    if (Object.keys(value2).some((key) => !allowedKeys.has(key))) {
+      throw new Error(`Queued capture request ${index + 1} contains unsupported fields.`);
+    }
+    const requestId = `capture-${index + 1}`;
+    if (value2.requestId !== requestId) {
+      throw new Error(`Queued capture request ${index + 1} has an invalid requestId.`);
+    }
+    const nodeId = asOptionalString2(value2.nodeId);
+    if (!nodeId || nodeId.length > 512 || /[\u0000-\u001f\u007f]/u.test(nodeId)) {
+      throw new Error(`Queued capture request ${requestId} has an invalid nodeId.`);
+    }
+    const imageFile = value2.imageFile;
+    if (imageFile !== void 0 && (typeof imageFile !== "string" || imageFile.length === 0 || imageFile.length > 32768 || imageFile.includes("\0") || isAbsolute2(imageFile) || imageFile.includes("..") || /^[A-Za-z]:/u.test(imageFile) || imageFile.startsWith("\\\\"))) {
+      throw new Error(`Queued capture request ${requestId} imageFile must be a safe workspace-relative path.`);
+    }
+    const maxDimension = value2.maxDimension;
+    if (maxDimension !== void 0 && (!Number.isInteger(maxDimension) || maxDimension < 1 || maxDimension > 65536)) {
+      throw new Error(`Queued capture request ${requestId} has an invalid maxDimension.`);
+    }
+    const contentsOnly = value2.contentsOnly;
+    if (contentsOnly !== void 0 && typeof contentsOnly !== "boolean") {
+      throw new Error(`Queued capture request ${requestId} has an invalid contentsOnly value.`);
+    }
+    requests.push(removeUndefined3({
+      requestId,
+      nodeId,
+      imageFile,
+      maxDimension,
+      contentsOnly
+    }));
+  }
+  return requests;
+}
+function resolveQueuedCaptureOutputFile(session, requestId, index, requestedImageFile) {
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
+  const uniqueSuffix = randomUUID().slice(0, 8);
+  const fileName = `capture-${timestamp}-${index + 1}-${requestId}-${uniqueSuffix}`;
+  const selectedFileName = requestedImageFile ?? fileName;
+  if (session.workspace) {
+    return resolveWorkspaceFile(session.workspace.sessionDir, selectedFileName, "imageFile");
+  }
+  const root = defaultTaskWorkspaceRoot2();
+  if (!isAbsolute2(root)) {
+    throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
+  }
+  return resolveWorkspaceFile(resolve6(root, "capture-results", session.slug), selectedFileName, "imageFile");
+}
+function compactQueuedCaptureResult(requestId, result) {
+  const upstreamError = isRecord5(result.upstreamError) && typeof result.upstreamError.message === "string" ? compactQueuedCaptureError(result.upstreamError) : void 0;
+  const diagnostics = compactQueuedCaptureDiagnostics(result.diagnostics);
+  return removeUndefined3({
+    requestId,
+    ok: result.ok === true,
+    nodeId: asOptionalString2(result.nodeId),
+    imageFile: asOptionalString2(result.imageFile),
+    bytes: typeof result.bytes === "number" ? result.bytes : void 0,
+    width: typeof result.width === "number" ? result.width : void 0,
+    height: typeof result.height === "number" ? result.height : void 0,
+    diagnostics,
+    upstreamError
+  });
+}
+function compactQueuedCaptureError(error2) {
+  const record2 = asRecord2(error2);
+  return removeUndefined3({
+    message: truncateUtf82(asOptionalString2(record2.message) ?? "Queued capture failed.", QUEUED_CAPTURE_ERROR_MESSAGE_BYTES),
+    code: asOptionalString2(record2.code) ? truncateUtf82(asOptionalString2(record2.code), 120) : void 0
+  });
+}
+function compactQueuedCaptureDiagnostics(value) {
+  if (!Array.isArray(value)) return void 0;
+  const diagnostics = value.filter(isRecord5).slice(0, 2).flatMap((diagnostic) => {
+    const code2 = asOptionalString2(diagnostic.code);
+    const severity = diagnostic.severity === "fatal" || diagnostic.severity === "warning" ? diagnostic.severity : void 0;
+    const message = asOptionalString2(diagnostic.message);
+    const suggestion = asOptionalString2(diagnostic.suggestion);
+    const docsHint = asOptionalString2(diagnostic.docsHint);
+    if (!code2 || !severity || !message || !suggestion || !docsHint) return [];
+    return [{
+      code: truncateUtf82(code2, 120),
+      severity,
+      message: truncateUtf82(message, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES),
+      suggestion: truncateUtf82(suggestion, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES),
+      docsHint: truncateUtf82(docsHint, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES)
+    }];
+  });
+  return diagnostics.length > 0 ? diagnostics : void 0;
 }
 async function executeRunTaskPlan(args, runtime) {
   const session = runtime.sessions.getOrCreate(args.sessionId);
@@ -47435,7 +47665,8 @@ return {
     surface: __figmaRepl.surface,
     currentPageId: figma.currentPage && figma.currentPage.id,
     knownPages: Object.fromEntries(figma.root.children.map((page) => [page.id, page.name])),
-    mode: __figmaRepl.mode
+    mode: __figmaRepl.mode,
+    captureRequests: __figmaRepl.captureRequests
   },
   result: __figmaReplResult
 };`;
@@ -47449,7 +47680,8 @@ function createFigmaWorkspacePrelude(session, mode, includeEvalHelpers, scriptIn
   surface: ${literal4(session.surface)},
   currentPageId: ${literal4(session.currentPageId)},
   knownPages: ${literal4(session.knownPages ?? {})},
-  handles: ${literal4(session.handles ?? {})}
+  handles: ${literal4(session.handles ?? {})},
+  captureRequests: []
 };
 
 function normalizeHandleName(name) {
@@ -48160,12 +48392,48 @@ $.imageAsset = async function imageAsset(options = {}) {
 $.inspect = async function inspect(target, depth = 1) {
   return summarizeNode(await $(target), depth);
 };
-$.screenshot = async function screenshot(target, options = {}) {
+$.capture = async function capture(target, options = {}) {
   const node = await $(target);
-  if (!node || typeof node.screenshot !== "function") {
-    throw new Error("$.screenshot target does not support node.screenshot().");
+  if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+    throw new Error("$.capture target must resolve to a scene node.");
   }
-  return await node.screenshot(options);
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("$.capture options must be an object.");
+  }
+  if (__figmaRepl.captureRequests.length >= ${MAX_QUEUED_CAPTURE_REQUESTS}) {
+    throw new Error("$.capture supports at most ${MAX_QUEUED_CAPTURE_REQUESTS} requests per execution.");
+  }
+  const request = {
+    requestId: "capture-" + String(__figmaRepl.captureRequests.length + 1),
+    nodeId: node.id,
+  };
+  if (options.imageFile !== undefined) {
+    if (
+      typeof options.imageFile !== "string"
+      || !options.imageFile
+      || options.imageFile.includes("..")
+      || /^[A-Za-z]:/.test(options.imageFile)
+      || options.imageFile.charCodeAt(0) === 47
+      || options.imageFile.charCodeAt(0) === 92
+    ) {
+      throw new Error("$.capture imageFile must be a safe workspace-relative path.");
+    }
+    request.imageFile = options.imageFile;
+  }
+  if (options.maxDimension !== undefined) {
+    if (!Number.isInteger(options.maxDimension) || options.maxDimension < 1 || options.maxDimension > 65536) {
+      throw new Error("$.capture maxDimension must be an integer from 1 to 65536.");
+    }
+    request.maxDimension = options.maxDimension;
+  }
+  if (options.contentsOnly !== undefined) {
+    if (typeof options.contentsOnly !== "boolean") {
+      throw new Error("$.capture contentsOnly must be a boolean.");
+    }
+    request.contentsOnly = options.contentsOnly;
+  }
+  __figmaRepl.captureRequests.push(request);
+  return { requestId: request.requestId, nodeId: request.nodeId };
 };
 ` : ""}
 $.checkpoint = async function checkpoint(name, targets = [], options = {}) {
@@ -48251,8 +48519,8 @@ function stripFigmaWorkspacePreludeForEvalHelpers(source, injectedHelpers) {
   if (!has("replaceGeneratedFrame")) removeLine("$.replaceGeneratedFrame = replaceGeneratedFrameForRepl;");
   if (!has("text")) prelude = replaceDelimitedSource(prelude, "$.text = async function text", "function __figmaReplDecodeBase64", "");
   if (!has("imageAsset")) prelude = replaceDelimitedSource(prelude, "function __figmaReplDecodeBase64", "$.inspect = async function inspect", "");
-  if (!has("inspect")) prelude = replaceDelimitedSource(prelude, "$.inspect = async function inspect", "$.screenshot = async function screenshot", "");
-  if (!has("screenshot")) prelude = replaceDelimitedSource(prelude, "$.screenshot = async function screenshot", "$.checkpoint = async function checkpoint", "");
+  if (!has("inspect")) prelude = replaceDelimitedSource(prelude, "$.inspect = async function inspect", "$.capture = async function capture", "");
+  if (!has("capture")) prelude = replaceDelimitedSource(prelude, "$.capture = async function capture", "$.checkpoint = async function checkpoint", "");
   if (!has("checkpoint")) {
     prelude = prelude.replace("const __figmaReplEvalCheckpoints = [];\n", "");
     prelude = replaceDelimitedSource(prelude, "$.checkpoint = async function checkpoint", "$.checkpoints = __figmaReplEvalCheckpoints;", "", { includeEndMarker: true });
@@ -50108,7 +50376,7 @@ async function shapeUpstreamBackedResponse(options) {
     inlineResultLimit,
     [...options.contract.outputPolicy.inlineLimitFields]
   );
-  const needsOutputFile = options.parsed.upstreamError || isRecord5(limitedPayload.inlineResultLimit);
+  const needsOutputFile = options.forceOutputFile === true || options.parsed.upstreamError || isRecord5(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
   }
@@ -50555,7 +50823,7 @@ function normalizeBoundedInteger(value, fallback, max) {
 function literal4(value) {
   return JSON.stringify(value);
 }
-var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, resolveFigmaWorkspaceScriptHelperSelection2, FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_INSPECT_VALIDATE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
+var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, resolveFigmaWorkspaceScriptHelperSelection2, FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, FIGMA_WORKSPACE_EVAL_COMMON_HELPER_NAMES, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, MAX_QUEUED_CAPTURE_REQUESTS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_INSPECT_VALIDATE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
 var init_workspace_mcp_server = __esm({
   "src/mcp/workspace-mcp-server.ts"() {
     "use strict";
@@ -50588,13 +50856,17 @@ var init_workspace_mcp_server = __esm({
       "placeNode",
       "replaceGeneratedFrame",
       "inspect",
-      "screenshot",
+      "capture",
       "imageAsset",
       "checkpoint"
     ];
     DEFAULT_HISTORY_LIMIT = 50;
     DEFAULT_INLINE_RESULT_LIMIT = 4e3;
     MAX_INLINE_RESULT_LIMIT = 1e4;
+    MAX_QUEUED_CAPTURE_REQUESTS = 8;
+    QUEUED_CAPTURE_ERROR_MESSAGE_BYTES = 600;
+    QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES = 300;
+    QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE = "Script execution succeeded and may have mutated Figma. Do not rerun it just because capture post-processing failed; retry the affected node with figma:capture.";
     APPLY_ASSET_MANIFEST_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_apply_asset_manifest");
     DOWNLOAD_ASSETS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_download_assets");
     CAPTURE_NODE_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_capture_node");
@@ -50770,7 +51042,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_workspace_eval",
-      description: "Small ephemeral JavaScript Plugin API call for quick reads or tightly scoped updates only. Recommended input: { sessionId, code, mode, surface }. By default code is parsed and executed as JavaScript; pass typescript:true only when inline TypeScript annotations should be compiled first. Use prepare-task + run-script-file for repairable TypeScript scripts, multi-step work, and large structured results.",
+      description: "Small ephemeral JavaScript Plugin API call for quick reads or tightly scoped updates only. Recommended input: { sessionId, code, mode, surface }. By default code is parsed and executed as JavaScript; pass typescript:true only when inline TypeScript annotations should be compiled first. Use await $.capture(target, options?) to queue local PNG files returned under captures[] after successful execution. Use prepare-task + run-script-file for repairable TypeScript scripts, multi-step work, and large structured results.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id. Defaults to 'default'."),
@@ -50785,7 +51057,7 @@ function createReplToolDescriptions(options) {
     },
     {
       name: "figma_workspace_run_script_file",
-      description: "Primary file-based TypeScript workflow for Figma Workspace. Recommended workspace call: { sessionId, inputFile, strict, surface }. The tool only accepts .figma.ts files, strict-checks them with Figma Plugin API typings, and compiles the upstream payload internally before execution. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
+      description: "Primary file-based TypeScript workflow for Figma Workspace. Recommended workspace call: { sessionId, inputFile, strict, surface }. The tool only accepts .figma.ts files, strict-checks them with Figma Plugin API typings, and compiles the upstream payload internally before execution. Use await $.capture(target, options?) to queue up to 8 local PNG files returned under captures[] after successful script execution. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id or task name. Defaults to 'default'."),
@@ -51033,7 +51305,7 @@ function createReplToolDescriptions(options) {
         surface: enumProperty(["design", "figjam", "slides"], "Docs-only hard surface filter. It is invalid with kind=api and never falls back across surfaces."),
         taskFamily: enumProperty(FIGMA_WORKSPACE_TASK_FAMILIES2, "Docs-only hard canonical task-family filter. It is invalid with kind=api and takes precedence over inferred routing."),
         query: stringProperty(`Required for kind=docs. Use English task keywords, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
-        symbol: stringProperty(`Required for kind=api. Accepts bare or supported qualified Plugin API symbols, for example createFrame, figma.createFrame(), SceneNode.screenshot, or figma.variables.createVariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
+        symbol: stringProperty(`Required for kind=api. Accepts bare or supported qualified Plugin API symbols, for example createFrame, figma.createFrame(), ExportMixin.exportAsync, or figma.variables.createVariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
         maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
         maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`)
       }, ["kind"])
@@ -51082,10 +51354,14 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_workspace_eval: toolOutputSchema({
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    scriptExecutionSucceeded: booleanProperty("True when the Plugin API script finished successfully before queued capture post-processing."),
+    captureProcessingSucceeded: booleanProperty("Present when $.capture queued work. False means the script succeeded but at least one local PNG capture failed."),
+    retryGuidance: stringProperty("Explicit recovery guidance when capture post-processing failed after successful script execution."),
     diagnostics: arrayProperty("Preflight diagnostics when warnings or failures are present."),
     repairPlan: jsonProperty("Agent-facing repair plan with status, summary, and deduplicated steps containing occurrences with line:column labels."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public eval results."),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    captures: arrayProperty("Compact queued capture results in request order. Successful entries include requestId, nodeId, and local imageFile; failed entries include upstreamError. Image bytes are never returned."),
     outputFiles: outputFilesProperty(
       "Debug files written on demand for failure or inline omissions, including minimal result envelope and upstream sidecar.",
       ["debugFile", "upstreamFile"]
@@ -51096,6 +51372,9 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     phase: enumProperty(["preflight", "execute"], "Execution phase represented by this result. preflight means diagnostics blocked upstream execution; execute means upstream Figma was called."),
     executed: booleanProperty("Whether upstream Figma execution was attempted."),
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, optional sessionDir, and handleChanges only."),
+    scriptExecutionSucceeded: booleanProperty("True when the Plugin API script finished successfully before queued capture post-processing."),
+    captureProcessingSucceeded: booleanProperty("Present when $.capture queued work. False means the script succeeded but at least one local PNG capture failed."),
+    retryGuidance: stringProperty("Explicit recovery guidance when capture post-processing failed after successful script execution."),
     diagnostics: arrayProperty("Script and wrapper diagnostics when warnings or failures are present."),
     repairPlan: jsonProperty("Agent-facing repair plan returned only when diagnostics or preflight blockers are actionable."),
     script: scriptMetadataProperty("Compact script metadata. Clean inputFile success returns only inputFile; preflight/failure keeps repair details."),
@@ -51104,6 +51383,7 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
       ["debugFile", "upstreamFile", "compiledScriptFile"]
     ),
     upstreamError: objectProperty("Normalized upstream failure details when execution failed."),
+    captures: arrayProperty("Compact queued capture results in request order. Successful entries include requestId, nodeId, and local imageFile; failed entries include upstreamError. Image bytes are never returned."),
     upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaRepl metadata is removed from public script results."),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
   }),
