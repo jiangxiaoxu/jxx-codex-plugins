@@ -6,6 +6,7 @@ import {
   FIGMA_COMMAND_FAMILIES,
   FIGMA_DIRECT_COMMANDS,
   FIGMA_JSON_COMMANDS,
+  FIGMA_TASK_FAMILIES,
   formatRootHelp,
   runFigmaCommand,
   runFigmaCommandCli,
@@ -20,8 +21,9 @@ test("build publishes the typed shared Figma command runtime", async () => {
   assert.match(source, /runFigmaCommandCli/u);
   assert.equal(typeof runFigmaCommandCli, "function");
   assert.equal(typeof runFigmaCommand, "function");
-  assert.equal(Object.keys(FIGMA_DIRECT_COMMANDS).length, 17);
+  assert.equal(Object.keys(FIGMA_DIRECT_COMMANDS).length, 18);
   assert.equal(Object.keys(FIGMA_JSON_COMMANDS).length, 9);
+  assert.equal(FIGMA_TASK_FAMILIES.length, 12);
   assert.deepEqual(Object.keys(FIGMA_COMMAND_FAMILIES), ["docs", "api", "sessions", "upstream"]);
 });
 
@@ -64,29 +66,68 @@ test("direct parsing supports option order and an exact positional separator", a
   ]);
 });
 
-test("docs search maps its exact lookup scope while API search does not expose scope", async () => {
+test("docs commands map catalog filters, stable ids, and automatic search routing", async () => {
   const calls = [];
   const runCli = async (_argv, dependencies) => {
     calls.push(JSON.parse(await dependencies.io.readStdin()));
     return 0;
   };
 
+  assert.equal(await runFigmaCommand("docs:list", ["--state-file", stateFile], { runCli }), 0);
+  assert.equal(await runFigmaCommand("docs:catalog", [
+    "--task-family", "code-connect", "--surface", "design", "--classification", "conditional",
+    "--limit", "25", "--state-file", stateFile,
+  ], { runCli }), 0);
+  assert.equal(await runFigmaCommand("docs:read", ["canonical:code-connect/router", "--state-file", stateFile], { runCli }), 0);
   assert.equal(await runFigmaCommand("docs:search", ["components", "--state-file", stateFile], { runCli }), 0);
   assert.equal(await runFigmaCommand("docs:search", [
-    "components", "--scope", "conditional", "--state-file", stateFile,
+    "components", "--scope", "router", "--surface", "design", "--task-family", "design-editing",
+    "--state-file", stateFile,
   ], { runCli }), 0);
   assert.deepEqual(calls, [
-    { kind: "docs", scope: "active", query: "components" },
-    { kind: "docs", scope: "conditional", query: "components" },
+    { mode: "list" },
+    { mode: "catalog", taskFamily: "code-connect", surface: "design", classification: "conditional", limit: 25 },
+    { mode: "read", id: "canonical:code-connect/router" },
+    { kind: "docs", scope: "auto", query: "components" },
+    { kind: "docs", scope: "router", query: "components", surface: "design", taskFamily: "design-editing" },
   ]);
 
-  for (const scope of ["unknown", "Active", "example"]) {
+  for (const scope of ["unknown", "Auto", "example"]) {
     const output = createOutput();
     assert.equal(await runFigmaCommand("docs:search", [
       "components", "--scope", scope, "--state-file", stateFile,
     ], { ...output.dependencies, runCli }), 2, scope);
-    assert.match(output.stderr, /must be one of: active, conditional, examples, all/u, scope);
+    assert.match(output.stderr, /must be one of: auto, active, conditional, router, examples, all/u, scope);
   }
+
+  const catalogOutput = createOutput();
+  assert.equal(await runFigmaCommand("docs:catalog", [
+    "--task-family", "create-new-file", "--state-file", stateFile,
+  ], { ...catalogOutput.dependencies, runCli }), 2);
+  assert.match(catalogOutput.stderr, /must be one of: code-connect, create-file/u);
+
+  const workflowCalls = [];
+  assert.equal(await runFigmaCommand("guidance", [
+    "motion implementation", "--workflow", "motion-implementation", "--state-file", stateFile,
+  ], {
+    runCli: async (_argv, dependencies) => {
+      workflowCalls.push(JSON.parse(await dependencies.io.readStdin()));
+      return 0;
+    },
+  }), 0);
+  assert.deepEqual(workflowCalls, [{
+    query: "motion implementation",
+    workflow: "motion-implementation",
+  }]);
+
+  const unknownWorkflowOutput = createOutput();
+  assert.equal(await runFigmaCommand("guidance", [
+    "motion implementation", "--workflow", "missing-workflow", "--state-file", stateFile,
+  ], {
+    ...unknownWorkflowOutput.dependencies,
+    runCli: async () => assert.fail("unknown workflow must fail before runtime"),
+  }), 2);
+  assert.match(unknownWorkflowOutput.stderr, /must be one of: design-implementation-context, motion-implementation/u);
 
   const apiOutput = createOutput();
   assert.equal(await runFigmaCommand("api:search", [
@@ -139,7 +180,7 @@ test("every executing optimized command requires an explicit absolute state file
   for (const commandName of Object.keys(FIGMA_DIRECT_COMMANDS)) {
     const output = createOutput();
     const args = commandName === "guidance" ? ["query"]
-      : commandName === "docs:read" ? ["overview"]
+      : commandName === "docs:read" ? ["project:overview"]
         : commandName === "docs:search" || commandName === "api:search" || commandName === "design-system" ? ["query"]
           : commandName === "sessions:read" ? ["default"]
             : commandName === "upstream:read" ? ["whoami"]
@@ -214,6 +255,7 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   const family = createOutput();
   assert.equal(await runFigmaCommand("docs", [], family.dependencies), 0);
   assert.match(family.stdout, /^# figma docs help/u);
+  assert.match(family.stdout, /figma:docs:catalog/u);
   assert.match(family.stdout, /figma:docs:search/u);
 
   const direct = createOutput();
@@ -222,7 +264,7 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   assert.match(direct.stdout, /--state-file <path>.*Required\./u);
   assert.match(direct.stdout, /--max-inline-bytes <bytes>/u);
   assert.match(direct.stdout, /<query>.*Required\./u);
-  assert.match(direct.stdout, /--workflow <id>.*Default: unset\./u);
+  assert.match(direct.stdout, /--workflow <design-implementation-context\|motion-implementation>.*Default: unset\./u);
   assert.match(direct.stdout, /--card-limit <n>.*Range: 1 to 8\./u);
   assert.match(direct.stdout, /--max-inline-bytes <bytes>.*Default: 4096\..*Range: 0 to 10000\./u);
 
@@ -239,8 +281,20 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
 
   const docsSearch = createOutput();
   assert.equal(await runFigmaCommand("docs:search", ["--help"], docsSearch.dependencies), 0);
-  assert.match(docsSearch.stdout, /--scope <active\|conditional\|examples\|all>/u);
-  assert.match(docsSearch.stdout, /--scope .*Default: active\..*Allowed: active, conditional, examples, all\./u);
+  assert.match(docsSearch.stdout, /--scope <auto\|active\|conditional\|router\|examples\|all>/u);
+  assert.match(docsSearch.stdout, /--scope .*Default: auto\..*Allowed: auto, active, conditional, router, examples, all\./u);
+  assert.match(docsSearch.stdout, /--surface <design\|figjam\|slides>/u);
+  assert.match(docsSearch.stdout, /--task-family <code-connect\|create-file\|design-to-code/u);
+
+  const docsCatalog = createOutput();
+  assert.equal(await runFigmaCommand("docs:catalog", ["--help"], docsCatalog.dependencies), 0);
+  assert.match(docsCatalog.stdout, /--classification <active\|conditional\|router\|examples>/u);
+  assert.match(docsCatalog.stdout, /--limit <n>.*Range: 1 to 100\./u);
+
+  const docsRead = createOutput();
+  assert.equal(await runFigmaCommand("docs:read", ["--help"], docsRead.dependencies), 0);
+  assert.match(docsRead.stdout, /<doc-id>.*Required\./u);
+  assert.match(docsRead.stdout, /project:workflow/u);
 
   const apiSearch = createOutput();
   assert.equal(await runFigmaCommand("api:search", ["--help"], apiSearch.dependencies), 0);

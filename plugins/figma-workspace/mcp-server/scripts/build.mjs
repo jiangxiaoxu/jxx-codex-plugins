@@ -3,12 +3,10 @@ import { chmod, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/prom
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import * as ts from "@typescript/typescript6";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = resolve(root, "dist");
-
-await rm(dist, { recursive: true, force: true });
-await mkdir(dist, { recursive: true });
 
 const sharedBuildOptions = {
   platform: "node",
@@ -82,42 +80,51 @@ const publicWrappers = [
   },
 ];
 
-await build({
-  ...sharedBuildOptions,
-  bundle: true,
-  banner: { js: bundledEsmRequireBanner },
-  entryPoints: [typescriptCompilerRuntimeOutput.entryPoint],
-  outfile: typescriptCompilerRuntimeOutput.outfile,
-});
-await rewriteBuiltFile(typescriptCompilerRuntimeOutput.outfile);
-
-await build({
-  ...sharedBuildOptions,
-  bundle: true,
-  banner: { js: bundledEsmRequireBanner },
-  entryPoints: [sharedRuntimeOutput.entryPoint],
-  external: ["./typescript-compiler-runtime.js"],
-  outfile: sharedRuntimeOutput.outfile,
-});
-await rewriteBuiltFile(sharedRuntimeOutput.outfile);
-
-await build({
-  ...sharedBuildOptions,
-  bundle: true,
-  banner: { js: bundledEsmRequireBanner },
-  entryPoints: [commandRuntimeOutput.entryPoint],
-  external: ["../runtime/workspace-runtime.js"],
-  outfile: commandRuntimeOutput.outfile,
-});
-await rewriteBuiltFile(commandRuntimeOutput.outfile);
-
-for (const output of publicWrappers) {
-  await writeWrapper(output.outfile, output.source, output.executable === true);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await buildDistribution();
 }
 
-await stageCanonicalCorpus();
-await stageProjectDocs();
-await stageHelperDeclarations();
+async function buildDistribution() {
+  await rm(dist, { recursive: true, force: true });
+  await mkdir(dist, { recursive: true });
+
+  await build({
+    ...sharedBuildOptions,
+    bundle: true,
+    banner: { js: bundledEsmRequireBanner },
+    entryPoints: [typescriptCompilerRuntimeOutput.entryPoint],
+    outfile: typescriptCompilerRuntimeOutput.outfile,
+  });
+  await rewriteBuiltFile(typescriptCompilerRuntimeOutput.outfile);
+
+  await build({
+    ...sharedBuildOptions,
+    bundle: true,
+    banner: { js: bundledEsmRequireBanner },
+    entryPoints: [sharedRuntimeOutput.entryPoint],
+    external: ["./typescript-compiler-runtime.js"],
+    outfile: sharedRuntimeOutput.outfile,
+  });
+  await rewriteBuiltFile(sharedRuntimeOutput.outfile);
+
+  await build({
+    ...sharedBuildOptions,
+    bundle: true,
+    banner: { js: bundledEsmRequireBanner },
+    entryPoints: [commandRuntimeOutput.entryPoint],
+    external: ["../runtime/workspace-runtime.js"],
+    outfile: commandRuntimeOutput.outfile,
+  });
+  await rewriteBuiltFile(commandRuntimeOutput.outfile);
+
+  for (const output of publicWrappers) {
+    await writeWrapper(output.outfile, output.source, output.executable === true);
+  }
+
+  await stageCanonicalCorpus();
+  await stageProjectDocs();
+  await stageHelperDeclarations();
+}
 
 function stripTrailingWhitespace(value) {
   return value.replace(/[ \t]+$/gm, "");
@@ -139,8 +146,20 @@ async function writeWrapper(file, source, executable) {
 async function stageCanonicalCorpus() {
   const source = resolve(root, "../skills/figma-workspace/references/canonical-corpus");
   const target = resolve(dist, "skills/figma-workspace/references/canonical-corpus");
+  const manifestFile = resolve(source, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestFile, "utf8"));
+  if (manifest.schemaVersion !== 2) {
+    throw new Error("Canonical corpus manifest schemaVersion must be 2 before staging.");
+  }
+  const runtimeFiles = ["manifest.json", manifest.routeCatalog?.file, manifest.corpus?.file];
+  for (const file of runtimeFiles) {
+    if (typeof file !== "string" || !/^[a-z0-9][a-z0-9.-]*$/u.test(file) || file.includes("..")) {
+      throw new Error(`Canonical corpus manifest contains an unsafe runtime file: ${String(file)}.`);
+    }
+  }
   await rm(target, { recursive: true, force: true });
-  await cp(source, target, { recursive: true });
+  await mkdir(target, { recursive: true });
+  await Promise.all(runtimeFiles.map((file) => cp(resolve(source, file), resolve(target, file))));
 }
 
 async function stageProjectDocs() {
@@ -176,21 +195,22 @@ async function stageFigmaPluginTypings(sourceDir, targetDir) {
     .map((entry) => cp(resolve(sourceDir, entry), resolve(targetDir, entry))));
 }
 
-async function stageFigmaPluginApiIndex(sourceDir, targetDir) {
+export async function stageFigmaPluginApiIndex(sourceDir, targetDir) {
   const sourceFiles = ["index.d.ts", "plugin-api.d.ts"];
   const packageData = JSON.parse(await readFile(resolve(sourceDir, "package.json"), "utf8"));
   const sourceEntries = [];
-  const records = [];
+  const sourceInputs = [];
   for (const sourceFile of sourceFiles) {
     const sourceText = normalizeLineEndings(await readFile(resolve(sourceDir, sourceFile), "utf8"));
     sourceEntries.push({ file: sourceFile, sha256: sha256(sourceText) });
-    records.push(...createPluginApiSymbolRecords(sourceFile, sourceText));
+    sourceInputs.push({ sourceFile, sourceText });
   }
+  const records = createPluginApiSymbolRecords(sourceInputs);
   const indexText = `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
   const indexSha256 = sha256(indexText);
   const indexFile = `index-${indexSha256}.jsonl`;
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     source: {
       package: "@figma/plugin-typings",
       version: packageData.version,
@@ -208,29 +228,168 @@ async function stageFigmaPluginApiIndex(sourceDir, targetDir) {
   await writeFile(resolve(targetDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
-function createPluginApiSymbolRecords(sourceFile, sourceText) {
-  const lines = sourceText.split("\n");
-  const records = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    const symbol = pluginApiSymbol(lines[index]);
-    if (!symbol) continue;
-    const start = pluginApiChunkStart(lines, index);
-    const end = pluginApiChunkEnd(lines, index);
-    const text = lines.slice(start, end).join("\n");
-    const id = `@figma/plugin-typings/${sourceFile}:${index + 1}:${symbol}`;
-    records.push({
-      schemaVersion: 1,
-      id,
-      symbol,
-      sourceFile,
-      declarationLine: index + 1,
-      lineStart: start + 1,
-      lineEnd: end,
+export function createPluginApiSymbolRecords(sourceInputs) {
+  const declarations = sourceInputs.flatMap(({ sourceFile, sourceText }) =>
+    collectPluginApiDeclarations(sourceFile, sourceText));
+  const runtimeAliases = createRuntimeQualifiedAliases(declarations);
+  return declarations.map((declaration) => {
+    const qualifiedAliases = new Set();
+    if (declaration.ownerSymbol) {
+      qualifiedAliases.add(`${declaration.ownerSymbol}.${declaration.symbol}`);
+    }
+    for (const alias of runtimeAliases.get(declaration) ?? []) {
+      qualifiedAliases.add(alias);
+    }
+    const text = declaration.lines.slice(declaration.lineStart - 1, declaration.lineEnd).join("\n");
+    return {
+      schemaVersion: 2,
+      id: `@figma/plugin-typings/${declaration.sourceFile}:${declaration.declarationLine}:${declaration.symbol}`,
+      symbol: declaration.symbol,
+      ownerSymbol: declaration.ownerSymbol,
+      declarationKind: declaration.declarationKind,
+      qualifiedAliases: [...qualifiedAliases].sort(),
+      sourceFile: declaration.sourceFile,
+      declarationLine: declaration.declarationLine,
+      lineStart: declaration.lineStart,
+      lineEnd: declaration.lineEnd,
       contentSha256: sha256(text),
       text,
+    };
+  });
+}
+
+function collectPluginApiDeclarations(sourceFile, sourceText) {
+  const source = ts.createSourceFile(
+    sourceFile,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const lines = sourceText.split("\n");
+  const declarations = [];
+
+  const append = (nameNode, declarationKind, ownerSymbol = null, typeNode = undefined) => {
+    if (!nameNode || !ts.isIdentifier(nameNode)) return;
+    const symbolIndex = source.getLineAndCharacterOfPosition(nameNode.getStart(source)).line;
+    const start = pluginApiChunkStart(lines, symbolIndex);
+    const end = pluginApiChunkEnd(lines, symbolIndex);
+    declarations.push({
+      sourceFile,
+      lines,
+      symbol: nameNode.text,
+      ownerSymbol,
+      declarationKind,
+      declarationLine: symbolIndex + 1,
+      lineStart: start + 1,
+      lineEnd: end,
+      referencedType: directNamedTypeReference(typeNode),
     });
+  };
+
+  const visitMembers = (ownerSymbol, members) => {
+    for (const member of members) {
+      if (ts.isMethodSignature(member) || ts.isMethodDeclaration(member)) {
+        append(member.name, "method", ownerSymbol);
+      } else if (ts.isPropertySignature(member) || ts.isPropertyDeclaration(member)) {
+        append(member.name, "property", ownerSymbol, member.type);
+      } else if (ts.isGetAccessorDeclaration(member)) {
+        append(member.name, "getter", ownerSymbol, member.type);
+      } else if (ts.isSetAccessorDeclaration(member)) {
+        append(member.name, "setter", ownerSymbol);
+      }
+    }
+  };
+
+  const visitStatements = (statements, namespaceOwner = null) => {
+    for (const statement of statements) {
+      if (ts.isInterfaceDeclaration(statement)) {
+        append(statement.name, "interface", namespaceOwner);
+        visitMembers(statement.name.text, statement.members);
+      } else if (ts.isTypeAliasDeclaration(statement)) {
+        append(statement.name, "type-alias", namespaceOwner, statement.type);
+      } else if (ts.isClassDeclaration(statement)) {
+        append(statement.name, "class", namespaceOwner);
+        if (statement.name) visitMembers(statement.name.text, statement.members);
+      } else if (ts.isEnumDeclaration(statement)) {
+        append(statement.name, "enum", namespaceOwner);
+        for (const member of statement.members) {
+          append(member.name, "enum-member", statement.name.text);
+        }
+      } else if (ts.isFunctionDeclaration(statement)) {
+        append(statement.name, "function", namespaceOwner);
+      } else if (ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) {
+          append(declaration.name, "variable", namespaceOwner, declaration.type);
+        }
+      } else if (ts.isModuleDeclaration(statement)) {
+        const isGlobalAugmentation = (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
+        if (ts.isIdentifier(statement.name) && !isGlobalAugmentation) {
+          append(statement.name, "namespace", namespaceOwner);
+        }
+        let body = statement.body;
+        while (body && ts.isModuleDeclaration(body)) body = body.body;
+        if (body && ts.isModuleBlock(body)) {
+          visitStatements(
+            body.statements,
+            ts.isIdentifier(statement.name) && !isGlobalAugmentation ? statement.name.text : namespaceOwner,
+          );
+        }
+      }
+    }
+  };
+
+  visitStatements(source.statements);
+  return declarations;
+}
+
+function directNamedTypeReference(typeNode) {
+  if (!typeNode) return undefined;
+  if (ts.isParenthesizedTypeNode(typeNode)) return directNamedTypeReference(typeNode.type);
+  if (ts.isTypeReferenceNode(typeNode) && ts.isIdentifier(typeNode.typeName)) {
+    return typeNode.typeName.text;
   }
-  return records;
+  if (ts.isUnionTypeNode(typeNode)) {
+    const references = new Set(typeNode.types
+      .map((entry) => directNamedTypeReference(entry))
+      .filter((entry) => entry !== undefined));
+    return references.size === 1 ? [...references][0] : undefined;
+  }
+  return undefined;
+}
+
+function createRuntimeQualifiedAliases(declarations) {
+  const aliases = new Map();
+  const membersByOwner = new Map();
+  for (const declaration of declarations) {
+    if (!declaration.ownerSymbol) continue;
+    const members = membersByOwner.get(declaration.ownerSymbol) ?? [];
+    members.push(declaration);
+    membersByOwner.set(declaration.ownerSymbol, members);
+  }
+
+  const roots = declarations.filter((declaration) =>
+    declaration.declarationKind === "variable"
+      && declaration.symbol === "figma"
+      && declaration.referencedType === "PluginAPI");
+  const pending = roots.map((root) => ({ typeName: root.referencedType, path: root.symbol, depth: 0 }));
+  const visited = new Set();
+  while (pending.length > 0) {
+    const current = pending.shift();
+    const visitKey = `${current.typeName}:${current.path}`;
+    if (visited.has(visitKey) || current.depth > 4) continue;
+    visited.add(visitKey);
+    for (const member of membersByOwner.get(current.typeName) ?? []) {
+      const alias = `${current.path}.${member.symbol}`;
+      const memberAliases = aliases.get(member) ?? [];
+      memberAliases.push(alias);
+      aliases.set(member, memberAliases);
+      if (member.declarationKind === "property" && member.referencedType) {
+        pending.push({ typeName: member.referencedType, path: alias, depth: current.depth + 1 });
+      }
+    }
+  }
+  return aliases;
 }
 
 function pluginApiSymbol(line) {

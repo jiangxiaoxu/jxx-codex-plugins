@@ -109,15 +109,49 @@ test("guidance and lookup run locally against staged runtime assets", async () =
   try {
     const guidance = await client.guidance({ query: "component variants text", surface: "design" });
     assert.equal(guidance.ok, true);
-    assert.ok(guidance.suggestions.referenceContext.length > 0);
-    assert.ok(guidance.suggestions.referenceContext.every((entry) => entry.sourceId.startsWith("internal:")));
-    assert.ok(guidance.suggestions.referenceContext.every((entry) => entry.classification === "active"));
+    assert.ok(guidance.referenceContext.length > 0);
+    assert.ok(guidance.referenceContext.every((entry) => typeof entry.docId === "string"));
+    assert.ok(guidance.referenceContext.every((entry) => entry.classification !== "examples"));
+    assert.equal(guidance.route.surface, "design");
+    assert.equal("suggestions" in guidance, false);
+    assert.doesNotMatch(JSON.stringify(guidance), /"text"\s*:/u);
     assert.doesNotMatch(JSON.stringify(guidance), /figma_workspace_/u);
+
+    const inferredSlidesGuidance = await client.guidance({ query: "slides presentation" });
+    assert.equal(inferredSlidesGuidance.route.surface, "slides");
+    assert.ok(inferredSlidesGuidance.cards.every((card) => card.surface === "slides" || card.surface === "any"));
+    assert.deepEqual(inferredSlidesGuidance.workflowGraph, []);
+
+    const intentMatrix = [
+      ["code connect", "code-connect", "canonical:figma-code-connect/references/api.md"],
+      ["create file", "create-file", "canonical:figma-create-new-file/SKILL.md"],
+      ["design to code", "design-to-code", "canonical:figma-design-to-code/SKILL.md"],
+      ["generate design", "design-generation", "canonical:figma-generate-design/SKILL.md"],
+      ["generate diagram", "diagram", "canonical:figma-generate-diagram/SKILL.md"],
+      ["create component library", "library-generation", "canonical:figma-generate-library/SKILL.md"],
+      ["motion implementation", "motion-implementation", "canonical:figma-implement-motion/SKILL.md"],
+      ["swiftui design to code", "swiftui", "canonical:figma-swiftui/SKILL.md"],
+      ["figjam board", "figjam", "canonical:figma-use-figjam/SKILL.md"],
+      ["motion design", "motion", "canonical:figma-use-motion/SKILL.md"],
+      ["slides presentation", "slides", "canonical:figma-use-slides/references/slide-lifecycle.md"],
+      ["design editing", "design-editing", "canonical:figma-use/SKILL.md"],
+    ];
+    for (const [query, taskFamily, topDocId] of intentMatrix) {
+      const routed = await client.guidance({ query });
+      assert.equal(routed.route.status, "matched", query);
+      assert.equal(routed.route.taskFamily, taskFamily, query);
+      assert.equal(routed.referenceContext[0]?.docId, topDocId, query);
+      assert.equal(routed.nextActions[0]?.commandId, "figma:docs:read", query);
+      assert.equal(routed.nextActions[0]?.args?.id, topDocId, query);
+      assert.ok(routed.nextActions.every((action) => /^figma:/u.test(action.commandId)), query);
+      assert.ok(routed.referenceContext.slice(0, 3).every((entry) =>
+        !entry.docId.startsWith("canonical:") || entry.taskFamily === taskFamily), query);
+    }
 
     const plan = await client.guidance({ mode: "plan", query: "component variants text" });
     assert.equal(plan.ok, true);
-    assert.ok(plan.recommendedTools.includes("guidance"));
-    assert.ok(plan.recommendedTools.includes("inspect"));
+    assert.ok(plan.recommendedTools.includes("figma:guidance"));
+    assert.ok(plan.recommendedTools.includes("figma:inspect"));
     assert.match(plan.workflow.workspaceDirGuidance, /Git-ignored <project>\/\.figma-workspace/u);
     assert.match(plan.workflow.workspaceDirGuidance, /capability-specific output roots/u);
     assert.doesNotMatch(JSON.stringify(plan), /task-memory|<project>\/figma-workspace|absolute project\/worktree/u);
@@ -138,9 +172,10 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       maxSnippetLines: 8,
     });
     assert.equal(docsLookup.ok, true);
-    assert.ok(docsLookup.results.some((entry) => entry.sourceId.startsWith("internal:bridge/")));
+    assert.ok(docsLookup.results.some((entry) => entry.docId.startsWith("bridge:")));
     assert.match(JSON.stringify(docsLookup.results), /guidance|get-design-context/u);
     assert.doesNotMatch(JSON.stringify(docsLookup.results), /figma_workspace_/u);
+    assert.ok(Buffer.byteLength(JSON.stringify(docsLookup), "utf8") <= 12 * 1024);
 
     const projectDocsLookup = await client.lookup({
       kind: "docs",
@@ -149,7 +184,7 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       maxSnippetLines: 4,
     });
     assert.equal(projectDocsLookup.ok, true);
-    assert.ok(projectDocsLookup.results.some((entry) => entry.sourceId.startsWith("project:sessions#")));
+    assert.ok(projectDocsLookup.results.some((entry) => entry.docId === "project:sessions"));
     assert.match(JSON.stringify(projectDocsLookup.results), /--state-file|\.figma-workspace\/results/u);
 
     const defaultExampleLookup = await client.lookup({
@@ -159,7 +194,8 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       maxSnippetLines: 4,
     });
     assert.equal(defaultExampleLookup.ok, true);
-    assert.equal(defaultExampleLookup.scope, "active");
+    assert.equal(defaultExampleLookup.requestedScope, "auto");
+    assert.equal(defaultExampleLookup.effectiveScopes.includes("examples"), false);
     assert.equal(defaultExampleLookup.results.length, 0);
 
     const exampleLookup = await client.lookup({
@@ -171,11 +207,11 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     });
     assert.equal(exampleLookup.ok, true);
     assert.ok(exampleLookup.results.some(
-      (entry) => entry.sourceId.includes("figma-generate-library/examples/cleanup-orphans"),
+      (entry) => entry.docId.includes("figma-generate-library/examples/cleanup-orphans"),
     ));
     assert.ok(exampleLookup.results.every((entry) => entry.classification === "examples"));
     assert.ok(exampleLookup.results.every((entry) => entry.nonExecutable === true));
-    assert.ok(exampleLookup.results.every((entry) => !entry.sourceId.includes("/scripts/") && !entry.sourceId.endsWith(".js")));
+    assert.ok(exampleLookup.results.every((entry) => !entry.docId.includes("/scripts/") && !entry.docId.endsWith(".js")));
     const allExampleLookup = await client.lookup({
       kind: "docs",
       scope: "all",
@@ -184,7 +220,7 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       maxSnippetLines: 4,
     });
     assert.ok(allExampleLookup.results.some(
-      (entry) => entry.sourceId.includes("figma-generate-library/examples/cleanup-orphans") && entry.nonExecutable === true,
+      (entry) => entry.docId.includes("figma-generate-library/examples/cleanup-orphans") && entry.nonExecutable === true,
     ));
 
     const activeLookup = await client.lookup({
@@ -194,28 +230,29 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       maxSnippetLines: 4,
     });
     assert.ok(activeLookup.results.some(
-      (entry) => entry.sourceRecordId === "figma-use-figjam/references/create-code-block.md",
+      (entry) => entry.docId === "canonical:figma-use-figjam/references/create-code-block.md",
     ));
     assert.ok(activeLookup.results.every((entry) => entry.classification === "active"));
 
     const conditionalDefaultLookup = await client.lookup({
       kind: "docs",
-      query: "non-snippet information upwards",
+      query: "code connect advanced patterns",
       maxResults: 5,
       maxSnippetLines: 4,
     });
-    assert.ok(conditionalDefaultLookup.results.every(
-      (entry) => entry.sourceRecordId !== "figma-code-connect/references/advanced-patterns.md",
+    assert.ok(conditionalDefaultLookup.results.some(
+      (entry) => entry.docId === "canonical:figma-code-connect/references/advanced-patterns.md",
     ));
     const conditionalLookup = await client.lookup({
       kind: "docs",
       scope: "conditional",
-      query: "non-snippet information upwards",
+      query: "code connect advanced patterns",
+      taskFamily: "code-connect",
       maxResults: 5,
       maxSnippetLines: 4,
     });
     assert.ok(conditionalLookup.results.some(
-      (entry) => entry.sourceRecordId === "figma-code-connect/references/advanced-patterns.md",
+      (entry) => entry.docId === "canonical:figma-code-connect/references/advanced-patterns.md",
     ));
     assert.ok(conditionalLookup.results.every((entry) => entry.classification === "conditional"));
 
@@ -225,8 +262,8 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       maxResults: 5,
       maxSnippetLines: 4,
     });
-    assert.ok(routerDefaultLookup.results.every(
-      (entry) => entry.sourceRecordId !== "figma-design-to-code/SKILL.md",
+    assert.ok(routerDefaultLookup.results.some(
+      (entry) => entry.docId === "canonical:figma-design-to-code/SKILL.md",
     ));
     const allLookup = await client.lookup({
       kind: "docs",
@@ -236,11 +273,12 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       maxSnippetLines: 4,
     });
     const designToCodeResult = allLookup.results.find(
-      (entry) => entry.sourceRecordId === "figma-design-to-code/SKILL.md",
+      (entry) => entry.docId === "canonical:figma-design-to-code/SKILL.md",
     );
     assert.ok(designToCodeResult);
     assert.equal(designToCodeResult.classification, "router");
-    assert.equal(designToCodeResult.sanitized, true);
+    assert.equal("sanitized" in designToCodeResult, false);
+    assert.equal("text" in designToCodeResult, false);
     assert.doesNotMatch(designToCodeResult.snippet, /invoke skill|skillNames|resource:/iu);
 
     const lookup = await client.lookup({ kind: "api", symbol: "createFrame", maxResults: 2, maxSnippetLines: 3 });
@@ -249,10 +287,8 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     assert.equal(lookup.results[0].matchType, "exact-symbol");
     assert.match(JSON.stringify(lookup.results), /createFrame/u);
     assert.ok(lookup.results.every((entry) => entry.classification === "api"));
-    assert.ok(lookup.results.every(
-      (entry) => entry.sourceRecordId.startsWith("@figma/plugin-typings/"),
-    ));
-    assert.ok(lookup.results.every((entry) => entry.sourceContract === "@figma/plugin-typings"));
+    assert.ok(lookup.results.every((entry) => entry.apiId.startsWith("api:")));
+    assert.ok(lookup.results.every((entry) => !("sourceContract" in entry) && !("text" in entry)));
     const detailedApiLookup = await client.lookup({
       kind: "api",
       symbol: "createFrame",
@@ -269,18 +305,14 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     assert.ok(createFrameDeclarationLine > 0);
     const exactCreateFrame = detailedApiLookup.results.find((entry) =>
       entry.matchType === "exact-symbol" &&
-      entry.indexedSymbol === "createFrame" &&
-      entry.indexedSourceFile === "plugin-api.d.ts" &&
+      entry.title === "PluginAPI.createFrame" &&
+      entry.apiId.includes("plugin-api.d.ts") &&
       entry.lineStart <= createFrameDeclarationLine &&
       entry.lineEnd >= createFrameDeclarationLine);
     assert.ok(exactCreateFrame);
     assert.match(exactCreateFrame.snippet, /^\s*createFrame\(\): FrameNode\s*$/mu);
     assert.ok(detailedApiLookup.results.every((entry) =>
-      entry.matchType !== "exact-symbol" || entry.indexedSymbol.toLowerCase() === "createframe"));
-    assert.ok(detailedApiLookup.results.every((entry) =>
-      entry.indexedSymbol === "createFrame" || entry.matchType !== "exact-symbol"));
-    assert.ok(detailedApiLookup.results.some((entry) =>
-      entry.indexedSymbol !== "createFrame" && entry.matchType !== "exact-symbol"));
+      entry.matchType !== "exact-symbol" || entry.title.endsWith(".createFrame")));
     const caseVariantApiLookup = await client.lookup({
       kind: "api",
       symbol: "CreateFrame",
@@ -289,6 +321,21 @@ test("guidance and lookup run locally against staged runtime assets", async () =
     });
     assert.ok(caseVariantApiLookup.results.length > 0);
     assert.ok(caseVariantApiLookup.results.every((entry) => entry.matchType !== "exact-symbol"));
+    const missingScreenshotLookup = await client.lookup({
+      kind: "api",
+      symbol: "SceneNode.screenshot",
+      maxResults: 5,
+      maxSnippetLines: 3,
+    });
+    assert.ok(missingScreenshotLookup.results.every((entry) => entry.classification === "api"));
+    assert.ok(missingScreenshotLookup.results.every((entry) => entry.matchType !== "exact-symbol"));
+    const invalidOwnerLookup = await client.lookup({
+      kind: "api",
+      symbol: "createFrame.createRectangle",
+      maxResults: 5,
+      maxSnippetLines: 3,
+    });
+    assert.ok(invalidOwnerLookup.results.every((entry) => entry.matchType !== "exact-symbol"));
     await assert.rejects(
       client.lookup({ kind: "api", scope: "active", symbol: "createFrame" }),
       /scope.*only allowed.*kind.*docs/u,
@@ -321,12 +368,17 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
     }],
   });
   try {
-    const docs = await client.docs();
+    const docs = await client.docs({ mode: "list" });
     assert.equal(docs.ok, true);
-    assert.ok(docs.topics.some((entry) => entry.topic === "workflow"));
-    const workflow = await client.docs({ topic: "workflow" });
+    assert.ok(docs.topics.some((entry) => entry.id === "project:workflow"));
+    const catalog = await client.docs({ mode: "catalog", taskFamily: "code-connect" });
+    assert.ok(catalog.records.some((entry) => entry.id === "canonical:figma-code-connect/references/advanced-patterns.md"));
+    const workflow = await client.docs({ mode: "read", id: "project:workflow" });
     assert.equal(workflow.ok, true);
     assert.match(workflow.content, /figma\.ts/u);
+    const canonicalDoc = await client.docs({ mode: "read", id: "canonical:figma-code-connect/references/advanced-patterns.md" });
+    assert.equal(canonicalDoc.kind, "canonical");
+    assert.match(canonicalDoc.content, /Code Connect/iu);
 
     const doctor = await client.doctor();
     assert.equal(typeof doctor.runtime.projectDocs.ok, "boolean");
@@ -334,7 +386,7 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
     assert.equal(typeof doctor.runtime.typescript.ok, "boolean");
     assert.match(doctor.runtime.lookup.canonical.corpusSha256, /^[a-f0-9]{64}$/u);
     assert.equal(doctor.runtime.lookup.canonical.recordCount, 87);
-    assert.deepEqual(doctor.runtime.lookup.canonical.classificationCounts, {
+    assert.deepEqual(doctor.runtime.lookup.canonical.inventories.classifications, {
       active: 46,
       conditional: 20,
       router: 12,

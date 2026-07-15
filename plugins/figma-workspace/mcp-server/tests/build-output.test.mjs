@@ -68,6 +68,16 @@ test("build publishes a private package with only the figma-workspace CLI bin", 
   assert.equal(distFiles.some((entry) => entry.includes("upstream-stdio")), false);
   assert.equal(distFiles.some((entry) => entry.includes("upstream-corpus") || entry.includes("upstream-active")), false);
   assert.equal(distFiles.includes("skills/figma-workspace/references/canonical-corpus/manifest.json"), true);
+  const canonicalManifest = JSON.parse(await readFile(
+    resolve(packageRoot, "dist/skills/figma-workspace/references/canonical-corpus/manifest.json"),
+    "utf8",
+  ));
+  assert.equal(distFiles.includes(`skills/figma-workspace/references/canonical-corpus/${canonicalManifest.routeCatalog.file}`), true);
+  assert.deepEqual(
+    distFiles.filter((entry) => /skills\/figma-workspace\/references\/canonical-corpus\/corpus-[a-f0-9]{64}\.jsonl$/u.test(entry)),
+    [`skills/figma-workspace/references/canonical-corpus/${canonicalManifest.corpus.file}`],
+  );
+  assert.equal(distFiles.some((entry) => /canonical-corpus\/(?:policy|docs)\//u.test(entry)), false);
   assert.equal(distFiles.includes("runtime/figma-plugin-api-index/manifest.json"), true);
   for (const file of [
     "figma-workspace-overview.md",
@@ -449,7 +459,9 @@ test("built CLI reads JSON stdin through the real process pipe", async () => {
     assert.doesNotMatch(result.stdout, /^Status: failed$/mu);
     const fullResult = await readCliResultSidecar(result.stdout);
     assert.equal(fullResult.ok, true);
-    assert.ok(fullResult.suggestions.referenceContext.length > 0);
+    assert.ok(fullResult.referenceContext.length > 0);
+    assert.equal("suggestions" in fullResult, false);
+    assert.doesNotMatch(JSON.stringify(fullResult), /figma_workspace_|"text"\s*:/u);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

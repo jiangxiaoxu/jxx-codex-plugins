@@ -12,7 +12,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildCanonicalCorpus } from "../scripts/lib/canonical-corpus.mjs";
+import {
+  buildCanonicalCorpus,
+  readCanonicalRouteCatalog,
+} from "../scripts/lib/canonical-corpus.mjs";
 
 const generatedAt = "2026-07-14T04:05:06.000Z";
 
@@ -34,11 +37,28 @@ test("builder publishes only self-contained mirrors with canonical identities", 
       "alpha/scripts/create-card.js",
       "alpha/references/guide.md",
     ]);
-    assert.deepEqual(manifest.classificationCounts, {
-      active: 1,
-      conditional: 0,
-      router: 1,
-      examples: 1,
+    assert.equal(manifest.schemaVersion, 2);
+    assert.deepEqual(manifest.inventories, {
+      classifications: {
+        active: 1,
+        conditional: 0,
+        examples: 1,
+        router: 1,
+      },
+      surfaces: {
+        design: 3,
+        figjam: 0,
+        slides: 0,
+      },
+      taskFamilies: {
+        "alpha-task": 3,
+      },
+    });
+    assert.deepEqual(manifest.routeCatalog, {
+      file: "routes.json",
+      schemaVersion: 1,
+      routeCount: 1,
+      sha256: sha256(await readFile(join(fixture.canonicalRoot, "routes.json"), "utf8")),
     });
     assert.deepEqual(manifest.reviewWarnings, []);
     assert.deepEqual(manifest.corpus, {
@@ -56,11 +76,39 @@ test("builder publishes only self-contained mirrors with canonical identities", 
       records.map((record) => [record.id, record.contentSha256]),
     ));
     for (const record of records) {
+      assert.equal(record.schemaVersion, 2);
       assert.equal(record.format, "markdown");
       assert.equal(record.sanitized, true);
       assert.equal(record.contentSha256, sha256(record.text));
+      assert.equal(record.taskFamily, "alpha-task");
+      assert.deepEqual(record.surfaces, ["design"]);
+      assert.equal(typeof record.mappingProfile, "string");
+      assert.equal(typeof record.title, "string");
+      assert.equal(typeof record.summary, "string");
+      assert.ok(record.title.length > 0 && record.title.length <= 120);
+      assert.ok(record.summary.length > 0 && record.summary.length <= 240);
       assert.equal("sourceContentSha256" in record, false);
     }
+    assert.deepEqual(
+      records.map(({ id, title, summary }) => ({ id, title, summary })),
+      [
+        {
+          id: "alpha/SKILL.md",
+          title: "Canonical router",
+          summary: "Route Alpha tasks to the canonical workflow.",
+        },
+        {
+          id: "alpha/examples/create-card.md",
+          title: "Create a card",
+          summary: "Create the card with the native Plugin API.",
+        },
+        {
+          id: "alpha/references/guide.md",
+          title: "Canonical safe guide",
+          summary: "Use the safe canonical workflow.",
+        },
+      ],
+    );
     const example = records.find((record) => record.classification === "examples");
     assert.equal(example.nonExecutable, true);
     assert.match(example.text, /```ts/u);
@@ -182,6 +230,110 @@ test("policy and mirror errors fail closed", async (t) => {
       await rm(fixture.root, { recursive: true, force: true });
     }
   });
+
+  await t.test("unknown policy surface", async () => {
+    const fixture = await createFixture();
+    try {
+      fixture.policyRecords[0].surfaces = ["whiteboard"];
+      await writePolicy(fixture);
+      await assert.rejects(buildFixture(fixture), /Unknown policy record .* surface/u);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("route and policy surface mismatch", async () => {
+    const fixture = await createFixture();
+    try {
+      fixture.route.routes[0].surfaces = ["figjam"];
+      await writeRoutes(fixture);
+      await assert.rejects(buildFixture(fixture), /route surfaces do not match policy surfaces/u);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+});
+
+test("route catalog schema and fixed task-family coverage fail closed", async (t) => {
+  await t.test("old schema", async () => {
+    const fixture = await createFixture();
+    try {
+      fixture.route.schemaVersion = 0;
+      await writeRoutes(fixture);
+      await assert.rejects(buildFixture(fixture), /schemaVersion must be 1/u);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("unknown task family", async () => {
+    const fixture = await createFixture();
+    try {
+      fixture.route.routes[0].taskFamily = "unknown-task";
+      await writeRoutes(fixture);
+      await assert.rejects(buildFixture(fixture), /Unknown canonical task family/u);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("duplicate alias", async () => {
+    const fixture = await createFixture();
+    try {
+      fixture.route.routes[0].aliases.push("alpha-task");
+      await writeRoutes(fixture);
+      await assert.rejects(buildFixture(fixture), /Duplicate canonical route alias/u);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("non-English alias", async () => {
+    const fixture = await createFixture();
+    try {
+      fixture.route.routes[0].aliases = ["alpha task", "设计"];
+      await writeRoutes(fixture);
+      await assert.rejects(buildFixture(fixture), /compact English ASCII text/u);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("unsorted task families", async () => {
+    const fixture = await createFixture();
+    try {
+      fixture.route.routes = [
+        {
+          taskFamily: "zeta-task",
+          skill: "zeta",
+          surfaces: ["design"],
+          canonicalQuery: "complete a Zeta task",
+          aliases: ["zeta task"],
+        },
+        fixture.route.routes[0],
+      ];
+      await writeRoutes(fixture);
+      await assert.rejects(
+        readCanonicalRouteCatalog(fixture.canonicalRoot, {
+          expectedTaskFamilies: ["alpha-task", "zeta-task"],
+        }),
+        /strictly sorted by taskFamily/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+});
+
+test("route catalog reader returns the validated shared route source", async () => {
+  const fixture = await createFixture();
+  try {
+    assert.deepEqual(await readCanonicalRouteCatalog(fixture.canonicalRoot, {
+      expectedTaskFamilies: ["alpha-task"],
+    }), fixture.route);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
 });
 
 test("manifest-last publication retains old content and cleans failed temporaries", async () => {
@@ -215,13 +367,34 @@ test("manifest-last publication retains old content and cleans failed temporarie
   }
 });
 
+test("successful publication removes corpus files not referenced by the current manifest", async () => {
+  const fixture = await createFixture();
+  try {
+    const first = await buildFixture(fixture);
+    await writeFile(
+      join(fixture.canonicalRoot, "docs/alpha/references/guide.md"),
+      "# Revised canonical guide\n\nUse the revised safe workflow.\n",
+      "utf8",
+    );
+    const second = await buildFixture(fixture);
+    assert.notEqual(first.manifest.corpus.file, second.manifest.corpus.file);
+    const files = await readdir(fixture.canonicalRoot);
+    assert.deepEqual(
+      files.filter((file) => /^corpus-[0-9a-f]{64}\.jsonl$/u.test(file)),
+      [second.manifest.corpus.file],
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
 async function createFixture() {
   const root = await mkdtemp(join(tmpdir(), "figma-canonical-corpus-"));
   const canonicalRoot = join(root, "canonical-corpus");
   const mirrors = {
-    "docs/alpha/SKILL.md": "# Canonical router\n",
-    "docs/alpha/references/guide.md": "# Canonical safe guide\n",
-    "docs/alpha/examples/create-card.md": "# Create a card\n\n```ts\nconst card = figma.createFrame();\n```\n",
+    "docs/alpha/SKILL.md": "# Canonical router\n\nRoute Alpha tasks to the canonical workflow.\n",
+    "docs/alpha/references/guide.md": "# Canonical safe guide\n\nUse the safe canonical workflow.\n",
+    "docs/alpha/examples/create-card.md": "# Create a card\n\nCreate the card with the native Plugin API.\n\n```ts\nconst card = figma.createFrame();\n```\n",
   };
   for (const [path, text] of Object.entries(mirrors)) {
     const target = join(canonicalRoot, ...path.split("/"));
@@ -244,7 +417,18 @@ async function createFixture() {
     ),
     policyRecord("alpha/references/api.d.ts", "export interface Api {}\n", "api"),
   ];
-  const fixture = { root, canonicalRoot, policyRecords };
+  const route = {
+    schemaVersion: 1,
+    routes: [{
+      taskFamily: "alpha-task",
+      skill: "alpha",
+      surfaces: ["design"],
+      canonicalQuery: "complete an Alpha task",
+      aliases: ["alpha task"],
+    }],
+  };
+  const fixture = { root, canonicalRoot, policyRecords, route };
+  await writeRoutes(fixture);
   await writePolicy(fixture);
   return fixture;
 }
@@ -255,12 +439,22 @@ async function buildFixture(fixture, options = {}) {
     generatedAt,
     expectedPolicyFragmentCount: 1,
     expectedPublishedRecordCount: 3,
+    expectedTaskFamilies: ["alpha-task"],
     source: {
       repository: "https://example.invalid/figma.git",
       resolvedCommit: "a".repeat(40),
     },
     ...options,
   });
+}
+
+async function writeRoutes(fixture) {
+  await mkdir(fixture.canonicalRoot, { recursive: true });
+  await writeFile(
+    join(fixture.canonicalRoot, "routes.json"),
+    `${JSON.stringify(fixture.route, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 async function writePolicy(fixture) {
@@ -274,6 +468,11 @@ async function writePolicy(fixture) {
 }
 
 function policyRecord(id, source, classification, mirrorPath) {
+  const mappingProfile = classification === "examples"
+    ? "canonical-typescript-example"
+    : classification === "api"
+      ? "exact-plugin-api"
+      : "plugin-api";
   return {
     id,
     sourceContentSha256: sha256(source),
@@ -282,8 +481,8 @@ function policyRecord(id, source, classification, mirrorPath) {
     ...(mirrorPath === undefined ? {} : { mirrorPath }),
     sourceContract: "figma-mcp",
     targetContract: "figma-workspace-cli",
-    surfaces: [classification === "api" ? "api" : "docs"],
-    mappingProfile: `${classification}-v1`,
+    surfaces: ["design"],
+    mappingProfile,
   };
 }
 

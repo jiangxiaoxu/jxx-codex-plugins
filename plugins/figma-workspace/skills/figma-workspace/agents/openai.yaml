@@ -1,4 +1,4 @@
 interface:
   display_name: "Figma Workspace"
   short_description: "Figma automation through independent npm commands and a stateful CLI"
-  default_prompt: "Use $figma-workspace and its plugin-root npm command entrypoints for Figma work; run the chosen command help before first use, reuse --state-file for stateful work, and read Restricted Markdown or outputFiles.cliResultFile rather than JSON.parse(stdout)."
+  default_prompt: "Use $figma-workspace and its public figma:* npm commands for Figma work. Run command help first, reuse an absolute --state-file, compress documentation intent to English canonical keywords, use docs:catalog/list/read IDs and docs:search auto routing with hard surface filters, and read Restricted Markdown or outputFiles.cliResultFile rather than JSON.parse(stdout)."

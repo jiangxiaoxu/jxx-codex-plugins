@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    {
+      "taskFamily": "code-connect",
+      "skill": "figma-code-connect",
+      "surfaces": [
+        "design"
+      ],
+      "canonicalQuery": "connect Figma components to code components",
+      "aliases": [
+        "code connect",
+        "component code mapping",
+        "connect component to code"
+      ]
+    },
+    {
+      "taskFamily": "create-file",
+      "skill": "figma-create-new-file",
+      "surfaces": [
+        "design",
+        "figjam",
+        "slides"
+      ],
+      "canonicalQuery": "create a new Figma file",
+      "aliases": [
+        "create file",
+        "new Figma file",
+        "new design file"
+      ]
+    },
+    {
+      "taskFamily": "design-editing",
+      "skill": "figma-use",
+      "surfaces": [
+        "design"
+      ],
+      "canonicalQuery": "edit a Figma design with the Plugin API",
+      "aliases": [
+        "design editing",
+        "edit design",
+        "plugin api",
+        "text layout",
+        "components and variables"
+      ]
+    },
+    {
+      "taskFamily": "design-generation",
+      "skill": "figma-generate-design",
+      "surfaces": [
+        "design"
+      ],
+      "canonicalQuery": "generate a Figma design",
+      "aliases": [
+        "design generation",
+        "generate design",
+        "create interface design"
+      ]
+    },
+    {
+      "taskFamily": "design-to-code",
+      "skill": "figma-design-to-code",
+      "surfaces": [
+        "design"
+      ],
+      "canonicalQuery": "convert a Figma design to code",
+      "aliases": [
+        "design to code",
+        "implement from Figma",
+        "convert design to code"
+      ]
+    },
+    {
+      "taskFamily": "diagram",
+      "skill": "figma-generate-diagram",
+      "surfaces": [
+        "figjam"
+      ],
+      "canonicalQuery": "generate a diagram in FigJam",
+      "aliases": [
+        "generate diagram",
+        "flowchart",
+        "sequence diagram",
+        "architecture diagram",
+        "entity relationship diagram"
+      ]
+    },
+    {
+      "taskFamily": "figjam",
+      "skill": "figma-use-figjam",
+      "surfaces": [
+        "figjam"
+      ],
+      "canonicalQuery": "edit a FigJam board",
+      "aliases": [
+        "figjam",
+        "figjam board",
+        "sticky notes",
+        "board connector"
+      ]
+    },
+    {
+      "taskFamily": "library-generation",
+      "skill": "figma-generate-library",
+      "surfaces": [
+        "design"
+      ],
+      "canonicalQuery": "generate a Figma design system library",
+      "aliases": [
+        "library generation",
+        "generate design system",
+        "create component library",
+        "create token library"
+      ]
+    },
+    {
+      "taskFamily": "motion",
+      "skill": "figma-use-motion",
+      "surfaces": [
+        "design"
+      ],
+      "canonicalQuery": "inspect motion in a Figma design",
+      "aliases": [
+        "motion",
+        "motion design",
+        "motion easing",
+        "animation pattern"
+      ]
+    },
+    {
+      "taskFamily": "motion-implementation",
+      "skill": "figma-implement-motion",
+      "surfaces": [
+        "design"
+      ],
+      "canonicalQuery": "implement motion from a Figma design",
+      "aliases": [
+        "motion implementation",
+        "implement animation",
+        "implement motion",
+        "path motion"
+      ]
+    },
+    {
+      "taskFamily": "slides",
+      "skill": "figma-use-slides",
+      "surfaces": [
+        "slides"
+      ],
+      "canonicalQuery": "create or edit Figma Slides",
+      "aliases": [
+        "slides",
+        "figma slides",
+        "slide deck",
+        "presentation slides"
+      ]
+    },
+    {
+      "taskFamily": "swiftui",
+      "skill": "figma-swiftui",
+      "surfaces": [
+        "design"
+      ],
+      "canonicalQuery": "convert between Figma designs and SwiftUI",
+      "aliases": [
+        "swiftui",
+        "swiftui design to code",
+        "swiftui code to design",
+        "figma swiftui"
+      ]
+    }
+  ]
+}
