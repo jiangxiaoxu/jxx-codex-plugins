@@ -60,11 +60,11 @@ Use native Figma Plugin API for all other operations, including node traversal, 
 
 ## Canonical Corpus And API Index
 
-The runtime reads only the plugin-owned canonical corpus staged from `skills/figma-workspace/references/canonical-corpus/`. Its v2 manifest validates 87 records and their content-addressed hashes, classification, surface, task-family, title, summary, and route catalog. The runtime does not read or package the complete upstream source snapshot.
+The runtime reads only the plugin-owned manifest, route catalog, and content-addressed JSONL staged from `skills/figma-workspace/references/canonical-corpus/`. Its v2 manifest validates 87 records and their hashes, classification, surface, task-family, title, and summary. Adapted Markdown mirrors and policy live under `dev/canonical-corpus-source/`, outside the recursively discovered skill tree and outside the package. The runtime does not read or package the authoring source or complete upstream snapshot.
 
 The v2 Figma Plugin API index is generated during the package build from bundled `@figma/plugin-typings`. It is independent of the development snapshot. `figma:doctor` diagnoses the canonical corpus, generated API index, project docs, and TypeScript runtime assets.
 
-The complete development source snapshot and drift report live under `dev/upstream-snapshot/` and `dev/upstream-changes/`. They are maintenance inputs only and do not enter the npm package or `mcp-server/dist/`.
+The canonical authoring source, complete development snapshot, and drift report live under `dev/canonical-corpus-source/`, `dev/upstream-snapshot/`, and `dev/upstream-changes/`. They are maintenance inputs only and do not enter the npm package or `mcp-server/dist/`.
 
 ## Login And State
 

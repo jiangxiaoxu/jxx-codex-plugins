@@ -66,6 +66,11 @@ test("builder publishes only self-contained mirrors with canonical identities", 
       recordCount: 3,
       sha256: sha256(corpusText),
     });
+    assert.deepEqual((await readdir(fixture.canonicalRoot)).sort(), [
+      manifest.corpus.file,
+      "manifest.json",
+      "routes.json",
+    ].sort());
     assert.deepEqual(manifest.source, {
       repository: "https://example.invalid/figma.git",
       resolvedCommit: "a".repeat(40),
@@ -137,7 +142,7 @@ test("builder publishes but records a review warning for source-identical mirror
   const fixture = await createFixture();
   try {
     const policy = fixture.policyRecords.find((record) => record.classification === "active");
-    const mirror = join(fixture.canonicalRoot, ...policy.mirrorPath.split("/"));
+    const mirror = join(fixture.sourceRoot, ...policy.mirrorPath.split("/"));
     const text = await readFile(mirror, "utf8");
     policy.sourceContentSha256 = sha256(text);
     await writePolicy(fixture);
@@ -180,7 +185,7 @@ test("canonical examples fail closed without a TypeScript code fence", async (t)
       const fixture = await createFixture();
       try {
         await writeFile(
-          join(fixture.canonicalRoot, "docs/alpha/examples/create-card.md"),
+          join(fixture.sourceRoot, "docs/alpha/examples/create-card.md"),
           text,
           "utf8",
         );
@@ -197,6 +202,31 @@ test("canonical examples fail closed without a TypeScript code fence", async (t)
 });
 
 test("policy and mirror errors fail closed", async (t) => {
+  await t.test("source and publish roots overlap", async () => {
+    const fixture = await createFixture();
+    try {
+      await assert.rejects(
+        buildCanonicalCorpus({
+          sourceRoot: fixture.canonicalRoot,
+          publishRoot: fixture.canonicalRoot,
+        }),
+        /sourceRoot and publishRoot must be separate/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("publish root contains an authoring directory", async () => {
+    const fixture = await createFixture();
+    try {
+      await mkdir(join(fixture.canonicalRoot, "docs"));
+      await assert.rejects(buildFixture(fixture), /publishRoot must contain runtime files only/u);
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
   await t.test("duplicate canonical identity", async () => {
     const fixture = await createFixture();
     try {
@@ -211,7 +241,7 @@ test("policy and mirror errors fail closed", async (t) => {
   await t.test("missing mirror", async () => {
     const fixture = await createFixture();
     try {
-      await rm(join(fixture.canonicalRoot, "docs/alpha/references/guide.md"));
+      await rm(join(fixture.sourceRoot, "docs/alpha/references/guide.md"));
       await assert.rejects(buildFixture(fixture), /Unable to read canonical mirror/u);
     } finally {
       await rm(fixture.root, { recursive: true, force: true });
@@ -222,7 +252,7 @@ test("policy and mirror errors fail closed", async (t) => {
     const fixture = await createFixture();
     try {
       await writeFile(
-        join(fixture.canonicalRoot, "docs/alpha/references/guide.md"),
+        join(fixture.sourceRoot, "docs/alpha/references/guide.md"),
         Buffer.from([0xc3, 0x28]),
       );
       await assert.rejects(buildFixture(fixture), /not valid UTF-8/u);
@@ -342,7 +372,7 @@ test("manifest-last publication retains old content and cleans failed temporarie
     const first = await buildFixture(fixture);
     const oldManifest = await readFile(join(fixture.canonicalRoot, "manifest.json"), "utf8");
     await writeFile(
-      join(fixture.canonicalRoot, "docs/alpha/references/guide.md"),
+      join(fixture.sourceRoot, "docs/alpha/references/guide.md"),
       "# Revised canonical guide\n",
       "utf8",
     );
@@ -372,7 +402,7 @@ test("successful publication removes corpus files not referenced by the current 
   try {
     const first = await buildFixture(fixture);
     await writeFile(
-      join(fixture.canonicalRoot, "docs/alpha/references/guide.md"),
+      join(fixture.sourceRoot, "docs/alpha/references/guide.md"),
       "# Revised canonical guide\n\nUse the revised safe workflow.\n",
       "utf8",
     );
@@ -391,13 +421,14 @@ test("successful publication removes corpus files not referenced by the current 
 async function createFixture() {
   const root = await mkdtemp(join(tmpdir(), "figma-canonical-corpus-"));
   const canonicalRoot = join(root, "canonical-corpus");
+  const sourceRoot = join(root, "canonical-corpus-source");
   const mirrors = {
     "docs/alpha/SKILL.md": "# Canonical router\n\nRoute Alpha tasks to the canonical workflow.\n",
     "docs/alpha/references/guide.md": "# Canonical safe guide\n\nUse the safe canonical workflow.\n",
     "docs/alpha/examples/create-card.md": "# Create a card\n\nCreate the card with the native Plugin API.\n\n```ts\nconst card = figma.createFrame();\n```\n",
   };
   for (const [path, text] of Object.entries(mirrors)) {
-    const target = join(canonicalRoot, ...path.split("/"));
+    const target = join(sourceRoot, ...path.split("/"));
     await mkdir(join(target, ".."), { recursive: true });
     await writeFile(target, text, "utf8");
   }
@@ -427,7 +458,7 @@ async function createFixture() {
       aliases: ["alpha task"],
     }],
   };
-  const fixture = { root, canonicalRoot, policyRecords, route };
+  const fixture = { root, canonicalRoot, sourceRoot, policyRecords, route };
   await writeRoutes(fixture);
   await writePolicy(fixture);
   return fixture;
@@ -435,7 +466,8 @@ async function createFixture() {
 
 async function buildFixture(fixture, options = {}) {
   return buildCanonicalCorpus({
-    canonicalRoot: fixture.canonicalRoot,
+    sourceRoot: fixture.sourceRoot,
+    publishRoot: fixture.canonicalRoot,
     generatedAt,
     expectedPolicyFragmentCount: 1,
     expectedPublishedRecordCount: 3,
@@ -458,7 +490,7 @@ async function writeRoutes(fixture) {
 }
 
 async function writePolicy(fixture) {
-  const policyRoot = join(fixture.canonicalRoot, "policy");
+  const policyRoot = join(fixture.sourceRoot, "policy");
   await mkdir(policyRoot, { recursive: true });
   await writeFile(join(policyRoot, "alpha.json"), `${JSON.stringify({
     schemaVersion: 1,

@@ -11,6 +11,8 @@ import {
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const rawRoot = join(pluginRoot, "dev", "upstream-snapshot");
+const sourceRoot = join(pluginRoot, "dev", "canonical-corpus-source");
+const skillsRoot = join(pluginRoot, "skills");
 const canonicalRoot = join(
   pluginRoot,
   "skills",
@@ -22,13 +24,13 @@ const canonicalRoot = join(
 test("committed policy classifies every raw snapshot record exactly once", async () => {
   const rawManifest = JSON.parse(await readFile(join(rawRoot, "manifest.json"), "utf8"));
   const rawRecords = parseJsonl(await readFile(join(rawRoot, rawManifest.corpus.file), "utf8"));
-  const policyFiles = (await readdir(join(canonicalRoot, "policy")))
+  const policyFiles = (await readdir(join(sourceRoot, "policy")))
     .filter((file) => file.endsWith(".json"))
     .sort();
   assert.equal(policyFiles.length, 12);
   const policyRecords = (
     await Promise.all(policyFiles.map(async (file) => {
-      const fragment = JSON.parse(await readFile(join(canonicalRoot, "policy", file), "utf8"));
+      const fragment = JSON.parse(await readFile(join(sourceRoot, "policy", file), "utf8"));
       assert.equal(file, `${fragment.skill}.json`);
       return fragment.records;
     }))
@@ -59,11 +61,11 @@ test("shared route catalog maps all policy skills to the fixed task families", a
     catalog.routes.map((route) => route.taskFamily).sort(),
     [...CANONICAL_TASK_FAMILIES].sort(),
   );
-  const policyFiles = (await readdir(join(canonicalRoot, "policy")))
+  const policyFiles = (await readdir(join(sourceRoot, "policy")))
     .filter((file) => file.endsWith(".json"))
     .sort();
   const fragments = await Promise.all(policyFiles.map(async (file) =>
-    JSON.parse(await readFile(join(canonicalRoot, "policy", file), "utf8"))));
+    JSON.parse(await readFile(join(sourceRoot, "policy", file), "utf8"))));
   assert.deepEqual(
     catalog.routes.map((route) => route.skill).sort(),
     fragments.map((fragment) => fragment.skill).sort(),
@@ -129,11 +131,11 @@ test("committed canonical corpus is schema v2 with complete routing metadata", a
 });
 
 test("all 87 canonical mirrors are adapted, CLI-compatible Markdown", async () => {
-  const policyFiles = (await readdir(join(canonicalRoot, "policy")))
+  const policyFiles = (await readdir(join(sourceRoot, "policy")))
     .filter((file) => file.endsWith(".json"));
   const policyRecords = (
     await Promise.all(policyFiles.map(async (file) =>
-      JSON.parse(await readFile(join(canonicalRoot, "policy", file), "utf8")).records))
+      JSON.parse(await readFile(join(sourceRoot, "policy", file), "utf8")).records))
   ).flat();
   const markdownRecords = policyRecords.filter((record) => record.mirrorPath);
   assert.equal(markdownRecords.length, 87);
@@ -146,7 +148,7 @@ test("all 87 canonical mirrors are adapted, CLI-compatible Markdown", async () =
   const uncoveredCodeConnect = /\b(?:add|remove|get|send)_code_connect_(?:map|mappings)\b/iu;
   const canonicalIds = new Set();
   for (const record of markdownRecords) {
-    const text = await readFile(join(canonicalRoot, ...record.mirrorPath.split("/")), "utf8");
+    const text = await readFile(join(sourceRoot, ...record.mirrorPath.split("/")), "utf8");
     const canonicalId = record.mirrorPath.slice("docs/".length);
     assert.equal(canonicalIds.has(canonicalId), false, canonicalId);
     canonicalIds.add(canonicalId);
@@ -168,6 +170,14 @@ test("all 87 canonical mirrors are adapted, CLI-compatible Markdown", async () =
       assert.match(text, /```(?:ts|typescript)\b/u);
     }
   }
+});
+
+test("plugin skills tree exposes only the Figma Workspace router skill", async () => {
+  const skillFiles = (await readdir(skillsRoot, { recursive: true }))
+    .map((path) => path.replaceAll("\\", "/"))
+    .filter((path) => path === "SKILL.md" || path.endsWith("/SKILL.md"))
+    .sort();
+  assert.deepEqual(skillFiles, ["figma-workspace/SKILL.md"]);
 });
 
 function parseJsonl(text) {
