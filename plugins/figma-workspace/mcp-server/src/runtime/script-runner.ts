@@ -79,14 +79,13 @@ export function compileFigmaWorkspaceScriptFile(options: {
   source: string;
   targetPageId?: string;
   expectedSurface?: FigmaWorkspaceSurface;
-  strict?: boolean;
 }): CompiledFigmaWorkspaceScriptFile {
   const preparedSource = prepareFigmaWorkspaceScriptSource(options);
   const lines: string[] = [];
   if (options.targetPageId) {
     lines.push(createTargetPageBootstrap(options.targetPageId));
   }
-  lines.push(`// run-script-file source: ${options.scriptPath}`);
+  lines.push(`// figma:script:run source: ${options.scriptPath}`);
   lines.push(preparedSource.source);
   return {
     code: lines.join("\n"),
@@ -107,7 +106,6 @@ export function compileFigmaWorkspaceEvalCode(options: {
   const compiled = compileFigmaWorkspaceTypescriptSource(
     "__figma_workspace_inline_eval.figma.ts",
     options.code,
-    true,
   );
   return {
     code: compiled.source,
@@ -124,12 +122,11 @@ export function compileFigmaWorkspaceEvalCode(options: {
 function prepareFigmaWorkspaceScriptSource(options: {
   scriptPath: string;
   source: string;
-  strict?: boolean;
 }): { source: string; diagnostics: FigmaWorkspaceFileDiagnostic[] } {
   if (!options.scriptPath.endsWith(FIGMA_TYPESCRIPT_EXTENSION)) {
     return { source: options.source, diagnostics: [] };
   }
-  return compileFigmaWorkspaceTypescriptSource(options.scriptPath, options.source, Boolean(options.strict));
+  return compileFigmaWorkspaceTypescriptSource(options.scriptPath, options.source);
 }
 
 function createTargetPageBootstrap(targetPageId: string): string {
@@ -153,7 +150,7 @@ export function diagnoseWrappedScriptSize(
     severity: "fatal",
     message: `Compiled Figma script payload is ${byteLength} bytes; the maximum is ${UPSTREAM_EVAL_CODE_LIMIT_BYTES} UTF-8 bytes.`,
     suggestion: "Split the work into smaller .figma.ts files, for example skeleton, asset targets, upload fills, and visual fixes.",
-    docsHint: "Figma Workspace CLI: run-script-file --help",
+    docsHint: "Figma Workspace CLI: figma:script:run --help",
     source: { scriptPath },
   }];
 }

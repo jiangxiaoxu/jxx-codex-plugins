@@ -302,7 +302,7 @@ figma.createComponentFromNode(node) // Convert existing node to component (Desig
 
 ## Plugin Lifecycle
 
-Scripts are saved as an ordinary async TypeScript body and run through `figma:script:run` after strict TypeScript preflight. Use `return` to send data back:
+Scripts are saved as an ordinary async TypeScript body and run through `figma:script:run` after TypeScript preflight. Use `return` to send data back:
 
 ```js
 return { nodeId: frame.id }     // Return object — auto-serialized to JSON

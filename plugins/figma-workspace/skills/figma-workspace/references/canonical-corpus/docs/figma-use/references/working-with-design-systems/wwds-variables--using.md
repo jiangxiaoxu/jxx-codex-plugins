@@ -49,7 +49,7 @@ node.fills = [figma.variables.setBoundVariableForPaint(basePaint, "color", varia
 return { nodeId: node.id, boundVariable: variable.name };
 ```
 
-Run the prepared script with strict preflight and the persisted session id in its JSON input:
+Run the prepared script with the persisted session id in its JSON input. TypeScript preflight is always enabled:
 
 ```text
 npm --silent run figma:script:run -- --input bind-token.json --state-file C:/work/project/.figma-workspace/state.json
@@ -67,4 +67,4 @@ npm --silent run figma:api:search -- "setBoundVariable" --state-file C:/work/pro
 - When changing a reusable component, inspect representative variants rather than assuming one instance proves every state.
 - Use a capture followed by `view_image` when the binding affects visible output and visual correctness matters.
 - Stop for clarification when no appropriate variable exists, a requested variable is from an unavailable library, scopes reject the binding, or a requested mode conflicts with the active component contract.
-- If strict preflight reports fatal diagnostics, no write has run. Repair the `.figma.ts` source and rerun; preserve the script as the reviewable mutation record.
+- If TypeScript preflight reports fatal diagnostics, no write has run. Repair the `.figma.ts` source and rerun; preserve the script as the reviewable mutation record.

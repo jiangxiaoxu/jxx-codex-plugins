@@ -15,7 +15,7 @@ For an existing deck, inspect its canvas, hierarchy, palette, typography, spacin
 
 ## Build through the CLI workflow
 
-Prepare the Slides task, edit the generated `.figma.ts`, and use `figma:script:run` with strict preflight. Keep a slide's creation and its local layout together so each transaction is small and repairable. Slides are isolated subtrees, so building several simple slides in one run is reasonable; split a complex deck at section boundaries.
+Prepare the Slides task, edit the generated `.figma.ts`, and use `figma:script:run`; TypeScript preflight is always enabled. Keep a slide's creation and its local layout together so each transaction is small and repairable. Slides are isolated subtrees, so building several simple slides in one run is reasonable; split a complex deck at section boundaries.
 
 ```ts
 const slide = figma.createSlide();
@@ -49,4 +49,4 @@ Do not blindly repeat this composition. A comparison can use separation, a singl
 
 Use `figma:capture` for representative slides and inspect every resulting image with `view_image`. Check title dominance, clipping, contrast, empty-space intent, and whether decorative elements still help at presentation scale. Capture a title, a dense evidence slide, and a transition slide at minimum; a deck can have individually acceptable slides but a monotonous sequence.
 
-Strict script diagnostics are an execution boundary: repair them before retrying. If available fonts or existing branding do not support the requested direction, keep the deck consistent and report the restriction rather than substituting unreviewed typography. A still capture confirms layout and legibility, not presenter timing or animations.
+Fatal script diagnostics are an execution boundary: repair them before retrying. If available fonts or existing branding do not support the requested direction, keep the deck consistent and report the restriction rather than substituting unreviewed typography. A still capture confirms layout and legibility, not presenter timing or animations.

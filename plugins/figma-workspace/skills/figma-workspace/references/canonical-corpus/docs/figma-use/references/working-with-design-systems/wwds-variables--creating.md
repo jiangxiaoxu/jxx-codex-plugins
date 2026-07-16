@@ -40,7 +40,7 @@ npm --silent run figma:task:prepare -- --input task.json --state-file C:/work/pr
 npm --silent run figma:script:run -- --input run-variable-script.json --state-file C:/work/project/.figma-workspace/state.json
 ```
 
-`task.json` identifies the Figma file, an absolute `workspaceDir`, and a slug-style task name. `run-variable-script.json` supplies the persisted session id, the `.figma.ts` `inputFile`, `strict: true`, and the required surface. Consult each command's `--help` before first use.
+`task.json` identifies the Figma file, an absolute `workspaceDir`, and a slug-style task name. `run-variable-script.json` supplies the persisted session id, the `.figma.ts` `inputFile`, and the required surface. TypeScript preflight is always enabled. Consult each command's `--help` before first use.
 
 Use an idempotent script: find collections and variables by a stable name before creating anything, then return the created or reused ids. This prevents silent duplicate names and makes retries safe.
 

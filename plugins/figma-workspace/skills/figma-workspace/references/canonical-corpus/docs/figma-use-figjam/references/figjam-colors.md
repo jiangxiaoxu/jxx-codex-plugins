@@ -10,7 +10,6 @@
 {
   "sessionId": "<session-id>",
   "inputFile": "C:/work/project/.figma-workspace/board/apply-colors.figma.ts",
-  "strict": true,
   "surface": "figjam"
 }
 ```

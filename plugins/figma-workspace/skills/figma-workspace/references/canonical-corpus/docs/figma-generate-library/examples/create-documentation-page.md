@@ -124,8 +124,7 @@ After replacing the placeholders and reviewing the script, run it explicitly. It
 @'
 {
   "scriptPath": "C:/work/project/.figma-workspace/create-documentation-page.figma.ts",
-  "surface": "design",
-  "strict": true
+  "surface": "design"
 }
 '@ | npm --silent run figma:script:run -- --input - --state-file C:/work/project/.figma-workspace/state.json
 ```

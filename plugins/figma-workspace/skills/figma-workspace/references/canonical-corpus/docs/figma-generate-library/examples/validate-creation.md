@@ -22,7 +22,6 @@ Save this body as `<absolute-task-directory>/validate-creation.figma.ts`. Create
 {
   "sessionId": "<persisted-session-id>",
   "scriptPath": "<absolute-task-directory>/validate-creation.figma.ts",
-  "strict": true,
   "surface": "design"
 }
 ```

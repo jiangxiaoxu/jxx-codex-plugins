@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import {
   FIGMA_COMMAND_FAMILIES,
@@ -29,6 +29,7 @@ import {
 } from "../scripts/server.mjs";
 
 const testStateFile = resolve(tmpdir(), "figma-workspace-server-tests-state.json");
+const internalAgentFacingNamePattern = /figma_workspace_|figma-workspace:\/\/|run-script-file|apply-asset-manifest|download-assets|capture-node|prepare-task|call-upstream-tool|upstream-tools|use_figma|get_metadata|get_design_context|get_motion_context|get_variable_defs|get_libraries|search_design_system|get_screenshot/u;
 
 test("createBridgeConfig applies defaults and normalizes path", () => {
   const config = createBridgeConfig({ port: 19001, path: "mcp" });
@@ -80,7 +81,7 @@ test("plugin manifest exposes the CLI skill without a local MCP server", async (
     Object.keys(expectedEntrypoints).sort(),
     "package figma scripts must exactly match the exported typed and family namespaces",
   );
-  assert.equal(Object.keys(actualFigmaScripts).length, 35);
+  assert.equal(Object.keys(actualFigmaScripts).length, 34);
   const scriptEntrypoints = [];
   for (const [scriptName, entrypoint] of Object.entries(expectedEntrypoints)) {
     const expected = `node scripts/commands/${entrypoint}`;
@@ -164,7 +165,7 @@ test("every command accepts -h and --help before runtime validation", async () =
     "sessions:list", "sessions:read", "upstream:list", "upstream:read", "inspect",
     "metadata", "design-context", "motion-context", "variables", "design-system", "libraries",
     "open", "eval", "script:run", "assets:apply", "assets:download", "capture",
-    "task:run", "task:prepare", "upstream:call",
+    "task:prepare", "upstream:call",
   ];
   for (const commandName of commandNames) {
     for (const helpToken of ["-h", "--help"]) {
@@ -186,7 +187,7 @@ test("command help exposes only optimized command-relevant option names", async 
     "sessions:list", "sessions:read", "upstream:list", "upstream:read", "inspect",
     "metadata", "design-context", "motion-context", "variables", "design-system", "libraries",
     "open", "eval", "script:run", "assets:apply", "assets:download", "capture",
-    "task:run", "task:prepare", "upstream:call",
+    "task:prepare", "upstream:call",
   ];
   const sessionIdCommands = new Set([
     "inspect", "metadata", "design-context", "motion-context", "variables", "design-system", "libraries",
@@ -195,6 +196,7 @@ test("command help exposes only optimized command-relevant option names", async 
     const output = createCommandOutput();
     assert.equal(await runFigmaCli([commandName, "-h"], output.dependencies), 0);
     const help = output.stdout();
+    assert.doesNotMatch(help, internalAgentFacingNamePattern, commandName);
     assert.doesNotMatch(help, /--session-file|--inline-result-limit|--max-results|--max-snippet-lines|--max-cards|--workspace-dir|--library-key/u, commandName);
     assert.equal(help.includes("--state-file"), true, `${commandName} state file`);
     assert.equal(help.includes("--session-id"), sessionIdCommands.has(commandName), `${commandName} session id`);
@@ -233,6 +235,22 @@ test("optimized help declares positional and option omitted states, repeatabilit
   assert.match(json.stdout(), /--input <json-file\|->.*Required\./u);
   assert.match(json.stdout(), /--state-file <path>.*Required\./u);
   assert.match(json.stdout(), /--max-inline-bytes <bytes>.*Default: input inlineResultLimit when present, otherwise 4096\./u);
+  assert.match(json.stdout(), /## Input JSON Schema/u);
+  assert.doesNotMatch(json.stdout(), /figma:raw|figma_workspace_|run-script-file|use_figma/u);
+
+  for (const commandName of Object.keys(FIGMA_JSON_COMMANDS)) {
+    const output = createCommandOutput();
+    assert.equal(await runFigmaCli([commandName, "--help"], output.dependencies), 0);
+    const help = output.stdout();
+    assert.match(help, /^## Input JSON Schema$/mu, commandName);
+    const schemaSource = help.match(/## Input JSON Schema\n```json\n([\s\S]*?)\n```/u)?.[1];
+    assert.notEqual(schemaSource, undefined, commandName);
+    const schema = JSON.parse(schemaSource);
+    assert.equal(schema.type, "object", commandName);
+    assert.equal(typeof schema.properties, "object", commandName);
+    assert.equal(Array.isArray(schema.required), true, commandName);
+    assert.doesNotMatch(help, internalAgentFacingNamePattern, commandName);
+  }
 });
 
 test("every command family accepts -h and --help", async () => {
@@ -281,7 +299,7 @@ test("direct command validation rejects ambiguous or malformed options without r
     [["api:search", "createFrame", "--state-file", "state.json"], /requires a fully qualified absolute path/u],
     [["docs:search", "session", "--snippet-lines", "0"], /must be at least 1/u],
     [["guidance", "text", "--surface", "canvas"], /must be one of/u],
-    [["guidance", "text.font", "--mode", "card"], /must be one of/u],
+    [["guidance", "text.font", "--mode", "card"], /Unknown option/u],
     [["guidance", "text", "--card-limit", "9"], /must be at most 8/u],
     [["inspect", "123:456", "--depth", "0"], /must be at least 1/u],
     [["inspect", "$hero"], /\$selection|\$currentPage|node id|node URL|fileKey|target/u],
@@ -293,6 +311,8 @@ test("direct command validation rejects ambiguous or malformed options without r
     [["eval", "--input", "eval.json", "--allow-dangerous-operations"], /Unknown option/u],
     [["eval", "--input", "eval.json", "--handle-updates", "replace"], /Unknown option/u],
     [["script:run", "--input", "script.json", "--allow-dangerous-operations"], /Unknown option/u],
+    [["script:run", "--input", "script.json", "--strict"], /Unknown option/u],
+    [["task:run", "--input", "task.json"], /Unknown (?:Figma )?command/u],
     [["doctor", "unexpected"], /Unexpected argument/u],
     [["api:search", "two", "arguments"], /accepts one <symbol>/u],
     [["api:search", "--", "one", "two"], /accepts one <symbol>/u],
@@ -434,7 +454,7 @@ test("all public figma npm scripts expose banner-free subprocess help", async ()
     scriptName === "figma" || scriptName.startsWith("figma:")
   ));
 
-  assert.equal(figmaScripts.length, 35);
+  assert.equal(figmaScripts.length, 34);
   for (const scriptName of figmaScripts) {
     const result = runNpm(["--silent", "run", scriptName, "--", "--help"], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
@@ -458,6 +478,74 @@ test("root figma CLI dispatches the same canonical command", () => {
   assert.match(result.stdout, /^# figma api:search help$/mu);
   assert.doesNotMatch(result.stdout, /^>/mu);
   assert.equal(result.stderr, "");
+});
+
+test("canonical and independent npm commands accept stdin and file input after npm option forwarding", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-public-stdin-"));
+  try {
+    const pluginRoot = fileURLToPath(new URL("../", import.meta.url));
+    const inputFile = resolve(tempDir, "open-input.json");
+    await writeFile(inputFile, '{"connect":false}', "utf8");
+    const cases = ["figma", "figma:open"];
+    for (const [index, command] of cases.entries()) {
+      const stateFile = resolve(tempDir, `state-${index}.json`);
+      const args = command === "figma"
+        ? ["--silent", "run", command, "--", "open", "--input", "-", "--state-file", stateFile]
+        : ["--silent", "run", command, "--", "--input", "-", "--state-file", stateFile];
+      const result = runNpm(args, {
+        cwd: pluginRoot,
+        encoding: "utf8",
+        input: '{"connect":false}',
+      });
+      assert.equal(result.status, 0, `${command}\n${result.stderr}`);
+      assert.match(result.stdout, /^# figma-workspace open$/mu);
+      assert.equal(result.stderr, "");
+
+      const fileStateFile = resolve(tempDir, `file-state-${index}.json`);
+      const fileArgs = command === "figma"
+        ? ["--silent", "run", command, "--", "open", "--input", inputFile, "--state-file", fileStateFile]
+        : ["--silent", "run", command, "--", "--input", inputFile, "--state-file", fileStateFile];
+      const fileResult = runNpm(fileArgs, { cwd: pluginRoot, encoding: "utf8" });
+      assert.equal(fileResult.status, 0, `${command} file input\n${fileResult.stderr}`);
+      assert.match(fileResult.stdout, /^# figma-workspace open$/mu);
+      assert.equal(fileResult.stderr, "");
+
+      const duplicateArgs = command === "figma"
+        ? ["--silent", "run", command, "--", "open", "--input", "-", "--input", "-", "--state-file", stateFile]
+        : ["--silent", "run", command, "--", "--input", "-", "--input", "-", "--state-file", stateFile];
+      const duplicate = runNpm(duplicateArgs, {
+        cwd: pluginRoot,
+        encoding: "utf8",
+        input: '{"connect":false}',
+      });
+      assert.equal(duplicate.status, 2, `${command} duplicate input\n${duplicate.stderr}`);
+      assert.equal(duplicate.stdout, "");
+      assert.match(duplicate.stderr, /Duplicate input|input may be specified only once|Duplicate option.*--input/iu);
+    }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("public JSON input validation returns npm usage exit 2", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-public-usage-"));
+  try {
+    const result = runNpm([
+      "--silent", "run", "figma:script:run", "--",
+      "--input", "-",
+      "--state-file", resolve(tempDir, "state.json"),
+    ], {
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      encoding: "utf8",
+      input: JSON.stringify({ scriptPath: resolve(tempDir, "task.figma.ts"), strict: true }),
+    });
+    assert.equal(result.status, 2, result.stderr);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /strict.*removed/iu);
+    assert.doesNotMatch(result.stderr, internalAgentFacingNamePattern);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("figma:raw keeps the transport schema escape hatch", () => {
@@ -640,6 +728,80 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
     assert.match(apiResult.stdout, /Normalized Symbol: createVariableCollection/u);
     assert.match(apiResult.stdout, /Owner Match: true/u);
     assert.equal(apiResult.stderr, "");
+
+    const guidanceResult = runNpm(
+      ["--silent", "run", "figma:guidance", "--", "text font loadFontAsync", "--state-file", join(tempDir, "guidance-state.json")],
+      { cwd: join(extractDir, "package"), encoding: "utf8" },
+    );
+    assert.equal(guidanceResult.status, 0, guidanceResult.stderr);
+    assert.match(guidanceResult.stdout, /Task Family: design-editing/u);
+    assert.match(guidanceResult.stdout, /Confidence: high/u);
+    assert.equal(guidanceResult.stderr, "");
+
+    for (const [index, command] of ["figma", "figma:task:prepare"].entries()) {
+      const workspaceDir = join(tempDir, `packed-task-${index}`);
+      const taskName = `packed-stdin-${index}`;
+      const args = command === "figma"
+        ? ["--silent", "run", command, "--", "task:prepare", "--input", "-", "--state-file", join(tempDir, `task-state-${index}.json`)]
+        : ["--silent", "run", command, "--", "--input", "-", "--state-file", join(tempDir, `task-state-${index}.json`)];
+      const prepared = runNpm(args, {
+        cwd: join(extractDir, "package"),
+        encoding: "utf8",
+        input: JSON.stringify({ taskName, workspaceDir }),
+      });
+      assert.equal(prepared.status, 0, `${command}\n${prepared.stderr}`);
+      assert.match(prepared.stdout, /^# figma-workspace prepare-task$/mu);
+      assert.match(await readFile(join(workspaceDir, `${taskName}.figma.ts`), "utf8"), /figma/u);
+      assert.equal(prepared.stderr, "");
+    }
+
+    const packedRuntimeUrl = pathToFileURL(join(extractDir, "package", "mcp-server", "dist", "index.js")).href;
+    const packedRuntime = await import(`${packedRuntimeUrl}?packed-cross-file=${Date.now()}`);
+    const packedCalls = [];
+    const packedClient = packedRuntime.createFigmaWorkspaceClient({
+      client: {
+        async connect() {},
+        async close() {},
+        async listTools() {
+          return { tools: [{
+            name: "use_figma",
+            inputSchema: {
+              type: "object",
+              properties: { code: { type: "string" }, fileKey: { type: "string" } },
+              required: ["code", "fileKey"],
+            },
+          }] };
+        },
+        async callTool(name, args) {
+          packedCalls.push([name, args]);
+          return { content: [{ type: "text", text: JSON.stringify({
+            ok: true,
+            __figmaWorkspace: { sessionId: "packed-cross-file", captureRequests: [], knownPages: {} },
+            result: { target: "22:7", mode: "inspect", summary: { id: "22:7", type: "FRAME", name: "Target" } },
+          }) }] };
+        },
+      },
+    });
+    try {
+      const fileA = "PackedFileAKey0123456789";
+      const fileB = "PackedFileBKey0123456789";
+      await packedClient.open({
+        sessionId: "packed-cross-file",
+        file: `https://www.figma.com/design/${fileA}/Source`,
+        workspaceDir: join(tempDir, "packed-cross-file-workspace"),
+        connect: false,
+      });
+      const inspected = await packedClient.inspect({
+        sessionId: "packed-cross-file",
+        target: `https://www.figma.com/design/${fileB}/Target?node-id=22-7`,
+      });
+      assert.equal(inspected.target, "22:7");
+      assert.equal(packedCalls[0][0], "use_figma");
+      assert.equal(packedCalls[0][1].fileKey, fileB);
+      assert.equal(packedClient.sessions.get("packed-cross-file").fileKey, fileA);
+    } finally {
+      await packedClient.close();
+    }
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

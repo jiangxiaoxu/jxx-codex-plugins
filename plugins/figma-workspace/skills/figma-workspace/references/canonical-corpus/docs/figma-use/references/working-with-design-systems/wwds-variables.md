@@ -50,7 +50,7 @@ npm --silent run figma:api:search -- "VariableScope" --state-file C:/work/projec
 
 ## Creation and binding boundary
 
-Reads identify the model; writes belong in a local `.figma.ts` script. Create a task workspace with `figma:task:prepare`, edit the generated script, and execute it through `figma:script:run` using JSON input that names the persisted session, script file, strict preflight, and surface. Keep scripts small, idempotent, and explicit about ids and names they create or bind.
+Reads identify the model; writes belong in a local `.figma.ts` script. Create a task workspace with `figma:task:prepare`, edit the generated script, and execute it through `figma:script:run` using JSON input that names the persisted session, script file, and surface. TypeScript preflight is always enabled. Keep scripts small, idempotent, and explicit about ids and names they create or bind.
 
 ```ts
 const semantic = figma.variables
@@ -71,7 +71,7 @@ text.fills = [figma.variables.setBoundVariableForPaint(basePaint, "color", seman
 return { targetId: text.id, variableId: semantic.id, variableName: semantic.name };
 ```
 
-Strict preflight failures mean the script did not execute. Fix source-line diagnostics, then rerun the same `.figma.ts`; do not turn a failed planned write into an unreviewable ad-hoc operation.
+Fatal TypeScript preflight failures mean the script did not execute. Fix source-line diagnostics, then rerun the same `.figma.ts`; do not turn a failed planned write into an unreviewable ad-hoc operation.
 
 ## Working rules
 

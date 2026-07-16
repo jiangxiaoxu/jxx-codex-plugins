@@ -93,7 +93,6 @@ Run `npm --silent run figma:script:run -- --help` first. Then create an input fi
 {
   "sessionId": "YOUR_SESSION_ID",
   "inputFile": "create-component-with-variants.figma.ts",
-  "strict": true,
   "surface": "design"
 }
 ```

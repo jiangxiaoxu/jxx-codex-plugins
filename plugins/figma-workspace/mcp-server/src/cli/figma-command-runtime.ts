@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
 import {
   isFullyQualifiedAbsolutePath,
+  getFigmaWorkspaceCommandInputSchema,
   runFigmaWorkspaceCli,
+  type FigmaWorkspaceCliCommand,
   type FigmaWorkspaceCliDependencies,
   type FigmaWorkspaceCliIo,
 } from "../runtime/workspace-runtime.js";
@@ -101,7 +103,7 @@ interface DirectCommandSpec {
 }
 
 interface JsonCommandSpec {
-  readonly command: string;
+  readonly command: FigmaWorkspaceCliCommand;
   readonly purpose: string;
   readonly inputRequired: boolean;
 }
@@ -242,7 +244,6 @@ export const FIGMA_DIRECT_COMMANDS = {
     purpose: "Get task-oriented workflow guidance from a direct keyword query.",
     position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Compact planning keywords." },
     options: {
-      "--mode": enumOption("mode", ["guidance", "plan"], "Guidance mode. Use the JSON escape hatch for card or catalog mode."),
       "--surface": enumOption("surface", ["design", "figjam", "slides"], "Expected Figma surface."),
       "--workflow": enumOption("workflow", FIGMA_GUIDANCE_WORKFLOWS, "Existing workflow id used to filter workflow and wrapper summaries."),
       "--card-limit": integerOption("maxCards", "<n>", "Maximum returned cards from 1 to 8.", { min: 1, max: 8 }),
@@ -375,7 +376,6 @@ export const FIGMA_JSON_COMMANDS = {
   "assets:apply": { command: "apply-asset-manifest", purpose: "Apply a prepared local asset manifest.", inputRequired: true },
   "assets:download": { command: "download-assets", purpose: "Download official Figma assets to local files.", inputRequired: true },
   capture: { command: "capture-node", purpose: "Capture a Figma node to a local PNG file.", inputRequired: true },
-  "task:run": { command: "run-task-plan", purpose: "Execute a prepared multi-step task plan.", inputRequired: true },
   "task:prepare": { command: "prepare-task", purpose: "Create a repairable local .figma.ts task workspace.", inputRequired: true },
   "upstream:call": { command: "call-upstream-tool", purpose: "Invoke one uncovered official upstream capability.", inputRequired: true },
 } as const satisfies Readonly<Record<string, JsonCommandSpec>>;
@@ -447,7 +447,11 @@ export async function runFigmaCommand(
       return EXIT_SUCCESS;
     }
     try {
-      const forwardedArgs = parseJsonArguments(commandName, spec, argv);
+      const forwardedArgs = parseJsonArguments(
+        commandName,
+        spec,
+        normalizeNpmForwardedJsonArguments(argv, dependencies.env ?? ((name) => process.env[name])),
+      );
       return await (dependencies.runCli ?? runFigmaWorkspaceCli)([spec.command, ...forwardedArgs]);
     } catch (error) {
       writeStderr(`${formatError(error)}\n\n${formatJsonHelp(commandName, spec)}`);
@@ -457,6 +461,52 @@ export async function runFigmaCommand(
 
   writeStderr(`Unknown Figma command: ${commandName}\n\n${formatRootHelp()}`);
   return EXIT_USAGE;
+}
+
+function normalizeNpmForwardedJsonArguments(
+  argv: readonly string[],
+  env: FigmaWorkspaceCliIo["env"],
+): readonly string[] {
+  if (argv.some((token) => token.startsWith("--"))) return argv;
+
+  const inputForwarded = env("npm_config_input") === "true";
+  const stateFileForwarded = env("npm_config_state_file") === "true";
+  const maxInlineBytesForwarded = env("npm_config_max_inline_bytes") === "true";
+  if (!inputForwarded && !stateFileForwarded && !maxInlineBytesForwarded) return argv;
+
+  const remaining = argv.map((value, index) => ({ value, index }));
+  const takeAt = (index: number): string => {
+    const [entry] = remaining.splice(index, 1);
+    if (entry === undefined) throw new Error("npm removed a JSON command option without forwarding its value.");
+    return entry.value;
+  };
+  const normalized: Array<{ index: number; option: string; value: string }> = [];
+
+  if (inputForwarded) {
+    const stdinIndex = remaining.findIndex(({ value }) => value === "-");
+    const entry = remaining[stdinIndex >= 0 ? stdinIndex : 0];
+    if (entry === undefined) throw new Error("npm removed --input without forwarding its value.");
+    normalized.push({ index: entry.index, option: "--input", value: takeAt(stdinIndex >= 0 ? stdinIndex : 0) });
+  }
+
+  if (maxInlineBytesForwarded) {
+    const integerIndex = remaining.findIndex(({ value }) => /^\d+$/u.test(value));
+    const entry = remaining[integerIndex];
+    if (entry === undefined) throw new Error("npm removed --max-inline-bytes without forwarding its value.");
+    normalized.push({ index: entry.index, option: "--max-inline-bytes", value: takeAt(integerIndex) });
+  }
+
+  if (stateFileForwarded) {
+    if (remaining.length === 0) throw new Error("npm removed --state-file without forwarding its value.");
+    const entry = remaining[remaining.length - 1];
+    if (entry === undefined) throw new Error("npm removed --state-file without forwarding its value.");
+    normalized.push({ index: entry.index, option: "--state-file", value: takeAt(remaining.length - 1) });
+  }
+
+  if (remaining.length > 0) return argv;
+  return normalized
+    .sort((left, right) => left.index - right.index)
+    .flatMap(({ option, value }) => [option, value]);
 }
 
 export interface ParsedDirectArguments {
@@ -537,6 +587,12 @@ export function parseJsonArguments(
   const seen = new Set<string>();
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token === "-") {
+      if (seen.has("--input")) throw new Error(`Duplicate input for figma ${commandName}.`);
+      seen.add("--input");
+      forwardedArgs.push("--input", "-");
+      continue;
+    }
     if (token === undefined || !hasOwn(options, token)) throw new Error(`Unknown option for figma ${commandName}: ${token}`);
     const option = options[token];
     if (seen.has(token)) throw new Error(`Duplicate option for figma ${commandName}: ${token}`);
@@ -674,11 +730,75 @@ export function formatJsonHelp(commandName: string, spec: JsonCommandSpec): stri
     lines.push(`- \`${flag} ${option.value}\`: ${option.description} ${formatOptionMetadata(option)}`);
   }
   lines.push(
-    "- `-h`, `--help`: Show this command help without running Figma.", "", "## JSON Schema",
-    `Run \`npm --silent run figma:raw -- ${spec.command} --help\` only when the complete transport-level input schema is needed.`, "",
+    "- `-h`, `--help`: Show this command help without running Figma.", "", "## Input JSON Schema",
+    "```json", JSON.stringify(publicJsonSchema(spec.command), null, 2), "```", "",
     "## Output", "Restricted Markdown on stdout. Follow `outputFiles.cliResultFile` for an oversized complete JSON result.", "",
   );
   return lines.join("\n");
+}
+
+const PUBLIC_SCHEMA_COMMAND_REPLACEMENTS: Readonly<Record<string, string>> = {
+  figma_workspace_apply_asset_manifest: "figma:assets:apply",
+  figma_workspace_call_upstream_tool: "figma:upstream:call",
+  figma_workspace_capture_node: "figma:capture",
+  figma_workspace_download_assets: "figma:assets:download",
+  figma_workspace_eval: "figma:eval",
+  figma_workspace_get_design_context: "figma:design-context",
+  figma_workspace_get_libraries: "figma:libraries",
+  figma_workspace_get_metadata: "figma:metadata",
+  figma_workspace_get_motion_context: "figma:motion-context",
+  figma_workspace_get_variable_defs: "figma:variables",
+  figma_workspace_guidance: "figma:guidance",
+  figma_workspace_inspect: "figma:inspect",
+  figma_workspace_lookup: "figma:docs:search or figma:api:search",
+  figma_workspace_open: "figma:open",
+  figma_workspace_prepare_task: "figma:task:prepare",
+  figma_workspace_run_script_file: "figma:script:run",
+  figma_workspace_search_design_system: "figma:design-system",
+  figma_workspace_sessions: "figma:sessions:list or figma:sessions:read",
+  figma_workspace_upstream_tools: "figma:upstream:list or figma:upstream:read",
+  "apply-asset-manifest": "figma:assets:apply",
+  "call-upstream-tool": "figma:upstream:call",
+  "capture-node": "figma:capture",
+  "download-assets": "figma:assets:download",
+  "prepare-task": "figma:task:prepare",
+  "run-script-file": "figma:script:run",
+  download_assets: "figma:assets:download",
+  get_design_context: "figma:design-context",
+  get_libraries: "figma:libraries",
+  get_metadata: "figma:metadata",
+  get_motion_context: "figma:motion-context",
+  get_screenshot: "figma:capture",
+  get_variable_defs: "figma:variables",
+  search_design_system: "figma:design-system",
+  upload_assets: "figma:assets:apply",
+  use_figma: "native Plugin API execution",
+};
+
+function publicJsonSchema(command: FigmaWorkspaceCliCommand): unknown {
+  return mapSchemaValue(
+    getFigmaWorkspaceCommandInputSchema(command),
+    sanitizePublicSchemaText,
+  );
+}
+
+function mapSchemaValue(value: unknown, mapText: (value: string) => string): unknown {
+  if (typeof value === "string") return mapText(value);
+  if (Array.isArray(value)) return value.map((entry) => mapSchemaValue(entry, mapText));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, mapSchemaValue(entry, mapText)]),
+    );
+  }
+  return value;
+}
+
+function sanitizePublicSchemaText(value: string): string {
+  let sanitized = value;
+  for (const [internalName, commandId] of Object.entries(PUBLIC_SCHEMA_COMMAND_REPLACEMENTS)) {
+    sanitized = sanitized.replaceAll(internalName, commandId);
+  }
+  return sanitized;
 }
 
 function formatOptionMetadata(option: DirectOption | ForwardOption): string {

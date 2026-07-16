@@ -49,7 +49,7 @@ npm --silent run figma:task:prepare -- --input task.json --state-file C:/work/pr
 npm --silent run figma:script:run -- --input run-script.json --state-file C:/work/project/.figma-workspace/state.json
 ```
 
-`run-script.json` supplies the saved session id, `.figma.ts` input path, `strict: true`, and surface. Return concise evidence such as node ids, variable ids, component names, and validation notes. Make the script idempotent where retries could create duplicate system assets.
+`run-script.json` supplies the saved session id, `.figma.ts` input path, and surface. TypeScript preflight is always enabled. Return concise evidence such as node ids, variable ids, component names, and validation notes. Make the script idempotent where retries could create duplicate system assets.
 
 ```ts
 const component = figma.root
@@ -63,7 +63,7 @@ component.description =
 return { componentId: component.id, name: component.name };
 ```
 
-Fatal strict-preflight diagnostics mean that no change ran. Fix the `.figma.ts` diagnostics and rerun the same planned transaction. Do not bypass the script path with an untracked write.
+Fatal TypeScript preflight diagnostics mean that no change ran. Fix the `.figma.ts` diagnostics and rerun the same planned transaction. Do not bypass the script path with an untracked write.
 
 ## Review checklist and boundaries
 

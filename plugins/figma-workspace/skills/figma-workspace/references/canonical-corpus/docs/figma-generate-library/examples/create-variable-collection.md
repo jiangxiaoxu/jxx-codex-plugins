@@ -54,8 +54,7 @@ Replace placeholders, review the result, save it as the `.figma.ts` file above, 
 @'
 {
   "scriptPath": "C:/work/project/.figma-workspace/create-variable-collection.figma.ts",
-  "surface": "design",
-  "strict": true
+  "surface": "design"
 }
 '@ | npm --silent run figma:script:run -- --input - --state-file C:/work/project/.figma-workspace/state.json
 ```

@@ -398,7 +398,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["image", "images", "fill", "asset", "assets", "png", "jpeg", "upload", "generated"],
     surface: "design",
     helpers: [],
-    publicCommandIds: ["figma:assets:apply", "figma:task:run", "figma:api:search"],
+    publicCommandIds: ["figma:assets:apply", "figma:script:run", "figma:api:search"],
     upstreamTools: ["upload_assets"],
     apiReferences: [
       { displayExpression: "figma.createImage()", lookupQuery: "PluginAPI.createImage", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -409,7 +409,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     ],
     queryHints: ["create image fill", "upload local asset manifest", "official upload_assets", "set rectangle fills to image hash"],
     avoid: [],
-    pitfalls: ["For local generated files, create target rectangles and use the apply-asset-manifest CLI command with upload_assets."],
+    pitfalls: ["For local generated files, create target rectangles and use figma:assets:apply."],
   },
   {
     id: "capture.qa",
@@ -417,7 +417,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["capture", "screenshot", "qa", "visual", "review", "inspect image"],
     surface: "any",
     helpers: ["$.capture"],
-    publicCommandIds: ["figma:capture", "figma:task:run"],
+    publicCommandIds: ["figma:capture", "figma:script:run"],
     upstreamTools: ["get_screenshot"],
     apiReferences: [],
     queryHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],

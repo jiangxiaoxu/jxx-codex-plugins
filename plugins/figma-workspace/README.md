@@ -15,10 +15,10 @@ npm --silent run figma:api:search -- "figma.createFrame()" --state-file C:/work/
 ```
 
 - 18 direct query/read commands: `figma:guidance`, `figma:docs:list`, `figma:docs:catalog`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`.
-- 9 JSON commands: `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:run`, `figma:task:prepare`, and `figma:upstream:call`.
-- 22 raw transport JSON commands are isolated behind `figma:raw` and `figma:raw:help`. They are not agent-facing command IDs.
+- 8 JSON commands: `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:prepare`, and `figma:upstream:call`.
+- 21 raw transport JSON commands are isolated behind `figma:raw` and `figma:raw:help` for explicit transport debugging. They are not agent-facing command IDs.
 
-Every executing optimized command requires a fully qualified absolute `--state-file`; its parent owns `results/` sidecars. All support `--max-inline-bytes`. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. Run the selected command with `--help` before first use.
+Every executing optimized command requires a fully qualified absolute `--state-file`; its parent owns `results/` sidecars. All support `--max-inline-bytes`. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. Run the selected command with `--help` before first use; public help includes its complete input schema. Pass `--input -` to read JSON from stdin through either the canonical or independent npm entrypoint.
 
 Typed results are Restricted Markdown, not JSON. Read `outputFiles.cliResultFile` for any complete oversized result. Usage errors exit 2; typed interrupts exit 130; other typed failures exit 1, except an unhealthy `figma:doctor` observation exits 0.
 
@@ -41,11 +41,13 @@ Search and guidance payloads expose compact public metadata and byte-limited sni
 1. Choose an absolute `--state-file` and reuse it for the task.
 2. Use guidance, catalog, docs search/read, and API lookup to establish the right surface and workflow.
 3. Use `figma:task:prepare` to create a repairable `.figma.ts` workspace.
-4. Edit the script using native Figma Plugin API and injected `$` helpers, then run `figma:script:run` with `strict: true`. Use `await $.capture(target, options?)` to queue up to 8 local PNG captures for nodes created or resolved inside the script; completed paths are returned under `captures[]` after successful script execution.
+4. Edit the script using native Figma Plugin API and injected `$` helpers, then run `figma:script:run`. TypeScript and bundled Plugin API preflight are always enabled. Use `await $.capture(target, options?)` to queue up to 8 local PNG captures for nodes created or resolved inside the script; completed paths are returned under `captures[]` after successful script execution.
 5. Repair fatal preflight diagnostics before execution. Use first-class context, metadata, inspect, asset, and capture commands as needed.
 6. Inspect every generated or edited image, including standalone `figma:capture` and queued `$.capture` PNG output, with `view_image`.
 
 Use `figma:upstream:list` or `figma:upstream:read` before `figma:upstream:call` for capabilities with no first-class wrapper.
+
+Node URLs and structured `{ fileKey, nodeId }` targets carry request-scoped file context. They may address another file without rebinding the persisted session; a conflicting explicit file fails closed. Raw node IDs and fixed session selectors continue to use current session context.
 
 ## Script Helpers And Boundaries
 

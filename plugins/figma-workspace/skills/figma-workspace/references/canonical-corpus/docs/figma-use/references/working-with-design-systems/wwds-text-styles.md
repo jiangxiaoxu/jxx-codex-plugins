@@ -56,7 +56,7 @@ target.textStyleId = style.id;
 return { styleId: style.id, targetId: target.id, font: desiredFont };
 ```
 
-严格预检和执行只通过 JSON 输入的 `figma:script:run`。输入文件带有会话、脚本绝对路径、`strict: true` 和对应 surface; 先运行命令 help 确认当前 schema。
+TypeScript 预检和执行只通过 JSON 输入的 `figma:script:run`. 输入文件带有会话, 脚本绝对路径和对应 surface; TypeScript 预检始终启用. 先运行命令 help 确认当前 schema.
 
 ```text
 npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/type-ramp/run.json --state-file C:/work/project/.figma-workspace/state.json

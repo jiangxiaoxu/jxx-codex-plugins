@@ -14,6 +14,7 @@ Use this reference when file context or cross-process continuity matters. CLI he
 - Run `figma:open` with JSON containing the intended Figma file or URL to create or update a session.
 - Commands that accept a raw node id need state-file context to determine the file and accept `--session-id` to select the logical workspace session.
 - A node URL or structured `{ fileKey, nodeId }` target can provide file context directly where the command supports that target form.
+- That target file context applies only to the current request. It does not rebind the persisted session or update its current page, known pages, workspace binding, or file metadata. An explicit file key that conflicts with the target fails closed.
 - Keep separate state files for unrelated files or concurrent tasks to avoid accidental context changes.
 
 ## Recovery

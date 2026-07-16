@@ -4,7 +4,7 @@ Use `SHAPE_WITH_TEXT` nodes for diagram steps, decisions, named concepts, and br
 
 ## Build in a task file
 
-For a board change, edit a prepared local `.figma.ts` file and run it with `figma:script:run`, passing JSON with `sessionId`, `inputFile`, `strict: true`, and `surface: "figjam"`, plus an absolute `--state-file`. Return all changed node IDs. `figma:eval` is only suitable for a small self-contained transaction.
+For a board change, edit a prepared local `.figma.ts` file and run it with `figma:script:run`, passing JSON with `sessionId`, `inputFile`, and `surface: "figjam"`, plus an absolute `--state-file`. TypeScript preflight is always enabled. Return all changed node IDs. `figma:eval` is only suitable for a small self-contained transaction.
 
 ```ts
 // review-decision.figma.ts
@@ -41,4 +41,4 @@ Execute it with `npm --silent run figma:script:run -- --input <run-json> --state
 
 Return the ID, type, text, dimensions, and location. A read-only script should confirm the node's `type`, `shapeType`, `text.characters`, and bounds; capture it if wrapping, clipping, or its relationship to connectors is important, then inspect that image locally.
 
-An unloaded-font error means the font load was skipped or not awaited. Clipped copy means the chosen dimensions do not fit the actual text; enlarge the existing shape after measuring rather than replace its content with an abbreviation. If a shape appears at the origin or overlaps board content, compute a clear anchor before creation. Strict preflight errors require fixing and rerunning the same local script; script failures are atomic.
+An unloaded-font error means the font load was skipped or not awaited. Clipped copy means the chosen dimensions do not fit the actual text; enlarge the existing shape after measuring rather than replace its content with an abbreviation. If a shape appears at the origin or overlaps board content, compute a clear anchor before creation. TypeScript preflight errors require fixing and rerunning the same local script; script failures are atomic.

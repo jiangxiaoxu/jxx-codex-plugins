@@ -87,7 +87,7 @@ export const FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES = [
 ] as const;
 
 export const FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE =
-  "Prefer first-class Figma Workspace CLI commands when available; use call-upstream-tool for raw upstream behavior or uncovered official capabilities.";
+  "Prefer first-class Figma Workspace CLI commands when available; use figma:upstream:call for uncovered official capabilities.";
 
 export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
   {
@@ -124,7 +124,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       derivedUpstream: ["code", "fileKey"],
       fixedUpstream: ["description"],
       hiddenUpstreamOptional: ["skillNames"],
-      localOnly: ["title", "sessionId", "scriptPath", "inputFile", "strict", "surface", "targetPageId", "inlineResultLimit"],
+      localOnly: ["title", "sessionId", "scriptPath", "inputFile", "surface", "targetPageId", "inlineResultLimit"],
     }),
     targetSupport: "none",
     outputPolicy: {
@@ -362,19 +362,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     outputPolicy: {
       inlineLimitFields: [],
       debugFiles: [],
-      upstreamEnvelope: false,
-    },
-  },
-  {
-    toolName: "figma_workspace_run_task_plan",
-    category: "asset-capture-workflow",
-    parameterMatrix: parameterMatrix({
-      localOnly: ["title", "sessionId", "planPath", "steps", "stopOnFailure"],
-    }),
-    targetSupport: "none",
-    outputPolicy: {
-      inlineLimitFields: [],
-      debugFiles: ["debugFile"],
       upstreamEnvelope: false,
     },
   },

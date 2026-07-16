@@ -21,7 +21,6 @@ export const FIGMA_WORKSPACE_PUBLIC_COMMAND_IDS = [
   "figma:sessions:list",
   "figma:sessions:read",
   "figma:task:prepare",
-  "figma:task:run",
   "figma:upstream:call",
   "figma:upstream:list",
   "figma:upstream:read",

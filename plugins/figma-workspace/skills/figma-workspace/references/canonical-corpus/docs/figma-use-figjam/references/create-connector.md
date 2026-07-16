@@ -4,7 +4,7 @@ Use a connector to express a relationship or flow between existing FigJam nodes.
 
 ## Script-first workflow
 
-Create or update connectors in a local `.figma.ts` task file, then execute it using `figma:script:run` with `strict: true`, a persisted session ID, `surface: "figjam"`, and an absolute `--state-file`. Keep the returned IDs for inspection and later edits. `figma:eval` is appropriate only for a single, bounded transaction.
+Create or update connectors in a local `.figma.ts` task file, then execute it using `figma:script:run` with a persisted session ID, `surface: "figjam"`, and an absolute `--state-file`. TypeScript preflight is always enabled. Keep the returned IDs for inspection and later edits. `figma:eval` is appropriate only for a single, bounded transaction.
 
 ```ts
 // flow-connector.figma.ts
@@ -30,7 +30,7 @@ connector.text.characters = 'approves'
 return { createdNodeIds: [connector.id], connector: { id: connector.id, start: start.id, end: end.id } }
 ```
 
-Run it with `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`. The input JSON contains `sessionId`, `inputFile`, `strict: true`, and `surface: "figjam"`.
+Run it with `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`. The input JSON contains `sessionId`, `inputFile`, and `surface: "figjam"`.
 
 ## API choices
 
@@ -44,4 +44,4 @@ Run it with `npm --silent run figma:script:run -- --input <run-json> --state-fil
 
 Return the connector and endpoint IDs. A read-only follow-up script can check `type`, `connectorStart`, `connectorEnd`, caps, and `text.characters`; use `attachedConnectors` on either endpoint when auditing an existing flow. Capture the affected region when route direction or label placement matters, then inspect that image locally.
 
-If a label write says a font is unloaded, do not load `connector.text.fontName` from a new connector; explicitly load and assign a known `FontName` first. If endpoint attachment fails, confirm the IDs resolve in the active page and retry with `magnet: 'AUTO'`. If strict preflight rejects the script, fix that file and rerun rather than issuing a cleanup mutation.
+If a label write says a font is unloaded, do not load `connector.text.fontName` from a new connector; explicitly load and assign a known `FontName` first. If endpoint attachment fails, confirm the IDs resolve in the active page and retry with `magnet: 'AUTO'`. If TypeScript preflight rejects the script, fix that file and rerun rather than issuing a cleanup mutation.

@@ -91,8 +91,7 @@ After replacing every placeholder and reviewing aliases, scopes, and code syntax
 @'
 {
   "scriptPath": "C:/work/project/.figma-workspace/create-semantic-tokens.figma.ts",
-  "surface": "design",
-  "strict": true
+  "surface": "design"
 }
 '@ | npm --silent run figma:script:run -- --input - --state-file C:/work/project/.figma-workspace/state.json
 ```

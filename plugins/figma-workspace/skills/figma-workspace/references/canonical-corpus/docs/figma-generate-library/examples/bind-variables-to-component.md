@@ -80,7 +80,6 @@ Run `npm --silent run figma:script:run -- --help` first. Then write a JSON input
 {
   "sessionId": "YOUR_SESSION_ID",
   "inputFile": "bind-variables-to-component.figma.ts",
-  "strict": true,
   "surface": "design"
 }
 ```

@@ -211613,7 +211613,7 @@ function getFigmaWorkspaceTypescriptRuntimeInfo() {
     typescriptLibCount: typescriptRuntimeAssets.typescriptLibs.size
   };
 }
-function compileFigmaWorkspaceTypescriptSource(scriptPath, source, strict, extraDeclarations) {
+function compileFigmaWorkspaceTypescriptSource(scriptPath, source, extraDeclarations) {
   if (!typescriptRuntimeAssets.ok) {
     return {
       source,
@@ -211621,7 +211621,7 @@ function compileFigmaWorkspaceTypescriptSource(scriptPath, source, strict, extra
     };
   }
   const wrappedSource = `${TYPESCRIPT_WRAPPER_PREFIX}${source}${TYPESCRIPT_WRAPPER_SUFFIX}`;
-  const compilerOptions = createFigmaWorkspaceTypescriptCompilerOptions(strict);
+  const compilerOptions = createFigmaWorkspaceTypescriptCompilerOptions();
   const typescriptScriptPath = normalizeTypescriptFileName(scriptPath);
   const helperTypesPath = normalizeTypescriptFileName(`${scriptPath}.${TYPESCRIPT_WORKSPACE_HELPER_TYPES_PATH}`);
   const figmaTypingsPath = typescriptRuntimeAssets.figmaPluginTypingsPath;
@@ -211677,7 +211677,7 @@ function compileFigmaWorkspaceTypescriptSource(scriptPath, source, strict, extra
     diagnostics
   };
 }
-function createFigmaWorkspaceTypescriptCompilerOptions(strict) {
+function createFigmaWorkspaceTypescriptCompilerOptions() {
   return {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,
@@ -211687,7 +211687,7 @@ function createFigmaWorkspaceTypescriptCompilerOptions(strict) {
     noImplicitAny: true,
     strictNullChecks: true,
     skipLibCheck: true,
-    noEmitOnError: strict,
+    noEmitOnError: true,
     isolatedModules: false,
     esModuleInterop: true,
     allowSyntheticDefaultImports: true,
@@ -211803,8 +211803,8 @@ function typescriptRuntimeAssetFailureDiagnostic(scriptPath, failure) {
       `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`
     ].join("; "),
-    suggestion: "Rebuild the mcp-server dist if bundled declaration files are missing, then rerun the CLI command with the same --session-file.",
-    docsHint: "Figma Workspace CLI: run-script-file --help",
+    suggestion: "Rebuild the mcp-server dist if bundled declaration files are missing, then rerun figma:script:run with the same --state-file.",
+    docsHint: "Figma Workspace CLI: figma:script:run --help",
     source: { scriptPath }
   };
 }
@@ -211856,7 +211856,7 @@ function typescriptDiagnosticToFileDiagnostic(diagnostic, scriptPath, sourceFile
     severity: "fatal",
     message: `${syntaxError ? "TypeScript syntax preflight failed" : "TypeScript preflight failed"}: ${message}`,
     suggestion: syntaxError ? "Fix all TypeScript syntax errors before running the Figma Workspace script; rerun afterward to get guardrail diagnostics." : "Fix the TypeScript error before running the Figma script. Use Figma Plugin API node types such as FrameNode, PageNode, or RectangleNode to model allowed methods.",
-    docsHint: syntaxError ? "Figma Workspace CLI: run-script-file --help" : "lookup kind=api symbol=ChildrenMixin.appendChild",
+    docsHint: syntaxError ? "Figma Workspace CLI: figma:script:run --help" : "lookup kind=api symbol=ChildrenMixin.appendChild",
     source: {
       scriptPath,
       ...location

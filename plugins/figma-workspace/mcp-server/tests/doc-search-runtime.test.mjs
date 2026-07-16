@@ -163,6 +163,24 @@ test("Plugin API lookup supports qualified aliases without blind unknown-owner e
     assert.ok(Buffer.byteLength(exact.snippet, "utf8") <= 1200);
   }
 
+  for (const [query, expectedTitle] of [
+    ["figma.createFrame()", "PluginAPI.createFrame"],
+    ["PluginAPI.createFrame", "PluginAPI.createFrame"],
+    ["ComponentNode.createInstance", "ComponentNode.createInstance"],
+    ["figma.variables.createVariableCollection", "VariablesAPI.createVariableCollection"],
+  ]) {
+    const matches = await docs.searchReferenceFiles({
+      query,
+      corpus: "api",
+      exactSymbol: true,
+      maxResults: 5,
+      maxSnippetLines: 5,
+    });
+    assert.deepEqual(matches.results.map((result) => result.title), [expectedTitle], query);
+    assert.equal(matches.results[0].matchType, "exact-symbol", query);
+    assert.equal(matches.results[0].ownerMatch, true, query);
+  }
+
   const unknownOwner = await docs.searchReferenceFiles({
     query: "UnknownOwner.createFrame",
     corpus: "api",
@@ -183,6 +201,10 @@ test("Plugin API lookup supports qualified aliases without blind unknown-owner e
   const fallbackExact = knownOwnerFallback.results.find((result) => result.matchType === "exact-symbol");
   assert.ok(fallbackExact);
   assert.equal(fallbackExact.ownerMatch, false);
+  assert.equal(fallbackExact.confidence, "medium");
+  assert.ok(knownOwnerFallback.results
+    .filter((result) => result.matchType === "exact-symbol")
+    .every((result) => result.ownerMatch === false && result.confidence !== "high"));
 
   const caseMismatch = await docs.searchReferenceFiles({
     query: "CreateFrame",

@@ -26,14 +26,14 @@ return {
 }
 ```
 
-Run the prepared file with JSON that names the persisted session, input file, FigJam surface, and strict preflight:
+Run the prepared file with JSON that names the persisted session, input file, and FigJam surface. TypeScript preflight is always enabled:
 
 ```powershell
 npm --silent run figma:script:run -- --input .figma-workspace/run-code.json --state-file G:/work/project/.figma-workspace/state.json
 ```
 
 ```json
-{"sessionId":"<persisted-session-id>","inputFile":"G:/work/project/.figma-workspace/figjam-code/figjam-code.figma.ts","strict":true,"surface":"figjam"}
+{"sessionId":"<persisted-session-id>","inputFile":"G:/work/project/.figma-workspace/figjam-code/figjam-code.figma.ts","surface":"figjam"}
 ```
 
 `figma:eval` is only an exception for a small, one-off Plugin API transaction that does not merit a checked `.figma.ts` file.
