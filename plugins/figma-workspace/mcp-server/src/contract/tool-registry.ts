@@ -5,7 +5,6 @@ export const LOCAL_WORKSPACE_TOOL_NAMES = [
   "figma_workspace_apply_asset_manifest",
   "figma_workspace_download_assets",
   "figma_workspace_capture_node",
-  "figma_workspace_run_task_plan",
   "figma_workspace_prepare_task",
   "figma_workspace_guidance",
   "figma_workspace_inspect",
@@ -29,41 +28,4 @@ const LOCAL_WORKSPACE_TOOL_NAME_SET: ReadonlySet<string> = new Set(LOCAL_WORKSPA
 
 export function isLocalWorkspaceToolName(value: string): value is LocalWorkspaceToolName {
   return LOCAL_WORKSPACE_TOOL_NAME_SET.has(value);
-}
-
-export type FigmaWorkspaceTaskPlanStepType =
-  | "script-file"
-  | "asset-manifest"
-  | "download-assets"
-  | "screenshot-capture"
-  | "upstream-tool";
-
-export const TASK_PLAN_STEP_TYPE_ALIASES: Readonly<Record<string, FigmaWorkspaceTaskPlanStepType>> = {
-  figma_workspace_run_script_file: "script-file",
-  run_script_file: "script-file",
-  script: "script-file",
-  "script-file": "script-file",
-  figma_workspace_apply_asset_manifest: "asset-manifest",
-  apply_asset_manifest: "asset-manifest",
-  asset_manifest: "asset-manifest",
-  upload_assets: "asset-manifest",
-  "asset-manifest": "asset-manifest",
-  figma_workspace_download_assets: "download-assets",
-  download_assets: "download-assets",
-  download_assets_from_figma: "download-assets",
-  "download-assets": "download-assets",
-  figma_workspace_capture_node: "screenshot-capture",
-  capture_node: "screenshot-capture",
-  screenshot: "screenshot-capture",
-  "screenshot-capture": "screenshot-capture",
-  figma_workspace_call_upstream_tool: "upstream-tool",
-  call_upstream_tool: "upstream-tool",
-  upstream: "upstream-tool",
-  "upstream-tool": "upstream-tool",
-};
-
-export function normalizeTaskPlanStepType(
-  value: string | undefined,
-): FigmaWorkspaceTaskPlanStepType | string {
-  return value === undefined ? "script-file" : TASK_PLAN_STEP_TYPE_ALIASES[value] ?? value;
 }

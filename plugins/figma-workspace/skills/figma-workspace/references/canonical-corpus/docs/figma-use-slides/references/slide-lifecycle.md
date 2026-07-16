@@ -38,6 +38,6 @@ For changes that mix layout and lifecycle, do the structural operation first and
 
 ## Validate before reporting success
 
-Run `figma:script:run` only after strict TypeScript preflight is clean. A fatal diagnostic means no partial lifecycle operation was executed. After a successful run, inspect the returned nodes or fresh metadata to confirm section names, slide count, and order; then use `figma:capture` on representative slides and inspect each local image with `view_image`.
+Run `figma:script:run` only after TypeScript preflight is clean. A fatal diagnostic means no partial lifecycle operation was executed. After a successful run, inspect the returned nodes or fresh metadata to confirm section names, slide count, and order; then use `figma:capture` on representative slides and inspect each local image with `view_image`.
 
 Capture cannot prove presenter navigation or transitions, and still images do not reveal an empty section outside the selected view. If the requested reorder could remove or relocate user-authored slides, inspect first, make the smallest explicit structural change, and report the resulting ids and order rather than treating an inferred grid layout as authoritative.

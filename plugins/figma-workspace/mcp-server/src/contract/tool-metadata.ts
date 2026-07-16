@@ -75,13 +75,12 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_run_script_file",
       description:
-        "Primary file-based TypeScript workflow for Figma Workspace. Recommended workspace call: { sessionId, inputFile, strict, surface }. The tool only accepts .figma.ts files, strict-checks them with Figma Plugin API typings, and compiles the upstream payload internally before execution. Use await $.capture(target, options?) to queue up to 8 local PNG files returned under captures[] after successful script execution. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
+        "Primary file-based TypeScript workflow for Figma Workspace. Recommended workspace call: { sessionId, inputFile, surface }. The tool only accepts .figma.ts files, always strict-checks them with Figma Plugin API typings, and compiles the upstream payload internally before execution. Use await $.capture(target, options?) to queue up to 8 local PNG files returned under captures[] after successful script execution. The tool always preflights diagnostics and compiled payload size before upstream execution; preflight failures return structured diagnostics without calling upstream Figma. Debug JSON files are generated on demand for failures, diagnostics, and inline omissions. Execution uses fixed upstream use_figma/code.",
       inputSchema: objectSchema({
         title: titleProperty(),
         sessionId: stringProperty("Local workspace session id or task name. Defaults to 'default'."),
         scriptPath: stringProperty("Advanced absolute .figma.ts path escape hatch only. Prefer inputFile after prepare-task creates a file-context workspace."),
         inputFile: stringProperty("Recommended workspace .figma.ts script file name after prepare-task; preferred over scriptPath for agents."),
-        strict: booleanProperty("Request strict TypeScript preflight with bundled Figma Plugin API typings. TypeScript diagnostics reject execution."),
         surface: enumProperty(["design", "figjam", "slides"], "Figma surface associated with this script."),
         targetPageId: stringProperty("Optional PAGE node id used for one setCurrentPageAsync call before the script body runs."),
         inlineResultLimit: inlineResultLimitInputProperty("Advanced payload-size control in bytes for inline upstream.result/upstream.text only. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile."),
@@ -142,22 +141,6 @@ export function createReplToolDescriptions(
       }, ["target"]),
     },
     {
-      name: "figma_workspace_run_task_plan",
-      description:
-        "Workflow add-on for running a repeatable local JSON task plan. Recommended file-plan call: { sessionId, planPath }. Steps use only { id?, type?, args? }; put tool-specific inputs inside args. The plan-level debug file is generated automatically.",
-      inputSchema: objectSchema({
-        title: titleProperty(),
-        sessionId: stringProperty("Default local workspace session id inherited by steps when omitted."),
-        planPath: stringProperty("Recommended JSON plan path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of steps or an object with steps."),
-        steps: {
-          type: "array",
-          description: "Advanced inline steps. Prefer planPath for repeatable workflows. Supported type values: script-file, asset-manifest/upload_assets, download-assets/download_assets, screenshot-capture, upstream-tool. Step arguments go under args.",
-          items: taskPlanStepProperty("One task-plan step. Put tool-specific inputs under args."),
-        },
-        stopOnFailure: booleanProperty("Stop after the first failed step. Defaults true.", { default: true }),
-      }, { anyOf: [requiredBranch("planPath"), requiredBranch("steps")] }),
-    },
-    {
       name: "figma_workspace_prepare_task",
       description:
         "Core workflow entrypoint for creating or reusing a task-specific .figma.ts script. It does not create a pending result stub; debug JSON files are generated later on demand. Recommended input: { file, taskName, workspaceDir, surface }. Follow with guidance, lookup, run-script-file, inspect, and capture-node.",
@@ -178,16 +161,14 @@ export function createReplToolDescriptions(
     {
       name: "figma_workspace_guidance",
       description:
-        "Planning and routing helper for compact workflow guidance, curated Plugin API cards, or catalog metadata. Recommended call: { query, surface }. surface is a hard Design/FigJam/Slides route filter, never a cross-surface fallback. In plan mode workflow must name a supported workflow and filters the returned workflow graph and wrapper profiles. Use English task keywords before writing .figma.ts; use figma:docs:search or figma:api:search only when exact reference context is still needed.",
+        "Planning and routing helper for compact workflow guidance. Recommended call: { query, surface }. surface is a hard Design/FigJam/Slides route filter, never a cross-surface fallback. workflow must name a supported workflow and filters the returned workflow graph and wrapper profiles. Use English task keywords before writing .figma.ts; use figma:docs:search or figma:api:search only when exact reference context is still needed.",
       inputSchema: objectSchema({
         title: titleProperty(),
-        mode: enumProperty(["guidance", "plan", "card", "catalog"], "Guidance mode. Defaults from card/query fields."),
-        card: stringProperty(`Card id or topic, for example text.font, layout.auto, components.variants, variables.bind, surface.slides. Hard limit ${options.maxLookupQueryLength} characters.`),
         query: stringProperty(`English task keywords used for deterministic route resolution, for example text font loadFontAsync or components variants properties. Hard limit ${options.maxLookupQueryLength} characters.`),
         surface: enumProperty(["design", "figjam", "slides"], "Optional hard route filter. Results may use this surface or an explicitly surface-agnostic record only."),
-        workflow: stringProperty("Optional exact supported workflow id for plan mode. An unknown id is a usage error; when supplied it filters workflowGraph and wrapperProfiles."),
+        workflow: stringProperty("Optional exact supported workflow id. An unknown id is a usage error; when supplied it filters workflowGraph and wrapperProfiles."),
         maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4."),
-      }),
+      }, ["query"]),
     },
     {
       name: "figma_workspace_inspect",
@@ -443,13 +424,6 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     diagnostics: arrayProperty("Nonfatal optional upstream passthrough warnings when present."),
     upstreamError: objectProperty("Normalized upstream failure details when capture failed."),
   }),
-  figma_workspace_run_task_plan: toolOutputSchema({
-    session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
-    stopped: booleanProperty("Whether execution stopped before remaining steps."),
-    steps: arrayProperty("Compact per-step execution summaries with per-step outputReferences when a step produced files for later references."),
-    outputFiles: outputFilesProperty("Files written for plan result output.", ["debugFile"]),
-    failures: compactTaskPlanFailuresProperty("Compact failed task-plan step summaries."),
-  }),
   figma_workspace_prepare_task: toolOutputSchema({
     task: objectProperty("Prepared task workspace and script file."),
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir; task.workspace remains the full prepared workspace shape."),
@@ -459,7 +433,6 @@ const LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   figma_workspace_guidance: toolOutputSchema({
     route: objectProperty("Resolved task route: status (matched, ambiguous, fallback, or none), confidence, requested/effective surface, candidate task families, effective scopes, normalized English query, and reason."),
     cards: arrayProperty("At most the requested compact curated API cards, filtered to the resolved surface and route."),
-    catalogSize: numberProperty("Total curated API card count when mode=catalog returns cards."),
     queryHints: stringArrayProperty("At most eight compact English docs/API lookup hints."),
     apiReferences: arrayProperty("At most eight Plugin API references. Each reference has displayExpression, lookupQuery, ownerHint when known, and symbolKind. lookupQuery is directly consumable by figma:api:search."),
     guardrails: stringArrayProperty("At most six task-specific guardrails."),
@@ -750,19 +723,6 @@ function inlineResultLimitInputProperty(description: string): Record<string, unk
   });
 }
 
-function taskPlanStepProperty(description: string): Record<string, unknown> {
-  return {
-    type: "object",
-    description,
-    properties: {
-      id: stringProperty("Optional stable step id used by output references and templates."),
-      type: stringProperty("Task-plan step type, for example script-file, asset-manifest, download-assets, screenshot-capture, or upstream-tool."),
-      args: objectProperty("Tool-specific step arguments. Put all step tool inputs here."),
-    },
-    additionalProperties: false,
-  };
-}
-
 function downloadAssetTargetProperty(): Record<string, unknown> {
   return {
     type: "object",
@@ -938,24 +898,6 @@ function compactDownloadAssetResultsProperty(description: string): Record<string
         },
         upstreamError: objectProperty("Compact per-target upstream error."),
         downloadError: objectProperty("Compact per-target local download error."),
-      },
-      additionalProperties: true,
-    },
-  };
-}
-
-function compactTaskPlanFailuresProperty(description: string): Record<string, unknown> {
-  return {
-    type: "array",
-    description,
-    items: {
-      type: "object",
-      properties: {
-        id: stringProperty("Task-plan step id."),
-        index: numberProperty("Task-plan step index."),
-        type: stringProperty("Normalized task-plan step type."),
-        status: stringProperty("Failed step status."),
-        error: objectProperty("Compact step error when available."),
       },
       additionalProperties: true,
     },

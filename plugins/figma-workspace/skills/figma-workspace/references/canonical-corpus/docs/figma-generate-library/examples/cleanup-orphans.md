@@ -74,7 +74,6 @@ Run `npm --silent run figma:script:run -- --help` first. Use this JSON input for
 {
   "sessionId": "YOUR_SESSION_ID",
   "inputFile": "cleanup-orphans.figma.ts",
-  "strict": true,
   "surface": "design"
 }
 ```

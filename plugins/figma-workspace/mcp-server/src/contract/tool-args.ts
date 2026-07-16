@@ -1,5 +1,9 @@
 import type { FigmaWorkspaceSurface } from "../runtime/script-runner.js";
 
+export class FigmaWorkspaceToolArgumentError extends Error {
+  readonly name = "FigmaWorkspaceToolArgumentError";
+}
+
 export interface FigmaWorkspaceExplicitNodeTarget {
   fileKey: string;
   nodeId: string;
@@ -36,7 +40,6 @@ export interface FigmaWorkspaceRunScriptFileArguments {
   sessionId?: string;
   scriptPath?: string;
   inputFile?: string;
-  strict?: boolean;
   surface?: FigmaWorkspaceSurface;
   targetPageId?: string;
   inlineResultLimit?: number;
@@ -86,21 +89,6 @@ export interface FigmaWorkspaceCaptureNodeArguments {
   imageFile?: string;
   maxDimension?: number;
   contentsOnly?: boolean;
-}
-
-export interface FigmaWorkspaceTaskPlanStep {
-  id?: string;
-  type?: string;
-  args?: Record<string, unknown>;
-}
-
-export interface FigmaWorkspaceRunTaskPlanArguments {
-  [key: string]: unknown;
-  title?: string;
-  sessionId?: string;
-  planPath?: string;
-  steps?: FigmaWorkspaceTaskPlanStep[];
-  stopOnFailure?: boolean;
 }
 
 export interface FigmaWorkspaceCallUpstreamToolArguments {
@@ -276,9 +264,7 @@ export interface FigmaWorkspaceUpstreamToolsArguments {
 export interface FigmaWorkspaceGuidanceArguments {
   [key: string]: unknown;
   title?: string;
-  mode?: "guidance" | "plan" | "card" | "catalog";
-  card?: string;
-  query?: string;
+  query: string;
   surface?: FigmaWorkspaceSurface;
   workflow?: FigmaWorkspaceGuidanceWorkflow;
   maxCards?: number;
@@ -294,7 +280,6 @@ export interface FigmaWorkspaceInspectArguments {
 }
 
 const FIGMA_WORKSPACE_SURFACES = ["design", "figjam", "slides"] as const satisfies readonly FigmaWorkspaceSurface[];
-const FIGMA_WORKSPACE_GUIDANCE_MODES = ["guidance", "plan", "card", "catalog"] as const;
 const FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS = ["design-implementation-context", "motion-implementation"] as const satisfies readonly FigmaWorkspaceGuidanceWorkflow[];
 const FIGMA_WORKSPACE_INSPECT_MODES = ["inspect", "style"] as const;
 const FIGMA_WORKSPACE_LOOKUP_KINDS = ["docs", "api"] as const;
@@ -327,7 +312,7 @@ const FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"] as c
 function assertRemovedFileReferenceFields(record: Record<string, unknown>): void {
   const removed = ["fileUrl", "fileKey"].filter((field) => record[field] !== undefined);
   if (removed.length > 0) {
-    throw new Error(`Tool argument "${removed.join("/")}" was removed. Use "file" with a Figma URL or file key.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${removed.join("/")}" was removed. Use "file" with a Figma URL or file key.`);
   }
 }
 
@@ -339,14 +324,14 @@ function assertRemovedArguments(
 ): void {
   const removed = fields.filter((field) => record[field] !== undefined);
   if (removed.length > 0) {
-    throw new Error(`Tool argument "${displayName ?? removed.join("/")}" was removed. Use "${replacement}".`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${displayName ?? removed.join("/")}" was removed. Use "${replacement}".`);
   }
 }
 
 function assertRemovedDebugOutputArguments(record: Record<string, unknown>, fields: readonly string[]): void {
   const removed = fields.filter((field) => record[field] !== undefined);
   if (removed.length > 0) {
-    throw new Error(
+    throw new FigmaWorkspaceToolArgumentError(
       `Tool argument "${removed.join("/")}" was removed. Debug files are generated on demand for failures, diagnostics, and inline omissions.`,
     );
   }
@@ -355,8 +340,8 @@ function assertRemovedDebugOutputArguments(record: Record<string, unknown>, fiel
 function assertRemovedRunScriptOutputLayoutArguments(record: Record<string, unknown>): void {
   const removed = ["outputDir", "diagnosticsFile", "summaryFile"].filter((field) => record[field] !== undefined);
   if (removed.length > 0) {
-    throw new Error(
-      `Input "${removed.join("/")}" was removed for run-script-file. Debug files are generated on demand for failures, diagnostics, and inline omissions; diagnostics are included in outputFiles.debugFile.`,
+    throw new FigmaWorkspaceToolArgumentError(
+      `Input "${removed.join("/")}" was removed for figma:script:run. Debug files are generated on demand for failures, diagnostics, and inline omissions; diagnostics are included in outputFiles.debugFile.`,
     );
   }
 }
@@ -365,8 +350,8 @@ export function asOpenArgs(args: unknown): FigmaWorkspaceOpenArguments {
   const record = parseToolArgs<FigmaWorkspaceOpenArguments>(args);
   assertRemovedFileReferenceFields(record);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
-  assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
-  assertRemovedArguments(record, ["refresh"], "the call-upstream-tool CLI command");
+  assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed native Plugin API execution");
+  assertRemovedArguments(record, ["refresh"], "figma:upstream:call");
   assertRemovedArguments(record, ["cwd", "workspaceCwd", "dirName"], "workspaceDir");
   assertOptionalStringFields(record, [
     "sessionId",
@@ -383,7 +368,7 @@ export function asOpenArgs(args: unknown): FigmaWorkspaceOpenArguments {
 export function asEvalArgs(args: unknown): FigmaWorkspaceEvalArguments {
   const record = parseToolArgs<FigmaWorkspaceEvalArguments>(args);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
-  assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed native Plugin API execution");
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, [
     "code",
@@ -399,11 +384,11 @@ export function asEvalArgs(args: unknown): FigmaWorkspaceEvalArguments {
 export function asRunScriptFileArgs(args: unknown): FigmaWorkspaceRunScriptFileArguments {
   const record = parseToolArgs<FigmaWorkspaceRunScriptFileArguments>(args);
   assertRemovedArguments(record, ["expectedSurface"], "surface");
-  assertRemovedArguments(record, ["dryRun"], "run-script-file without dryRun; preflight runs automatically");
+  assertRemovedArguments(record, ["dryRun"], "figma:script:run without dryRun; preflight runs automatically");
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertRemovedRunScriptOutputLayoutArguments(record);
-  assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
-  assertRemovedArgumentsWithoutReplacement(record, ["allowDangerousOperations"]);
+  assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed native Plugin API execution");
+  assertRemovedArgumentsWithoutReplacement(record, ["allowDangerousOperations", "strict"]);
   assertOptionalStringFields(record, [
     "sessionId",
     "scriptPath",
@@ -416,8 +401,8 @@ export function asRunScriptFileArgs(args: unknown): FigmaWorkspaceRunScriptFileA
 
 export function asApplyAssetManifestArgs(args: unknown): FigmaWorkspaceApplyAssetManifestArguments {
   const record = parseToolArgs<FigmaWorkspaceApplyAssetManifestArguments>(args);
-  assertRemovedArguments(record, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_workspace_call_upstream_tool");
-  assertRemovedArguments(record, ["batchCommit"], "figma_workspace_call_upstream_tool");
+  assertRemovedArguments(record, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma:upstream:call");
+  assertRemovedArguments(record, ["batchCommit"], "figma:upstream:call");
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, [
     "sessionId",
@@ -431,7 +416,7 @@ export function asDownloadAssetsArgs(args: unknown): FigmaWorkspaceDownloadAsset
   const record = parseToolArgs<FigmaWorkspaceDownloadAssetsArguments>(args);
   assertRemovedArguments(record, ["target"], "targets");
   assertRemovedArguments(record, ["assets"], "targets");
-  assertRemovedArguments(record, ["toolName", "arguments", "refresh", "download"], "figma_workspace_call_upstream_tool");
+  assertRemovedArguments(record, ["toolName", "arguments", "refresh", "download"], "figma:upstream:call");
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, [
     "sessionId",
@@ -450,9 +435,9 @@ export function asCaptureNodeArgs(args: unknown): FigmaWorkspaceCaptureNodeArgum
   assertRemovedArguments(record, ["nodeId", "targetNodeId", "handle"], "target");
   assertRemovedArguments(record, ["outputFile"], "imageFile");
   assertRemovedArguments(record, ["resultFile"], "imageFile");
-  assertRemovedArguments(record, ["metadataFile"], "figma_workspace_call_upstream_tool");
-  assertRemovedArguments(record, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma_workspace_call_upstream_tool");
-  assertRemovedArguments(record, ["enableBase64Response"], "figma_workspace_call_upstream_tool");
+  assertRemovedArguments(record, ["metadataFile"], "figma:upstream:call");
+  assertRemovedArguments(record, ["argumentsTemplate", "toolName", "arguments", "refresh"], "figma:upstream:call");
+  assertRemovedArguments(record, ["enableBase64Response"], "figma:upstream:call");
   assertOptionalStringFields(record, [
     "sessionId",
     "imageFile",
@@ -460,20 +445,6 @@ export function asCaptureNodeArgs(args: unknown): FigmaWorkspaceCaptureNodeArgum
   assertOptionalIntegerRange(record, "maxDimension", 1, 65536);
   assertOptionalBooleanFields(record, ["contentsOnly"]);
   assertOptionalCaptureTargetValue(record.target, "target");
-  return record;
-}
-
-export function asRunTaskPlanArgs(args: unknown): FigmaWorkspaceRunTaskPlanArguments {
-  const record = parseToolArgs<FigmaWorkspaceRunTaskPlanArguments>(args);
-  assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
-  assertOptionalStringFields(record, [
-    "sessionId",
-    "planPath",
-  ]);
-  const steps = assertOptionalTaskPlanSteps(record);
-  if (steps) {
-    record.steps = steps;
-  }
   return record;
 }
 
@@ -504,8 +475,10 @@ export function asGuidanceArgs(args: unknown): FigmaWorkspaceGuidanceArguments {
   const record = parseToolArgs<FigmaWorkspaceGuidanceArguments>(args);
   assertRemovedArguments(record, ["intent", "goal", "task"], "query");
   assertRemovedArguments(record, ["expectedSurface"], "surface");
-  assertOptionalStringFields(record, ["card", "query"]);
-  assertOptionalEnum(record, "mode", FIGMA_WORKSPACE_GUIDANCE_MODES);
+  assertRemovedArgumentsWithoutReplacement(record, ["mode", "card"]);
+  if (typeof record.query !== "string" || record.query.trim() === "") {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "query" must be a non-empty string.');
+  }
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
   assertOptionalEnum(record, "workflow", FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS);
   return record;
@@ -513,7 +486,7 @@ export function asGuidanceArgs(args: unknown): FigmaWorkspaceGuidanceArguments {
 
 export function asInspectArgs(args: unknown): FigmaWorkspaceInspectArguments {
   const record = parseToolArgs<FigmaWorkspaceInspectArguments>(args);
-  assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed use_figma execution");
+  assertRemovedArguments(record, ["upstreamTool", "upstreamArgument", "upstreamArguments"], "fixed native Plugin API execution");
   assertOptionalStringFields(record, [
     "sessionId",
   ]);
@@ -528,10 +501,10 @@ function assertOptionalInspectTarget(value: unknown): void {
     return;
   }
   if (typeof value !== "string" || value.trim() === "") {
-    throw new Error('Tool argument "target" must be $selection, $currentPage, a raw node id, or a node URL string.');
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "target" must be $selection, $currentPage, a raw node id, or a node URL string.');
   }
   if (value.startsWith("$") && value !== "$selection" && value !== "$currentPage") {
-    throw new Error('Tool argument "target" no longer accepts local handles. Use $selection, $currentPage, a raw node id, or a node URL.');
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "target" no longer accepts local handles. Use $selection, $currentPage, a raw node id, or a node URL.');
   }
 }
 
@@ -641,7 +614,7 @@ export function asGetVariableDefsArgs(args: unknown): FigmaWorkspaceGetVariableD
   assertRemovedArguments(
     record,
     ["clientLanguages", "clientFrameworks"],
-    "figma_workspace_get_design_context",
+    "figma:design-context",
     "clientLanguages/clientFrameworks",
   );
   assertOptionalStringFields(record, [
@@ -658,13 +631,13 @@ export function asLookupArgs(args: unknown): FigmaWorkspaceLookupArguments {
   assertOptionalEnum(record, "kind", FIGMA_WORKSPACE_LOOKUP_KINDS);
   assertOptionalEnum(record, "scope", FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES);
   if (record.scope !== undefined && record.kind !== "docs") {
-    throw new Error('Tool argument "scope" is only allowed when "kind" is "docs".');
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "scope" is only allowed when "kind" is "docs".');
   }
   if (record.kind === "docs" && record.scope === undefined) {
     record.scope = "auto";
   }
   if (record.kind !== "docs" && (record.surface !== undefined || record.taskFamily !== undefined)) {
-    throw new Error('Tool arguments "surface" and "taskFamily" are only allowed when "kind" is "docs".');
+    throw new FigmaWorkspaceToolArgumentError('Tool arguments "surface" and "taskFamily" are only allowed when "kind" is "docs".');
   }
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
   assertOptionalEnum(record, "taskFamily", FIGMA_WORKSPACE_TASK_FAMILIES);
@@ -688,11 +661,11 @@ export function asDocsArgs(args: unknown): FigmaWorkspaceDocsArguments {
   if (record.mode === "read") {
     assertOptionalStringFields(record, ["id"]);
     if (typeof record.id !== "string" || record.id.trim().length === 0) {
-      throw new Error('Tool argument "id" is required when docs mode is "read".');
+      throw new FigmaWorkspaceToolArgumentError('Tool argument "id" is required when docs mode is "read".');
     }
     return record as FigmaWorkspaceDocsArguments;
   }
-  throw new Error('Tool argument "mode" must be one of: list, catalog, read.');
+  throw new FigmaWorkspaceToolArgumentError('Tool argument "mode" must be one of: list, catalog, read.');
 }
 
 export function asDoctorArgs(args: unknown): FigmaWorkspaceDoctorArguments {
@@ -719,7 +692,7 @@ function parseToolArgs<T extends Record<string, unknown>>(value: unknown): T {
     return {} as T;
   }
   if (!isRecord(value)) {
-    throw new Error("Tool arguments must be an object.");
+    throw new FigmaWorkspaceToolArgumentError("Tool arguments must be an object.");
   }
   return { ...value } as T;
 }
@@ -734,7 +707,7 @@ function assertOptionalEnum(
     return;
   }
   if (typeof value !== "string" || !values.includes(value)) {
-    throw new Error(`Tool argument "${key}" must be one of: ${values.join(", ")}.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be one of: ${values.join(", ")}.`);
   }
 }
 
@@ -748,7 +721,7 @@ function assertOptionalRecord(
     return;
   }
   if (!isRecord(value)) {
-    throw new Error(`Tool argument "${displayName}" must be an object.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${displayName}" must be an object.`);
   }
 }
 
@@ -758,7 +731,7 @@ function assertOptionalArray(record: Record<string, unknown>, key: string): unkn
     return undefined;
   }
   if (!Array.isArray(value)) {
-    throw new Error(`Tool argument "${key}" must be an array.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be an array.`);
   }
   return value;
 }
@@ -770,7 +743,7 @@ function assertOptionalStringFields(record: Record<string, unknown>, keys: reado
       continue;
     }
     if (typeof value !== "string") {
-      throw new Error(`Tool argument "${key}" must be a string.`);
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be a string.`);
     }
   }
 }
@@ -782,7 +755,7 @@ function assertOptionalBooleanFields(record: Record<string, unknown>, keys: read
       continue;
     }
     if (typeof value !== "boolean") {
-      throw new Error(`Tool argument "${key}" must be a boolean.`);
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be a boolean.`);
     }
   }
 }
@@ -794,7 +767,7 @@ function assertOptionalStringArray(record: Record<string, unknown>, key: string)
   }
   values.forEach((value, index) => {
     if (typeof value !== "string") {
-      throw new Error(`Tool argument "${key}[${index}]" must be a string.`);
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}[${index}]" must be a string.`);
     }
   });
 }
@@ -805,7 +778,7 @@ function assertOptionalNonNegativeInteger(record: Record<string, unknown>, key: 
     return;
   }
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw new Error(`Tool argument "${key}" must be a non-negative integer.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be a non-negative integer.`);
   }
 }
 
@@ -817,7 +790,7 @@ function assertOptionalAssets(record: Record<string, unknown>): void {
   assets.forEach((asset, index) => {
     const assetName = `assets[${index}]`;
     if (!isRecord(asset)) {
-      throw new Error(`Tool argument "${assetName}" must be an object.`);
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "${assetName}" must be an object.`);
     }
     assertOptionalStringFieldsWithPrefix(asset, assetName, [
       "path",
@@ -826,7 +799,7 @@ function assertOptionalAssets(record: Record<string, unknown>): void {
       "scaleMode",
       "name",
     ]);
-    assertRemovedArguments(asset, ["toolName", "arguments"], "figma_workspace_call_upstream_tool", `${assetName}.toolName/arguments`);
+    assertRemovedArguments(asset, ["toolName", "arguments"], "figma:upstream:call", `${assetName}.toolName/arguments`);
     assertRemovedArguments(asset, ["filePath", "localPath"], "path", `${assetName}.filePath/localPath`);
     assertRemovedArguments(
       asset,
@@ -848,7 +821,7 @@ function assertOptionalDownloadAssetTargets(record: Record<string, unknown>): Fi
   return targets.map((target, index) => {
     const targetName = `targets[${index}]`;
     if (!isRecord(target)) {
-      throw new Error(`Tool argument "${targetName}" must be an object.`);
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "${targetName}" must be an object.`);
     }
     assertRemovedArguments(
       target,
@@ -860,11 +833,11 @@ function assertOptionalDownloadAssetTargets(record: Record<string, unknown>): Fi
     assertOptionalTargetValue(target.target, `${targetName}.target`);
     const defaultFormat = target.defaultFormat;
     if (defaultFormat !== undefined && (typeof defaultFormat !== "string" || !FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS.includes(defaultFormat as never))) {
-      throw new Error(`Tool argument "${targetName}.defaultFormat" must be one of: ${FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS.join(", ")}.`);
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "${targetName}.defaultFormat" must be one of: ${FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS.join(", ")}.`);
     }
     const defaultScale = target.defaultScale;
     if (defaultScale !== undefined && (typeof defaultScale !== "number" || !Number.isFinite(defaultScale) || defaultScale < 0.01 || defaultScale > 4)) {
-      throw new Error(`Tool argument "${targetName}.defaultScale" must be a number from 0.01 to 4.`);
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "${targetName}.defaultScale" must be a number from 0.01 to 4.`);
     }
     return {
       target: target.target as FigmaWorkspaceNodeTarget | undefined,
@@ -884,7 +857,7 @@ function assertOptionalTargetValue(value: unknown, displayName: string): void {
     return;
   }
   if (!isRecord(value)) {
-    throw new Error(`Tool argument "${displayName}" must be a raw node id, node URL, or { fileKey, nodeId }.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${displayName}" must be a raw node id, node URL, or { fileKey, nodeId }.`);
   }
   assertExplicitNodeTarget(value, displayName);
 }
@@ -895,7 +868,7 @@ function assertOptionalIntegerRange(record: Record<string, unknown>, key: string
     return;
   }
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
-    throw new Error(`Tool argument "${key}" must be an integer from ${min} to ${max}.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be an integer from ${min} to ${max}.`);
   }
 }
 
@@ -904,20 +877,20 @@ function assertOptionalExportVideoConstraint(value: unknown): void {
     return;
   }
   if (!isRecord(value)) {
-    throw new Error('Tool argument "constraint" must be an object with type and value.');
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "constraint" must be an object with type and value.');
   }
   const type = value.type;
   const constraintValue = value.value;
   if (type !== "SCALE" && type !== "WIDTH" && type !== "HEIGHT") {
-    throw new Error('Tool argument "constraint.type" must be one of: SCALE, WIDTH, HEIGHT.');
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "constraint.type" must be one of: SCALE, WIDTH, HEIGHT.');
   }
   if (typeof constraintValue !== "number" || !Number.isFinite(constraintValue) || constraintValue <= 0) {
-    throw new Error('Tool argument "constraint.value" must be a positive number.');
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "constraint.value" must be a positive number.');
   }
   const keys = Object.keys(value);
   const extra = keys.filter((key) => key !== "type" && key !== "value");
   if (extra.length > 0) {
-    throw new Error(`Tool argument "constraint" does not allow extra fields: ${extra.join(", ")}.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "constraint" does not allow extra fields: ${extra.join(", ")}.`);
   }
 }
 
@@ -930,17 +903,17 @@ function assertOptionalCaptureTargetValue(value: unknown, displayName: string): 
     return;
   }
   if (!isRecord(value)) {
-    throw new Error(`Tool argument "${displayName}" must be a raw node id, node URL, or { fileKey, nodeId }.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${displayName}" must be a raw node id, node URL, or { fileKey, nodeId }.`);
   }
   assertExplicitNodeTarget(value, displayName);
 }
 
 function assertNodeTargetString(value: string, displayName: string): void {
   if (value.trim() === "") {
-    throw new Error(`Tool argument "${displayName}" must not be empty.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${displayName}" must not be empty.`);
   }
   if (value.startsWith("$")) {
-    throw new Error(`Tool argument "${displayName}" no longer accepts local handles. Use a raw node id, node URL, or { fileKey, nodeId }.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${displayName}" no longer accepts local handles. Use a raw node id, node URL, or { fileKey, nodeId }.`);
   }
 }
 
@@ -952,66 +925,21 @@ function assertExplicitNodeTarget(value: Record<string, unknown>, displayName: s
     || value.fileKey.trim() === ""
     || typeof value.nodeId !== "string"
     || value.nodeId.trim() === "") {
-    throw new Error(`Tool argument "${displayName}" object must contain exactly non-empty string fileKey and nodeId fields.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${displayName}" object must contain exactly non-empty string fileKey and nodeId fields.`);
   }
 }
 
 function assertRemovedHandleArguments(record: Record<string, unknown>, fields: readonly string[]): void {
   const removed = fields.filter((field) => record[field] !== undefined);
   if (removed.length > 0) {
-    throw new Error(`Tool argument "${removed.join("/")}" was removed because local handles are no longer supported.`);
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${removed.join("/")}" was removed because local handles are no longer supported.`);
   }
 }
 
 function assertRemovedArgumentsWithoutReplacement(record: Record<string, unknown>, fields: readonly string[]): void {
   const removed = fields.filter((field) => record[field] !== undefined);
   if (removed.length > 0) {
-    throw new Error(`Tool argument "${removed.join("/")}" was removed.`);
-  }
-}
-
-export function asTaskPlanSteps(value: unknown, displayName = "steps"): FigmaWorkspaceTaskPlanStep[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`Tool argument "${displayName}" must be an array.`);
-  }
-  return value.map((step, index) => asTaskPlanStep(step, `${displayName}[${index}]`));
-}
-
-function assertOptionalTaskPlanSteps(record: Record<string, unknown>): FigmaWorkspaceTaskPlanStep[] | undefined {
-  const steps = assertOptionalArray(record, "steps");
-  if (!steps) {
-    return undefined;
-  }
-  return asTaskPlanSteps(steps);
-}
-
-function asTaskPlanStep(value: unknown, displayName: string): FigmaWorkspaceTaskPlanStep {
-  if (!isRecord(value)) {
-    throw new Error(`Tool argument "${displayName}" must be an object.`);
-  }
-  assertRemovedArguments(value, ["tool"], "type", `${displayName}.tool`);
-  assertRemovedArguments(value, ["arguments"], "args", `${displayName}.arguments`);
-  assertOnlyTaskPlanStepFields(value, displayName);
-  assertOptionalStringFieldsWithPrefix(value, displayName, ["id", "type"]);
-  assertOptionalRecord(value, "args", `${displayName}.args`);
-  const step: FigmaWorkspaceTaskPlanStep = {};
-  if (value.id !== undefined) {
-    step.id = value.id as string;
-  }
-  if (value.type !== undefined) {
-    step.type = value.type as string;
-  }
-  if (value.args !== undefined) {
-    step.args = value.args as Record<string, unknown>;
-  }
-  return step;
-}
-
-function assertOnlyTaskPlanStepFields(record: Record<string, unknown>, displayName: string): void {
-  for (const key of Object.keys(record)) {
-    if (!["id", "type", "args"].includes(key)) {
-      throw new Error(`Tool argument "${displayName}.${key}" is not supported. Put step tool inputs under "args".`);
-    }
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${removed.join("/")}" was removed.`);
   }
 }
 
@@ -1026,7 +954,7 @@ function assertOptionalStringFieldsWithPrefix(
       continue;
     }
     if (typeof value !== "string") {
-      throw new Error(`Tool argument "${prefix}.${key}" must be a string.`);
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "${prefix}.${key}" must be a string.`);
     }
   }
 }
@@ -1040,10 +968,10 @@ export function withDefaultTitle<T extends Record<string, unknown>>(
   _title: string,
 ): T {
   if (!isRecord(args)) {
-    throw new Error("Tool arguments must be an object.");
+    throw new FigmaWorkspaceToolArgumentError("Tool arguments must be an object.");
   }
   if (args.title !== undefined && typeof args.title !== "string") {
-    throw new Error('Tool argument "title" must be a string.');
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "title" must be a string.');
   }
   return args;
 }

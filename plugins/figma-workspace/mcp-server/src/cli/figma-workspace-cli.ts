@@ -2,29 +2,29 @@ import { randomUUID } from "node:crypto";
 import { link, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type {
-  FigmaWorkspaceApplyAssetManifestArguments,
-  FigmaWorkspaceCallUpstreamToolArguments,
-  FigmaWorkspaceCaptureNodeArguments,
-  FigmaWorkspaceDownloadAssetsArguments,
-  FigmaWorkspaceDocsArguments,
-  FigmaWorkspaceDoctorArguments,
-  FigmaWorkspaceEvalArguments,
-  FigmaWorkspaceGetDesignContextArguments,
-  FigmaWorkspaceGetLibrariesArguments,
-  FigmaWorkspaceGetMetadataArguments,
-  FigmaWorkspaceGetMotionContextArguments,
-  FigmaWorkspaceGetVariableDefsArguments,
-  FigmaWorkspaceGuidanceArguments,
-  FigmaWorkspaceInspectArguments,
-  FigmaWorkspaceLookupArguments,
-  FigmaWorkspaceOpenArguments,
-  FigmaWorkspacePrepareTaskArguments,
-  FigmaWorkspaceRunScriptFileArguments,
-  FigmaWorkspaceRunTaskPlanArguments,
-  FigmaWorkspaceSearchDesignSystemArguments,
-  FigmaWorkspaceSessionsArguments,
-  FigmaWorkspaceUpstreamToolsArguments,
+import {
+  FigmaWorkspaceToolArgumentError,
+  type FigmaWorkspaceApplyAssetManifestArguments,
+  type FigmaWorkspaceCallUpstreamToolArguments,
+  type FigmaWorkspaceCaptureNodeArguments,
+  type FigmaWorkspaceDownloadAssetsArguments,
+  type FigmaWorkspaceDocsArguments,
+  type FigmaWorkspaceDoctorArguments,
+  type FigmaWorkspaceEvalArguments,
+  type FigmaWorkspaceGetDesignContextArguments,
+  type FigmaWorkspaceGetLibrariesArguments,
+  type FigmaWorkspaceGetMetadataArguments,
+  type FigmaWorkspaceGetMotionContextArguments,
+  type FigmaWorkspaceGetVariableDefsArguments,
+  type FigmaWorkspaceGuidanceArguments,
+  type FigmaWorkspaceInspectArguments,
+  type FigmaWorkspaceLookupArguments,
+  type FigmaWorkspaceOpenArguments,
+  type FigmaWorkspacePrepareTaskArguments,
+  type FigmaWorkspaceRunScriptFileArguments,
+  type FigmaWorkspaceSearchDesignSystemArguments,
+  type FigmaWorkspaceSessionsArguments,
+  type FigmaWorkspaceUpstreamToolsArguments,
 } from "../contract/tool-args.js";
 import { createReplToolDescriptions } from "../contract/tool-metadata.js";
 import {
@@ -63,7 +63,6 @@ export const FIGMA_WORKSPACE_CLI_COMMANDS = [
   "apply-asset-manifest",
   "download-assets",
   "capture-node",
-  "run-task-plan",
   "prepare-task",
   "guidance",
   "inspect",
@@ -174,6 +173,13 @@ export function parseFigmaWorkspaceCliArguments(argv: readonly string[]): FigmaW
   let inlineResultLimit: number | undefined;
   for (let index = 1; index < argv.length; index += 1) {
     const option = argv[index];
+    if (option === "-") {
+      if (inputFile !== undefined) {
+        throw new FigmaWorkspaceCliUsageError("Command input may be specified only once.");
+      }
+      inputFile = "-";
+      continue;
+    }
     if (option !== "--input" && option !== "--session-file" && option !== "--inline-result-limit") {
       throw new FigmaWorkspaceCliUsageError(`Unknown option: ${option}`);
     }
@@ -184,7 +190,7 @@ export function parseFigmaWorkspaceCliArguments(argv: readonly string[]): FigmaW
     index += 1;
     if (option === "--input") {
       if (inputFile !== undefined) {
-        throw new FigmaWorkspaceCliUsageError("Option --input may be specified only once.");
+        throw new FigmaWorkspaceCliUsageError("Command input may be specified only once.");
       }
       inputFile = value;
     } else if (option === "--session-file") {
@@ -302,7 +308,7 @@ export async function runFigmaWorkspaceCli(
     if (isCliInterruptError(error)) {
       return FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT;
     }
-    return error instanceof FigmaWorkspaceCliUsageError
+    return error instanceof FigmaWorkspaceCliUsageError || error instanceof FigmaWorkspaceToolArgumentError
       ? FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR
       : FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR;
   }
@@ -580,7 +586,7 @@ export function createFigmaWorkspaceCommandHelp(command: FigmaWorkspaceCliComman
   if (metadata === undefined) {
     throw new Error(`Missing CLI metadata for command: ${command}`);
   }
-  const schemaSource = JSON.stringify(createCliCommandInputSchema(metadata.inputSchema), null, 2);
+  const schemaSource = JSON.stringify(getFigmaWorkspaceCommandInputSchema(command), null, 2);
   return [
     `# figma-workspace ${command} help`,
     "",
@@ -603,6 +609,14 @@ export function createFigmaWorkspaceCommandHelp(command: FigmaWorkspaceCliComman
   ].join("\n");
 }
 
+export function getFigmaWorkspaceCommandInputSchema(command: FigmaWorkspaceCliCommand): Record<string, unknown> {
+  const metadata = FIGMA_WORKSPACE_CLI_TOOL_DESCRIPTIONS.get(toFigmaWorkspaceToolName(command));
+  if (metadata === undefined) {
+    throw new Error(`Missing CLI metadata for command: ${command}`);
+  }
+  return createCliCommandInputSchema(metadata.inputSchema);
+}
+
 function createCliCommandInputSchema(inputSchema: Record<string, unknown>): Record<string, unknown> {
   const properties = isRecord(inputSchema.properties) ? inputSchema.properties : {};
   return {
@@ -614,7 +628,7 @@ function createCliCommandInputSchema(inputSchema: Record<string, unknown>): Reco
         minimum: 0,
         maximum: FIGMA_WORKSPACE_CLI_MAX_INLINE_RESULT_LIMIT_BYTES,
         default: FIGMA_WORKSPACE_CLI_DEFAULT_INLINE_RESULT_LIMIT_BYTES,
-        description: "Global Restricted Markdown inline-result byte limit when --inline-result-limit is omitted. 0 always writes the complete result under the session results directory.",
+        description: "Global Restricted Markdown inline-result byte limit when --max-inline-bytes is omitted. 0 always writes the complete result under the state file's sibling results directory.",
       },
     },
   };
@@ -983,7 +997,6 @@ async function invokeFigmaWorkspaceCommand(
     case "apply-asset-manifest": return client.applyAssetManifest(input as unknown as FigmaWorkspaceApplyAssetManifestArguments);
     case "download-assets": return client.downloadAssets(input as unknown as FigmaWorkspaceDownloadAssetsArguments);
     case "capture-node": return client.captureNode(input as unknown as FigmaWorkspaceCaptureNodeArguments);
-    case "run-task-plan": return client.runTaskPlan(input as unknown as FigmaWorkspaceRunTaskPlanArguments);
     case "prepare-task": return client.prepareTask(input as unknown as FigmaWorkspacePrepareTaskArguments);
     case "guidance": return client.guidance(input as FigmaWorkspaceGuidanceArguments);
     case "inspect": return client.inspect(input as FigmaWorkspaceInspectArguments);

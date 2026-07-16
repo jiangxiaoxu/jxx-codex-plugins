@@ -22,7 +22,7 @@ test("build publishes the typed shared Figma command runtime", async () => {
   assert.equal(typeof runFigmaCommandCli, "function");
   assert.equal(typeof runFigmaCommand, "function");
   assert.equal(Object.keys(FIGMA_DIRECT_COMMANDS).length, 18);
-  assert.equal(Object.keys(FIGMA_JSON_COMMANDS).length, 9);
+  assert.equal(Object.keys(FIGMA_JSON_COMMANDS).length, 8);
   assert.equal(FIGMA_TASK_FAMILIES.length, 12);
   assert.deepEqual(Object.keys(FIGMA_COMMAND_FAMILIES), ["docs", "api", "sessions", "upstream"]);
 });
@@ -200,6 +200,25 @@ test("JSON commands retain optimized option validation and transport mapping", a
   assert.match(output.stderr, /requires --input <json-file\|->/u);
 });
 
+test("JSON commands normalize an npm-forwarded standalone dash to stdin and reject duplicate input", async () => {
+  const calls = [];
+  assert.equal(await runFigmaCommand("eval", [
+    "--state-file", stateFile, "-",
+  ], {
+    runCli: async (argv) => { calls.push(argv); return 0; },
+  }), 0);
+  assert.deepEqual(calls, [["eval", "--session-file", stateFile, "--input", "-"]]);
+
+  const output = createOutput();
+  assert.equal(await runFigmaCommand("eval", [
+    "--input", "eval.json", "--state-file", stateFile, "-",
+  ], {
+    ...output.dependencies,
+    runCli: async () => assert.fail("duplicate input must fail before runtime"),
+  }), 2);
+  assert.match(output.stderr, /Duplicate input/u);
+});
+
 test("every executing optimized command requires an explicit absolute state file", async () => {
   for (const commandName of Object.keys(FIGMA_DIRECT_COMMANDS)) {
     const output = createOutput();
@@ -275,6 +294,7 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   assert.match(root.stdout, /^# Figma command CLI help/u);
   assert.match(root.stdout, /^- `guidance`$/mu);
   assert.match(root.stdout, /^- `task:prepare`$/mu);
+  assert.doesNotMatch(root.stdout, /task:run|run-task-plan/u);
 
   const family = createOutput();
   assert.equal(await runFigmaCommand("docs", [], family.dependencies), 0);
@@ -285,6 +305,7 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   const direct = createOutput();
   assert.equal(await runFigmaCommand("guidance", ["--help"], direct.dependencies), 0);
   assert.match(direct.stdout, /--card-limit <n>/u);
+  assert.doesNotMatch(direct.stdout, /--mode|card mode|catalog mode/iu);
   assert.match(direct.stdout, /--state-file <path>.*Required\./u);
   assert.match(direct.stdout, /--max-inline-bytes <bytes>/u);
   assert.match(direct.stdout, /<query>.*Required\./u);
@@ -294,7 +315,10 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
 
   const json = createOutput();
   assert.equal(await runFigmaCommand("capture", ["-h"], json.dependencies), 0);
-  assert.match(json.stdout, /figma:raw -- capture-node --help/u);
+  assert.match(json.stdout, /## Input JSON Schema/u);
+  assert.match(json.stdout, /"target"/u);
+  assert.match(json.stdout, /"required": \[\s*"target"/u);
+  assert.doesNotMatch(json.stdout, /figma:raw|capture-node|get_screenshot|figma_workspace_/u);
   assert.match(json.stdout, /--input <json-file\|->.*Required\./u);
   assert.match(json.stdout, /--state-file <path>.*Required\./u);
   assert.match(json.stdout, /--max-inline-bytes <bytes>.*Default: input inlineResultLimit when present, otherwise 4096\./u);
@@ -312,7 +336,23 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   for (const commandName of ["open", "eval", "script:run"]) {
     const output = createOutput();
     assert.equal(await runFigmaCommand(commandName, ["--help"], output.dependencies), 0);
-    assert.doesNotMatch(output.stdout, /allowDangerousOperations|allow-dangerous-operations|handleUpdates|handle-updates|handles/u, commandName);
+    assert.doesNotMatch(output.stdout, /allowDangerousOperations|allow-dangerous-operations|handleUpdates|handle-updates|handles|"strict"/u, commandName);
+  }
+
+  for (const commandName of Object.keys(FIGMA_JSON_COMMANDS)) {
+    const output = createOutput();
+    assert.equal(await runFigmaCommand(commandName, ["--help"], output.dependencies), 0);
+    const schemaSource = output.stdout.match(/## Input JSON Schema\n```json\n([\s\S]*?)\n```/u)?.[1];
+    assert.notEqual(schemaSource, undefined, commandName);
+    const schema = JSON.parse(schemaSource);
+    assert.equal(schema.type, "object", commandName);
+    assert.equal(typeof schema.properties, "object", commandName);
+    assert.equal(Array.isArray(schema.required), true, commandName);
+    assert.doesNotMatch(
+      output.stdout,
+      /figma_workspace_|figma-workspace:\/\/|run-script-file|apply-asset-manifest|download-assets|capture-node|prepare-task|call-upstream-tool|use_figma/u,
+      commandName,
+    );
   }
 
   const docsSearch = createOutput();

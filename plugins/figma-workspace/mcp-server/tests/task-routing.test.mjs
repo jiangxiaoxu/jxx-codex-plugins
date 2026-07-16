@@ -96,6 +96,30 @@ test("loads the repository route catalog without maintaining test-only aliases",
     catalog.routes.map((entry) => entry.taskFamily),
     [...catalog.routes.map((entry) => entry.taskFamily)].sort(),
   );
+  const designEditing = catalog.routes.find((entry) => entry.taskFamily === "design-editing");
+  assert.ok(designEditing);
+  assert.equal(designEditing.aliases.includes("text editing"), true);
+  assert.equal(designEditing.aliases.includes("text font"), true);
+
+  const normalizedAliases = catalog.routes.flatMap((entry) =>
+    entry.aliases.map((alias) => routing.normalizeTaskRoutingQuery(alias)));
+  assert.equal(new Set(normalizedAliases).size, normalizedAliases.length);
+});
+
+test("repository text font guidance query resolves to design editing with at least medium confidence", () => {
+  const catalog = routing.loadTaskRoutingCatalog(resolve(
+    packageRoot,
+    "../skills/figma-workspace/references/canonical-corpus/routes.json",
+  ));
+  const result = routing.resolveTaskRoute({
+    query: "text font loadFontAsync",
+    routes: catalog.routes,
+    requestedSurface: "design",
+  });
+  assert.equal(result.status, "matched");
+  assert.equal(result.taskFamily, "design-editing");
+  assert.ok(["high", "medium"].includes(result.confidence));
+  assert.deepEqual(result.candidateTaskFamilies, ["design-editing"]);
 });
 
 test("repository aliases cover every stable task family deterministically", () => {

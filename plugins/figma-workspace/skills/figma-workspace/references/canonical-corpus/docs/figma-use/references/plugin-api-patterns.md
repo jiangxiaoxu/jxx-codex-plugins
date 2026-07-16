@@ -32,7 +32,7 @@ await figma.setCurrentPageAsync(targetPage);
 
 ### Returning Results
 
-Scripts are saved as an ordinary async TypeScript body and run through `figma:script:run` after strict TypeScript preflight. Just write plain JS and use `return` to send data back to the agent:
+Scripts are saved as an ordinary async TypeScript body and run through `figma:script:run` after TypeScript preflight. Just write plain JS and use `return` to send data back to the agent:
 
 ```javascript
 // Return an object — auto-serialized to JSON

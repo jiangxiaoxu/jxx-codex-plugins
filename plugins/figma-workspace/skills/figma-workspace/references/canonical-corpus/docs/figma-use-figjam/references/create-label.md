@@ -4,7 +4,7 @@ Use a label for a one- or two-character step marker such as `1`, `A`, or `10`. I
 
 ## Prepare and run a local script
 
-Place the operation in the task's `.figma.ts` file and execute it with `figma:script:run`, using the persisted FigJam session, `strict: true`, and an absolute state file. Return every created ID. Reserve `figma:eval` for a small, isolated transaction only.
+Place the operation in the task's `.figma.ts` file and execute it with `figma:script:run`, using the persisted FigJam session and an absolute state file. TypeScript preflight is always enabled. Return every created ID. Reserve `figma:eval` for a small, isolated transaction only.
 
 ```ts
 // callout-label.figma.ts
@@ -31,7 +31,7 @@ label.name = `Callout ${labelText}`
 return { createdNodeIds: [label.id], label: { id: label.id, text: label.text.characters, size } }
 ```
 
-Execute `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`, where the JSON supplies `sessionId`, `inputFile`, `strict: true`, and `surface: "figjam"`.
+Execute `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`, where the JSON supplies `sessionId`, `inputFile`, and `surface: "figjam"`.
 
 ## Plugin API rules
 
@@ -44,4 +44,4 @@ Execute `npm --silent run figma:script:run -- --input <run-json> --state-file <a
 
 Return the ID, text, dimensions, and position. In a read-only script, verify `type === 'SHAPE_WITH_TEXT'`, `shapeType === 'ELLIPSE'`, the text, and `width === height`; capture the diagram area when alignment with its target matters and inspect the image locally.
 
-If text writes fail, load the label's current font and await it before the mutation. If the result is oval, one dimension was changed independently; call `resize(size, size)`. If the content exceeds two characters, use a standard shape-with-text rather than shrinking unreadable label text. Repair any strict preflight diagnostic in the same `.figma.ts` file before rerunning.
+If text writes fail, load the label's current font and await it before the mutation. If the result is oval, one dimension was changed independently; call `resize(size, size)`. If the content exceeds two characters, use a standard shape-with-text rather than shrinking unreadable label text. Repair any TypeScript preflight diagnostic in the same `.figma.ts` file before rerunning.

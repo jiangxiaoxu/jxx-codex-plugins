@@ -45,7 +45,7 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 - Manifest: `plugins/figma-workspace/.codex-plugin/plugin.json`.
 - Skill router: `plugins/figma-workspace/skills/figma-workspace/SKILL.md`.
 - Agent CLI source: `plugins/figma-workspace/mcp-server/src/cli/figma-workspace-cli.ts`.
-- Agent invocation: use the canonical `npm --silent run figma -- <command>` CLI or the corresponding independent public `figma:<command>` npm executable. The contract has 18 direct commands, 9 JSON commands, and 22 raw transport commands available only through `figma:raw` and `figma:raw:help`. `figma:docs:list`, `figma:docs:catalog`, `figma:docs:read`, `figma:docs:search`, and `figma:api:search` are the documentation contract. `.figma.ts` and eval inject a frozen, non-callable `$` namespace with only `$.text` and `$.capture`; all other scripting uses native Figma Plugin API. Use `npm --silent` in every shell to preserve Restricted Markdown stdout after packaging. Put npm's `--` before arguments passed to an independent npm executable.
+- Agent invocation: use the canonical `npm --silent run figma -- <command>` CLI or the corresponding independent public `figma:<command>` npm executable. The contract has 18 direct commands, 8 JSON commands, and 21 raw transport commands available only through `figma:raw` and `figma:raw:help`. Public command help contains the complete input schema, and JSON commands accept `--input -` through both npm entrypoint forms. `figma:docs:list`, `figma:docs:catalog`, `figma:docs:read`, `figma:docs:search`, and `figma:api:search` are the documentation contract. `.figma.ts` and eval inject a frozen, non-callable `$` namespace with only `$.text` and `$.capture`; all other scripting uses native Figma Plugin API. Use `npm --silent` in every shell to preserve Restricted Markdown stdout after packaging. Put npm's `--` before arguments passed to an independent npm executable.
 - Agent result surface: Restricted Markdown on stdout for typed results; usage and thrown failures use stderr.
 - Project docs: `plugins/figma-workspace/skills/figma-workspace/references/*.md`; `docs:list` returns `project:` IDs, `docs:catalog` returns canonical records, and `docs:read` reads either namespace. `guidance` and `docs:search --scope auto` share English-only task routing with hard surface filters. The lightweight workflow references describe hard boundaries only; TypeScript and bundled Plugin API typings preflight scripts, while valid Plugin API operations are not subject to semantic AST policy.
 - OAuth bridge: `plugins/figma-workspace/scripts/server.mjs`.
@@ -53,7 +53,6 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 - Generated package output: `plugins/figma-workspace/mcp-server/dist/`; keep it synchronized with source changes through the package build.
 - Primary maintenance guide: [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md).
 - Cross-repository CLI guide: [Reusable npm CLI Implementation Guide](figma-workspace-reusable-npm-cli-implementation-guide.md).
-- Output cleanup backlog: [Figma Workspace Output Simplification TODO](figma-workspace-output-simplification-todo.md).
 - User-facing plugin guide: `plugins/figma-workspace/README.md`.
 - Package guide: `plugins/figma-workspace/mcp-server/README.md`.
 

@@ -36,7 +36,7 @@ npm --silent run figma:api:search -- componentPropertyDefinitions --state-file C
 
 ## `.figma.ts` 写入方式
 
-写操作只进入一个可审查的 `.figma.ts` 文件, 再由 `figma:script:run` 严格预检和执行。以下示例把已有的三种 Button Component 转为一个 Component Set; 实际任务应先替换 id、名称和属性值。
+写操作只进入一个可审查的 `.figma.ts` 文件, 再由 `figma:script:run` 进行 TypeScript 预检和执行. 以下示例把已有的三种 Button Component 转为一个 Component Set; 实际任务应先替换 id、名称和属性值.
 
 ```ts
 const candidates = ["Button / Primary", "Button / Secondary", "Button / Disabled"];
@@ -76,7 +76,6 @@ return {
 {
   "sessionId": "default",
   "inputFile": "C:/work/project/.figma-workspace/button/create-button.figma.ts",
-  "strict": true,
   "surface": "design"
 }
 ```
@@ -95,4 +94,4 @@ npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/bu
 
 ## 失败边界
 
-不要在不完整的参照物上创建“近似”组件: 缺少状态、尺寸、token 或代码语义时, 先报告缺口。不要把已发布组件或未知实例网络重构为新 Component Set, 除非任务明确授权迁移影响。若严格预检失败, 按行号修复脚本; 若设计系统搜索显示同一概念已有库资产, 停止创建并改为复用或请求架构决定。
+不要在不完整的参照物上创建“近似”组件: 缺少状态、尺寸、token 或代码语义时, 先报告缺口. 不要把已发布组件或未知实例网络重构为新 Component Set, 除非任务明确授权迁移影响. 若 TypeScript 预检失败, 按行号修复脚本; 若设计系统搜索显示同一概念已有库资产, 停止创建并改为复用或请求架构决定.

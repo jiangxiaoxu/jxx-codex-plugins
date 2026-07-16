@@ -28,7 +28,6 @@ const commandMethods = {
   "apply-asset-manifest": "applyAssetManifest",
   "download-assets": "downloadAssets",
   "capture-node": "captureNode",
-  "run-task-plan": "runTaskPlan",
   "prepare-task": "prepareTask",
   guidance: "guidance",
   inspect: "inspect",
@@ -123,6 +122,32 @@ test("CLI exposes local help and returns a usage error for unknown commands", as
   assert.match(usage.stderr, /# Figma Workspace CLI help/u);
 });
 
+test("removed run-task-plan transport command returns a usage error", async () => {
+  const output = createMemoryIo();
+  assert.equal(await runFigmaWorkspaceCli(["run-task-plan"], { io: output.io }), 2);
+  assert.match(output.stderr, /Unknown command: run-task-plan/u);
+  assert.doesNotMatch(output.stdout, /run-task-plan/u);
+});
+
+test("removed JSON input fields return a usage error before execution", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-removed-input-"));
+  try {
+    const output = createMemoryIo({
+      cwd: tempDir,
+      stdin: JSON.stringify({ scriptPath: resolve(tempDir, "task.figma.ts"), strict: true }),
+    });
+    const upstream = createCliFakeUpstream(() => assert.fail("removed input must fail before upstream execution"));
+    assert.equal(await runFigmaWorkspaceCli(
+      ["run-script-file", "--input", "-", "--session-file", resolve(tempDir, "state.json")],
+      typedCliDependencies(output.io, upstream),
+    ), 2, output.stderr);
+    assert.match(output.stderr, /strict.*removed/iu);
+    assert.equal(output.stdout, "");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("every command-specific help exposes its canonical input JSON schema", () => {
   for (const command of FIGMA_WORKSPACE_CLI_COMMANDS) {
     const help = createFigmaWorkspaceCommandHelp(command);
@@ -157,7 +182,10 @@ test("every command-specific help exposes its canonical input JSON schema", () =
   const evalHelp = createFigmaWorkspaceCommandHelp("eval");
   assert.doesNotMatch(evalHelp, /allowDangerousOperations|handleUpdates/u);
 
-  assert.doesNotMatch(runScriptHelp, /allowDangerousOperations|handleUpdates/u);
+  assert.doesNotMatch(runScriptHelp, /allowDangerousOperations|handleUpdates|"strict"/u);
+
+  const guidanceHelp = createFigmaWorkspaceCommandHelp("guidance");
+  assert.doesNotMatch(guidanceHelp, /"mode"|"card"/u);
 });
 
 test("Restricted Markdown formatter expands nested objects, arrays, and fenced values", () => {
@@ -393,8 +421,8 @@ test("inline limit above the global maximum returns a usage error", async () => 
   assert.match(output.stderr, /# Figma Workspace CLI help/u);
 });
 
-test("all 22 CLI commands map one-to-one to typed client methods", async () => {
-  assert.equal(FIGMA_WORKSPACE_CLI_COMMANDS.length, 22);
+test("all 21 CLI commands map one-to-one to typed client methods", async () => {
+  assert.equal(FIGMA_WORKSPACE_CLI_COMMANDS.length, 21);
   assert.deepEqual([...FIGMA_WORKSPACE_CLI_COMMANDS], Object.keys(commandMethods));
 
   for (const [command, expectedMethod] of Object.entries(commandMethods)) {
@@ -446,6 +474,34 @@ test("CLI accepts JSON from a file and stdin", async () => {
       assert.equal(exitCode, 0);
       assert.deepEqual(calls[0], ["guidance", { marker }]);
     }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("transport CLI normalizes a standalone dash to stdin and rejects duplicate input", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-cli-standalone-stdin-"));
+  try {
+    const sessionFile = resolve(tempDir, "session.json");
+    const calls = [];
+    const output = createMemoryIo({ stdin: '{"query":"text editing"}' });
+    assert.equal(await runFigmaWorkspaceCli(
+      ["guidance", "--session-file", sessionFile, "-"],
+      {
+        io: output.io,
+        createClient: () => createRecordingClient(calls),
+        loadSessions: async () => [],
+        saveSessions: async () => undefined,
+      },
+    ), 0, output.stderr);
+    assert.deepEqual(calls[0], ["guidance", { query: "text editing" }]);
+
+    const duplicate = createMemoryIo();
+    assert.equal(await runFigmaWorkspaceCli(
+      ["guidance", "--input", "input.json", "--session-file", sessionFile, "-"],
+      { io: duplicate.io },
+    ), 2);
+    assert.match(duplicate.stderr, /Command input may be specified only once/u);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

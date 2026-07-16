@@ -4,7 +4,7 @@ Use this reference to choose a public `figma:*` command before opening its CLI h
 
 ## Command Surface
 
-- The plugin has 18 direct query/read commands, 9 JSON commands, and 22 raw transport commands. Agents use only the public `figma:*` npm scripts; raw transport names and internal runtime operation names are not agent-facing contracts.
+- The plugin has 18 direct query/read commands, 8 JSON commands, and 21 raw transport commands. Agents use only the public `figma:*` npm scripts; raw transport names and internal runtime operation names are not agent-facing contracts.
 - Every optimized command requires an absolute `--state-file`. Its parent owns `results/` sidecars. Guidance, docs, API, doctor, and upstream list/read do not require existing file context.
 - All optimized commands accept `--max-inline-bytes`. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. File-context commands use `--session-id` and, where applicable, `--workspace`.
 - Read Restricted Markdown on stdout. If it returns `outputFiles.cliResultFile`, read that JSON sidecar rather than parsing stdout.
@@ -14,7 +14,7 @@ Use this reference to choose a public `figma:*` command before opening its CLI h
 - Use `figma:open` to create or reopen persisted file context.
 - Use `figma:task:prepare` and `figma:script:run` for non-trivial, repairable `.figma.ts` changes.
 - Use `figma:eval` only for small native Plugin API transactions.
-- Use `figma:task:run` for prepared repeatable script, asset, download, capture, or upstream-tool steps.
+- Compose repeatable workflows from the public script, asset, download, capture, and upstream commands.
 
 ## Context And Inspection
 

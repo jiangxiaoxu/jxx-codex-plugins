@@ -52,7 +52,6 @@
     "figma:assets:apply": "node scripts/commands/figma-assets-apply.mjs",
     "figma:assets:download": "node scripts/commands/figma-assets-download.mjs",
     "figma:capture": "node scripts/commands/figma-capture.mjs",
-    "figma:task:run": "node scripts/commands/figma-task-run.mjs",
     "figma:task:prepare": "node scripts/commands/figma-task-prepare.mjs",
     "figma:upstream:call": "node scripts/commands/figma-upstream-call.mjs",
     "login:figma-http": "node mcp-server/scripts/login-figma-http.mjs",

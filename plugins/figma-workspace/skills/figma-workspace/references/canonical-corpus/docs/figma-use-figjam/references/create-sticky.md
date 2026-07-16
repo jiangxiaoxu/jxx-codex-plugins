@@ -4,7 +4,7 @@ Use a sticky for a single idea, response, observation, or piece of workshop inpu
 
 ## Create through a repairable script
 
-Put the operation in a local `.figma.ts` task file, then invoke `figma:script:run` with a JSON input containing `sessionId`, `inputFile`, `strict: true`, and `surface: "figjam"`; provide an absolute `--state-file`. Return the sticky IDs and the dimensions observed after writing text. `figma:eval` is only a small-transaction exception.
+Put the operation in a local `.figma.ts` task file, then invoke `figma:script:run` with a JSON input containing `sessionId`, `inputFile`, and `surface: "figjam"`; provide an absolute `--state-file`. TypeScript preflight is always enabled. Return the sticky IDs and the dimensions observed after writing text. `figma:eval` is only a small-transaction exception.
 
 ```ts
 // research-note.figma.ts
@@ -61,4 +61,4 @@ return { createdNodeIds: notes.map((note) => note.id), heights: notes.map((note)
 
 Use a read-only script to verify `type === 'STICKY'`, text, fill, `isWideWidth`, and final dimensions. Capture a completed cluster or section and inspect the local image when spacing and visual hierarchy matter.
 
-If a text write reports an unloaded font, await `loadFontAsync(sticky.text.fontName)` before the mutation. If batch notes overlap, their positions were based on assumed 240px heights or set before every note was populated; perform the two passes. If the content is instructional rather than an idea, replace the sticky with board text or a shape. Repair strict preflight diagnostics in the same `.figma.ts` file before rerunning; failed runs make no partial board edits.
+If a text write reports an unloaded font, await `loadFontAsync(sticky.text.fontName)` before the mutation. If batch notes overlap, their positions were based on assumed 240px heights or set before every note was populated; perform the two passes. If the content is instructional rather than an idea, replace the sticky with board text or a shape. Repair TypeScript preflight diagnostics in the same `.figma.ts` file before rerunning; failed runs make no partial board edits.

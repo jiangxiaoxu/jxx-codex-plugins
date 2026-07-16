@@ -103,7 +103,7 @@ task-shaped command
 
 - direct commands 将 positional/options 组装成 JSON input.
 - complex commands 只暴露 `--input <json-file|->` 等少量 escape-hatch options.
-- raw transport 保留完整 command schema.
+- public wrapper help 直接呈现完整 input schema; raw transport 只保留内部执行和显式 debug 能力.
 
 普通单层 CLI 不需要为了“架构整齐”而增加 transport layer. 只有当它隔离稳定边界, 复用真实逻辑或保留完整低层能力时才值得存在.
 
@@ -160,6 +160,8 @@ help 至少包含:
 ```
 
 结构可以按项目裁剪, 但 parser allowlist, default behavior 和 help 文案必须由测试证明一致. 所有 independent entrypoint 都应执行 `--help` smoke, 并验证 help 不进入 runtime, 不读取 input file, 不创建 state, 不连接 remote service.
+
+当 public JSON command 只接受 `--input <json-file|->` 时, help 仍应内联完整 input schema. 不要要求 agent 切换到 raw transport command 才能发现字段. `--input -` 必须通过 canonical 和 independent npm entrypoint 的真实 process 测试, 包括 npm 转发产生的孤立 `-` 和 duplicate input rejection.
 
 ## Stdout, Stderr And Exit Codes
 
@@ -378,6 +380,9 @@ command registry, transport command list, wrappers 和 npm scripts 很容易形�
 6. `check:dist` 执行 build 后检查 generated `dist` cleanliness, 只适合 clean checkout 或 CI. 它是维护/CI contract, 不应在含用户改动的 working tree 中作为普通本地验证运行.
 7. Transport state path 明确为 fully qualified absolute `--session-file` > fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`; 二者缺失或路径依赖 current drive/cwd 时直接返回 usage error. State 与 sidecar 使用 sibling temp file + atomic rename; sidecar 可能含敏感 Figma 内容, 默认保留用于恢复并由用户手动清理, 不自动删除. 移除 cwd fallback 与 relative-path resolution 是 breaking path contract; caller 必须显式迁移.
 8. Session lock 只保证同机 local filesystem/process/PID model, 不保证 distributed, network filesystem 或 shared-volume safety. 这是现有能力边界的文档化, 不新增跨主机语义.
+9. Public JSON command help 直接包含完整 schema, `--input -` 在 canonical 和 independent npm entrypoint 中都可用. Raw transport 只用于显式 debug, 不是 agent 查 schema 的依赖.
+10. Cross-file node URL 或 structured target 的 file context 只对当前 request 生效. Runtime 解析后应让主读取、enrichment 和 native execution 共享同一 fileKey, 且不得隐式重绑 persisted session.
+11. 删除无语义参数和复合 orchestrator 时采用 breaking change: script type-check 开关、guidance result mode 和复合 workflow command 都不保留 alias 或 migration layer.
 
 ## What Not To Copy
 

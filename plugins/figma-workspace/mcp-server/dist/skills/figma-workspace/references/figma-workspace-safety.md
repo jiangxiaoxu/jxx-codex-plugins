@@ -2,7 +2,7 @@
 
 Use this reference for non-bypassable runtime boundaries. Runtime schemas and actual command help remain the source of truth.
 
-Before executing a command, read its help and use only the optimized flags it exposes. Do not infer transport CLI options on a command; use `npm --silent run figma:raw -- <transport-command> --help` only when the complete transport JSON schema is required.
+Before executing a command, read its public help and use only the optimized flags it exposes. Public help includes the complete input schema; do not infer transport CLI options or raw operation names.
 
 ## Hard Boundaries
 

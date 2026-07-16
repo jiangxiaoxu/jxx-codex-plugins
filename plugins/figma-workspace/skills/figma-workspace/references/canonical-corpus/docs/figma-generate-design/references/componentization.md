@@ -25,7 +25,7 @@ Do not detach a library instance merely to alter it. If the requested result can
 
 ## Implement in a `.figma.ts` transaction
 
-Use the normal TypeScript script workflow: prepare/open the task, edit the local `.figma.ts`, and execute it with `figma:script:run` using a JSON input that names the persisted session and script file. Strict preflight must pass before the transaction reaches Figma.
+Use the normal TypeScript script workflow: prepare/open the task, edit the local `.figma.ts`, and execute it with `figma:script:run` using a JSON input that names the persisted session and script file. TypeScript preflight must pass before the transaction reaches Figma.
 
 ```ts
 const metrics: ReadonlyArray<{ label: string }> = [

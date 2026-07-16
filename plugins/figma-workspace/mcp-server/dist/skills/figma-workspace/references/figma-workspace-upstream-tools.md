@@ -12,7 +12,7 @@ Use this reference to decide between a first-class CLI command and direct offici
 
 - Run `figma:upstream:list -- --state-file <absolute-path>` for the live compact directory. Run `figma:upstream:read -- <name> --refresh --state-file <absolute-path>` to read one current description and `inputSchema`. These discovery commands need no existing Figma file context, but every execution requires the state file; sidecars belong to its sibling `results/` directory.
 - Use `figma:upstream:call` for official capabilities without a first-class wrapper, such as Code Connect writes, shader reads, or `export_video`.
-- The `figma:upstream:call` JSON command exposes `--input`, `--state-file`, and `--max-inline-bytes`; use `npm --silent run figma:raw -- call-upstream-tool --help` for its complete transport JSON schema.
+- The `figma:upstream:call` JSON command exposes `--input`, `--state-file`, and `--max-inline-bytes`; its public help contains the complete input schema. Pass `--input -` to read JSON from stdin.
 - Provide the official upstream tool name and arguments exactly as required by that tool.
 - Treat raw upstream output as transport-owned data. Do not assume it has fields normalized by the local wrappers.
 - Use `figma:guidance` or `figma:docs:search` for sequencing, then `figma:api:search` only when local `.figma.ts` Plugin API details are needed.

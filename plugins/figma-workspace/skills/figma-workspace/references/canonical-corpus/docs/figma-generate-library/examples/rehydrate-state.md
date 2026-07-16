@@ -22,7 +22,6 @@ Save this body as `<absolute-task-directory>/rehydrate-state.figma.ts`. Use an i
 {
   "sessionId": "<persisted-session-id>",
   "scriptPath": "<absolute-task-directory>/rehydrate-state.figma.ts",
-  "strict": true,
   "surface": "design"
 }
 ```

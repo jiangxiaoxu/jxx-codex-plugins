@@ -22,7 +22,6 @@ Save the following body as `<absolute-task-directory>/inspect-file-structure.fig
 {
   "sessionId": "<persisted-session-id>",
   "scriptPath": "<absolute-task-directory>/inspect-file-structure.figma.ts",
-  "strict": true,
   "surface": "design"
 }
 ```

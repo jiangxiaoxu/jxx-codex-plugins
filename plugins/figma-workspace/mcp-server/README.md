@@ -15,10 +15,11 @@ The build stages project documentation and the canonical corpus into checked-in 
 
 ## Public Command Contract
 
-Agents invoke the plugin-root scripts, not this package directly. The public contract has 18 direct query/read commands, 9 JSON commands, and 22 raw transport commands behind `figma:raw`.
+Agents invoke the plugin-root scripts, not this package directly. The public contract has 18 direct query/read commands, 8 JSON commands, and 21 raw transport commands behind `figma:raw`.
 
 - Direct commands include `figma:guidance`, `figma:docs:list`, `figma:docs:catalog`, `figma:docs:read`, `figma:docs:search`, and `figma:api:search`.
 - JSON commands use only `--input <json-file|->`, `--state-file <absolute-path>`, `--max-inline-bytes <bytes>`, and help.
+- Public command help includes the complete input schema. `--input -` reads stdin through both the canonical and independent npm entrypoints.
 - Every optimized command requires a fully qualified absolute `--state-file`; its parent owns the `results/` sidecar directory.
 - Typed results render Restricted Markdown. They are not JSON. Oversized complete results use `outputFiles.cliResultFile`.
 
@@ -26,7 +27,9 @@ Agents invoke the plugin-root scripts, not this package directly. The public con
 
 The script runtime uses TypeScript and bundled Plugin API typings as preflight, without semantic AST policy for valid Plugin API calls. It continues to enforce the 50,000-byte wrapped payload limit, state/session and workspace path validation, capture envelope and PNG validation, inline-result/sidecar limits, and atomic local writes.
 
-Use `npm --silent` and a command's generated `--help` as the public usage source. Agent-facing values must use public `figma:*` command IDs, never internal `figma_workspace_*` operation IDs or raw transport command names.
+Use `npm --silent` and a command's generated `--help` as the public usage source. Agent-facing values must use public `figma:*` command IDs, never internal operation IDs or raw transport command names.
+
+Node URLs and structured `{ fileKey, nodeId }` targets carry request-scoped file context. Cross-file requests use the target file only for that call and do not rebind persisted session file context. Conflicting explicit and target file keys fail closed; raw node IDs and fixed session selectors remain session-scoped.
 
 ## Document And Guidance Routing
 

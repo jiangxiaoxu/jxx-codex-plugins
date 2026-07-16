@@ -4,7 +4,7 @@ Use a FigJam section to make a named board area: a workshop phase, a flowchart b
 
 ## Local `.figma.ts` workflow
 
-Prepare a task workspace, make the change in its local `.figma.ts` file, and execute it with `figma:script:run`. The run JSON supplies the persisted `sessionId`, `inputFile`, `strict: true`, and `surface: "figjam"`; the command always receives an absolute `--state-file`. A tiny, one-off API transaction may use `figma:eval`, but a section and its content normally belong in the repairable script.
+Prepare a task workspace, make the change in its local `.figma.ts` file, and execute it with `figma:script:run`. The run JSON supplies the persisted `sessionId`, `inputFile`, and `surface: "figjam"`; the command always receives an absolute `--state-file`, and TypeScript preflight is always enabled. A tiny, one-off API transaction may use `figma:eval`, but a section and its content normally belong in the repairable script.
 
 ```ts
 // discovery-section.figma.ts
@@ -47,4 +47,4 @@ Run `npm --silent run figma:script:run -- --input <run-json> --state-file <absol
 
 Return the section ID and each child ID. A read-only follow-up script should confirm the node type, name, dimensions, child parent IDs, and that child bounds lie within the intended section. Capture the section when it is part of a finished board and inspect the output locally.
 
-If content lands in an unexpected location, it was positioned before `appendChild` or its coordinates were calculated in page space. Reparent first, then position locally. If the section is too small after adding material, enlarge the existing section rather than recreate it. If strict preflight fails, correct the local source and rerun; the failed script has not partially changed the board.
+If content lands in an unexpected location, it was positioned before `appendChild` or its coordinates were calculated in page space. Reparent first, then position locally. If the section is too small after adding material, enlarge the existing section rather than recreate it. If TypeScript preflight fails, correct the local source and rerun; the failed script has not partially changed the board.

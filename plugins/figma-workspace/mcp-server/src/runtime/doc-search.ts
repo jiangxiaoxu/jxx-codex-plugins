@@ -276,6 +276,7 @@ interface PluginApiLookupQuery {
   normalizedSymbol: string;
   ownerHint?: string;
   ownerKnown: boolean;
+  directMatchRecordIds: ReadonlySet<string>;
 }
 
 const canonicalClassifications = ["active", "conditional", "router", "examples"] as const;
@@ -484,6 +485,13 @@ export async function searchReferenceFiles(options: {
   const chunks: ReferenceChunk[] = [];
   if (apiIndex) {
     for (const record of apiIndex.records.values()) {
+      if (
+        apiQuery !== undefined
+        && apiQuery.directMatchRecordIds.size > 0
+        && !apiQuery.directMatchRecordIds.has(record.id)
+      ) {
+        continue;
+      }
       chunks.push(buildPluginApiReferenceChunk(record));
     }
   }
@@ -566,7 +574,7 @@ export function normalizeLookupRankingQuery(value: unknown, name: string): strin
 const BRIDGE_DOCS_RECORDS = createBridgeDocsRecords();
 
 function createBridgeDocsRecords(): Map<string, { id: string; text: string }> {
-  const wrapperTools = "get-design-context, get-motion-context";
+  const wrapperTools = "figma:design-context, figma:motion-context";
   const upstreamTools = "get_design_context, get_motion_context, export_video, list_shader_effects, get_shader_effect, list_shader_fills, get_shader_fill";
   const workflowIds = "design-implementation-context, motion-implementation, video-export";
   const helperCategories = "text: $.text; capture: $.capture";
@@ -861,6 +869,7 @@ function parsePluginApiLookupQuery(query: string, index: PluginApiIndex | undefi
       normalizedInput,
       normalizedSymbol: normalizedInput,
       ownerKnown: false,
+      directMatchRecordIds: new Set<string>(),
     };
   }
   const normalizedSymbol = segments.at(-1) ?? normalizedInput;
@@ -876,11 +885,23 @@ function parsePluginApiLookupQuery(query: string, index: PluginApiIndex | undefi
       if (owner) knownOwners.add(owner);
     }
   }
+  const directMatchRecordIds = new Set<string>();
+  if (ownerHint !== undefined) {
+    for (const record of index?.records.values() ?? []) {
+      if (
+        record.symbol === normalizedSymbol
+        && (record.ownerSymbol === ownerHint || record.qualifiedAliases.includes(normalizedInput))
+      ) {
+        directMatchRecordIds.add(record.id);
+      }
+    }
+  }
   return {
     normalizedInput,
     normalizedSymbol,
     ownerHint,
     ownerKnown: ownerHint !== undefined && knownOwners.has(ownerHint),
+    directMatchRecordIds,
   };
 }
 
@@ -957,7 +978,9 @@ function scoreReferenceChunks(options: {
         chunk,
         score,
         matchType,
-        confidence: confidenceForReferenceScore(score, matchType),
+        confidence: apiExact?.ownerMatch === false
+          ? "medium"
+          : confidenceForReferenceScore(score, matchType),
         ownerMatch: apiExact?.ownerMatch,
       };
     })

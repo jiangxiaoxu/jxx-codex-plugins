@@ -10,7 +10,6 @@
 {
   "sessionId": "<session-id>",
   "inputFile": "C:/work/project/.figma-workspace/board/revise-copy.figma.ts",
-  "strict": true,
   "surface": "figjam"
 }
 ```

@@ -16,7 +16,7 @@ test("neutral entrypoints expose the typed client and CLI contract", async () =>
   assert.equal(typeof root.createFigmaWorkspaceClient, "function");
   assert.equal(typeof workspaceClient.createFigmaWorkspaceClient, "function");
   assert.equal(typeof root.runFigmaWorkspaceCli, "function");
-  assert.equal(FIGMA_WORKSPACE_CLI_COMMANDS.length, 22);
+  assert.equal(FIGMA_WORKSPACE_CLI_COMMANDS.length, 21);
   assert.equal("createFigmaWorkspaceMcpServer" in root, false);
 });
 
@@ -98,6 +98,34 @@ test("typed client rejects removed handle and semantic-guardrail inputs", async 
       /allowDangerousOperations.*removed/iu,
     );
     await assert.rejects(
+      client.runScriptFile({ scriptPath: "unused.figma.ts", strict: true }),
+      /strict.*removed/iu,
+    );
+    for (const operation of [
+      client.runScriptFile({ scriptPath: "unused.figma.ts", outputDir: "legacy" }),
+      client.eval({ code: "return true;", upstreamTool: "legacy" }),
+      client.inspect({ target: "1:2", upstreamTool: "legacy" }),
+    ]) {
+      const error = await operation.then(
+        () => assert.fail("removed input must fail"),
+        (reason) => reason,
+      );
+      assert.doesNotMatch(
+        error.message,
+        /figma_workspace_|run-script-file|use_figma|prepare-task|call-upstream-tool/u,
+      );
+    }
+    const relativeScriptError = await client.runScriptFile({ scriptPath: "relative.figma.ts" }).then(
+      () => assert.fail("relative script path must fail"),
+      (reason) => reason,
+    );
+    assert.match(relativeScriptError.message, /figma:task:prepare/u);
+    assert.doesNotMatch(relativeScriptError.message, /prepare-task/u);
+    await assert.rejects(
+      client.guidance({ query: "text editing", mode: "plan" }),
+      /mode.*removed/iu,
+    );
+    await assert.rejects(
       client.inspect({ mode: "validate" }),
       /mode.*inspect.*style|must be one of/iu,
     );
@@ -134,6 +162,94 @@ test("typed eval delegates through use_figma and returns compact output", async 
     assert.equal(result.upstream.result.selected, "1:2");
     assert.equal(result.content, undefined);
     assert.deepEqual(calls.map((entry) => entry[0]), ["connect", "listTools", "callTool"]);
+  } finally {
+    await client.close();
+  }
+});
+
+test("eval accepts exactly 50,000 wrapped UTF-8 bytes and rejects 50,001 without upstream", async () => {
+  const calls = [];
+  const wrappedByteLengths = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name, args }) => {
+      assert.equal(name, "use_figma");
+      wrappedByteLengths.push(Buffer.byteLength(args.code, "utf8"));
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: true,
+        __figmaWorkspace: {
+          sessionId: "eval-size-boundary",
+          currentPageId: "1:1",
+          knownPages: {},
+          captureRequests: [],
+        },
+        result: { accepted: true },
+      }) }] };
+    }),
+  });
+  const fixtures = [
+    {
+      name: "JavaScript",
+      typescript: false,
+      source: (padding) => `return ${JSON.stringify("x".repeat(padding))}.length;`,
+    },
+    {
+      name: "TypeScript",
+      typescript: true,
+      source: (padding) => `const value: string = ${JSON.stringify("x".repeat(padding))};\nreturn value.length;`,
+    },
+    {
+      name: "capture helper",
+      typescript: false,
+      source: (padding) => `const value = ${JSON.stringify("x".repeat(padding))};\nreturn $.capture("1:2", { imageFile: "capture.png" });`,
+    },
+  ];
+  try {
+    for (const fixture of fixtures) {
+      const baseline = await client.eval({
+        sessionId: "eval-size-boundary",
+        code: fixture.source(0),
+        typescript: fixture.typescript,
+      });
+      assert.equal(baseline.ok, true, fixture.name);
+      let padding = 50_000 - wrappedByteLengths.at(-1);
+      assert.ok(padding > 0, fixture.name);
+
+      const exact = await client.eval({
+        sessionId: "eval-size-boundary",
+        code: fixture.source(padding),
+        typescript: fixture.typescript,
+      });
+      assert.equal(exact.ok, true, fixture.name);
+      padding += 50_000 - wrappedByteLengths.at(-1);
+      if (wrappedByteLengths.at(-1) !== 50_000) {
+        const recalibrated = await client.eval({
+          sessionId: "eval-size-boundary",
+          code: fixture.source(padding),
+          typescript: fixture.typescript,
+        });
+        assert.equal(recalibrated.ok, true, fixture.name);
+      }
+      assert.equal(wrappedByteLengths.at(-1), 50_000, fixture.name);
+
+      const upstreamCallCount = calls.length;
+      const acceptedEvalCount = wrappedByteLengths.length;
+      const oversized = await client.eval({
+        sessionId: "eval-size-boundary",
+        code: fixture.source(padding + 1),
+        typescript: fixture.typescript,
+      });
+      assert.equal(oversized.ok, false, fixture.name);
+      assert.equal(oversized.scriptExecutionSucceeded, false, fixture.name);
+      assert.ok(
+        oversized.diagnostics.some((diagnostic) => (
+          diagnostic.code === "FIGMA_WORKSPACE_SCRIPT_PAYLOAD_TOO_LARGE"
+          && /50001 bytes.*50000 UTF-8 bytes/u.test(diagnostic.message)
+        )),
+        fixture.name,
+      );
+      assert.equal(calls.length, upstreamCallCount, `${fixture.name} oversized call must not reach upstream`);
+      assert.equal(wrappedByteLengths.length, acceptedEvalCount, fixture.name);
+    }
   } finally {
     await client.close();
   }
@@ -528,28 +644,33 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       assert.equal(routed.route.status, "matched", query);
       assert.equal(routed.route.taskFamily, taskFamily, query);
       assert.equal(routed.referenceContext[0]?.docId, topDocId, query);
-      assert.equal(routed.nextActions[0]?.commandId, "figma:docs:read", query);
-      assert.equal(routed.nextActions[0]?.args?.id, topDocId, query);
+      if (routed.route.confidence === "low") {
+        assert.equal(routed.nextActions[0]?.commandId, "figma:docs:catalog", query);
+      } else {
+        assert.equal(routed.nextActions[0]?.commandId, "figma:docs:read", query);
+        assert.equal(routed.nextActions[0]?.args?.id, topDocId, query);
+      }
       assert.ok(routed.nextActions.every((action) => /^figma:/u.test(action.commandId)), query);
       assert.ok(routed.referenceContext.slice(0, 3).every((entry) =>
         !entry.docId.startsWith("canonical:") || entry.taskFamily === taskFamily), query);
     }
 
-    const plan = await client.guidance({ mode: "plan", query: "component variants text" });
-    assert.equal(plan.ok, true);
-    assert.ok(plan.recommendedTools.includes("figma:guidance"));
-    assert.ok(plan.recommendedTools.includes("figma:inspect"));
-    assert.match(plan.workflow.workspaceDirGuidance, /Git-ignored <project>\/\.figma-workspace/u);
-    assert.match(plan.workflow.workspaceDirGuidance, /capability-specific output roots/u);
-    assert.doesNotMatch(JSON.stringify(plan), /task-memory|<project>\/figma-workspace|absolute project\/worktree/u);
-    assert.doesNotMatch(JSON.stringify(plan), /figma_workspace_/u);
-
-    for (const result of [
-      await client.guidance({ mode: "catalog" }),
-      await client.guidance({ mode: "card", card: "text.font" }),
+    for (const [query, status] of [
+      ["layout", "fallback"],
+      ["component", "ambiguous"],
+      ["quantum banana", "none"],
     ]) {
-      assert.equal(result.ok, true);
-      assert.doesNotMatch(JSON.stringify(result), /figma_workspace_|figma-workspace:\/\//u);
+      const uncertain = await client.guidance({ query });
+      assert.equal(uncertain.route.status, status, query);
+      assert.equal(uncertain.nextActions[0]?.commandId, "figma:docs:catalog", query);
+    }
+
+    for (const removedInput of [
+      { mode: "plan", query: "component variants text" },
+      { mode: "catalog" },
+      { mode: "card", card: "text.font" },
+    ]) {
+      await assert.rejects(client.guidance(removedInput), /mode.*removed/iu);
     }
 
     const docsLookup = await client.lookup({
@@ -750,7 +871,31 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
       updatedAt: "2026-01-02T00:00:00.000Z",
       knownPages: {},
       lastDiagnostics: [],
-      history: [{ id: "h1", at: "2026-01-02T00:00:00.000Z", tool: "eval", summary: "read", nodeIds: [] }],
+      history: [
+        {
+          id: "h1",
+          at: "2026-01-02T00:00:00.000Z",
+          tool: "figma_workspace_eval",
+          summary: "evaluated",
+          nodeIds: ["1:2"],
+        },
+        {
+          id: "h2",
+          at: "2026-01-02T00:01:00.000Z",
+          tool: "legacy-private-operation",
+          mode: "legacy",
+          summary: "legacy summary",
+          nodeIds: ["9:9"],
+        },
+        {
+          id: "h3",
+          at: "2026-01-02T00:02:00.000Z",
+          tool: "figma_workspace_download_assets",
+          mode: "download-assets",
+          summary: "downloaded",
+          nodeIds: ["3:4"],
+        },
+      ],
     }],
   });
   try {
@@ -762,6 +907,14 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
     const workflow = await client.docs({ mode: "read", id: "project:workflow" });
     assert.equal(workflow.ok, true);
     assert.match(workflow.content, /figma\.ts/u);
+    for (const topic of docs.topics) {
+      const projectDoc = await client.docs({ mode: "read", id: topic.id });
+      assert.doesNotMatch(
+        projectDoc.content,
+        /figma_workspace_|figma-workspace:\/\/|run-script-file|prepare-task|call-upstream-tool|use_figma|get_metadata|get_design_context|get_motion_context|get_variable_defs|get_libraries|search_design_system|get_screenshot|download-assets/u,
+        topic.id,
+      );
+    }
     const canonicalDoc = await client.docs({ mode: "read", id: "canonical:figma-code-connect/references/advanced-patterns.md" });
     assert.equal(canonicalDoc.kind, "canonical");
     assert.match(canonicalDoc.content, /Code Connect/iu);
@@ -793,7 +946,28 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
     assert.equal(detail.session.history, undefined);
     const expanded = await client.sessionsInfo({ sessionId: "saved", includeHistory: true });
     assert.equal("handles" in expanded.session, false);
-    assert.equal(expanded.session.history.length, 1);
+    assert.equal(expanded.session.history.length, 3);
+    assert.deepEqual(expanded.session.history[0], {
+      id: "h1",
+      at: "2026-01-02T00:00:00.000Z",
+      commandId: "figma:eval",
+      kind: "execution",
+      summary: "evaluated",
+      nodeIds: ["1:2"],
+    });
+    assert.deepEqual(expanded.session.history[1], {
+      kind: "operation",
+      summary: "legacy summary",
+    });
+    assert.deepEqual(expanded.session.history[2], {
+      id: "h3",
+      at: "2026-01-02T00:02:00.000Z",
+      commandId: "figma:assets:download",
+      kind: "assets",
+      summary: "downloaded",
+      nodeIds: ["3:4"],
+    });
+    assert.doesNotMatch(JSON.stringify(expanded), /figma_workspace_|legacy-private-operation|download-assets|"tool"/u);
     assert.equal(client.sessions.list().length, 1);
 
     const directory = await client.upstreamTools();
@@ -883,7 +1057,7 @@ test("runScriptFile forwards valid Plugin API operations without semantic policy
     }),
   });
   try {
-    const result = await client.runScriptFile({ sessionId: "native-api", scriptPath, strict: true });
+    const result = await client.runScriptFile({ sessionId: "native-api", scriptPath });
     assert.equal(result.ok, true);
     assert.equal(result.executed, true);
     assert.deepEqual(result.diagnostics ?? [], []);
@@ -919,27 +1093,27 @@ test("runScriptFile accepts exactly 50,000 wrapped UTF-8 bytes and rejects 50,00
     }),
   });
   try {
-    const baseline = await client.runScriptFile({ sessionId: "size-boundary", scriptPath, strict: true });
+    const baseline = await client.runScriptFile({ sessionId: "size-boundary", scriptPath });
     assert.equal(baseline.ok, true);
     assert.equal(wrappedByteLengths.length, 1);
     let paddingLength = 50_000 - wrappedByteLengths[0];
     assert.ok(paddingLength > 0);
 
     await writeFile(scriptPath, `/*${"x".repeat(paddingLength)} */\nreturn null;\n`, "utf8");
-    const calibration = await client.runScriptFile({ sessionId: "size-boundary", scriptPath, strict: true });
+    const calibration = await client.runScriptFile({ sessionId: "size-boundary", scriptPath });
     assert.equal(calibration.ok, true);
     paddingLength += 50_000 - wrappedByteLengths.at(-1);
 
     if (wrappedByteLengths.at(-1) !== 50_000) {
       await writeFile(scriptPath, `/*${"x".repeat(paddingLength)} */\nreturn null;\n`, "utf8");
-      const exact = await client.runScriptFile({ sessionId: "size-boundary", scriptPath, strict: true });
+      const exact = await client.runScriptFile({ sessionId: "size-boundary", scriptPath });
       assert.equal(exact.ok, true);
     }
     assert.equal(wrappedByteLengths.at(-1), 50_000);
     const acceptedCallCount = wrappedByteLengths.length;
 
     await writeFile(scriptPath, `/*${"x".repeat(paddingLength + 1)} */\nreturn null;\n`, "utf8");
-    const oversized = await client.runScriptFile({ sessionId: "size-boundary", scriptPath, strict: true });
+    const oversized = await client.runScriptFile({ sessionId: "size-boundary", scriptPath });
     assert.equal(oversized.ok, false);
     assert.equal(oversized.phase, "preflight");
     assert.equal(oversized.executed, false);
@@ -973,7 +1147,7 @@ test("successful runScriptFile transpiles TypeScript and delegates to use_figma"
     }),
   });
   try {
-    const result = await client.runScriptFile({ sessionId: "script-success", scriptPath, strict: true });
+    const result = await client.runScriptFile({ sessionId: "script-success", scriptPath });
     assert.equal(result.ok, true);
     assert.equal(result.phase, "execute");
     assert.equal(result.executed, true);
@@ -1049,7 +1223,6 @@ test("runScriptFile preserves script success when a queued capture fails", async
     const result = await client.runScriptFile({
       sessionId: "queued-script-failure",
       scriptPath,
-      strict: true,
     });
     assert.equal(result.ok, false);
     assert.equal(result.phase, "execute");
@@ -1073,13 +1246,15 @@ test("runScriptFile preserves script success when a queued capture fails", async
 
 test("applyAssetManifest validates official upload_assets arguments offline", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-assets-"));
+  const fileA = "AssetSourceFileKey012345";
+  const fileB = "AssetTargetFileKey012345";
   const assetPath = resolve(tempDir, "hero.png");
   await writeFile(assetPath, "fake image bytes", "utf8");
   const calls = [];
   const client = createFigmaWorkspaceClient({
     client: createFakeUpstream(calls, ({ name, args }) => {
       assert.equal(name, "upload_assets");
-      assert.deepEqual(args, { fileKey: "file123", count: 1, nodeId: "12:34", scaleMode: "FILL" });
+      assert.deepEqual(args, { fileKey: fileB, count: 1, nodeId: "12:34", scaleMode: "FILL" });
       return { content: [{ type: "text", text: JSON.stringify({ ok: true, result: { summary: "asset filled" } }) }] };
     }, {
       tools: [{
@@ -1094,19 +1269,65 @@ test("applyAssetManifest validates official upload_assets arguments offline", as
   try {
     await client.open({
       sessionId: "asset-test",
-      file: "https://www.figma.com/design/file123/Test",
+      file: `https://www.figma.com/design/${fileA}/Test`,
       workspaceDir: tempDir,
       connect: false,
     });
     const result = await client.applyAssetManifest({
       sessionId: "asset-test",
-      assets: [{ path: assetPath, target: "12:34", name: "Hero art" }],
+      assets: [{ path: assetPath, target: { fileKey: fileB, nodeId: "12:34" }, name: "Hero art" }],
       validateTargets: false,
     });
     assert.equal(result.ok, true);
     assert.equal(result.assets.length, 1);
     assert.equal(result.failures, undefined);
     assert.deepEqual(calls.map((entry) => entry[0]), ["connect", "listTools", "callTool"]);
+    assert.equal(client.sessions.get("asset-test").fileKey, fileA);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("downloadAssets groups cross-file targets without rebinding the session", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-download-assets-"));
+  const fileA = "DownloadSourceFileKey0123";
+  const fileB = "DownloadTargetFileKey0123";
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name, args }) => {
+      assert.equal(name, "download_assets");
+      assert.deepEqual(args, { fileKey: fileB, nodeId: "15:9" });
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: false,
+        error: { code: "EXPECTED_TEST_FAILURE", message: "No download required for routing test." },
+      }) }] };
+    }, {
+      tools: [{
+        name: "download_assets",
+        inputSchema: {
+          type: "object",
+          properties: { fileKey: { type: "string" }, nodeId: { type: "string" } },
+          required: ["fileKey", "nodeId"],
+        },
+      }],
+    }),
+  });
+  try {
+    await client.open({
+      sessionId: "download-cross-file",
+      file: `https://www.figma.com/design/${fileA}/Source`,
+      workspaceDir: tempDir,
+      connect: false,
+    });
+    const result = await client.downloadAssets({
+      sessionId: "download-cross-file",
+      targets: [{ target: { fileKey: fileB, nodeId: "15:9" } }],
+      outputDir: resolve(tempDir, "downloads"),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(calls.filter((entry) => entry[0] === "callTool").length, 1);
+    assert.equal(client.sessions.get("download-cross-file").fileKey, fileA);
   } finally {
     await client.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -1115,13 +1336,15 @@ test("applyAssetManifest validates official upload_assets arguments offline", as
 
 test("captureNode writes a deterministic PNG returned by get_screenshot", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-capture-"));
+  const fileA = "CaptureSourceFileKey0123";
+  const fileB = "CaptureTargetFileKey0123";
   const outputFile = resolve(tempDir, "capture.png");
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lP2PAAAAAElFTkSuQmCC", "base64");
   const calls = [];
   const client = createFigmaWorkspaceClient({
     client: createFakeUpstream(calls, ({ name, args }) => {
       assert.equal(name, "get_screenshot");
-      assert.deepEqual(args, { fileKey: "file123", nodeId: "22:7" });
+      assert.deepEqual(args, { fileKey: fileB, nodeId: "22:7" });
       return { content: [{ type: "image", mimeType: "image/png", data: png.toString("base64") }] };
     }, {
       tools: [{
@@ -1135,13 +1358,21 @@ test("captureNode writes a deterministic PNG returned by get_screenshot", async 
     }),
   });
   try {
+    await client.open({
+      sessionId: "capture-cross-file",
+      file: `https://www.figma.com/design/${fileA}/Source`,
+      workspaceDir: tempDir,
+      connect: false,
+    });
     const result = await client.captureNode({
-      target: { fileKey: "file123", nodeId: "22:7" },
+      sessionId: "capture-cross-file",
+      target: { fileKey: fileB, nodeId: "22:7" },
       imageFile: outputFile,
     });
     assert.equal(result.ok, true);
     assert.equal(result.imageFile, outputFile);
     assert.equal((await readFile(outputFile)).subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.equal(client.sessions.get("capture-cross-file").fileKey, fileA);
   } finally {
     await client.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -1192,45 +1423,6 @@ test("captureNode fails closed for explicit non-PNG MIME types and malformed PNG
   }
 });
 
-test("runTaskPlan stops after a structured upstream failure", async () => {
-  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-plan-"));
-  const previousTaskRoot = process.env.FIGMA_WORKSPACE_TASK_ROOT;
-  process.env.FIGMA_WORKSPACE_TASK_ROOT = tempDir;
-  const calls = [];
-  const client = createFigmaWorkspaceClient({
-    client: createFakeUpstream(calls, ({ name }) => ({
-      content: [{ type: "text", text: JSON.stringify(name === "plan-ok"
-        ? { ok: true, result: { summary: "ok" } }
-        : { ok: false, error: { code: "PLAN_FAILED", message: "planned failure" } }) }],
-    }), {
-      tools: ["plan-ok", "plan-fail", "after-stop"].map((name) => ({
-        name,
-        inputSchema: { type: "object", properties: {} },
-      })),
-    }),
-  });
-  try {
-    const result = await client.runTaskPlan({
-      steps: [
-        { id: "ok", type: "upstream", args: { toolName: "plan-ok", arguments: {} } },
-        { id: "fail", type: "upstream", args: { toolName: "plan-fail", arguments: {} } },
-        { id: "after", type: "upstream", args: { toolName: "after-stop", arguments: {} } },
-      ],
-    });
-    assert.equal(result.ok, false);
-    assert.equal(result.stopped, true);
-    assert.deepEqual(result.steps.map((step) => step.id), ["ok", "fail"]);
-    assert.deepEqual(result.steps.map((step) => step.status), ["completed", "failed"]);
-    assert.equal(result.failures.length, 1);
-    assert.deepEqual(calls.filter((entry) => entry[0] === "callTool").map((entry) => entry[1]), ["plan-ok", "plan-fail"]);
-  } finally {
-    await client.close();
-    if (previousTaskRoot === undefined) delete process.env.FIGMA_WORKSPACE_TASK_ROOT;
-    else process.env.FIGMA_WORKSPACE_TASK_ROOT = previousTaskRoot;
-    await rm(tempDir, { recursive: true, force: true });
-  }
-});
-
 test("metadata, design context, and inspect use typed official-tool wrappers", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-client-context-"));
   const calls = [];
@@ -1270,6 +1462,8 @@ test("metadata, design context, and inspect use typed official-tool wrappers", a
     });
     const metadata = await client.getMetadata({ sessionId: "context-test", target: "1:2" });
     assert.equal(metadata.ok, true);
+    assert.equal(metadata.metadata.source, "figma:metadata");
+    assert.equal(metadata.metadata.json.source, "figma:metadata");
     assert.equal(metadata.metadata.json.root.nodeId, "1:2");
     const design = await client.getDesignContext({ sessionId: "context-test", target: "1:2" });
     assert.equal(design.ok, true);
@@ -1285,6 +1479,273 @@ test("metadata, design context, and inspect use typed official-tool wrappers", a
       client.getDesignContext({ sessionId: "context-test", target: { handle: "$root" } }),
       /no longer accepts local handles|nodeId/iu,
     );
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("inspect and style use node URL file context without rebinding the session", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-cross-file-inspect-"));
+  const fileA = "InspectFileAKey0123456789";
+  const fileB = "InspectFileBKey0123456789";
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name, args }) => {
+      assert.equal(name, "use_figma");
+      const target = args.code.match(/const __target = "([^"]+)";/u)?.[1];
+      assert.notEqual(target, undefined);
+      assert.doesNotMatch(args.code, /https:\/\/www\.figma\.com/u);
+      const style = args.code.includes("const __includeSummary");
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: true,
+        __figmaWorkspace: {
+          sessionId: "cross-file-inspect",
+          currentPageId: args.fileKey === fileB ? "B:page" : "A:page",
+          knownPages: args.fileKey === fileB ? { B: "B:page" } : { A: "A:page" },
+          captureRequests: [],
+        },
+        result: style
+          ? {
+              target,
+              mode: "style",
+              nodeCount: 1,
+              scannedNodeCount: 1,
+              targetSummary: { id: target, type: "FRAME", name: "Target" },
+              styleCounts: {},
+              style: {},
+            }
+          : {
+              target,
+              mode: "inspect",
+              summary: target === "$selection" ? [] : { id: target, type: "FRAME", name: "Target" },
+            },
+      }) }] };
+    }, {
+      tools: [{
+        name: "use_figma",
+        inputSchema: {
+          type: "object",
+          properties: { code: { type: "string" }, fileKey: { type: "string" } },
+          required: ["code", "fileKey"],
+        },
+      }],
+    }),
+  });
+  const nodeUrl = `https://www.figma.com/design/${fileB}/Target?node-id=22-7`;
+  try {
+    await client.open({
+      sessionId: "cross-file-inspect",
+      file: `https://www.figma.com/design/${fileA}/Source`,
+      workspaceDir: tempDir,
+      currentPageId: "A:page",
+      connect: false,
+    });
+
+    const inspected = await client.inspect({ sessionId: "cross-file-inspect", target: nodeUrl });
+    assert.equal(inspected.ok, true);
+    assert.equal(inspected.target, "22:7");
+    const styled = await client.inspect({ sessionId: "cross-file-inspect", target: nodeUrl, mode: "style" });
+    assert.equal(styled.ok, true);
+    assert.equal(styled.target, "22:7");
+
+    const raw = await client.inspect({ sessionId: "cross-file-inspect", target: "33:9" });
+    assert.equal(raw.target, "33:9");
+    const instanceQualified = await client.inspect({
+      sessionId: "cross-file-inspect",
+      target: "I4005:6111;30:8005",
+    });
+    assert.equal(instanceQualified.target, "I4005:6111;30:8005");
+    const selection = await client.inspect({ sessionId: "cross-file-inspect", target: "$selection" });
+    assert.equal(selection.target, "$selection");
+
+    const evalCalls = calls.filter((entry) => entry[0] === "callTool");
+    assert.deepEqual(evalCalls.map((entry) => entry[2].fileKey), [fileB, fileB, fileA, fileA, fileA]);
+    assert.match(evalCalls[0][2].code, /const __target = "22:7";/u);
+    assert.match(evalCalls[1][2].code, /const __target = "22:7";/u);
+    assert.match(evalCalls[2][2].code, /const __target = "33:9";/u);
+    assert.match(evalCalls[3][2].code, /const __target = "I4005:6111;30:8005";/u);
+    assert.match(evalCalls[4][2].code, /const __target = "\$selection";/u);
+
+    const session = client.sessions.get("cross-file-inspect");
+    assert.equal(session.fileKey, fileA);
+    assert.equal(session.fileUrl, `https://www.figma.com/design/${fileA}/Source`);
+    assert.equal(session.currentPageId, "A:page");
+    assert.deepEqual(session.knownPages, { A: "A:page" });
+
+    const withoutSession = await client.inspect({ sessionId: "url-only-inspect", target: nodeUrl });
+    assert.equal(withoutSession.ok, true);
+    const urlOnlySession = client.sessions.get("url-only-inspect");
+    assert.equal(urlOnlySession.fileKey, undefined);
+    assert.equal(urlOnlySession.fileUrl, undefined);
+    assert.equal(urlOnlySession.currentPageId, undefined);
+    assert.deepEqual(urlOnlySession.knownPages, {});
+    assert.equal(calls.filter((entry) => entry[0] === "callTool").at(-1)[2].fileKey, fileB);
+
+    const beforeInvalidUrlCallCount = calls.length;
+    await assert.rejects(
+      client.inspect({ sessionId: "cross-file-inspect", target: `https://www.figma.com/design/${fileB}/Target` }),
+      /node URL must include a node-id/iu,
+    );
+    await assert.rejects(
+      client.inspect({ sessionId: "cross-file-inspect", target: `https://example.com/design/${fileB}/Target?node-id=22-7` }),
+      /figma\.com Figma URL/iu,
+    );
+    await assert.rejects(
+      client.inspect({ sessionId: "cross-file-inspect", target: "https://[" }),
+      /target URL is malformed/iu,
+    );
+    await assert.rejects(
+      client.inspect({ sessionId: "cross-file-inspect", target: `ftp://www.figma.com/design/${fileB}/Target?node-id=22-7` }),
+      /https:\/\/\*\.figma\.com/iu,
+    );
+    assert.equal(calls.length, beforeInvalidUrlCallCount);
+    assert.equal(client.sessions.get("cross-file-inspect").fileKey, fileA);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("cross-file metadata keeps main and enrichment reads together and rejects conflicts before upstream", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-cross-file-metadata-"));
+  const fileA = "MetadataFileAKey0123456789";
+  const fileB = "MetadataFileBKey0123456789";
+  const conflictingFile = "MetadataConflictKey012345";
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name, args }) => {
+      if (name === "get_metadata") {
+        assert.equal(args.fileKey, fileB);
+        assert.equal(args.nodeId, "22:7");
+        return { content: [{ type: "text", text: '<frame id="22:7" name="Cross-file target" width="300" height="200" />' }] };
+      }
+      assert.equal(name, "use_figma");
+      assert.equal(args.fileKey, fileB);
+      assert.match(args.code, /const __metadataNodeIds = \["22:7"\];/u);
+      return { content: [{ type: "text", text: JSON.stringify({
+        ok: true,
+        result: { enrichment: { nodes: { "22:7": { locked: false, layoutMode: "VERTICAL" } } } },
+      }) }] };
+    }, {
+      tools: [
+        {
+          name: "get_metadata",
+          inputSchema: {
+            type: "object",
+            properties: { fileKey: { type: "string" }, nodeId: { type: "string" } },
+            required: ["fileKey"],
+          },
+        },
+        {
+          name: "use_figma",
+          inputSchema: {
+            type: "object",
+            properties: { code: { type: "string" }, fileKey: { type: "string" } },
+            required: ["code", "fileKey"],
+          },
+        },
+      ],
+    }),
+  });
+  const nodeUrl = `https://www.figma.com/design/${fileB}/Target?node-id=22-7`;
+  try {
+    await client.open({
+      sessionId: "cross-file-metadata",
+      file: `https://www.figma.com/design/${fileA}/Source`,
+      workspaceDir: tempDir,
+      currentPageId: "A:page",
+      connect: false,
+    });
+    const metadata = await client.getMetadata({ sessionId: "cross-file-metadata", target: nodeUrl });
+    assert.equal(metadata.ok, true);
+    assert.equal(metadata.fileKey, fileB);
+    assert.equal(metadata.nodeId, "22:7");
+    assert.equal(metadata.metadata.source, "figma:metadata");
+    assert.equal(metadata.metadata.json.root.locked, false);
+    assert.equal(metadata.metadata.json.root.layoutMode, "VERTICAL");
+    assert.deepEqual(
+      calls.filter((entry) => entry[0] === "callTool").map((entry) => [entry[1], entry[2].fileKey]),
+      [["get_metadata", fileB], ["use_figma", fileB]],
+    );
+
+    const beforeConflictCallCount = calls.length;
+    await assert.rejects(
+      client.getMetadata({
+        sessionId: "cross-file-metadata",
+        file: `https://www.figma.com/design/${conflictingFile}/Conflict`,
+        target: nodeUrl,
+      }),
+      /conflicting file contexts/iu,
+    );
+    assert.equal(calls.length, beforeConflictCallCount);
+    const session = client.sessions.get("cross-file-metadata");
+    assert.equal(session.fileKey, fileA);
+    assert.equal(session.fileUrl, `https://www.figma.com/design/${fileA}/Source`);
+    assert.equal(session.currentPageId, "A:page");
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("all dedicated node-scoped reads keep target file context request-scoped", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-cross-file-node-reads-"));
+  const fileA = "NodeReadFileAKey0123456789";
+  const fileB = "NodeReadFileBKey0123456789";
+  const conflictingFile = "NodeReadConflictKey012345";
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: createFakeUpstream(calls, ({ name, args }) => {
+      assert.equal(args.fileKey, fileB);
+      assert.equal(args.nodeId, "44:8");
+      return { content: [{ type: "text", text: JSON.stringify({ ok: true, source: name }) }] };
+    }, {
+      tools: ["get_design_context", "get_motion_context", "get_variable_defs"].map((name) => ({
+        name,
+        inputSchema: {
+          type: "object",
+          properties: { fileKey: { type: "string" }, nodeId: { type: "string" } },
+          required: ["fileKey", "nodeId"],
+        },
+      })),
+    }),
+  });
+  const nodeUrl = `https://www.figma.com/design/${fileB}/Target?node-id=44-8`;
+  try {
+    await client.open({
+      sessionId: "cross-file-node-reads",
+      file: `https://www.figma.com/design/${fileA}/Source`,
+      workspaceDir: tempDir,
+      currentPageId: "A:page",
+      connect: false,
+    });
+
+    assert.equal((await client.getDesignContext({ sessionId: "cross-file-node-reads", target: nodeUrl })).ok, true);
+    assert.equal((await client.getMotionContext({ sessionId: "cross-file-node-reads", target: nodeUrl })).ok, true);
+    assert.equal((await client.getVariableDefs({ sessionId: "cross-file-node-reads", target: nodeUrl })).ok, true);
+    assert.deepEqual(
+      calls.filter((entry) => entry[0] === "callTool").map((entry) => [entry[1], entry[2].fileKey, entry[2].nodeId]),
+      [
+        ["get_design_context", fileB, "44:8"],
+        ["get_motion_context", fileB, "44:8"],
+        ["get_variable_defs", fileB, "44:8"],
+      ],
+    );
+
+    const beforeConflictCallCount = calls.length;
+    for (const run of [
+      () => client.getDesignContext({ sessionId: "cross-file-node-reads", file: conflictingFile, target: nodeUrl }),
+      () => client.getMotionContext({ sessionId: "cross-file-node-reads", file: conflictingFile, target: nodeUrl }),
+      () => client.getVariableDefs({ sessionId: "cross-file-node-reads", file: conflictingFile, target: nodeUrl }),
+    ]) {
+      await assert.rejects(run(), /conflicting file contexts/iu);
+    }
+    assert.equal(calls.length, beforeConflictCallCount);
+    const session = client.sessions.get("cross-file-node-reads");
+    assert.equal(session.fileKey, fileA);
+    assert.equal(session.fileUrl, `https://www.figma.com/design/${fileA}/Source`);
+    assert.equal(session.currentPageId, "A:page");
   } finally {
     await client.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -1329,7 +1790,12 @@ test("typed prepareTask creates a local .figma.ts workspace without upstream", a
     assert.equal(result.ok, true);
     assert.equal(result.task.taskName, "build-card");
     assert.equal(result.task.workspace.files.inputFile, "build-card.figma.ts");
-    assert.match(await readFile(resolve(workspaceDir, "build-card.figma.ts"), "utf8"), /figma/u);
+    const template = await readFile(resolve(workspaceDir, "build-card.figma.ts"), "utf8");
+    assert.match(template, /figma/u);
+    assert.doesNotMatch(
+      template,
+      /figma_workspace_|run-script-file|prepare-task|call-upstream-tool|use_figma|figma-workspace:\/\//u,
+    );
     assert.deepEqual(calls, []);
   } finally {
     await client.close();
@@ -1380,7 +1846,7 @@ test("eval and .figma.ts execution inject byte-identical helper bootstrap", asyn
   });
   try {
     assert.equal((await client.eval({ sessionId: "shared-bootstrap", code: "return 1;" })).ok, true);
-    assert.equal((await client.runScriptFile({ sessionId: "shared-bootstrap", scriptPath, strict: true })).ok, true);
+    assert.equal((await client.runScriptFile({ sessionId: "shared-bootstrap", scriptPath })).ok, true);
     assert.equal(wrappedScripts.length, 2);
     const marker = "\nasync function __figmaWorkspaceUserMain()";
     const bootstraps = wrappedScripts.map((source) => source.slice(0, source.indexOf(marker)));
