@@ -40,7 +40,8 @@ const routeCatalogFile = "routes.json";
 const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
 
 export async function buildCanonicalCorpus(options = {}) {
-  const canonicalRoot = resolve(requiredString(options.canonicalRoot, "canonicalRoot"));
+  const sourceRoot = resolve(requiredString(options.sourceRoot, "sourceRoot"));
+  const publishRoot = resolve(requiredString(options.publishRoot, "publishRoot"));
   const generatedAt = options.generatedAt ?? new Date().toISOString();
   const expectedPolicyFragmentCount = options.expectedPolicyFragmentCount ?? 12;
   const expectedPublishedRecordCount = options.expectedPublishedRecordCount ?? 87;
@@ -49,10 +50,12 @@ export async function buildCanonicalCorpus(options = {}) {
   requirePositiveInteger(expectedPolicyFragmentCount, "expectedPolicyFragmentCount");
   requirePositiveInteger(expectedPublishedRecordCount, "expectedPublishedRecordCount");
   validateExpectedTaskFamilies(expectedTaskFamilies);
+  validateRootSeparation(sourceRoot, publishRoot);
+  await validatePublishRoot(publishRoot);
 
-  const routeCatalog = await readRouteCatalog(canonicalRoot, expectedTaskFamilies);
+  const routeCatalog = await readRouteCatalog(publishRoot, expectedTaskFamilies);
   const routeBySkill = new Map(routeCatalog.routes.map((route) => [route.skill, route]));
-  const policies = await readPolicies(canonicalRoot, expectedPolicyFragmentCount);
+  const policies = await readPolicies(sourceRoot, expectedPolicyFragmentCount);
   validatePolicyRouteMapping(policies, routeCatalog.routes);
 
   const records = [];
@@ -71,7 +74,7 @@ export async function buildCanonicalCorpus(options = {}) {
     if (route === undefined) {
       throw new Error(`Policy skill has no canonical route: ${policy.skill}`);
     }
-    const text = await readMirror(canonicalRoot, policy);
+    const text = await readMirror(sourceRoot, policy);
     if (
       policy.classification === "examples"
       && !/(?:^|\n)```(?:ts|typescript)[ \t]*\n/u.test(text)
@@ -158,7 +161,7 @@ export async function buildCanonicalCorpus(options = {}) {
 
   if (options.publish !== false) {
     await publishContentAddressed({
-      root: canonicalRoot,
+      root: publishRoot,
       contentFile: corpusFile,
       content: corpusJsonl,
       contentSha256: corpusSha256,
@@ -166,10 +169,11 @@ export async function buildCanonicalCorpus(options = {}) {
       renameFile: options.renameFile,
       syncDirectoryFn: options.syncDirectoryFn,
     });
-    await removeSupersededCorpusFiles(canonicalRoot, corpusFile);
+    await removeSupersededCorpusFiles(publishRoot, corpusFile);
   }
   return {
-    canonicalRoot,
+    sourceRoot,
+    publishRoot,
     manifest,
     records,
     routes: routeCatalog.routes,
@@ -266,11 +270,24 @@ async function readRouteCatalog(canonicalRoot, expectedTaskFamilies) {
   return { schemaVersion: 1, routes, sha256: sha256(raw) };
 }
 
-async function readPolicies(canonicalRoot, expectedCount) {
-  const policyRoot = join(canonicalRoot, "policy");
+function validateRootSeparation(sourceRoot, publishRoot) {
+  if (isWithin(sourceRoot, publishRoot) || isWithin(publishRoot, sourceRoot)) {
+    throw new Error("Canonical sourceRoot and publishRoot must be separate directory trees");
+  }
+}
+
+async function validatePublishRoot(publishRoot) {
+  const entries = await readdir(publishRoot, { withFileTypes: true });
+  if (entries.some((entry) => entry.isDirectory())) {
+    throw new Error("Canonical publishRoot must contain runtime files only");
+  }
+}
+
+async function readPolicies(sourceRoot, expectedCount) {
+  const policyRoot = join(sourceRoot, "policy");
   const entries = await readdir(policyRoot, { withFileTypes: true });
   if (entries.some((entry) => !entry.isFile() || !entry.name.endsWith(".json"))) {
-    throw new Error("canonical-corpus/policy may contain only JSON policy fragments");
+    throw new Error("canonical source policy directory may contain only JSON policy fragments");
   }
   const files = entries.map((entry) => entry.name).sort(compareStrings);
   if (files.length !== expectedCount) {
@@ -399,10 +416,10 @@ function validatePolicyRouteMapping(policies, routes) {
   }
 }
 
-async function readMirror(canonicalRoot, policy) {
-  const path = resolve(canonicalRoot, ...policy.mirrorPath.split("/"));
-  if (!isWithin(canonicalRoot, path)) {
-    throw new Error(`Policy mirrorPath escapes canonical-corpus: ${policy.id}`);
+async function readMirror(sourceRoot, policy) {
+  const path = resolve(sourceRoot, ...policy.mirrorPath.split("/"));
+  if (!isWithin(sourceRoot, path)) {
+    throw new Error(`Policy mirrorPath escapes canonical source root: ${policy.id}`);
   }
   return readUtf8File(path, `canonical mirror for ${policy.id}`);
 }

@@ -623,7 +623,11 @@ test("npm package includes runtime surfaces and excludes local state and source 
   assert.equal(paths.some((path) => path.split("/").includes(".figma-workspace")), false);
   assert.equal(paths.some((path) => path.includes("/src/") || path.includes("/tests/")), false);
   assert.equal(paths.some((path) => /canonical-corpus\/(?:policy|docs)\//u.test(path)), false);
-  assert.equal(paths.some((path) => path.includes("dev/upstream-")), false);
+  assert.equal(paths.some((path) => path.includes("dev/")), false);
+  assert.deepEqual(
+    paths.filter((path) => path === "SKILL.md" || path.endsWith("/SKILL.md")),
+    ["skills/figma-workspace/SKILL.md"],
+  );
   assert.deepEqual(
     paths.filter((path) => /canonical-corpus\/corpus-[a-f0-9]{64}\.jsonl$/u.test(path)).sort(),
     [

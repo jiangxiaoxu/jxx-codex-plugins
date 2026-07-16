@@ -23,7 +23,8 @@ const defaultCanonicalRoot = resolve(
   pluginRoot,
   "skills/figma-workspace/references/canonical-corpus",
 );
-const defaultPolicyRoot = join(defaultCanonicalRoot, "policy");
+const defaultCanonicalSourceRoot = resolve(pluginRoot, "dev/canonical-corpus-source");
+const defaultPolicyRoot = join(defaultCanonicalSourceRoot, "policy");
 const policyClassifications = new Set(["active", "conditional", "router", "examples", "api"]);
 const snapshotContract = "Development-only complete upstream snapshot; never packaged or read at runtime.";
 const workflowSkillReason = "Standalone workflow skill; excluded from the tracked skills snapshot.";
@@ -722,8 +723,11 @@ function compareStrings(left, right) {
 async function main() {
   const invocation = parseCliInvocation(process.argv.slice(2));
   if (invocation.command === "build-canonical-corpus") {
-    const result = await buildCanonicalCorpus({ canonicalRoot: defaultCanonicalRoot });
-    process.stdout.write(`wrote ${result.records.length} canonical corpus records to ${result.canonicalRoot}\n`);
+    const result = await buildCanonicalCorpus({
+      sourceRoot: defaultCanonicalSourceRoot,
+      publishRoot: defaultCanonicalRoot,
+    });
+    process.stdout.write(`wrote ${result.records.length} canonical corpus records to ${result.publishRoot}\n`);
     if (result.manifest.reviewWarnings.length > 0) {
       process.stderr.write(
         `warning: ${result.manifest.reviewWarnings.length} canonical mirrors are byte-identical to their accepted upstream sources and require review\n`,

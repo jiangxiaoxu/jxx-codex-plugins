@@ -49,4 +49,4 @@ The staged canonical-corpus v2 manifest contains the current content-addressed r
 
 The generated Plugin API index v2 is built from bundled `@figma/plugin-typings`. It records a declaration symbol, direct owner symbol, declaration kind, and deterministic qualified aliases. `api:search` accepts bare, qualified, and call-shaped symbols; exact match is case-sensitive, and unknown qualifiers are not blindly stripped.
 
-Development snapshot files under `../dev/upstream-snapshot/` and `../dev/upstream-changes/` are not runtime or package inputs. `figma:doctor` diagnoses the staged corpus, generated API index, project docs, and TypeScript assets.
+Canonical authoring files under `../dev/canonical-corpus-source/` and development snapshot files under `../dev/upstream-snapshot/` and `../dev/upstream-changes/` are not runtime or package inputs. The authoring root stays outside the recursively discovered plugin skill tree. `figma:doctor` diagnoses the staged corpus, generated API index, project docs, and TypeScript assets.
