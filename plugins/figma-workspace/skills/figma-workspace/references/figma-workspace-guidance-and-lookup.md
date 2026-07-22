@@ -20,6 +20,7 @@ npm --silent run figma:guidance -- "text font loadFontAsync" --surface design --
 - API references use `displayExpression`, `lookupQuery`, optional `ownerHint`, and `symbolKind`. Send `lookupQuery` directly to `figma:api:search`.
 - Use `--workflow <id>` only with an ID returned by guidance. Unknown IDs are usage errors.
 - Guidance may identify the two injected helpers, `$.text` and `$.capture`. `$` is a frozen, non-callable namespace, and no helper-selection analysis is required.
+- Treat generated help as the input contract for every action returned by guidance. JSON commands reject unknown fields, and direct commands reject unknown options with usage exit 2 rather than silently accepting an approximate invocation.
 
 ## Docs Catalog, Search, And Read
 

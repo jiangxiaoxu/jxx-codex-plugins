@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { tmpdir } from "node:os";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { lstat, open, readFile, stat, type FileHandle } from "node:fs/promises";
+import type { Stats } from "node:fs";
 import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
+import { Transform } from "node:stream";
 import {
   createRemoteMcpClient,
   isRemoteMcpOAuthError,
@@ -119,6 +123,7 @@ import {
 import {
   TASK_WORKSPACE_ROOT_ENV,
   captureImageOutputFilePath,
+  assertWorkspaceManagedInputFile,
   createScriptOutputWriter,
   createSessionWorkspace,
   ensureWorkspaceDirectories,
@@ -136,6 +141,10 @@ import {
   writeTaskFile,
   type FigmaWorkspaceSessionWorkspace,
 } from "../runtime/workspace-files.js";
+import {
+  atomicWriteManagedBinaryFile,
+  atomicWriteManagedStreamFile,
+} from "../runtime/managed-files.js";
 
 export const FIGMA_WORKSPACE_DEFAULT_SESSION_ID = "default";
 
@@ -192,12 +201,19 @@ const DEFAULT_EVAL_TOOL_NAME = requireWrapperUpstreamToolName(DEFAULT_EVAL_CONTR
 const DEFAULT_EVAL_ARGUMENT_NAME = requireWrapperUpstreamProperty(DEFAULT_EVAL_CONTRACT, "code");
 const DEFAULT_EVAL_DESCRIPTION = "Figma Workspace Plugin API execution";
 const DEFAULT_HISTORY_LIMIT = 50;
-const DEFAULT_INLINE_RESULT_LIMIT = 4_000;
+const DEFAULT_INLINE_RESULT_LIMIT = 4_096;
 const MAX_INLINE_RESULT_LIMIT = 10_000;
 const MAX_QUEUED_CAPTURE_REQUESTS = 8;
+const MAX_MANIFEST_ITEMS = 64;
+const MAX_MANIFEST_FILE_BYTES = 256 * 1024;
+const MAX_SINGLE_ASSET_BYTES = 16 * 1024 * 1024;
+const MAX_COMMAND_DATA_PLANE_BYTES = 64 * 1024 * 1024;
+const NETWORK_REQUEST_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
+const NETWORK_REQUEST_IDLE_TIMEOUT_MS = 60 * 1000;
 const QUEUED_CAPTURE_ERROR_MESSAGE_BYTES = 600;
 const QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES = 300;
 const QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE = "Script execution succeeded and may have mutated Figma. Do not rerun it just because capture post-processing failed; retry the affected node with figma:capture.";
+const UNKNOWN_EXECUTION_RETRY_GUIDANCE = "The execution request was dispatched, but Figma completion could not be confirmed. Do not rerun the mutation blindly. Inspect or read back the target and reconcile the observed state before deciding whether any retry is safe.";
 const APPLY_ASSET_MANIFEST_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_apply_asset_manifest");
 const DOWNLOAD_ASSETS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_download_assets");
 const CAPTURE_NODE_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_capture_node");
@@ -218,6 +234,163 @@ const SEARCH_DESIGN_SYSTEM_TOOL_NAME = requireWrapperUpstreamToolName(SEARCH_DES
 const GET_LIBRARIES_TOOL_NAME = requireWrapperUpstreamToolName(GET_LIBRARIES_CONTRACT);
 const GET_VARIABLE_DEFS_TOOL_NAME = requireWrapperUpstreamToolName(GET_VARIABLE_DEFS_CONTRACT);
 const COVERED_UPSTREAM_TOOL_NAMES_TEXT = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
+
+class DataPlaneResourceBudget {
+  #usedBytes = 0;
+
+  get remainingBytes(): number {
+    return MAX_COMMAND_DATA_PLANE_BYTES - this.#usedBytes;
+  }
+
+  assertCanConsume(bytes: number, label: string): void {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) {
+      throw resourceLimitError(`${label} reported an invalid byte length.`);
+    }
+    if (bytes > this.remainingBytes) {
+      throw resourceLimitError(
+        `${label} would exceed the ${formatDataPlaneLimit(MAX_COMMAND_DATA_PLANE_BYTES)} per-command data-plane limit.`,
+      );
+    }
+  }
+
+  consume(bytes: number, label: string): void {
+    this.assertCanConsume(bytes, label);
+    this.#usedBytes += bytes;
+  }
+}
+
+interface CommandResourceContext {
+  resourceBudget: DataPlaneResourceBudget;
+}
+
+const COMMAND_RESOURCE_CONTEXT = new AsyncLocalStorage<CommandResourceContext>();
+
+function runWithCommandResourceContext<T>(operation: () => Promise<T>): Promise<T> {
+  return COMMAND_RESOURCE_CONTEXT.run(
+    { resourceBudget: new DataPlaneResourceBudget() },
+    operation,
+  );
+}
+
+function commandResourceBudget(): DataPlaneResourceBudget {
+  return COMMAND_RESOURCE_CONTEXT.getStore()?.resourceBudget ?? new DataPlaneResourceBudget();
+}
+
+class NetworkRequestDeadline {
+  readonly controller = new AbortController();
+  #totalTimer: NodeJS.Timeout;
+  #idleTimer: NodeJS.Timeout | undefined;
+
+  constructor(
+    private readonly label: string,
+    options: { idleTimeout?: boolean } = {},
+  ) {
+    this.#totalTimer = setTimeout(() => {
+      this.controller.abort(networkTimeoutError(`${this.label} exceeded the 5-minute total timeout.`));
+    }, NETWORK_REQUEST_TOTAL_TIMEOUT_MS);
+    this.#totalTimer.unref?.();
+    if (options.idleTimeout !== false) this.touch();
+  }
+
+  touch(): void {
+    if (this.#idleTimer) clearTimeout(this.#idleTimer);
+    this.#idleTimer = setTimeout(() => {
+      this.controller.abort(networkTimeoutError(`${this.label} had no data activity for 60 seconds.`));
+    }, NETWORK_REQUEST_IDLE_TIMEOUT_MS);
+    this.#idleTimer.unref?.();
+  }
+
+  dispose(): void {
+    clearTimeout(this.#totalTimer);
+    if (this.#idleTimer) clearTimeout(this.#idleTimer);
+  }
+}
+
+async function awaitUpstreamOperation<T>(
+  label: string,
+  operation: (signal: AbortSignal) => Promise<T>,
+  options: { countResponse: boolean },
+): Promise<T> {
+  const deadline = new NetworkRequestDeadline(label, { idleTimeout: false });
+  let rejectOnAbort: ((reason: unknown) => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectOnAbort = reject;
+  });
+  const handleAbort = (): void => {
+    rejectOnAbort?.(deadline.controller.signal.reason ?? networkTimeoutError(`${label} timed out.`));
+  };
+  deadline.controller.signal.addEventListener("abort", handleAbort, { once: true });
+  try {
+    const result = await Promise.race([operation(deadline.controller.signal), aborted]);
+    if (options.countResponse) {
+      const serialized = JSON.stringify(result);
+      if (serialized === undefined) {
+        throw new PostResponseResourceError(
+          resourceLimitError(`${label} returned a non-JSON-serializable response.`),
+          result,
+        );
+      }
+      try {
+        commandResourceBudget().consume(Buffer.byteLength(serialized, "utf8"), `${label} response`);
+      } catch (error) {
+        throw new PostResponseResourceError(error, result);
+      }
+    }
+    return result;
+  } finally {
+    deadline.controller.signal.removeEventListener("abort", handleAbort);
+    deadline.dispose();
+  }
+}
+
+class PostResponseResourceError extends Error {
+  readonly code = "FIGMA_WORKSPACE_RESOURCE_LIMIT_EXCEEDED";
+  constructor(readonly cause: unknown, readonly response: unknown) {
+    super(errorMessage(cause), { cause });
+    this.name = "PostResponseResourceError";
+  }
+}
+
+async function connectUpstream(client: FigmaUpstreamMcpProxyClient, label: string): Promise<void> {
+  await awaitUpstreamOperation(`${label} connection`, () => client.connect(), { countResponse: false });
+}
+
+async function listUpstreamToolsWithLimits(
+  client: FigmaUpstreamMcpProxyClient,
+  label: string,
+): Promise<unknown> {
+  return awaitUpstreamOperation(
+    `${label} tool discovery`,
+    (signal) => client.listTools(signal),
+    { countResponse: true },
+  );
+}
+
+async function callUpstreamToolWithLimits(
+  client: FigmaUpstreamMcpProxyClient,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  return awaitUpstreamOperation(
+    `Upstream tool ${toolName}`,
+    (signal) => client.callTool(toolName, args, signal),
+    { countResponse: true },
+  );
+}
+
+function resourceLimitError(message: string): Error {
+  return Object.assign(new Error(message), { code: "FIGMA_WORKSPACE_RESOURCE_LIMIT_EXCEEDED" });
+}
+
+function networkTimeoutError(message: string): Error {
+  return Object.assign(new Error(message), { code: "FIGMA_WORKSPACE_NETWORK_TIMEOUT" });
+}
+
+function formatDataPlaneLimit(bytes: number): string {
+  if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)} MiB`;
+  if (bytes % 1024 === 0) return `${bytes / 1024} KiB`;
+  return `${bytes} bytes`;
+}
 
 function requireWrapperUpstreamToolName(contract: FigmaWorkspaceWrapperContract): string {
   if (!contract.upstreamToolName) {
@@ -307,8 +480,8 @@ function createSkippedOptionalUpstreamDiagnostic(options: {
 export interface FigmaWorkspaceUpstreamClient {
   connect(): Promise<void>;
   close(): Promise<void>;
-  listTools(): Promise<unknown>;
-  callTool(name: string, args?: Record<string, unknown>): Promise<unknown>;
+  listTools(signal?: AbortSignal): Promise<unknown>;
+  callTool(name: string, args?: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>;
 }
 
 type FigmaUpstreamMcpProxyClient = FigmaWorkspaceUpstreamClient;
@@ -412,15 +585,19 @@ export interface FigmaWorkspaceUpstreamBackedResult extends FigmaWorkspaceToolRe
   upstreamError?: FigmaWorkspacePublicUpstreamError;
 }
 
-export interface FigmaWorkspaceEvalResult extends FigmaWorkspaceUpstreamBackedResult {
+export type FigmaWorkspaceExecutionOutcome = "not_started" | "succeeded" | "outcome_unknown";
+
+export interface FigmaWorkspaceEvalResult extends FigmaWorkspaceToolResultBase {
   session: FigmaWorkspaceCompactSession;
-  scriptExecutionSucceeded?: boolean;
+  executionOutcome: FigmaWorkspaceExecutionOutcome;
   captureProcessingSucceeded?: boolean;
   retryGuidance?: string;
   captures?: FigmaWorkspaceQueuedCaptureResult[];
   diagnostics?: FigmaWorkspaceDiagnostic[];
   repairPlan?: FigmaWorkspaceRepairPlan;
   outputFiles?: FigmaWorkspaceOutputFiles;
+  upstream?: FigmaWorkspaceUpstreamEnvelope;
+  upstreamError?: FigmaWorkspacePublicUpstreamError;
   inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
 
@@ -444,9 +621,8 @@ export interface FigmaWorkspaceInlineResultLimit {
 
 export interface FigmaWorkspaceRunScriptFileResult extends FigmaWorkspaceToolResultBase {
   phase: "preflight" | "execute";
-  executed: boolean;
+  executionOutcome: FigmaWorkspaceExecutionOutcome;
   session: FigmaWorkspaceCompactSession;
-  scriptExecutionSucceeded?: boolean;
   captureProcessingSucceeded?: boolean;
   retryGuidance?: string;
   captures?: FigmaWorkspaceQueuedCaptureResult[];
@@ -870,6 +1046,12 @@ interface NormalizedAssetManifestAsset {
   metadata?: Record<string, unknown>;
 }
 
+interface OpenedAssetInput {
+  asset: NormalizedAssetManifestAsset;
+  handle: FileHandle;
+  stats: Stats;
+}
+
 interface NormalizedDownloadAssetsManifest {
   targets: NormalizedDownloadAssetsTarget[];
 }
@@ -1000,39 +1182,41 @@ export function createFigmaWorkspaceClient(
   return {
     client: runtime.client,
     sessions: runtime.sessions,
-    connect: () => runtime.client.connect(),
+    connect: () => runWithCommandResourceContext(
+      async () => connectUpstream(runtime.client, "Connect Figma Workspace client"),
+    ),
     close: () => runtime.client.close(),
-    open: async (args = {}) =>
+    open: async (args = {}) => runWithCommandResourceContext(async () =>
       parseJsonToolResult<FigmaWorkspaceOpenResult>(
         await handleOpen(asOpenArgs(withDefaultTitle(args, "Open Figma Workspace session")), runtime),
-      ),
-    eval: async (args) =>
+      )),
+    eval: async (args) => runWithCommandResourceContext(async () =>
       parseJsonToolResult<FigmaWorkspaceEvalResult>(
         await handleEval(
           asEvalArgs(withDefaultTitle(args, "Run Figma Workspace Plugin API")),
           runtime,
         ),
-      ),
-    runScriptFile: async (args) =>
+      )),
+    runScriptFile: async (args) => runWithCommandResourceContext(async () =>
       executeRunScriptFile(
         asRunScriptFileArgs(withDefaultTitle(args, "Run Figma TypeScript file")),
         runtime,
-      ) as Promise<FigmaWorkspaceRunScriptFileResult>,
-    applyAssetManifest: async (args) =>
+      ) as Promise<FigmaWorkspaceRunScriptFileResult>),
+    applyAssetManifest: async (args) => runWithCommandResourceContext(async () =>
       executeApplyAssetManifest(
         asApplyAssetManifestArgs(withDefaultTitle(args, "Apply Figma asset manifest")),
         runtime,
-      ) as Promise<FigmaWorkspaceApplyAssetManifestResult>,
-    downloadAssets: async (args) =>
+      ) as Promise<FigmaWorkspaceApplyAssetManifestResult>),
+    downloadAssets: async (args) => runWithCommandResourceContext(async () =>
       executeDownloadAssets(
         asDownloadAssetsArgs(withDefaultTitle(args, "Download Figma assets")),
         runtime,
-      ) as Promise<FigmaWorkspaceDownloadAssetsResult>,
-    captureNode: async (args) =>
+      ) as Promise<FigmaWorkspaceDownloadAssetsResult>),
+    captureNode: async (args) => runWithCommandResourceContext(async () =>
       executeCaptureNode(
         asCaptureNodeArgs(withDefaultTitle(args, "Capture Figma node")),
         runtime,
-      ) as Promise<FigmaWorkspaceCaptureNodeResult>,
+      ) as Promise<FigmaWorkspaceCaptureNodeResult>),
     prepareTask: async (args) =>
       parseJsonToolResult<FigmaWorkspacePrepareTaskResult>(
         await handlePrepareTask(
@@ -1044,45 +1228,45 @@ export function createFigmaWorkspaceClient(
       parseJsonToolResult<FigmaWorkspaceGuidanceResult>(
         await handleGuidance(asGuidanceArgs(withDefaultTitle(args, "Read Figma Workspace guidance"))),
       ),
-    inspect: async (args = {}) =>
+    inspect: async (args = {}) => runWithCommandResourceContext(async () =>
       parseJsonToolResult<FigmaWorkspaceInspectResult>(
         await handleInspect(asInspectArgs(withDefaultTitle(args, "Inspect Figma Workspace target")), runtime),
-      ),
-    getMetadata: async (args) =>
+      )),
+    getMetadata: async (args) => runWithCommandResourceContext(async () =>
       executeGetMetadata(
         asGetMetadataArgs(withDefaultTitle(args, "Read Figma metadata as JSON")),
         runtime,
-      ) as Promise<FigmaWorkspaceGetMetadataResult>,
-    getDesignContext: async (args) =>
+      ) as Promise<FigmaWorkspaceGetMetadataResult>),
+    getDesignContext: async (args) => runWithCommandResourceContext(async () =>
       executeGetDesignContext(
         asGetDesignContextArgs(withDefaultTitle(args, "Get Figma design context")),
         runtime,
-      ) as Promise<FigmaWorkspaceGetDesignContextResult>,
-    getMotionContext: async (args) =>
+      ) as Promise<FigmaWorkspaceGetDesignContextResult>),
+    getMotionContext: async (args) => runWithCommandResourceContext(async () =>
       executeGetMotionContext(
         asGetMotionContextArgs(withDefaultTitle(args, "Get Figma motion context")),
         runtime,
-      ) as Promise<FigmaWorkspaceGetMotionContextResult>,
-    searchDesignSystem: async (args) =>
+      ) as Promise<FigmaWorkspaceGetMotionContextResult>),
+    searchDesignSystem: async (args) => runWithCommandResourceContext(async () =>
       executeSearchDesignSystem(
         asSearchDesignSystemArgs(withDefaultTitle(args, "Search Figma design system")),
         runtime,
-      ) as Promise<FigmaWorkspaceSearchDesignSystemResult>,
-    getLibraries: async (args = {}) =>
+      ) as Promise<FigmaWorkspaceSearchDesignSystemResult>),
+    getLibraries: async (args = {}) => runWithCommandResourceContext(async () =>
       executeGetLibraries(
         asGetLibrariesArgs(withDefaultTitle(args, "Get Figma libraries")),
         runtime,
-      ) as Promise<FigmaWorkspaceGetLibrariesResult>,
-    getVariableDefs: async (args) =>
+      ) as Promise<FigmaWorkspaceGetLibrariesResult>),
+    getVariableDefs: async (args) => runWithCommandResourceContext(async () =>
       executeGetVariableDefs(
         asGetVariableDefsArgs(withDefaultTitle(args, "Get Figma variable definitions")),
         runtime,
-      ) as Promise<FigmaWorkspaceGetVariableDefsResult>,
-    callUpstreamTool: async (args) =>
+      ) as Promise<FigmaWorkspaceGetVariableDefsResult>),
+    callUpstreamTool: async (args) => runWithCommandResourceContext(async () =>
       executeCallUpstreamTool(
         asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool")),
         runtime,
-      ) as Promise<FigmaWorkspaceCallUpstreamToolResult>,
+      ) as Promise<FigmaWorkspaceCallUpstreamToolResult>),
     lookup: async (args) =>
       parseJsonToolResult<FigmaWorkspaceLookupResult>(
         await handleLookup(asLookupArgs(withDefaultTitle(args, "Look up Figma Workspace reference"))),
@@ -1090,7 +1274,9 @@ export function createFigmaWorkspaceClient(
     docs: async (args) => handleDocs(asDocsArgs(args)),
     doctor: async (args = {}) => handleDoctor(asDoctorArgs(args)),
     sessionsInfo: async (args = {}) => handleSessions(asSessionsArgs(args), runtime.sessions),
-    upstreamTools: async (args = {}) => handleUpstreamTools(asUpstreamToolsArgs(args), runtime.upstreamToolCache),
+    upstreamTools: async (args = {}) => runWithCommandResourceContext(
+      async () => handleUpstreamTools(asUpstreamToolsArgs(args), runtime.upstreamToolCache),
+    ),
   };
 }
 
@@ -1218,7 +1404,9 @@ async function handleOpen(
   touchSession(session);
 
   if (args.connect !== false) {
-    await runtime.client?.connect();
+    if (runtime.client) {
+      await connectUpstream(runtime.client, "Open Figma Workspace session");
+    }
   }
   const payload = removeUndefined({
     ok: true,
@@ -1262,15 +1450,71 @@ async function handleEval(
     return makeJsonToolResult({
       ok: false,
       session: responseSession(session),
-      scriptExecutionSucceeded: false,
+      executionOutcome: "not_started",
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: createFigmaWorkspaceRepairPlan(diagnostics),
     });
   }
 
-  const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
-  const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
-  const parsed = parseUpstreamToolResult(upstream);
+  let evalSettings: EvalSettings;
+  try {
+    evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
+  } catch (error) {
+    const upstreamError = normalizeCaughtUpstreamError(error);
+    return makeJsonToolResult(removeUndefined({
+      ok: false,
+      session: responseSession(session),
+      executionOutcome: "not_started",
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      upstreamError: responseUpstreamError(upstreamError),
+    }));
+  }
+  const attempt = await attemptUpstreamEval(runtime.client, evalSettings, script);
+  if (attempt.error) {
+    return makeJsonToolResult(removeUndefined({
+      ok: false,
+      session: responseSession(session),
+      executionOutcome: attempt.requestDispatched ? "outcome_unknown" : "not_started",
+      retryGuidance: attempt.requestDispatched ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : undefined,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      upstreamError: responseUpstreamError(attempt.error),
+    }));
+  }
+  const upstream = attempt.upstream;
+  let parsed: ParsedUpstreamToolResult;
+  try {
+    parsed = parseUpstreamToolResult(upstream);
+  } catch (error) {
+    const upstreamError = normalizeCaughtUpstreamError(error);
+    return makeJsonToolResult(removeUndefined({
+      ok: false,
+      session: responseSession(session),
+      executionOutcome: "outcome_unknown",
+      retryGuidance: UNKNOWN_EXECUTION_RETRY_GUIDANCE,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      upstreamError: responseUpstreamError(upstreamError),
+    }));
+  }
+  if (attempt.postResponseError) {
+    const upstreamFailed = parsed.upstreamError !== undefined;
+    const resultPayload = removeUndefined({
+      ok: false,
+      session: responseSession(session),
+      executionOutcome: upstreamFailed ? "outcome_unknown" : "succeeded",
+      retryGuidance: upstreamFailed ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : undefined,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined,
+    }) as Record<string, unknown>;
+    return makeJsonToolResult(localPostprocessingFailure(
+      resultPayload,
+      "upstreamResponseBudget",
+      attempt.postResponseError,
+    ));
+  }
   updateSessionFromParsedResult(session, parsed.json);
   const captureBatch = parsed.upstreamError
     ? { ok: true, requested: false } satisfies FigmaWorkspaceQueuedCaptureBatchResult
@@ -1289,9 +1533,13 @@ async function handleEval(
   const resultPayload = removeUndefined({
     ok: !parsed.upstreamError && captureBatch.ok,
     session: responseSession(session),
-    scriptExecutionSucceeded: !parsed.upstreamError,
+    executionOutcome: parsed.upstreamError ? "outcome_unknown" : "succeeded",
     captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : undefined,
-    retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : undefined,
+    retryGuidance: parsed.upstreamError
+      ? UNKNOWN_EXECUTION_RETRY_GUIDANCE
+      : !captureBatch.ok
+        ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE
+        : undefined,
     captures: captureBatch.captures,
     diagnostics: diagnosticsForResponse(diagnostics),
     repairPlan: repairPlanForResponse(diagnostics),
@@ -1340,7 +1588,7 @@ async function writeEvalResultFiles(options: {
         fields: {
           diagnosticsCount: countArrayField(options.resultPayload.diagnostics),
           repairPlan: options.resultPayload.repairPlan,
-          scriptExecutionSucceeded: options.resultPayload.scriptExecutionSucceeded,
+          executionOutcome: options.resultPayload.executionOutcome,
           captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
           retryGuidance: options.resultPayload.retryGuidance,
           captures: options.resultPayload.captures,
@@ -1508,14 +1756,13 @@ function createRunScriptResultFilePayload(options: {
     upstream: options.upstream,
     fields: {
       phase: asOptionalString(options.resultPayload.phase),
-      executed: options.resultPayload.executed === true,
+      executionOutcome: asOptionalString(options.resultPayload.executionOutcome),
       diagnosticsCount: options.diagnostics.length,
       fatalDiagnostics: options.diagnostics.filter((item) => item.severity === "fatal").length,
       warningDiagnostics: options.diagnostics.filter((item) => item.severity === "warning").length,
       diagnostics: options.diagnostics.length > 0 ? options.diagnostics : undefined,
       repairPlan: options.resultPayload.repairPlan,
       script,
-      scriptExecutionSucceeded: options.resultPayload.scriptExecutionSucceeded,
       captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
       retryGuidance: options.resultPayload.retryGuidance,
       captures: options.resultPayload.captures,
@@ -1544,7 +1791,9 @@ async function executeRunScriptFile(
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   let source: string;
   try {
+    await assertWorkspaceManagedInputFile(scriptPath, session);
     source = await readFile(scriptPath, "utf8");
+    await assertWorkspaceManagedInputFile(scriptPath, session);
   } catch (error) {
     if (!isMissingFileError(error)) {
       throw error;
@@ -1564,7 +1813,7 @@ async function executeRunScriptFile(
     const resultPayload = removeUndefined({
       ok: false,
       phase: "preflight",
-      executed: false,
+      executionOutcome: "not_started",
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
@@ -1619,7 +1868,7 @@ async function executeRunScriptFile(
     const resultPayload = removeUndefined({
       ok: false,
       phase: "preflight",
-      executed: false,
+      executionOutcome: "not_started",
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
@@ -1641,18 +1890,15 @@ async function executeRunScriptFile(
     return payload;
   }
 
-  const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
-  let upstream: unknown;
-  let parsed: ParsedUpstreamToolResult;
+  let evalSettings: EvalSettings;
   try {
-    upstream = await callUpstreamEval(runtime.client, evalSettings, wrappedScript);
-    parsed = parseUpstreamToolResult(upstream);
+    evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime);
   } catch (error) {
     const upstreamError = normalizeCaughtUpstreamError(error);
     const resultPayload = removeUndefined({
       ok: false,
-      phase: "execute",
-      executed: true,
+      phase: "preflight",
+      executionOutcome: "not_started",
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
@@ -1681,41 +1927,133 @@ async function executeRunScriptFile(
     };
     return payload;
   }
+  const attempt = await attemptUpstreamEval(runtime.client, evalSettings, wrappedScript);
+  if (attempt.error) {
+    const resultPayload = removeUndefined({
+      ok: false,
+      phase: attempt.requestDispatched ? "execute" : "preflight",
+      executionOutcome: attempt.requestDispatched ? "outcome_unknown" : "not_started",
+      session: responseSession(session),
+      retryGuidance: attempt.requestDispatched ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : undefined,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      script: responseScript,
+      upstreamError: responseUpstreamError(attempt.error),
+    }) as Record<string, unknown>;
+    const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
+      resultPayload,
+      stage: "scriptResultSidecars",
+      write: () => outputWriter.write({
+        result: createRunScriptResultFilePayload({
+          session,
+          resultPayload,
+          diagnostics,
+        }),
+        compiledScript: wrappedScript,
+        writeResult: true,
+      }),
+    });
+    return limitInlineScriptResult(
+      payloadWithOutputFiles,
+      inlineResultLimit,
+      [],
+    );
+  }
+  const upstream = attempt.upstream;
+  let parsed: ParsedUpstreamToolResult;
+  try {
+    parsed = parseUpstreamToolResult(upstream);
+  } catch (error) {
+    const upstreamError = normalizeCaughtUpstreamError(error);
+    const resultPayload = removeUndefined({
+      ok: false,
+      phase: "execute",
+      executionOutcome: "outcome_unknown",
+      session: responseSession(session),
+      retryGuidance: UNKNOWN_EXECUTION_RETRY_GUIDANCE,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      script: responseScript,
+      upstreamError: responseUpstreamError(upstreamError),
+    }) as Record<string, unknown>;
+    const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
+      resultPayload,
+      stage: "scriptResultSidecars",
+      write: () => outputWriter.write({
+        result: createRunScriptResultFilePayload({
+          session,
+          resultPayload,
+          diagnostics,
+        }),
+        compiledScript: wrappedScript,
+        writeResult: true,
+      }),
+    });
+    return limitInlineScriptResult(
+      payloadWithOutputFiles,
+      inlineResultLimit,
+      [],
+    );
+  }
+  if (attempt.postResponseError) {
+    const upstreamFailed = parsed.upstreamError !== undefined;
+    const resultPayload = removeUndefined({
+      ok: false,
+      phase: "execute",
+      executionOutcome: upstreamFailed ? "outcome_unknown" : "succeeded",
+      session: responseSession(session),
+      retryGuidance: upstreamFailed ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : undefined,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      script: responseScript,
+      upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined,
+    }) as Record<string, unknown>;
+    return limitInlineScriptResult(
+      localPostprocessingFailure(
+        resultPayload,
+        "upstreamResponseBudget",
+        attempt.postResponseError,
+      ),
+      inlineResultLimit,
+      [],
+    );
+  }
   if (parsed.upstreamError) {
     const upstreamResult = upstreamEnvelope(parsed);
     const resultPayload = removeUndefined({
       ok: false,
       phase: "execute",
-      executed: true,
+      executionOutcome: "outcome_unknown",
       session: responseSession(session),
+      retryGuidance: UNKNOWN_EXECUTION_RETRY_GUIDANCE,
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
       ...runScriptUpstreamFields(parsed),
       ...runScriptUpstreamFailureFields(parsed),
     }) as Record<string, unknown>;
-    const outputFiles = await addUpstreamSidecar(
-      await outputWriter.write({
-        result: createRunScriptResultFilePayload({
-        session,
-        resultPayload,
-        diagnostics,
-        parsed,
-        upstream: upstreamResult,
-      }),
-        compiledScript: wrappedScript,
-        writeResult: true,
-      }),
-      outputWriter.files.resultFile,
-      upstreamResult,
-    );
-    const nonEmptyOutputFiles = Object.keys(outputFiles).length > 0 ? outputFiles : undefined;
+    const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
+      resultPayload,
+      stage: "scriptResultSidecars",
+      write: async () => addUpstreamSidecar(
+        await outputWriter.write({
+          result: createRunScriptResultFilePayload({
+            session,
+            resultPayload,
+            diagnostics,
+            parsed,
+            upstream: upstreamResult,
+          }),
+          compiledScript: wrappedScript,
+          writeResult: true,
+        }),
+        outputWriter.files.resultFile,
+        upstreamResult,
+      ),
+    });
     const payload = {
       ...limitInlineScriptResult(
-        {
-          ...resultPayload,
-          outputFiles: nonEmptyOutputFiles,
-        },
+        payloadWithOutputFiles,
         inlineResultLimit,
         ["upstream.result", "upstream.text"],
       ),
@@ -1740,9 +2078,8 @@ async function executeRunScriptFile(
   const resultPayload = removeUndefined({
     ok: captureBatch.ok,
     phase: "execute",
-    executed: true,
+    executionOutcome: "succeeded",
     session: responseSession(session),
-    scriptExecutionSucceeded: true,
     captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : undefined,
     retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : undefined,
     captures: captureBatch.captures,
@@ -1758,32 +2095,31 @@ async function executeRunScriptFile(
     ["upstream.result", "upstream.text"],
   );
   const needsOutputFile = diagnostics.length > 0 || !captureBatch.ok || isRecord(limitedPayload.inlineResultLimit);
-  const outputFiles = needsOutputFile
-    ? await addUpstreamSidecar(await outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload,
-        diagnostics,
-        parsed,
-        upstream: upstreamResult,
+  return attachPostExecutionOutputFiles({
+    resultPayload: limitedPayload,
+    stage: "scriptResultSidecars",
+    write: async () => needsOutputFile
+      ? addUpstreamSidecar(await outputWriter.write({
+        result: createRunScriptResultFilePayload({
+          session,
+          resultPayload,
+          diagnostics,
+          parsed,
+          upstream: upstreamResult,
+        }),
+        writeResult: true,
+      }), outputWriter.files.resultFile, upstreamResult)
+      : outputWriter.write({
+        result: createRunScriptResultFilePayload({
+          session,
+          resultPayload,
+          diagnostics,
+          parsed,
+          upstream: upstreamResult,
+        }),
+        writeResult: false,
       }),
-      writeResult: true,
-    }), outputWriter.files.resultFile, upstreamResult)
-    : await outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload,
-        diagnostics,
-        parsed,
-        upstream: upstreamResult,
-      }),
-      writeResult: false,
-    });
-  const payload = {
-    ...limitedPayload,
-    outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
-  };
-  return payload;
+  });
 }
 
 async function handleApplyAssetManifest(
@@ -1798,9 +2134,12 @@ async function executeApplyAssetManifest(
   runtime: FigmaWorkspaceRuntime,
 ): Promise<Record<string, unknown>> {
   const session = runtime.sessions.getOrCreate(args.sessionId);
+  const resourceBudget = commandResourceBudget();
   let manifest: NormalizedAssetManifest;
+  let assetInputs: OpenedAssetInput[];
   try {
-    manifest = await loadAssetManifest(args, session);
+    manifest = await loadAssetManifest(args, session, resourceBudget);
+    assetInputs = await openAssetInputs(manifest.assets, session, resourceBudget);
   } catch (error) {
     if (error instanceof AssetManifestLoadError) {
       const diagnostics = [assetManifestLoadDiagnostic(error)];
@@ -1819,6 +2158,7 @@ async function executeApplyAssetManifest(
     }
     throw error;
   }
+  try {
   const tools = await runtime.upstreamToolCache.list(false);
   const uploadKind = requireWrapperUpstreamKind(APPLY_ASSET_MANIFEST_CONTRACT);
   const tool = selectRequiredUpstreamTool(tools, UPLOAD_ASSETS_TOOL_NAME, uploadKind);
@@ -1826,21 +2166,21 @@ async function executeApplyAssetManifest(
   const failures: Array<Record<string, unknown>> = [];
   const assetResults: Array<Record<string, unknown>> = [];
   const assetDetails: Array<Record<string, unknown>> = [];
-  await runtime.client.connect();
+  await connectUpstream(runtime.client, "Apply Figma asset manifest");
 
-  for (const asset of manifest.assets) {
+  for (const [assetIndex, asset] of manifest.assets.entries()) {
     const upstreamArguments = buildAssetManifestUpstreamArguments({
       asset,
       tool,
     });
     const startedAt = new Date().toISOString();
     try {
-      const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+      const upstream = await callUpstreamToolWithLimits(runtime.client, tool.name, upstreamArguments);
       const parsed = parseUpstreamToolResult(upstream);
       const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined;
       const upload = parsed.upstreamError
         ? undefined
-        : await submitLocalAssetUploadIfAvailable(asset, parsed);
+        : await submitLocalAssetUploadIfAvailable(assetInputs[assetIndex], parsed, resourceBudget);
       const ok = !parsed.upstreamError && upload?.ok !== false;
       const uploadSummary = compactUploadSummary(upload);
       const entry = {
@@ -1974,6 +2314,9 @@ async function executeApplyAssetManifest(
     outputFiles: Object.keys(files).length > 0 ? files : undefined,
   };
   return response;
+  } finally {
+    await Promise.allSettled(assetInputs.map(({ handle }) => handle.close()));
+  }
 }
 
 function isAssetManifestValidationIndeterminate(validation: Record<string, unknown>): boolean {
@@ -2037,7 +2380,8 @@ async function executeDownloadAssets(
   runtime: FigmaWorkspaceRuntime,
 ): Promise<Record<string, unknown>> {
   const session = runtime.sessions.getOrCreate(args.sessionId);
-  const manifest = await loadDownloadAssetsManifest(args, session);
+  const resourceBudget = commandResourceBudget();
+  const manifest = await loadDownloadAssetsManifest(args, session, resourceBudget);
   const paths = resolveDownloadAssetsOutputPaths(args, session);
   const tools = await runtime.upstreamToolCache.list(false);
   const downloadKind = requireWrapperUpstreamKind(DOWNLOAD_ASSETS_CONTRACT);
@@ -2048,7 +2392,7 @@ async function executeDownloadAssets(
   const failures: Array<Record<string, unknown>> = [];
   const diagnostics: FigmaWorkspaceDiagnostic[] = [];
   const usedSlugs = new Set<string>();
-  await runtime.client.connect();
+  await connectUpstream(runtime.client, "Download Figma assets");
 
   for (const [index, target] of manifest.targets.entries()) {
     const startedAt = new Date().toISOString();
@@ -2067,13 +2411,13 @@ async function executeDownloadAssets(
     diagnostics.push(...filtered.diagnostics);
     const upstreamArguments = filtered.arguments;
     try {
-      const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+      const upstream = await callUpstreamToolWithLimits(runtime.client, tool.name, upstreamArguments);
       const parsed = parseUpstreamToolResult(upstream);
       const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined;
       const links = parsed.upstreamError ? [] : collectDownloadAssetLinks(parsed.json);
       const downloadedFiles = parsed.upstreamError
         ? []
-        : await downloadAssetLinks(links, targetOutputDir);
+        : await downloadAssetLinks(links, targetOutputDir, resourceBudget);
       const downloadFailures = downloadedFiles.filter((file) => file.ok === false);
       const ok = !parsed.upstreamError && links.length > 0 && downloadFailures.length === 0;
       const downloadError = downloadFailures[0]?.error
@@ -2188,6 +2532,7 @@ async function executeDownloadAssets(
 async function loadDownloadAssetsManifest(
   args: FigmaWorkspaceDownloadAssetsArguments,
   session: FigmaWorkspaceSession,
+  resourceBudget: DataPlaneResourceBudget,
 ): Promise<NormalizedDownloadAssetsManifest> {
   const inlineTargets = Array.isArray(args.targets) ? args.targets : undefined;
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
@@ -2195,7 +2540,13 @@ async function loadDownloadAssetsManifest(
     throw new Error('Pass either "targets" or "manifestPath", not both.');
   }
   const manifestValue = manifestPath
-    ? JSON.parse(await readFile(manifestPath, "utf8"))
+    ? JSON.parse((await readManagedWorkspaceFile({
+      path: manifestPath,
+      session,
+      limitBytes: MAX_MANIFEST_FILE_BYTES,
+      resourceBudget,
+      label: "Download manifest",
+    })).toString("utf8"))
     : undefined;
   const manifestRecord = asRecord(manifestValue);
   if (manifestRecord.assets !== undefined) {
@@ -2205,6 +2556,7 @@ async function loadDownloadAssetsManifest(
   if (!rawTargets || rawTargets.length === 0) {
     throw new Error('Tool argument "targets" or "manifestPath" with targets is required.');
   }
+  assertManifestItemCount(rawTargets.length, "Download manifest");
   return {
     targets: rawTargets.map((target, index) => normalizeDownloadAssetTarget(target, index, session)),
   };
@@ -2361,16 +2713,17 @@ function inferDownloadAssetFormat(record: Record<string, unknown>, url: string):
 async function downloadAssetLinks(
   links: DownloadAssetLink[],
   outputDir: string,
+  resourceBudget: DataPlaneResourceBudget,
 ): Promise<Array<Record<string, unknown>>> {
-  await mkdir(outputDir, { recursive: true });
   const rawIndexes = new Map<"exported" | "raw", number>();
   const results: Array<Record<string, unknown>> = [];
   for (const link of links) {
     const index = (rawIndexes.get(link.kind) ?? 0) + 1;
     rawIndexes.set(link.kind, index);
+    const deadline = new NetworkRequestDeadline(`Asset download ${link.url}`);
+    let response: Response | undefined;
     try {
-      const response = await fetch(link.url);
-      const bytes = Buffer.from(await response.arrayBuffer());
+      response = await fetch(link.url, { signal: deadline.controller.signal });
       const mimeType = contentTypeWithoutParameters(response.headers.get("content-type")) ?? undefined;
       const format = sanitizeFileExtension(link.format)
         ?? extensionFromContentType(mimeType)
@@ -2381,6 +2734,7 @@ async function downloadAssetLinks(
         : `raw-${index}`;
       const path = resolve(outputDir, `${baseName}.${format}`);
       if (!response.ok) {
+        await response.body?.cancel();
         results.push(removeUndefined({
           ok: false,
           kind: link.kind,
@@ -2395,18 +2749,30 @@ async function downloadAssetLinks(
         }) as Record<string, unknown>);
         continue;
       }
-      await writeFile(path, bytes);
+      const written = await atomicWriteManagedStreamFile({
+        root: outputDir,
+        path,
+        overwrite: true,
+      }, boundedResponseBodyChunks({
+        response,
+        itemLimitBytes: MAX_SINGLE_ASSET_BYTES,
+        resourceBudget,
+        deadline,
+        label: `Downloaded asset ${link.url}`,
+      }));
       results.push(removeUndefined({
         ok: true,
         kind: link.kind,
         sourceUrl: link.url,
         path,
-        bytes: bytes.byteLength,
+        bytes: written.bytes,
         lineCount: 0,
         mimeType,
         format,
       }) as Record<string, unknown>);
     } catch (error) {
+      deadline.controller.abort(error);
+      await response?.body?.cancel(error).catch(() => undefined);
       const upstreamError = normalizeCaughtUpstreamError(error);
       results.push(removeUndefined({
         ok: false,
@@ -2414,9 +2780,196 @@ async function downloadAssetLinks(
         sourceUrl: link.url,
         error: responseUpstreamError(upstreamError),
       }) as Record<string, unknown>);
+    } finally {
+      deadline.dispose();
     }
   }
   return results;
+}
+
+async function readBoundedResponseBody(options: {
+  response: Response;
+  itemLimitBytes: number;
+  resourceBudget: DataPlaneResourceBudget;
+  deadline: NetworkRequestDeadline;
+  label: string;
+}): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let itemBytes = 0;
+  for await (const chunk of boundedResponseBodyChunks(options)) {
+    const buffer = Buffer.from(chunk);
+    itemBytes += buffer.byteLength;
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, itemBytes);
+}
+
+async function* boundedResponseBodyChunks(options: {
+  response: Response;
+  itemLimitBytes: number;
+  resourceBudget: DataPlaneResourceBudget;
+  deadline: NetworkRequestDeadline;
+  label: string;
+}): AsyncGenerator<Uint8Array> {
+  const contentLength = parseContentLength(options.response.headers.get("content-length"));
+  if (contentLength !== undefined) {
+    try {
+      assertSingleItemLimit(contentLength, options.itemLimitBytes, options.label);
+      options.resourceBudget.assertCanConsume(contentLength, options.label);
+    } catch (error) {
+      options.deadline.controller.abort(error);
+      await options.response.body?.cancel(error).catch(() => undefined);
+      throw error;
+    }
+  }
+  if (!options.response.body) return;
+
+  let itemBytes = 0;
+  const reader = options.response.body.getReader();
+  let completed = false;
+  let failure: unknown;
+  try {
+    while (true) {
+      const item = await reader.read();
+      if (item.done) break;
+      options.deadline.touch();
+      const chunk = Buffer.from(item.value);
+      itemBytes += chunk.byteLength;
+      assertSingleItemLimit(itemBytes, options.itemLimitBytes, options.label);
+      options.resourceBudget.consume(chunk.byteLength, options.label);
+      yield chunk;
+    }
+    completed = true;
+  } catch (error) {
+    failure = error;
+    options.deadline.controller.abort(error);
+    throw error;
+  } finally {
+    if (!completed) {
+      const reason = failure ?? new Error(`${options.label} response consumption was cancelled.`);
+      options.deadline.controller.abort(reason);
+      await reader.cancel(reason).catch(() => undefined);
+    }
+    reader.releaseLock();
+  }
+}
+
+async function readBoundedLocalFile(
+  path: string,
+  limitBytes: number,
+  resourceBudget: DataPlaneResourceBudget,
+  label: string,
+): Promise<Buffer> {
+  const fileStats = await stat(path);
+  assertSingleItemLimit(fileStats.size, limitBytes, label);
+  resourceBudget.assertCanConsume(fileStats.size, label);
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const rawChunk of createReadStream(path)) {
+    const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
+    bytes += chunk.byteLength;
+    assertSingleItemLimit(bytes, limitBytes, label);
+    resourceBudget.consume(chunk.byteLength, label);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, bytes);
+}
+
+async function readManagedWorkspaceFile(options: {
+  path: string;
+  session: FigmaWorkspaceSession;
+  limitBytes: number;
+  resourceBudget: DataPlaneResourceBudget;
+  label: string;
+}): Promise<Buffer> {
+  await assertWorkspaceManagedInputFile(options.path, options.session);
+  const result = await readBoundedLocalFile(
+    options.path,
+    options.limitBytes,
+    options.resourceBudget,
+    options.label,
+  );
+  await assertWorkspaceManagedInputFile(options.path, options.session);
+  return result;
+}
+
+async function openAssetInputs(
+  assets: NormalizedAssetManifestAsset[],
+  session: FigmaWorkspaceSession,
+  resourceBudget: DataPlaneResourceBudget,
+): Promise<OpenedAssetInput[]> {
+  const opened: OpenedAssetInput[] = [];
+  try {
+    for (const asset of assets) {
+      const input = await openManagedAssetInput(asset, session);
+      assertSingleItemLimit(input.stats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+      opened.push(input);
+    }
+    const totalBytes = opened.reduce((sum, input) => sum + input.stats.size, 0);
+    resourceBudget.assertCanConsume(totalBytes, "Asset upload inputs");
+    return opened;
+  } catch (error) {
+    await Promise.allSettled(opened.map(({ handle }) => handle.close()));
+    throw error;
+  }
+}
+
+async function openManagedAssetInput(
+  asset: NormalizedAssetManifestAsset,
+  session: FigmaWorkspaceSession,
+): Promise<OpenedAssetInput> {
+  const path = await assertWorkspaceManagedInputFile(asset.path, session);
+  const before = await lstat(path);
+  assertRegularAssetInput(before, path);
+  const handle = await open(path, "r");
+  try {
+    const handleStats = await handle.stat();
+    assertRegularAssetInput(handleStats, path);
+    const current = await lstat(path);
+    assertRegularAssetInput(current, path);
+    await assertWorkspaceManagedInputFile(path, session);
+    if (!sameFileIdentity(before, handleStats) || !sameFileIdentity(handleStats, current)) {
+      throw new Error(`Asset input changed while it was being opened: ${path}`);
+    }
+    return { asset, handle, stats: handleStats };
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+function assertRegularAssetInput(stats: Stats, path: string): void {
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    throw new Error(`Asset input must be a real regular file, not a symlink, junction, reparse target, or directory: ${path}`);
+  }
+}
+
+function sameFileIdentity(left: Stats, right: Stats): boolean {
+  if (left.dev !== 0 || left.ino !== 0 || right.dev !== 0 || right.ino !== 0) {
+    return left.dev === right.dev && left.ino === right.ino;
+  }
+  return left.mode === right.mode
+    && left.size === right.size
+    && left.birthtimeMs === right.birthtimeMs
+    && left.ctimeMs === right.ctimeMs;
+}
+
+function parseContentLength(value: string | null): number | undefined {
+  if (value === null || !/^\d+$/u.test(value.trim())) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+function assertSingleItemLimit(bytes: number, limitBytes: number, label: string): void {
+  if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > limitBytes) {
+    throw resourceLimitError(`${label} exceeds the ${formatDataPlaneLimit(limitBytes)} per-item limit.`);
+  }
+}
+
+function assertManifestItemCount(count: number, label: string): void {
+  if (count > MAX_MANIFEST_ITEMS) {
+    throw resourceLimitError(`${label} contains ${count} items; at most ${MAX_MANIFEST_ITEMS} are allowed.`);
+  }
 }
 
 function compactDownloadedFiles(files: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
@@ -2492,6 +3045,7 @@ async function executeCaptureNode(
 async function executeCaptureNodeForTool(
   args: FigmaWorkspaceCaptureNodeArguments,
   runtime: FigmaWorkspaceRuntime,
+  resourceBudget = commandResourceBudget(),
 ): Promise<Record<string, unknown>> {
   rejectRemovedCaptureMediaArguments(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
@@ -2531,8 +3085,8 @@ async function executeCaptureNodeForTool(
     upstreamKind: requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT),
   });
   const upstreamArguments = filtered.arguments;
-  await runtime.client.connect();
-  const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+  await connectUpstream(runtime.client, "Capture Figma node");
+  const upstream = await callUpstreamToolWithLimits(runtime.client, tool.name, upstreamArguments);
   const parsed = parseUpstreamToolResult(upstream);
   if (parsed.upstreamError) {
     const payload = {
@@ -2546,7 +3100,8 @@ async function executeCaptureNodeForTool(
   }
   let saved: Awaited<ReturnType<typeof writeCaptureOutputFile>>;
   try {
-    saved = await writeCaptureOutputFile(requestedOutputFile, upstream, parsed);
+    const boundedUpstream = await prepareBoundedCapturePayload(upstream, parsed, resourceBudget);
+    saved = await writeCaptureOutputFile(requestedOutputFile, boundedUpstream, parsed);
   } catch (error) {
     const payload = {
       ok: false,
@@ -2576,6 +3131,106 @@ async function executeCaptureNodeForTool(
     diagnostics: filtered.diagnostics.length > 0 ? diagnosticsForResponse(filtered.diagnostics) : undefined,
   };
   return payload;
+}
+
+async function prepareBoundedCapturePayload(
+  upstream: unknown,
+  parsed: ParsedUpstreamToolResult,
+  resourceBudget: DataPlaneResourceBudget,
+): Promise<unknown> {
+  const content = Array.isArray(asRecord(upstream).content)
+    ? (asRecord(upstream).content as unknown[]).filter(isRecord)
+    : [];
+  const inlineImage = content.find((item) => item.type === "image" && typeof item.data === "string");
+  if (inlineImage && typeof inlineImage.data === "string") {
+    const compactBase64 = inlineImage.data.replace(/\s/gu, "");
+    const estimatedBytes = Math.floor((compactBase64.length * 3) / 4)
+      - (compactBase64.endsWith("==") ? 2 : compactBase64.endsWith("=") ? 1 : 0);
+    assertSingleItemLimit(estimatedBytes, MAX_SINGLE_ASSET_BYTES, "Capture image payload");
+    resourceBudget.assertCanConsume(estimatedBytes, "Capture image payload");
+    const decoded = Buffer.from(compactBase64, "base64");
+    assertSingleItemLimit(decoded.byteLength, MAX_SINGLE_ASSET_BYTES, "Capture image payload");
+    resourceBudget.consume(decoded.byteLength, "Capture image payload");
+    return upstream;
+  }
+
+  const sourceUrl = findCaptureImageUrlForResourceLimit(upstream, parsed.json);
+  if (!sourceUrl) return upstream;
+  const deadline = new NetworkRequestDeadline(`Capture download ${sourceUrl}`);
+  try {
+    const response = await fetch(sourceUrl, { signal: deadline.controller.signal });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(
+        `Unable to download captured node image from ${sourceUrl}: ${response.status} ${response.statusText}`,
+      );
+    }
+    const bytes = await readBoundedResponseBody({
+      response,
+      itemLimitBytes: MAX_SINGLE_ASSET_BYTES,
+      resourceBudget,
+      deadline,
+      label: "Capture image payload",
+    });
+    return {
+      content: [{
+        type: "image",
+        mimeType: contentTypeWithoutParameters(response.headers.get("content-type")) ?? "image/png",
+        data: bytes.toString("base64"),
+      }],
+    };
+  } finally {
+    deadline.dispose();
+  }
+}
+
+function findCaptureImageUrlForResourceLimit(upstream: unknown, parsedJson: unknown): string | undefined {
+  const content = Array.isArray(asRecord(upstream).content)
+    ? (asRecord(upstream).content as unknown[]).filter(isRecord)
+    : [];
+  for (const item of content) {
+    if (item.type !== "image") continue;
+    for (const value of [item.url, item.imageUrl, item.image_url, item.screenshotUrl, item.downloadUrl]) {
+      const url = asHttpUrl(value);
+      if (url) return url;
+    }
+  }
+  return findHttpUrlInCaptureValue(parsedJson, 0) ?? findHttpUrlInCaptureValue(upstream, 0);
+}
+
+function findHttpUrlInCaptureValue(value: unknown, depth: number): string | undefined {
+  if (depth > 6) return undefined;
+  const direct = asHttpUrl(value);
+  if (direct) return direct;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findHttpUrlInCaptureValue(item, depth + 1);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  const priorityKeys = ["imageUrl", "image_url", "screenshotUrl", "downloadUrl", "url", "src", "href"];
+  for (const key of priorityKeys) {
+    const found = findHttpUrlInCaptureValue(value[key], depth + 1);
+    if (found) return found;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    if (priorityKeys.includes(key)) continue;
+    const found = findHttpUrlInCaptureValue(item, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function asHttpUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function rejectRemovedCaptureMediaArguments(args: FigmaWorkspaceCaptureNodeArguments): void {
@@ -2650,6 +3305,7 @@ async function executeQueuedCaptureRequests(options: {
   }
 
   const captures: FigmaWorkspaceQueuedCaptureResult[] = [];
+  const resourceBudget = commandResourceBudget();
   for (const [index, request] of requests.entries()) {
     try {
       const imageFile = resolveQueuedCaptureOutputFile(
@@ -2664,7 +3320,7 @@ async function executeQueuedCaptureRequests(options: {
         imageFile,
         maxDimension: request.maxDimension,
         contentsOnly: request.contentsOnly,
-      }, options.runtime);
+      }, options.runtime, resourceBudget);
       captures.push(compactQueuedCaptureResult(request.requestId, result));
     } catch (error) {
       captures.push({
@@ -2854,7 +3510,7 @@ async function handlePrepareTask(
     const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
 
     await ensureWorkspaceDirectories(workspace);
-    await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, scriptName, args), Boolean(args.overwrite));
+    await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, scriptName, args), args.overwrite === true);
     const payload = {
       ok: true,
       session: session ? responseSession(session) : undefined,
@@ -2864,7 +3520,7 @@ async function handlePrepareTask(
         inputFile: scriptName,
         workspace: responseWorkspace(workspace),
         scriptPath,
-        overwritten: Boolean(args.overwrite),
+        overwritten: args.overwrite === true,
       },
       taskChange: {
         previous: previousTask,
@@ -3576,7 +4232,7 @@ async function executeGetMetadata(
     args,
     contract: GET_METADATA_CONTRACT,
   });
-  await runtime.client.connect();
+  await connectUpstream(runtime.client, "Read Figma metadata");
   const filtered = filterAdvertisedUpstreamArguments({
     upstreamArguments: removeUndefined({
       fileKey: requested.fileKey,
@@ -3588,7 +4244,7 @@ async function executeGetMetadata(
     upstreamKind: requireWrapperUpstreamKind(GET_METADATA_CONTRACT),
   });
   const upstreamArgs = filtered.arguments;
-  const upstream = await runtime.client.callTool(GET_METADATA_TOOL_NAME, upstreamArgs);
+  const upstream = await callUpstreamToolWithLimits(runtime.client, GET_METADATA_TOOL_NAME, upstreamArgs);
   const parsed = parseUpstreamToolResult(upstream);
   const upstreamResult = upstreamEnvelope(parsed, { includePayload: false });
   const xml = metadataXmlFromParsedResult(parsed);
@@ -3951,8 +4607,8 @@ async function executeDedicatedUpstreamTool(options: {
     upstreamKind,
   });
   const upstreamArguments = filtered.arguments;
-  await options.runtime.client.connect();
-  let upstream = await options.runtime.client.callTool(upstreamToolName, upstreamArguments);
+  await connectUpstream(options.runtime.client, `Execute ${options.contract.toolName}`);
+  let upstream = await callUpstreamToolWithLimits(options.runtime.client, upstreamToolName, upstreamArguments);
   let parsed = parseUpstreamToolResult(upstream);
   const recoveryDiagnostics: FigmaWorkspaceDiagnostic[] = [];
   if (shouldRetrySelectionDependentWrapper(options.contract, parsed, options.nodeIds)) {
@@ -3964,7 +4620,7 @@ async function executeDedicatedUpstreamTool(options: {
     });
     recoveryDiagnostics.push(...recovery.diagnostics);
     if (recovery.selected) {
-      upstream = await options.runtime.client.callTool(upstreamToolName, upstreamArguments);
+      upstream = await callUpstreamToolWithLimits(options.runtime.client, upstreamToolName, upstreamArguments);
       parsed = parseUpstreamToolResult(upstream);
     }
   }
@@ -4108,8 +4764,8 @@ async function executeCallUpstreamTool(
       `Upstream Figma MCP tool "${args.toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`,
     );
   }
-  await runtime.client.connect();
-  const upstream = await runtime.client.callTool(args.toolName, upstreamArgs);
+  await connectUpstream(runtime.client, "Call upstream Figma MCP tool");
+  const upstream = await callUpstreamToolWithLimits(runtime.client, args.toolName, upstreamArgs);
   const parsed = parseUpstreamToolResult(upstream);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   runtime.sessions.rememberHistory(session, {
@@ -4297,11 +4953,70 @@ async function callUpstreamEval(
   evalSettings: EvalSettings,
   script: string,
 ): Promise<unknown> {
-  await client.connect();
-  return client.callTool(evalSettings.toolName, {
+  await connectUpstream(client, "Figma Plugin API execution");
+  return callUpstreamToolWithLimits(client, evalSettings.toolName, {
     ...evalSettings.upstreamArguments,
     [evalSettings.argumentName]: script,
   });
+}
+
+type UpstreamEvalAttempt =
+  | {
+      requestDispatched: boolean;
+      error: FigmaWorkspaceUpstreamError;
+      upstream?: never;
+    }
+  | {
+      requestDispatched: true;
+      error?: never;
+      upstream: unknown;
+      postResponseError?: PostResponseResourceError;
+    };
+
+async function attemptUpstreamEval(
+  client: FigmaUpstreamMcpProxyClient,
+  evalSettings: EvalSettings,
+  script: string,
+): Promise<UpstreamEvalAttempt> {
+  try {
+    await connectUpstream(client, "Figma Plugin API execution");
+  } catch (error) {
+    return {
+      requestDispatched: false,
+      error: normalizeCaughtUpstreamError(error),
+    };
+  }
+
+  let requestDispatched = false;
+  try {
+    return {
+      requestDispatched: true,
+      upstream: await awaitUpstreamOperation(
+        `Upstream tool ${evalSettings.toolName}`,
+        (signal) => {
+          const request = client.callTool(evalSettings.toolName, {
+            ...evalSettings.upstreamArguments,
+            [evalSettings.argumentName]: script,
+          }, signal);
+          requestDispatched = true;
+          return request;
+        },
+        { countResponse: true },
+      ),
+    };
+  } catch (error) {
+    if (error instanceof PostResponseResourceError) {
+      return {
+        requestDispatched: true,
+        upstream: error.response,
+        postResponseError: error,
+      };
+    }
+    return {
+      requestDispatched,
+      error: normalizeCaughtUpstreamError(error),
+    };
+  }
 }
 
 function createUpstreamToolCache(client: FigmaUpstreamMcpProxyClient) {
@@ -4311,8 +5026,8 @@ function createUpstreamToolCache(client: FigmaUpstreamMcpProxyClient) {
       if (cached && !refresh) {
         return cached;
       }
-      await client.connect();
-      const result = asRecord(await client.listTools());
+      await connectUpstream(client, "Discover upstream Figma MCP tools");
+      const result = asRecord(await listUpstreamToolsWithLimits(client, "Discover upstream Figma MCP tools"));
       const tools = Array.isArray(result.tools) ? result.tools : [];
       cached = tools.filter(isRecord).map((tool) => ({
         name: String(tool.name ?? ""),
@@ -4715,9 +5430,10 @@ const $ = Object.freeze({
 async function loadAssetManifest(
   args: FigmaWorkspaceApplyAssetManifestArguments,
   session: FigmaWorkspaceSession,
+  resourceBudget: DataPlaneResourceBudget,
 ): Promise<NormalizedAssetManifest> {
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
-  const manifestValue = manifestPath ? await readAssetManifestValue(manifestPath) : undefined;
+  const manifestValue = manifestPath ? await readAssetManifestValue(manifestPath, resourceBudget, session) : undefined;
   const manifestRecord = asRecord(manifestValue);
   const manifestAssets = Array.isArray(manifestValue)
     ? manifestValue
@@ -4729,6 +5445,7 @@ async function loadAssetManifest(
   if (!rawAssets || rawAssets.length === 0) {
     throw new Error('Tool argument "assets" or "manifestPath" with assets is required.');
   }
+  assertManifestItemCount(rawAssets.length, "Asset manifest");
   const baseDir = manifestPath ? dirname(manifestPath) : session.workspace?.sessionDir;
   if (manifestRecord.argumentsTemplate !== undefined) {
     throw new Error('Asset manifest field "argumentsTemplate" was removed. Use figma:upstream:call only for explicit upstream capabilities.');
@@ -4751,9 +5468,27 @@ class AssetManifestLoadError extends Error {
   }
 }
 
-async function readAssetManifestValue(manifestPath: string): Promise<unknown> {
+async function readAssetManifestValue(
+  manifestPath: string,
+  resourceBudget: DataPlaneResourceBudget,
+  session?: FigmaWorkspaceSession,
+): Promise<unknown> {
   try {
-    return JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+    const bytes = session
+      ? await readManagedWorkspaceFile({
+        path: manifestPath,
+        session,
+        limitBytes: MAX_MANIFEST_FILE_BYTES,
+        resourceBudget,
+        label: "Asset manifest",
+      })
+      : await readBoundedLocalFile(
+        manifestPath,
+        MAX_MANIFEST_FILE_BYTES,
+        resourceBudget,
+        "Asset manifest",
+      );
+    return JSON.parse(bytes.toString("utf8")) as unknown;
   } catch (error) {
     throw new AssetManifestLoadError(manifestPath, error);
   }
@@ -5545,40 +6280,85 @@ function isAssetManifestValidationRecord(value: unknown): boolean {
 }
 
 async function submitLocalAssetUploadIfAvailable(
-  asset: NormalizedAssetManifestAsset,
+  input: OpenedAssetInput,
   parsed: ParsedUpstreamToolResult,
+  resourceBudget: DataPlaneResourceBudget,
 ): Promise<Record<string, unknown> | undefined> {
+  const { asset, handle, stats: fileStats } = input;
   const submitUrl = extractAssetSubmitUrl(parsed.json);
   if (!submitUrl) {
     return undefined;
   }
-  const bytes = await readFile(asset.path);
+  assertSingleItemLimit(fileStats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+  resourceBudget.assertCanConsume(fileStats.size, `Asset upload ${asset.path}`);
   const mimeType = mimeTypeForAssetPath(asset.path);
-  const response = await fetch(submitUrl, {
-    method: "POST",
-    headers: { "Content-Type": mimeType },
-    body: bytes,
+  const deadline = new NetworkRequestDeadline(`Asset upload ${asset.path}`);
+  const source = handle.createReadStream({ autoClose: false, start: 0 });
+  let uploadedBytes = 0;
+  const countedBody = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      try {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        uploadedBytes += bytes.byteLength;
+        assertSingleItemLimit(uploadedBytes, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+        resourceBudget.consume(bytes.byteLength, `Asset upload ${asset.path}`);
+        deadline.touch();
+        callback(null, bytes);
+      } catch (error) {
+        callback(error instanceof Error ? error : new Error(String(error)));
+      }
+    },
   });
-  const text = await response.text();
-  const json = parseJsonLenient(text);
-  if (!response.ok) {
+  const abortSource = (): void => {
+    source.destroy(deadline.controller.signal.reason instanceof Error
+      ? deadline.controller.signal.reason
+      : new Error("Asset upload aborted."));
+  };
+  deadline.controller.signal.addEventListener("abort", abortSource, { once: true });
+  try {
+    const response = await fetch(submitUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": mimeType,
+        "Content-Length": String(fileStats.size),
+      },
+      body: source.pipe(countedBody) as unknown as BodyInit,
+      duplex: "half",
+      signal: deadline.controller.signal,
+    } as RequestInit & { duplex: "half" });
+    const responseBytes = await readBoundedResponseBody({
+      response,
+      itemLimitBytes: MAX_SINGLE_ASSET_BYTES,
+      resourceBudget,
+      deadline,
+      label: `Asset upload response for ${asset.path}`,
+    });
+    const text = responseBytes.toString("utf8");
+    const json = parseJsonLenient(text);
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        statusText: response.statusText,
+        mimeType,
+        bytes: uploadedBytes,
+        response: summarizeUploadResponse(text, json),
+      };
+    }
     return {
-      ok: false,
+      ok: true,
       status: response.status,
       statusText: response.statusText,
       mimeType,
-      bytes: bytes.byteLength,
+      bytes: uploadedBytes,
       response: summarizeUploadResponse(text, json),
     };
+  } finally {
+    deadline.controller.signal.removeEventListener("abort", abortSource);
+    source.destroy();
+    countedBody.destroy();
+    deadline.dispose();
   }
-  return {
-    ok: true,
-    status: response.status,
-    statusText: response.statusText,
-    mimeType,
-    bytes: bytes.byteLength,
-    response: summarizeUploadResponse(text, json),
-  };
 }
 
 function extractAssetSubmitUrl(value: unknown): string | undefined {
@@ -6753,10 +7533,59 @@ async function shapeUpstreamBackedResponse(options: {
   if (!needsOutputFile) {
     return limitedPayload;
   }
-  return {
-    ...limitedPayload,
-    outputFiles: await options.writeOutputFiles(upstreamEnvelope(options.parsed)),
-  };
+  try {
+    return {
+      ...limitedPayload,
+      outputFiles: await options.writeOutputFiles(upstreamEnvelope(options.parsed)),
+    };
+  } catch (error) {
+    return localPostprocessingFailure(limitedPayload, "backendSidecars", error);
+  }
+}
+
+function localPostprocessingFailure(
+  resultPayload: Record<string, unknown>,
+  stage: string,
+  error: unknown,
+  outputFiles?: object,
+): Record<string, unknown> {
+  const executionOutcome = asOptionalString(resultPayload.executionOutcome);
+  const existingGuidance = asOptionalString(resultPayload.retryGuidance);
+  const localGuidance = executionOutcome === "succeeded"
+    ? "The remote operation succeeded and may have mutated Figma. Do not rerun it; repair only the failed local post-processing step."
+    : executionOutcome === "outcome_unknown"
+      ? "The remote outcome is unknown and local recovery output also failed. Inspect or read back Figma and reconcile state before any retry."
+      : "Inspect the returned business result and repair the failed local post-processing step before retrying.";
+  return removeUndefined({
+    ...resultPayload,
+    ok: false,
+    retryGuidance: existingGuidance ? `${existingGuidance} ${localGuidance}` : localGuidance,
+    postProcessing: {
+      ...asRecord(resultPayload.postProcessing),
+      [stage]: {
+        status: "failed",
+        message: errorMessage(error),
+        code: asOptionalString(asRecord(error).code),
+      },
+    },
+    outputFiles: outputFiles && Object.keys(outputFiles).length > 0 ? outputFiles : resultPayload.outputFiles,
+  }) as Record<string, unknown>;
+}
+
+async function attachPostExecutionOutputFiles(options: {
+  resultPayload: Record<string, unknown>;
+  stage: string;
+  write: () => Promise<object>;
+}): Promise<Record<string, unknown>> {
+  try {
+    const outputFiles = await options.write();
+    return {
+      ...options.resultPayload,
+      outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
+    };
+  } catch (error) {
+    return localPostprocessingFailure(options.resultPayload, options.stage, error);
+  }
 }
 
 function responseUpstreamError(error: FigmaWorkspaceUpstreamError): Record<string, unknown> {

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 import { createServer } from "node:http";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { Readable, Transform, Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { AtomicCredentialStore } from "../mcp-server/dist/auth/credential-store.js";
 
 export const DEFAULT_TARGET = "https://mcp.figma.com/mcp";
 export const DEFAULT_HOST = "127.0.0.1";
@@ -23,6 +25,15 @@ export const FIGMA_TOKEN_ENDPOINT = "https://api.figma.com/v1/oauth/token";
 export const FIGMA_REGISTRATION_ENDPOINT =
   "https://api.figma.com/v1/oauth/mcp/register";
 
+export const MCP_REQUEST_BODY_LIMIT_BYTES = 512 * 1024;
+export const OAUTH_BODY_LIMIT_BYTES = 64 * 1024;
+export const BRIDGE_RESPONSE_LIMIT_BYTES = 64 * 1024 * 1024;
+export const BRIDGE_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
+export const BRIDGE_IDLE_TIMEOUT_MS = 60 * 1000;
+export const BRIDGE_SHUTDOWN_GRACE_MS = 10 * 1000;
+
+const refreshFlights = new Map();
+
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
   "keep-alive",
@@ -40,8 +51,17 @@ export async function startFigmaMcpBridge(options = {}) {
   const oauthCache = config.oauthCacheEnabled
     ? new OAuthCache(config.oauthCachePath)
     : undefined;
+  const activeControllers = new Set();
+  const sockets = new Set();
   const server = createServer((request, response) => {
-    void handleBridgeRequest(config, request, response, { oauthCache });
+    const controller = new AbortController();
+    activeControllers.add(controller);
+    void handleBridgeRequest(config, request, response, { oauthCache, controller })
+      .finally(() => activeControllers.delete(controller));
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
   });
 
   await new Promise((resolve, reject) => {
@@ -55,10 +75,7 @@ export async function startFigmaMcpBridge(options = {}) {
   return {
     ...config,
     url: `http://${config.host}:${config.port}${config.path}`,
-    close: () =>
-      new Promise((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      }),
+    close: () => closeBridgeServer(server, activeControllers, sockets),
   };
 }
 
@@ -97,14 +114,32 @@ function missingOAuthCachePath() {
 }
 
 export async function handleBridgeRequest(config, request, response, runtime = {}) {
+  const controller = runtime.controller ?? new AbortController();
+  const activity = createRequestActivityController(
+    controller,
+    request,
+    response,
+    {
+      totalTimeoutMs: runtime.totalTimeoutMs,
+      idleTimeoutMs: runtime.idleTimeoutMs,
+    },
+  );
   try {
     const incomingUrl = new URL(request.url ?? "/", `http://${config.host}:${config.port}`);
     if (incomingUrl.pathname === PROTECTED_RESOURCE_PATH) {
-      await handleProtectedResourceMetadata(config, request, response);
+      await handleProtectedResourceMetadata(config, request, response, {
+        signal: controller.signal,
+        activity,
+        fetch: runtime.fetch,
+      });
       return;
     }
     if (incomingUrl.pathname === AUTHORIZATION_SERVER_METADATA_PATH) {
-      await handleAuthorizationServerMetadata(config, request, response);
+      await handleAuthorizationServerMetadata(config, request, response, {
+        signal: controller.signal,
+        activity,
+        fetch: runtime.fetch,
+      });
       return;
     }
     if (incomingUrl.pathname === OAUTH_AUTHORIZE_PATH) {
@@ -116,6 +151,9 @@ export async function handleBridgeRequest(config, request, response, runtime = {
         config,
         oauthCache: runtime.oauthCache,
         cacheKind: "token",
+        signal: controller.signal,
+        activity,
+        fetch: runtime.fetch,
       });
       return;
     }
@@ -124,6 +162,9 @@ export async function handleBridgeRequest(config, request, response, runtime = {
         config,
         oauthCache: runtime.oauthCache,
         cacheKind: "client",
+        signal: controller.signal,
+        activity,
+        fetch: runtime.fetch,
       });
       return;
     }
@@ -137,19 +178,49 @@ export async function handleBridgeRequest(config, request, response, runtime = {
     const targetUrl = new URL(config.target);
     targetUrl.search = incomingUrl.search;
 
-    const { headers, injectedCachedToken } = await createMcpRequestHeaders(
+    const { headers, injectedCachedToken, credentialFingerprint } = await createMcpRequestHeaders(
       config,
       request.headers,
       runtime.oauthCache,
+      { signal: controller.signal },
     );
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
-    const upstream = await fetch(targetUrl, {
+    if (hasBody) {
+      assertDeclaredBodyLimit(
+        request.headers["content-length"],
+        MCP_REQUEST_BODY_LIMIT_BYTES,
+        "MCP request body",
+        activity,
+      );
+    }
+    const incomingBody = hasBody
+      ? createLimitedNodeStream(
+          request,
+          MCP_REQUEST_BODY_LIMIT_BYTES,
+          activity,
+          "MCP request body",
+          controller.signal,
+        )
+      : undefined;
+    const upstreamPromise = fetchWithBridgeAbort(targetUrl, {
       method: request.method,
       headers,
-      body: hasBody ? request : undefined,
+      body: incomingBody?.stream,
       duplex: hasBody ? "half" : undefined,
       redirect: "manual",
-    });
+      signal: controller.signal,
+    }, activity, runtime.fetch);
+    const operations = incomingBody
+      ? [upstreamPromise, incomingBody.completion]
+      : [upstreamPromise];
+    let upstream;
+    try {
+      [upstream] = await Promise.all(operations);
+    } catch (error) {
+      activity.abort(error);
+      await Promise.allSettled(operations);
+      throw error;
+    }
 
     if (config.log) {
       console.error(
@@ -157,12 +228,19 @@ export async function handleBridgeRequest(config, request, response, runtime = {
       );
     }
     if (injectedCachedToken && upstream.status === 401) {
-      await runtime.oauthCache?.clearTokens();
+      await runtime.oauthCache?.invalidateAccessToken(credentialFingerprint);
     }
 
     const responseHeaders = rewriteResponseHeaders(
       copyResponseHeaders(upstream.headers),
       config,
+    );
+    await assertUpstreamResponseLength(
+      responseHeaders.get("content-length"),
+      BRIDGE_RESPONSE_LIMIT_BYTES,
+      "Bridge response body",
+      upstream.body,
+      activity,
     );
     response.writeHead(
       upstream.status,
@@ -175,30 +253,52 @@ export async function handleBridgeRequest(config, request, response, runtime = {
       return;
     }
 
-    await pipeWebStream(upstream.body, response);
+    await pipeWebStream(
+      upstream.body,
+      response,
+      BRIDGE_RESPONSE_LIMIT_BYTES,
+      activity,
+      controller.signal,
+    );
   } catch (error) {
-    response.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
-    response.end(error instanceof Error ? error.message : String(error));
+    const bridgeError = findBridgeHttpError(error);
+    if (!response.headersSent && !response.destroyed) {
+      const status = bridgeError?.status ?? 502;
+      response.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
+      response.end(bridgeError?.message ?? (error instanceof Error ? error.message : String(error)));
+    } else if (!response.destroyed && !response.writableEnded) {
+      response.destroy(error instanceof Error ? error : undefined);
+    }
+  } finally {
+    activity.close();
   }
 }
 
-export async function handleProtectedResourceMetadata(config, request, response) {
+export async function handleProtectedResourceMetadata(config, request, response, runtime = {}) {
   if (request.method !== "GET" && request.method !== "HEAD") {
     response.writeHead(405, { allow: "GET, HEAD" });
     response.end();
     return;
   }
 
-  const upstream = await fetch(
+  const upstream = await fetchWithBridgeAbort(
     new URL(PROTECTED_RESOURCE_PATH, config.target).toString(),
     {
       method: "GET",
       headers: copyRequestHeaders(request.headers),
       redirect: "manual",
+      signal: runtime.signal,
     },
+    runtime.activity,
+    runtime.fetch,
   );
 
-  const text = await upstream.text();
+  const text = (await readWebResponseBody(
+    upstream,
+    OAUTH_BODY_LIMIT_BYTES,
+    runtime.activity,
+    "OAuth metadata response",
+  )).toString("utf8");
   const responseHeaders = copyResponseHeaders(upstream.headers);
   const rewritten = rewriteProtectedResourceMetadata(text, config);
   responseHeaders.set("content-length", String(Buffer.byteLength(rewritten)));
@@ -230,20 +330,26 @@ export function rewriteProtectedResourceMetadata(text, config) {
   })}\n`;
 }
 
-export async function handleAuthorizationServerMetadata(config, request, response) {
+export async function handleAuthorizationServerMetadata(config, request, response, runtime = {}) {
   if (request.method !== "GET" && request.method !== "HEAD") {
     response.writeHead(405, { allow: "GET, HEAD" });
     response.end();
     return;
   }
 
-  const upstream = await fetch(FIGMA_AUTHORIZATION_SERVER_METADATA, {
+  const upstream = await fetchWithBridgeAbort(FIGMA_AUTHORIZATION_SERVER_METADATA, {
     method: "GET",
     headers: copyRequestHeaders(request.headers),
     redirect: "manual",
-  });
+    signal: runtime.signal,
+  }, runtime.activity, runtime.fetch);
 
-  const text = await upstream.text();
+  const text = (await readWebResponseBody(
+    upstream,
+    OAUTH_BODY_LIMIT_BYTES,
+    runtime.activity,
+    "OAuth metadata response",
+  )).toString("utf8");
   const responseHeaders = copyResponseHeaders(upstream.headers);
   const rewritten = rewriteAuthorizationServerMetadata(text, config);
   responseHeaders.set("content-length", String(Buffer.byteLength(rewritten)));
@@ -286,7 +392,23 @@ export function handleAuthorizationRedirect(config, incomingUrl, response) {
 
 export async function proxyOAuthEndpoint(target, request, response, options = {}) {
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
-  const requestBody = hasBody ? await readRequestBody(request) : undefined;
+  if (hasBody) {
+    assertDeclaredBodyLimit(
+      request.headers["content-length"],
+      OAUTH_BODY_LIMIT_BYTES,
+      "OAuth request body",
+      options.activity,
+    );
+  }
+  const requestBody = hasBody
+    ? await readRequestBody(
+        request,
+        OAUTH_BODY_LIMIT_BYTES,
+        options.activity,
+        "OAuth request body",
+        options.signal,
+      )
+    : undefined;
   const rewrittenBody =
     requestBody && options.config
       ? rewriteOAuthRequestBody(
@@ -295,17 +417,30 @@ export async function proxyOAuthEndpoint(target, request, response, options = {}
           options.config,
         )
       : requestBody;
-  const upstream = await fetch(target, {
+  const upstream = await fetchWithBridgeAbort(target, {
     method: request.method,
     headers: copyRequestHeaders(request.headers, { dropContentLength: true }),
     body: rewrittenBody,
     duplex: hasBody ? "half" : undefined,
     redirect: "manual",
-  });
+    signal: options.signal,
+  }, options.activity, options.fetch);
 
   const responseHeaders = copyResponseHeaders(upstream.headers);
-  const responseBody = upstream.body ? Buffer.from(await upstream.arrayBuffer()) : undefined;
-  if (upstream.ok && responseBody && options.oauthCache) {
+  const responseBody = upstream.body
+    ? await readWebResponseBody(
+        upstream,
+        OAUTH_BODY_LIMIT_BYTES,
+        options.activity,
+        "OAuth response body",
+      )
+    : undefined;
+  if (
+    upstream.ok &&
+    responseBody &&
+    options.oauthCache &&
+    isJsonLike(responseHeaders.get("content-type"))
+  ) {
     await cacheOAuthResponse(
       options.oauthCache,
       options.cacheKind,
@@ -325,62 +460,139 @@ export async function proxyOAuthEndpoint(target, request, response, options = {}
   response.end(responseBody);
 }
 
-export async function createMcpRequestHeaders(config, input, oauthCache) {
+export async function createMcpRequestHeaders(config, input, oauthCache, options = {}) {
   const headers = copyRequestHeaders(input);
   if (headers.has("authorization") || !oauthCache) {
     return { headers, injectedCachedToken: false };
   }
 
-  const accessToken = await oauthCache.getUsableAccessToken();
-  if (accessToken) {
-    headers.set("authorization", `Bearer ${accessToken}`);
-    return { headers, injectedCachedToken: true };
+  const cached = await oauthCache.getUsableAccessTokenSnapshot();
+  if (cached?.accessToken) {
+    headers.set("authorization", `Bearer ${cached.accessToken}`);
+    return {
+      headers,
+      injectedCachedToken: true,
+      credentialFingerprint: cached.fingerprint,
+    };
   }
 
-  const refreshed = await refreshAccessToken(config, oauthCache);
+  const refreshed = await refreshAccessToken(config, oauthCache, options);
   if (refreshed?.access_token) {
     headers.set("authorization", `Bearer ${refreshed.access_token}`);
-    return { headers, injectedCachedToken: true };
+    return {
+      headers,
+      injectedCachedToken: true,
+      credentialFingerprint: refreshed.credentialFingerprint,
+    };
   }
 
   return { headers, injectedCachedToken: false };
 }
 
-export async function refreshAccessToken(config, oauthCache) {
-  const state = await oauthCache.read();
-  const refreshToken = state.tokens?.refresh_token;
-  const clientId = state.clientInformation?.client_id;
-  if (!refreshToken || !clientId) {
-    return undefined;
+export async function refreshAccessToken(config, oauthCache, options = {}) {
+  const flightKey = oauthCache.path;
+  const existing = refreshFlights.get(flightKey);
+  if (existing) {
+    return existing;
   }
+  const flight = refreshAccessTokenLocked(config, oauthCache, options)
+    .finally(() => {
+      if (refreshFlights.get(flightKey) === flight) {
+        refreshFlights.delete(flightKey);
+      }
+    });
+  refreshFlights.set(flightKey, flight);
+  return flight;
+}
 
-  const params = new URLSearchParams({
-    grant_type: "refresh_token",
-    refresh_token: refreshToken,
-    client_id: clientId,
+async function refreshAccessTokenLocked(config, oauthCache, options) {
+  return oauthCache.withLock(async (locked) => {
+    const snapshot = await locked.readSnapshot();
+    const cached = usableAccessToken(snapshot.state, oauthCache.now());
+    if (cached) {
+      return {
+        ...snapshot.state.tokens,
+        access_token: cached,
+        credentialFingerprint: snapshot.fingerprint,
+      };
+    }
+
+    const refreshToken = snapshot.state.tokens?.refresh_token;
+    const clientId = snapshot.state.clientInformation?.client_id;
+    if (typeof refreshToken !== "string" || typeof clientId !== "string") {
+      return undefined;
+    }
+
+    const params = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: clientId,
+      resource: config.target,
+    });
+    if (snapshot.state.clientInformation?.client_secret) {
+      params.set("client_secret", snapshot.state.clientInformation.client_secret);
+    }
+
+    let response;
+    try {
+      response = await fetch(FIGMA_TOKEN_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          accept: "application/json",
+        },
+        body: params,
+        signal: options.signal,
+      });
+    } catch (error) {
+      throw new OAuthRefreshError(
+        "transient",
+        "Figma OAuth token refresh failed due to a network or cancellation error.",
+        { cause: error },
+      );
+    }
+
+    const contentType = response.headers.get("content-type");
+    const body = response.body
+      ? await readWebResponseBody(
+          response,
+          OAUTH_BODY_LIMIT_BYTES,
+          options.activity,
+          "OAuth token response",
+        )
+      : Buffer.alloc(0);
+    const value = isJsonLike(contentType) ? parseJsonObject(body) : undefined;
+
+    if (!response.ok) {
+      const code = typeof value?.error === "string" ? value.error : undefined;
+      if (code === "invalid_grant" || code === "invalid_client") {
+        const next = withoutTokens(snapshot.state, oauthCache.now());
+        await locked.write(next);
+        return undefined;
+      }
+      throw new OAuthRefreshError(
+        "transient",
+        `Figma OAuth token refresh failed with HTTP ${response.status}${code ? ` (${code})` : ""}; existing credentials were preserved.`,
+        { status: response.status, oauthCode: code },
+      );
+    }
+
+    if (!value || typeof value.access_token !== "string") {
+      throw new OAuthRefreshError(
+        "transient",
+        "Figma OAuth token refresh returned an invalid JSON token response; existing credentials were preserved.",
+        { status: response.status },
+      );
+    }
+
+    const next = mergeTokenResponse(snapshot.state, value, oauthCache.now());
+    await locked.write(next);
+    const written = await locked.readSnapshot();
+    return {
+      ...next.tokens,
+      credentialFingerprint: written.fingerprint,
+    };
   });
-  if (state.clientInformation?.client_secret) {
-    params.set("client_secret", state.clientInformation.client_secret);
-  }
-  params.set("resource", config.target);
-
-  const response = await fetch(FIGMA_TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      accept: "application/json",
-    },
-    body: params,
-  });
-
-  if (!response.ok) {
-    await oauthCache.clearTokens();
-    return undefined;
-  }
-
-  const tokenResponse = await response.json();
-  await oauthCache.saveTokenResponse(tokenResponse);
-  return tokenResponse;
 }
 
 export function rewriteResponseHeaders(headers, config) {
@@ -424,28 +636,34 @@ export function copyResponseHeaders(input) {
   return headers;
 }
 
-async function pipeWebStream(readable, response) {
-  const reader = readable.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      response.write(Buffer.from(value));
-    }
-    response.end();
-  } finally {
-    reader.releaseLock();
-  }
+async function pipeWebStream(readable, response, limit, activity, signal) {
+  const source = Readable.fromWeb(readable);
+  await pipeline(
+    source,
+    createCountingTransform(limit, activity, "Bridge response body"),
+    response,
+    { signal },
+  );
 }
 
-async function readRequestBody(request) {
+export async function readRequestBody(request, limit, activity, label, signal) {
   const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
+  let total = 0;
+  const collector = new Writable({
+    write(chunk, _encoding, callback) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buffer.byteLength;
+      chunks.push(buffer);
+      callback();
+    },
+  });
+  await pipeline(
+    request,
+    createCountingTransform(limit, activity, label),
+    collector,
+    signal ? { signal } : {},
+  );
+  return Buffer.concat(chunks, total);
 }
 
 export function rewriteOAuthRequestBody(contentType, body, config) {
@@ -517,38 +735,31 @@ function normalizePort(value) {
 
 export class OAuthCache {
   constructor(path, options = {}) {
-    this.path = path;
+    this.path = resolve(path);
     this.now = options.now ?? (() => Date.now());
+    this.store = new AtomicCredentialStore(this.path, {
+      empty: () => ({}),
+      parse: parseJsonState,
+      now: this.now,
+      lockTimeoutMs: options.lockTimeoutMs,
+      lockRetryMs: options.lockRetryMs,
+    });
   }
 
   async read() {
-    try {
-      const value = JSON.parse(await readFile(this.path, "utf8"));
-      return value && typeof value === "object" && !Array.isArray(value)
-        ? value
-        : {};
-    } catch (error) {
-      if (error?.code === "ENOENT") {
-        return {};
-      }
-      throw error;
-    }
+    return this.store.read();
   }
 
   async write(state) {
-    await mkdir(dirname(this.path), { recursive: true });
-    const tmpPath = `${this.path}.tmp`;
-    await writeFile(tmpPath, `${JSON.stringify(state, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    await rename(tmpPath, this.path);
+    await this.store.write(state);
   }
 
   async update(fn) {
-    const next = fn(await this.read());
-    await this.write(next);
-    return next;
+    return this.store.update(fn);
+  }
+
+  async withLock(fn) {
+    return this.store.withLock(fn);
   }
 
   async saveClientInformation(clientInformation) {
@@ -560,55 +771,295 @@ export class OAuthCache {
   }
 
   async saveTokenResponse(tokenResponse) {
-    await this.update((state) => {
-      const previousTokens = state.tokens ?? {};
-      const expiresIn =
-        typeof tokenResponse.expires_in === "number"
-          ? tokenResponse.expires_in
-          : Number(tokenResponse.expires_in);
-      const expiresAt =
-        Number.isFinite(expiresIn) && expiresIn > 0
-          ? this.now() + expiresIn * 1000
-          : undefined;
-      return {
-        ...state,
-        tokens: {
-          ...previousTokens,
-          ...tokenResponse,
-          refresh_token:
-            tokenResponse.refresh_token ?? previousTokens.refresh_token,
-          expires_at: expiresAt,
-        },
-        updatedAt: new Date(this.now()).toISOString(),
-      };
-    });
+    await this.update((state) => mergeTokenResponse(state, tokenResponse, this.now()));
   }
 
   async getUsableAccessToken() {
-    const state = await this.read();
-    const token = state.tokens?.access_token;
-    if (typeof token !== "string") {
-      return undefined;
-    }
-    const expiresAt = state.tokens?.expires_at;
-    if (typeof expiresAt === "number" && expiresAt <= this.now() + 60000) {
-      return undefined;
-    }
-    return token;
+    return (await this.getUsableAccessTokenSnapshot())?.accessToken;
   }
 
-  async clearTokens() {
-    await this.update((state) => {
-      const next = { ...state };
-      delete next.tokens;
-      next.updatedAt = new Date(this.now()).toISOString();
-      return next;
+  async getUsableAccessTokenSnapshot() {
+    const snapshot = await this.store.readSnapshot();
+    const accessToken = usableAccessToken(snapshot.state, this.now());
+    return accessToken
+      ? { accessToken, fingerprint: snapshot.fingerprint }
+      : undefined;
+  }
+
+  async clearTokens(expectedFingerprint) {
+    return this.store.withLock(async (locked) => {
+      const snapshot = await locked.readSnapshot();
+      if (
+        expectedFingerprint !== undefined &&
+        snapshot.fingerprint !== expectedFingerprint
+      ) {
+        return false;
+      }
+      await locked.write(withoutTokens(snapshot.state, this.now()));
+      return true;
+    });
+  }
+
+  async invalidateAccessToken(expectedFingerprint) {
+    return this.store.withLock(async (locked) => {
+      const snapshot = await locked.readSnapshot();
+      if (
+        expectedFingerprint !== undefined &&
+        snapshot.fingerprint !== expectedFingerprint
+      ) {
+        return false;
+      }
+      const tokens = { ...(snapshot.state.tokens ?? {}) };
+      delete tokens.access_token;
+      delete tokens.expires_at;
+      await locked.write({
+        ...snapshot.state,
+        tokens,
+        updatedAt: new Date(this.now()).toISOString(),
+      });
+      return true;
     });
   }
 
   async clear() {
-    await rm(this.path, { force: true });
+    await this.store.clear();
   }
+}
+
+export class OAuthRefreshError extends Error {
+  constructor(kind, message, options = {}) {
+    super(message, { cause: options.cause });
+    this.name = "OAuthRefreshError";
+    this.kind = kind;
+    this.status = options.status;
+    this.oauthCode = options.oauthCode;
+  }
+}
+
+class BridgeHttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.name = "BridgeHttpError";
+    this.status = status;
+  }
+}
+
+function findBridgeHttpError(error) {
+  const visited = new Set();
+  let current = error;
+  while (current && typeof current === "object" && !visited.has(current)) {
+    if (current instanceof BridgeHttpError) {
+      return current;
+    }
+    visited.add(current);
+    current = current.cause;
+  }
+  return undefined;
+}
+
+function assertDeclaredBodyLimit(value, limit, label, activity) {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (normalized === undefined) return;
+  const length = Number(normalized);
+  if (Number.isFinite(length) && length > limit) {
+    const error = new BridgeHttpError(413, `${label} exceeds ${limit} bytes.`);
+    activity?.abort(error);
+    throw error;
+  }
+}
+
+async function assertUpstreamResponseLength(value, limit, label, body, activity) {
+  if (value === undefined || value === null) return;
+  const length = Number(value);
+  if (Number.isFinite(length) && length > limit) {
+    const error = new BridgeHttpError(502, `${label} exceeds ${limit} bytes.`);
+    await body?.cancel(error).catch(() => undefined);
+    activity?.abort(error);
+    throw error;
+  }
+}
+
+function createRequestActivityController(controller, request, response, options = {}) {
+  const totalTimeoutMs = options.totalTimeoutMs ?? BRIDGE_TOTAL_TIMEOUT_MS;
+  const idleTimeoutMs = options.idleTimeoutMs ?? BRIDGE_IDLE_TIMEOUT_MS;
+  let idleTimer;
+  const totalTimer = setTimeout(() => {
+    controller.abort(new Error("Bridge request exceeded the 5 minute total timeout."));
+  }, totalTimeoutMs);
+  const touch = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      controller.abort(new Error("Bridge request was idle for more than 60 seconds."));
+    }, idleTimeoutMs);
+  };
+  const abortDisconnectedClient = () => {
+    if (!response.writableEnded) {
+      controller.abort(new Error("Bridge client disconnected."));
+    }
+  };
+  request.once("aborted", abortDisconnectedClient);
+  response.once("close", abortDisconnectedClient);
+  const destroyIncomingRequest = () => {
+    if (!request.destroyed) {
+      request.destroy();
+    }
+  };
+  controller.signal.addEventListener("abort", destroyIncomingRequest, { once: true });
+  touch();
+  return {
+    touch,
+    abort(reason) {
+      if (!controller.signal.aborted) {
+        controller.abort(reason instanceof Error ? reason : new Error(String(reason)));
+      }
+    },
+    close() {
+      clearTimeout(totalTimer);
+      clearTimeout(idleTimer);
+      request.off("aborted", abortDisconnectedClient);
+      response.off("close", abortDisconnectedClient);
+      controller.signal.removeEventListener("abort", destroyIncomingRequest);
+    },
+  };
+}
+
+export function createLimitedNodeStream(readable, limit, activity, label, signal) {
+  const stream = createCountingTransform(limit, activity, label);
+  return {
+    stream,
+    completion: pipeline(readable, stream, signal ? { signal } : {}),
+  };
+}
+
+function createCountingTransform(limit, activity, label) {
+  let total = 0;
+  return new Transform({
+    transform(chunk, _encoding, callback) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buffer.byteLength;
+      activity?.touch();
+      if (total > limit) {
+        callback(new BridgeHttpError(413, `${label} exceeds ${limit} bytes.`));
+        return;
+      }
+      callback(null, buffer);
+    },
+  });
+}
+
+async function readWebResponseBody(response, limit, activity, label) {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > limit) {
+    const error = new BridgeHttpError(502, `${label} exceeds ${limit} bytes.`);
+    await response.body?.cancel(error).catch(() => undefined);
+    activity?.abort(error);
+    throw error;
+  }
+  if (!response.body) {
+    return Buffer.alloc(0);
+  }
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of Readable.fromWeb(response.body)) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.byteLength;
+    activity?.touch();
+    if (total > limit) {
+      throw new BridgeHttpError(502, `${label} exceeds ${limit} bytes.`);
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, total);
+}
+
+async function fetchWithBridgeAbort(input, init, activity, fetchImplementation = fetch) {
+  try {
+    return await fetchImplementation(input, init);
+  } catch (error) {
+    activity?.abort(error);
+    throw error;
+  }
+}
+
+function parseJsonObject(body) {
+  try {
+    return parseJsonState(body.toString("utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+function parseJsonState(json) {
+  const value = JSON.parse(json);
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+}
+
+function usableAccessToken(state, now) {
+  const token = state.tokens?.access_token;
+  if (typeof token !== "string" || token.length === 0) {
+    return undefined;
+  }
+  const expiresAt = state.tokens?.expires_at;
+  if (typeof expiresAt === "number" && expiresAt <= now + 60_000) {
+    return undefined;
+  }
+  return token;
+}
+
+function mergeTokenResponse(state, tokenResponse, now) {
+  const previousTokens = state.tokens ?? {};
+  const expiresIn = typeof tokenResponse.expires_in === "number"
+    ? tokenResponse.expires_in
+    : Number(tokenResponse.expires_in);
+  const expiresAt = Number.isFinite(expiresIn) && expiresIn > 0
+    ? now + expiresIn * 1000
+    : undefined;
+  return {
+    ...state,
+    tokens: {
+      ...previousTokens,
+      ...tokenResponse,
+      refresh_token: tokenResponse.refresh_token ?? previousTokens.refresh_token,
+      expires_at: expiresAt,
+    },
+    updatedAt: new Date(now).toISOString(),
+  };
+}
+
+function withoutTokens(state, now) {
+  const next = { ...state };
+  delete next.tokens;
+  next.updatedAt = new Date(now).toISOString();
+  return next;
+}
+
+async function closeBridgeServer(server, activeControllers, sockets) {
+  if (!server.listening) {
+    return;
+  }
+  let timer;
+  await new Promise((resolvePromise, reject) => {
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolvePromise();
+    };
+    timer = setTimeout(() => {
+      for (const controller of activeControllers) {
+        controller.abort(new Error("Figma MCP bridge is shutting down."));
+      }
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      server.closeAllConnections?.();
+    }, BRIDGE_SHUTDOWN_GRACE_MS);
+    server.close(finish);
+  });
 }
 
 function publicBaseUrl(config) {

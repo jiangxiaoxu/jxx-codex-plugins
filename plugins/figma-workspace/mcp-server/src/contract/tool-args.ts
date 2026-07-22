@@ -49,8 +49,6 @@ export interface FigmaWorkspaceAssetManifestAsset {
   [key: string]: unknown;
   path?: string;
   target?: FigmaWorkspaceNodeTarget;
-  nodeUrl?: string;
-  url?: string;
   name?: string;
   metadata?: Record<string, unknown>;
 }
@@ -308,6 +306,11 @@ const FIGMA_WORKSPACE_TASK_FAMILIES = [
 const FIGMA_WORKSPACE_DOCS_MODES = ["list", "catalog", "read"] as const;
 const FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS = ["active", "conditional", "router", "examples"] as const;
 const FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"] as const;
+const MAX_ASSET_MANIFEST_ITEMS = 64;
+const MAX_INLINE_RESULT_LIMIT = 10_000;
+const MAX_GUIDANCE_CARDS = 8;
+const MAX_LOOKUP_RESULTS = 10;
+const MAX_LOOKUP_SNIPPET_LINES = 8;
 
 function assertRemovedFileReferenceFields(record: Record<string, unknown>): void {
   const removed = ["fileUrl", "fileKey"].filter((field) => record[field] !== undefined);
@@ -361,7 +364,9 @@ export function asOpenArgs(args: unknown): FigmaWorkspaceOpenArguments {
     "currentPageId",
   ]);
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalBooleanFields(record, ["reset", "connect"]);
   assertRemovedHandleArguments(record, ["handles"]);
+  assertAllowedToolFields(record, ["title", "sessionId", "label", "file", "workspaceDir", "surface", "currentPageId", "reset", "connect"]);
   return record;
 }
 
@@ -378,6 +383,8 @@ export function asEvalArgs(args: unknown): FigmaWorkspaceEvalArguments {
   assertRemovedArgumentsWithoutReplacement(record, ["mode", "allowDangerousOperations"]);
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
   assertOptionalBooleanFields(record, ["typescript"]);
+  assertOptionalIntegerRange(record, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record, ["title", "sessionId", "code", "typescript", "surface", "inlineResultLimit"]);
   return record;
 }
 
@@ -396,6 +403,8 @@ export function asRunScriptFileArgs(args: unknown): FigmaWorkspaceRunScriptFileA
     "targetPageId",
   ]);
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalIntegerRange(record, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record, ["title", "sessionId", "scriptPath", "inputFile", "surface", "targetPageId", "inlineResultLimit"]);
   return record;
 }
 
@@ -409,6 +418,8 @@ export function asApplyAssetManifestArgs(args: unknown): FigmaWorkspaceApplyAsse
     "manifestPath",
   ]);
   assertOptionalAssets(record);
+  assertOptionalBooleanFields(record, ["validateTargets"]);
+  assertAllowedToolFields(record, ["title", "sessionId", "assets", "manifestPath", "validateTargets"]);
   return record;
 }
 
@@ -427,6 +438,7 @@ export function asDownloadAssetsArgs(args: unknown): FigmaWorkspaceDownloadAsset
   if (targets) {
     record.targets = targets;
   }
+  assertAllowedToolFields(record, ["title", "sessionId", "targets", "manifestPath", "outputDir"]);
   return record;
 }
 
@@ -445,6 +457,7 @@ export function asCaptureNodeArgs(args: unknown): FigmaWorkspaceCaptureNodeArgum
   assertOptionalIntegerRange(record, "maxDimension", 1, 65536);
   assertOptionalBooleanFields(record, ["contentsOnly"]);
   assertOptionalCaptureTargetValue(record.target, "target");
+  assertAllowedToolFields(record, ["title", "sessionId", "target", "imageFile", "maxDimension", "contentsOnly"]);
   return record;
 }
 
@@ -468,6 +481,8 @@ export function asPrepareTaskArgs(args: unknown): FigmaWorkspacePrepareTaskArgum
     "template",
   ]);
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalBooleanFields(record, ["overwrite"]);
+  assertAllowedToolFields(record, ["title", "sessionId", "taskName", "file", "fileSlug", "fileName", "workspaceDir", "surface", "targetPageId", "template", "overwrite"]);
   return record;
 }
 
@@ -481,6 +496,8 @@ export function asGuidanceArgs(args: unknown): FigmaWorkspaceGuidanceArguments {
   }
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
   assertOptionalEnum(record, "workflow", FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS);
+  assertOptionalIntegerRange(record, "maxCards", 1, MAX_GUIDANCE_CARDS);
+  assertAllowedToolFields(record, ["title", "query", "surface", "workflow", "maxCards"]);
   return record;
 }
 
@@ -492,7 +509,9 @@ export function asInspectArgs(args: unknown): FigmaWorkspaceInspectArguments {
   ]);
   assertOptionalInspectTarget(record.target);
   assertOptionalEnum(record, "mode", FIGMA_WORKSPACE_INSPECT_MODES);
+  assertOptionalIntegerRange(record, "depth", 1, Number.MAX_SAFE_INTEGER);
   assertRemovedHandleArguments(record, ["handles"]);
+  assertAllowedToolFields(record, ["title", "sessionId", "mode", "target", "depth"]);
   return record;
 }
 
@@ -513,6 +532,9 @@ export function asCallUpstreamToolArgs(args: unknown): FigmaWorkspaceCallUpstrea
   assertRemovedDebugOutputArguments(record, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record, ["sessionId", "toolName"]);
   assertOptionalRecord(record, "arguments");
+  assertOptionalBooleanFields(record, ["refresh"]);
+  assertOptionalIntegerRange(record, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record, ["title", "sessionId", "toolName", "arguments", "refresh", "inlineResultLimit"]);
   return record;
 }
 
@@ -530,6 +552,12 @@ export function asGetMetadataArgs(args: unknown): FigmaWorkspaceGetMetadataArgum
     "clientFrameworks",
   ]);
   assertOptionalTargetValue(record.target, "target");
+  assertOptionalBooleanFields(record, ["refresh"]);
+  assertOptionalIntegerRange(record, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record, [
+    "title", "sessionId", "file", "workspaceDir", "target", "nodeId", "refresh",
+    "inlineResultLimit", "clientLanguages", "clientFrameworks",
+  ]);
   return record;
 }
 
@@ -549,8 +577,14 @@ export function asGetDesignContextArgs(args: unknown): FigmaWorkspaceGetDesignCo
     "forceCode",
     "disableCodeConnect",
     "excludeScreenshot",
+    "refresh",
   ]);
   assertOptionalTargetValue(record.target, "target");
+  assertOptionalIntegerRange(record, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record, [
+    "title", "sessionId", "file", "workspaceDir", "target", "refresh", "inlineResultLimit",
+    "clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot",
+  ]);
   return record;
 }
 
@@ -566,8 +600,13 @@ export function asGetMotionContextArgs(args: unknown): FigmaWorkspaceGetMotionCo
     "clientLanguages",
     "clientFrameworks",
   ]);
-  assertOptionalBooleanFields(record, ["recursive"]);
+  assertOptionalBooleanFields(record, ["recursive", "refresh"]);
   assertOptionalTargetValue(record.target, "target");
+  assertOptionalIntegerRange(record, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record, [
+    "title", "sessionId", "file", "workspaceDir", "target", "recursive", "clientLanguages",
+    "clientFrameworks", "refresh", "inlineResultLimit",
+  ]);
   return record;
 }
 
@@ -587,8 +626,15 @@ export function asSearchDesignSystemArgs(args: unknown): FigmaWorkspaceSearchDes
     "includeComponents",
     "includeVariables",
     "includeStyles",
+    "refresh",
   ]);
   assertOptionalStringArray(record, "includeLibraryKeys");
+  assertOptionalIntegerRange(record, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record, [
+    "title", "sessionId", "file", "workspaceDir", "query", "disableCodeConnect",
+    "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys", "refresh",
+    "inlineResultLimit",
+  ]);
   return record;
 }
 
@@ -603,6 +649,11 @@ export function asGetLibrariesArgs(args: unknown): FigmaWorkspaceGetLibrariesArg
     "workspaceDir",
   ]);
   assertOptionalNonNegativeInteger(record, "offset");
+  assertOptionalBooleanFields(record, ["refresh"]);
+  assertOptionalIntegerRange(record, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record, [
+    "title", "sessionId", "file", "workspaceDir", "offset", "refresh", "inlineResultLimit",
+  ]);
   return record;
 }
 
@@ -623,6 +674,11 @@ export function asGetVariableDefsArgs(args: unknown): FigmaWorkspaceGetVariableD
     "workspaceDir",
   ]);
   assertOptionalTargetValue(record.target, "target");
+  assertOptionalBooleanFields(record, ["refresh"]);
+  assertOptionalIntegerRange(record, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record, [
+    "title", "sessionId", "file", "workspaceDir", "target", "refresh", "inlineResultLimit",
+  ]);
   return record;
 }
 
@@ -642,12 +698,19 @@ export function asLookupArgs(args: unknown): FigmaWorkspaceLookupArguments {
   assertOptionalEnum(record, "surface", FIGMA_WORKSPACE_SURFACES);
   assertOptionalEnum(record, "taskFamily", FIGMA_WORKSPACE_TASK_FAMILIES);
   assertOptionalStringFields(record, ["query", "symbol"]);
+  assertOptionalIntegerRange(record, "maxResults", 1, MAX_LOOKUP_RESULTS);
+  assertOptionalIntegerRange(record, "maxSnippetLines", 1, MAX_LOOKUP_SNIPPET_LINES);
+  assertAllowedToolFields(record, [
+    "title", "kind", "scope", "surface", "taskFamily", "query", "symbol", "maxResults",
+    "maxSnippetLines",
+  ]);
   return record;
 }
 
 export function asDocsArgs(args: unknown): FigmaWorkspaceDocsArguments {
   const record = parseToolArgs<Record<string, unknown>>(args);
   assertOptionalEnum(record, "mode", FIGMA_WORKSPACE_DOCS_MODES);
+  assertAllowedToolFields(record, ["mode", "id", "taskFamily", "surface", "classification", "limit"]);
   if (record.mode === "list") {
     return record as FigmaWorkspaceDocsArguments;
   }
@@ -669,7 +732,9 @@ export function asDocsArgs(args: unknown): FigmaWorkspaceDocsArguments {
 }
 
 export function asDoctorArgs(args: unknown): FigmaWorkspaceDoctorArguments {
-  return parseToolArgs<FigmaWorkspaceDoctorArguments>(args);
+  const record = parseToolArgs<FigmaWorkspaceDoctorArguments>(args);
+  assertAllowedToolFields(record, []);
+  return record;
 }
 
 export function asSessionsArgs(args: unknown): FigmaWorkspaceSessionsArguments {
@@ -677,6 +742,7 @@ export function asSessionsArgs(args: unknown): FigmaWorkspaceSessionsArguments {
   assertOptionalStringFields(record, ["sessionId"]);
   assertRemovedHandleArguments(record, ["includeHandles"]);
   assertOptionalBooleanFields(record, ["includeHistory"]);
+  assertAllowedToolFields(record, ["sessionId", "includeHistory"]);
   return record;
 }
 
@@ -684,6 +750,7 @@ export function asUpstreamToolsArgs(args: unknown): FigmaWorkspaceUpstreamToolsA
   const record = parseToolArgs<FigmaWorkspaceUpstreamToolsArguments>(args);
   assertOptionalStringFields(record, ["name"]);
   assertOptionalBooleanFields(record, ["refresh"]);
+  assertAllowedToolFields(record, ["name", "refresh"]);
   return record;
 }
 
@@ -787,6 +854,9 @@ function assertOptionalAssets(record: Record<string, unknown>): void {
   if (!assets) {
     return;
   }
+  if (assets.length > MAX_ASSET_MANIFEST_ITEMS) {
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "assets" must contain at most ${MAX_ASSET_MANIFEST_ITEMS} items.`);
+  }
   assets.forEach((asset, index) => {
     const assetName = `assets[${index}]`;
     if (!isRecord(asset)) {
@@ -794,9 +864,6 @@ function assertOptionalAssets(record: Record<string, unknown>): void {
     }
     assertOptionalStringFieldsWithPrefix(asset, assetName, [
       "path",
-      "nodeUrl",
-      "url",
-      "scaleMode",
       "name",
     ]);
     assertRemovedArguments(asset, ["toolName", "arguments"], "figma:upstream:call", `${assetName}.toolName/arguments`);
@@ -810,6 +877,7 @@ function assertOptionalAssets(record: Record<string, unknown>): void {
     const target = asset.target;
     assertOptionalTargetValue(target, `${assetName}.target`);
     assertOptionalRecord(asset, "metadata", `${assetName}.metadata`);
+    assertAllowedToolFields(asset, ["path", "target", "name", "metadata"], assetName);
   });
 }
 
@@ -817,6 +885,9 @@ function assertOptionalDownloadAssetTargets(record: Record<string, unknown>): Fi
   const targets = assertOptionalArray(record, "targets");
   if (!targets) {
     return undefined;
+  }
+  if (targets.length > MAX_ASSET_MANIFEST_ITEMS) {
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets" must contain at most ${MAX_ASSET_MANIFEST_ITEMS} items.`);
   }
   return targets.map((target, index) => {
     const targetName = `targets[${index}]`;
@@ -839,6 +910,7 @@ function assertOptionalDownloadAssetTargets(record: Record<string, unknown>): Fi
     if (defaultScale !== undefined && (typeof defaultScale !== "number" || !Number.isFinite(defaultScale) || defaultScale < 0.01 || defaultScale > 4)) {
       throw new FigmaWorkspaceToolArgumentError(`Tool argument "${targetName}.defaultScale" must be a number from 0.01 to 4.`);
     }
+    assertAllowedToolFields(target, ["target", "name", "defaultFormat", "defaultScale"], targetName);
     return {
       target: target.target as FigmaWorkspaceNodeTarget | undefined,
       name: target.name as string | undefined,
@@ -961,6 +1033,20 @@ function assertOptionalStringFieldsWithPrefix(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function assertAllowedToolFields(
+  record: Record<string, unknown>,
+  allowedFields: readonly string[],
+  displayName = "command input",
+): void {
+  const allowed = new Set(allowedFields);
+  const unknownFields = Object.keys(record).filter((field) => !allowed.has(field));
+  if (unknownFields.length > 0) {
+    throw new FigmaWorkspaceToolArgumentError(
+      `Tool argument "${displayName}" does not allow unknown field${unknownFields.length === 1 ? "" : "s"}: ${unknownFields.join(", ")}.`,
+    );
+  }
 }
 
 export function withDefaultTitle<T extends Record<string, unknown>>(

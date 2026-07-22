@@ -45,12 +45,12 @@ The plugin directory, manifest, and marketplace entry should describe the same i
 - Manifest: `plugins/figma-workspace/.codex-plugin/plugin.json`.
 - Skill router: `plugins/figma-workspace/skills/figma-workspace/SKILL.md`.
 - Agent CLI source: `plugins/figma-workspace/mcp-server/src/cli/figma-workspace-cli.ts`.
-- Agent invocation: use the canonical `npm --silent run figma -- <command>` CLI or the corresponding independent public `figma:<command>` npm executable. The contract has 18 direct commands, 8 JSON commands, and 21 raw transport commands available only through `figma:raw` and `figma:raw:help`. Public command help contains the complete input schema, and JSON commands accept `--input -` through both npm entrypoint forms. `figma:docs:list`, `figma:docs:catalog`, `figma:docs:read`, `figma:docs:search`, and `figma:api:search` are the documentation contract. `.figma.ts` and eval inject a frozen, non-callable `$` namespace with only `$.text` and `$.capture`; all other scripting uses native Figma Plugin API. Use `npm --silent` in every shell to preserve Restricted Markdown stdout after packaging. Put npm's `--` before arguments passed to an independent npm executable.
-- Agent result surface: Restricted Markdown on stdout for typed results; usage and thrown failures use stderr.
+- Agent invocation: use the canonical `npm --silent run figma -- <command>` CLI or the corresponding independent public `figma:<command>` npm executable. The contract has 18 direct commands, 8 JSON commands, and 21 raw transport commands available only through `figma:raw` and `figma:raw:help`. Public command help contains the complete input schema, and JSON commands accept `--input -` through both npm entrypoint forms while rejecting unknown fields. `figma:design-context`, `figma:motion-context`, and `figma:variables` require exactly one node source: a target or a `--file` URL with `node-id`. `figma:docs:list`, `figma:docs:catalog`, `figma:docs:read`, `figma:docs:search`, and `figma:api:search` are the documentation contract. `.figma.ts` and eval inject a frozen, non-callable `$` namespace with only `$.text` and `$.capture`; all other scripting uses native Figma Plugin API. Use `npm --silent` in every shell to preserve Restricted Markdown stdout after packaging. Put npm's `--` before arguments passed to an independent npm executable.
+- Agent result surface: Restricted Markdown on stdout for typed results; usage and thrown failures use stderr. `figma:eval` and `figma:script:run` carry required `executionOutcome`: `not_started`, `succeeded`, or `outcome_unknown`. An unknown outcome must be inspected/read back/reconciled before a mutation retry.
 - Project docs: `plugins/figma-workspace/skills/figma-workspace/references/*.md`; `docs:list` returns `project:` IDs, `docs:catalog` returns canonical records, and `docs:read` reads either namespace. `guidance` and `docs:search --scope auto` share English-only task routing with hard surface filters. The lightweight workflow references describe hard boundaries only; TypeScript and bundled Plugin API typings preflight scripts, while valid Plugin API operations are not subject to semantic AST policy.
 - OAuth bridge: `plugins/figma-workspace/scripts/server.mjs`.
 - Node runtime source: `plugins/figma-workspace/mcp-server/src/`; the directory name is legacy, not a local MCP registration.
-- Generated package output: `plugins/figma-workspace/mcp-server/dist/`; keep it synchronized with source changes through the package build.
+- Generated package output: `plugins/figma-workspace/mcp-server/dist/`; keep it synchronized with source changes through the package build. It ships CLI/runtime artifacts, not a supported typed import facade.
 - Primary maintenance guide: [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md).
 - Cross-repository CLI guide: [Reusable npm CLI Implementation Guide](figma-workspace-reusable-npm-cli-implementation-guide.md).
 - User-facing plugin guide: `plugins/figma-workspace/README.md`.
@@ -98,6 +98,14 @@ From `plugins/figma-workspace`:
 npm test
 ```
 
+When the ignored local Design fixture configuration and standard OAuth cache are intentionally available, run the separately invoked release check:
+
+```text
+npm run test:live
+```
+
+It is not part of `npm test`; missing configuration is a usage error rather than a skipped suite.
+
 From `plugins/figma-workspace/mcp-server`:
 
 ```text
@@ -105,7 +113,7 @@ npm run typecheck
 npm test
 ```
 
-The CLI package build regenerates `dist/`; review generated changes with the source diff.
+The CLI package build regenerates `dist`; review generated changes with the source diff. `npm run check:dist` belongs in a clean checkout or release/CI gate and must verify that removed typed facades are absent.
 
 ## Generated And Local State
 
@@ -113,6 +121,7 @@ The CLI package build regenerates `dist/`; review generated changes with the sou
 - `plugins/figma-workspace/skills/figma-workspace/references/canonical-corpus/` is the only bundled workflow corpus read at runtime. It contains only the v2 manifest, shared English route catalog, and current content-addressed JSONL. The manifest validates 87 records: 46 `active`, 20 `conditional`, 12 `router`, and 9 `examples`. Each record publishes task family, surfaces, mapping profile, title, and summary. Examples are plugin-owned non-executable TypeScript-in-Markdown templates. Upstream source text is not packaged or read at runtime.
 - `plugins/figma-workspace/dev/canonical-corpus-source/` owns the 87 adapted Markdown mirrors and 12 policy fragments used to build the runtime JSONL. Keeping these authoring inputs outside `skills/` prevents nested upstream `SKILL.md` mirrors from being discovered as plugin skills. `plugins/figma-workspace/dev/upstream-snapshot/` is the complete development source snapshot, and `plugins/figma-workspace/dev/upstream-changes/` is its drift report. All three directories are maintenance inputs outside the npm package and `mcp-server/dist/`. `npm run update:upstream-snapshot -- --ref <git-ref>` updates only the snapshot and drift report. `npm run build:canonical-corpus` reads the adapted mirrors and policy from the canonical source root and publishes only the self-contained runtime corpus; source-identical content may be reported for human review but is not a mechanical publication failure.
 - `figma:api:search` reads a v2 plugin-owned symbol index generated during the package build from bundled `@figma/plugin-typings`; it supports bare, qualified, and call-shaped API queries and does not read the development snapshot. `figma:doctor` diagnoses the canonical corpus, generated API index, project docs, and TypeScript runtime assets. Upstream drift belongs to the maintenance updater, not `doctor`.
-- Figma OAuth cache files live outside the repository and may contain secrets.
-- Figma CLI state files are local runtime state and should not be committed by default. Every executing optimized command requires an explicit fully qualified absolute `--state-file`; its parent directory owns result sidecars. Prefer a Git-ignored project-local `.figma-workspace/`; otherwise use an explicitly selected Figma task-artifact directory. Do not reuse capability-specific output roots as generic task storage. The raw transport requires a fully qualified absolute `--session-file` or fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE` and has no current-directory default.
+- Figma OAuth cache files live outside the repository and may contain secrets. Resolution is `FIGMA_WORKSPACE_OAUTH_CACHE_PATH`, then `CODEX_HOME`, then `USERPROFILE/.codex/.figma-workspace-oauth.json`; transient refresh failures retain the cached credential.
+- Figma CLI state files are local runtime state and should not be committed by default. Their strict shape is `{ "schemaVersion": 1, "sessions": [...] }`; legacy arrays fail closed and must be replaced with a new state file. Every executing optimized command requires an explicit fully qualified absolute `--state-file`; its parent directory owns result sidecars. Prefer a Git-ignored project-local `.figma-workspace/`; otherwise use an explicitly selected Figma task-artifact directory. Do not reuse capability-specific output roots as generic task storage. The raw transport requires a fully qualified absolute `--session-file` or fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE` and has no current-directory default.
+- Managed Figma workspace and output paths reject symbolic links, Windows junctions, and other reparse points. State/output locks cover only same-machine local filesystems, not network shares or distributed use. Local live verification uses the Git-ignored `plugins/figma-workspace/.figma-workspace/live-test.json` configuration with no token or secret; it is Design-only and tag-scoped for cleanup.
 - Workspace `task-memory/` directories are runtime task state and should not be treated as repository documentation or plugin source.

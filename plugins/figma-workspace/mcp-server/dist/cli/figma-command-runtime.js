@@ -99,7 +99,7 @@ var SCRIPT_NAMES_BY_TRANSPORT_COMMAND = {
 function npmScriptForCommand(command) {
   return hasOwn(SCRIPT_NAMES_BY_TRANSPORT_COMMAND, command) ? SCRIPT_NAMES_BY_TRANSPORT_COMMAND[command] : command;
 }
-function targetSpec(command, purpose, extraOptions = {}) {
+function targetSpec(command, purpose, extraOptions = {}, requiresNodeFile = false) {
   return {
     command,
     purpose,
@@ -112,7 +112,11 @@ function targetSpec(command, purpose, extraOptions = {}) {
       repeatable: false,
       description: "Raw node id or node URL. A node-scoped --file URL can supply the target instead."
     },
-    options: { ...fileContextOptions(), ...extraOptions },
+    options: {
+      ...fileContextOptions(),
+      ...requiresNodeFile ? { "--file": stringOption("file", "<node-url>", "Figma node URL containing node-id; supplies the required target when the positional target is omitted.") } : {},
+      ...extraOptions
+    },
     examples: [`npm --silent run figma:${npmScriptForCommand(command)} -- '12:34' --session-id default ${STATE_FILE_EXAMPLE}`]
   };
 }
@@ -245,11 +249,11 @@ var FIGMA_DIRECT_COMMANDS = {
     "--force-code": booleanOption("forceCode", "Force code generation when supported."),
     "--no-code-connect": booleanOption("disableCodeConnect", "Disable Code Connect context."),
     "--exclude-screenshot": booleanOption("excludeScreenshot", "Exclude screenshots from context.")
-  }),
+  }, true),
   "motion-context": targetSpec("get-motion-context", "Read official motion context.", {
     "--recursive": booleanOption("recursive", "Include recursive motion context.")
-  }),
-  variables: targetSpec("get-variable-defs", "Read variable definitions for a target."),
+  }, true),
+  variables: targetSpec("get-variable-defs", "Read variable definitions for a target.", {}, true),
   "design-system": {
     command: "search-design-system",
     purpose: "Search official design-system components, variables, and styles.",
@@ -278,6 +282,11 @@ var FIGMA_DIRECT_COMMANDS = {
     examples: [`npm --silent run figma:libraries -- --session-id default ${STATE_FILE_EXAMPLE}`]
   }
 };
+var REQUIRED_NODE_SCOPED_DIRECT_COMMANDS = /* @__PURE__ */ new Set([
+  "design-context",
+  "motion-context",
+  "variables"
+]);
 var FIGMA_JSON_COMMANDS = {
   open: { command: "open", purpose: "Create or reopen persisted Figma workspace context.", inputRequired: false },
   eval: { command: "eval", purpose: "Run a small native Plugin API transaction with optional queued local captures.", inputRequired: true },
@@ -450,7 +459,27 @@ function parseDirectArguments(commandName, spec, argv) {
   if (!seenKeys.has("--state-file")) {
     throw new Error(`figma ${commandName} requires --state-file <path>.`);
   }
+  if (REQUIRED_NODE_SCOPED_DIRECT_COMMANDS.has(commandName)) {
+    const file = typeof input.file === "string" ? input.file : void 0;
+    const fileSuppliesNode = file !== void 0 && isFigmaNodeUrl(file);
+    if (positionalSeen === fileSuppliesNode) {
+      throw new Error(
+        `figma ${commandName} requires exactly one node target: pass <target>, or pass --file with a Figma URL containing node-id.`
+      );
+    }
+    if (file !== void 0 && !fileSuppliesNode) {
+      throw new Error(`Option --file for figma ${commandName} must be a Figma URL containing node-id when <target> is omitted.`);
+    }
+  }
   return { input, globalArgs };
+}
+function isFigmaNodeUrl(value) {
+  try {
+    const url = new URL(value);
+    return (url.hostname === "figma.com" || url.hostname.endsWith(".figma.com")) && (url.protocol === "https:" || url.protocol === "http:") && (url.searchParams.get("node-id")?.trim() ?? "") !== "";
+  } catch {
+    return false;
+  }
 }
 function parseJsonArguments(commandName, spec, argv) {
   const options = jsonOptions(spec);

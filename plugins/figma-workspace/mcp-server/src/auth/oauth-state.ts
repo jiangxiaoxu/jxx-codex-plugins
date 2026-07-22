@@ -1,10 +1,12 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   OAuthClientInformationMixed,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import {
+  AtomicCredentialStore,
+  type LockedCredentialStore,
+} from "./credential-store.js";
 
 export interface OAuthState {
   [key: string]: unknown;
@@ -50,40 +52,34 @@ export function parseOAuthState(json: string): OAuthState {
 }
 
 export class OAuthStateStore {
-  constructor(readonly statePath: string) {}
+  private readonly store: AtomicCredentialStore<OAuthState>;
+
+  constructor(readonly statePath: string) {
+    this.store = new AtomicCredentialStore(statePath, {
+      empty: () => ({}),
+      parse: parseOAuthState,
+    });
+  }
 
   async read(): Promise<OAuthState> {
-    try {
-      return parseOAuthState(await readFile(this.statePath, "utf8"));
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        (error as NodeJS.ErrnoException).code === "ENOENT"
-      ) {
-        return {};
-      }
-      throw error;
-    }
+    return this.store.read();
   }
 
   async write(state: OAuthState): Promise<void> {
-    await mkdir(dirname(this.statePath), { recursive: true });
-    const tmpPath = `${this.statePath}.tmp`;
-    await writeFile(tmpPath, `${JSON.stringify(state, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    await rename(tmpPath, this.statePath);
+    await this.store.write(state);
   }
 
   async update(update: (state: OAuthState) => OAuthState): Promise<OAuthState> {
-    const next = update(await this.read());
-    await this.write(next);
-    return next;
+    return this.store.update(update);
   }
 
   async clear(): Promise<void> {
-    await rm(this.statePath, { force: true });
+    await this.store.clear();
+  }
+
+  async withLock<R>(
+    operation: (store: LockedCredentialStore<OAuthState>) => R | Promise<R>,
+  ): Promise<R> {
+    return this.store.withLock(operation);
   }
 }

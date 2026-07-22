@@ -18,9 +18,21 @@ npm --silent run figma:api:search -- "figma.createFrame()" --state-file C:/work/
 - 8 JSON commands: `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:prepare`, and `figma:upstream:call`.
 - 21 raw transport JSON commands are isolated behind `figma:raw` and `figma:raw:help` for explicit transport debugging. They are not agent-facing command IDs.
 
-Every executing optimized command requires a fully qualified absolute `--state-file`; its parent owns `results/` sidecars. All support `--max-inline-bytes`. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. Run the selected command with `--help` before first use; public help includes its complete input schema. Pass `--input -` to read JSON from stdin through either the canonical or independent npm entrypoint.
+Every executing optimized command requires a fully qualified absolute `--state-file`; its parent owns `results/` sidecars. All support `--max-inline-bytes`, with a shared 4096-byte default. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. Their input objects are strict: unknown or misspelled fields are usage failures. Run the selected command with `--help` before first use; public help includes its complete input schema. Pass `--input -` to read JSON from stdin through either the canonical or independent npm entrypoint.
+
+`figma:design-context`, `figma:motion-context`, and `figma:variables` require exactly one node source. Pass a positional target, or pass `--file` with a Figma URL containing `node-id`; a file key alone is not enough for these node-scoped reads.
 
 Typed results are Restricted Markdown, not JSON. Read `outputFiles.cliResultFile` for any complete oversized result. Usage errors exit 2; typed interrupts exit 130; other typed failures exit 1, except an unhealthy `figma:doctor` observation exits 0.
+
+## Mutation Recovery
+
+`figma:eval` and `figma:script:run` always include `executionOutcome` in their result:
+
+- `not_started`: validation, preflight, connection, or auth stopped the call before dispatch.
+- `succeeded`: Figma confirmed script execution.
+- `outcome_unknown`: the call was dispatched but completion cannot be confirmed.
+
+For `outcome_unknown`, use `retryGuidance`, inspect or read back the intended Figma state, and reconcile before deciding whether a retry is safe. Never blindly replay a mutation. A queued capture failure preserves `executionOutcome: "succeeded"` with `captureProcessingSucceeded: false`; recover it with standalone `figma:capture`, not by rerunning the edit. If stdout reports `Status: failed after execution`, Figma completed the remote operation but local state, sidecar, or lock post-processing failed. Preserve the result, repair that local stage, and do not rerun the confirmed mutation.
 
 ## Agent Documentation Routing
 
@@ -58,6 +70,8 @@ Node URLs and structured `{ fileKey, nodeId }` targets carry request-scoped file
 
 Use native Figma Plugin API for all other operations, including node traversal, selection, layout, asset construction, cloning, PluginData, page switching, and destructive edits. Script preflight enforces TypeScript and bundled Plugin API typings, but does not impose semantic AST policy on valid Plugin API calls. The runtime still enforces payload size, state/session and workspace path containment, capture validation, and atomic sidecar output boundaries.
 
+Managed workspaces reject symbolic links, Windows junctions, and other reparse points at the root, ancestor, and final target. Use a real workspace directory. Public JSON file/stdin input and asset manifest files are limited to 256 KiB; asset manifests contain at most 64 items; each upload, download, or capture is limited to 16 MiB; total command I/O is limited to 64 MiB; and network work has a 5-minute total deadline plus a 60-second no-data idle deadline. Final local files use atomic publication, so an output failure does not publish a partial result.
+
 ## Canonical Corpus And API Index
 
 The runtime reads only the plugin-owned manifest, route catalog, and content-addressed JSONL staged from `skills/figma-workspace/references/canonical-corpus/`. Its v2 manifest validates 87 records and their hashes, classification, surface, task-family, title, and summary. Adapted Markdown mirrors and policy live under `dev/canonical-corpus-source/`, outside the recursively discovered skill tree and outside the package. The runtime does not read or package the authoring source or complete upstream snapshot.
@@ -68,7 +82,9 @@ The canonical authoring source, complete development snapshot, and drift report 
 
 ## Login And State
 
-State files and sidecars can contain sensitive workspace data. Prefer a Git-ignored project-local `.figma-workspace/`; do not commit state or sidecars. Use `figma:sessions:list` and `figma:sessions:read` rather than parsing state JSON.
+State files and sidecars can contain sensitive workspace data. Prefer a Git-ignored project-local `.figma-workspace/`; do not commit state or sidecars. State files use the strict `{ "schemaVersion": 1, "sessions": [...] }` envelope. An old unwrapped array is rejected rather than migrated, so preserve it and select a new `--state-file`. Use `figma:sessions:list` and `figma:sessions:read` rather than parsing state JSON.
+
+State and output locks are same-machine, local-filesystem coordination only. They do not provide distributed, network-share, shared-volume, or power-loss durability guarantees.
 
 When a result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or `FIGMA_UPSTREAM_OAUTH_*`, ask the user before browser authorization. If approved, run:
 
@@ -76,4 +92,20 @@ When a result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or `FIGMA_UPSTREAM_OAUTH_*`
 npm run login:figma-http
 ```
 
-The helper is temporary and removes its local bridge registration after login. Do not add a persistent local MCP entry.
+The helper is temporary and removes its local bridge registration after login. Do not add a persistent local MCP entry. A rate limit, server error, or network refresh failure preserves the cached credential and should be retried as a transient fault; use `--force` only when fresh authorization is genuinely required.
+
+## Live Design Verification
+
+`npm run test:live` is an explicit local Design smoke suite and is intentionally separate from `npm test`. It reads only the Git-ignored `.figma-workspace/live-test.json` file in this plugin root:
+
+```json
+{
+  "schemaVersion": 1,
+  "designFileUrl": "https://www.figma.com/design/<file-key>/<name>",
+  "stateFile": "C:/work/project/.figma-workspace/live-state.json",
+  "workspaceDir": "C:/work/project/.figma-workspace/live-workspace",
+  "allowMutationCleanup": true
+}
+```
+
+All paths are fully qualified absolute paths. The config contains no OAuth token or secret; normal cache lookup remains `FIGMA_WORKSPACE_OAUTH_CACHE_PATH`, then `CODEX_HOME`, then `USERPROFILE/.codex/.figma-workspace-oauth.json`. The smoke test creates uniquely tagged test nodes, reads them back, captures them, and removes only the matching tagged nodes. If creation is `outcome_unknown`, it reconciles by tag before any cleanup and does not rerun creation. Missing config is a usage error, not a skipped test.

@@ -8,7 +8,7 @@ import {
   createCallbackUrl,
   createConfig,
   findCodexHomeOAuthCachePath,
-} from "../dist/index.js";
+} from "../dist/runtime/workspace-runtime.js";
 
 test("createConfig applies Figma MCP defaults", () => {
   const config = createConfig({ openBrowser: false });

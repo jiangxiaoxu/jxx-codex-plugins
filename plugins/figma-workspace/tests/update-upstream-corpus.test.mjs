@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 import {
   parseCliInvocation,
@@ -110,11 +111,10 @@ test("new, changed, and deleted upstream files affect only the dev report", asyn
       expectedPolicyFragmentCount: 2,
       generatedAt,
     });
-    await writeFile(join(fixture.repository, "skills/alpha/SKILL.md"), "# Alpha revised\n", "utf8");
-    await rm(join(fixture.repository, "skills/alpha/scripts/example.js"));
-    await writeFile(join(fixture.repository, "skills/alpha/references/new.md"), "# New\n", "utf8");
-    git(fixture.repository, ["add", "--all"]);
-    git(fixture.repository, ["commit", "--quiet", "-m", "upstream drift"]);
+    await writeFile(join(fixture.worktree, "skills/alpha/SKILL.md"), "# Alpha revised\n", "utf8");
+    await rm(join(fixture.worktree, "skills/alpha/scripts/example.js"));
+    await writeFile(join(fixture.worktree, "skills/alpha/references/new.md"), "# New\n", "utf8");
+    commitFixture(fixture, "upstream drift");
 
     const second = await updateUpstreamSnapshot({
       repository: fixture.repository,
@@ -211,9 +211,8 @@ test("change-report failure restores the previous snapshot manifest and cleans t
       generatedAt,
     });
     const oldSnapshotManifest = await readFile(join(snapshotRoot, "manifest.json"), "utf8");
-    await writeFile(join(fixture.repository, "skills/alpha/SKILL.md"), "# Changed\n", "utf8");
-    git(fixture.repository, ["add", "--all"]);
-    git(fixture.repository, ["commit", "--quiet", "-m", "change"]);
+    await writeFile(join(fixture.worktree, "skills/alpha/SKILL.md"), "# Changed\n", "utf8");
+    commitFixture(fixture, "change");
 
     await assert.rejects(
       updateUpstreamSnapshot({
@@ -255,9 +254,8 @@ test("directory sync failure after change manifest rename rolls back both manife
     });
     const oldSnapshotManifest = await readFile(join(snapshotRoot, "manifest.json"), "utf8");
     const oldChangesManifest = await readFile(join(changesRoot, "manifest.json"), "utf8");
-    await writeFile(join(fixture.repository, "skills/alpha/SKILL.md"), "# Changed\n", "utf8");
-    git(fixture.repository, ["add", "--all"]);
-    git(fixture.repository, ["commit", "--quiet", "-m", "change"]);
+    await writeFile(join(fixture.worktree, "skills/alpha/SKILL.md"), "# Changed\n", "utf8");
+    commitFixture(fixture, "change");
 
     let changesSyncCount = 0;
     await assert.rejects(
@@ -289,12 +287,12 @@ test("directory sync failure after change manifest rename rolls back both manife
 
 async function createRepositoryFixture() {
   const root = await mkdtemp(join(tmpdir(), "figma-upstream-snapshot-fixture-"));
-  const repository = join(root, "repository");
-  await mkdir(repository);
-  git(repository, ["init", "--quiet", "--initial-branch=main"]);
-  git(repository, ["config", "user.name", "Snapshot Test"]);
-  git(repository, ["config", "user.email", "snapshot-test@example.invalid"]);
-  git(repository, ["config", "core.autocrlf", "false"]);
+  const worktree = join(root, "repository");
+  await mkdir(worktree);
+  git(worktree, ["init", "--quiet", "--initial-branch=main"]);
+  git(worktree, ["config", "user.name", "Snapshot Test"]);
+  git(worktree, ["config", "user.email", "snapshot-test@example.invalid"]);
+  git(worktree, ["config", "core.autocrlf", "false"]);
   const files = {
     "skills/zeta/SKILL.md": "# Zeta\r\nsecond line\r\n",
     "skills/alpha/SKILL.md": "# Alpha\n",
@@ -305,12 +303,17 @@ async function createRepositoryFixture() {
     "workflow-skills/generate-project-plan/SKILL.md": "# Plan\n",
   };
   for (const [path, content] of Object.entries(files)) {
-    const target = join(repository, ...path.split("/"));
+    const target = join(worktree, ...path.split("/"));
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, content, "utf8");
   }
-  git(repository, ["add", "--all"]);
-  git(repository, ["commit", "--quiet", "-m", "fixture"]);
+  git(worktree, ["add", "--all"]);
+  git(worktree, ["commit", "--quiet", "-m", "fixture"]);
+  const remote = join(root, "remote.git");
+  git(root, ["init", "--bare", "--quiet", remote]);
+  const repository = pathToFileURL(remote).href;
+  git(worktree, ["remote", "add", "origin", repository]);
+  git(worktree, ["push", "--quiet", "origin", "main"]);
   const policyRoot = join(root, "canonical-policy");
   await writeAcceptedPolicies(policyRoot, {
     "alpha/SKILL.md": ["# Alpha\n", "router"],
@@ -322,9 +325,16 @@ async function createRepositoryFixture() {
   return {
     root,
     repository,
+    worktree,
     policyRoot,
-    commit: git(repository, ["rev-parse", "HEAD"]).stdout.trim(),
+    commit: git(worktree, ["rev-parse", "HEAD"]).stdout.trim(),
   };
+}
+
+function commitFixture(fixture, message) {
+  git(fixture.worktree, ["add", "--all"]);
+  git(fixture.worktree, ["commit", "--quiet", "-m", message]);
+  git(fixture.worktree, ["push", "--quiet", "origin", "main"]);
 }
 
 async function writeAcceptedPolicies(policyRoot, records) {

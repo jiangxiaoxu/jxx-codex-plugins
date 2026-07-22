@@ -220,6 +220,7 @@ function targetSpec(
   command: string,
   purpose: string,
   extraOptions: Readonly<Record<`--${string}`, InputOption>> = {},
+  requiresNodeFile = false,
 ): DirectCommandSpec {
   return {
     command,
@@ -233,7 +234,13 @@ function targetSpec(
       repeatable: false,
       description: "Raw node id or node URL. A node-scoped --file URL can supply the target instead.",
     },
-    options: { ...fileContextOptions(), ...extraOptions },
+    options: {
+      ...fileContextOptions(),
+      ...(requiresNodeFile
+        ? { "--file": stringOption("file", "<node-url>", "Figma node URL containing node-id; supplies the required target when the positional target is omitted.") }
+        : {}),
+      ...extraOptions,
+    },
     examples: [`npm --silent run figma:${npmScriptForCommand(command)} -- '12:34' --session-id default ${STATE_FILE_EXAMPLE}`],
   };
 }
@@ -337,11 +344,11 @@ export const FIGMA_DIRECT_COMMANDS = {
     "--force-code": booleanOption("forceCode", "Force code generation when supported."),
     "--no-code-connect": booleanOption("disableCodeConnect", "Disable Code Connect context."),
     "--exclude-screenshot": booleanOption("excludeScreenshot", "Exclude screenshots from context."),
-  }),
+  }, true),
   "motion-context": targetSpec("get-motion-context", "Read official motion context.", {
     "--recursive": booleanOption("recursive", "Include recursive motion context."),
-  }),
-  variables: targetSpec("get-variable-defs", "Read variable definitions for a target."),
+  }, true),
+  variables: targetSpec("get-variable-defs", "Read variable definitions for a target.", {}, true),
   "design-system": {
     command: "search-design-system", purpose: "Search official design-system components, variables, and styles.",
     sessionId: true, outputLimit: true,
@@ -368,6 +375,12 @@ export const FIGMA_DIRECT_COMMANDS = {
 } as const satisfies Readonly<Record<string, DirectCommandSpec>>;
 
 export type FigmaDirectCommandName = keyof typeof FIGMA_DIRECT_COMMANDS;
+
+const REQUIRED_NODE_SCOPED_DIRECT_COMMANDS = new Set<FigmaDirectCommandName>([
+  "design-context",
+  "motion-context",
+  "variables",
+]);
 
 export const FIGMA_JSON_COMMANDS = {
   open: { command: "open", purpose: "Create or reopen persisted Figma workspace context.", inputRequired: false },
@@ -574,7 +587,30 @@ export function parseDirectArguments(
   if (!seenKeys.has("--state-file")) {
     throw new Error(`figma ${commandName} requires --state-file <path>.`);
   }
+  if (REQUIRED_NODE_SCOPED_DIRECT_COMMANDS.has(commandName as FigmaDirectCommandName)) {
+    const file = typeof input.file === "string" ? input.file : undefined;
+    const fileSuppliesNode = file !== undefined && isFigmaNodeUrl(file);
+    if (positionalSeen === fileSuppliesNode) {
+      throw new Error(
+        `figma ${commandName} requires exactly one node target: pass <target>, or pass --file with a Figma URL containing node-id.`,
+      );
+    }
+    if (file !== undefined && !fileSuppliesNode) {
+      throw new Error(`Option --file for figma ${commandName} must be a Figma URL containing node-id when <target> is omitted.`);
+    }
+  }
   return { input, globalArgs };
+}
+
+function isFigmaNodeUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.hostname === "figma.com" || url.hostname.endsWith(".figma.com"))
+      && (url.protocol === "https:" || url.protocol === "http:")
+      && (url.searchParams.get("node-id")?.trim() ?? "") !== "";
+  } catch {
+    return false;
+  }
 }
 
 export function parseJsonArguments(

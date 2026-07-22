@@ -49,6 +49,44 @@ test("direct command parsing maps typed input and optimized global arguments", a
   }]);
 });
 
+test("node-scoped direct commands require exactly one positional target or node-id file URL", async () => {
+  const nodeUrl = "https://www.figma.com/design/ExampleFileKey/Fixture?node-id=12-34";
+  for (const commandName of ["design-context", "motion-context", "variables"]) {
+    const calls = [];
+    const runCli = async (argv, dependencies) => {
+      calls.push({ argv, input: JSON.parse(await dependencies.io.readStdin()) });
+      return 0;
+    };
+    assert.equal(await runFigmaCommand(commandName, ["12:34", "--state-file", stateFile], { runCli }), 0);
+    assert.equal(calls.at(-1).input.target, "12:34");
+    assert.equal(await runFigmaCommand(commandName, ["--file", nodeUrl, "--state-file", stateFile], { runCli }), 0);
+    assert.equal(calls.at(-1).input.file, nodeUrl);
+
+    for (const invalidArgs of [
+      ["--state-file", stateFile],
+      ["--file", "ExampleFileKey", "--state-file", stateFile],
+      ["12:34", "--file", nodeUrl, "--state-file", stateFile],
+    ]) {
+      const output = createOutput();
+      assert.equal(await runFigmaCommand(commandName, invalidArgs, {
+        ...output.dependencies,
+        runCli: async () => assert.fail("invalid node target must fail before runtime"),
+      }), 2);
+      assert.match(output.stderr, /exactly one node target|must be a Figma URL containing node-id/iu);
+    }
+
+    const help = createOutput();
+    assert.equal(await runFigmaCommand(commandName, ["--help"], help.dependencies), 0);
+    assert.match(help.stdout, /--file <node-url>.*must.*node-id|--file <node-url>.*containing node-id/iu);
+    assert.doesNotMatch(help.stdout, /--file <url-or-key>/u);
+  }
+
+  const metadataHelp = createOutput();
+  assert.equal(await runFigmaCommand("metadata", ["--help"], metadataHelp.dependencies), 0);
+  assert.match(metadataHelp.stdout, /--file <url-or-key>/u);
+  assert.doesNotMatch(metadataHelp.stdout, /--file <node-url>/u);
+});
+
 test("removed handle and policy options fail as optimized CLI usage errors", async () => {
   const cases = [
     ["sessions:read", ["default", "--with-handles"]],

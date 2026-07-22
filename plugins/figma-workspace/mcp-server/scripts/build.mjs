@@ -35,19 +35,11 @@ const commandRuntimeOutput = {
   entryPoint: resolve(root, "src/cli/figma-command-runtime.ts"),
   outfile: resolve(dist, "cli/figma-command-runtime.js"),
 };
+const credentialStoreOutput = {
+  entryPoint: resolve(root, "src/auth/credential-store.ts"),
+  outfile: resolve(dist, "auth/credential-store.js"),
+};
 const publicWrappers = [
-  {
-    outfile: resolve(dist, "index.js"),
-    source: [
-      'export * from "./runtime/workspace-runtime.js";',
-    ].join("\n"),
-  },
-  {
-    outfile: resolve(dist, "workspace-client.js"),
-    source: [
-      'export * from "./runtime/workspace-runtime.js";',
-    ].join("\n"),
-  },
   {
     outfile: resolve(dist, "upstream/node-upstream-client.js"),
     source: [
@@ -116,6 +108,15 @@ async function buildDistribution() {
     outfile: commandRuntimeOutput.outfile,
   });
   await rewriteBuiltFile(commandRuntimeOutput.outfile);
+
+  await build({
+    ...sharedBuildOptions,
+    bundle: true,
+    banner: { js: bundledEsmRequireBanner },
+    entryPoints: [credentialStoreOutput.entryPoint],
+    outfile: credentialStoreOutput.outfile,
+  });
+  await rewriteBuiltFile(credentialStoreOutput.outfile);
 
   for (const output of publicWrappers) {
     await writeWrapper(output.outfile, output.source, output.executable === true);

@@ -6,7 +6,8 @@ Use this reference to choose a public `figma:*` command before opening its CLI h
 
 - The plugin has 18 direct query/read commands, 8 JSON commands, and 21 raw transport commands. Agents use only the public `figma:*` npm scripts; raw transport names and internal runtime operation names are not agent-facing contracts.
 - Every optimized command requires an absolute `--state-file`. Its parent owns `results/` sidecars. Guidance, docs, API, doctor, and upstream list/read do not require existing file context.
-- All optimized commands accept `--max-inline-bytes`. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. File-context commands use `--session-id` and, where applicable, `--workspace`.
+- All optimized commands accept `--max-inline-bytes`; the shared default is 4096 UTF-8 bytes. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help, and reject unknown JSON fields. File-context commands use `--session-id` and, where applicable, `--workspace`.
+- `figma:design-context`, `figma:motion-context`, and `figma:variables` require exactly one node source: a positional target, or `--file` containing a Figma `node-id`. Consult generated help for the complete conditional input rules.
 - Read Restricted Markdown on stdout. If it returns `outputFiles.cliResultFile`, read that JSON sidecar rather than parsing stdout.
 
 ## Core Workflow
@@ -15,6 +16,7 @@ Use this reference to choose a public `figma:*` command before opening its CLI h
 - Use `figma:task:prepare` and `figma:script:run` for non-trivial, repairable `.figma.ts` changes.
 - Use `figma:eval` only for small native Plugin API transactions.
 - Compose repeatable workflows from the public script, asset, download, capture, and upstream commands.
+- Treat `figma:eval` and `figma:script:run` as three-state mutations. `executionOutcome: "not_started"` means no request was dispatched, `"succeeded"` confirms execution, and `"outcome_unknown"` requires inspect/readback/reconcile before any retry.
 
 ## Context And Inspection
 
