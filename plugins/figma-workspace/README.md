@@ -4,9 +4,10 @@ Figma Workspace is a stateful Node CLI and plugin bundle for repairable Figma au
 
 ## Quick Start
 
-Run commands from this plugin directory. Use `npm --silent` so npm banners do not contaminate Restricted Markdown stdout. Select one fully qualified absolute state file for the task and run help before a command's first use.
+Run commands from this plugin directory. Use `npm --silent` so npm banners do not contaminate Restricted Markdown stdout. Select one fully qualified absolute state file for the task, use `figma:help` to discover the complete agent-facing command catalog, and run the selected command's help before first use.
 
 ```text
+npm --silent run figma:help
 npm --silent run figma -- guidance "text font loadFontAsync" --surface design --state-file C:/work/project/.figma-workspace/state.json
 npm --silent run figma:docs:catalog -- --task-family design-editing --surface design --state-file C:/work/project/.figma-workspace/state.json
 npm --silent run figma:api:search -- "figma.createFrame()" --state-file C:/work/project/.figma-workspace/state.json
@@ -43,7 +44,7 @@ Upstream and bridge network requests have a 5-minute total deadline. The 60-seco
 
 ## Documentation And API Lookup
 
-Use `figma:guidance` for initial routing, `figma:docs:list` for project documents, `figma:docs:catalog` and `figma:docs:search` for canonical workflow material, `figma:docs:read` for returned `project:` or `canonical:` IDs, and `figma:api:search` for Plugin API declarations. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references explain the workflow without duplicating generated CLI schemas.
+For a non-trivial or ambiguous request, translate the intent to concise English keywords and use `figma:guidance` with the known surface. If routing is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected task family and surface, and use `figma:docs:read` for returned `project:` or `canonical:` IDs. Use `figma:api:search` for bare, qualified, or call-shaped Plugin API symbols. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references provide the complete intent-to-command and topic-to-query maps without duplicating generated CLI schemas.
 
 ## Live Design Verification
 

@@ -54,7 +54,7 @@ test("createBridgeConfig applies defaults and normalizes path", () => {
   assert.equal(config.oauthCacheEnabled, true);
 });
 
-test("plugin manifest exposes the CLI skill without a local MCP server", async () => {
+test("plugin manifest exposes the agent-facing CLI skill without a local MCP server", async () => {
   const manifest = JSON.parse(
     await readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8"),
   );
@@ -66,14 +66,18 @@ test("plugin manifest exposes the CLI skill without a local MCP server", async (
   const specialEntrypoints = {
     figma: "figma.mjs",
     "figma:help": "figma-help.mjs",
-    "figma:raw": "figma-raw.mjs",
-    "figma:raw:help": "figma-raw-help.mjs",
+  };
+  const maintenanceEntrypoints = {
+    "maintenance:raw": "maintenance-raw.mjs",
+    "maintenance:raw:help": "maintenance-raw-help.mjs",
   };
   const typedNamespaces = new Set([
     ...Object.keys(FIGMA_DIRECT_COMMANDS),
     ...Object.keys(FIGMA_JSON_COMMANDS),
   ]);
   const familyNamespaces = new Set(Object.keys(FIGMA_COMMAND_FAMILIES));
+  assert.equal(typedNamespaces.size, 26, "the public registry must contain 26 concrete commands");
+  assert.equal(familyNamespaces.size, 4, "the public registry must contain four command families");
   const expectedEntrypoints = {
     ...specialEntrypoints,
     ...Object.fromEntries(
@@ -94,16 +98,16 @@ test("plugin manifest exposes the CLI skill without a local MCP server", async (
     Object.keys(expectedEntrypoints).sort(),
     "package figma scripts must exactly match the exported typed and family namespaces",
   );
-  assert.equal(Object.keys(actualFigmaScripts).length, 34);
+  assert.equal(Object.keys(actualFigmaScripts).length, 32);
+  assert.equal(packageJson.scripts["figma:raw"], undefined);
+  assert.equal(packageJson.scripts["figma:raw:help"], undefined);
   const scriptEntrypoints = [];
   for (const [scriptName, entrypoint] of Object.entries(expectedEntrypoints)) {
     const expected = `node scripts/commands/${entrypoint}`;
     assert.equal(packageJson.scripts[scriptName], expected);
     scriptEntrypoints.push(expected);
     const source = await readFile(new URL(`../scripts/commands/${entrypoint}`, import.meta.url), "utf8");
-    if (!["figma:raw", "figma:raw:help"].includes(scriptName)) {
-      assert.match(source, /dist\/cli\/figma-command-runtime\.js/u, scriptName);
-    }
+    assert.match(source, /dist\/cli\/figma-command-runtime\.js/u, scriptName);
     if (typedNamespaces.has(scriptName.slice("figma:".length))) {
       const commandName = scriptName.slice("figma:".length);
       assert.match(source, /dist\/cli\/figma-command-runtime\.js/u, scriptName);
@@ -111,6 +115,45 @@ test("plugin manifest exposes the CLI skill without a local MCP server", async (
     }
   }
   assert.equal(new Set(scriptEntrypoints).size, scriptEntrypoints.length, "each public command owns one executable entrypoint");
+
+  const actualMaintenanceScripts = Object.fromEntries(
+    Object.entries(packageJson.scripts).filter(([scriptName]) => scriptName.startsWith("maintenance:")),
+  );
+  assert.deepEqual(
+    actualMaintenanceScripts,
+    Object.fromEntries(
+      Object.entries(maintenanceEntrypoints).map(([scriptName, entrypoint]) => [
+        scriptName,
+        `node scripts/commands/${entrypoint}`,
+      ]),
+    ),
+    "maintenance wrappers must remain outside the agent-facing figma script inventory",
+  );
+  for (const [scriptName, entrypoint] of Object.entries(maintenanceEntrypoints)) {
+    const source = await readFile(new URL(`../scripts/commands/${entrypoint}`, import.meta.url), "utf8");
+    assert.match(source, /dist\/runtime\/workspace-runtime\.js/u, scriptName);
+    assert.doesNotMatch(source, /dist\/cli\/figma-command-runtime\.js/u, scriptName);
+  }
+  assert.doesNotMatch(manifest.interface.longDescription, /figma:raw|raw transport/iu);
+});
+
+test("release metadata keeps plugin, CLI package, lockfile, and OAuth client versions aligned", async () => {
+  const [manifest, packageJson, cliPackageJson, cliLockfile, authConstants] = await Promise.all([
+    readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("../cli-runtime/package.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("../cli-runtime/package-lock.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("../cli-runtime/src/auth/constants.ts", import.meta.url), "utf8"),
+  ]);
+  const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
+  const expectedVersion = manifest.version;
+
+  assert.equal(expectedVersion, "0.4.0");
+  assert.equal(packageJson.version, expectedVersion);
+  assert.equal(cliPackageJson.version, expectedVersion);
+  assert.equal(cliLockfile.version, expectedVersion);
+  assert.equal(cliLockfile.packages[""].version, expectedVersion);
+  assert.equal(clientVersion, expectedVersion);
 });
 
 test("direct commands map positional options into canonical runtime input", async () => {
@@ -467,7 +510,7 @@ test("all public figma npm scripts expose banner-free subprocess help", async ()
     scriptName === "figma" || scriptName.startsWith("figma:")
   ));
 
-  assert.equal(figmaScripts.length, 34);
+  assert.equal(figmaScripts.length, 32);
   for (const scriptName of figmaScripts) {
     const result = runNpm(["--silent", "run", scriptName, "--", "--help"], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
@@ -561,8 +604,16 @@ test("public JSON input validation returns npm usage exit 2", async () => {
   }
 });
 
-test("figma:raw keeps the transport schema escape hatch", () => {
-  const result = runNpm(["--silent", "run", "figma:raw", "--", "lookup", "--help"], {
+test("maintenance:raw keeps the transport schema escape hatch outside the public inventory", () => {
+  const help = runNpm(["--silent", "run", "maintenance:raw:help"], {
+    cwd: fileURLToPath(new URL("../", import.meta.url)),
+    encoding: "utf8",
+  });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /^# Figma Workspace CLI help$/mu);
+  assert.equal(help.stderr, "");
+
+  const result = runNpm(["--silent", "run", "maintenance:raw", "--", "lookup", "--help"], {
     cwd: fileURLToPath(new URL("../", import.meta.url)),
     encoding: "utf8",
   });
@@ -572,7 +623,7 @@ test("figma:raw keeps the transport schema escape hatch", () => {
   assert.equal(result.stderr, "");
 });
 
-test("figma:raw command help takes precedence over invalid or I/O-bound options", () => {
+test("maintenance:raw command help takes precedence over invalid or I/O-bound options", () => {
   const cases = [
     ["lookup", "--input", "definitely-missing.json", "--help"],
     ["lookup", "--unknown", "value", "-h"],
@@ -580,7 +631,7 @@ test("figma:raw command help takes precedence over invalid or I/O-bound options"
   ];
 
   for (const args of cases) {
-    const result = runNpm(["--silent", "run", "figma:raw", "--", ...args], {
+    const result = runNpm(["--silent", "run", "maintenance:raw", "--", ...args], {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
       encoding: "utf8",
     });
@@ -902,6 +953,78 @@ test("skill-relative plugin root resolves to the npm package directory", () => {
   const pluginRoot = fileURLToPath(new URL("../", import.meta.url));
 
   assert.equal(resolve(dirname(skillFile), "../.."), resolve(pluginRoot));
+});
+
+test("skill router maps every concrete public command and preserves the agent workflow guards", async () => {
+  const [skill, agentMetadata] = await Promise.all([
+    readFile(new URL("../skills/figma-workspace/SKILL.md", import.meta.url), "utf8"),
+    readFile(new URL("../skills/figma-workspace/agents/openai.yaml", import.meta.url), "utf8"),
+  ]);
+  const commandMap = skill.match(/## Public Command Map\n(?<body>[\s\S]*?)\n## /u)?.groups?.body;
+  assert.notEqual(commandMap, undefined, "SKILL must own one parseable public command map");
+
+  const mappedCommandIds = [...commandMap.matchAll(/`(figma:[a-z][a-z:-]*)`/gu)]
+    .map((match) => match[1])
+    .sort();
+  const expectedCommandIds = [
+    ...Object.keys(FIGMA_DIRECT_COMMANDS),
+    ...Object.keys(FIGMA_JSON_COMMANDS),
+  ].map((command) => `figma:${command}`).sort();
+
+  assert.equal(mappedCommandIds.length, 26);
+  assert.equal(new Set(mappedCommandIds).size, 26);
+  assert.deepEqual(mappedCommandIds, expectedCommandIds);
+  for (const required of [
+    "figma:help",
+    "--state-file",
+    "--help",
+    "Restricted Markdown",
+    "outputFiles.cliResultFile",
+    "English canonical keywords",
+    "figma:docs:catalog",
+    "figma:docs:search",
+    "figma:docs:read",
+    "figma:api:search",
+    "native Figma Plugin API",
+    "view_image",
+    "outcome_unknown",
+    "Never blindly replay a mutation",
+  ]) {
+    assert.match(skill, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"), required);
+  }
+  assert.doesNotMatch(skill, /maintenance:raw|figma:raw|transport schema escape hatch/iu);
+  assert.doesNotMatch(agentMetadata, /maintenance:raw|figma:raw|transport schema escape hatch/iu);
+});
+
+test("skill topic map stays aligned with the twelve committed canonical routes", async () => {
+  const [guidanceReference, routeCatalog] = await Promise.all([
+    readFile(new URL("../skills/figma-workspace/references/figma-workspace-guidance-and-lookup.md", import.meta.url), "utf8"),
+    readFile(new URL("../skills/figma-workspace/references/canonical-corpus/routes.json", import.meta.url), "utf8").then(JSON.parse),
+  ]);
+  const topicMap = guidanceReference.match(/## Topic Map\n(?<body>[\s\S]*?)\n## /u)?.groups?.body;
+  assert.notEqual(topicMap, undefined, "guidance reference must own one parseable topic map");
+  const rows = new Map(
+    [...topicMap.matchAll(/^\| `(?<family>[a-z-]+)` \|(?<row>.+)$/gmu)]
+      .map((match) => [match.groups.family, match[0]]),
+  );
+  const expectedFamilies = routeCatalog.routes.map((route) => route.taskFamily).sort();
+
+  assert.equal(rows.size, 12);
+  assert.deepEqual([...rows.keys()].sort(), expectedFamilies);
+  for (const route of routeCatalog.routes) {
+    const row = rows.get(route.taskFamily);
+    assert.notEqual(row, undefined, route.taskFamily);
+    assert.ok(
+      route.aliases.some((alias) => row.includes(alias)),
+      `${route.taskFamily} must publish at least one committed English alias`,
+    );
+    for (const surface of route.surfaces) {
+      const label = surface === "figjam" ? "FigJam" : `${surface[0].toUpperCase()}${surface.slice(1)}`;
+      assert.ok(row.includes(label), `${route.taskFamily} ${label} surface`);
+    }
+  }
+  assert.match(guidanceReference, /English aliases only/u);
+  assert.match(guidanceReference, /misspelled/u);
 });
 
 test("createBridgeConfig uses CODEX_HOME as the OAuth cache location", async () => {

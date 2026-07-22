@@ -6,6 +6,7 @@ import {
   FIGMA_COMMAND_FAMILIES,
   FIGMA_DIRECT_COMMANDS,
   FIGMA_JSON_COMMANDS,
+  FIGMA_ROOT_HELP_GROUPS,
   FIGMA_TASK_FAMILIES,
   formatRootHelp,
   runFigmaCommand,
@@ -330,8 +331,34 @@ test("root, family, direct, and JSON help remain locally formatted", async () =>
   assert.equal(await runFigmaCommandCli(["--help"], root.dependencies), 0);
   assert.equal(root.stdout, formatRootHelp());
   assert.match(root.stdout, /^# Figma command CLI help/u);
-  assert.match(root.stdout, /^- `guidance`$/mu);
-  assert.match(root.stdout, /^- `task:prepare`$/mu);
+  assert.match(root.stdout, /## Start here/u);
+  assert.match(root.stdout, /## Recommended order/u);
+  assert.match(root.stdout, /## Discovery entrypoints/u);
+  assert.match(root.stdout, /npm --silent run figma:docs -- --help/u);
+  assert.match(root.stdout, /npm --silent run figma:api -- --help/u);
+  assert.match(root.stdout, /npm --silent run figma:sessions -- --help/u);
+  assert.match(root.stdout, /npm --silent run figma:upstream -- --help/u);
+
+  const concreteCommandNames = [
+    ...Object.keys(FIGMA_DIRECT_COMMANDS),
+    ...Object.keys(FIGMA_JSON_COMMANDS),
+  ].sort();
+  const groupedCommandNames = FIGMA_ROOT_HELP_GROUPS.flatMap((group) => group.commands).sort();
+  assert.equal(groupedCommandNames.length, 26);
+  assert.equal(new Set(groupedCommandNames).size, 26);
+  assert.deepEqual(groupedCommandNames, concreteCommandNames);
+
+  for (const commandName of concreteCommandNames) {
+    const spec = commandName in FIGMA_DIRECT_COMMANDS
+      ? FIGMA_DIRECT_COMMANDS[commandName]
+      : FIGMA_JSON_COMMANDS[commandName];
+    assert.ok(root.stdout.includes(`\`npm --silent run figma:${commandName} -- --help\``), commandName);
+    assert.ok(root.stdout.includes(spec.purpose), commandName);
+  }
+  assert.doesNotMatch(
+    root.stdout,
+    /\braw\b|maintenance:|run-script-file|apply-asset-manifest|download-assets|capture-node|prepare-task|call-upstream-tool|upstream-tools|get-metadata|get-design-context|get-motion-context|get-variable-defs|search-design-system|get-libraries|\bMCP\b|figma-workspace:\/\/|resource:\/\//iu,
+  );
   assert.doesNotMatch(root.stdout, /task:run|run-task-plan/u);
 
   const family = createOutput();

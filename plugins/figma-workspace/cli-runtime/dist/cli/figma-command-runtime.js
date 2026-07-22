@@ -297,6 +297,28 @@ var FIGMA_JSON_COMMANDS = {
   "task:prepare": { command: "prepare-task", purpose: "Create a repairable local .figma.ts task workspace.", inputRequired: true },
   "upstream:call": { command: "call-upstream-tool", purpose: "Invoke one uncovered official upstream capability.", inputRequired: true }
 };
+var FIGMA_ROOT_HELP_GROUPS = [
+  {
+    title: "Plan, documentation, and Plugin API lookup",
+    commands: ["guidance", "docs:list", "docs:catalog", "docs:read", "docs:search", "api:search", "doctor"]
+  },
+  {
+    title: "Open files and understand existing work",
+    commands: ["open", "sessions:list", "sessions:read", "metadata", "inspect"]
+  },
+  {
+    title: "Implementation context and design systems",
+    commands: ["design-context", "motion-context", "variables", "design-system", "libraries"]
+  },
+  {
+    title: "Implement, manage assets, and verify",
+    commands: ["task:prepare", "script:run", "eval", "assets:apply", "assets:download", "capture"]
+  },
+  {
+    title: "Official capability fallback",
+    commands: ["upstream:list", "upstream:read", "upstream:call"]
+  }
+];
 var FIGMA_COMMAND_FAMILIES = {
   docs: ["docs:list", "docs:catalog", "docs:read", "docs:search"],
   api: ["api:search"],
@@ -735,25 +757,35 @@ function formatOmittedValue(omitted) {
   }
 }
 function formatRootHelp() {
-  return [
+  const lines = [
     "# Figma command CLI help",
     "",
-    "## Usage",
-    "- `npm --silent run figma -- <command> [arguments] [options]`",
+    "## Start here",
+    "1. Run `npm --silent run figma:help` to open this agent-facing catalog.",
+    "2. Select a concrete `figma:*` command below, then run its `--help` before first use.",
+    "3. Use `npm --silent run figma -- <command> [arguments] [options]` when an umbrella invocation is more convenient.",
     "",
-    "## Command families",
-    ...Object.keys(FIGMA_COMMAND_FAMILIES).map((family) => `- \`npm --silent run figma -- ${family} --help\``),
+    "## Recommended order",
+    "1. For non-trivial, generated, or unclear work, start with `figma:guidance`.",
+    "2. Find workflow material with `figma:docs:catalog`, `figma:docs:search`, and `figma:docs:read`; find native Plugin API symbols with `figma:api:search`.",
+    "3. Establish context with `figma:open`, use `figma:metadata` before targeted `figma:inspect`, then implement and verify with `figma:capture`.",
+    "4. For an uncovered official capability, use `figma:upstream:list`, then `figma:upstream:read`, then `figma:upstream:call`.",
     "",
-    "## Query and read commands",
-    ...Object.keys(FIGMA_DIRECT_COMMANDS).map((command) => `- \`${command}\``),
+    "## Discovery entrypoints",
+    "- Root: `npm --silent run figma:help` or `npm --silent run figma -- --help`.",
+    "- Families: `npm --silent run figma:docs -- --help`, `npm --silent run figma:api -- --help`, `npm --silent run figma:sessions -- --help`, and `npm --silent run figma:upstream -- --help`.",
     "",
-    "## JSON commands",
-    ...Object.keys(FIGMA_JSON_COMMANDS).map((command) => `- \`${command}\``),
-    "",
-    "## Transport schema escape hatch",
-    "- `npm --silent run figma:raw -- <transport-command> --help`",
-    ""
-  ].join("\n");
+    "## Concrete commands"
+  ];
+  for (const group of FIGMA_ROOT_HELP_GROUPS) {
+    lines.push("", `### ${group.title}`);
+    for (const commandName of group.commands) {
+      const spec = isDirectCommand(commandName) ? FIGMA_DIRECT_COMMANDS[commandName] : FIGMA_JSON_COMMANDS[commandName];
+      lines.push(`- \`npm --silent run figma:${commandName} -- --help\`: ${spec.purpose}`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
 }
 function writer(candidate, fallback) {
   return candidate ?? fallback;
@@ -791,6 +823,7 @@ export {
   FIGMA_DIRECT_COMMANDS,
   FIGMA_GUIDANCE_WORKFLOWS,
   FIGMA_JSON_COMMANDS,
+  FIGMA_ROOT_HELP_GROUPS,
   FIGMA_TASK_FAMILIES,
   formatDirectHelp,
   formatFamilyHelp,

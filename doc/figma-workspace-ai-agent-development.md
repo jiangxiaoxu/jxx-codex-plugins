@@ -7,6 +7,8 @@ This document is for maintainers of `figma-workspace`. It defines repository own
 ### Public and internal boundaries
 
 - The supported agent surface is the plugin-root `figma:*` npm CLI. Keep `npm --silent` in agent invocations so npm output cannot contaminate Restricted Markdown stdout.
+- `figma:help` is the complete described agent-facing inventory and must stay synchronized with typed command metadata. The public fallback for uncovered official capabilities is `figma:upstream:list`, `figma:upstream:read`, then `figma:upstream:call`.
+- The transport-schema maintenance entrypoints are `maintenance:raw` and `maintenance:raw:help`. Keep them out of the `figma:*` registry, agent help, skill, plugin metadata, and user documentation.
 - The official Figma remote MCP is an internal transport behind that CLI. Do not add a local MCP registration, deferred tool discovery, agent-facing resource URI, or typed runtime facade.
 - Public command metadata, runtime schemas, and generated help own command names, arguments, defaults, result fields, and exit behavior. Documentation summarizes stable workflow and recovery rules only.
 - `figma:eval` and `figma:script:run` report `executionOutcome`. A dispatched mutation with `outcome_unknown` must be inspected, read back, and reconciled before any retry. A confirmed operation followed by local post-processing failure remains confirmed and must not be replayed blindly.
@@ -38,7 +40,7 @@ The workflow corpus has three intentionally separate layers:
 | Runtime operations | `cli-runtime/src/mcp/`, `cli-runtime/src/runtime/` | Keep the CLI as the only agent-facing integration boundary. |
 | Upstream transport and OAuth | `cli-runtime/src/upstream/`, `cli-runtime/src/auth/`, `scripts/server.mjs` | Reuse the canonical credential implementation; do not create a second cache format or bridge behavior. |
 | Managed files and state | `cli-runtime/src/runtime/managed-files.ts` and related runtime modules | Reuse containment, link rejection, atomic publication, and lock primitives. |
-| Public wrappers | `scripts/commands/` and plugin-root `package.json` | Keep each public wrapper thin and aligned with generated help. |
+| Public and maintenance wrappers | `scripts/commands/` and plugin-root `package.json` | Keep public wrappers aligned with generated help; keep maintenance raw entrypoints outside the agent-facing inventory. |
 | Corpus archive | `dev/upstream-snapshot/`, `dev/upstream-changes/` | Preserve as upstream evidence; never edit it to make local guidance correct. |
 | Corpus authoring | `dev/canonical-corpus-source/` | Make reviewed CLI-native edits here and keep stable record IDs. |
 | Runtime corpus | `skills/figma-workspace/references/canonical-corpus/`, generated `dist/` | Generate it from reviewed canonical authoring; do not hand-edit generated files. |
