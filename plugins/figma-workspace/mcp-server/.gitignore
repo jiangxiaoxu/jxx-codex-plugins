@@ -1,7 +1,29 @@
-node_modules/
 .mcp-oauth-state.json
 .mcp-oauth-state.json.tmp
 figma-workspace/
+
+# Checked-in generated package allowlist.
+dist/*
+!dist/cli/
+!dist/cli/**
+!dist/auth/
+dist/auth/*
+!dist/auth/credential-store.js
+!dist/upstream/
+dist/upstream/*
+!dist/upstream/node-upstream-client.js
+!dist/runtime/
+dist/runtime/*
+!dist/runtime/*.d.ts
+!dist/runtime/workspace-runtime.js
+!dist/runtime/typescript-compiler-runtime.js
+!dist/runtime/figma-plugin-typings/
+!dist/runtime/figma-plugin-typings/index.d.ts
+!dist/runtime/figma-plugin-typings/plugin-api.d.ts
+!dist/runtime/figma-plugin-api-index/
+!dist/runtime/figma-plugin-api-index/**
+!dist/runtime/typescript-lib/
+!dist/runtime/typescript-lib/lib.*.d.ts
 !dist/skills/
 dist/skills/*
 !dist/skills/figma-workspace/
@@ -11,5 +33,3 @@ dist/skills/figma-workspace/references/*
 !dist/skills/figma-workspace/references/*.md
 !dist/skills/figma-workspace/references/canonical-corpus/
 !dist/skills/figma-workspace/references/canonical-corpus/**
-!dist/runtime/figma-plugin-api-index/
-!dist/runtime/figma-plugin-api-index/**
