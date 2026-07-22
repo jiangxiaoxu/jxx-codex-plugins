@@ -40,9 +40,17 @@ Use these English keyword patterns as search seeds. Add the known surface and ta
 | Variables and tokens | `variable collections modes scopes code syntax` |
 | Library audit | `available libraries components variables styles` |
 | Design to code | `implementation context layout assets` |
+| Code Connect | `code connect component code mapping` |
+| New Figma file | `new Figma file surface setup` |
+| Design generation | `create interface design frames components layout` |
+| Diagram generation | `flowchart sequence architecture diagram` |
+| Library generation | `create component library variants variables styles` |
 | FigJam journey | `user journey sticky notes connectors` |
 | Slides structure | `slide lifecycle grid row structure` |
 | Motion | `motion easing keyframes transitions` |
+| Motion implementation | `implement animation motion path transitions` |
+| SwiftUI | `swiftui design to code code to design` |
+| Image and assets | `image fill asset upload download export` |
 | Mutation recovery | `outcome_unknown readback reconcile mutation` |
 
 ## Public Command Map

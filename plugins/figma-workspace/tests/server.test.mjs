@@ -148,7 +148,7 @@ test("release metadata keeps plugin, CLI package, lockfile, and OAuth client ver
   const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
   const expectedVersion = manifest.version;
 
-  assert.equal(expectedVersion, "0.4.1");
+  assert.equal(expectedVersion, "0.4.2");
   assert.equal(packageJson.version, expectedVersion);
   assert.equal(cliPackageJson.version, expectedVersion);
   assert.equal(cliLockfile.version, expectedVersion);
@@ -1002,8 +1002,8 @@ test("skill publishes focused English-only search query recipes outside the runt
   const recipes = skill.match(/## Search Query Recipes\n(?<body>[\s\S]*?)\n## /u)?.groups?.body;
   assert.notEqual(recipes, undefined, "SKILL must own one parseable query recipe table");
   const rows = [...recipes.matchAll(/^\| (?<intent>[^|]+) \| `(?<query>[^`]+)` \|$/gmu)];
-  assert.equal(rows.length, 10);
-  assert.equal(new Set(rows.map((row) => row.groups.intent.trim())).size, 10);
+  assert.equal(rows.length, 18);
+  assert.equal(new Set(rows.map((row) => row.groups.intent.trim())).size, 18);
   for (const query of [
     "text font loadFontAsync mixed fonts",
     "auto layout sizing fill hug spacing",
@@ -1011,9 +1011,17 @@ test("skill publishes focused English-only search query recipes outside the runt
     "variable collections modes scopes code syntax",
     "available libraries components variables styles",
     "implementation context layout assets",
+    "code connect component code mapping",
+    "new Figma file surface setup",
+    "create interface design frames components layout",
+    "flowchart sequence architecture diagram",
+    "create component library variants variables styles",
     "user journey sticky notes connectors",
     "slide lifecycle grid row structure",
     "motion easing keyframes transitions",
+    "implement animation motion path transitions",
+    "swiftui design to code code to design",
+    "image fill asset upload download export",
     "outcome_unknown readback reconcile mutation",
   ]) {
     assert.ok(rows.some((row) => row.groups.query === query), query);
