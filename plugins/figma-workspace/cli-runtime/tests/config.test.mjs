@@ -19,7 +19,7 @@ test("createConfig applies Figma MCP defaults", () => {
   assert.equal(config.callbackPath, "/oauth/callback");
   assert.equal(config.callbackUrl, "http://127.0.0.1:18765/oauth/callback");
   assert.equal(config.openBrowser, false);
-  assert.match(config.statePath, /figma-workspace[\\/]mcp-server[\\/]dist[\\/]\.mcp-oauth-state\.json$/);
+  assert.match(config.statePath, /figma-workspace[\\/]cli-runtime[\\/]dist[\\/]\.mcp-oauth-state\.json$/);
   assert.deepEqual(config.clientMetadata.redirect_uris, [
     "http://127.0.0.1:18765/oauth/callback",
   ]);

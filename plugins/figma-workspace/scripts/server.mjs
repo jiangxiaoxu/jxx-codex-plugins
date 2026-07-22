@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Readable, Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { AtomicCredentialStore } from "../mcp-server/dist/auth/credential-store.js";
+import { AtomicCredentialStore } from "../cli-runtime/dist/auth/credential-store.js";
 
 export const DEFAULT_TARGET = "https://mcp.figma.com/mcp";
 export const DEFAULT_HOST = "127.0.0.1";

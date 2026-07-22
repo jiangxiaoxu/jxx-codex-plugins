@@ -1674,8 +1674,8 @@ function pluginApiIndexRootCandidates(moduleDir: string, cwd: string): string[] 
     resolve(moduleDir, "figma-plugin-api-index"),
     resolve(moduleDir, "../runtime/figma-plugin-api-index"),
     resolve(cwd, "dist/runtime/figma-plugin-api-index"),
-    resolve(cwd, "mcp-server/dist/runtime/figma-plugin-api-index"),
-    resolve(cwd, "plugins/figma-workspace/mcp-server/dist/runtime/figma-plugin-api-index"),
+    resolve(cwd, "cli-runtime/dist/runtime/figma-plugin-api-index"),
+    resolve(cwd, "plugins/figma-workspace/cli-runtime/dist/runtime/figma-plugin-api-index"),
   ];
 }
 

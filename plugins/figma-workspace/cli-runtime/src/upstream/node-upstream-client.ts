@@ -10,7 +10,7 @@ import type {
 } from "./remote-mcp-client.js";
 import type {
   FigmaWorkspaceClientOptions,
-} from "../mcp/workspace-mcp-server.js";
+} from "../runtime/workspace-client.js";
 
 const BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
 const NODE_WORKSPACE_DEFAULT_CLIENT_MESSAGE = [
@@ -36,13 +36,13 @@ installNodeReplWebStreamGlobals();
 
 const [
   clientModule,
-  replServerModule,
+  workspaceClientModule,
 ]: [
   typeof import("./remote-mcp-client.js"),
-  typeof import("../mcp/workspace-mcp-server.js"),
+  typeof import("../runtime/workspace-client.js"),
 ] = await Promise.all([
   import("./remote-mcp-client.js"),
-  import("../mcp/workspace-mcp-server.js"),
+  import("../runtime/workspace-client.js"),
 ]);
 
 export const RemoteMcpClient = clientModule.RemoteMcpClient;
@@ -55,8 +55,8 @@ export function createRemoteMcpClient(
 
 export function createFigmaWorkspaceClient(
   options: FigmaWorkspaceClientOptions = {},
-): ReturnType<typeof replServerModule.createFigmaWorkspaceClient> {
-  return replServerModule.createFigmaWorkspaceClient(withNodeReplReplDefaults(options));
+): ReturnType<typeof workspaceClientModule.createFigmaWorkspaceClient> {
+  return workspaceClientModule.createFigmaWorkspaceClient(withNodeWorkspaceDefaults(options));
 }
 
 function withNodeReplRemoteDefaults(options: RemoteMcpClientOptions): RemoteMcpClientOptions {
@@ -70,7 +70,7 @@ function withNodeReplRemoteDefaults(options: RemoteMcpClientOptions): RemoteMcpC
   };
 }
 
-function withNodeReplReplDefaults(options: FigmaWorkspaceClientOptions): FigmaWorkspaceClientOptions {
+function withNodeWorkspaceDefaults(options: FigmaWorkspaceClientOptions): FigmaWorkspaceClientOptions {
   if (options.client) {
     return options;
   }
@@ -120,4 +120,4 @@ export type { RemoteMcpClientOptions } from "./remote-mcp-client.js";
 export type {
   FigmaWorkspaceClient,
   FigmaWorkspaceClientOptions,
-} from "../mcp/workspace-mcp-server.js";
+} from "../runtime/workspace-client.js";

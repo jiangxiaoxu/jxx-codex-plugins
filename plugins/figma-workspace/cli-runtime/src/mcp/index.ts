@@ -109,4 +109,4 @@ export {
   type FigmaWorkspaceUpstreamBackedResult,
   type FigmaWorkspaceUpstreamClient,
   type FigmaWorkspaceUpstreamEnvelope,
-} from "./workspace-mcp-server.js";
+} from "../runtime/workspace-client.js";

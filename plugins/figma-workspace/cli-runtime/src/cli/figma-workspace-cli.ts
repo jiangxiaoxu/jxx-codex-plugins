@@ -33,7 +33,7 @@ import {
   type FigmaWorkspaceClient,
   type FigmaWorkspaceClientOptions,
   type FigmaWorkspaceSession,
-} from "../mcp/workspace-mcp-server.js";
+} from "../runtime/workspace-client.js";
 import {
   DEFAULT_DOCS_SEARCH_MAX_RESULTS,
   DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
