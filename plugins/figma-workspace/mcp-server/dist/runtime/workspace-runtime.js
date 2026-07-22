@@ -50,7 +50,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.1.0";
+    DEFAULT_CLIENT_VERSION = "0.3.0";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -135,9 +135,327 @@ var init_config = __esm({
   }
 });
 
+// src/auth/credential-store.ts
+import { createHash, randomUUID } from "node:crypto";
+import {
+  chmod,
+  link,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat
+} from "node:fs/promises";
+import { dirname as dirname2, resolve as resolve3 } from "node:path";
+async function restoreQuarantinedCredentialLock(quarantinePath, canonicalLockPath) {
+  try {
+    await link(quarantinePath, canonicalLockPath);
+  } catch (error2) {
+    if (errorCode(error2) === "EEXIST") {
+      throw new Error(
+        `OAuth credential lock changed during reclaim; refusing to overwrite the canonical lock: ${canonicalLockPath}`,
+        { cause: error2 }
+      );
+    }
+    throw new Error(
+      `OAuth credential lock changed during reclaim and exclusive hard-link restore failed: ${canonicalLockPath}`,
+      { cause: error2 }
+    );
+  }
+  try {
+    await rm(quarantinePath);
+  } catch (error2) {
+    throw new Error(
+      `OAuth credential lock was restored but its quarantine link could not be removed: ${quarantinePath}`,
+      { cause: error2 }
+    );
+  }
+}
+function parseLockOwner(value) {
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || typeof parsed.pid !== "number" || typeof parsed.nonce !== "string" || typeof parsed.createdAt !== "number") {
+      return void 0;
+    }
+    return parsed;
+  } catch {
+    return void 0;
+  }
+}
+function isProcessAlive(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error2) {
+    return errorCode(error2) === "EPERM";
+  }
+}
+function fingerprint(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+function errorCode(error2) {
+  return error2 && typeof error2 === "object" && "code" in error2 ? String(error2.code) : void 0;
+}
+function delay(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+async function withProcessQueue(path, operation) {
+  const previous = processQueues.get(path) ?? Promise.resolve();
+  let release;
+  const current = new Promise((resolvePromise) => {
+    release = resolvePromise;
+  });
+  const tail = previous.then(() => current);
+  processQueues.set(path, tail);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (processQueues.get(path) === tail) {
+      processQueues.delete(path);
+    }
+  }
+}
+var DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_LOCK_RETRY_MS, INCOMPLETE_LOCK_GRACE_MS, processQueues, AtomicCredentialStore;
+var init_credential_store = __esm({
+  "src/auth/credential-store.ts"() {
+    "use strict";
+    DEFAULT_LOCK_TIMEOUT_MS = 6e4;
+    DEFAULT_LOCK_RETRY_MS = 25;
+    INCOMPLETE_LOCK_GRACE_MS = 5e3;
+    processQueues = /* @__PURE__ */ new Map();
+    AtomicCredentialStore = class {
+      path;
+      lockPath;
+      options;
+      constructor(path, options) {
+        this.path = resolve3(path);
+        this.lockPath = `${this.path}.lock`;
+        this.options = {
+          ...options,
+          lockTimeoutMs: options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
+          lockRetryMs: options.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS,
+          now: options.now ?? Date.now,
+          lockOpen: options.lockOpen ?? open,
+          platform: options.platform ?? process.platform
+        };
+      }
+      async read() {
+        return (await this.readSnapshot()).state;
+      }
+      async readSnapshot() {
+        return this.readSnapshotUnlocked();
+      }
+      async write(state) {
+        await this.withLock((locked) => locked.write(state));
+      }
+      async writeBytes(bytes) {
+        await this.withLock((locked) => locked.writeBytes(bytes));
+      }
+      async update(update) {
+        return this.withLock((locked) => locked.update(update));
+      }
+      async clear(expectedFingerprint) {
+        return this.withLock((locked) => locked.clear(expectedFingerprint));
+      }
+      async withLock(operation) {
+        return withProcessQueue(this.lockPath, async () => {
+          const owner = await this.acquireLock();
+          try {
+            return await operation(this.lockedStore());
+          } finally {
+            await this.releaseLock(owner);
+          }
+        });
+      }
+      lockedStore() {
+        return {
+          read: async () => (await this.readSnapshotUnlocked()).state,
+          readSnapshot: () => this.readSnapshotUnlocked(),
+          write: (state) => this.writeUnlocked(state),
+          writeBytes: (bytes) => this.writeBytesUnlocked(bytes),
+          update: async (update) => {
+            const next = update((await this.readSnapshotUnlocked()).state);
+            await this.writeUnlocked(next);
+            return next;
+          },
+          clear: async (expectedFingerprint) => {
+            if (expectedFingerprint !== void 0) {
+              const current = await this.readSnapshotUnlocked();
+              if (current.fingerprint !== expectedFingerprint) {
+                return false;
+              }
+            }
+            await rm(this.path, { force: true });
+            return true;
+          }
+        };
+      }
+      async readSnapshotUnlocked() {
+        try {
+          const bytes = await readFile(this.path);
+          return {
+            exists: true,
+            bytes,
+            fingerprint: fingerprint(bytes),
+            state: this.options.parse(bytes.toString("utf8"))
+          };
+        } catch (error2) {
+          if (errorCode(error2) === "ENOENT") {
+            return { exists: false, state: this.options.empty() };
+          }
+          throw error2;
+        }
+      }
+      async writeUnlocked(state) {
+        await this.writeBytesUnlocked(Buffer.from(`${JSON.stringify(state, null, 2)}
+`, "utf8"));
+      }
+      async writeBytesUnlocked(bytes) {
+        await mkdir(dirname2(this.path), { recursive: true });
+        const temporaryPath = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
+        let handle;
+        try {
+          handle = await open(temporaryPath, "wx", 384);
+          await handle.writeFile(bytes);
+          await handle.sync();
+          await handle.close();
+          handle = void 0;
+          await rename(temporaryPath, this.path);
+          if (process.platform !== "win32") {
+            await chmod(this.path, 384);
+          }
+        } catch (error2) {
+          await handle?.close().catch(() => void 0);
+          await rm(temporaryPath, { force: true }).catch(() => void 0);
+          throw error2;
+        }
+      }
+      async acquireLock() {
+        await mkdir(dirname2(this.path), { recursive: true });
+        const deadline = this.options.now() + this.options.lockTimeoutMs;
+        while (true) {
+          const owner = {
+            pid: process.pid,
+            nonce: randomUUID(),
+            createdAt: this.options.now()
+          };
+          let handle;
+          try {
+            handle = await this.options.lockOpen(this.lockPath, "wx", 384);
+            await handle.writeFile(`${JSON.stringify(owner)}
+`, "utf8");
+            await handle.sync();
+            await handle.close();
+            return owner;
+          } catch (error2) {
+            const createdLock = handle !== void 0;
+            await handle?.close().catch(() => void 0);
+            if (createdLock) {
+              await rm(this.lockPath, { force: true }).catch(() => void 0);
+            }
+            if (!await this.isLockContention(error2)) {
+              throw error2;
+            }
+          }
+          if (await this.tryReclaimDeadLock()) {
+            continue;
+          }
+          if (this.options.now() >= deadline) {
+            throw new Error(`Timed out waiting for OAuth credential lock: ${this.lockPath}`);
+          }
+          await delay(this.options.lockRetryMs);
+        }
+      }
+      async isLockContention(error2) {
+        const code = errorCode(error2);
+        if (code === "EEXIST") {
+          return true;
+        }
+        if (this.options.platform !== "win32" || code !== "EPERM" && code !== "EBUSY") {
+          return false;
+        }
+        const errno = error2;
+        if (errno.syscall !== "open" || errno.path !== this.lockPath) {
+          return false;
+        }
+        try {
+          return (await stat(this.lockPath)).isFile();
+        } catch {
+          return false;
+        }
+      }
+      async tryReclaimDeadLock() {
+        let observedText;
+        let observedMtimeMs = 0;
+        try {
+          [observedText, observedMtimeMs] = await Promise.all([
+            readFile(this.lockPath, "utf8"),
+            stat(this.lockPath).then((value) => value.mtimeMs)
+          ]);
+        } catch (error2) {
+          if (errorCode(error2) === "ENOENT") {
+            return true;
+          }
+          throw error2;
+        }
+        const owner = parseLockOwner(observedText);
+        if (owner && isProcessAlive(owner.pid)) {
+          return false;
+        }
+        if (!owner && this.options.now() - observedMtimeMs < INCOMPLETE_LOCK_GRACE_MS) {
+          return false;
+        }
+        const quarantinePath = `${this.lockPath}.${process.pid}.${randomUUID()}.reclaim`;
+        try {
+          await rename(this.lockPath, quarantinePath);
+        } catch (error2) {
+          if (errorCode(error2) === "ENOENT") {
+            return true;
+          }
+          throw error2;
+        }
+        let movedText;
+        try {
+          movedText = await readFile(quarantinePath, "utf8");
+        } catch (error2) {
+          if (errorCode(error2) !== "ENOENT") {
+            throw error2;
+          }
+          return true;
+        }
+        if (movedText !== observedText) {
+          await restoreQuarantinedCredentialLock(quarantinePath, this.lockPath);
+          return false;
+        }
+        await rm(quarantinePath, { force: true });
+        return true;
+      }
+      async releaseLock(owner) {
+        let current;
+        try {
+          current = parseLockOwner(await readFile(this.lockPath, "utf8"));
+        } catch (error2) {
+          if (errorCode(error2) === "ENOENT") {
+            throw new Error(`OAuth credential lock disappeared before release: ${this.lockPath}`);
+          }
+          throw error2;
+        }
+        if (!current || current.nonce !== owner.nonce || current.pid !== owner.pid) {
+          throw new Error(`OAuth credential lock ownership changed before release: ${this.lockPath}`);
+        }
+        await rm(this.lockPath);
+      }
+    };
+  }
+});
+
 // src/auth/oauth-state.ts
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname as dirname2 } from "node:path";
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -164,38 +482,31 @@ var OAuthStateStore;
 var init_oauth_state = __esm({
   "src/auth/oauth-state.ts"() {
     "use strict";
+    init_credential_store();
     OAuthStateStore = class {
       constructor(statePath) {
         this.statePath = statePath;
+        this.store = new AtomicCredentialStore(statePath, {
+          empty: () => ({}),
+          parse: parseOAuthState
+        });
       }
       statePath;
+      store;
       async read() {
-        try {
-          return parseOAuthState(await readFile(this.statePath, "utf8"));
-        } catch (error2) {
-          if (error2 instanceof Error && "code" in error2 && error2.code === "ENOENT") {
-            return {};
-          }
-          throw error2;
-        }
+        return this.store.read();
       }
       async write(state) {
-        await mkdir(dirname2(this.statePath), { recursive: true });
-        const tmpPath = `${this.statePath}.tmp`;
-        await writeFile(tmpPath, `${JSON.stringify(state, null, 2)}
-`, {
-          encoding: "utf8",
-          mode: 384
-        });
-        await rename(tmpPath, this.statePath);
+        await this.store.write(state);
       }
       async update(update) {
-        const next = update(await this.read());
-        await this.write(next);
-        return next;
+        return this.store.update(update);
       }
       async clear() {
-        await rm(this.statePath, { force: true });
+        await this.store.clear();
+      }
+      async withLock(operation) {
+        return this.store.withLock(operation);
       }
     };
   }
@@ -203,6 +514,26 @@ var init_oauth_state = __esm({
 
 // src/auth/oauth-provider.ts
 import { randomBytes } from "node:crypto";
+function withTokenExpiry(tokens) {
+  const expiresIn = Number(tokens.expires_in);
+  if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
+    return tokens;
+  }
+  return {
+    ...tokens,
+    expires_at: Date.now() + expiresIn * 1e3
+  };
+}
+function requiresSerializedRefresh(state) {
+  const tokens = state.tokens;
+  if (typeof tokens?.refresh_token !== "string" || tokens.refresh_token.length === 0 || typeof state.clientInformation?.client_id !== "string" || state.clientInformation.client_id.length === 0) {
+    return false;
+  }
+  if (typeof tokens.access_token !== "string" || tokens.access_token.length === 0) {
+    return true;
+  }
+  return typeof tokens.expires_at !== "number" || !Number.isFinite(tokens.expires_at) || tokens.expires_at <= Date.now() + 6e4;
+}
 var PersistentOAuthProvider;
 var init_oauth_provider = __esm({
   "src/auth/oauth-provider.ts"() {
@@ -224,6 +555,7 @@ ${authorizationUrl.toString()}`
       clientMetadataUrl;
       store;
       redirectHandler;
+      lockedStore;
       get redirectUrl() {
         return this.options.redirectUrl;
       }
@@ -235,52 +567,59 @@ ${authorizationUrl.toString()}`
       }
       async state() {
         const state = randomBytes(16).toString("hex");
-        await this.store.update((current) => ({ ...current, lastState: state }));
+        await this.updateState((current) => ({ ...current, lastState: state }));
         return state;
       }
       async savedState() {
-        return this.store.read();
+        return this.readState();
       }
       async expectedState() {
-        return (await this.store.read()).lastState;
+        return (await this.readState()).lastState;
       }
       async clientInformation() {
-        return (await this.store.read()).clientInformation;
+        return (await this.readState()).clientInformation;
       }
       async saveClientInformation(clientInformation) {
-        await this.store.update((current) => ({ ...current, clientInformation }));
+        await this.updateState((current) => ({ ...current, clientInformation }));
       }
       async tokens() {
-        return (await this.store.read()).tokens;
+        return (await this.readState()).tokens;
       }
       async saveTokens(tokens) {
-        await this.store.update((current) => ({ ...current, tokens }));
+        await this.updateState((current) => ({
+          ...current,
+          tokens: withTokenExpiry(tokens)
+        }));
       }
       async redirectToAuthorization(authorizationUrl) {
         await this.redirectHandler(authorizationUrl);
       }
       async saveCodeVerifier(codeVerifier) {
-        await this.store.update((current) => ({ ...current, codeVerifier }));
+        await this.updateState((current) => ({ ...current, codeVerifier }));
       }
       async codeVerifier() {
-        const codeVerifier = (await this.store.read()).codeVerifier;
+        const codeVerifier = (await this.readState()).codeVerifier;
         if (!codeVerifier) {
           throw new Error("No OAuth code verifier is saved.");
         }
         return codeVerifier;
       }
       async saveDiscoveryState(discoveryState) {
-        await this.store.update((current) => ({ ...current, discoveryState }));
+        await this.updateState((current) => ({ ...current, discoveryState }));
       }
       async discoveryState() {
-        return (await this.store.read()).discoveryState;
+        return (await this.readState()).discoveryState;
       }
       async invalidateCredentials(scope) {
         if (scope === "all") {
-          await this.store.clear();
+          if (this.lockedStore) {
+            await this.lockedStore.clear();
+          } else {
+            await this.store.clear();
+          }
           return;
         }
-        await this.store.update((current) => {
+        await this.updateState((current) => {
           const next = { ...current };
           if (scope === "client") {
             delete next.clientInformation;
@@ -297,6 +636,31 @@ ${authorizationUrl.toString()}`
           }
           return next;
         });
+      }
+      async runWithRefreshLockIfNeeded(operation) {
+        const initial = await this.store.read();
+        if (!requiresSerializedRefresh(initial)) {
+          return operation();
+        }
+        const retryOutsideLock = /* @__PURE__ */ Symbol("retryOutsideLock");
+        const result = await this.store.withLock(async (locked) => {
+          if (!requiresSerializedRefresh(await locked.read())) {
+            return retryOutsideLock;
+          }
+          this.lockedStore = locked;
+          try {
+            return await operation();
+          } finally {
+            this.lockedStore = void 0;
+          }
+        });
+        return result === retryOutsideLock ? operation() : result;
+      }
+      readState() {
+        return this.lockedStore ? this.lockedStore.read() : this.store.read();
+      }
+      updateState(update) {
+        return this.lockedStore ? this.lockedStore.update(update) : this.store.update(update);
       }
     };
   }
@@ -315,8 +679,8 @@ async function closeServer(server) {
   if (!server.listening) {
     return;
   }
-  await new Promise((resolve9, reject) => {
-    server.close((error2) => error2 ? reject(error2) : resolve9());
+  await new Promise((resolve11, reject) => {
+    server.close((error2) => error2 ? reject(error2) : resolve11());
   });
 }
 async function startOAuthCallbackServer(options) {
@@ -326,8 +690,8 @@ async function startOAuthCallbackServer(options) {
   let closePromise;
   let resolveCode;
   let rejectCode;
-  const codePromise = new Promise((resolve9, reject) => {
-    resolveCode = resolve9;
+  const codePromise = new Promise((resolve11, reject) => {
+    resolveCode = resolve11;
     rejectCode = reject;
   });
   codePromise.catch(() => void 0);
@@ -419,14 +783,14 @@ async function startOAuthCallbackServer(options) {
     rejectCode(error2);
     requestClose().catch(() => void 0);
   };
-  await new Promise((resolve9, reject) => {
+  await new Promise((resolve11, reject) => {
     const rejectStartup = (error2) => {
       reject(asOAuthCallbackStartupError(error2, options, callbackUrl));
     };
     server.once("error", rejectStartup);
     server.listen(options.port, options.host, () => {
       server.off("error", rejectStartup);
-      resolve9();
+      resolve11();
     });
   });
   timeout = setTimeout(() => {
@@ -8687,7 +9051,7 @@ var init_protocol = __esm({
               return;
             }
             const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-            await new Promise((resolve9) => setTimeout(resolve9, pollInterval));
+            await new Promise((resolve11) => setTimeout(resolve11, pollInterval));
             options?.signal?.throwIfAborted();
           }
         } catch (error2) {
@@ -8704,7 +9068,7 @@ var init_protocol = __esm({
        */
       request(request, resultSchema, options) {
         const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-        return new Promise((resolve9, reject) => {
+        return new Promise((resolve11, reject) => {
           const earlyReject = (error2) => {
             reject(error2);
           };
@@ -8782,7 +9146,7 @@ var init_protocol = __esm({
               if (!parseResult.success) {
                 reject(parseResult.error);
               } else {
-                resolve9(parseResult.data);
+                resolve11(parseResult.data);
               }
             } catch (error2) {
               reject(error2);
@@ -9043,12 +9407,12 @@ var init_protocol = __esm({
           }
         } catch {
         }
-        return new Promise((resolve9, reject) => {
+        return new Promise((resolve11, reject) => {
           if (signal.aborted) {
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
             return;
           }
-          const timeoutId = setTimeout(resolve9, interval);
+          const timeoutId = setTimeout(resolve11, interval);
           signal.addEventListener("abort", () => {
             clearTimeout(timeoutId);
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -12075,7 +12439,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve9.call(this, root, ref);
+      let _sch = resolve11.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -12102,7 +12466,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve9(root, ref) {
+    function resolve11(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -12729,59 +13093,59 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse3(serialize(uri, options), options);
+        parse4(serialize(uri, options), options);
       }
       return uri;
     }
-    function resolve9(baseURI, relativeURI, options) {
+    function resolve11(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
-      const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
+      const resolved = resolveComponent(parse4(baseURI, schemelessOptions), parse4(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse3(serialize(base, options), options);
-        relative3 = parse3(serialize(relative3, options), options);
+        base = parse4(serialize(base, options), options);
+        relative4 = parse4(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -12789,7 +13153,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -12966,7 +13330,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort };
     }
-    function parse3(uri, opts) {
+    function parse4(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -12991,11 +13355,11 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve9,
+      resolve: resolve11,
       resolveComponent,
       equal,
       serialize,
-      parse: parse3
+      parse: parse4
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -16792,8 +17156,8 @@ async function random(size) {
   const evenDistCutoff = Math.pow(2, 8) - Math.pow(2, 8) % mask.length;
   let result = "";
   while (result.length < size) {
-    const randomBytes2 = await getRandomValues(size - result.length);
-    for (const randomByte of randomBytes2) {
+    const randomBytes3 = await getRandomValues(size - result.length);
+    for (const randomByte of randomBytes3) {
       if (randomByte < evenDistCutoff) {
         result += mask[randomByte % mask.length];
       }
@@ -18029,13 +18393,13 @@ var init_streamableHttp = __esm({
           this.onerror?.(new Error(`Maximum reconnection attempts (${maxRetries}) exceeded.`));
           return;
         }
-        const delay = this._getNextReconnectionDelay(attemptCount);
+        const delay2 = this._getNextReconnectionDelay(attemptCount);
         this._reconnectionTimeout = setTimeout(() => {
           this._startOrAuthSse(options).catch((error2) => {
             this.onerror?.(new Error(`Failed to reconnect SSE stream: ${error2 instanceof Error ? error2.message : String(error2)}`));
             this._scheduleReconnection(options, attemptCount + 1);
           });
-        }, delay);
+        }, delay2);
       }
       _handleSseStream(stream, options, isReconnectable) {
         if (!stream) {
@@ -18312,16 +18676,16 @@ async function openBrowser(url2) {
   const os = platform();
   const command = os === "darwin" ? "open" : os === "win32" ? "cmd.exe" : "xdg-open";
   const args = os === "win32" ? ["/c", "start", "", href] : [href];
-  return new Promise((resolve9) => {
+  return new Promise((resolve11) => {
     const child = spawn(command, args, {
       detached: true,
       stdio: "ignore",
       windowsHide: true
     });
-    child.on("error", () => resolve9(false));
+    child.on("error", () => resolve11(false));
     child.on("spawn", () => {
       child.unref();
-      resolve9(true);
+      resolve11(true);
     });
   });
 }
@@ -18348,6 +18712,13 @@ function isRemoteMcpOAuthError(error2) {
     return false;
   }
   return error2.name === "RemoteMcpOAuthError" && typeof error2.code === "string" && REMOTE_MCP_OAUTH_ERROR_CODES.includes(error2.code);
+}
+function remoteRequestOptions(signal) {
+  return {
+    signal,
+    timeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS,
+    maxTotalTimeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS
+  };
 }
 function createRemoteMcpClient(options = {}) {
   return new RemoteMcpClient(options);
@@ -18531,7 +18902,7 @@ function isForbiddenStatusCode(value) {
 function isRecord2(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-var OAUTH_CACHE_FILE_NAME, LOGIN_COMMAND, REMOTE_MCP_OAUTH_ERROR_CODES, RemoteMcpOAuthError, RemoteMcpClient, StaleConnectionError;
+var OAUTH_CACHE_FILE_NAME, LOGIN_COMMAND, REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS, REMOTE_MCP_OAUTH_ERROR_CODES, RemoteMcpOAuthError, RemoteMcpClient, StaleConnectionError;
 var init_remote_mcp_client = __esm({
   "src/upstream/remote-mcp-client.ts"() {
     "use strict";
@@ -18544,6 +18915,7 @@ var init_remote_mcp_client = __esm({
     init_oauth_callback();
     OAUTH_CACHE_FILE_NAME = ".figma-workspace-oauth.json";
     LOGIN_COMMAND = "npm run login:figma-http";
+    REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS = 5 * 60 * 1e3;
     REMOTE_MCP_OAUTH_ERROR_CODES = [
       "FIGMA_UPSTREAM_AUTH_REQUIRED",
       "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
@@ -18721,7 +19093,7 @@ ${authorizationUrl.toString()}`
           throw new StaleConnectionError();
         }
         try {
-          await client.connect(transport);
+          await this.authProvider.runWithRefreshLockIfNeeded(() => client.connect(transport));
         } catch (error2) {
           if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
             await transport.close().catch(() => void 0);
@@ -18744,20 +19116,24 @@ ${authorizationUrl.toString()}`
         }
         return this.client;
       }
-      async listTools() {
-        return this.requireClient().listTools();
+      async listTools(signal) {
+        return this.requireClient().listTools({}, remoteRequestOptions(signal));
       }
-      async callTool(name, args = {}) {
-        return this.requireClient().callTool({ name, arguments: args });
+      async callTool(name, args = {}, signal) {
+        return this.requireClient().callTool(
+          { name, arguments: args },
+          void 0,
+          remoteRequestOptions(signal)
+        );
       }
-      async listResources() {
-        return this.requireClient().listResources();
+      async listResources(signal) {
+        return this.requireClient().listResources({}, remoteRequestOptions(signal));
       }
-      async listResourceTemplates() {
-        return this.requireClient().listResourceTemplates();
+      async listResourceTemplates(signal) {
+        return this.requireClient().listResourceTemplates({}, remoteRequestOptions(signal));
       }
-      async readResource(uri) {
-        return this.requireClient().readResource({ uri });
+      async readResource(uri, signal) {
+        return this.requireClient().readResource({ uri }, remoteRequestOptions(signal));
       }
       async setConnectedIfCurrent(connection, connectionGeneration) {
         if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
@@ -18843,7 +19219,7 @@ ${authorizationUrl.toString()}`
 
 // src/runtime/project-docs.ts
 import { readFileSync } from "node:fs";
-import { dirname as dirname3, resolve as resolve3 } from "node:path";
+import { dirname as dirname3, resolve as resolve4 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function listFigmaWorkspaceProjectDocs() {
   return PROJECT_DOC_DEFINITIONS.map(({ id, title, description }) => ({ id, title, description }));
@@ -18861,7 +19237,7 @@ function readFigmaWorkspaceProjectDoc(id) {
     kind: "project",
     title: definition.title,
     description: definition.description,
-    content: readFileSync(resolve3(root, definition.fileName), "utf8")
+    content: readFileSync(resolve4(root, definition.fileName), "utf8")
   };
 }
 function getFigmaWorkspaceProjectDocSearchRecords() {
@@ -18897,18 +19273,18 @@ function resolveProjectDocsRoot() {
 }
 function projectDocsRootCandidates(moduleDir, cwd) {
   return [
-    resolve3(moduleDir, "../skills/figma-workspace/references"),
-    resolve3(moduleDir, "../../../skills/figma-workspace/references"),
-    resolve3(cwd, "skills/figma-workspace/references"),
-    resolve3(cwd, "plugins/figma-workspace/skills/figma-workspace/references"),
-    resolve3(cwd, "../skills/figma-workspace/references")
+    resolve4(moduleDir, "../skills/figma-workspace/references"),
+    resolve4(moduleDir, "../../../skills/figma-workspace/references"),
+    resolve4(cwd, "skills/figma-workspace/references"),
+    resolve4(cwd, "plugins/figma-workspace/skills/figma-workspace/references"),
+    resolve4(cwd, "../skills/figma-workspace/references")
   ];
 }
 function resolveProjectDocsRootFromCandidates(candidates) {
   for (const candidate of candidates) {
     try {
       for (const definition of PROJECT_DOC_DEFINITIONS) {
-        readFileSync(resolve3(candidate, definition.fileName), "utf8");
+        readFileSync(resolve4(candidate, definition.fileName), "utf8");
       }
       return candidate;
     } catch {
@@ -19371,9 +19747,9 @@ var init_task_routing = __esm({
 });
 
 // src/runtime/doc-search.ts
-import { createHash } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 import { readFileSync as readFileSync2 } from "node:fs";
-import { dirname as dirname4, resolve as resolve4 } from "node:path";
+import { dirname as dirname4, resolve as resolve5 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 function docsSearchFilesForScope(scope, filters = {}) {
   const effectiveScopeSet = scope === "auto" ? new Set(
@@ -20049,7 +20425,7 @@ function readCanonicalCorpusState() {
   const candidates = canonicalCorpusRootCandidates(moduleDir, cwd);
   try {
     const root = resolveAssetRoot(candidates, "canonical corpus");
-    const manifest = parseCanonicalCorpusManifest(readFileSync2(resolve4(root, "manifest.json"), "utf8"));
+    const manifest = parseCanonicalCorpusManifest(readFileSync2(resolve5(root, "manifest.json"), "utf8"));
     const corpus = readCanonicalCorpus(root, manifest);
     return { ok: true, corpus, moduleDir, cwd, argv1, packageVersion };
   } catch (error2) {
@@ -20068,7 +20444,7 @@ function readCanonicalCorpusState() {
   }
 }
 function readCanonicalCorpus(root, manifest) {
-  const routeCatalogText = readFileSync2(resolve4(root, manifest.routeCatalog.file), "utf8");
+  const routeCatalogText = readFileSync2(resolve5(root, manifest.routeCatalog.file), "utf8");
   if (sha256(routeCatalogText) !== manifest.routeCatalog.sha256) {
     throw new Error("Canonical Figma route catalog SHA-256 does not match its manifest.");
   }
@@ -20077,7 +20453,7 @@ function readCanonicalCorpus(root, manifest) {
   if (routes.length !== manifest.routeCatalog.routeCount) {
     throw new Error("Canonical Figma route count does not match its manifest.");
   }
-  const corpusText = normalizeLineEndings(readFileSync2(resolve4(root, manifest.corpus.file), "utf8"));
+  const corpusText = normalizeLineEndings(readFileSync2(resolve5(root, manifest.corpus.file), "utf8"));
   if (sha256(corpusText) !== manifest.corpus.sha256) {
     throw new Error("Canonical Figma corpus SHA-256 does not match its manifest.");
   }
@@ -20121,18 +20497,18 @@ function readCanonicalCorpus(root, manifest) {
 }
 function canonicalCorpusRootCandidates(moduleDir, cwd) {
   return [
-    resolve4(moduleDir, "../skills/figma-workspace/references/canonical-corpus"),
-    resolve4(moduleDir, "../../skills/figma-workspace/references/canonical-corpus"),
-    resolve4(moduleDir, "../../../skills/figma-workspace/references/canonical-corpus"),
-    resolve4(cwd, "skills/figma-workspace/references/canonical-corpus"),
-    resolve4(cwd, "plugins/figma-workspace/skills/figma-workspace/references/canonical-corpus"),
-    resolve4(cwd, "../skills/figma-workspace/references/canonical-corpus")
+    resolve5(moduleDir, "../skills/figma-workspace/references/canonical-corpus"),
+    resolve5(moduleDir, "../../skills/figma-workspace/references/canonical-corpus"),
+    resolve5(moduleDir, "../../../skills/figma-workspace/references/canonical-corpus"),
+    resolve5(cwd, "skills/figma-workspace/references/canonical-corpus"),
+    resolve5(cwd, "plugins/figma-workspace/skills/figma-workspace/references/canonical-corpus"),
+    resolve5(cwd, "../skills/figma-workspace/references/canonical-corpus")
   ];
 }
 function resolveAssetRoot(candidates, label) {
   for (const candidate of candidates) {
     try {
-      readFileSync2(resolve4(candidate, "manifest.json"), "utf8");
+      readFileSync2(resolve5(candidate, "manifest.json"), "utf8");
       return candidate;
     } catch {
     }
@@ -20273,7 +20649,7 @@ function readPluginApiIndexState() {
   const candidates = pluginApiIndexRootCandidates(moduleDir, cwd);
   try {
     const root = resolveAssetRoot(candidates, "Plugin API symbol index");
-    const manifest = parsePluginApiIndexManifest(readFileSync2(resolve4(root, "manifest.json"), "utf8"));
+    const manifest = parsePluginApiIndexManifest(readFileSync2(resolve5(root, "manifest.json"), "utf8"));
     return { ok: true, index: readPluginApiIndex(root, manifest) };
   } catch (error2) {
     return {
@@ -20292,21 +20668,21 @@ function readPluginApiIndexState() {
 }
 function pluginApiIndexRootCandidates(moduleDir, cwd) {
   return [
-    resolve4(moduleDir, "figma-plugin-api-index"),
-    resolve4(moduleDir, "../runtime/figma-plugin-api-index"),
-    resolve4(cwd, "dist/runtime/figma-plugin-api-index"),
-    resolve4(cwd, "mcp-server/dist/runtime/figma-plugin-api-index"),
-    resolve4(cwd, "plugins/figma-workspace/mcp-server/dist/runtime/figma-plugin-api-index")
+    resolve5(moduleDir, "figma-plugin-api-index"),
+    resolve5(moduleDir, "../runtime/figma-plugin-api-index"),
+    resolve5(cwd, "dist/runtime/figma-plugin-api-index"),
+    resolve5(cwd, "mcp-server/dist/runtime/figma-plugin-api-index"),
+    resolve5(cwd, "plugins/figma-workspace/mcp-server/dist/runtime/figma-plugin-api-index")
   ];
 }
 function readPluginApiIndex(root, manifest) {
   for (const source of manifest.source.files) {
-    const sourceText = normalizeLineEndings(readFileSync2(resolve4(root, "../figma-plugin-typings", source.file), "utf8"));
+    const sourceText = normalizeLineEndings(readFileSync2(resolve5(root, "../figma-plugin-typings", source.file), "utf8"));
     if (sha256(sourceText) !== source.sha256) {
       throw new Error(`Bundled Figma Plugin API typings SHA-256 mismatch: ${source.file}`);
     }
   }
-  const indexText = normalizeLineEndings(readFileSync2(resolve4(root, manifest.index.file), "utf8"));
+  const indexText = normalizeLineEndings(readFileSync2(resolve5(root, manifest.index.file), "utf8"));
   if (sha256(indexText) !== manifest.index.sha256) {
     throw new Error("Generated Figma Plugin API index SHA-256 does not match its manifest.");
   }
@@ -20404,7 +20780,7 @@ function normalizeLineEndings(value) {
   return value.replace(/\r\n/gu, "\n");
 }
 function sha256(value) {
-  return createHash("sha256").update(value, "utf8").digest("hex");
+  return createHash2("sha256").update(value, "utf8").digest("hex");
 }
 function isSha256(value) {
   return /^[a-f0-9]{64}$/u.test(value);
@@ -20432,10 +20808,10 @@ function readNearestPackageVersion(startDir) {
 }
 function packageJsonCandidates(startDir) {
   return [
-    resolve4(startDir, "../package.json"),
-    resolve4(startDir, "../../package.json"),
-    resolve4(startDir, "../../../package.json"),
-    resolve4(startDir, "../../../../package.json")
+    resolve5(startDir, "../package.json"),
+    resolve5(startDir, "../../package.json"),
+    resolve5(startDir, "../../../package.json"),
+    resolve5(startDir, "../../../../package.json")
   ];
 }
 function safeProcessCwd2(fallback) {
@@ -21266,7 +21642,9 @@ function asOpenArgs(args) {
     "currentPageId"
   ]);
   assertOptionalEnum(record2, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalBooleanFields(record2, ["reset", "connect"]);
   assertRemovedHandleArguments(record2, ["handles"]);
+  assertAllowedToolFields(record2, ["title", "sessionId", "label", "file", "workspaceDir", "surface", "currentPageId", "reset", "connect"]);
   return record2;
 }
 function asEvalArgs(args) {
@@ -21282,6 +21660,8 @@ function asEvalArgs(args) {
   assertRemovedArgumentsWithoutReplacement(record2, ["mode", "allowDangerousOperations"]);
   assertOptionalEnum(record2, "surface", FIGMA_WORKSPACE_SURFACES);
   assertOptionalBooleanFields(record2, ["typescript"]);
+  assertOptionalIntegerRange(record2, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record2, ["title", "sessionId", "code", "typescript", "surface", "inlineResultLimit"]);
   return record2;
 }
 function asRunScriptFileArgs(args) {
@@ -21299,6 +21679,8 @@ function asRunScriptFileArgs(args) {
     "targetPageId"
   ]);
   assertOptionalEnum(record2, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalIntegerRange(record2, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record2, ["title", "sessionId", "scriptPath", "inputFile", "surface", "targetPageId", "inlineResultLimit"]);
   return record2;
 }
 function asApplyAssetManifestArgs(args) {
@@ -21311,6 +21693,8 @@ function asApplyAssetManifestArgs(args) {
     "manifestPath"
   ]);
   assertOptionalAssets(record2);
+  assertOptionalBooleanFields(record2, ["validateTargets"]);
+  assertAllowedToolFields(record2, ["title", "sessionId", "assets", "manifestPath", "validateTargets"]);
   return record2;
 }
 function asDownloadAssetsArgs(args) {
@@ -21328,6 +21712,7 @@ function asDownloadAssetsArgs(args) {
   if (targets) {
     record2.targets = targets;
   }
+  assertAllowedToolFields(record2, ["title", "sessionId", "targets", "manifestPath", "outputDir"]);
   return record2;
 }
 function asCaptureNodeArgs(args) {
@@ -21345,6 +21730,7 @@ function asCaptureNodeArgs(args) {
   assertOptionalIntegerRange(record2, "maxDimension", 1, 65536);
   assertOptionalBooleanFields(record2, ["contentsOnly"]);
   assertOptionalCaptureTargetValue(record2.target, "target");
+  assertAllowedToolFields(record2, ["title", "sessionId", "target", "imageFile", "maxDimension", "contentsOnly"]);
   return record2;
 }
 function asPrepareTaskArgs(args) {
@@ -21367,6 +21753,8 @@ function asPrepareTaskArgs(args) {
     "template"
   ]);
   assertOptionalEnum(record2, "surface", FIGMA_WORKSPACE_SURFACES);
+  assertOptionalBooleanFields(record2, ["overwrite"]);
+  assertAllowedToolFields(record2, ["title", "sessionId", "taskName", "file", "fileSlug", "fileName", "workspaceDir", "surface", "targetPageId", "template", "overwrite"]);
   return record2;
 }
 function asGuidanceArgs(args) {
@@ -21379,6 +21767,8 @@ function asGuidanceArgs(args) {
   }
   assertOptionalEnum(record2, "surface", FIGMA_WORKSPACE_SURFACES);
   assertOptionalEnum(record2, "workflow", FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS);
+  assertOptionalIntegerRange(record2, "maxCards", 1, MAX_GUIDANCE_CARDS);
+  assertAllowedToolFields(record2, ["title", "query", "surface", "workflow", "maxCards"]);
   return record2;
 }
 function asInspectArgs(args) {
@@ -21389,7 +21779,9 @@ function asInspectArgs(args) {
   ]);
   assertOptionalInspectTarget(record2.target);
   assertOptionalEnum(record2, "mode", FIGMA_WORKSPACE_INSPECT_MODES);
+  assertOptionalIntegerRange(record2, "depth", 1, Number.MAX_SAFE_INTEGER);
   assertRemovedHandleArguments(record2, ["handles"]);
+  assertAllowedToolFields(record2, ["title", "sessionId", "mode", "target", "depth"]);
   return record2;
 }
 function assertOptionalInspectTarget(value) {
@@ -21408,6 +21800,9 @@ function asCallUpstreamToolArgs(args) {
   assertRemovedDebugOutputArguments(record2, ["outputFile", "resultFile"]);
   assertOptionalStringFields(record2, ["sessionId", "toolName"]);
   assertOptionalRecord(record2, "arguments");
+  assertOptionalBooleanFields(record2, ["refresh"]);
+  assertOptionalIntegerRange(record2, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record2, ["title", "sessionId", "toolName", "arguments", "refresh", "inlineResultLimit"]);
   return record2;
 }
 function asGetMetadataArgs(args) {
@@ -21424,6 +21819,20 @@ function asGetMetadataArgs(args) {
     "clientFrameworks"
   ]);
   assertOptionalTargetValue(record2.target, "target");
+  assertOptionalBooleanFields(record2, ["refresh"]);
+  assertOptionalIntegerRange(record2, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record2, [
+    "title",
+    "sessionId",
+    "file",
+    "workspaceDir",
+    "target",
+    "nodeId",
+    "refresh",
+    "inlineResultLimit",
+    "clientLanguages",
+    "clientFrameworks"
+  ]);
   return record2;
 }
 function asGetDesignContextArgs(args) {
@@ -21441,9 +21850,25 @@ function asGetDesignContextArgs(args) {
   assertOptionalBooleanFields(record2, [
     "forceCode",
     "disableCodeConnect",
-    "excludeScreenshot"
+    "excludeScreenshot",
+    "refresh"
   ]);
   assertOptionalTargetValue(record2.target, "target");
+  assertOptionalIntegerRange(record2, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record2, [
+    "title",
+    "sessionId",
+    "file",
+    "workspaceDir",
+    "target",
+    "refresh",
+    "inlineResultLimit",
+    "clientLanguages",
+    "clientFrameworks",
+    "forceCode",
+    "disableCodeConnect",
+    "excludeScreenshot"
+  ]);
   return record2;
 }
 function asGetMotionContextArgs(args) {
@@ -21458,8 +21883,21 @@ function asGetMotionContextArgs(args) {
     "clientLanguages",
     "clientFrameworks"
   ]);
-  assertOptionalBooleanFields(record2, ["recursive"]);
+  assertOptionalBooleanFields(record2, ["recursive", "refresh"]);
   assertOptionalTargetValue(record2.target, "target");
+  assertOptionalIntegerRange(record2, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record2, [
+    "title",
+    "sessionId",
+    "file",
+    "workspaceDir",
+    "target",
+    "recursive",
+    "clientLanguages",
+    "clientFrameworks",
+    "refresh",
+    "inlineResultLimit"
+  ]);
   return record2;
 }
 function asSearchDesignSystemArgs(args) {
@@ -21477,9 +21915,25 @@ function asSearchDesignSystemArgs(args) {
     "disableCodeConnect",
     "includeComponents",
     "includeVariables",
-    "includeStyles"
+    "includeStyles",
+    "refresh"
   ]);
   assertOptionalStringArray(record2, "includeLibraryKeys");
+  assertOptionalIntegerRange(record2, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record2, [
+    "title",
+    "sessionId",
+    "file",
+    "workspaceDir",
+    "query",
+    "disableCodeConnect",
+    "includeComponents",
+    "includeVariables",
+    "includeStyles",
+    "includeLibraryKeys",
+    "refresh",
+    "inlineResultLimit"
+  ]);
   return record2;
 }
 function asGetLibrariesArgs(args) {
@@ -21493,6 +21947,17 @@ function asGetLibrariesArgs(args) {
     "workspaceDir"
   ]);
   assertOptionalNonNegativeInteger(record2, "offset");
+  assertOptionalBooleanFields(record2, ["refresh"]);
+  assertOptionalIntegerRange(record2, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record2, [
+    "title",
+    "sessionId",
+    "file",
+    "workspaceDir",
+    "offset",
+    "refresh",
+    "inlineResultLimit"
+  ]);
   return record2;
 }
 function asGetVariableDefsArgs(args) {
@@ -21512,6 +21977,17 @@ function asGetVariableDefsArgs(args) {
     "workspaceDir"
   ]);
   assertOptionalTargetValue(record2.target, "target");
+  assertOptionalBooleanFields(record2, ["refresh"]);
+  assertOptionalIntegerRange(record2, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  assertAllowedToolFields(record2, [
+    "title",
+    "sessionId",
+    "file",
+    "workspaceDir",
+    "target",
+    "refresh",
+    "inlineResultLimit"
+  ]);
   return record2;
 }
 function asLookupArgs(args) {
@@ -21530,11 +22006,25 @@ function asLookupArgs(args) {
   assertOptionalEnum(record2, "surface", FIGMA_WORKSPACE_SURFACES);
   assertOptionalEnum(record2, "taskFamily", FIGMA_WORKSPACE_TASK_FAMILIES);
   assertOptionalStringFields(record2, ["query", "symbol"]);
+  assertOptionalIntegerRange(record2, "maxResults", 1, MAX_LOOKUP_RESULTS);
+  assertOptionalIntegerRange(record2, "maxSnippetLines", 1, MAX_LOOKUP_SNIPPET_LINES);
+  assertAllowedToolFields(record2, [
+    "title",
+    "kind",
+    "scope",
+    "surface",
+    "taskFamily",
+    "query",
+    "symbol",
+    "maxResults",
+    "maxSnippetLines"
+  ]);
   return record2;
 }
 function asDocsArgs(args) {
   const record2 = parseToolArgs(args);
   assertOptionalEnum(record2, "mode", FIGMA_WORKSPACE_DOCS_MODES);
+  assertAllowedToolFields(record2, ["mode", "id", "taskFamily", "surface", "classification", "limit"]);
   if (record2.mode === "list") {
     return record2;
   }
@@ -21555,19 +22045,23 @@ function asDocsArgs(args) {
   throw new FigmaWorkspaceToolArgumentError('Tool argument "mode" must be one of: list, catalog, read.');
 }
 function asDoctorArgs(args) {
-  return parseToolArgs(args);
+  const record2 = parseToolArgs(args);
+  assertAllowedToolFields(record2, []);
+  return record2;
 }
 function asSessionsArgs(args) {
   const record2 = parseToolArgs(args);
   assertOptionalStringFields(record2, ["sessionId"]);
   assertRemovedHandleArguments(record2, ["includeHandles"]);
   assertOptionalBooleanFields(record2, ["includeHistory"]);
+  assertAllowedToolFields(record2, ["sessionId", "includeHistory"]);
   return record2;
 }
 function asUpstreamToolsArgs(args) {
   const record2 = parseToolArgs(args);
   assertOptionalStringFields(record2, ["name"]);
   assertOptionalBooleanFields(record2, ["refresh"]);
+  assertAllowedToolFields(record2, ["name", "refresh"]);
   return record2;
 }
 function parseToolArgs(value) {
@@ -21654,6 +22148,9 @@ function assertOptionalAssets(record2) {
   if (!assets) {
     return;
   }
+  if (assets.length > MAX_ASSET_MANIFEST_ITEMS) {
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "assets" must contain at most ${MAX_ASSET_MANIFEST_ITEMS} items.`);
+  }
   assets.forEach((asset, index) => {
     const assetName = `assets[${index}]`;
     if (!isRecord3(asset)) {
@@ -21661,9 +22158,6 @@ function assertOptionalAssets(record2) {
     }
     assertOptionalStringFieldsWithPrefix(asset, assetName, [
       "path",
-      "nodeUrl",
-      "url",
-      "scaleMode",
       "name"
     ]);
     assertRemovedArguments(asset, ["toolName", "arguments"], "figma:upstream:call", `${assetName}.toolName/arguments`);
@@ -21677,12 +22171,16 @@ function assertOptionalAssets(record2) {
     const target = asset.target;
     assertOptionalTargetValue(target, `${assetName}.target`);
     assertOptionalRecord(asset, "metadata", `${assetName}.metadata`);
+    assertAllowedToolFields(asset, ["path", "target", "name", "metadata"], assetName);
   });
 }
 function assertOptionalDownloadAssetTargets(record2) {
   const targets = assertOptionalArray(record2, "targets");
   if (!targets) {
     return void 0;
+  }
+  if (targets.length > MAX_ASSET_MANIFEST_ITEMS) {
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets" must contain at most ${MAX_ASSET_MANIFEST_ITEMS} items.`);
   }
   return targets.map((target, index) => {
     const targetName = `targets[${index}]`;
@@ -21705,6 +22203,7 @@ function assertOptionalDownloadAssetTargets(record2) {
     if (defaultScale !== void 0 && (typeof defaultScale !== "number" || !Number.isFinite(defaultScale) || defaultScale < 0.01 || defaultScale > 4)) {
       throw new FigmaWorkspaceToolArgumentError(`Tool argument "${targetName}.defaultScale" must be a number from 0.01 to 4.`);
     }
+    assertAllowedToolFields(target, ["target", "name", "defaultFormat", "defaultScale"], targetName);
     return {
       target: target.target,
       name: target.name,
@@ -21789,6 +22288,15 @@ function assertOptionalStringFieldsWithPrefix(record2, prefix, keys) {
 function isRecord3(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+function assertAllowedToolFields(record2, allowedFields, displayName = "command input") {
+  const allowed = new Set(allowedFields);
+  const unknownFields = Object.keys(record2).filter((field) => !allowed.has(field));
+  if (unknownFields.length > 0) {
+    throw new FigmaWorkspaceToolArgumentError(
+      `Tool argument "${displayName}" does not allow unknown field${unknownFields.length === 1 ? "" : "s"}: ${unknownFields.join(", ")}.`
+    );
+  }
+}
 function withDefaultTitle(args, _title) {
   if (!isRecord3(args)) {
     throw new FigmaWorkspaceToolArgumentError("Tool arguments must be an object.");
@@ -21798,7 +22306,7 @@ function withDefaultTitle(args, _title) {
   }
   return args;
 }
-var FigmaWorkspaceToolArgumentError, FIGMA_WORKSPACE_SURFACES, FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS, FIGMA_WORKSPACE_INSPECT_MODES, FIGMA_WORKSPACE_LOOKUP_KINDS, FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES, FIGMA_WORKSPACE_TASK_FAMILIES, FIGMA_WORKSPACE_DOCS_MODES, FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS, FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS;
+var FigmaWorkspaceToolArgumentError, FIGMA_WORKSPACE_SURFACES, FIGMA_WORKSPACE_GUIDANCE_WORKFLOWS, FIGMA_WORKSPACE_INSPECT_MODES, FIGMA_WORKSPACE_LOOKUP_KINDS, FIGMA_WORKSPACE_DOCS_LOOKUP_SCOPES, FIGMA_WORKSPACE_TASK_FAMILIES, FIGMA_WORKSPACE_DOCS_MODES, FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS, FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS, MAX_ASSET_MANIFEST_ITEMS, MAX_INLINE_RESULT_LIMIT, MAX_GUIDANCE_CARDS, MAX_LOOKUP_RESULTS, MAX_LOOKUP_SNIPPET_LINES;
 var init_tool_args = __esm({
   "src/contract/tool-args.ts"() {
     "use strict";
@@ -21834,6 +22342,11 @@ var init_tool_args = __esm({
     FIGMA_WORKSPACE_DOCS_MODES = ["list", "catalog", "read"];
     FIGMA_WORKSPACE_DOCS_CLASSIFICATIONS = ["active", "conditional", "router", "examples"];
     FIGMA_WORKSPACE_DOWNLOAD_ASSET_FORMATS = ["png", "jpg", "svg", "pdf"];
+    MAX_ASSET_MANIFEST_ITEMS = 64;
+    MAX_INLINE_RESULT_LIMIT = 1e4;
+    MAX_GUIDANCE_CARDS = 8;
+    MAX_LOOKUP_RESULTS = 10;
+    MAX_LOOKUP_SNIPPET_LINES = 8;
   }
 });
 
@@ -22221,16 +22734,376 @@ var init_wrapper_contracts = __esm({
   }
 });
 
+// src/runtime/managed-files.ts
+import { randomBytes as randomBytes2 } from "node:crypto";
+import {
+  link as link2,
+  lstat,
+  mkdir as mkdir2,
+  open as open2,
+  realpath,
+  rename as rename2,
+  unlink
+} from "node:fs/promises";
+import { basename, dirname as dirname5, isAbsolute, join, relative, resolve as resolve6 } from "node:path";
+async function ensureManagedDirectory(options) {
+  await prepareManagedDirectory(options.root, options.directory, mergeOperations(options.operations));
+}
+async function assertManagedFilePath(options) {
+  const operations = mergeOperations(options.operations);
+  const target = resolveManagedTarget(options.root, options.path);
+  const context = await inspectManagedDirectory(options.root, dirname5(target), operations);
+  const targetFingerprint = await inspectManagedFile(target, context, operations);
+  await revalidateDirectoryContext(context, operations);
+  await revalidateFingerprint(targetFingerprint, "managed file", operations);
+  return target;
+}
+async function removeManagedFile(options) {
+  const operations = mergeOperations(options.operations);
+  const target = resolveManagedTarget(options.root, options.path);
+  let context;
+  try {
+    context = await inspectManagedDirectory(options.root, dirname5(target), operations);
+  } catch (error2) {
+    if (options.allowMissing && hasErrorCode(error2, "ENOENT")) return;
+    throw error2;
+  }
+  let targetFingerprint;
+  try {
+    targetFingerprint = await inspectManagedFile(target, context, operations);
+  } catch (error2) {
+    if (options.allowMissing && hasErrorCode(error2, "ENOENT")) return;
+    throw error2;
+  }
+  await revalidateDirectoryContext(context, operations);
+  await revalidateFingerprint(targetFingerprint, "managed file", operations);
+  await operations.unlink(target);
+  await revalidateDirectoryContext(context, operations);
+}
+async function atomicWriteManagedTextFile(options, content) {
+  return atomicWriteManagedFile(options, content, Buffer.byteLength(content, "utf8"));
+}
+async function atomicWriteManagedBinaryFile(options, content) {
+  return atomicWriteManagedFile(options, content, content.byteLength);
+}
+async function atomicWriteManagedStreamFile(options, content) {
+  return atomicWriteManagedFile(options, content);
+}
+async function atomicWriteManagedFile(options, content, expectedBytes) {
+  const operations = mergeOperations(options.operations);
+  const target = resolveManagedTarget(options.root, options.path);
+  const context = await prepareManagedDirectory(options.root, dirname5(target), operations);
+  const initialTarget = await inspectOptionalManagedFile(target, context, operations);
+  if (!options.overwrite && initialTarget) {
+    throw refusingToOverwriteError(target);
+  }
+  const temporaryPath = await createTemporaryFilePath(target, operations);
+  let handle;
+  let committed = false;
+  try {
+    handle = await operations.open(temporaryPath, "wx", 384);
+    await handle.chmod(384);
+    const bytes = isAsyncIterable(content) ? await writeManagedChunks(handle, content) : await writeManagedValue(handle, content);
+    if (expectedBytes !== void 0 && bytes !== expectedBytes) {
+      throw new Error(`Managed file write produced ${bytes} bytes; expected ${expectedBytes}: ${target}`);
+    }
+    await handle.sync();
+    await handle.close();
+    handle = void 0;
+    const temporaryFingerprint = await inspectManagedFile(temporaryPath, context, operations);
+    await revalidateDirectoryContext(context, operations);
+    await revalidateOptionalTarget(target, initialTarget, context, operations, !options.overwrite);
+    if (options.overwrite) {
+      await operations.rename(temporaryPath, target);
+    } else {
+      try {
+        await operations.link(temporaryPath, target);
+      } catch (error2) {
+        if (hasErrorCode(error2, "EEXIST")) {
+          throw refusingToOverwriteError(target);
+        }
+        throw error2;
+      }
+      await operations.unlink(temporaryPath);
+    }
+    committed = true;
+    await revalidateDirectoryContext(context, operations);
+    const committedFingerprint = await inspectManagedFile(target, context, operations);
+    if (!sameIdentity(temporaryFingerprint, committedFingerprint)) {
+      throw new Error(`Managed file target was replaced while committing the write: ${target}`);
+    }
+    return { path: target, bytes };
+  } finally {
+    if (handle) {
+      try {
+        await handle.close();
+      } catch {
+      }
+    }
+    if (!committed) {
+      try {
+        await operations.unlink(temporaryPath);
+      } catch (error2) {
+        if (!hasErrorCode(error2, "ENOENT")) {
+        }
+      }
+    }
+  }
+}
+async function writeManagedValue(handle, content) {
+  await handle.writeFile(content, typeof content === "string" ? { encoding: "utf8" } : void 0);
+  return typeof content === "string" ? Buffer.byteLength(content, "utf8") : content.byteLength;
+}
+async function writeManagedChunks(handle, content) {
+  let position = 0;
+  for await (const rawChunk of content) {
+    const chunk = Buffer.from(rawChunk);
+    let offset = 0;
+    while (offset < chunk.byteLength) {
+      const { bytesWritten } = await handle.write(
+        chunk,
+        offset,
+        chunk.byteLength - offset,
+        position
+      );
+      if (!Number.isSafeInteger(bytesWritten) || bytesWritten <= 0) {
+        throw new Error("Managed stream write made no forward progress.");
+      }
+      offset += bytesWritten;
+      position += bytesWritten;
+    }
+  }
+  return position;
+}
+function isAsyncIterable(value) {
+  return typeof value === "object" && value !== null && Symbol.asyncIterator in value && typeof value[Symbol.asyncIterator] === "function";
+}
+async function createTemporaryFilePath(target, operations) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const candidate = join(
+      dirname5(target),
+      `.${basename(target)}.${process.pid}.${randomBytes2(12).toString("hex")}.tmp`
+    );
+    try {
+      await operations.lstat(candidate);
+    } catch (error2) {
+      if (hasErrorCode(error2, "ENOENT")) return candidate;
+      throw error2;
+    }
+  }
+  throw new Error(`Unable to allocate a unique sibling temporary file for ${target}.`);
+}
+async function prepareManagedDirectory(rootValue, directoryValue, operations) {
+  const { root, target: directory } = resolveManagedPair(rootValue, directoryValue);
+  const rootContext = await ensureManagedRoot(root, operations);
+  const fingerprints = [rootContext.fingerprint];
+  let current = root;
+  let expectedRealPath = rootContext.fingerprint.realPath;
+  const rel = relative(root, directory);
+  const segments = rel === "" ? [] : rel.split(/[\\/]+/u);
+  for (const segment of segments) {
+    await revalidateFingerprints(fingerprints, operations);
+    current = join(current, segment);
+    expectedRealPath = join(expectedRealPath, segment);
+    try {
+      await operations.mkdir(current);
+    } catch (error2) {
+      if (!hasErrorCode(error2, "EEXIST")) throw error2;
+    }
+    const fingerprint3 = await inspectDirectory(current, operations, expectedRealPath);
+    fingerprints.push(fingerprint3);
+  }
+  await revalidateFingerprints(fingerprints, operations);
+  return { root, directory, rootRealPath: rootContext.fingerprint.realPath, fingerprints };
+}
+async function inspectManagedDirectory(rootValue, directoryValue, operations) {
+  const { root, target: directory } = resolveManagedPair(rootValue, directoryValue);
+  const rootFingerprint = await inspectDirectory(root, operations);
+  const fingerprints = [rootFingerprint];
+  let current = root;
+  let expectedRealPath = rootFingerprint.realPath;
+  const rel = relative(root, directory);
+  const segments = rel === "" ? [] : rel.split(/[\\/]+/u);
+  for (const segment of segments) {
+    current = join(current, segment);
+    expectedRealPath = join(expectedRealPath, segment);
+    fingerprints.push(await inspectDirectory(current, operations, expectedRealPath));
+  }
+  await revalidateFingerprints(fingerprints, operations);
+  return { root, directory, rootRealPath: rootFingerprint.realPath, fingerprints };
+}
+async function ensureManagedRoot(root, operations) {
+  try {
+    return { fingerprint: await inspectDirectory(root, operations) };
+  } catch (error2) {
+    if (!hasErrorCode(error2, "ENOENT")) throw error2;
+  }
+  const missing = [];
+  let existing = root;
+  while (true) {
+    try {
+      const existingFingerprint = await inspectDirectory(existing, operations);
+      let parentFingerprint = existingFingerprint;
+      for (const child of missing.reverse()) {
+        await revalidateFingerprint(parentFingerprint, "managed directory", operations);
+        try {
+          await operations.mkdir(child);
+        } catch (error2) {
+          if (!hasErrorCode(error2, "EEXIST")) throw error2;
+        }
+        parentFingerprint = await inspectDirectory(
+          child,
+          operations,
+          join(parentFingerprint.realPath, basename(child))
+        );
+      }
+      return { fingerprint: parentFingerprint };
+    } catch (error2) {
+      if (!hasErrorCode(error2, "ENOENT")) throw error2;
+      const parent = dirname5(existing);
+      if (parent === existing) throw error2;
+      missing.push(existing);
+      existing = parent;
+    }
+  }
+}
+async function inspectDirectory(path, operations, expectedRealPath) {
+  const stats = await operations.lstat(path);
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    throw new Error(`Managed directory must be a real directory, not a symlink, junction, reparse target, or file: ${path}`);
+  }
+  const actualRealPath = await operations.realpath(path);
+  if (expectedRealPath && !samePath(actualRealPath, expectedRealPath)) {
+    throw new Error(`Managed directory traverses a symlink, junction, or reparse point: ${path}`);
+  }
+  return fingerprint2(path, actualRealPath, stats);
+}
+async function inspectManagedFile(path, context, operations) {
+  const stats = await operations.lstat(path);
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    throw new Error(`Managed file target must be a regular file, not a symlink, junction, reparse target, or directory: ${path}`);
+  }
+  const actualRealPath = await operations.realpath(path);
+  const parentRealPath = context.fingerprints.at(-1)?.realPath ?? context.rootRealPath;
+  const expectedRealPath = join(parentRealPath, basename(path));
+  if (!samePath(actualRealPath, expectedRealPath)) {
+    throw new Error(`Managed file target traverses a symlink, junction, or reparse point: ${path}`);
+  }
+  return fingerprint2(path, actualRealPath, stats);
+}
+async function inspectOptionalManagedFile(path, context, operations) {
+  try {
+    return await inspectManagedFile(path, context, operations);
+  } catch (error2) {
+    if (hasErrorCode(error2, "ENOENT")) return void 0;
+    throw error2;
+  }
+}
+async function revalidateOptionalTarget(path, initial, context, operations, refuseIfCreated) {
+  const current = await inspectOptionalManagedFile(path, context, operations);
+  if (!initial && !current) return;
+  if (!initial && current && refuseIfCreated) {
+    throw refusingToOverwriteError(path);
+  }
+  if (!initial || !current || !sameIdentity(initial, current)) {
+    throw new Error(`Managed file target changed while preparing the write: ${path}`);
+  }
+}
+async function revalidateDirectoryContext(context, operations) {
+  await revalidateFingerprints(context.fingerprints, operations);
+}
+async function revalidateFingerprints(fingerprints, operations) {
+  for (const item of fingerprints) {
+    await revalidateFingerprint(item, "managed directory", operations);
+  }
+}
+async function revalidateFingerprint(original, label, operations) {
+  const stats = await operations.lstat(original.path);
+  const actualRealPath = await operations.realpath(original.path);
+  const current = fingerprint2(original.path, actualRealPath, stats);
+  if (stats.isSymbolicLink() || !samePath(original.realPath, actualRealPath) || !sameIdentity(original, current)) {
+    throw new Error(`${label} was replaced during a filesystem operation: ${original.path}`);
+  }
+}
+function resolveManagedTarget(rootValue, targetValue) {
+  return resolveManagedPair(rootValue, targetValue).target;
+}
+function resolveManagedPair(rootValue, targetValue) {
+  if (!isAbsolute(rootValue)) {
+    throw new Error(`Managed root must be an absolute path: ${rootValue}`);
+  }
+  if (!isAbsolute(targetValue)) {
+    throw new Error(`Managed target must be an absolute path: ${targetValue}`);
+  }
+  const root = resolve6(rootValue);
+  const target = resolve6(targetValue);
+  const rel = relative(root, target);
+  if (rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(rel)) {
+    throw new Error(`Managed target must stay inside its managed root: ${target}`);
+  }
+  return { root, target };
+}
+function fingerprint2(path, realPath, stats) {
+  return {
+    path,
+    realPath,
+    dev: stats.dev,
+    ino: stats.ino,
+    mode: stats.mode,
+    birthtimeMs: stats.birthtimeMs
+  };
+}
+function sameIdentity(left, right) {
+  if (left.dev !== 0 || left.ino !== 0 || right.dev !== 0 || right.ino !== 0) {
+    return left.dev === right.dev && left.ino === right.ino;
+  }
+  return left.mode === right.mode && left.birthtimeMs === right.birthtimeMs;
+}
+function samePath(left, right) {
+  const normalizedLeft = resolve6(left);
+  const normalizedRight = resolve6(right);
+  return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
+}
+function mergeOperations(operations) {
+  return { ...DEFAULT_OPERATIONS, ...operations };
+}
+function refusingToOverwriteError(path) {
+  const error2 = new Error(`Refusing to overwrite existing file without overwrite=true: ${path}`);
+  Object.assign(error2, { code: "EEXIST" });
+  return error2;
+}
+function hasErrorCode(error2, code) {
+  return error2 instanceof Error && "code" in error2 && error2.code === code;
+}
+var DEFAULT_OPERATIONS;
+var init_managed_files = __esm({
+  "src/runtime/managed-files.ts"() {
+    "use strict";
+    DEFAULT_OPERATIONS = {
+      link: link2,
+      lstat,
+      mkdir: (path) => mkdir2(path),
+      open: open2,
+      realpath,
+      rename: rename2,
+      unlink
+    };
+  }
+});
+
 // src/runtime/workspace-files.ts
-import { mkdir as mkdir2, readFile as readFile2, unlink, writeFile as writeFile2 } from "node:fs/promises";
-import { basename, dirname as dirname5, extname, isAbsolute, relative, resolve as resolve5 } from "node:path";
+import { basename as basename2, dirname as dirname6, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve7 } from "node:path";
 function createScriptOutputWriter(args, session) {
   const files = resolveScriptOutputFiles(args, session);
   return {
     files,
     async cleanupCompiledScriptFile() {
       if (files.compiledScriptFile) {
-        await removeFileIfExists(files.compiledScriptFile);
+        await removeManagedFile({
+          root: session?.workspace?.root ?? dirname6(files.compiledScriptFile),
+          path: files.compiledScriptFile,
+          allowMissing: true
+        });
       }
     },
     async write(payload) {
@@ -22251,7 +23124,7 @@ function createScriptOutputWriter(args, session) {
 function resolveScriptInputPath(args, session) {
   const scriptPath = asOptionalString(args.scriptPath);
   if (scriptPath) {
-    if (!isAbsolute(scriptPath)) {
+    if (!isAbsolute2(scriptPath)) {
       throw new Error('Input "scriptPath" must be an absolute path. Use inputFile after figma:task:prepare for workspace-relative files.');
     }
     assertFigmaTypescriptScriptPath(scriptPath, "scriptPath");
@@ -22277,7 +23150,7 @@ function resolveWorkspaceAwareFile(value, session, argumentName) {
   if (!raw) {
     return void 0;
   }
-  if (isAbsolute(raw)) {
+  if (isAbsolute2(raw)) {
     return raw;
   }
   if (!session.workspace) {
@@ -22286,6 +23159,14 @@ function resolveWorkspaceAwareFile(value, session, argumentName) {
     );
   }
   return resolveWorkspaceFile(session.workspace.sessionDir, raw, argumentName);
+}
+async function assertWorkspaceManagedInputFile(path, session) {
+  const resolvedPath = resolve7(path);
+  const workspaceRoot = session.workspace?.root;
+  if (!workspaceRoot || !isPathInside(resolve7(workspaceRoot), resolvedPath)) {
+    return resolvedPath;
+  }
+  return assertManagedFilePath({ root: workspaceRoot, path: resolvedPath });
 }
 async function writeCaptureOutputFile(outputFile, upstream, parsed) {
   const rawContent = asRecord(upstream).content;
@@ -22314,7 +23195,6 @@ async function writeCaptureOutputFile(outputFile, upstream, parsed) {
 }
 async function writeCaptureImageOutputFile(outputFile, buffer, sourceMimeType) {
   const output = resolveCaptureImageOutput(outputFile);
-  await mkdir2(dirname5(output.path), { recursive: true });
   const inputMimeType = sourceMimeType ?? detectCaptureImageMimeType(buffer);
   if (inputMimeType !== "image/png") {
     throw new Error(
@@ -22322,7 +23202,11 @@ async function writeCaptureImageOutputFile(outputFile, buffer, sourceMimeType) {
     );
   }
   const dimensions = readPngDimensions(buffer);
-  await writeFile2(output.path, buffer);
+  await atomicWriteManagedBinaryFile({
+    root: dirname6(output.path),
+    path: output.path,
+    overwrite: true
+  }, buffer);
   return {
     path: output.path,
     bytes: buffer.byteLength,
@@ -22384,19 +23268,18 @@ function withFileExtension(path, extension) {
   return `${path.slice(0, -currentExtension.length)}${extension}`;
 }
 async function writeJsonFile(path, value) {
-  await mkdir2(dirname5(path), { recursive: true });
   const content = `${JSON.stringify(removeUndefined2(value), null, 2)}
 `;
-  await writeFile2(path, content, "utf8");
+  await atomicWriteManagedTextFile({ root: dirname6(path), path, overwrite: true }, content);
   return textFileMetadata(path, content);
 }
 function createSessionWorkspace(options) {
-  if (!isAbsolute(options.workspaceDir)) {
+  if (!isAbsolute2(options.workspaceDir)) {
     throw new Error('Tool argument "workspaceDir" must be an absolute path.');
   }
-  const root = resolve5(options.workspaceDir);
+  const root = resolve7(options.workspaceDir);
   const fileContext = normalizeFileContextDirectory(options.fileKey, options.fileSlug);
-  const fileDir = resolve5(root, fileContext);
+  const fileDir = resolve7(root, fileContext);
   if (!isPathInside(root, fileDir)) {
     throw new Error("Resolved file workspace must stay inside the workspace root.");
   }
@@ -22410,8 +23293,8 @@ function createSessionWorkspace(options) {
     fileSlug: options.fileSlug,
     intentSlug: options.intentSlug,
     sessionDir: fileDir,
-    scriptPath: resolve5(fileDir, script),
-    resultFile: resolve5(fileDir, result),
+    scriptPath: resolve7(fileDir, script),
+    resultFile: resolve7(fileDir, result),
     files: {
       script,
       result
@@ -22419,13 +23302,13 @@ function createSessionWorkspace(options) {
   };
 }
 async function ensureWorkspaceDirectories(workspace) {
-  await mkdir2(workspace.sessionDir, { recursive: true });
+  await ensureManagedDirectory({ root: workspace.root, directory: workspace.sessionDir });
 }
 function resolvePreparedTaskWorkspace(options) {
   if (options.session?.workspace && !options.args.workspaceDir) {
     return createWorkspaceFromFileDir({
       root: options.session.workspace.root,
-      fileDir: resolve5(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
+      fileDir: resolve7(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
       fileKey: options.session.fileKey,
       fileSlug: options.fileSlug,
       intentSlug: options.taskName
@@ -22435,16 +23318,16 @@ function resolvePreparedTaskWorkspace(options) {
   if (!explicitWorkspaceDir) {
     throw new Error('Tool argument "workspaceDir" is required. Pass a Git-ignored project-local .figma-workspace directory or an explicitly selected Figma task-artifact directory.');
   }
-  if (!isAbsolute(explicitWorkspaceDir)) {
+  if (!isAbsolute2(explicitWorkspaceDir)) {
     throw new Error('Tool argument "workspaceDir" must be an absolute path.');
   }
   return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskName);
 }
 function resolveWorkspaceFile(baseDir, fileName, argumentName) {
-  if (isAbsolute(fileName) || fileName.includes("..") || /^[A-Za-z]:/u.test(fileName) || fileName.startsWith("\\\\")) {
+  if (isAbsolute2(fileName) || fileName.includes("..") || /^[A-Za-z]:/u.test(fileName) || fileName.startsWith("\\\\")) {
     throw new Error(`Tool argument "${argumentName}" must be a workspace-relative file name.`);
   }
-  const resolved = resolve5(baseDir, fileName);
+  const resolved = resolve7(baseDir, fileName);
   if (!isPathInside(baseDir, resolved)) {
     throw new Error(`Tool argument "${argumentName}" must stay inside the file-context workspace.`);
   }
@@ -22452,7 +23335,7 @@ function resolveWorkspaceFile(baseDir, fileName, argumentName) {
 }
 function normalizeTaskScriptName(value, taskName) {
   const scriptName = asOptionalString(value) ?? `${taskName}.figma.ts`;
-  if (isAbsolute(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
+  if (isAbsolute2(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
     throw new Error('Tool argument "fileName" must be a file name, not a path.');
   }
   assertFigmaTypescriptScriptPath(scriptName, "fileName");
@@ -22465,17 +23348,7 @@ function resultFileNameForScript(scriptName) {
   return `${slugifyTaskName(scriptName)}.result.json`;
 }
 async function writeTaskFile(path, content, overwrite) {
-  if (!overwrite) {
-    try {
-      await readFile2(path, "utf8");
-      throw new Error(`Refusing to overwrite existing file without overwrite=true: ${path}`);
-    } catch (error2) {
-      if (error2 instanceof Error && error2.message.startsWith("Refusing to overwrite")) {
-        throw error2;
-      }
-    }
-  }
-  await writeFile2(path, content, "utf8");
+  await atomicWriteManagedTextFile({ root: dirname6(path), path, overwrite }, content);
   return textFileMetadata(path, content);
 }
 function resolveScriptOutputFiles(args, session) {
@@ -22502,22 +23375,11 @@ function compiledFilePathForResultFile(resultFile) {
 }
 function resolveWorkspaceOutputFile(value, baseDir, fallbackName, argumentName) {
   const raw = asOptionalString(value) ?? fallbackName;
-  return isAbsolute(raw) ? raw : resolveWorkspaceFile(baseDir, raw, argumentName);
+  return isAbsolute2(raw) ? raw : resolveWorkspaceFile(baseDir, raw, argumentName);
 }
 async function writeTextFile(path, content) {
-  await mkdir2(dirname5(path), { recursive: true });
-  await writeFile2(path, content, "utf8");
+  await atomicWriteManagedTextFile({ root: dirname6(path), path, overwrite: true }, content);
   return textFileMetadata(path, content);
-}
-async function removeFileIfExists(path) {
-  try {
-    await unlink(path);
-  } catch (error2) {
-    if (isMissingFileError(error2)) {
-      return;
-    }
-    throw error2;
-  }
 }
 function formatCompiledScriptFailureFile(compiledScript, args, session) {
   const source = compiledScriptSourceDescription(args, session);
@@ -22563,9 +23425,9 @@ function countTextLines(content) {
 }
 function createWorkspaceFromSessionDir(sessionDir, taskName) {
   return createWorkspaceFromFileDir({
-    root: dirname5(sessionDir),
+    root: dirname6(sessionDir),
     fileDir: sessionDir,
-    fileSlug: slugifyTaskName(basename(sessionDir)),
+    fileSlug: slugifyTaskName(basename2(sessionDir)),
     intentSlug: taskName
   });
 }
@@ -22583,8 +23445,8 @@ function createWorkspaceFromFileDir(options) {
     fileSlug: options.fileSlug,
     intentSlug: options.intentSlug,
     sessionDir: options.fileDir,
-    scriptPath: resolve5(options.fileDir, script),
-    resultFile: resolve5(options.fileDir, result),
+    scriptPath: resolve7(options.fileDir, script),
+    resultFile: resolve7(options.fileDir, result),
     files: {
       script,
       result
@@ -22593,7 +23455,7 @@ function createWorkspaceFromFileDir(options) {
 }
 function normalizeFileContextDirectory(fileKey, fileSlug) {
   if (fileKey) {
-    if (isAbsolute(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
+    if (isAbsolute2(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
       throw new Error("Derived Figma file key must be a simple file key.");
     }
     return fileKey;
@@ -22712,8 +23574,8 @@ function slugifyTaskName(value) {
   return slug || "figma-task";
 }
 function isPathInside(root, path) {
-  const rel = relative(root, path);
-  return rel === "" || !rel.startsWith("..") && !isAbsolute(rel);
+  const rel = relative2(root, path);
+  return rel === "" || !rel.startsWith("..") && !isAbsolute2(rel);
 }
 function removeUndefined2(value) {
   if (Array.isArray(value)) {
@@ -22742,6 +23604,7 @@ var TASK_WORKSPACE_ROOT_ENV;
 var init_workspace_files = __esm({
   "src/runtime/workspace-files.ts"() {
     "use strict";
+    init_managed_files();
     TASK_WORKSPACE_ROOT_ENV = "FIGMA_WORKSPACE_TASK_ROOT";
   }
 });
@@ -22756,15 +23619,87 @@ __export(workspace_mcp_server_exports, {
   createFigmaWorkspaceSessionStore: () => createFigmaWorkspaceSessionStore,
   isFigmaWorkspaceMissingFileErrorForTesting: () => isMissingFileError
 });
-import { randomUUID } from "node:crypto";
+import { randomUUID as randomUUID2 } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { tmpdir } from "node:os";
-import { mkdir as mkdir3, readFile as readFile3, writeFile as writeFile3 } from "node:fs/promises";
-import { dirname as dirname6, extname as extname2, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve6 } from "node:path";
+import { createReadStream } from "node:fs";
+import { lstat as lstat2, open as open3, readFile as readFile2, stat as stat2 } from "node:fs/promises";
+import { dirname as dirname7, extname as extname2, isAbsolute as isAbsolute3, relative as relative3, resolve as resolve8 } from "node:path";
+import { Transform } from "node:stream";
 function readProcessEnv(name) {
   return typeof process === "undefined" ? void 0 : process.env?.[name];
 }
 function defaultTaskWorkspaceRoot() {
-  return readProcessEnv(TASK_WORKSPACE_ROOT_ENV) ?? resolve6(tmpdir(), "figma-workspace", "tasks");
+  return readProcessEnv(TASK_WORKSPACE_ROOT_ENV) ?? resolve8(tmpdir(), "figma-workspace", "tasks");
+}
+function runWithCommandResourceContext(operation) {
+  return COMMAND_RESOURCE_CONTEXT.run(
+    { resourceBudget: new DataPlaneResourceBudget() },
+    operation
+  );
+}
+function commandResourceBudget() {
+  return COMMAND_RESOURCE_CONTEXT.getStore()?.resourceBudget ?? new DataPlaneResourceBudget();
+}
+async function awaitUpstreamOperation(label, operation, options) {
+  const deadline = new NetworkRequestDeadline(label, { idleTimeout: false });
+  let rejectOnAbort;
+  const aborted2 = new Promise((_resolve, reject) => {
+    rejectOnAbort = reject;
+  });
+  const handleAbort = () => {
+    rejectOnAbort?.(deadline.controller.signal.reason ?? networkTimeoutError(`${label} timed out.`));
+  };
+  deadline.controller.signal.addEventListener("abort", handleAbort, { once: true });
+  try {
+    const result = await Promise.race([operation(deadline.controller.signal), aborted2]);
+    if (options.countResponse) {
+      const serialized = JSON.stringify(result);
+      if (serialized === void 0) {
+        throw new PostResponseResourceError(
+          resourceLimitError(`${label} returned a non-JSON-serializable response.`),
+          result
+        );
+      }
+      try {
+        commandResourceBudget().consume(Buffer.byteLength(serialized, "utf8"), `${label} response`);
+      } catch (error2) {
+        throw new PostResponseResourceError(error2, result);
+      }
+    }
+    return result;
+  } finally {
+    deadline.controller.signal.removeEventListener("abort", handleAbort);
+    deadline.dispose();
+  }
+}
+async function connectUpstream(client, label) {
+  await awaitUpstreamOperation(`${label} connection`, () => client.connect(), { countResponse: false });
+}
+async function listUpstreamToolsWithLimits(client, label) {
+  return awaitUpstreamOperation(
+    `${label} tool discovery`,
+    (signal) => client.listTools(signal),
+    { countResponse: true }
+  );
+}
+async function callUpstreamToolWithLimits(client, toolName, args) {
+  return awaitUpstreamOperation(
+    `Upstream tool ${toolName}`,
+    (signal) => client.callTool(toolName, args, signal),
+    { countResponse: true }
+  );
+}
+function resourceLimitError(message) {
+  return Object.assign(new Error(message), { code: "FIGMA_WORKSPACE_RESOURCE_LIMIT_EXCEEDED" });
+}
+function networkTimeoutError(message) {
+  return Object.assign(new Error(message), { code: "FIGMA_WORKSPACE_NETWORK_TIMEOUT" });
+}
+function formatDataPlaneLimit(bytes) {
+  if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)} MiB`;
+  if (bytes % 1024 === 0) return `${bytes / 1024} KiB`;
+  return `${bytes} bytes`;
 }
 function requireWrapperUpstreamToolName(contract) {
   if (!contract.upstreamToolName) {
@@ -22907,33 +23842,35 @@ function createFigmaWorkspaceClient(options = {}) {
   return {
     client: runtime.client,
     sessions: runtime.sessions,
-    connect: () => runtime.client.connect(),
-    close: () => runtime.client.close(),
-    open: async (args = {}) => parseJsonToolResult(
-      await handleOpen(asOpenArgs(withDefaultTitle(args, "Open Figma Workspace session")), runtime)
+    connect: () => runWithCommandResourceContext(
+      async () => connectUpstream(runtime.client, "Connect Figma Workspace client")
     ),
-    eval: async (args) => parseJsonToolResult(
+    close: () => runtime.client.close(),
+    open: async (args = {}) => runWithCommandResourceContext(async () => parseJsonToolResult(
+      await handleOpen(asOpenArgs(withDefaultTitle(args, "Open Figma Workspace session")), runtime)
+    )),
+    eval: async (args) => runWithCommandResourceContext(async () => parseJsonToolResult(
       await handleEval(
         asEvalArgs(withDefaultTitle(args, "Run Figma Workspace Plugin API")),
         runtime
       )
-    ),
-    runScriptFile: async (args) => executeRunScriptFile(
+    )),
+    runScriptFile: async (args) => runWithCommandResourceContext(async () => executeRunScriptFile(
       asRunScriptFileArgs(withDefaultTitle(args, "Run Figma TypeScript file")),
       runtime
-    ),
-    applyAssetManifest: async (args) => executeApplyAssetManifest(
+    )),
+    applyAssetManifest: async (args) => runWithCommandResourceContext(async () => executeApplyAssetManifest(
       asApplyAssetManifestArgs(withDefaultTitle(args, "Apply Figma asset manifest")),
       runtime
-    ),
-    downloadAssets: async (args) => executeDownloadAssets(
+    )),
+    downloadAssets: async (args) => runWithCommandResourceContext(async () => executeDownloadAssets(
       asDownloadAssetsArgs(withDefaultTitle(args, "Download Figma assets")),
       runtime
-    ),
-    captureNode: async (args) => executeCaptureNode(
+    )),
+    captureNode: async (args) => runWithCommandResourceContext(async () => executeCaptureNode(
       asCaptureNodeArgs(withDefaultTitle(args, "Capture Figma node")),
       runtime
-    ),
+    )),
     prepareTask: async (args) => parseJsonToolResult(
       await handlePrepareTask(
         asPrepareTaskArgs(withDefaultTitle(args, "Prepare Figma Workspace task")),
@@ -22943,44 +23880,46 @@ function createFigmaWorkspaceClient(options = {}) {
     guidance: async (args) => parseJsonToolResult(
       await handleGuidance(asGuidanceArgs(withDefaultTitle(args, "Read Figma Workspace guidance")))
     ),
-    inspect: async (args = {}) => parseJsonToolResult(
+    inspect: async (args = {}) => runWithCommandResourceContext(async () => parseJsonToolResult(
       await handleInspect(asInspectArgs(withDefaultTitle(args, "Inspect Figma Workspace target")), runtime)
-    ),
-    getMetadata: async (args) => executeGetMetadata(
+    )),
+    getMetadata: async (args) => runWithCommandResourceContext(async () => executeGetMetadata(
       asGetMetadataArgs(withDefaultTitle(args, "Read Figma metadata as JSON")),
       runtime
-    ),
-    getDesignContext: async (args) => executeGetDesignContext(
+    )),
+    getDesignContext: async (args) => runWithCommandResourceContext(async () => executeGetDesignContext(
       asGetDesignContextArgs(withDefaultTitle(args, "Get Figma design context")),
       runtime
-    ),
-    getMotionContext: async (args) => executeGetMotionContext(
+    )),
+    getMotionContext: async (args) => runWithCommandResourceContext(async () => executeGetMotionContext(
       asGetMotionContextArgs(withDefaultTitle(args, "Get Figma motion context")),
       runtime
-    ),
-    searchDesignSystem: async (args) => executeSearchDesignSystem(
+    )),
+    searchDesignSystem: async (args) => runWithCommandResourceContext(async () => executeSearchDesignSystem(
       asSearchDesignSystemArgs(withDefaultTitle(args, "Search Figma design system")),
       runtime
-    ),
-    getLibraries: async (args = {}) => executeGetLibraries(
+    )),
+    getLibraries: async (args = {}) => runWithCommandResourceContext(async () => executeGetLibraries(
       asGetLibrariesArgs(withDefaultTitle(args, "Get Figma libraries")),
       runtime
-    ),
-    getVariableDefs: async (args) => executeGetVariableDefs(
+    )),
+    getVariableDefs: async (args) => runWithCommandResourceContext(async () => executeGetVariableDefs(
       asGetVariableDefsArgs(withDefaultTitle(args, "Get Figma variable definitions")),
       runtime
-    ),
-    callUpstreamTool: async (args) => executeCallUpstreamTool(
+    )),
+    callUpstreamTool: async (args) => runWithCommandResourceContext(async () => executeCallUpstreamTool(
       asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool")),
       runtime
-    ),
+    )),
     lookup: async (args) => parseJsonToolResult(
       await handleLookup(asLookupArgs(withDefaultTitle(args, "Look up Figma Workspace reference")))
     ),
     docs: async (args) => handleDocs(asDocsArgs(args)),
     doctor: async (args = {}) => handleDoctor(asDoctorArgs(args)),
     sessionsInfo: async (args = {}) => handleSessions(asSessionsArgs(args), runtime.sessions),
-    upstreamTools: async (args = {}) => handleUpstreamTools(asUpstreamToolsArgs(args), runtime.upstreamToolCache)
+    upstreamTools: async (args = {}) => runWithCommandResourceContext(
+      async () => handleUpstreamTools(asUpstreamToolsArgs(args), runtime.upstreamToolCache)
+    )
   };
 }
 function handleDocs(args) {
@@ -23081,7 +24020,9 @@ async function handleOpen(args, runtime) {
   bindOpenWorkspaceIfAvailable(session, args);
   touchSession(session);
   if (args.connect !== false) {
-    await runtime.client?.connect();
+    if (runtime.client) {
+      await connectUpstream(runtime.client, "Open Figma Workspace session");
+    }
   }
   const payload = removeUndefined3({
     ok: true,
@@ -23115,14 +24056,70 @@ async function handleEval(args, runtime) {
     return makeJsonToolResult({
       ok: false,
       session: responseSession(session),
-      scriptExecutionSucceeded: false,
+      executionOutcome: "not_started",
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: createFigmaWorkspaceRepairPlan(diagnostics)
     });
   }
-  const evalSettings = await resolveEvalSettings(session, args, runtime);
-  const upstream = await callUpstreamEval(runtime.client, evalSettings, script);
-  const parsed = parseUpstreamToolResult(upstream);
+  let evalSettings;
+  try {
+    evalSettings = await resolveEvalSettings(session, args, runtime);
+  } catch (error2) {
+    const upstreamError = normalizeCaughtUpstreamError(error2);
+    return makeJsonToolResult(removeUndefined3({
+      ok: false,
+      session: responseSession(session),
+      executionOutcome: "not_started",
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      upstreamError: responseUpstreamError(upstreamError)
+    }));
+  }
+  const attempt = await attemptUpstreamEval(runtime.client, evalSettings, script);
+  if (attempt.error) {
+    return makeJsonToolResult(removeUndefined3({
+      ok: false,
+      session: responseSession(session),
+      executionOutcome: attempt.requestDispatched ? "outcome_unknown" : "not_started",
+      retryGuidance: attempt.requestDispatched ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : void 0,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      upstreamError: responseUpstreamError(attempt.error)
+    }));
+  }
+  const upstream = attempt.upstream;
+  let parsed;
+  try {
+    parsed = parseUpstreamToolResult(upstream);
+  } catch (error2) {
+    const upstreamError = normalizeCaughtUpstreamError(error2);
+    return makeJsonToolResult(removeUndefined3({
+      ok: false,
+      session: responseSession(session),
+      executionOutcome: "outcome_unknown",
+      retryGuidance: UNKNOWN_EXECUTION_RETRY_GUIDANCE,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      upstreamError: responseUpstreamError(upstreamError)
+    }));
+  }
+  if (attempt.postResponseError) {
+    const upstreamFailed = parsed.upstreamError !== void 0;
+    const resultPayload2 = removeUndefined3({
+      ok: false,
+      session: responseSession(session),
+      executionOutcome: upstreamFailed ? "outcome_unknown" : "succeeded",
+      retryGuidance: upstreamFailed ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : void 0,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0
+    });
+    return makeJsonToolResult(localPostprocessingFailure(
+      resultPayload2,
+      "upstreamResponseBudget",
+      attempt.postResponseError
+    ));
+  }
   updateSessionFromParsedResult(session, parsed.json);
   const captureBatch = parsed.upstreamError ? { ok: true, requested: false } : await executeQueuedCaptureRequests({
     parsedJson: parsed.json,
@@ -23130,7 +24127,7 @@ async function handleEval(args, runtime) {
     runtime
   });
   runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
+    id: randomUUID2(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_workspace_eval",
     summary: summarizeParsedResult(parsed),
@@ -23139,9 +24136,9 @@ async function handleEval(args, runtime) {
   const resultPayload = removeUndefined3({
     ok: !parsed.upstreamError && captureBatch.ok,
     session: responseSession(session),
-    scriptExecutionSucceeded: !parsed.upstreamError,
+    executionOutcome: parsed.upstreamError ? "outcome_unknown" : "succeeded",
     captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : void 0,
-    retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : void 0,
+    retryGuidance: parsed.upstreamError ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : void 0,
     captures: captureBatch.captures,
     diagnostics: diagnosticsForResponse(diagnostics),
     repairPlan: repairPlanForResponse(diagnostics),
@@ -23178,7 +24175,7 @@ async function writeEvalResultFiles(options) {
         fields: {
           diagnosticsCount: countArrayField(options.resultPayload.diagnostics),
           repairPlan: options.resultPayload.repairPlan,
-          scriptExecutionSucceeded: options.resultPayload.scriptExecutionSucceeded,
+          executionOutcome: options.resultPayload.executionOutcome,
           captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
           retryGuidance: options.resultPayload.retryGuidance,
           captures: options.resultPayload.captures
@@ -23195,10 +24192,10 @@ function resolveEvalOutputFile(session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
   }
   const root = defaultTaskWorkspaceRoot();
-  if (!isAbsolute2(root)) {
+  if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve6(root, "eval-results", session.slug, fileName);
+  return resolve8(root, "eval-results", session.slug, fileName);
 }
 async function writeCallUpstreamResultFiles(options) {
   const outputFile = resolveCallUpstreamOutputFile(options.toolName, options.session);
@@ -23230,10 +24227,10 @@ function metadataResultFilePath(session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "metadataFile");
   }
   const root = defaultTaskWorkspaceRoot();
-  if (!isAbsolute2(root)) {
+  if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve6(root, "metadata-results", session.slug, fileName);
+  return resolve8(root, "metadata-results", session.slug, fileName);
 }
 function resolveCallUpstreamOutputFile(toolName, session) {
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
@@ -23242,10 +24239,10 @@ function resolveCallUpstreamOutputFile(toolName, session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
   }
   const root = defaultTaskWorkspaceRoot();
-  if (!isAbsolute2(root)) {
+  if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve6(root, "upstream-results", session.slug, fileName);
+  return resolve8(root, "upstream-results", session.slug, fileName);
 }
 function upstreamFilePathForResultFile(resultFile) {
   if (resultFile.endsWith(".result.json")) {
@@ -23304,14 +24301,13 @@ function createRunScriptResultFilePayload(options) {
     upstream: options.upstream,
     fields: {
       phase: asOptionalString2(options.resultPayload.phase),
-      executed: options.resultPayload.executed === true,
+      executionOutcome: asOptionalString2(options.resultPayload.executionOutcome),
       diagnosticsCount: options.diagnostics.length,
       fatalDiagnostics: options.diagnostics.filter((item) => item.severity === "fatal").length,
       warningDiagnostics: options.diagnostics.filter((item) => item.severity === "warning").length,
       diagnostics: options.diagnostics.length > 0 ? options.diagnostics : void 0,
       repairPlan: options.resultPayload.repairPlan,
       script,
-      scriptExecutionSucceeded: options.resultPayload.scriptExecutionSucceeded,
       captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
       retryGuidance: options.resultPayload.retryGuidance,
       captures: options.resultPayload.captures,
@@ -23331,7 +24327,9 @@ async function executeRunScriptFile(args, runtime) {
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   let source;
   try {
-    source = await readFile3(scriptPath, "utf8");
+    await assertWorkspaceManagedInputFile(scriptPath, session);
+    source = await readFile2(scriptPath, "utf8");
+    await assertWorkspaceManagedInputFile(scriptPath, session);
   } catch (error2) {
     if (!isMissingFileError(error2)) {
       throw error2;
@@ -23351,13 +24349,13 @@ async function executeRunScriptFile(args, runtime) {
     const resultPayload2 = removeUndefined3({
       ok: false,
       phase: "preflight",
-      executed: false,
+      executionOutcome: "not_started",
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics2),
       repairPlan: repairPlanForResponse(diagnostics2),
       script: responseScriptMetadata({ scriptPath })
     });
-    const outputFiles2 = await outputWriter.write({
+    const outputFiles = await outputWriter.write({
       result: createRunScriptResultFilePayload({
         session,
         resultPayload: resultPayload2,
@@ -23367,7 +24365,7 @@ async function executeRunScriptFile(args, runtime) {
     });
     return {
       ...limitInlineScriptResult(resultPayload2, inlineResultLimit, []),
-      outputFiles: Object.keys(outputFiles2).length > 0 ? outputFiles2 : void 0
+      outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0
     };
   }
   const expectedSurface = normalizeSurface(args.surface) ?? session.surface;
@@ -23404,14 +24402,14 @@ async function executeRunScriptFile(args, runtime) {
     const resultPayload2 = removeUndefined3({
       ok: false,
       phase: "preflight",
-      executed: false,
+      executionOutcome: "not_started",
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript
     });
     const limitedPayload2 = limitInlineScriptResult(resultPayload2, inlineResultLimit, []);
-    const outputFiles2 = await outputWriter.write({
+    const outputFiles = await outputWriter.write({
       result: createRunScriptResultFilePayload({
         session,
         resultPayload: resultPayload2,
@@ -23419,31 +24417,28 @@ async function executeRunScriptFile(args, runtime) {
       }),
       writeResult: true
     });
-    const payload2 = {
+    const payload = {
       ...limitedPayload2,
-      outputFiles: Object.keys(outputFiles2).length > 0 ? outputFiles2 : void 0
+      outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0
     };
-    return payload2;
+    return payload;
   }
-  const evalSettings = await resolveEvalSettings(session, args, runtime);
-  let upstream;
-  let parsed;
+  let evalSettings;
   try {
-    upstream = await callUpstreamEval(runtime.client, evalSettings, wrappedScript);
-    parsed = parseUpstreamToolResult(upstream);
+    evalSettings = await resolveEvalSettings(session, args, runtime);
   } catch (error2) {
     const upstreamError = normalizeCaughtUpstreamError(error2);
     const resultPayload2 = removeUndefined3({
       ok: false,
-      phase: "execute",
-      executed: true,
+      phase: "preflight",
+      executionOutcome: "not_started",
       session: responseSession(session),
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
       upstreamError: responseUpstreamError(upstreamError)
     });
-    const outputFiles2 = await outputWriter.write({
+    const outputFiles = await outputWriter.write({
       result: createRunScriptResultFilePayload({
         session,
         resultPayload: resultPayload2,
@@ -23452,8 +24447,8 @@ async function executeRunScriptFile(args, runtime) {
       compiledScript: wrappedScript,
       writeResult: true
     });
-    const nonEmptyOutputFiles = Object.keys(outputFiles2).length > 0 ? outputFiles2 : void 0;
-    const payload2 = {
+    const nonEmptyOutputFiles = Object.keys(outputFiles).length > 0 ? outputFiles : void 0;
+    const payload = {
       ...limitInlineScriptResult(
         {
           ...resultPayload2,
@@ -23463,48 +24458,140 @@ async function executeRunScriptFile(args, runtime) {
         []
       )
     };
-    return payload2;
+    return payload;
+  }
+  const attempt = await attemptUpstreamEval(runtime.client, evalSettings, wrappedScript);
+  if (attempt.error) {
+    const resultPayload2 = removeUndefined3({
+      ok: false,
+      phase: attempt.requestDispatched ? "execute" : "preflight",
+      executionOutcome: attempt.requestDispatched ? "outcome_unknown" : "not_started",
+      session: responseSession(session),
+      retryGuidance: attempt.requestDispatched ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : void 0,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      script: responseScript,
+      upstreamError: responseUpstreamError(attempt.error)
+    });
+    const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
+      resultPayload: resultPayload2,
+      stage: "scriptResultSidecars",
+      write: () => outputWriter.write({
+        result: createRunScriptResultFilePayload({
+          session,
+          resultPayload: resultPayload2,
+          diagnostics
+        }),
+        compiledScript: wrappedScript,
+        writeResult: true
+      })
+    });
+    return limitInlineScriptResult(
+      payloadWithOutputFiles,
+      inlineResultLimit,
+      []
+    );
+  }
+  const upstream = attempt.upstream;
+  let parsed;
+  try {
+    parsed = parseUpstreamToolResult(upstream);
+  } catch (error2) {
+    const upstreamError = normalizeCaughtUpstreamError(error2);
+    const resultPayload2 = removeUndefined3({
+      ok: false,
+      phase: "execute",
+      executionOutcome: "outcome_unknown",
+      session: responseSession(session),
+      retryGuidance: UNKNOWN_EXECUTION_RETRY_GUIDANCE,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      script: responseScript,
+      upstreamError: responseUpstreamError(upstreamError)
+    });
+    const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
+      resultPayload: resultPayload2,
+      stage: "scriptResultSidecars",
+      write: () => outputWriter.write({
+        result: createRunScriptResultFilePayload({
+          session,
+          resultPayload: resultPayload2,
+          diagnostics
+        }),
+        compiledScript: wrappedScript,
+        writeResult: true
+      })
+    });
+    return limitInlineScriptResult(
+      payloadWithOutputFiles,
+      inlineResultLimit,
+      []
+    );
+  }
+  if (attempt.postResponseError) {
+    const upstreamFailed = parsed.upstreamError !== void 0;
+    const resultPayload2 = removeUndefined3({
+      ok: false,
+      phase: "execute",
+      executionOutcome: upstreamFailed ? "outcome_unknown" : "succeeded",
+      session: responseSession(session),
+      retryGuidance: upstreamFailed ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : void 0,
+      diagnostics: diagnosticsForResponse(diagnostics),
+      repairPlan: repairPlanForResponse(diagnostics),
+      script: responseScript,
+      upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0
+    });
+    return limitInlineScriptResult(
+      localPostprocessingFailure(
+        resultPayload2,
+        "upstreamResponseBudget",
+        attempt.postResponseError
+      ),
+      inlineResultLimit,
+      []
+    );
   }
   if (parsed.upstreamError) {
     const upstreamResult2 = upstreamEnvelope(parsed);
     const resultPayload2 = removeUndefined3({
       ok: false,
       phase: "execute",
-      executed: true,
+      executionOutcome: "outcome_unknown",
       session: responseSession(session),
+      retryGuidance: UNKNOWN_EXECUTION_RETRY_GUIDANCE,
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
       ...runScriptUpstreamFields(parsed),
       ...runScriptUpstreamFailureFields(parsed)
     });
-    const outputFiles2 = await addUpstreamSidecar(
-      await outputWriter.write({
-        result: createRunScriptResultFilePayload({
-          session,
-          resultPayload: resultPayload2,
-          diagnostics,
-          parsed,
-          upstream: upstreamResult2
+    const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
+      resultPayload: resultPayload2,
+      stage: "scriptResultSidecars",
+      write: async () => addUpstreamSidecar(
+        await outputWriter.write({
+          result: createRunScriptResultFilePayload({
+            session,
+            resultPayload: resultPayload2,
+            diagnostics,
+            parsed,
+            upstream: upstreamResult2
+          }),
+          compiledScript: wrappedScript,
+          writeResult: true
         }),
-        compiledScript: wrappedScript,
-        writeResult: true
-      }),
-      outputWriter.files.resultFile,
-      upstreamResult2
-    );
-    const nonEmptyOutputFiles = Object.keys(outputFiles2).length > 0 ? outputFiles2 : void 0;
-    const payload2 = {
+        outputWriter.files.resultFile,
+        upstreamResult2
+      )
+    });
+    const payload = {
       ...limitInlineScriptResult(
-        {
-          ...resultPayload2,
-          outputFiles: nonEmptyOutputFiles
-        },
+        payloadWithOutputFiles,
         inlineResultLimit,
         ["upstream.result", "upstream.text"]
       )
     };
-    return payload2;
+    return payload;
   }
   updateSessionFromParsedResult(session, parsed.json);
   const captureBatch = await executeQueuedCaptureRequests({
@@ -23513,7 +24600,7 @@ async function executeRunScriptFile(args, runtime) {
     runtime
   });
   runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
+    id: randomUUID2(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_workspace_run_script_file",
     mode: "write",
@@ -23523,9 +24610,8 @@ async function executeRunScriptFile(args, runtime) {
   const resultPayload = removeUndefined3({
     ok: captureBatch.ok,
     phase: "execute",
-    executed: true,
+    executionOutcome: "succeeded",
     session: responseSession(session),
-    scriptExecutionSucceeded: true,
     captureProcessingSucceeded: captureBatch.requested ? captureBatch.ok : void 0,
     retryGuidance: !captureBatch.ok ? QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE : void 0,
     captures: captureBatch.captures,
@@ -23541,36 +24627,38 @@ async function executeRunScriptFile(args, runtime) {
     ["upstream.result", "upstream.text"]
   );
   const needsOutputFile = diagnostics.length > 0 || !captureBatch.ok || isRecord5(limitedPayload.inlineResultLimit);
-  const outputFiles = needsOutputFile ? await addUpstreamSidecar(await outputWriter.write({
-    result: createRunScriptResultFilePayload({
-      session,
-      resultPayload,
-      diagnostics,
-      parsed,
-      upstream: upstreamResult
-    }),
-    writeResult: true
-  }), outputWriter.files.resultFile, upstreamResult) : await outputWriter.write({
-    result: createRunScriptResultFilePayload({
-      session,
-      resultPayload,
-      diagnostics,
-      parsed,
-      upstream: upstreamResult
-    }),
-    writeResult: false
+  return attachPostExecutionOutputFiles({
+    resultPayload: limitedPayload,
+    stage: "scriptResultSidecars",
+    write: async () => needsOutputFile ? addUpstreamSidecar(await outputWriter.write({
+      result: createRunScriptResultFilePayload({
+        session,
+        resultPayload,
+        diagnostics,
+        parsed,
+        upstream: upstreamResult
+      }),
+      writeResult: true
+    }), outputWriter.files.resultFile, upstreamResult) : outputWriter.write({
+      result: createRunScriptResultFilePayload({
+        session,
+        resultPayload,
+        diagnostics,
+        parsed,
+        upstream: upstreamResult
+      }),
+      writeResult: false
+    })
   });
-  const payload = {
-    ...limitedPayload,
-    outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0
-  };
-  return payload;
 }
 async function executeApplyAssetManifest(args, runtime) {
   const session = runtime.sessions.getOrCreate(args.sessionId);
+  const resourceBudget = commandResourceBudget();
   let manifest;
+  let assetInputs;
   try {
-    manifest = await loadAssetManifest(args, session);
+    manifest = await loadAssetManifest(args, session, resourceBudget);
+    assetInputs = await openAssetInputs(manifest.assets, session, resourceBudget);
   } catch (error2) {
     if (error2 instanceof AssetManifestLoadError) {
       const diagnostics = [assetManifestLoadDiagnostic(error2)];
@@ -23589,155 +24677,159 @@ async function executeApplyAssetManifest(args, runtime) {
     }
     throw error2;
   }
-  const tools = await runtime.upstreamToolCache.list(false);
-  const uploadKind = requireWrapperUpstreamKind(APPLY_ASSET_MANIFEST_CONTRACT);
-  const tool = selectRequiredUpstreamTool(tools, UPLOAD_ASSETS_TOOL_NAME, uploadKind);
-  assertUpstreamToolHasProperties(tool, [...APPLY_ASSET_MANIFEST_CONTRACT.requiredUpstreamProperties ?? []], uploadKind);
-  const failures = [];
-  const assetResults = [];
-  const assetDetails = [];
-  await runtime.client.connect();
-  for (const asset of manifest.assets) {
-    const upstreamArguments = buildAssetManifestUpstreamArguments({
-      asset,
-      tool
-    });
-    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
-    try {
-      const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
-      const parsed = parseUpstreamToolResult(upstream);
-      const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0;
-      const upload = parsed.upstreamError ? void 0 : await submitLocalAssetUploadIfAvailable(asset, parsed);
-      const ok2 = !parsed.upstreamError && upload?.ok !== false;
-      const uploadSummary = compactUploadSummary(upload);
-      const entry = {
-        ok: ok2,
-        path: asset.path,
-        targetNodeId: asset.targetNodeId,
-        name: asset.name,
-        upload: uploadSummary,
-        upstreamError
-      };
-      const detail = {
-        ...entry,
-        toolName: tool.name,
-        upload,
-        metadata: asset.metadata,
-        arguments: upstreamArguments,
-        upstream: upstreamEnvelope(parsed),
-        upstreamError,
-        primaryFix: parsed.primaryFix,
-        startedAt,
-        finishedAt: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      assetResults.push(entry);
-      assetDetails.push(detail);
-      if (!ok2) {
+  try {
+    const tools = await runtime.upstreamToolCache.list(false);
+    const uploadKind = requireWrapperUpstreamKind(APPLY_ASSET_MANIFEST_CONTRACT);
+    const tool = selectRequiredUpstreamTool(tools, UPLOAD_ASSETS_TOOL_NAME, uploadKind);
+    assertUpstreamToolHasProperties(tool, [...APPLY_ASSET_MANIFEST_CONTRACT.requiredUpstreamProperties ?? []], uploadKind);
+    const failures = [];
+    const assetResults = [];
+    const assetDetails = [];
+    await connectUpstream(runtime.client, "Apply Figma asset manifest");
+    for (const [assetIndex, asset] of manifest.assets.entries()) {
+      const upstreamArguments = buildAssetManifestUpstreamArguments({
+        asset,
+        tool
+      });
+      const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+      try {
+        const upstream = await callUpstreamToolWithLimits(runtime.client, tool.name, upstreamArguments);
+        const parsed = parseUpstreamToolResult(upstream);
+        const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0;
+        const upload = parsed.upstreamError ? void 0 : await submitLocalAssetUploadIfAvailable(assetInputs[assetIndex], parsed, resourceBudget);
+        const ok2 = !parsed.upstreamError && upload?.ok !== false;
+        const uploadSummary = compactUploadSummary(upload);
+        const entry = {
+          ok: ok2,
+          path: asset.path,
+          targetNodeId: asset.targetNodeId,
+          name: asset.name,
+          upload: uploadSummary,
+          upstreamError
+        };
+        const detail = {
+          ...entry,
+          toolName: tool.name,
+          upload,
+          metadata: asset.metadata,
+          arguments: upstreamArguments,
+          upstream: upstreamEnvelope(parsed),
+          upstreamError,
+          primaryFix: parsed.primaryFix,
+          startedAt,
+          finishedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        assetResults.push(entry);
+        assetDetails.push(detail);
+        if (!ok2) {
+          failures.push({
+            path: asset.path,
+            targetNodeId: asset.targetNodeId,
+            upstreamError
+          });
+        }
+      } catch (error2) {
+        const upstreamError = normalizeCaughtUpstreamError(error2);
+        const responseError = responseUpstreamError(upstreamError);
+        const entry = {
+          ok: false,
+          path: asset.path,
+          targetNodeId: asset.targetNodeId,
+          name: asset.name,
+          upstreamError: responseError
+        };
+        const detail = {
+          ...entry,
+          toolName: tool.name,
+          metadata: asset.metadata,
+          arguments: upstreamArguments,
+          upstreamError: responseError,
+          primaryFix: primaryFixForUpstreamError(upstreamError),
+          startedAt,
+          finishedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        assetResults.push(entry);
+        assetDetails.push(detail);
         failures.push({
           path: asset.path,
           targetNodeId: asset.targetNodeId,
-          upstreamError
+          upstreamError: responseError
         });
       }
-    } catch (error2) {
-      const upstreamError = normalizeCaughtUpstreamError(error2);
-      const responseError = responseUpstreamError(upstreamError);
-      const entry = {
-        ok: false,
-        path: asset.path,
-        targetNodeId: asset.targetNodeId,
-        name: asset.name,
-        upstreamError: responseError
-      };
-      const detail = {
-        ...entry,
-        toolName: tool.name,
-        metadata: asset.metadata,
-        arguments: upstreamArguments,
-        upstreamError: responseError,
-        primaryFix: primaryFixForUpstreamError(upstreamError),
-        startedAt,
-        finishedAt: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      assetResults.push(entry);
-      assetDetails.push(detail);
-      failures.push({
-        path: asset.path,
-        targetNodeId: asset.targetNodeId,
-        upstreamError: responseError
-      });
     }
-  }
-  const files = {};
-  const application = await applyUploadedAssetFillsIfAvailable({
-    session,
-    runtime,
-    tools,
-    assetResults,
-    assetDetails
-  });
-  const validation = await validateAssetManifestTargetsIfAvailable({
-    args,
-    session,
-    runtime,
-    tools,
-    assetResults,
-    assetDetails
-  });
-  const validationIndeterminate = isAssetManifestValidationIndeterminate(validation);
-  const ok = failures.length === 0 && application.ok !== false && validation.ok !== false && !validationIndeterminate;
-  for (const detail of assetDetails) {
-    const targetNodeId = asOptionalString2(detail.targetNodeId);
-    const asset = assetResults.find((item) => item.targetNodeId === targetNodeId);
-    if (asset?.validation !== void 0) {
-      detail.validation = asset.validation;
-    }
-    if (asset?.application !== void 0) {
-      detail.application = asset.application;
-    }
-  }
-  const payload = {
-    ok,
-    session: responseSession(session),
-    assets: assetResults,
-    application,
-    validation,
-    failures: failures.length > 0 ? failures : void 0
-  };
-  if (!ok) {
-    files.debugFile = responseFilePointer(await writeJsonFile(resolveAssetManifestDebugFile(args, session), createResultFileEnvelope({
-      tool: "figma:assets:apply",
+    const files = {};
+    const application = await applyUploadedAssetFillsIfAvailable({
       session,
-      ok,
-      fields: {
-        assetCount: assetResults.length,
-        failureCount: failures.length,
-        applicationOk: application.ok,
-        applicationReason: application.reason,
-        applicationSource: application.applicationSource,
-        validationOk: validation.ok,
-        validationReason: validation.reason,
-        validationSource: validation.validationSource,
-        validationExpectedCount: validation.expectedCount,
-        validationMissingCount: validation.missingValidationCount,
-        failures: failures.length > 0 ? failures : void 0,
-        assetDetails
+      runtime,
+      tools,
+      assetResults,
+      assetDetails
+    });
+    const validation = await validateAssetManifestTargetsIfAvailable({
+      args,
+      session,
+      runtime,
+      tools,
+      assetResults,
+      assetDetails
+    });
+    const validationIndeterminate = isAssetManifestValidationIndeterminate(validation);
+    const ok = failures.length === 0 && application.ok !== false && validation.ok !== false && !validationIndeterminate;
+    for (const detail of assetDetails) {
+      const targetNodeId = asOptionalString2(detail.targetNodeId);
+      const asset = assetResults.find((item) => item.targetNodeId === targetNodeId);
+      if (asset?.validation !== void 0) {
+        detail.validation = asset.validation;
       }
-    })));
+      if (asset?.application !== void 0) {
+        detail.application = asset.application;
+      }
+    }
+    const payload = {
+      ok,
+      session: responseSession(session),
+      assets: assetResults,
+      application,
+      validation,
+      failures: failures.length > 0 ? failures : void 0
+    };
+    if (!ok) {
+      files.debugFile = responseFilePointer(await writeJsonFile(resolveAssetManifestDebugFile(args, session), createResultFileEnvelope({
+        tool: "figma:assets:apply",
+        session,
+        ok,
+        fields: {
+          assetCount: assetResults.length,
+          failureCount: failures.length,
+          applicationOk: application.ok,
+          applicationReason: application.reason,
+          applicationSource: application.applicationSource,
+          validationOk: validation.ok,
+          validationReason: validation.reason,
+          validationSource: validation.validationSource,
+          validationExpectedCount: validation.expectedCount,
+          validationMissingCount: validation.missingValidationCount,
+          failures: failures.length > 0 ? failures : void 0,
+          assetDetails
+        }
+      })));
+    }
+    runtime.sessions.rememberHistory(session, {
+      id: randomUUID2(),
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      tool: "figma_workspace_apply_asset_manifest",
+      mode: "upstream-assets",
+      summary: `Applied ${assetResults.length} asset manifest entries with ${failures.length} failures.`,
+      nodeIds: assetResults.map((asset) => asOptionalString2(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
+    });
+    const response = {
+      ...payload,
+      outputFiles: Object.keys(files).length > 0 ? files : void 0
+    };
+    return response;
+  } finally {
+    await Promise.allSettled(assetInputs.map(({ handle }) => handle.close()));
   }
-  runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
-    at: (/* @__PURE__ */ new Date()).toISOString(),
-    tool: "figma_workspace_apply_asset_manifest",
-    mode: "upstream-assets",
-    summary: `Applied ${assetResults.length} asset manifest entries with ${failures.length} failures.`,
-    nodeIds: assetResults.map((asset) => asOptionalString2(asset.targetNodeId)).filter((nodeId) => nodeId !== void 0)
-  });
-  const response = {
-    ...payload,
-    outputFiles: Object.keys(files).length > 0 ? files : void 0
-  };
-  return response;
 }
 function isAssetManifestValidationIndeterminate(validation) {
   if (validation.skipped === true) {
@@ -23752,10 +24844,10 @@ function resolveAssetManifestDebugFile(args, session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "debugFile");
   }
   const root = defaultTaskWorkspaceRoot();
-  if (!isAbsolute2(root)) {
+  if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve6(root, "asset-results", session.slug, fileName);
+  return resolve8(root, "asset-results", session.slug, fileName);
 }
 function compactUploadSummary(upload) {
   if (!upload) {
@@ -23786,7 +24878,8 @@ function compactUploadResponse(response) {
 }
 async function executeDownloadAssets(args, runtime) {
   const session = runtime.sessions.getOrCreate(args.sessionId);
-  const manifest = await loadDownloadAssetsManifest(args, session);
+  const resourceBudget = commandResourceBudget();
+  const manifest = await loadDownloadAssetsManifest(args, session, resourceBudget);
   const paths = resolveDownloadAssetsOutputPaths(args, session);
   const tools = await runtime.upstreamToolCache.list(false);
   const downloadKind = requireWrapperUpstreamKind(DOWNLOAD_ASSETS_CONTRACT);
@@ -23797,11 +24890,11 @@ async function executeDownloadAssets(args, runtime) {
   const failures = [];
   const diagnostics = [];
   const usedSlugs = /* @__PURE__ */ new Set();
-  await runtime.client.connect();
+  await connectUpstream(runtime.client, "Download Figma assets");
   for (const [index, target] of manifest.targets.entries()) {
     const startedAt = (/* @__PURE__ */ new Date()).toISOString();
     const targetSlug = uniqueDownloadTargetSlug(target, index, usedSlugs);
-    const targetOutputDir = resolve6(paths.outputDir, targetSlug);
+    const targetOutputDir = resolve8(paths.outputDir, targetSlug);
     const passthrough = collectContractPassthroughArguments({
       args: target,
       contract: DOWNLOAD_ASSETS_CONTRACT
@@ -23815,11 +24908,11 @@ async function executeDownloadAssets(args, runtime) {
     diagnostics.push(...filtered.diagnostics);
     const upstreamArguments = filtered.arguments;
     try {
-      const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+      const upstream = await callUpstreamToolWithLimits(runtime.client, tool.name, upstreamArguments);
       const parsed = parseUpstreamToolResult(upstream);
       const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0;
       const links = parsed.upstreamError ? [] : collectDownloadAssetLinks(parsed.json);
-      const downloadedFiles = parsed.upstreamError ? [] : await downloadAssetLinks(links, targetOutputDir);
+      const downloadedFiles = parsed.upstreamError ? [] : await downloadAssetLinks(links, targetOutputDir, resourceBudget);
       const downloadFailures = downloadedFiles.filter((file) => file.ok === false);
       const ok2 = !parsed.upstreamError && links.length > 0 && downloadFailures.length === 0;
       const downloadError = downloadFailures[0]?.error ? responseUpstreamError(normalizeCaughtUpstreamError(downloadFailures[0].error)) : links.length === 0 && !parsed.upstreamError ? { message: "Upstream download_assets returned no downloadable URLs." } : void 0;
@@ -23912,7 +25005,7 @@ async function executeDownloadAssets(args, runtime) {
     })));
   }
   runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
+    id: randomUUID2(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_workspace_download_assets",
     mode: "download-assets",
@@ -23925,13 +25018,19 @@ async function executeDownloadAssets(args, runtime) {
   };
   return response;
 }
-async function loadDownloadAssetsManifest(args, session) {
+async function loadDownloadAssetsManifest(args, session, resourceBudget) {
   const inlineTargets = Array.isArray(args.targets) ? args.targets : void 0;
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
   if (inlineTargets && manifestPath) {
     throw new Error('Pass either "targets" or "manifestPath", not both.');
   }
-  const manifestValue = manifestPath ? JSON.parse(await readFile3(manifestPath, "utf8")) : void 0;
+  const manifestValue = manifestPath ? JSON.parse((await readManagedWorkspaceFile({
+    path: manifestPath,
+    session,
+    limitBytes: MAX_MANIFEST_FILE_BYTES,
+    resourceBudget,
+    label: "Download manifest"
+  })).toString("utf8")) : void 0;
   const manifestRecord = asRecord2(manifestValue);
   if (manifestRecord.assets !== void 0) {
     throw new Error('Download manifest field "assets" is not supported. Use "targets".');
@@ -23940,6 +25039,7 @@ async function loadDownloadAssetsManifest(args, session) {
   if (!rawTargets || rawTargets.length === 0) {
     throw new Error('Tool argument "targets" or "manifestPath" with targets is required.');
   }
+  assertManifestItemCount(rawTargets.length, "Download manifest");
   return {
     targets: rawTargets.map((target, index) => normalizeDownloadAssetTarget(target, index, session))
   };
@@ -23987,10 +25087,10 @@ function resolveDownloadAssetsOutputPaths(args, session) {
 }
 function resolveDownloadAssetsTempPath(session, fileName) {
   const root = defaultTaskWorkspaceRoot();
-  if (!isAbsolute2(root)) {
+  if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve6(root, "download-results", session.slug, fileName);
+  return resolve8(root, "download-results", session.slug, fileName);
 }
 function buildDownloadAssetsUpstreamArguments(target, passthroughArguments) {
   return removeUndefined3({
@@ -24058,25 +25158,26 @@ function inferDownloadAssetFormat(record2, url2) {
     asOptionalString2(record2.format) ?? asOptionalString2(record2.exportFormat) ?? asOptionalString2(record2.fileFormat) ?? extensionFromUrl(url2)
   );
 }
-async function downloadAssetLinks(links, outputDir) {
-  await mkdir3(outputDir, { recursive: true });
+async function downloadAssetLinks(links, outputDir, resourceBudget) {
   const rawIndexes = /* @__PURE__ */ new Map();
   const results = [];
-  for (const link2 of links) {
-    const index = (rawIndexes.get(link2.kind) ?? 0) + 1;
-    rawIndexes.set(link2.kind, index);
+  for (const link4 of links) {
+    const index = (rawIndexes.get(link4.kind) ?? 0) + 1;
+    rawIndexes.set(link4.kind, index);
+    const deadline = new NetworkRequestDeadline(`Asset download ${link4.url}`);
+    let response;
     try {
-      const response = await fetch(link2.url);
-      const bytes = Buffer.from(await response.arrayBuffer());
+      response = await fetch(link4.url, { signal: deadline.controller.signal });
       const mimeType = contentTypeWithoutParameters(response.headers.get("content-type")) ?? void 0;
-      const format = sanitizeFileExtension(link2.format) ?? extensionFromContentType(mimeType) ?? extensionFromUrl(link2.url) ?? "bin";
-      const baseName = link2.kind === "exported" ? index === 1 ? "exported" : `exported-${index}` : `raw-${index}`;
-      const path = resolve6(outputDir, `${baseName}.${format}`);
+      const format = sanitizeFileExtension(link4.format) ?? extensionFromContentType(mimeType) ?? extensionFromUrl(link4.url) ?? "bin";
+      const baseName = link4.kind === "exported" ? index === 1 ? "exported" : `exported-${index}` : `raw-${index}`;
+      const path = resolve8(outputDir, `${baseName}.${format}`);
       if (!response.ok) {
+        await response.body?.cancel();
         results.push(removeUndefined3({
           ok: false,
-          kind: link2.kind,
-          sourceUrl: link2.url,
+          kind: link4.kind,
+          sourceUrl: link4.url,
           path,
           mimeType,
           format,
@@ -24087,28 +25188,182 @@ async function downloadAssetLinks(links, outputDir) {
         }));
         continue;
       }
-      await writeFile3(path, bytes);
+      const written = await atomicWriteManagedStreamFile({
+        root: outputDir,
+        path,
+        overwrite: true
+      }, boundedResponseBodyChunks({
+        response,
+        itemLimitBytes: MAX_SINGLE_ASSET_BYTES,
+        resourceBudget,
+        deadline,
+        label: `Downloaded asset ${link4.url}`
+      }));
       results.push(removeUndefined3({
         ok: true,
-        kind: link2.kind,
-        sourceUrl: link2.url,
+        kind: link4.kind,
+        sourceUrl: link4.url,
         path,
-        bytes: bytes.byteLength,
+        bytes: written.bytes,
         lineCount: 0,
         mimeType,
         format
       }));
     } catch (error2) {
+      deadline.controller.abort(error2);
+      await response?.body?.cancel(error2).catch(() => void 0);
       const upstreamError = normalizeCaughtUpstreamError(error2);
       results.push(removeUndefined3({
         ok: false,
-        kind: link2.kind,
-        sourceUrl: link2.url,
+        kind: link4.kind,
+        sourceUrl: link4.url,
         error: responseUpstreamError(upstreamError)
       }));
+    } finally {
+      deadline.dispose();
     }
   }
   return results;
+}
+async function readBoundedResponseBody(options) {
+  const chunks = [];
+  let itemBytes = 0;
+  for await (const chunk of boundedResponseBodyChunks(options)) {
+    const buffer = Buffer.from(chunk);
+    itemBytes += buffer.byteLength;
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, itemBytes);
+}
+async function* boundedResponseBodyChunks(options) {
+  const contentLength = parseContentLength(options.response.headers.get("content-length"));
+  if (contentLength !== void 0) {
+    try {
+      assertSingleItemLimit(contentLength, options.itemLimitBytes, options.label);
+      options.resourceBudget.assertCanConsume(contentLength, options.label);
+    } catch (error2) {
+      options.deadline.controller.abort(error2);
+      await options.response.body?.cancel(error2).catch(() => void 0);
+      throw error2;
+    }
+  }
+  if (!options.response.body) return;
+  let itemBytes = 0;
+  const reader = options.response.body.getReader();
+  let completed = false;
+  let failure;
+  try {
+    while (true) {
+      const item = await reader.read();
+      if (item.done) break;
+      options.deadline.touch();
+      const chunk = Buffer.from(item.value);
+      itemBytes += chunk.byteLength;
+      assertSingleItemLimit(itemBytes, options.itemLimitBytes, options.label);
+      options.resourceBudget.consume(chunk.byteLength, options.label);
+      yield chunk;
+    }
+    completed = true;
+  } catch (error2) {
+    failure = error2;
+    options.deadline.controller.abort(error2);
+    throw error2;
+  } finally {
+    if (!completed) {
+      const reason = failure ?? new Error(`${options.label} response consumption was cancelled.`);
+      options.deadline.controller.abort(reason);
+      await reader.cancel(reason).catch(() => void 0);
+    }
+    reader.releaseLock();
+  }
+}
+async function readBoundedLocalFile(path, limitBytes, resourceBudget, label) {
+  const fileStats = await stat2(path);
+  assertSingleItemLimit(fileStats.size, limitBytes, label);
+  resourceBudget.assertCanConsume(fileStats.size, label);
+  const chunks = [];
+  let bytes = 0;
+  for await (const rawChunk of createReadStream(path)) {
+    const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
+    bytes += chunk.byteLength;
+    assertSingleItemLimit(bytes, limitBytes, label);
+    resourceBudget.consume(chunk.byteLength, label);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, bytes);
+}
+async function readManagedWorkspaceFile(options) {
+  await assertWorkspaceManagedInputFile(options.path, options.session);
+  const result = await readBoundedLocalFile(
+    options.path,
+    options.limitBytes,
+    options.resourceBudget,
+    options.label
+  );
+  await assertWorkspaceManagedInputFile(options.path, options.session);
+  return result;
+}
+async function openAssetInputs(assets, session, resourceBudget) {
+  const opened = [];
+  try {
+    for (const asset of assets) {
+      const input = await openManagedAssetInput(asset, session);
+      assertSingleItemLimit(input.stats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+      opened.push(input);
+    }
+    const totalBytes = opened.reduce((sum, input) => sum + input.stats.size, 0);
+    resourceBudget.assertCanConsume(totalBytes, "Asset upload inputs");
+    return opened;
+  } catch (error2) {
+    await Promise.allSettled(opened.map(({ handle }) => handle.close()));
+    throw error2;
+  }
+}
+async function openManagedAssetInput(asset, session) {
+  const path = await assertWorkspaceManagedInputFile(asset.path, session);
+  const before = await lstat2(path);
+  assertRegularAssetInput(before, path);
+  const handle = await open3(path, "r");
+  try {
+    const handleStats = await handle.stat();
+    assertRegularAssetInput(handleStats, path);
+    const current = await lstat2(path);
+    assertRegularAssetInput(current, path);
+    await assertWorkspaceManagedInputFile(path, session);
+    if (!sameFileIdentity(before, handleStats) || !sameFileIdentity(handleStats, current)) {
+      throw new Error(`Asset input changed while it was being opened: ${path}`);
+    }
+    return { asset, handle, stats: handleStats };
+  } catch (error2) {
+    await handle.close().catch(() => void 0);
+    throw error2;
+  }
+}
+function assertRegularAssetInput(stats, path) {
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    throw new Error(`Asset input must be a real regular file, not a symlink, junction, reparse target, or directory: ${path}`);
+  }
+}
+function sameFileIdentity(left, right) {
+  if (left.dev !== 0 || left.ino !== 0 || right.dev !== 0 || right.ino !== 0) {
+    return left.dev === right.dev && left.ino === right.ino;
+  }
+  return left.mode === right.mode && left.size === right.size && left.birthtimeMs === right.birthtimeMs && left.ctimeMs === right.ctimeMs;
+}
+function parseContentLength(value) {
+  if (value === null || !/^\d+$/u.test(value.trim())) return void 0;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : void 0;
+}
+function assertSingleItemLimit(bytes, limitBytes, label) {
+  if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > limitBytes) {
+    throw resourceLimitError(`${label} exceeds the ${formatDataPlaneLimit(limitBytes)} per-item limit.`);
+  }
+}
+function assertManifestItemCount(count, label) {
+  if (count > MAX_MANIFEST_ITEMS) {
+    throw resourceLimitError(`${label} contains ${count} items; at most ${MAX_MANIFEST_ITEMS} are allowed.`);
+  }
 }
 function compactDownloadedFiles(files) {
   return files.map((file) => removeUndefined3({
@@ -24164,7 +25419,7 @@ function sanitizeFileExtension(value) {
 async function executeCaptureNode(args, runtime) {
   return executeCaptureNodeForTool(args, runtime);
 }
-async function executeCaptureNodeForTool(args, runtime) {
+async function executeCaptureNodeForTool(args, runtime, resourceBudget = commandResourceBudget()) {
   rejectRemovedCaptureMediaArguments(args);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   const requested = resolveWrapperNodeTarget({
@@ -24203,8 +25458,8 @@ async function executeCaptureNodeForTool(args, runtime) {
     upstreamKind: requireWrapperUpstreamKind(CAPTURE_NODE_CONTRACT)
   });
   const upstreamArguments = filtered.arguments;
-  await runtime.client.connect();
-  const upstream = await runtime.client.callTool(tool.name, upstreamArguments);
+  await connectUpstream(runtime.client, "Capture Figma node");
+  const upstream = await callUpstreamToolWithLimits(runtime.client, tool.name, upstreamArguments);
   const parsed = parseUpstreamToolResult(upstream);
   if (parsed.upstreamError) {
     const payload2 = {
@@ -24218,7 +25473,8 @@ async function executeCaptureNodeForTool(args, runtime) {
   }
   let saved;
   try {
-    saved = await writeCaptureOutputFile(requestedOutputFile, upstream, parsed);
+    const boundedUpstream = await prepareBoundedCapturePayload(upstream, parsed, resourceBudget);
+    saved = await writeCaptureOutputFile(requestedOutputFile, boundedUpstream, parsed);
   } catch (error2) {
     const payload2 = {
       ok: false,
@@ -24230,7 +25486,7 @@ async function executeCaptureNodeForTool(args, runtime) {
     return payload2;
   }
   runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
+    id: randomUUID2(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_workspace_capture_node",
     mode: "capture",
@@ -24248,6 +25504,92 @@ async function executeCaptureNodeForTool(args, runtime) {
     diagnostics: filtered.diagnostics.length > 0 ? diagnosticsForResponse(filtered.diagnostics) : void 0
   };
   return payload;
+}
+async function prepareBoundedCapturePayload(upstream, parsed, resourceBudget) {
+  const content = Array.isArray(asRecord2(upstream).content) ? asRecord2(upstream).content.filter(isRecord5) : [];
+  const inlineImage = content.find((item) => item.type === "image" && typeof item.data === "string");
+  if (inlineImage && typeof inlineImage.data === "string") {
+    const compactBase64 = inlineImage.data.replace(/\s/gu, "");
+    const estimatedBytes = Math.floor(compactBase64.length * 3 / 4) - (compactBase64.endsWith("==") ? 2 : compactBase64.endsWith("=") ? 1 : 0);
+    assertSingleItemLimit(estimatedBytes, MAX_SINGLE_ASSET_BYTES, "Capture image payload");
+    resourceBudget.assertCanConsume(estimatedBytes, "Capture image payload");
+    const decoded = Buffer.from(compactBase64, "base64");
+    assertSingleItemLimit(decoded.byteLength, MAX_SINGLE_ASSET_BYTES, "Capture image payload");
+    resourceBudget.consume(decoded.byteLength, "Capture image payload");
+    return upstream;
+  }
+  const sourceUrl = findCaptureImageUrlForResourceLimit(upstream, parsed.json);
+  if (!sourceUrl) return upstream;
+  const deadline = new NetworkRequestDeadline(`Capture download ${sourceUrl}`);
+  try {
+    const response = await fetch(sourceUrl, { signal: deadline.controller.signal });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(
+        `Unable to download captured node image from ${sourceUrl}: ${response.status} ${response.statusText}`
+      );
+    }
+    const bytes = await readBoundedResponseBody({
+      response,
+      itemLimitBytes: MAX_SINGLE_ASSET_BYTES,
+      resourceBudget,
+      deadline,
+      label: "Capture image payload"
+    });
+    return {
+      content: [{
+        type: "image",
+        mimeType: contentTypeWithoutParameters(response.headers.get("content-type")) ?? "image/png",
+        data: bytes.toString("base64")
+      }]
+    };
+  } finally {
+    deadline.dispose();
+  }
+}
+function findCaptureImageUrlForResourceLimit(upstream, parsedJson) {
+  const content = Array.isArray(asRecord2(upstream).content) ? asRecord2(upstream).content.filter(isRecord5) : [];
+  for (const item of content) {
+    if (item.type !== "image") continue;
+    for (const value of [item.url, item.imageUrl, item.image_url, item.screenshotUrl, item.downloadUrl]) {
+      const url2 = asHttpUrl(value);
+      if (url2) return url2;
+    }
+  }
+  return findHttpUrlInCaptureValue(parsedJson, 0) ?? findHttpUrlInCaptureValue(upstream, 0);
+}
+function findHttpUrlInCaptureValue(value, depth) {
+  if (depth > 6) return void 0;
+  const direct = asHttpUrl(value);
+  if (direct) return direct;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findHttpUrlInCaptureValue(item, depth + 1);
+      if (found) return found;
+    }
+    return void 0;
+  }
+  if (!isRecord5(value)) return void 0;
+  const priorityKeys = ["imageUrl", "image_url", "screenshotUrl", "downloadUrl", "url", "src", "href"];
+  for (const key of priorityKeys) {
+    const found = findHttpUrlInCaptureValue(value[key], depth + 1);
+    if (found) return found;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    if (priorityKeys.includes(key)) continue;
+    const found = findHttpUrlInCaptureValue(item, depth + 1);
+    if (found) return found;
+  }
+  return void 0;
+}
+function asHttpUrl(value) {
+  if (typeof value !== "string") return void 0;
+  try {
+    const url2 = new URL(value);
+    return url2.protocol === "http:" || url2.protocol === "https:" ? url2.href : void 0;
+  } catch {
+    return void 0;
+  }
 }
 function rejectRemovedCaptureMediaArguments(args) {
   if (Object.prototype.hasOwnProperty.call(args, "preview")) {
@@ -24273,10 +25615,10 @@ function resolveCaptureOutputFile(args, session) {
     return resolveWorkspaceFile(session.workspace.sessionDir, fileName, "imageFile");
   }
   const root = defaultTaskWorkspaceRoot();
-  if (!isAbsolute2(root)) {
+  if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolve6(root, "capture-results", session.slug, fileName);
+  return resolve8(root, "capture-results", session.slug, fileName);
 }
 async function executeQueuedCaptureRequests(options) {
   let requests;
@@ -24300,6 +25642,7 @@ async function executeQueuedCaptureRequests(options) {
     return { ok: true, requested: false };
   }
   const captures = [];
+  const resourceBudget = commandResourceBudget();
   for (const [index, request] of requests.entries()) {
     try {
       const imageFile = resolveQueuedCaptureOutputFile(
@@ -24314,7 +25657,7 @@ async function executeQueuedCaptureRequests(options) {
         imageFile,
         maxDimension: request.maxDimension,
         contentsOnly: request.contentsOnly
-      }, options.runtime);
+      }, options.runtime, resourceBudget);
       captures.push(compactQueuedCaptureResult(request.requestId, result));
     } catch (error2) {
       captures.push({
@@ -24366,7 +25709,7 @@ function extractQueuedCaptureRequests(value, session) {
       throw new Error(`Queued capture request ${requestId} has an invalid nodeId.`);
     }
     const imageFile = value2.imageFile;
-    if (imageFile !== void 0 && (typeof imageFile !== "string" || imageFile.length === 0 || imageFile.length > 32768 || imageFile.includes("\0") || isAbsolute2(imageFile) || imageFile.includes("..") || /^[A-Za-z]:/u.test(imageFile) || imageFile.startsWith("\\\\"))) {
+    if (imageFile !== void 0 && (typeof imageFile !== "string" || imageFile.length === 0 || imageFile.length > 32768 || imageFile.includes("\0") || isAbsolute3(imageFile) || imageFile.includes("..") || /^[A-Za-z]:/u.test(imageFile) || imageFile.startsWith("\\\\"))) {
       throw new Error(`Queued capture request ${requestId} imageFile must be a safe workspace-relative path.`);
     }
     const maxDimension = value2.maxDimension;
@@ -24389,17 +25732,17 @@ function extractQueuedCaptureRequests(value, session) {
 }
 function resolveQueuedCaptureOutputFile(session, requestId, index, requestedImageFile) {
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
-  const uniqueSuffix = randomUUID().slice(0, 8);
+  const uniqueSuffix = randomUUID2().slice(0, 8);
   const fileName = `capture-${timestamp}-${index + 1}-${requestId}-${uniqueSuffix}`;
   const selectedFileName = requestedImageFile ?? fileName;
   if (session.workspace) {
     return resolveWorkspaceFile(session.workspace.sessionDir, selectedFileName, "imageFile");
   }
   const root = defaultTaskWorkspaceRoot();
-  if (!isAbsolute2(root)) {
+  if (!isAbsolute3(root)) {
     throw new Error(`Tool argument "taskRoot" and ${TASK_WORKSPACE_ROOT_ENV} must be absolute paths when provided.`);
   }
-  return resolveWorkspaceFile(resolve6(root, "capture-results", session.slug), selectedFileName, "imageFile");
+  return resolveWorkspaceFile(resolve8(root, "capture-results", session.slug), selectedFileName, "imageFile");
 }
 function compactQueuedCaptureResult(requestId, result) {
   const upstreamError = isRecord5(result.upstreamError) && typeof result.upstreamError.message === "string" ? compactQueuedCaptureError(result.upstreamError) : void 0;
@@ -24458,7 +25801,7 @@ async function handlePrepareTask(args, runtime) {
     const scriptName = normalizeTaskScriptName(args.fileName ?? workspace.files.script, taskName);
     const scriptPath = resolveWorkspaceFile(workspace.sessionDir, scriptName, "fileName");
     await ensureWorkspaceDirectories(workspace);
-    await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, scriptName, args), Boolean(args.overwrite));
+    await writeTaskFile(scriptPath, createTaskScriptTemplate(taskName, scriptName, args), args.overwrite === true);
     const payload = {
       ok: true,
       session: session ? responseSession(session) : void 0,
@@ -24468,7 +25811,7 @@ async function handlePrepareTask(args, runtime) {
         inputFile: scriptName,
         workspace: responseWorkspace(workspace),
         scriptPath,
-        overwritten: Boolean(args.overwrite)
+        overwritten: args.overwrite === true
       },
       taskChange: {
         previous: previousTask,
@@ -24663,7 +26006,7 @@ async function handleInspect(args, runtime) {
     updateSessionFromParsedResult(session, parsed.json);
   }
   runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
+    id: randomUUID2(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_workspace_inspect",
     mode: "read",
@@ -24710,7 +26053,7 @@ async function executeInspectStyle(args, runtime) {
     updateSessionFromParsedResult(session, parsed.json);
   }
   runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
+    id: randomUUID2(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_workspace_inspect",
     mode: "style",
@@ -25044,7 +26387,7 @@ async function executeGetMetadata(args, runtime) {
     args,
     contract: GET_METADATA_CONTRACT
   });
-  await runtime.client.connect();
+  await connectUpstream(runtime.client, "Read Figma metadata");
   const filtered = filterAdvertisedUpstreamArguments({
     upstreamArguments: removeUndefined3({
       fileKey: requested.fileKey,
@@ -25056,14 +26399,14 @@ async function executeGetMetadata(args, runtime) {
     upstreamKind: requireWrapperUpstreamKind(GET_METADATA_CONTRACT)
   });
   const upstreamArgs = filtered.arguments;
-  const upstream = await runtime.client.callTool(GET_METADATA_TOOL_NAME, upstreamArgs);
+  const upstream = await callUpstreamToolWithLimits(runtime.client, GET_METADATA_TOOL_NAME, upstreamArgs);
   const parsed = parseUpstreamToolResult(upstream);
   const upstreamResult = upstreamEnvelope(parsed, { includePayload: false });
   const xml = metadataXmlFromParsedResult(parsed);
   const metadata = xml && !parsed.upstreamError ? metadataJsonFromXml(xml, requested.fileKey, requested.nodeId) : void 0;
   const enrichment = metadata?.root ? await enrichMetadataJson(metadata, requested.fileKey, session, runtime) : emptyMetadataEnrichment();
   runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
+    id: randomUUID2(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_workspace_get_metadata",
     mode: "read",
@@ -25271,8 +26614,8 @@ async function executeDedicatedUpstreamTool(options) {
     upstreamKind
   });
   const upstreamArguments = filtered.arguments;
-  await options.runtime.client.connect();
-  let upstream = await options.runtime.client.callTool(upstreamToolName, upstreamArguments);
+  await connectUpstream(options.runtime.client, `Execute ${options.contract.toolName}`);
+  let upstream = await callUpstreamToolWithLimits(options.runtime.client, upstreamToolName, upstreamArguments);
   let parsed = parseUpstreamToolResult(upstream);
   const recoveryDiagnostics = [];
   if (shouldRetrySelectionDependentWrapper(options.contract, parsed, options.nodeIds)) {
@@ -25284,12 +26627,12 @@ async function executeDedicatedUpstreamTool(options) {
     });
     recoveryDiagnostics.push(...recovery.diagnostics);
     if (recovery.selected) {
-      upstream = await options.runtime.client.callTool(upstreamToolName, upstreamArguments);
+      upstream = await callUpstreamToolWithLimits(options.runtime.client, upstreamToolName, upstreamArguments);
       parsed = parseUpstreamToolResult(upstream);
     }
   }
   options.runtime.sessions.rememberHistory(options.session, {
-    id: randomUUID(),
+    id: randomUUID2(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: options.contract.toolName,
     mode: "upstream",
@@ -25400,12 +26743,12 @@ async function executeCallUpstreamTool(args, runtime) {
       `Upstream Figma MCP tool "${args.toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
     );
   }
-  await runtime.client.connect();
-  const upstream = await runtime.client.callTool(args.toolName, upstreamArgs);
+  await connectUpstream(runtime.client, "Call upstream Figma MCP tool");
+  const upstream = await callUpstreamToolWithLimits(runtime.client, args.toolName, upstreamArgs);
   const parsed = parseUpstreamToolResult(upstream);
   const session = runtime.sessions.getOrCreate(args.sessionId);
   runtime.sessions.rememberHistory(session, {
-    id: randomUUID(),
+    id: randomUUID2(),
     at: (/* @__PURE__ */ new Date()).toISOString(),
     tool: "figma_workspace_call_upstream_tool",
     mode: "upstream",
@@ -25565,11 +26908,51 @@ function lookupCorpusDiagnostic(error2) {
   };
 }
 async function callUpstreamEval(client, evalSettings, script) {
-  await client.connect();
-  return client.callTool(evalSettings.toolName, {
+  await connectUpstream(client, "Figma Plugin API execution");
+  return callUpstreamToolWithLimits(client, evalSettings.toolName, {
     ...evalSettings.upstreamArguments,
     [evalSettings.argumentName]: script
   });
+}
+async function attemptUpstreamEval(client, evalSettings, script) {
+  try {
+    await connectUpstream(client, "Figma Plugin API execution");
+  } catch (error2) {
+    return {
+      requestDispatched: false,
+      error: normalizeCaughtUpstreamError(error2)
+    };
+  }
+  let requestDispatched = false;
+  try {
+    return {
+      requestDispatched: true,
+      upstream: await awaitUpstreamOperation(
+        `Upstream tool ${evalSettings.toolName}`,
+        (signal) => {
+          const request = client.callTool(evalSettings.toolName, {
+            ...evalSettings.upstreamArguments,
+            [evalSettings.argumentName]: script
+          }, signal);
+          requestDispatched = true;
+          return request;
+        },
+        { countResponse: true }
+      )
+    };
+  } catch (error2) {
+    if (error2 instanceof PostResponseResourceError) {
+      return {
+        requestDispatched: true,
+        upstream: error2.response,
+        postResponseError: error2
+      };
+    }
+    return {
+      requestDispatched,
+      error: normalizeCaughtUpstreamError(error2)
+    };
+  }
 }
 function createUpstreamToolCache(client) {
   let cached2;
@@ -25578,8 +26961,8 @@ function createUpstreamToolCache(client) {
       if (cached2 && !refresh) {
         return cached2;
       }
-      await client.connect();
-      const result = asRecord2(await client.listTools());
+      await connectUpstream(client, "Discover upstream Figma MCP tools");
+      const result = asRecord2(await listUpstreamToolsWithLimits(client, "Discover upstream Figma MCP tools"));
       const tools = Array.isArray(result.tools) ? result.tools : [];
       cached2 = tools.filter(isRecord5).map((tool) => ({
         name: String(tool.name ?? ""),
@@ -25865,9 +27248,9 @@ const $ = Object.freeze({
   capture: __figmaWorkspaceCapture,
 });`;
 }
-async function loadAssetManifest(args, session) {
+async function loadAssetManifest(args, session, resourceBudget) {
   const manifestPath = resolveWorkspaceAwareFile(args.manifestPath, session, "manifestPath");
-  const manifestValue = manifestPath ? await readAssetManifestValue(manifestPath) : void 0;
+  const manifestValue = manifestPath ? await readAssetManifestValue(manifestPath, resourceBudget, session) : void 0;
   const manifestRecord = asRecord2(manifestValue);
   const manifestAssets = Array.isArray(manifestValue) ? manifestValue : Array.isArray(manifestRecord.assets) ? manifestRecord.assets : void 0;
   const inlineAssets = Array.isArray(args.assets) ? args.assets : void 0;
@@ -25875,7 +27258,8 @@ async function loadAssetManifest(args, session) {
   if (!rawAssets || rawAssets.length === 0) {
     throw new Error('Tool argument "assets" or "manifestPath" with assets is required.');
   }
-  const baseDir = manifestPath ? dirname6(manifestPath) : session.workspace?.sessionDir;
+  assertManifestItemCount(rawAssets.length, "Asset manifest");
+  const baseDir = manifestPath ? dirname7(manifestPath) : session.workspace?.sessionDir;
   if (manifestRecord.argumentsTemplate !== void 0) {
     throw new Error('Asset manifest field "argumentsTemplate" was removed. Use figma:upstream:call only for explicit upstream capabilities.');
   }
@@ -25886,9 +27270,21 @@ async function loadAssetManifest(args, session) {
     assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir, session))
   };
 }
-async function readAssetManifestValue(manifestPath) {
+async function readAssetManifestValue(manifestPath, resourceBudget, session) {
   try {
-    return JSON.parse(await readFile3(manifestPath, "utf8"));
+    const bytes = session ? await readManagedWorkspaceFile({
+      path: manifestPath,
+      session,
+      limitBytes: MAX_MANIFEST_FILE_BYTES,
+      resourceBudget,
+      label: "Asset manifest"
+    }) : await readBoundedLocalFile(
+      manifestPath,
+      MAX_MANIFEST_FILE_BYTES,
+      resourceBudget,
+      "Asset manifest"
+    );
+    return JSON.parse(bytes.toString("utf8"));
   } catch (error2) {
     throw new AssetManifestLoadError(manifestPath, error2);
   }
@@ -25936,15 +27332,15 @@ function normalizeManifestAsset(value, index, baseDir, session) {
   };
 }
 function resolveManifestAssetPath(rawPath, index, baseDir) {
-  if (isAbsolute2(rawPath)) {
+  if (isAbsolute3(rawPath)) {
     return rawPath;
   }
   if (!baseDir) {
     return void 0;
   }
-  const path = resolve6(baseDir, rawPath);
-  const relativePath = relative2(baseDir, path);
-  if (relativePath === ".." || relativePath.startsWith("../") || relativePath.startsWith("..\\") || isAbsolute2(relativePath)) {
+  const path = resolve8(baseDir, rawPath);
+  const relativePath = relative3(baseDir, path);
+  if (relativePath === ".." || relativePath.startsWith("../") || relativePath.startsWith("..\\") || isAbsolute3(relativePath)) {
     throw new Error(`Asset manifest entry ${index} path must stay inside manifest directory.`);
   }
   return path;
@@ -26534,38 +27930,80 @@ function isAssetManifestValidationRecord(value) {
   const record2 = asRecord2(value);
   return asOptionalString2(record2.targetNodeId) !== void 0 && asOptionalString2(record2.status) !== void 0;
 }
-async function submitLocalAssetUploadIfAvailable(asset, parsed) {
+async function submitLocalAssetUploadIfAvailable(input, parsed, resourceBudget) {
+  const { asset, handle, stats: fileStats } = input;
   const submitUrl = extractAssetSubmitUrl(parsed.json);
   if (!submitUrl) {
     return void 0;
   }
-  const bytes = await readFile3(asset.path);
+  assertSingleItemLimit(fileStats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+  resourceBudget.assertCanConsume(fileStats.size, `Asset upload ${asset.path}`);
   const mimeType = mimeTypeForAssetPath(asset.path);
-  const response = await fetch(submitUrl, {
-    method: "POST",
-    headers: { "Content-Type": mimeType },
-    body: bytes
+  const deadline = new NetworkRequestDeadline(`Asset upload ${asset.path}`);
+  const source = handle.createReadStream({ autoClose: false, start: 0 });
+  let uploadedBytes = 0;
+  const countedBody = new Transform({
+    transform(chunk, _encoding, callback) {
+      try {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        uploadedBytes += bytes.byteLength;
+        assertSingleItemLimit(uploadedBytes, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+        resourceBudget.consume(bytes.byteLength, `Asset upload ${asset.path}`);
+        deadline.touch();
+        callback(null, bytes);
+      } catch (error2) {
+        callback(error2 instanceof Error ? error2 : new Error(String(error2)));
+      }
+    }
   });
-  const text = await response.text();
-  const json = parseJsonLenient2(text);
-  if (!response.ok) {
+  const abortSource = () => {
+    source.destroy(deadline.controller.signal.reason instanceof Error ? deadline.controller.signal.reason : new Error("Asset upload aborted."));
+  };
+  deadline.controller.signal.addEventListener("abort", abortSource, { once: true });
+  try {
+    const response = await fetch(submitUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": mimeType,
+        "Content-Length": String(fileStats.size)
+      },
+      body: source.pipe(countedBody),
+      duplex: "half",
+      signal: deadline.controller.signal
+    });
+    const responseBytes = await readBoundedResponseBody({
+      response,
+      itemLimitBytes: MAX_SINGLE_ASSET_BYTES,
+      resourceBudget,
+      deadline,
+      label: `Asset upload response for ${asset.path}`
+    });
+    const text = responseBytes.toString("utf8");
+    const json = parseJsonLenient2(text);
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        statusText: response.statusText,
+        mimeType,
+        bytes: uploadedBytes,
+        response: summarizeUploadResponse(text, json)
+      };
+    }
     return {
-      ok: false,
+      ok: true,
       status: response.status,
       statusText: response.statusText,
       mimeType,
-      bytes: bytes.byteLength,
+      bytes: uploadedBytes,
       response: summarizeUploadResponse(text, json)
     };
+  } finally {
+    deadline.controller.signal.removeEventListener("abort", abortSource);
+    source.destroy();
+    countedBody.destroy();
+    deadline.dispose();
   }
-  return {
-    ok: true,
-    status: response.status,
-    statusText: response.statusText,
-    mimeType,
-    bytes: bytes.byteLength,
-    response: summarizeUploadResponse(text, json)
-  };
 }
 function extractAssetSubmitUrl(value) {
   const record2 = asRecord2(value);
@@ -26958,9 +28396,9 @@ function normalizeInlineResultLimit(value) {
   }
   const number4 = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(number4) || number4 < 0) {
-    throw new Error(`Tool argument "inlineResultLimit" must be a non-negative number of bytes up to ${MAX_INLINE_RESULT_LIMIT} bytes (${formatBytesHuman(MAX_INLINE_RESULT_LIMIT)}).`);
+    throw new Error(`Tool argument "inlineResultLimit" must be a non-negative number of bytes up to ${MAX_INLINE_RESULT_LIMIT2} bytes (${formatBytesHuman(MAX_INLINE_RESULT_LIMIT2)}).`);
   }
-  return Math.min(Math.floor(number4), MAX_INLINE_RESULT_LIMIT);
+  return Math.min(Math.floor(number4), MAX_INLINE_RESULT_LIMIT2);
 }
 function formatBytesHuman(bytes) {
   if (bytes < 1e3) {
@@ -27513,10 +28951,44 @@ async function shapeUpstreamBackedResponse(options) {
   if (!needsOutputFile) {
     return limitedPayload;
   }
-  return {
-    ...limitedPayload,
-    outputFiles: await options.writeOutputFiles(upstreamEnvelope(options.parsed))
-  };
+  try {
+    return {
+      ...limitedPayload,
+      outputFiles: await options.writeOutputFiles(upstreamEnvelope(options.parsed))
+    };
+  } catch (error2) {
+    return localPostprocessingFailure(limitedPayload, "backendSidecars", error2);
+  }
+}
+function localPostprocessingFailure(resultPayload, stage, error2, outputFiles) {
+  const executionOutcome = asOptionalString2(resultPayload.executionOutcome);
+  const existingGuidance = asOptionalString2(resultPayload.retryGuidance);
+  const localGuidance = executionOutcome === "succeeded" ? "The remote operation succeeded and may have mutated Figma. Do not rerun it; repair only the failed local post-processing step." : executionOutcome === "outcome_unknown" ? "The remote outcome is unknown and local recovery output also failed. Inspect or read back Figma and reconcile state before any retry." : "Inspect the returned business result and repair the failed local post-processing step before retrying.";
+  return removeUndefined3({
+    ...resultPayload,
+    ok: false,
+    retryGuidance: existingGuidance ? `${existingGuidance} ${localGuidance}` : localGuidance,
+    postProcessing: {
+      ...asRecord2(resultPayload.postProcessing),
+      [stage]: {
+        status: "failed",
+        message: errorMessage2(error2),
+        code: asOptionalString2(asRecord2(error2).code)
+      }
+    },
+    outputFiles: outputFiles && Object.keys(outputFiles).length > 0 ? outputFiles : resultPayload.outputFiles
+  });
+}
+async function attachPostExecutionOutputFiles(options) {
+  try {
+    const outputFiles = await options.write();
+    return {
+      ...options.resultPayload,
+      outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0
+    };
+  } catch (error2) {
+    return localPostprocessingFailure(options.resultPayload, options.stage, error2);
+  }
 }
 function responseUpstreamError(error2) {
   return {
@@ -27803,7 +29275,7 @@ function parseJsonToolResult(result) {
   return JSON.parse(firstText);
 }
 function normalizeOAuthCachePath(oauthCachePath) {
-  if (!isAbsolute2(oauthCachePath)) {
+  if (!isAbsolute3(oauthCachePath)) {
     throw new Error("oauthCachePath must be an absolute path.");
   }
   return oauthCachePath;
@@ -27862,7 +29334,7 @@ function parseFigmaFileReference(file) {
       surface: inferFigmaSurface(value)
     };
   } catch {
-    if (isAbsolute2(value) || value.includes("/") || value.includes("\\") || value.includes("..")) {
+    if (isAbsolute3(value) || value.includes("/") || value.includes("\\") || value.includes("..")) {
       throw new Error('Tool argument "file" must be a Figma URL or a simple Figma file key.');
     }
     return { fileKey: value };
@@ -27941,7 +29413,7 @@ function normalizeBoundedInteger(value, fallback, max) {
 function literal3(value) {
   return JSON.stringify(value);
 }
-var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT, MAX_QUEUED_CAPTURE_REQUESTS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, PUBLIC_HISTORY_COMMAND_IDS, PUBLIC_HISTORY_KINDS, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
+var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT2, MAX_QUEUED_CAPTURE_REQUESTS, MAX_MANIFEST_ITEMS, MAX_MANIFEST_FILE_BYTES, MAX_SINGLE_ASSET_BYTES, MAX_COMMAND_DATA_PLANE_BYTES, NETWORK_REQUEST_TOTAL_TIMEOUT_MS, NETWORK_REQUEST_IDLE_TIMEOUT_MS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, UNKNOWN_EXECUTION_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, DataPlaneResourceBudget, COMMAND_RESOURCE_CONTEXT, NetworkRequestDeadline, PostResponseResourceError, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, PUBLIC_HISTORY_COMMAND_IDS, PUBLIC_HISTORY_KINDS, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
 var init_workspace_mcp_server = __esm({
   "src/mcp/workspace-mcp-server.ts"() {
     "use strict";
@@ -27955,6 +29427,7 @@ var init_workspace_mcp_server = __esm({
     init_tool_registry();
     init_wrapper_contracts();
     init_workspace_files();
+    init_managed_files();
     FIGMA_WORKSPACE_DEFAULT_SESSION_ID = "default";
     FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS = FIGMA_WORKSPACE_WRAPPER_CONTRACTS;
     DEFAULT_EVAL_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_eval");
@@ -27962,12 +29435,19 @@ var init_workspace_mcp_server = __esm({
     DEFAULT_EVAL_ARGUMENT_NAME = requireWrapperUpstreamProperty(DEFAULT_EVAL_CONTRACT, "code");
     DEFAULT_EVAL_DESCRIPTION = "Figma Workspace Plugin API execution";
     DEFAULT_HISTORY_LIMIT = 50;
-    DEFAULT_INLINE_RESULT_LIMIT = 4e3;
-    MAX_INLINE_RESULT_LIMIT = 1e4;
+    DEFAULT_INLINE_RESULT_LIMIT = 4096;
+    MAX_INLINE_RESULT_LIMIT2 = 1e4;
     MAX_QUEUED_CAPTURE_REQUESTS = 8;
+    MAX_MANIFEST_ITEMS = 64;
+    MAX_MANIFEST_FILE_BYTES = 256 * 1024;
+    MAX_SINGLE_ASSET_BYTES = 16 * 1024 * 1024;
+    MAX_COMMAND_DATA_PLANE_BYTES = 64 * 1024 * 1024;
+    NETWORK_REQUEST_TOTAL_TIMEOUT_MS = 5 * 60 * 1e3;
+    NETWORK_REQUEST_IDLE_TIMEOUT_MS = 60 * 1e3;
     QUEUED_CAPTURE_ERROR_MESSAGE_BYTES = 600;
     QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES = 300;
     QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE = "Script execution succeeded and may have mutated Figma. Do not rerun it just because capture post-processing failed; retry the affected node with figma:capture.";
+    UNKNOWN_EXECUTION_RETRY_GUIDANCE = "The execution request was dispatched, but Figma completion could not be confirmed. Do not rerun the mutation blindly. Inspect or read back the target and reconcile the observed state before deciding whether any retry is safe.";
     APPLY_ASSET_MANIFEST_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_apply_asset_manifest");
     DOWNLOAD_ASSETS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_download_assets");
     CAPTURE_NODE_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_capture_node");
@@ -27988,6 +29468,63 @@ var init_workspace_mcp_server = __esm({
     GET_LIBRARIES_TOOL_NAME = requireWrapperUpstreamToolName(GET_LIBRARIES_CONTRACT);
     GET_VARIABLE_DEFS_TOOL_NAME = requireWrapperUpstreamToolName(GET_VARIABLE_DEFS_CONTRACT);
     COVERED_UPSTREAM_TOOL_NAMES_TEXT = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
+    DataPlaneResourceBudget = class {
+      #usedBytes = 0;
+      get remainingBytes() {
+        return MAX_COMMAND_DATA_PLANE_BYTES - this.#usedBytes;
+      }
+      assertCanConsume(bytes, label) {
+        if (!Number.isSafeInteger(bytes) || bytes < 0) {
+          throw resourceLimitError(`${label} reported an invalid byte length.`);
+        }
+        if (bytes > this.remainingBytes) {
+          throw resourceLimitError(
+            `${label} would exceed the ${formatDataPlaneLimit(MAX_COMMAND_DATA_PLANE_BYTES)} per-command data-plane limit.`
+          );
+        }
+      }
+      consume(bytes, label) {
+        this.assertCanConsume(bytes, label);
+        this.#usedBytes += bytes;
+      }
+    };
+    COMMAND_RESOURCE_CONTEXT = new AsyncLocalStorage();
+    NetworkRequestDeadline = class {
+      constructor(label, options = {}) {
+        this.label = label;
+        this.#totalTimer = setTimeout(() => {
+          this.controller.abort(networkTimeoutError(`${this.label} exceeded the 5-minute total timeout.`));
+        }, NETWORK_REQUEST_TOTAL_TIMEOUT_MS);
+        this.#totalTimer.unref?.();
+        if (options.idleTimeout !== false) this.touch();
+      }
+      label;
+      controller = new AbortController();
+      #totalTimer;
+      #idleTimer;
+      touch() {
+        if (this.#idleTimer) clearTimeout(this.#idleTimer);
+        this.#idleTimer = setTimeout(() => {
+          this.controller.abort(networkTimeoutError(`${this.label} had no data activity for 60 seconds.`));
+        }, NETWORK_REQUEST_IDLE_TIMEOUT_MS);
+        this.#idleTimer.unref?.();
+      }
+      dispose() {
+        clearTimeout(this.#totalTimer);
+        if (this.#idleTimer) clearTimeout(this.#idleTimer);
+      }
+    };
+    PostResponseResourceError = class extends Error {
+      constructor(cause, response) {
+        super(errorMessage2(cause), { cause });
+        this.cause = cause;
+        this.response = response;
+        this.name = "PostResponseResourceError";
+      }
+      cause;
+      response;
+      code = "FIGMA_WORKSPACE_RESOURCE_LIMIT_EXCEEDED";
+    };
     FIGMA_METADATA_ENRICHMENT_FIELDS = [
       "locked",
       "visible",
@@ -28125,15 +29662,16 @@ init_workspace_mcp_server();
 
 // src/cli/figma-workspace-cli.ts
 init_tool_args();
-import { randomUUID as randomUUID2 } from "node:crypto";
-import { link, mkdir as mkdir4, open, readFile as readFile4, rename as rename2, rm as rm2, stat, writeFile as writeFile4 } from "node:fs/promises";
-import { dirname as dirname7, isAbsolute as isAbsolute3, normalize, resolve as resolve7 } from "node:path";
+import { randomUUID as randomUUID3 } from "node:crypto";
+import { createReadStream as createReadStream2 } from "node:fs";
+import { link as link3, mkdir as mkdir3, open as open4, readFile as readFile3, rename as rename3, rm as rm2 } from "node:fs/promises";
+import { dirname as dirname8, isAbsolute as isAbsolute4, normalize, parse as parse3, resolve as resolve9 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // src/contract/tool-metadata.ts
 init_tool_registry();
 init_wrapper_contracts();
-var DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4e3;
+var DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4096;
 var MAX_INLINE_RESULT_LIMIT_BYTES = 1e4;
 var NODE_SCOPED_TARGET_SHAPES = FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION;
 var COVERED_UPSTREAM_TOOLS = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
@@ -28204,6 +29742,7 @@ function createReplToolDescriptions(options) {
         manifestPath: stringProperty("Recommended manifest file path. Accepts an absolute path or a file name inside the initialized file-context workspace; may be an array of assets or an object with assets."),
         assets: {
           type: "array",
+          maxItems: 64,
           description: "Advanced inline asset entries. Prefer manifestPath. Each entry uses { path, target }; target accepts a raw node id, node URL, or { fileKey, nodeId }.",
           items: {
             type: "object",
@@ -28213,7 +29752,7 @@ function createReplToolDescriptions(options) {
               name: stringProperty("Optional asset display name."),
               metadata: objectProperty("Optional asset metadata.")
             },
-            additionalProperties: true
+            additionalProperties: false
           }
         },
         validateTargets: booleanProperty("Defaults true. When upstream eval is available, verify target nodes have IMAGE fills after upload. Missing or incomplete validation records make the workflow fail with outputFiles.debugFile instead of silently succeeding.", { default: true })
@@ -28227,6 +29766,7 @@ function createReplToolDescriptions(options) {
         sessionId: stringProperty("Local workspace session id used for fileKey, workspace defaults, and history. Defaults to 'default'."),
         targets: {
           type: "array",
+          maxItems: 64,
           description: "Recommended target list. Single-target calls still use targets: [{ target }]. Mutually exclusive with manifestPath.",
           items: downloadAssetTargetProperty()
         },
@@ -28271,7 +29811,7 @@ function createReplToolDescriptions(options) {
         query: stringProperty(`English task keywords used for deterministic route resolution, for example text font loadFontAsync or components variants properties. Hard limit ${options.maxLookupQueryLength} characters.`),
         surface: enumProperty(["design", "figjam", "slides"], "Optional hard route filter. Results may use this surface or an explicitly surface-agnostic record only."),
         workflow: stringProperty("Optional exact supported workflow id. An unknown id is a usage error; when supplied it filters workflowGraph and wrapperProfiles."),
-        maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4.")
+        maxCards: numberProperty("Maximum cards to return, capped at 8. Defaults to 4.", { type: "integer", minimum: 1, maximum: 8 })
       }, ["query"])
     },
     {
@@ -28282,7 +29822,7 @@ function createReplToolDescriptions(options) {
         sessionId: stringProperty("Local workspace session id with file context. Defaults to 'default'."),
         mode: enumProperty(["inspect", "style"], "Use inspect for target summaries or style for compact visual-token audits. Defaults to inspect."),
         target: inspectTargetProperty("String-only target: $selection, $currentPage, a raw node id, or a node URL. Defaults to $selection. Do not pass { fileKey, nodeId }."),
-        depth: numberProperty("Child summary depth. Defaults to 2.")
+        depth: numberProperty("Child summary depth. Defaults to 2.", { type: "integer", minimum: 1 })
       })
     },
     {
@@ -28361,7 +29901,7 @@ function createReplToolDescriptions(options) {
         sessionId: stringProperty("Local workspace session id used for file context and history. Defaults to 'default'."),
         file: stringProperty("Optional Figma file URL or raw file key. Used when the session does not already have file context."),
         workspaceDir: stringProperty("Required absolute local workspace directory when file is supplied and the session does not already have file context. Prefer a Git-ignored <project>/.figma-workspace; otherwise choose an explicitly selected Figma task-artifact directory. File-context files live under <workspaceDir>/<fileKey-or-fileSlug>."),
-        offset: numberProperty("Optional official get_libraries pagination offset."),
+        offset: numberProperty("Optional official get_libraries pagination offset.", { type: "integer", minimum: 0 }),
         refresh: booleanProperty("Refresh cached upstream tool list before dispatch."),
         inlineResultLimit: inlineResultLimitInputProperty("Payload-size control in bytes for inline upstream.result/upstream.text. Defaults to 4 KB and is capped at 10 KB; 0 forces configurable inline fields to outputFiles only; complete upstream results stay in outputFiles.upstreamFile.")
       })
@@ -28408,8 +29948,8 @@ function createReplToolDescriptions(options) {
         taskFamily: enumProperty(FIGMA_WORKSPACE_TASK_FAMILIES2, "Docs-only hard canonical task-family filter. It is invalid with kind=api and takes precedence over inferred routing."),
         query: stringProperty(`Required for kind=docs. Use English task keywords, for example 'component properties' or 'Slides lifecycle'. Hard limit ${options.maxLookupQueryLength} characters.`),
         symbol: stringProperty(`Required for kind=api. Accepts bare or supported qualified Plugin API symbols, for example createFrame, figma.createFrame(), ExportMixin.exportAsync, or figma.variables.createVariableCollection. Hard limit ${options.maxLookupQueryLength} characters.`),
-        maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`),
-        maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`)
+        maxResults: numberProperty(`Result-size control only. Maximum results, capped at ${options.maxDocsSearchResults}. Defaults to docs=${options.defaultDocsSearchMaxResults}, api=5.`, { type: "integer", minimum: 1, maximum: options.maxDocsSearchResults }),
+        maxSnippetLines: numberProperty(`Result-size control only. Lines per snippet, capped at ${options.maxDocsSearchSnippetLines}. Defaults to docs=${options.defaultDocsSearchSnippetLines}, api=5.`, { type: "integer", minimum: 1, maximum: options.maxDocsSearchSnippetLines })
       }, ["kind"])
     },
     {
@@ -28455,9 +29995,9 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
   }),
   figma_workspace_eval: toolOutputSchema({
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
-    scriptExecutionSucceeded: booleanProperty("True when the Plugin API script finished successfully before queued capture post-processing."),
+    executionOutcome: enumProperty(["not_started", "succeeded", "outcome_unknown"], "Required execution certainty. not_started means no execution request was dispatched; succeeded means Figma confirmed script completion; outcome_unknown means a dispatched request did not produce a confirmable completion result."),
     captureProcessingSucceeded: booleanProperty("Present when $.capture queued work. False means the script succeeded but at least one local PNG capture failed."),
-    retryGuidance: stringProperty("Explicit recovery guidance when capture post-processing failed after successful script execution."),
+    retryGuidance: stringProperty("Required recovery guidance for outcome_unknown; also explains safe standalone capture recovery after successful script execution."),
     diagnostics: arrayProperty("Preflight diagnostics when warnings or failures are present."),
     repairPlan: jsonProperty("Agent-facing repair plan with status, summary, and deduplicated steps containing occurrences with line:column labels."),
     upstream: upstreamEnvelopeProperty("Upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaWorkspace metadata is removed from public eval results."),
@@ -28468,14 +30008,13 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
       ["debugFile", "upstreamFile"]
     ),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
-  }),
+  }, ["executionOutcome"]),
   figma_workspace_run_script_file: toolOutputSchema({
-    phase: enumProperty(["preflight", "execute"], "Execution phase represented by this result. preflight means diagnostics blocked upstream execution; execute means upstream Figma was called."),
-    executed: booleanProperty("Whether upstream Figma execution was attempted."),
+    phase: enumProperty(["preflight", "execute"], "Execution phase represented by this result. preflight means no execution request was dispatched; execute means the request was dispatched."),
+    executionOutcome: enumProperty(["not_started", "succeeded", "outcome_unknown"], "Required execution certainty. not_started means no execution request was dispatched; succeeded means Figma confirmed script completion; outcome_unknown means a dispatched request did not produce a confirmable completion result."),
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
-    scriptExecutionSucceeded: booleanProperty("True when the Plugin API script finished successfully before queued capture post-processing."),
     captureProcessingSucceeded: booleanProperty("Present when $.capture queued work. False means the script succeeded but at least one local PNG capture failed."),
-    retryGuidance: stringProperty("Explicit recovery guidance when capture post-processing failed after successful script execution."),
+    retryGuidance: stringProperty("Required recovery guidance for outcome_unknown; also explains safe standalone capture recovery after successful script execution."),
     diagnostics: arrayProperty("Script and wrapper diagnostics when warnings or failures are present."),
     repairPlan: jsonProperty("Agent-facing repair plan returned only when diagnostics or preflight blockers are actionable."),
     script: scriptMetadataProperty("Compact script metadata. Clean inputFile success returns only inputFile; preflight/failure keeps repair details."),
@@ -28487,7 +30026,7 @@ var LOCAL_WORKSPACE_TOOL_OUTPUT_SCHEMAS = {
     captures: arrayProperty("Compact queued capture results in request order. Successful entries include requestId, nodeId, and local imageFile; failed entries include upstreamError. Image bytes are never returned."),
     upstream: upstreamEnvelopeProperty("File-script upstream output envelope with JSON result or text fallback. upstream.ok reports effective upstream success and consumed top-level ok fields are removed from upstream.result. Bridge-internal __figmaWorkspace metadata is removed from public script results."),
     inlineResultLimit: inlineResultLimitProperty("Inline payload omission metadata when upstream.result or upstream.text exceeds the byte limit.")
-  }),
+  }, ["executionOutcome"]),
   figma_workspace_apply_asset_manifest: toolOutputSchema({
     session: objectProperty("Minimal local workspace session summary: id, fileKey, surface, and optional sessionDir."),
     assets: compactAssetResultsProperty("Compact per-asset upload/fill results. Successful submitUrl POSTs expose compact upload evidence without raw submit URLs."),
@@ -28782,6 +30321,7 @@ function enumProperty(values, description) {
 }
 function inlineResultLimitInputProperty(description) {
   return numberProperty(description, {
+    type: "integer",
     default: DEFAULT_INLINE_RESULT_LIMIT_BYTES,
     minimum: 0,
     maximum: MAX_INLINE_RESULT_LIMIT_BYTES
@@ -28980,14 +30520,14 @@ function taskChangeProperty(description) {
     additionalProperties: true
   };
 }
-function toolOutputSchema(properties) {
+function toolOutputSchema(properties, requiredProperties = []) {
   return {
     type: "object",
     properties: {
       ok: booleanProperty("Whether the local Figma Workspace wrapper/tool completed successfully; upstream.ok reports effective upstream success after consuming public upstream result ok fields."),
       ...properties
     },
-    required: ["ok"],
+    required: ["ok", ...requiredProperties],
     additionalProperties: true
   };
 }
@@ -28995,6 +30535,7 @@ function toolOutputSchema(properties) {
 // src/cli/figma-workspace-cli.ts
 init_workspace_mcp_server();
 init_doc_search();
+init_managed_files();
 init_workspace_files();
 var FIGMA_WORKSPACE_CLI_EXIT_SUCCESS = 0;
 var FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR = 1;
@@ -29002,11 +30543,11 @@ var FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR = 2;
 var FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT = 130;
 var FIGMA_WORKSPACE_SESSION_FILE_ENV = "FIGMA_WORKSPACE_SESSION_FILE";
 var FIGMA_WORKSPACE_SESSION_LOCK_TIMEOUT_MS = 3e4;
-var FIGMA_WORKSPACE_SESSION_LOCK_STALE_MS = 10 * 6e4;
 var FIGMA_WORKSPACE_SESSION_LOCK_RETRY_MS = 100;
 var FIGMA_WORKSPACE_SESSION_LOCK_HEARTBEAT_MS = 5e3;
 var FIGMA_WORKSPACE_CLI_DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4096;
 var FIGMA_WORKSPACE_CLI_MAX_INLINE_RESULT_LIMIT_BYTES = 1e4;
+var FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES = 256 * 1024;
 var FIGMA_WORKSPACE_CLI_MAX_INPUT_VALUE_CHARS = 256;
 var FIGMA_WORKSPACE_CLI_INPUT_PREFIX_CHARS = 120;
 var FIGMA_WORKSPACE_CLI_COMMANDS = [
@@ -29105,74 +30646,96 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
   }
   try {
     const sessionFile = resolveSessionFile(parsed.sessionFile, io);
+    await validateCliStateFilePath(sessionFile);
     const input = await readCommandInput(parsed.inputFile, io);
     const commandInput = createCommandInvocationInput(parsed.command, input, parsed.inlineResultLimit);
     const inlineResultLimit = resolveInlineResultLimit(parsed.inlineResultLimit, input.inlineResultLimit);
     let result;
-    let markdownResult;
-    let transactionError;
+    let commandError;
+    const postProcessing = /* @__PURE__ */ new Map();
     const releaseSessionLock = dependencies.loadSessions === void 0 && dependencies.saveSessions === void 0 ? await acquireFigmaWorkspaceSessionLock(sessionFile, dependencies.sessionLockOptions) : void 0;
+    let client;
     try {
       const sessions = await (dependencies.loadSessions ?? readFigmaWorkspaceSessions)(sessionFile);
       assertNoLegacySessionHandles(sessions);
-      const client = (dependencies.createClient ?? createFigmaWorkspaceClient)({
+      client = (dependencies.createClient ?? createFigmaWorkspaceClient)({
         ...dependencies.clientOptions,
         initialSessions: sessions
       });
-      let commandError;
       try {
         result = await invokeFigmaWorkspaceCommand(client, parsed.command, commandInput);
       } catch (error2) {
         commandError = error2;
       }
-      let saveError;
       try {
         if (dependencies.saveSessions === void 0) {
           await writeFigmaWorkspaceSessions(sessionFile, client.sessions.list(), dependencies.atomicFileOperations);
         } else {
           await dependencies.saveSessions(sessionFile, client.sessions.list());
         }
+        postProcessing.set("state", { status: "succeeded" });
       } catch (error2) {
-        saveError = error2;
+        postProcessing.set("state", { status: "failed", message: formatCliError(error2) });
       }
-      let closeError;
       try {
         await client.close();
+        postProcessing.set("clientClose", { status: "succeeded" });
       } catch (error2) {
-        closeError = error2;
+        postProcessing.set("clientClose", { status: "failed", message: formatCliError(error2) });
       }
-      transactionError = commandError ?? saveError ?? closeError;
     } catch (error2) {
-      transactionError = error2;
-    }
-    const presentation = transactionError === void 0 ? classifyFigmaWorkspaceCliResult(parsed.command, result) : void 0;
-    if (transactionError === void 0) {
-      try {
-        markdownResult = await persistOversizedCliResult(
-          parsed.command,
-          result,
-          commandInput,
-          sessionFile,
-          inlineResultLimit,
-          dependencies.atomicFileOperations
-        );
-      } catch (error2) {
-        transactionError = error2;
-      }
+      commandError ??= error2;
     }
     if (releaseSessionLock !== void 0) {
       try {
         await releaseSessionLock();
+        postProcessing.set("sessionLock", { status: "succeeded" });
       } catch (error2) {
-        transactionError ??= error2;
+        postProcessing.set("sessionLock", { status: "failed", message: formatCliError(error2) });
       }
+    } else {
+      postProcessing.set("sessionLock", { status: "not-required" });
     }
-    if (transactionError !== void 0) {
-      throw transactionError;
+    if (commandError !== void 0) {
+      throw commandError;
     }
-    io.writeStdout(`${formatFigmaWorkspaceCommandMarkdown(parsed.command, markdownResult, commandInput, presentation)}
+    const basePresentation = classifyFigmaWorkspaceCliResult(parsed.command, result);
+    const operationSucceeded = isRecord6(result) && result.executionOutcome === "succeeded" ? true : !(isRecord6(result) && result.ok === false);
+    let renderedResult = hasPostProcessingFailure(postProcessing) ? createPostProcessingResult(result, postProcessing) : result;
+    let presentation = hasPostProcessingFailure(postProcessing) ? createPostProcessingPresentation(operationSucceeded, renderedResult) : basePresentation;
+    try {
+      const resultBeforePersistence = renderedResult;
+      const persisted = await persistOversizedCliResult(
+        parsed.command,
+        renderedResult,
+        commandInput,
+        sessionFile,
+        inlineResultLimit,
+        dependencies.atomicFileOperations
+      );
+      renderedResult = persisted;
+      postProcessing.set("sidecar", {
+        status: persisted === resultBeforePersistence ? "not-required" : "succeeded"
+      });
+      if (persisted === resultBeforePersistence && hasPostProcessingFailure(postProcessing)) {
+        renderedResult = createPostProcessingResult(result, postProcessing);
+      }
+    } catch (error2) {
+      postProcessing.set("sidecar", { status: "failed", message: formatCliError(error2) });
+      renderedResult = createPostProcessingResult(summarizeOperationResult(result), postProcessing);
+      presentation = createPostProcessingPresentation(operationSucceeded, renderedResult);
+    }
+    if (hasPostProcessingFailure(postProcessing) && !isRecord6(renderedResult)) {
+      renderedResult = createPostProcessingResult(renderedResult, postProcessing);
+    } else if (hasPostProcessingFailure(postProcessing) && isRecord6(renderedResult) && !Object.hasOwn(renderedResult, "postProcessing")) {
+      renderedResult = createPostProcessingResult(renderedResult, postProcessing);
+    }
+    if (hasPostProcessingFailure(postProcessing)) {
+      presentation = createPostProcessingPresentation(operationSucceeded, renderedResult);
+    }
+    io.writeStdout(`${formatFigmaWorkspaceCommandMarkdown(parsed.command, renderedResult, commandInput, presentation)}
 `);
-    return presentation?.exitCode ?? FIGMA_WORKSPACE_CLI_EXIT_SUCCESS;
+    return presentation.exitCode;
   } catch (error2) {
     io.writeStderr(`${formatCliError(error2)}
 `);
@@ -29185,7 +30748,7 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
 async function readFigmaWorkspaceSessions(path) {
   let source;
   try {
-    source = await readFile4(path, "utf8");
+    source = await readFile3(path, "utf8");
   } catch (error2) {
     if (isMissingFileError2(error2)) {
       return [];
@@ -29198,14 +30761,32 @@ async function readFigmaWorkspaceSessions(path) {
   } catch (error2) {
     throw new FigmaWorkspaceCliUsageError(`Session file is not valid JSON: ${formatCliError(error2)}`);
   }
-  assertNoLegacySessionHandles(value);
-  if (!Array.isArray(value) || !value.every(isFigmaWorkspaceSession)) {
-    throw new FigmaWorkspaceCliUsageError("Session file must contain a FigmaWorkspaceSession array.");
+  if (Array.isArray(value)) {
+    throw new FigmaWorkspaceCliUsageError(
+      "Session file uses the removed legacy array format. Create and use a new --state-file."
+    );
   }
-  return value;
+  if (!isRecord6(value) || !hasExactlyKeys(value, ["schemaVersion", "sessions"]) || value.schemaVersion !== 1 || !Array.isArray(value.sessions)) {
+    throw new FigmaWorkspaceCliUsageError(
+      'Session file must contain exactly { "schemaVersion": 1, "sessions": [...] }. Create and use a new --state-file if this file uses an older format.'
+    );
+  }
+  const sessions = value.sessions.map((session, index) => parsePersistedSession(session, index));
+  const sessionIds = /* @__PURE__ */ new Set();
+  for (const session of sessions) {
+    if (sessionIds.has(session.id)) {
+      throw new FigmaWorkspaceCliUsageError(`Session file contains duplicate session id: ${session.id}.`);
+    }
+    sessionIds.add(session.id);
+  }
+  return sessions;
 }
 async function writeFigmaWorkspaceSessions(path, sessions, operations) {
-  await writeAtomicTextFile(path, `${JSON.stringify(sessions, null, 2)}
+  const state = {
+    schemaVersion: 1,
+    sessions: sessions.map(toPersistedSession)
+  };
+  await writeAtomicTextFile(path, `${JSON.stringify(state, null, 2)}
 `, operations);
 }
 async function persistOversizedCliResult(command, result, input, sessionFile, inlineResultLimit, operations) {
@@ -29219,15 +30800,18 @@ async function persistOversizedCliResult(command, result, input, sessionFile, in
   if (inlineResultLimit !== 0 && markdownBytes <= inlineResultLimit) {
     return result;
   }
-  const resultFile = resolve7(
-    dirname7(sessionFile),
+  const resultFile = resolve9(
+    dirname8(sessionFile),
     "results",
-    `${Date.now()}-${command}-${randomUUID2()}.json`
+    `${Date.now()}-${command}-${randomUUID3()}.json`
   );
   await writeAtomicTextFile(resultFile, resultSource, operations);
   const ok = isRecord6(result) && typeof result.ok === "boolean" ? result.ok : true;
   return {
     ok,
+    ...isRecord6(result) && typeof result.executionOutcome === "string" ? { executionOutcome: result.executionOutcome } : {},
+    ...isRecord6(result) && typeof result.retryGuidance === "string" ? { retryGuidance: result.retryGuidance } : {},
+    ...isRecord6(result) && isRecord6(result.postProcessing) ? { postProcessing: result.postProcessing } : {},
     outputFiles: {
       cliResultFile: {
         path: resultFile,
@@ -29241,16 +30825,97 @@ async function persistOversizedCliResult(command, result, input, sessionFile, in
     }
   };
 }
-async function writeAtomicTextFile(path, source, operations = { writeFile: writeFile4, rename: rename2, rm: rm2 }) {
-  const directory = dirname7(path);
-  const temporaryPath = resolve7(directory, `.${randomUUID2()}.tmp`);
-  await mkdir4(directory, { recursive: true });
+function hasPostProcessingFailure(stages) {
+  return [...stages.values()].some((stage) => stage.status === "failed");
+}
+function createPostProcessingResult(operationResult, stages) {
+  const executionOutcome = isRecord6(operationResult) && typeof operationResult.executionOutcome === "string" ? operationResult.executionOutcome : void 0;
+  const existingGuidance = isRecord6(operationResult) && typeof operationResult.retryGuidance === "string" ? operationResult.retryGuidance : void 0;
+  const retryGuidance = existingGuidance ?? (executionOutcome === "succeeded" ? "The remote operation succeeded and may have mutated Figma. Do not rerun it; inspect the returned result and repair only the failed local post-processing step." : "Inspect the returned business result and reconcile local state before retrying the operation.");
+  return {
+    ...isRecord6(operationResult) ? operationResult : { operationResult },
+    ...executionOutcome === void 0 ? {} : { executionOutcome },
+    retryGuidance,
+    postProcessing: Object.fromEntries(stages)
+  };
+}
+function summarizeOperationResult(result) {
+  if (!isRecord6(result)) {
+    return typeof result === "string" ? result.slice(0, 500) : result;
+  }
+  const summaryKeys = [
+    "ok",
+    "executionOutcome",
+    "phase",
+    "summary",
+    "payload",
+    "session",
+    "changedNodeIds",
+    "captures",
+    "error",
+    "upstreamError"
+  ];
+  const summary = Object.fromEntries(summaryKeys.filter((key) => result[key] !== void 0).map((key) => [key, limitSummaryValue(result[key])]));
+  return Object.keys(summary).length === 0 ? { availableFields: Object.keys(result).slice(0, 20) } : summary;
+}
+function limitSummaryValue(value) {
+  if (typeof value === "string") return value.slice(0, 500);
+  if (Array.isArray(value)) return value.slice(0, 20).map(limitSummaryValue);
+  if (isRecord6(value)) {
+    return Object.fromEntries(Object.entries(value).slice(0, 20).map(([key, entry]) => [key, limitSummaryValue(entry)]));
+  }
+  return value;
+}
+function createPostProcessingPresentation(operationSucceeded, result) {
+  return {
+    status: operationSucceeded ? "failed-after-execution" : "failed",
+    exitCode: FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR,
+    error: presentationError(result),
+    warnings: presentationWarnings(result)
+  };
+}
+async function writeAtomicTextFile(path, source, operations) {
+  await atomicWriteManagedTextFile({
+    root: parse3(path).root,
+    path,
+    overwrite: true,
+    ...operations === void 0 ? {} : { operations: createManagedAtomicOperations(operations) }
+  }, source);
+}
+function createManagedAtomicOperations(operations) {
+  return {
+    open: async (path, flags, mode) => {
+      const handle = await open4(path, flags, mode);
+      const adapted = {
+        chmod: (fileMode) => handle.chmod(fileMode),
+        close: () => handle.close(),
+        sync: () => handle.sync(),
+        write: async (buffer, offset, length, position) => {
+          const result = await handle.write(buffer, offset, length, position);
+          return { bytesWritten: result.bytesWritten };
+        },
+        writeFile: async (data) => {
+          if (typeof data !== "string") {
+            throw new TypeError("CLI atomic text writes require string content.");
+          }
+          await operations.writeFile(path, data, "utf8");
+          await handle.truncate(0);
+          await handle.writeFile(data, { encoding: "utf8" });
+        }
+      };
+      return adapted;
+    },
+    rename: operations.rename,
+    unlink: (path) => operations.rm(path, { force: true })
+  };
+}
+async function validateCliStateFilePath(path) {
+  const root = parse3(path).root;
+  await ensureManagedDirectory({ root, directory: dirname8(path) });
   try {
-    await operations.writeFile(temporaryPath, source, "utf8");
-    await operations.rename(temporaryPath, path);
+    await assertManagedFilePath({ root, path });
   } catch (error2) {
-    await operations.rm(temporaryPath, { force: true }).catch(() => void 0);
-    throw error2;
+    if (!isMissingFileError2(error2)) throw error2;
   }
 }
 async function acquireFigmaWorkspaceSessionLock(sessionFile, options = {}) {
@@ -29260,16 +30925,15 @@ async function acquireFigmaWorkspaceSessionLock(sessionFile, options = {}) {
   const scheduleInterval = options.setInterval ?? setInterval;
   const cancelInterval = options.clearInterval ?? clearInterval;
   const heartbeatMs = options.heartbeatMs ?? FIGMA_WORKSPACE_SESSION_LOCK_HEARTBEAT_MS;
-  const staleMs = options.staleMs ?? FIGMA_WORKSPACE_SESSION_LOCK_STALE_MS;
   const timeoutMs = options.timeoutMs ?? FIGMA_WORKSPACE_SESSION_LOCK_TIMEOUT_MS;
   const retryMs = options.retryMs ?? FIGMA_WORKSPACE_SESSION_LOCK_RETRY_MS;
-  const renameLock = options.rename ?? rename2;
-  await mkdir4(dirname7(lockFile), { recursive: true });
+  const renameLock = options.rename ?? rename3;
+  await mkdir3(dirname8(lockFile), { recursive: true });
   const deadline = now() + timeoutMs;
   while (true) {
     try {
-      const lockToken = randomUUID2();
-      const handle = await open(lockFile, "wx");
+      const lockToken = randomUUID3();
+      const handle = await open4(lockFile, "wx");
       try {
         await handle.writeFile(`${JSON.stringify({ token: lockToken, pid: process.pid, createdAt: (/* @__PURE__ */ new Date()).toISOString() })}
 `, "utf8");
@@ -29295,8 +30959,8 @@ async function acquireFigmaWorkspaceSessionLock(sessionFile, options = {}) {
         } catch (error2) {
           closeError = error2;
         }
-        const currentLock = await readFile4(lockFile, "utf8").catch((error2) => {
-          if (hasErrorCode(error2, "ENOENT")) {
+        const currentLock = await readFile3(lockFile, "utf8").catch((error2) => {
+          if (hasErrorCode2(error2, "ENOENT")) {
             return void 0;
           }
           throw error2;
@@ -29312,50 +30976,43 @@ async function acquireFigmaWorkspaceSessionLock(sessionFile, options = {}) {
         }
       };
     } catch (error2) {
-      if (!hasErrorCode(error2, "EEXIST")) {
+      if (!hasErrorCode2(error2, "EEXIST")) {
         throw error2;
       }
-      const lockStat = await stat(lockFile).catch((statError) => {
-        if (hasErrorCode(statError, "ENOENT")) {
+      const staleLockSource = await readFile3(lockFile, "utf8").catch((readError) => {
+        if (hasErrorCode2(readError, "ENOENT")) {
           return void 0;
         }
-        throw statError;
+        throw readError;
       });
-      if (lockStat !== void 0 && now() - lockStat.mtimeMs > staleMs) {
-        const staleLockSource = await readFile4(lockFile, "utf8").catch((readError) => {
-          if (hasErrorCode(readError, "ENOENT")) {
-            return void 0;
+      if (staleLockSource === void 0) {
+        continue;
+      }
+      if (!isSessionLockOwnerActive(staleLockSource, options.isProcessAlive)) {
+        const claimedLockFile = `${lockFile}.stale-${randomUUID3()}`;
+        try {
+          await renameLock(lockFile, claimedLockFile);
+        } catch (renameError) {
+          if (hasErrorCode2(renameError, "ENOENT") || hasErrorCode2(renameError, "EEXIST")) {
+            continue;
           }
-          throw readError;
-        });
-        if (staleLockSource === void 0) {
-          continue;
+          throw renameError;
         }
-        if (!isSessionLockOwnerActive(staleLockSource, options.isProcessAlive)) {
-          const claimedLockFile = `${lockFile}.stale-${randomUUID2()}`;
+        const claimedLockSource = await readFile3(claimedLockFile, "utf8");
+        if (claimedLockSource === staleLockSource && !isSessionLockOwnerActive(claimedLockSource, options.isProcessAlive)) {
+          await rm2(claimedLockFile, { force: true });
+        } else {
           try {
-            await renameLock(lockFile, claimedLockFile);
-          } catch (renameError) {
-            if (hasErrorCode(renameError, "ENOENT") || hasErrorCode(renameError, "EEXIST") || hasErrorCode(renameError, "EACCES") || hasErrorCode(renameError, "EPERM")) {
-              continue;
-            }
-            throw renameError;
-          }
-          const claimedLockSource = await readFile4(claimedLockFile, "utf8");
-          if (claimedLockSource === staleLockSource && !isSessionLockOwnerActive(claimedLockSource, options.isProcessAlive)) {
+            await link3(claimedLockFile, lockFile);
             await rm2(claimedLockFile, { force: true });
-          } else {
-            try {
-              await link(claimedLockFile, lockFile);
-              await rm2(claimedLockFile, { force: true });
-            } catch (restoreError) {
-              if (!hasErrorCode(restoreError, "EEXIST") && !hasErrorCode(restoreError, "EACCES") && !hasErrorCode(restoreError, "EPERM")) {
-                throw restoreError;
-              }
-            }
+          } catch (restoreError) {
+            throw new Error(
+              `Failed to restore a session lock after an ownership race: ${formatCliError(restoreError)}`,
+              { cause: restoreError }
+            );
           }
-          continue;
         }
+        continue;
       }
       if (now() >= deadline) {
         throw new Error(`Timed out waiting for session lock: ${lockFile}`);
@@ -29364,7 +31021,7 @@ async function acquireFigmaWorkspaceSessionLock(sessionFile, options = {}) {
     }
   }
 }
-function isSessionLockOwnerActive(lockSource, processAlive = isProcessAlive) {
+function isSessionLockOwnerActive(lockSource, processAlive = isProcessAlive2) {
   let lockData;
   try {
     lockData = JSON.parse(lockSource);
@@ -29376,16 +31033,16 @@ function isSessionLockOwnerActive(lockSource, processAlive = isProcessAlive) {
   }
   return processAlive(lockData.pid);
 }
-function isProcessAlive(pid) {
+function isProcessAlive2(pid) {
   try {
     process.kill(pid, 0);
     return true;
   } catch (error2) {
-    return hasErrorCode(error2, "EPERM") || hasErrorCode(error2, "EACCES");
+    return hasErrorCode2(error2, "EPERM") || hasErrorCode2(error2, "EACCES");
   }
 }
 function isFigmaWorkspaceCliDirectRun(importMetaUrl, argv = process.argv) {
-  return argv[1] !== void 0 && resolve7(fileURLToPath4(importMetaUrl)) === resolve7(argv[1]);
+  return argv[1] !== void 0 && resolve9(fileURLToPath4(importMetaUrl)) === resolve9(argv[1]);
 }
 var FIGMA_WORKSPACE_CLI_HELP = [
   "# Figma Workspace CLI help",
@@ -29462,6 +31119,14 @@ function createCliCommandInputSchema(inputSchema) {
   };
 }
 function createCommandInvocationInput(command, input, explicitInlineResultLimit) {
+  const schema = getFigmaWorkspaceCommandInputSchema(command);
+  const properties = isRecord6(schema.properties) ? schema.properties : {};
+  const unknownFields = Object.keys(input).filter((field) => !Object.hasOwn(properties, field));
+  if (unknownFields.length > 0) {
+    throw new FigmaWorkspaceToolArgumentError(
+      `Command input does not allow unknown field${unknownFields.length === 1 ? "" : "s"}: ${unknownFields.join(", ")}.`
+    );
+  }
   if (!commandSupportsInlineResultLimit(command)) {
     const { inlineResultLimit: _cliOnlyInlineResultLimit, ...commandInput } = input;
     return commandInput;
@@ -29478,7 +31143,7 @@ function commandSupportsInlineResultLimit(command) {
 function formatFigmaWorkspaceCommandMarkdown(command, result, input = {}, presentation = classifyFigmaWorkspaceCliResult(command, result)) {
   const lines = [`# figma-workspace ${command}`];
   lines.push(formatMarkdownInput(input));
-  lines.push(`Status: ${presentation.status.replace("-", " ")}`);
+  lines.push(`Status: ${presentation.status.replaceAll("-", " ")}`);
   if (isRecord6(result)) {
     const fields = Object.entries(result).filter(([key, value]) => key !== "ok" && value !== void 0);
     if (fields.length === 0) {
@@ -29682,7 +31347,8 @@ async function readCommandInput(inputFile, io) {
   if (inputFile === void 0) {
     return {};
   }
-  const source = inputFile === "-" ? await io.readStdin() : await io.readFile(resolve7(io.cwd(), inputFile));
+  const source = inputFile === "-" ? await io.readStdin(FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES) : await io.readFile(resolve9(io.cwd(), inputFile), FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES);
+  assertJsonInputSize(source);
   try {
     const value = JSON.parse(source);
     if (!isRecord6(value)) {
@@ -29697,7 +31363,7 @@ async function readCommandInput(inputFile, io) {
   }
 }
 function isFullyQualifiedAbsolutePath(path) {
-  return isAbsolute3(path) && normalize(path) === resolve7(path);
+  return isAbsolute4(path) && normalize(path) === resolve9(path);
 }
 function resolveSessionFile(explicitPath, io) {
   const configuredPath = explicitPath ?? io.env(FIGMA_WORKSPACE_SESSION_FILE_ENV);
@@ -29709,7 +31375,7 @@ function resolveSessionFile(explicitPath, io) {
   if (!isFullyQualifiedAbsolutePath(configuredPath)) {
     throw new FigmaWorkspaceCliUsageError("Session file path must be a fully qualified absolute path.");
   }
-  return resolve7(configuredPath);
+  return resolve9(configuredPath);
 }
 function resolveInlineResultLimit(explicitLimit, inputLimit) {
   if (explicitLimit !== void 0) {
@@ -29779,17 +31445,42 @@ function createProcessCliIo() {
   return {
     cwd: () => process.cwd(),
     env: (name) => process.env[name],
-    readFile: (path) => readFile4(path, "utf8"),
-    readStdin: async () => {
-      const chunks = [];
-      for await (const chunk of process.stdin) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      return Buffer.concat(chunks).toString("utf8");
-    },
+    readFile: (path, maxBytes = FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES) => readUtf8Input(
+      createReadStream2(path),
+      maxBytes
+    ),
+    readStdin: (maxBytes = FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES) => readUtf8Input(
+      process.stdin,
+      maxBytes
+    ),
     writeStdout: (value) => process.stdout.write(value),
     writeStderr: (value) => process.stderr.write(value)
   };
+}
+async function readUtf8Input(stream, maxBytes) {
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of stream) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : chunk instanceof Uint8Array ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength) : Buffer.from(String(chunk));
+    totalBytes += buffer.byteLength;
+    if (totalBytes > maxBytes) {
+      stream.destroy?.();
+      throw jsonInputTooLargeError(totalBytes);
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, totalBytes).toString("utf8");
+}
+function assertJsonInputSize(source) {
+  const bytes = Buffer.byteLength(source, "utf8");
+  if (bytes > FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES) {
+    throw jsonInputTooLargeError(bytes);
+  }
+}
+function jsonInputTooLargeError(observedBytes) {
+  return new FigmaWorkspaceCliUsageError(
+    `Command JSON input exceeds the ${FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES}-byte limit (observed at least ${observedBytes} bytes).`
+  );
 }
 function isFigmaWorkspaceCliCommand(value) {
   return FIGMA_WORKSPACE_CLI_COMMANDS.includes(value);
@@ -29815,11 +31506,147 @@ var FIGMA_WORKSPACE_CLI_TOOL_DESCRIPTIONS = new Map(
 function toFigmaWorkspaceToolName(command) {
   return `figma_workspace_${command.replaceAll("-", "_")}`;
 }
-function isFigmaWorkspaceSession(value) {
-  if (!isRecord6(value)) {
+function parsePersistedSession(value, index) {
+  const label = `sessions[${index}]`;
+  const allowedKeys = [
+    "id",
+    "slug",
+    "createdAt",
+    "updatedAt",
+    "label",
+    "fileUrl",
+    "fileKey",
+    "surface",
+    "knownPages",
+    "currentPageId",
+    "lastDiagnostics",
+    "history",
+    "workspace"
+  ];
+  if (!isRecord6(value) || !hasOnlyKeys(value, allowedKeys)) {
+    throw new FigmaWorkspaceCliUsageError(`${label} must be an object with only supported session fields.`);
+  }
+  if (!isNonEmptyString(value.id) || !isWorkspaceSlug(value.slug) || !isIsoDateString(value.createdAt) || !isIsoDateString(value.updatedAt) || !areOptionalStrings(value, ["label", "fileUrl", "fileKey", "currentPageId"]) || value.surface !== void 0 && value.surface !== "design" && value.surface !== "figjam" && value.surface !== "slides" || !isStringRecord2(value.knownPages) || !Array.isArray(value.lastDiagnostics) || !value.lastDiagnostics.every((diagnostic) => isPersistedDiagnostic(diagnostic)) || !Array.isArray(value.history) || !value.history.every((entry) => isPersistedHistoryEntry(entry))) {
+    throw new FigmaWorkspaceCliUsageError(`${label} is not a valid FigmaWorkspaceSession.`);
+  }
+  let workspace;
+  if (value.workspace !== void 0) {
+    if (!isPersistedWorkspace(value.workspace)) {
+      throw new FigmaWorkspaceCliUsageError(
+        `${label}.workspace must contain only canonical root, fileKey, fileSlug, and intentSlug inputs; derived paths are not accepted.`
+      );
+    }
+    try {
+      workspace = createSessionWorkspace({
+        workspaceDir: value.workspace.root,
+        fileKey: value.workspace.fileKey,
+        fileSlug: value.workspace.fileSlug,
+        intentSlug: value.workspace.intentSlug
+      });
+    } catch (error2) {
+      throw new FigmaWorkspaceCliUsageError(`${label}.workspace is invalid: ${formatCliError(error2)}`);
+    }
+  }
+  return {
+    id: value.id,
+    slug: value.slug,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    ...value.label === void 0 ? {} : { label: value.label },
+    ...value.fileUrl === void 0 ? {} : { fileUrl: value.fileUrl },
+    ...value.fileKey === void 0 ? {} : { fileKey: value.fileKey },
+    ...value.surface === void 0 ? {} : { surface: value.surface },
+    knownPages: { ...value.knownPages },
+    ...value.currentPageId === void 0 ? {} : { currentPageId: value.currentPageId },
+    lastDiagnostics: value.lastDiagnostics.map((diagnostic) => ({ ...diagnostic })),
+    history: value.history.map((entry) => ({ ...entry, nodeIds: [...entry.nodeIds] })),
+    ...workspace === void 0 ? {} : { workspace }
+  };
+}
+function toPersistedSession(session) {
+  if (!isWorkspaceSlug(session.slug)) {
+    throw new FigmaWorkspaceCliUsageError("Session slug must be a safe slug-style path segment.");
+  }
+  if (session.workspace !== void 0 && (!isWorkspaceSlug(session.workspace.fileSlug) || !isWorkspaceSlug(session.workspace.intentSlug))) {
+    throw new FigmaWorkspaceCliUsageError("Session workspace slugs must be safe slug-style path segments.");
+  }
+  if (session.workspace !== void 0) {
+    try {
+      createSessionWorkspace({
+        workspaceDir: session.workspace.root,
+        fileKey: session.workspace.fileKey,
+        fileSlug: session.workspace.fileSlug,
+        intentSlug: session.workspace.intentSlug
+      });
+    } catch (error2) {
+      throw new FigmaWorkspaceCliUsageError(`Session workspace is invalid: ${formatCliError(error2)}`);
+    }
+  }
+  return {
+    id: session.id,
+    slug: session.slug,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    ...session.label === void 0 ? {} : { label: session.label },
+    ...session.fileUrl === void 0 ? {} : { fileUrl: session.fileUrl },
+    ...session.fileKey === void 0 ? {} : { fileKey: session.fileKey },
+    ...session.surface === void 0 ? {} : { surface: session.surface },
+    knownPages: { ...session.knownPages },
+    ...session.currentPageId === void 0 ? {} : { currentPageId: session.currentPageId },
+    lastDiagnostics: session.lastDiagnostics.map((diagnostic) => ({ ...diagnostic })),
+    history: session.history.map((entry) => ({ ...entry, nodeIds: [...entry.nodeIds] })),
+    ...session.workspace === void 0 ? {} : {
+      workspace: {
+        root: session.workspace.root,
+        ...session.workspace.fileKey === void 0 ? {} : { fileKey: session.workspace.fileKey },
+        fileSlug: session.workspace.fileSlug,
+        intentSlug: session.workspace.intentSlug
+      }
+    }
+  };
+}
+function isPersistedWorkspace(value) {
+  return isRecord6(value) && hasOnlyKeys(value, ["root", "fileKey", "fileSlug", "intentSlug"]) && isNonEmptyString(value.root) && isFullyQualifiedAbsolutePath(value.root) && (value.fileKey === void 0 || isNonEmptyString(value.fileKey)) && isWorkspaceSlug(value.fileSlug) && isWorkspaceSlug(value.intentSlug);
+}
+function isWorkspaceSlug(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 80 && value !== "." && value !== ".." && !value.startsWith("-") && !value.endsWith("-") && /^[a-z0-9._-]+$/u.test(value);
+}
+function isPersistedHistoryEntry(value) {
+  return isRecord6(value) && hasOnlyKeys(value, ["id", "at", "tool", "mode", "summary", "nodeIds"]) && isNonEmptyString(value.id) && isIsoDateString(value.at) && isNonEmptyString(value.tool) && (value.mode === void 0 || typeof value.mode === "string") && typeof value.summary === "string" && Array.isArray(value.nodeIds) && value.nodeIds.every((nodeId) => typeof nodeId === "string");
+}
+function isPersistedDiagnostic(value) {
+  if (!isRecord6(value) || !hasOnlyKeys(value, ["code", "severity", "message", "suggestion", "docsHint", "location", "source"]) || !isNonEmptyString(value.code) || value.severity !== "fatal" && value.severity !== "warning" || typeof value.message !== "string" || typeof value.suggestion !== "string" || typeof value.docsHint !== "string") {
     return false;
   }
-  return typeof value.id === "string" && typeof value.slug === "string" && typeof value.createdAt === "string" && typeof value.updatedAt === "string" && isStringRecord2(value.knownPages) && Array.isArray(value.lastDiagnostics) && Array.isArray(value.history) && value.history.every((entry) => isRecord6(entry) && Array.isArray(entry.nodeIds));
+  if (value.location !== void 0 && (!isRecord6(value.location) || !hasOnlyKeys(value.location, ["line", "column"]) || !areOptionalPositiveIntegers(value.location, ["line", "column"]))) {
+    return false;
+  }
+  if (value.source !== void 0 && (!isRecord6(value.source) || !hasOnlyKeys(value.source, ["scriptPath", "line", "column", "occurrences"]) || !isPersistedDiagnosticScriptPath(value.source.scriptPath) || !areOptionalPositiveIntegers(value.source, ["line", "column"]) || value.source.occurrences !== void 0 && (!Array.isArray(value.source.occurrences) || !value.source.occurrences.every((occurrence) => isRecord6(occurrence) && hasExactlyKeys(occurrence, ["line", "column"]) && areOptionalPositiveIntegers(occurrence, ["line", "column"]) && occurrence.line !== void 0 && occurrence.column !== void 0)))) {
+    return false;
+  }
+  return true;
+}
+function isPersistedDiagnosticScriptPath(value) {
+  return value === "<inline eval>" || isNonEmptyString(value) && isFullyQualifiedAbsolutePath(value);
+}
+function hasOnlyKeys(value, allowedKeys) {
+  const allowed = new Set(allowedKeys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+function hasExactlyKeys(value, keys) {
+  return Object.keys(value).length === keys.length && hasOnlyKeys(value, keys);
+}
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+function isIsoDateString(value) {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString() === value;
+}
+function areOptionalStrings(record2, fields) {
+  return fields.every((field) => record2[field] === void 0 || typeof record2[field] === "string");
+}
+function areOptionalPositiveIntegers(record2, fields) {
+  return fields.every((field) => record2[field] === void 0 || typeof record2[field] === "number" && Number.isInteger(record2[field]) && record2[field] > 0);
 }
 function assertNoLegacySessionHandles(value) {
   if (!Array.isArray(value)) {
@@ -29839,9 +31666,9 @@ function isRecord6(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 function isMissingFileError2(error2) {
-  return hasErrorCode(error2, "ENOENT");
+  return hasErrorCode2(error2, "ENOENT");
 }
-function hasErrorCode(error2, code) {
+function hasErrorCode2(error2, code) {
   return isRecord6(error2) && error2.code === code;
 }
 function isCliInterruptError(error2) {
@@ -29861,10 +31688,10 @@ import {
   WritableStream as NodeWritableStream2
 } from "node:stream/web";
 import { homedir } from "node:os";
-import { resolve as resolve8 } from "node:path";
+import { resolve as resolve10 } from "node:path";
 
 // src/upstream/upstream-contract-snapshot.ts
-import { readFile as readFile5, writeFile as writeFile5 } from "node:fs/promises";
+import { readFile as readFile4, writeFile as writeFile2 } from "node:fs/promises";
 var FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION = 2;
 async function createFigmaUpstreamContractSnapshot(client, options = {}) {
   await client.connect();
@@ -29901,11 +31728,11 @@ function normalizeFigmaUpstreamContractSnapshot(snapshot) {
   };
 }
 async function readFigmaUpstreamContractSnapshotFile(snapshotPath) {
-  const parsed = JSON.parse(await readFile5(snapshotPath, "utf8"));
+  const parsed = JSON.parse(await readFile4(snapshotPath, "utf8"));
   return normalizeFigmaUpstreamContractSnapshot(parsed);
 }
 async function writeFigmaUpstreamContractSnapshotFile(snapshotPath, snapshot) {
-  await writeFile5(
+  await writeFile2(
     snapshotPath,
     `${JSON.stringify(normalizeFigmaUpstreamContractSnapshot(snapshot), null, 2)}
 `,
@@ -30066,7 +31893,7 @@ function withNodeReplReplDefaults(options) {
   };
 }
 function defaultBridgeOAuthCachePath() {
-  return resolve8(homedir(), ".codex", BRIDGE_OAUTH_CACHE_FILENAME2);
+  return resolve10(homedir(), ".codex", BRIDGE_OAUTH_CACHE_FILENAME2);
 }
 function createNodeReplDefaultUpstreamClient() {
   const rejectUpstreamUse = () => {

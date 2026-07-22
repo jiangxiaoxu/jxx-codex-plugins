@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { createServer, request as createHttpRequest } from "node:http";
+import { PassThrough } from "node:stream";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   FIGMA_COMMAND_FAMILIES,
@@ -13,10 +15,14 @@ import {
 } from "../mcp-server/dist/cli/figma-command-runtime.js";
 import {
   OAuthCache,
+  OAuthRefreshError,
   OAUTH_AUTHORIZE_PATH,
+  OAUTH_TOKEN_PATH,
   createMcpRequestHeaders,
+  refreshAccessToken,
   findCodexHomeOAuthCachePath,
   handleAuthorizationRedirect,
+  handleBridgeRequest,
   copyRequestHeaders,
   copyResponseHeaders,
   createBridgeConfig,
@@ -26,10 +32,17 @@ import {
   rewriteResponseHeaders,
   rewriteWwwAuthenticate,
   startFigmaMcpBridge,
+  createLimitedNodeStream,
+  readRequestBody,
+  MCP_REQUEST_BODY_LIMIT_BYTES,
+  OAUTH_BODY_LIMIT_BYTES,
+  BRIDGE_RESPONSE_LIMIT_BYTES,
 } from "../scripts/server.mjs";
 
 const testStateFile = resolve(tmpdir(), "figma-workspace-server-tests-state.json");
 const internalAgentFacingNamePattern = /figma_workspace_|figma-workspace:\/\/|run-script-file|apply-asset-manifest|download-assets|capture-node|prepare-task|call-upstream-tool|upstream-tools|use_figma|get_metadata|get_design_context|get_motion_context|get_variable_defs|get_libraries|search_design_system|get_screenshot/u;
+const pluginRoot = fileURLToPath(new URL("../", import.meta.url));
+const repositoryRoot = resolve(pluginRoot, "../..");
 
 test("createBridgeConfig applies defaults and normalizes path", () => {
   const config = createBridgeConfig({ port: 19001, path: "mcp" });
@@ -541,7 +554,7 @@ test("public JSON input validation returns npm usage exit 2", async () => {
     });
     assert.equal(result.status, 2, result.stderr);
     assert.equal(result.stdout, "");
-    assert.match(result.stderr, /strict.*removed/iu);
+    assert.match(result.stderr, /unknown field: strict/iu);
     assert.doesNotMatch(result.stderr, internalAgentFacingNamePattern);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -620,6 +633,12 @@ test("npm package includes runtime surfaces and excludes local state and source 
       assert.ok(paths.includes(match[1]), `packed files must include the ${scriptName} target ${match[1]}`);
     }
   }
+  for (const removedFacade of [
+    "mcp-server/dist/index.js",
+    "mcp-server/dist/workspace-client.js",
+  ]) {
+    assert.equal(paths.includes(removedFacade), false, `packed files must not include ${removedFacade}`);
+  }
   assert.equal(paths.some((path) => path.split("/").includes(".figma-workspace")), false);
   assert.equal(paths.some((path) => path.includes("/src/") || path.includes("/tests/")), false);
   assert.equal(paths.some((path) => /canonical-corpus\/(?:policy|docs)\//u.test(path)), false);
@@ -660,11 +679,52 @@ test("generated project docs are visible to Git and packed", () => {
   );
 });
 
-test("packed plugin preserves Restricted Markdown stdout without npm banners", async () => {
+test("fresh Git-visible source fixture builds and packs the plugin without ignored dist residue", async () => {
+  const fixture = await createFreshPluginFixture();
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-pack-"));
   try {
+    const installResult = runNpm(["ci", "--ignore-scripts"], {
+      cwd: fixture.mcpServerRoot,
+      encoding: "utf8",
+    });
+    assert.equal(
+      installResult.status,
+      0,
+      `${installResult.stderr}\n${installResult.error?.message ?? ""}`,
+    );
+
+    const fixtureTypingsPackage = join(
+      fixture.mcpServerRoot,
+      "node_modules",
+      "@figma",
+      "plugin-typings",
+      "package.json",
+    );
+    await readFile(fixtureTypingsPackage, "utf8");
+    const resolutionProbe = spawnSync(
+      process.execPath,
+      ["--eval", 'console.log(require.resolve("@figma/plugin-typings/package.json"))'],
+      { cwd: fixture.mcpServerRoot, encoding: "utf8" },
+    );
+    assert.equal(resolutionProbe.status, 0, resolutionProbe.stderr);
+    assert.equal(
+      resolve(resolutionProbe.stdout.trim()),
+      resolve(fixtureTypingsPackage),
+      "fixture module resolution must use its own npm ci installation rather than the repository",
+    );
+
+    const buildResult = runNpm(["run", "build"], {
+      cwd: fixture.mcpServerRoot,
+      encoding: "utf8",
+    });
+    assert.equal(buildResult.status, 0, buildResult.stderr);
+    for (const removedFacade of ["index.js", "workspace-client.js"]) {
+      const facadePath = join(fixture.pluginRoot, "mcp-server", "dist", removedFacade);
+      await assert.rejects(readFile(facadePath, "utf8"), /ENOENT/u);
+    }
+
     const pack = runNpm(["pack", "--json", "--pack-destination", tempDir], {
-      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      cwd: fixture.pluginRoot,
       encoding: "utf8",
     });
     assert.equal(pack.status, 0, pack.stderr);
@@ -709,7 +769,10 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(searchResult.status, 0, searchResult.stderr);
-    assert.match(searchResult.stdout, /Task Family: code-connect/u);
+    const searchResultPath = /^Path: (.+\.json)$/mu.exec(searchResult.stdout)?.[1];
+    assert.ok(searchResultPath, searchResult.stdout);
+    const searchSidecar = JSON.parse(await readFile(searchResultPath, "utf8"));
+    assert.equal(searchSidecar.route.taskFamily, "code-connect");
     assert.equal(searchResult.stderr, "");
 
     const canonicalReadResult = runNpm(
@@ -759,55 +822,9 @@ test("packed plugin preserves Restricted Markdown stdout without npm banners", a
       assert.equal(prepared.stderr, "");
     }
 
-    const packedRuntimeUrl = pathToFileURL(join(extractDir, "package", "mcp-server", "dist", "index.js")).href;
-    const packedRuntime = await import(`${packedRuntimeUrl}?packed-cross-file=${Date.now()}`);
-    const packedCalls = [];
-    const packedClient = packedRuntime.createFigmaWorkspaceClient({
-      client: {
-        async connect() {},
-        async close() {},
-        async listTools() {
-          return { tools: [{
-            name: "use_figma",
-            inputSchema: {
-              type: "object",
-              properties: { code: { type: "string" }, fileKey: { type: "string" } },
-              required: ["code", "fileKey"],
-            },
-          }] };
-        },
-        async callTool(name, args) {
-          packedCalls.push([name, args]);
-          return { content: [{ type: "text", text: JSON.stringify({
-            ok: true,
-            __figmaWorkspace: { sessionId: "packed-cross-file", captureRequests: [], knownPages: {} },
-            result: { target: "22:7", mode: "inspect", summary: { id: "22:7", type: "FRAME", name: "Target" } },
-          }) }] };
-        },
-      },
-    });
-    try {
-      const fileA = "PackedFileAKey0123456789";
-      const fileB = "PackedFileBKey0123456789";
-      await packedClient.open({
-        sessionId: "packed-cross-file",
-        file: `https://www.figma.com/design/${fileA}/Source`,
-        workspaceDir: join(tempDir, "packed-cross-file-workspace"),
-        connect: false,
-      });
-      const inspected = await packedClient.inspect({
-        sessionId: "packed-cross-file",
-        target: `https://www.figma.com/design/${fileB}/Target?node-id=22-7`,
-      });
-      assert.equal(inspected.target, "22:7");
-      assert.equal(packedCalls[0][0], "use_figma");
-      assert.equal(packedCalls[0][1].fileKey, fileB);
-      assert.equal(packedClient.sessions.get("packed-cross-file").fileKey, fileA);
-    } finally {
-      await packedClient.close();
-    }
   } finally {
     await rm(tempDir, { recursive: true, force: true });
+    await rm(fixture.container, { recursive: true, force: true });
   }
 });
 
@@ -1000,14 +1017,16 @@ test("login-figma-http.mjs runs in foreground and validates OAuth cache", async 
   assert.match(script, /async function removeOAuthCacheForForceLogin/u);
   assert.match(script, /--force/u);
   assert.match(script, /OAuth cache is not ready after adding the temporary server/u);
-  assert.match(script, /invokeCodexMcp\(\["mcp", "login", serverName\]\)/u);
-  assert.match(script, /invokeCodexMcp\(\["mcp", "add", serverName, "--url", serverUrl\]\)/u);
-  assert.match(script, /invokeCodexMcp\(\["mcp", "remove", serverName\], \{ ignoreFailure: true \}\)/u);
+  assert.match(script, /invokeCodexMcpImpl\(\["mcp", "login", serverName\]\)/u);
+  assert.match(script, /invokeCodexMcpImpl\(\["mcp", "add", serverName, "--url", serverUrl\]\)/u);
+  assert.match(script, /invokeCodexMcpImpl\(\["mcp", "remove", serverName\], \{ ignoreFailure: true \}\)/u);
   assert.match(script, /tokens\.access_token/u);
   assert.match(script, /expires within 60 seconds/u);
   assert.match(script, /process\.exitCode = 2/u);
   assert.match(script, /already usable; no new token was written/u);
   assert.match(script, /Restored the previous OAuth cache after login failure/u);
+  assert.match(script, /unique attempt marker/u);
+  assert.match(script, /OAuth cache rollback conflict/u);
   assert.match(script, /OAuth cache ready/u);
 });
 
@@ -1234,6 +1253,161 @@ test("OAuthCache stores client registration and token responses", async () => {
   }
 });
 
+test("refreshAccessToken is single-flight and rotates credentials under the cache lock", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-refresh-flight-"));
+  const originalFetch = globalThis.fetch;
+  try {
+    const cache = new OAuthCache(join(dir, "oauth.json"), { now: () => 100_000 });
+    await cache.write({
+      clientInformation: { client_id: "client-1", client_secret: "secret-1" },
+      tokens: {
+        access_token: "expired-access",
+        refresh_token: "refresh-1",
+        expires_at: 100_000,
+      },
+    });
+    let fetchCount = 0;
+    globalThis.fetch = async () => {
+      fetchCount += 1;
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+      return new Response(JSON.stringify({
+        access_token: "access-2",
+        refresh_token: "refresh-2",
+        expires_in: 3600,
+        token_type: "Bearer",
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const config = createBridgeConfig({ port: 19001 });
+    const [first, second] = await Promise.all([
+      refreshAccessToken(config, cache),
+      refreshAccessToken(config, cache),
+    ]);
+
+    assert.equal(fetchCount, 1);
+    assert.equal(first.access_token, "access-2");
+    assert.equal(second.access_token, "access-2");
+    assert.equal(typeof first.credentialFingerprint, "string");
+    const state = await cache.read();
+    assert.equal(state.tokens.refresh_token, "refresh-2");
+    assert.equal(state.tokens.expires_at, 3_700_000);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("refreshAccessToken preserves credentials for 429, 5xx, and network failures", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-refresh-transient-"));
+  const originalFetch = globalThis.fetch;
+  try {
+    const cachePath = join(dir, "oauth.json");
+    const cache = new OAuthCache(cachePath, { now: () => 100_000 });
+    const originalState = {
+      clientInformation: { client_id: "client-1" },
+      tokens: {
+        access_token: "expired-access",
+        refresh_token: "refresh-1",
+        expires_at: 100_000,
+      },
+    };
+    const config = createBridgeConfig({ port: 19001 });
+    for (const status of [429, 500, 503]) {
+      await cache.write(originalState);
+      globalThis.fetch = async () => new Response(
+        JSON.stringify({ error: "temporarily_unavailable" }),
+        { status, headers: { "content-type": "application/json" } },
+      );
+      await assert.rejects(
+        refreshAccessToken(config, cache),
+        (error) => error instanceof OAuthRefreshError &&
+          error.kind === "transient" && error.status === status,
+      );
+      assert.deepEqual((await cache.read()).tokens, originalState.tokens);
+    }
+
+    await cache.write(originalState);
+    globalThis.fetch = async () => {
+      throw new Error("network unavailable");
+    };
+    await assert.rejects(
+      refreshAccessToken(config, cache),
+      (error) => error instanceof OAuthRefreshError && error.kind === "transient",
+    );
+    assert.deepEqual((await cache.read()).tokens, originalState.tokens);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("refreshAccessToken clears tokens only for terminal OAuth errors", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-refresh-terminal-"));
+  const originalFetch = globalThis.fetch;
+  try {
+    const cache = new OAuthCache(join(dir, "oauth.json"), { now: () => 100_000 });
+    await cache.write({
+      clientInformation: { client_id: "client-1" },
+      tokens: {
+        access_token: "expired-access",
+        refresh_token: "refresh-1",
+        expires_at: 100_000,
+      },
+    });
+    globalThis.fetch = async () => new Response(
+      JSON.stringify({ error: "invalid_grant" }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+
+    assert.equal(
+      await refreshAccessToken(createBridgeConfig({ port: 19001 }), cache),
+      undefined,
+    );
+    const state = await cache.read();
+    assert.equal(state.tokens, undefined);
+    assert.equal(state.clientInformation.client_id, "client-1");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("OAuthCache token clearing uses credential fingerprint CAS", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-oauth-cas-"));
+  try {
+    const cache = new OAuthCache(join(dir, "oauth.json"), { now: () => 100_000 });
+    await cache.saveTokenResponse({ access_token: "access-1", expires_in: 3600 });
+    const stale = await cache.getUsableAccessTokenSnapshot();
+    await cache.saveTokenResponse({ access_token: "access-2", expires_in: 3600 });
+
+    assert.equal(await cache.clearTokens(stale.fingerprint), false);
+    assert.equal((await cache.read()).tokens.access_token, "access-2");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("OAuthCache invalidates a rejected access token without losing its refresh token", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-oauth-invalidate-"));
+  try {
+    const cache = new OAuthCache(join(dir, "oauth.json"), { now: () => 100_000 });
+    await cache.saveTokenResponse({
+      access_token: "access-1",
+      refresh_token: "refresh-1",
+      expires_in: 3600,
+    });
+    const current = await cache.getUsableAccessTokenSnapshot();
+
+    assert.equal(await cache.invalidateAccessToken(current.fingerprint), true);
+    const state = await cache.read();
+    assert.equal(state.tokens.access_token, undefined);
+    assert.equal(state.tokens.expires_at, undefined);
+    assert.equal(state.tokens.refresh_token, "refresh-1");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("createMcpRequestHeaders injects a cached access token when Authorization is missing", async () => {
   const dir = await mkdtemp(join(tmpdir(), "figma-workspace-"));
   try {
@@ -1294,6 +1468,373 @@ test("startFigmaMcpBridge starts and returns an HTTP MCP URL", async () => {
   }
 });
 
+test("limited MCP body pipeline destroys its source and transform on abort or overflow", async () => {
+  {
+    const source = new PassThrough();
+    const controller = new AbortController();
+    const body = createLimitedNodeStream(
+      source,
+      16,
+      undefined,
+      "MCP request body",
+      controller.signal,
+    );
+    body.stream.resume();
+    source.write("partial");
+    controller.abort(new Error("test shutdown"));
+
+    await assert.rejects(body.completion, /abort/u);
+    assert.equal(source.destroyed, true);
+    assert.equal(body.stream.destroyed, true);
+  }
+
+  {
+    const source = new PassThrough();
+    const body = createLimitedNodeStream(
+      source,
+      4,
+      undefined,
+      "MCP request body",
+    );
+    body.stream.resume();
+    source.end("12345");
+
+    await assert.rejects(body.completion, /MCP request body exceeds 4 bytes/u);
+    assert.equal(source.destroyed, true);
+    assert.equal(body.stream.destroyed, true);
+  }
+});
+
+test("buffered OAuth body read destroys its source when its signal aborts", async () => {
+  const source = new PassThrough();
+  const controller = new AbortController();
+  const reading = readRequestBody(
+    source,
+    OAUTH_BODY_LIMIT_BYTES,
+    undefined,
+    "OAuth request body",
+    controller.signal,
+  );
+  source.write("grant_type=");
+  controller.abort(new Error("test timeout"));
+
+  await assert.rejects(reading, /abort/u);
+  assert.equal(source.destroyed, true);
+});
+
+test("client abort cancels an in-flight MCP upload and upstream fetch", async () => {
+  let upstreamRequest;
+  let markUpstreamStarted;
+  let markUpstreamTerminated;
+  const upstreamStarted = new Promise((resolvePromise) => {
+    markUpstreamStarted = resolvePromise;
+  });
+  const upstreamTerminated = new Promise((resolvePromise) => {
+    markUpstreamTerminated = resolvePromise;
+  });
+  const upstream = createServer((request) => {
+    upstreamRequest = request;
+    request.once("data", markUpstreamStarted);
+    request.once("aborted", markUpstreamTerminated);
+    request.once("close", markUpstreamTerminated);
+  });
+  await listenTestServer(upstream);
+  const upstreamAddress = upstream.address();
+  assert.ok(upstreamAddress && typeof upstreamAddress === "object");
+
+  let incomingRequest;
+  let handling;
+  const bridgeServer = createServer((request, response) => {
+    incomingRequest = request;
+    handling = handleBridgeRequest(
+      createBridgeConfig({
+        port: 19005,
+        target: `http://127.0.0.1:${upstreamAddress.port}/mcp`,
+      }),
+      request,
+      response,
+      { controller: new AbortController() },
+    );
+  });
+  await listenTestServer(bridgeServer);
+  const bridgeAddress = bridgeServer.address();
+  assert.ok(bridgeAddress && typeof bridgeAddress === "object");
+
+  const client = createHttpRequest({
+    host: "127.0.0.1",
+    port: bridgeAddress.port,
+    path: "/mcp",
+    method: "POST",
+    headers: { "content-type": "application/json" },
+  });
+  client.on("error", () => undefined);
+  try {
+    client.write('{"jsonrpc":"2.0",');
+    await withinTestTimeout(upstreamStarted, "upstream MCP upload did not start");
+    client.destroy();
+    await withinTestTimeout(upstreamTerminated, "upstream MCP upload was not aborted");
+    await withinTestTimeout(handling, "bridge request handler did not settle");
+
+    assert.equal(incomingRequest.destroyed, true);
+    assert.equal(upstreamRequest.destroyed, true);
+  } finally {
+    client.destroy();
+    await closeTestServer(bridgeServer);
+    await closeTestServer(upstream);
+  }
+});
+
+test("upstream fetch failure destroys the incoming MCP request lifecycle", async () => {
+  let incomingRequest;
+  let handling;
+  const bridgeServer = createServer((request, response) => {
+    incomingRequest = request;
+    handling = handleBridgeRequest(
+      createBridgeConfig({ port: 19006 }),
+      request,
+      response,
+      {
+        controller: new AbortController(),
+        fetch: async () => {
+          throw new Error("test upstream fetch failure");
+        },
+      },
+    );
+  });
+  await listenTestServer(bridgeServer);
+  const address = bridgeServer.address();
+  assert.ok(address && typeof address === "object");
+
+  const clientTerminated = new Promise((resolvePromise) => {
+    const client = createHttpRequest({
+      host: "127.0.0.1",
+      port: address.port,
+      path: "/mcp",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    client.once("error", resolvePromise);
+    client.once("response", (response) => {
+      response.resume();
+      response.once("end", resolvePromise);
+    });
+    client.end("{}");
+  });
+
+  try {
+    await withinTestTimeout(clientTerminated, "failed fetch did not terminate its client");
+    await withinTestTimeout(handling, "failed fetch handler did not settle");
+    assert.equal(incomingRequest.destroyed, true);
+  } finally {
+    await closeTestServer(bridgeServer);
+  }
+});
+
+test("slow OAuth bodies terminate on injected idle and total request timeouts", async () => {
+  const scenarios = [
+    { name: "idle", idleTimeoutMs: 25, totalTimeoutMs: 1_000 },
+    { name: "total", idleTimeoutMs: 1_000, totalTimeoutMs: 25 },
+  ];
+
+  for (const scenario of scenarios) {
+    let incomingRequest;
+    let handling;
+    const bridgeServer = createServer((request, response) => {
+      incomingRequest = request;
+      handling = handleBridgeRequest(
+        createBridgeConfig({ port: 19006 }),
+        request,
+        response,
+        {
+          controller: new AbortController(),
+          idleTimeoutMs: scenario.idleTimeoutMs,
+          totalTimeoutMs: scenario.totalTimeoutMs,
+        },
+      );
+    });
+    await listenTestServer(bridgeServer);
+    const address = bridgeServer.address();
+    assert.ok(address && typeof address === "object");
+
+    const clientTerminated = new Promise((resolvePromise) => {
+      const client = createHttpRequest({
+        host: "127.0.0.1",
+        port: address.port,
+        path: OAUTH_TOKEN_PATH,
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      });
+      client.once("error", resolvePromise);
+      client.once("response", (response) => {
+        response.resume();
+        response.once("end", resolvePromise);
+      });
+      client.write("grant_type=");
+    });
+
+    try {
+      await withinTestTimeout(
+        clientTerminated,
+        `slow OAuth body did not hit the ${scenario.name} timeout`,
+      );
+      await withinTestTimeout(handling, "OAuth bridge request handler did not settle");
+      assert.equal(incomingRequest.destroyed, true);
+    } finally {
+      await closeTestServer(bridgeServer);
+    }
+  }
+});
+
+test("declared oversized MCP and OAuth bodies destroy the request before upstream dispatch", async () => {
+  const scenarios = [
+    { path: "/mcp", limit: MCP_REQUEST_BODY_LIMIT_BYTES },
+    { path: OAUTH_TOKEN_PATH, limit: OAUTH_BODY_LIMIT_BYTES },
+  ];
+
+  for (const scenario of scenarios) {
+    let incomingRequest;
+    let handling;
+    let fetchCalls = 0;
+    const bridgeServer = createServer((request, response) => {
+      incomingRequest = request;
+      handling = handleBridgeRequest(
+        createBridgeConfig({ port: 19003 }),
+        request,
+        response,
+        {
+          controller: new AbortController(),
+          fetch: async () => {
+            fetchCalls += 1;
+            return new Response("{}");
+          },
+        },
+      );
+    });
+    await listenTestServer(bridgeServer);
+    const address = bridgeServer.address();
+    assert.ok(address && typeof address === "object");
+
+    const clientTerminated = new Promise((resolvePromise) => {
+      const client = createHttpRequest({
+        host: "127.0.0.1",
+        port: address.port,
+        path: scenario.path,
+        method: "POST",
+        headers: {
+          "content-type": "application/octet-stream",
+          "content-length": String(scenario.limit + 1),
+        },
+      });
+      client.once("error", resolvePromise);
+      client.once("response", (response) => {
+        response.resume();
+        response.once("end", resolvePromise);
+      });
+      client.write("x");
+    });
+
+    try {
+      await withinTestTimeout(clientTerminated, `${scenario.path} was not terminated`);
+      await withinTestTimeout(handling, `${scenario.path} handler did not settle`);
+      assert.equal(incomingRequest.destroyed, true);
+      assert.equal(fetchCalls, 0);
+    } finally {
+      await closeTestServer(bridgeServer);
+    }
+  }
+});
+
+test("declared oversized upstream response cancels its body and request lifecycle", async () => {
+  let canceledReason;
+  const upstreamBody = new ReadableStream({
+    start(controller) {
+      controller.enqueue(Buffer.from("{}"));
+    },
+    cancel(reason) {
+      canceledReason = reason;
+    },
+  });
+  let incomingRequest;
+  let handling;
+  const bridgeServer = createServer((request, response) => {
+    incomingRequest = request;
+    handling = handleBridgeRequest(
+      createBridgeConfig({ port: 19004 }),
+      request,
+      response,
+      {
+        controller: new AbortController(),
+        fetch: async () => new Response(upstreamBody, {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "content-length": String(BRIDGE_RESPONSE_LIMIT_BYTES + 1),
+          },
+        }),
+      },
+    );
+  });
+  await listenTestServer(bridgeServer);
+  const address = bridgeServer.address();
+  assert.ok(address && typeof address === "object");
+
+  const clientTerminated = new Promise((resolvePromise) => {
+    const client = createHttpRequest({
+      host: "127.0.0.1",
+      port: address.port,
+      path: "/mcp",
+      method: "GET",
+    });
+    client.once("error", resolvePromise);
+    client.once("response", (response) => {
+      response.resume();
+      response.once("end", resolvePromise);
+    });
+    client.end();
+  });
+
+  try {
+    await withinTestTimeout(clientTerminated, "oversized upstream response did not terminate");
+    await withinTestTimeout(handling, "oversized upstream response handler did not settle");
+    assert.equal(incomingRequest.destroyed, true);
+    assert.match(canceledReason?.message ?? "", /Bridge response body exceeds/u);
+  } finally {
+    await closeTestServer(bridgeServer);
+  }
+});
+
+async function listenTestServer(server) {
+  await new Promise((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolvePromise();
+    });
+  });
+}
+
+async function closeTestServer(server) {
+  if (!server.listening) return;
+  server.closeAllConnections?.();
+  await new Promise((resolvePromise, reject) => {
+    server.close((error) => (error ? reject(error) : resolvePromise()));
+  });
+}
+
+async function withinTestTimeout(promise, message, timeoutMs = 1_000) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function withEnv(overrides, run) {
   const previous = {};
   for (const key of Object.keys(overrides)) {
@@ -1353,6 +1894,39 @@ function createCommandOutput() {
     stdout: () => stdout,
     stderr: () => stderr,
   };
+}
+
+async function createFreshPluginFixture() {
+  const container = await mkdtemp(join(tmpdir(), "figma-workspace-tracked-fixture-"));
+  // --others keeps this release's not-yet-staged inputs; after commit they are covered by --cached.
+  const listedFiles = spawnSync(
+    "git",
+    ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "plugins/figma-workspace"],
+    { cwd: repositoryRoot, encoding: "utf8" },
+  );
+  assert.equal(listedFiles.status, 0, listedFiles.stderr);
+  try {
+    for (const relativePath of listedFiles.stdout.split("\0").filter(Boolean)) {
+      assert.equal(
+        relativePath.split("/").includes("node_modules"),
+        false,
+        `fixture inputs must not include node_modules: ${relativePath}`,
+      );
+      const source = resolve(repositoryRoot, relativePath);
+      const destination = resolve(container, relativePath);
+      await mkdir(dirname(destination), { recursive: true });
+      await cp(source, destination, { force: false, preserveTimestamps: true });
+    }
+    const fixturePluginRoot = join(container, "plugins", "figma-workspace");
+    return {
+      container,
+      pluginRoot: fixturePluginRoot,
+      mcpServerRoot: join(fixturePluginRoot, "mcp-server"),
+    };
+  } catch (error) {
+    await rm(container, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function runNpm(args, options = {}) {

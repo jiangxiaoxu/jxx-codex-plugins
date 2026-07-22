@@ -5,6 +5,9 @@ dist/
 plugins/figma-workspace/mcp-server/dist/*
 !plugins/figma-workspace/mcp-server/dist/cli/
 !plugins/figma-workspace/mcp-server/dist/cli/**
+!plugins/figma-workspace/mcp-server/dist/auth/
+plugins/figma-workspace/mcp-server/dist/auth/*
+!plugins/figma-workspace/mcp-server/dist/auth/credential-store.js
 !plugins/figma-workspace/mcp-server/dist/upstream/
 plugins/figma-workspace/mcp-server/dist/upstream/*
 !plugins/figma-workspace/mcp-server/dist/upstream/node-upstream-client.js

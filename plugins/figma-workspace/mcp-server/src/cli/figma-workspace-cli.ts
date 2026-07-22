@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { link, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, normalize, resolve } from "node:path";
+import { createReadStream } from "node:fs";
+import { link, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, normalize, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   FigmaWorkspaceToolArgumentError,
@@ -40,7 +41,14 @@ import {
   MAX_DOCS_SEARCH_SNIPPET_LINES,
   MAX_LOOKUP_QUERY_LENGTH,
 } from "../runtime/doc-search.js";
-import { TASK_WORKSPACE_ROOT_ENV } from "../runtime/workspace-files.js";
+import {
+  assertManagedFilePath,
+  atomicWriteManagedTextFile,
+  ensureManagedDirectory,
+  type ManagedFileHandle,
+  type ManagedFileSystemOperations,
+} from "../runtime/managed-files.js";
+import { createSessionWorkspace, TASK_WORKSPACE_ROOT_ENV } from "../runtime/workspace-files.js";
 
 export const FIGMA_WORKSPACE_CLI_EXIT_SUCCESS = 0;
 export const FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR = 1;
@@ -48,11 +56,11 @@ export const FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR = 2;
 export const FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT = 130;
 export const FIGMA_WORKSPACE_SESSION_FILE_ENV = "FIGMA_WORKSPACE_SESSION_FILE";
 const FIGMA_WORKSPACE_SESSION_LOCK_TIMEOUT_MS = 30_000;
-const FIGMA_WORKSPACE_SESSION_LOCK_STALE_MS = 10 * 60_000;
 const FIGMA_WORKSPACE_SESSION_LOCK_RETRY_MS = 100;
 const FIGMA_WORKSPACE_SESSION_LOCK_HEARTBEAT_MS = 5_000;
 const FIGMA_WORKSPACE_CLI_DEFAULT_INLINE_RESULT_LIMIT_BYTES = 4_096;
 const FIGMA_WORKSPACE_CLI_MAX_INLINE_RESULT_LIMIT_BYTES = 10_000;
+const FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES = 256 * 1_024;
 const FIGMA_WORKSPACE_CLI_MAX_INPUT_VALUE_CHARS = 256;
 const FIGMA_WORKSPACE_CLI_INPUT_PREFIX_CHARS = 120;
 
@@ -95,8 +103,8 @@ export type FigmaWorkspaceCliArguments =
 export interface FigmaWorkspaceCliIo {
   cwd(): string;
   env(name: string): string | undefined;
-  readFile(path: string): Promise<string>;
-  readStdin(): Promise<string>;
+  readFile(path: string, maxBytes?: number): Promise<string>;
+  readStdin(maxBytes?: number): Promise<string>;
   writeStdout(value: string): void;
   writeStderr(value: string): void;
 }
@@ -134,7 +142,31 @@ export class FigmaWorkspaceCliUsageError extends Error {
   override readonly name = "FigmaWorkspaceCliUsageError";
 }
 
-export type FigmaWorkspaceCliPresentationStatus = "succeeded" | "observed-unhealthy" | "failed";
+export type FigmaWorkspaceCliPresentationStatus = "succeeded" | "observed-unhealthy" | "failed" | "failed-after-execution";
+
+type FigmaWorkspaceCliPostProcessingStage = "state" | "clientClose" | "sessionLock" | "sidecar";
+
+interface FigmaWorkspaceCliPostProcessingFailure {
+  readonly stage: FigmaWorkspaceCliPostProcessingStage;
+  readonly status: "failed";
+  readonly message: string;
+}
+
+interface PersistedFigmaWorkspaceSessionWorkspace {
+  readonly root: string;
+  readonly fileKey?: string;
+  readonly fileSlug: string;
+  readonly intentSlug: string;
+}
+
+interface PersistedFigmaWorkspaceSession extends Omit<FigmaWorkspaceSession, "workspace"> {
+  readonly workspace?: PersistedFigmaWorkspaceSessionWorkspace;
+}
+
+interface FigmaWorkspaceSessionStateFile {
+  readonly schemaVersion: 1;
+  readonly sessions: readonly PersistedFigmaWorkspaceSession[];
+}
 
 export interface FigmaWorkspaceCliPresentationError {
   readonly message: string;
@@ -231,78 +263,107 @@ export async function runFigmaWorkspaceCli(
 
   try {
     const sessionFile = resolveSessionFile(parsed.sessionFile, io);
+    await validateCliStateFilePath(sessionFile);
     const input = await readCommandInput(parsed.inputFile, io);
     const commandInput = createCommandInvocationInput(parsed.command, input, parsed.inlineResultLimit);
     const inlineResultLimit = resolveInlineResultLimit(parsed.inlineResultLimit, input.inlineResultLimit);
     let result: unknown;
-    let markdownResult: unknown;
-    let transactionError: unknown;
+    let commandError: unknown;
+    const postProcessing = new Map<FigmaWorkspaceCliPostProcessingStage, { status: "succeeded" | "failed" | "not-required"; message?: string }>();
     const releaseSessionLock = dependencies.loadSessions === undefined
       && dependencies.saveSessions === undefined
       ? await acquireFigmaWorkspaceSessionLock(sessionFile, dependencies.sessionLockOptions)
       : undefined;
+    let client: FigmaWorkspaceClient | undefined;
     try {
       const sessions = await (dependencies.loadSessions ?? readFigmaWorkspaceSessions)(sessionFile);
       assertNoLegacySessionHandles(sessions);
-      const client = (dependencies.createClient ?? createFigmaWorkspaceClient)({
+      client = (dependencies.createClient ?? createFigmaWorkspaceClient)({
         ...dependencies.clientOptions,
         initialSessions: sessions,
       });
-      let commandError: unknown;
       try {
         result = await invokeFigmaWorkspaceCommand(client, parsed.command, commandInput);
       } catch (error) {
         commandError = error;
       }
-      let saveError: unknown;
       try {
         if (dependencies.saveSessions === undefined) {
           await writeFigmaWorkspaceSessions(sessionFile, client.sessions.list(), dependencies.atomicFileOperations);
         } else {
           await dependencies.saveSessions(sessionFile, client.sessions.list());
         }
+        postProcessing.set("state", { status: "succeeded" });
       } catch (error) {
-        saveError = error;
+        postProcessing.set("state", { status: "failed", message: formatCliError(error) });
       }
-      let closeError: unknown;
       try {
         await client.close();
+        postProcessing.set("clientClose", { status: "succeeded" });
       } catch (error) {
-        closeError = error;
+        postProcessing.set("clientClose", { status: "failed", message: formatCliError(error) });
       }
-      transactionError = commandError ?? saveError ?? closeError;
     } catch (error) {
-      transactionError = error;
-    }
-    const presentation = transactionError === undefined
-      ? classifyFigmaWorkspaceCliResult(parsed.command, result)
-      : undefined;
-    if (transactionError === undefined) {
-      try {
-        markdownResult = await persistOversizedCliResult(
-          parsed.command,
-          result,
-          commandInput,
-          sessionFile,
-          inlineResultLimit,
-          dependencies.atomicFileOperations,
-        );
-      } catch (error) {
-        transactionError = error;
-      }
+      commandError ??= error;
     }
     if (releaseSessionLock !== undefined) {
       try {
         await releaseSessionLock();
+        postProcessing.set("sessionLock", { status: "succeeded" });
       } catch (error) {
-        transactionError ??= error;
+        postProcessing.set("sessionLock", { status: "failed", message: formatCliError(error) });
       }
+    } else {
+      postProcessing.set("sessionLock", { status: "not-required" });
     }
-    if (transactionError !== undefined) {
-      throw transactionError;
+    if (commandError !== undefined) {
+      throw commandError;
     }
-    io.writeStdout(`${formatFigmaWorkspaceCommandMarkdown(parsed.command, markdownResult, commandInput, presentation)}\n`);
-    return presentation?.exitCode ?? FIGMA_WORKSPACE_CLI_EXIT_SUCCESS;
+
+    const basePresentation = classifyFigmaWorkspaceCliResult(parsed.command, result);
+    const operationSucceeded = isRecord(result) && result.executionOutcome === "succeeded"
+      ? true
+      : !(isRecord(result) && result.ok === false);
+    let renderedResult = hasPostProcessingFailure(postProcessing)
+      ? createPostProcessingResult(result, postProcessing)
+      : result;
+    let presentation = hasPostProcessingFailure(postProcessing)
+      ? createPostProcessingPresentation(operationSucceeded, renderedResult)
+      : basePresentation;
+    try {
+      const resultBeforePersistence = renderedResult;
+      const persisted = await persistOversizedCliResult(
+        parsed.command,
+        renderedResult,
+        commandInput,
+        sessionFile,
+        inlineResultLimit,
+        dependencies.atomicFileOperations,
+      );
+      renderedResult = persisted;
+      postProcessing.set("sidecar", {
+        status: persisted === resultBeforePersistence ? "not-required" : "succeeded",
+      });
+      if (persisted === resultBeforePersistence && hasPostProcessingFailure(postProcessing)) {
+        renderedResult = createPostProcessingResult(result, postProcessing);
+      }
+    } catch (error) {
+      postProcessing.set("sidecar", { status: "failed", message: formatCliError(error) });
+      renderedResult = createPostProcessingResult(summarizeOperationResult(result), postProcessing);
+      presentation = createPostProcessingPresentation(operationSucceeded, renderedResult);
+    }
+    if (hasPostProcessingFailure(postProcessing) && !isRecord(renderedResult)) {
+      renderedResult = createPostProcessingResult(renderedResult, postProcessing);
+    } else if (hasPostProcessingFailure(postProcessing)
+      && isRecord(renderedResult)
+      && !Object.hasOwn(renderedResult, "postProcessing")) {
+      renderedResult = createPostProcessingResult(renderedResult, postProcessing);
+    }
+    if (hasPostProcessingFailure(postProcessing)) {
+      presentation = createPostProcessingPresentation(operationSucceeded, renderedResult);
+    }
+    io.writeStdout(`${formatFigmaWorkspaceCommandMarkdown(parsed.command, renderedResult, commandInput, presentation)}\n`);
+    return presentation.exitCode;
   } catch (error) {
     io.writeStderr(`${formatCliError(error)}\n`);
     if (isCliInterruptError(error)) {
@@ -330,11 +391,28 @@ export async function readFigmaWorkspaceSessions(path: string): Promise<FigmaWor
   } catch (error) {
     throw new FigmaWorkspaceCliUsageError(`Session file is not valid JSON: ${formatCliError(error)}`);
   }
-  assertNoLegacySessionHandles(value);
-  if (!Array.isArray(value) || !value.every(isFigmaWorkspaceSession)) {
-    throw new FigmaWorkspaceCliUsageError("Session file must contain a FigmaWorkspaceSession array.");
+  if (Array.isArray(value)) {
+    throw new FigmaWorkspaceCliUsageError(
+      "Session file uses the removed legacy array format. Create and use a new --state-file.",
+    );
   }
-  return value;
+  if (!isRecord(value)
+    || !hasExactlyKeys(value, ["schemaVersion", "sessions"])
+    || value.schemaVersion !== 1
+    || !Array.isArray(value.sessions)) {
+    throw new FigmaWorkspaceCliUsageError(
+      'Session file must contain exactly { "schemaVersion": 1, "sessions": [...] }. Create and use a new --state-file if this file uses an older format.',
+    );
+  }
+  const sessions = value.sessions.map((session, index) => parsePersistedSession(session, index));
+  const sessionIds = new Set<string>();
+  for (const session of sessions) {
+    if (sessionIds.has(session.id)) {
+      throw new FigmaWorkspaceCliUsageError(`Session file contains duplicate session id: ${session.id}.`);
+    }
+    sessionIds.add(session.id);
+  }
+  return sessions;
 }
 
 export async function writeFigmaWorkspaceSessions(
@@ -342,7 +420,11 @@ export async function writeFigmaWorkspaceSessions(
   sessions: readonly FigmaWorkspaceSession[],
   operations?: FigmaWorkspaceCliAtomicFileOperations,
 ): Promise<void> {
-  await writeAtomicTextFile(path, `${JSON.stringify(sessions, null, 2)}\n`, operations);
+  const state: FigmaWorkspaceSessionStateFile = {
+    schemaVersion: 1,
+    sessions: sessions.map(toPersistedSession),
+  };
+  await writeAtomicTextFile(path, `${JSON.stringify(state, null, 2)}\n`, operations);
 }
 
 async function persistOversizedCliResult(
@@ -371,6 +453,15 @@ async function persistOversizedCliResult(
   const ok = isRecord(result) && typeof result.ok === "boolean" ? result.ok : true;
   return {
     ok,
+    ...(isRecord(result) && typeof result.executionOutcome === "string"
+      ? { executionOutcome: result.executionOutcome }
+      : {}),
+    ...(isRecord(result) && typeof result.retryGuidance === "string"
+      ? { retryGuidance: result.retryGuidance }
+      : {}),
+    ...(isRecord(result) && isRecord(result.postProcessing)
+      ? { postProcessing: result.postProcessing }
+      : {}),
     outputFiles: {
       cliResultFile: {
         path: resultFile,
@@ -385,20 +476,117 @@ async function persistOversizedCliResult(
   };
 }
 
+function hasPostProcessingFailure(
+  stages: ReadonlyMap<FigmaWorkspaceCliPostProcessingStage, { readonly status: string }>,
+): boolean {
+  return [...stages.values()].some((stage) => stage.status === "failed");
+}
+
+function createPostProcessingResult(
+  operationResult: unknown,
+  stages: ReadonlyMap<FigmaWorkspaceCliPostProcessingStage, { readonly status: string; readonly message?: string }>,
+): Record<string, unknown> {
+  const executionOutcome = isRecord(operationResult) && typeof operationResult.executionOutcome === "string"
+    ? operationResult.executionOutcome
+    : undefined;
+  const existingGuidance = isRecord(operationResult) && typeof operationResult.retryGuidance === "string"
+    ? operationResult.retryGuidance
+    : undefined;
+  const retryGuidance = existingGuidance ?? (executionOutcome === "succeeded"
+    ? "The remote operation succeeded and may have mutated Figma. Do not rerun it; inspect the returned result and repair only the failed local post-processing step."
+    : "Inspect the returned business result and reconcile local state before retrying the operation.");
+  return {
+    ...(isRecord(operationResult) ? operationResult : { operationResult }),
+    ...(executionOutcome === undefined ? {} : { executionOutcome }),
+    retryGuidance,
+    postProcessing: Object.fromEntries(stages),
+  };
+}
+
+function summarizeOperationResult(result: unknown): unknown {
+  if (!isRecord(result)) {
+    return typeof result === "string" ? result.slice(0, 500) : result;
+  }
+  const summaryKeys = [
+    "ok", "executionOutcome", "phase", "summary", "payload", "session", "changedNodeIds", "captures", "error", "upstreamError",
+  ];
+  const summary = Object.fromEntries(summaryKeys
+    .filter((key) => result[key] !== undefined)
+    .map((key) => [key, limitSummaryValue(result[key])]));
+  return Object.keys(summary).length === 0 ? { availableFields: Object.keys(result).slice(0, 20) } : summary;
+}
+
+function limitSummaryValue(value: unknown): unknown {
+  if (typeof value === "string") return value.slice(0, 500);
+  if (Array.isArray(value)) return value.slice(0, 20).map(limitSummaryValue);
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).slice(0, 20).map(([key, entry]) => [key, limitSummaryValue(entry)]));
+  }
+  return value;
+}
+
+function createPostProcessingPresentation(
+  operationSucceeded: boolean,
+  result: unknown,
+): FigmaWorkspaceCliResultPresentation {
+  return {
+    status: operationSucceeded ? "failed-after-execution" : "failed",
+    exitCode: FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR,
+    error: presentationError(result),
+    warnings: presentationWarnings(result),
+  };
+}
+
 async function writeAtomicTextFile(
   path: string,
   source: string,
-  operations: FigmaWorkspaceCliAtomicFileOperations = { writeFile, rename, rm },
+  operations?: FigmaWorkspaceCliAtomicFileOperations,
 ): Promise<void> {
-  const directory = dirname(path);
-  const temporaryPath = resolve(directory, `.${randomUUID()}.tmp`);
-  await mkdir(directory, { recursive: true });
+  await atomicWriteManagedTextFile({
+    root: parse(path).root,
+    path,
+    overwrite: true,
+    ...(operations === undefined ? {} : { operations: createManagedAtomicOperations(operations) }),
+  }, source);
+}
+
+function createManagedAtomicOperations(
+  operations: FigmaWorkspaceCliAtomicFileOperations,
+): Pick<ManagedFileSystemOperations, "open" | "rename" | "unlink"> {
+  return {
+    open: async (path, flags, mode) => {
+      const handle = await open(path, flags, mode);
+      const adapted: ManagedFileHandle = {
+        chmod: (fileMode) => handle.chmod(fileMode),
+        close: () => handle.close(),
+        sync: () => handle.sync(),
+        write: async (buffer, offset, length, position) => {
+          const result = await handle.write(buffer, offset, length, position);
+          return { bytesWritten: result.bytesWritten };
+        },
+        writeFile: async (data) => {
+          if (typeof data !== "string") {
+            throw new TypeError("CLI atomic text writes require string content.");
+          }
+          await operations.writeFile(path, data, "utf8");
+          await handle.truncate(0);
+          await handle.writeFile(data, { encoding: "utf8" });
+        },
+      };
+      return adapted;
+    },
+    rename: operations.rename,
+    unlink: (path) => operations.rm(path, { force: true }),
+  };
+}
+
+async function validateCliStateFilePath(path: string): Promise<void> {
+  const root = parse(path).root;
+  await ensureManagedDirectory({ root, directory: dirname(path) });
   try {
-    await operations.writeFile(temporaryPath, source, "utf8");
-    await operations.rename(temporaryPath, path);
+    await assertManagedFilePath({ root, path });
   } catch (error) {
-    await operations.rm(temporaryPath, { force: true }).catch(() => undefined);
-    throw error;
+    if (!isMissingFileError(error)) throw error;
   }
 }
 
@@ -412,7 +600,6 @@ async function acquireFigmaWorkspaceSessionLock(
   const scheduleInterval = options.setInterval ?? setInterval;
   const cancelInterval = options.clearInterval ?? clearInterval;
   const heartbeatMs = options.heartbeatMs ?? FIGMA_WORKSPACE_SESSION_LOCK_HEARTBEAT_MS;
-  const staleMs = options.staleMs ?? FIGMA_WORKSPACE_SESSION_LOCK_STALE_MS;
   const timeoutMs = options.timeoutMs ?? FIGMA_WORKSPACE_SESSION_LOCK_TIMEOUT_MS;
   const retryMs = options.retryMs ?? FIGMA_WORKSPACE_SESSION_LOCK_RETRY_MS;
   const renameLock = options.rename ?? rename;
@@ -468,53 +655,41 @@ async function acquireFigmaWorkspaceSessionLock(
       if (!hasErrorCode(error, "EEXIST")) {
         throw error;
       }
-      const lockStat = await stat(lockFile).catch((statError: unknown) => {
-        if (hasErrorCode(statError, "ENOENT")) {
+      const staleLockSource = await readFile(lockFile, "utf8").catch((readError: unknown) => {
+        if (hasErrorCode(readError, "ENOENT")) {
           return undefined;
         }
-        throw statError;
+        throw readError;
       });
-      if (lockStat !== undefined && now() - lockStat.mtimeMs > staleMs) {
-        const staleLockSource = await readFile(lockFile, "utf8").catch((readError: unknown) => {
-          if (hasErrorCode(readError, "ENOENT")) {
-            return undefined;
+      if (staleLockSource === undefined) {
+        continue;
+      }
+      if (!isSessionLockOwnerActive(staleLockSource, options.isProcessAlive)) {
+        const claimedLockFile = `${lockFile}.stale-${randomUUID()}`;
+        try {
+          await renameLock(lockFile, claimedLockFile);
+        } catch (renameError) {
+          if (hasErrorCode(renameError, "ENOENT") || hasErrorCode(renameError, "EEXIST")) {
+            continue;
           }
-          throw readError;
-        });
-        if (staleLockSource === undefined) {
-          continue;
+          throw renameError;
         }
-        if (!isSessionLockOwnerActive(staleLockSource, options.isProcessAlive)) {
-          const claimedLockFile = `${lockFile}.stale-${randomUUID()}`;
+        const claimedLockSource = await readFile(claimedLockFile, "utf8");
+        if (claimedLockSource === staleLockSource
+          && !isSessionLockOwnerActive(claimedLockSource, options.isProcessAlive)) {
+          await rm(claimedLockFile, { force: true });
+        } else {
           try {
-            await renameLock(lockFile, claimedLockFile);
-          } catch (renameError) {
-            if (hasErrorCode(renameError, "ENOENT")
-              || hasErrorCode(renameError, "EEXIST")
-              || hasErrorCode(renameError, "EACCES")
-              || hasErrorCode(renameError, "EPERM")) {
-              continue;
-            }
-            throw renameError;
-          }
-          const claimedLockSource = await readFile(claimedLockFile, "utf8");
-          if (claimedLockSource === staleLockSource
-            && !isSessionLockOwnerActive(claimedLockSource, options.isProcessAlive)) {
+            await link(claimedLockFile, lockFile);
             await rm(claimedLockFile, { force: true });
-          } else {
-            try {
-              await link(claimedLockFile, lockFile);
-              await rm(claimedLockFile, { force: true });
-            } catch (restoreError) {
-              if (!hasErrorCode(restoreError, "EEXIST")
-                && !hasErrorCode(restoreError, "EACCES")
-                && !hasErrorCode(restoreError, "EPERM")) {
-                throw restoreError;
-              }
-            }
+          } catch (restoreError) {
+            throw new Error(
+              `Failed to restore a session lock after an ownership race: ${formatCliError(restoreError)}`,
+              { cause: restoreError },
+            );
           }
-          continue;
         }
+        continue;
       }
       if (now() >= deadline) {
         throw new Error(`Timed out waiting for session lock: ${lockFile}`);
@@ -639,6 +814,14 @@ function createCommandInvocationInput(
   input: Readonly<Record<string, unknown>>,
   explicitInlineResultLimit: number | undefined,
 ): Record<string, unknown> {
+  const schema = getFigmaWorkspaceCommandInputSchema(command);
+  const properties = isRecord(schema.properties) ? schema.properties : {};
+  const unknownFields = Object.keys(input).filter((field) => !Object.hasOwn(properties, field));
+  if (unknownFields.length > 0) {
+    throw new FigmaWorkspaceToolArgumentError(
+      `Command input does not allow unknown field${unknownFields.length === 1 ? "" : "s"}: ${unknownFields.join(", ")}.`,
+    );
+  }
   if (!commandSupportsInlineResultLimit(command)) {
     const { inlineResultLimit: _cliOnlyInlineResultLimit, ...commandInput } = input;
     return commandInput;
@@ -664,7 +847,7 @@ export function formatFigmaWorkspaceCommandMarkdown(
 ): string {
   const lines = [`# figma-workspace ${command}`];
   lines.push(formatMarkdownInput(input));
-  lines.push(`Status: ${presentation.status.replace("-", " ")}`);
+  lines.push(`Status: ${presentation.status.replaceAll("-", " ")}`);
   if (isRecord(result)) {
     const fields = Object.entries(result).filter(([key, value]) => key !== "ok" && value !== undefined);
     if (fields.length === 0) {
@@ -929,8 +1112,9 @@ async function readCommandInput(
     return {};
   }
   const source = inputFile === "-"
-    ? await io.readStdin()
-    : await io.readFile(resolve(io.cwd(), inputFile));
+    ? await io.readStdin(FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES)
+    : await io.readFile(resolve(io.cwd(), inputFile), FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES);
+  assertJsonInputSize(source);
   try {
     const value: unknown = JSON.parse(source);
     if (!isRecord(value)) {
@@ -1019,17 +1203,52 @@ function createProcessCliIo(): FigmaWorkspaceCliIo {
   return {
     cwd: () => process.cwd(),
     env: (name) => process.env[name],
-    readFile: (path) => readFile(path, "utf8"),
-    readStdin: async () => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of process.stdin) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      return Buffer.concat(chunks).toString("utf8");
-    },
+    readFile: (path, maxBytes = FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES) => readUtf8Input(
+      createReadStream(path),
+      maxBytes,
+    ),
+    readStdin: (maxBytes = FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES) => readUtf8Input(
+      process.stdin,
+      maxBytes,
+    ),
     writeStdout: (value) => process.stdout.write(value),
     writeStderr: (value) => process.stderr.write(value),
   };
+}
+
+async function readUtf8Input(
+  stream: AsyncIterable<unknown> & { destroy?: () => void },
+  maxBytes: number,
+): Promise<string> {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  for await (const chunk of stream) {
+    const buffer = Buffer.isBuffer(chunk)
+      ? chunk
+      : chunk instanceof Uint8Array
+        ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
+        : Buffer.from(String(chunk));
+    totalBytes += buffer.byteLength;
+    if (totalBytes > maxBytes) {
+      stream.destroy?.();
+      throw jsonInputTooLargeError(totalBytes);
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, totalBytes).toString("utf8");
+}
+
+function assertJsonInputSize(source: string): void {
+  const bytes = Buffer.byteLength(source, "utf8");
+  if (bytes > FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES) {
+    throw jsonInputTooLargeError(bytes);
+  }
+}
+
+function jsonInputTooLargeError(observedBytes: number): FigmaWorkspaceCliUsageError {
+  return new FigmaWorkspaceCliUsageError(
+    `Command JSON input exceeds the ${FIGMA_WORKSPACE_CLI_MAX_JSON_INPUT_BYTES}-byte limit (observed at least ${observedBytes} bytes).`,
+  );
 }
 
 function isFigmaWorkspaceCliCommand(value: string): value is FigmaWorkspaceCliCommand {
@@ -1066,18 +1285,202 @@ function toFigmaWorkspaceToolName(command: FigmaWorkspaceCliCommand): string {
   return `figma_workspace_${command.replaceAll("-", "_")}`;
 }
 
-function isFigmaWorkspaceSession(value: unknown): value is FigmaWorkspaceSession {
-  if (!isRecord(value)) {
+function parsePersistedSession(value: unknown, index: number): FigmaWorkspaceSession {
+  const label = `sessions[${index}]`;
+  const allowedKeys = [
+    "id", "slug", "createdAt", "updatedAt", "label", "fileUrl", "fileKey", "surface",
+    "knownPages", "currentPageId", "lastDiagnostics", "history", "workspace",
+  ] as const;
+  if (!isRecord(value) || !hasOnlyKeys(value, allowedKeys)) {
+    throw new FigmaWorkspaceCliUsageError(`${label} must be an object with only supported session fields.`);
+  }
+  if (!isNonEmptyString(value.id)
+    || !isWorkspaceSlug(value.slug)
+    || !isIsoDateString(value.createdAt)
+    || !isIsoDateString(value.updatedAt)
+    || !areOptionalStrings(value, ["label", "fileUrl", "fileKey", "currentPageId"])
+    || (value.surface !== undefined && value.surface !== "design" && value.surface !== "figjam" && value.surface !== "slides")
+    || !isStringRecord(value.knownPages)
+    || !Array.isArray(value.lastDiagnostics)
+    || !value.lastDiagnostics.every((diagnostic) => isPersistedDiagnostic(diagnostic))
+    || !Array.isArray(value.history)
+    || !value.history.every((entry) => isPersistedHistoryEntry(entry))) {
+    throw new FigmaWorkspaceCliUsageError(`${label} is not a valid FigmaWorkspaceSession.`);
+  }
+
+  let workspace: FigmaWorkspaceSession["workspace"];
+  if (value.workspace !== undefined) {
+    if (!isPersistedWorkspace(value.workspace)) {
+      throw new FigmaWorkspaceCliUsageError(
+        `${label}.workspace must contain only canonical root, fileKey, fileSlug, and intentSlug inputs; derived paths are not accepted.`,
+      );
+    }
+    try {
+      workspace = createSessionWorkspace({
+        workspaceDir: value.workspace.root,
+        fileKey: value.workspace.fileKey,
+        fileSlug: value.workspace.fileSlug,
+        intentSlug: value.workspace.intentSlug,
+      });
+    } catch (error) {
+      throw new FigmaWorkspaceCliUsageError(`${label}.workspace is invalid: ${formatCliError(error)}`);
+    }
+  }
+
+  return {
+    id: value.id,
+    slug: value.slug,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    ...(value.label === undefined ? {} : { label: value.label }),
+    ...(value.fileUrl === undefined ? {} : { fileUrl: value.fileUrl }),
+    ...(value.fileKey === undefined ? {} : { fileKey: value.fileKey }),
+    ...(value.surface === undefined ? {} : { surface: value.surface }),
+    knownPages: { ...value.knownPages },
+    ...(value.currentPageId === undefined ? {} : { currentPageId: value.currentPageId }),
+    lastDiagnostics: value.lastDiagnostics.map((diagnostic) => ({ ...diagnostic })),
+    history: value.history.map((entry) => ({ ...entry, nodeIds: [...entry.nodeIds] })),
+    ...(workspace === undefined ? {} : { workspace }),
+  } as FigmaWorkspaceSession;
+}
+
+function toPersistedSession(session: FigmaWorkspaceSession): PersistedFigmaWorkspaceSession {
+  if (!isWorkspaceSlug(session.slug)) {
+    throw new FigmaWorkspaceCliUsageError("Session slug must be a safe slug-style path segment.");
+  }
+  if (session.workspace !== undefined
+    && (!isWorkspaceSlug(session.workspace.fileSlug) || !isWorkspaceSlug(session.workspace.intentSlug))) {
+    throw new FigmaWorkspaceCliUsageError("Session workspace slugs must be safe slug-style path segments.");
+  }
+  if (session.workspace !== undefined) {
+    try {
+      createSessionWorkspace({
+        workspaceDir: session.workspace.root,
+        fileKey: session.workspace.fileKey,
+        fileSlug: session.workspace.fileSlug,
+        intentSlug: session.workspace.intentSlug,
+      });
+    } catch (error) {
+      throw new FigmaWorkspaceCliUsageError(`Session workspace is invalid: ${formatCliError(error)}`);
+    }
+  }
+  return {
+    id: session.id,
+    slug: session.slug,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    ...(session.label === undefined ? {} : { label: session.label }),
+    ...(session.fileUrl === undefined ? {} : { fileUrl: session.fileUrl }),
+    ...(session.fileKey === undefined ? {} : { fileKey: session.fileKey }),
+    ...(session.surface === undefined ? {} : { surface: session.surface }),
+    knownPages: { ...session.knownPages },
+    ...(session.currentPageId === undefined ? {} : { currentPageId: session.currentPageId }),
+    lastDiagnostics: session.lastDiagnostics.map((diagnostic) => ({ ...diagnostic })),
+    history: session.history.map((entry) => ({ ...entry, nodeIds: [...entry.nodeIds] })),
+    ...(session.workspace === undefined ? {} : {
+      workspace: {
+        root: session.workspace.root,
+        ...(session.workspace.fileKey === undefined ? {} : { fileKey: session.workspace.fileKey }),
+        fileSlug: session.workspace.fileSlug,
+        intentSlug: session.workspace.intentSlug,
+      },
+    }),
+  };
+}
+
+function isPersistedWorkspace(value: unknown): value is PersistedFigmaWorkspaceSessionWorkspace {
+  return isRecord(value)
+    && hasOnlyKeys(value, ["root", "fileKey", "fileSlug", "intentSlug"])
+    && isNonEmptyString(value.root)
+    && isFullyQualifiedAbsolutePath(value.root)
+    && (value.fileKey === undefined || isNonEmptyString(value.fileKey))
+    && isWorkspaceSlug(value.fileSlug)
+    && isWorkspaceSlug(value.intentSlug);
+}
+
+function isWorkspaceSlug(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 80
+    && value !== "."
+    && value !== ".."
+    && !value.startsWith("-")
+    && !value.endsWith("-")
+    && /^[a-z0-9._-]+$/u.test(value);
+}
+
+function isPersistedHistoryEntry(value: unknown): value is FigmaWorkspaceSession["history"][number] {
+  return isRecord(value)
+    && hasOnlyKeys(value, ["id", "at", "tool", "mode", "summary", "nodeIds"])
+    && isNonEmptyString(value.id)
+    && isIsoDateString(value.at)
+    && isNonEmptyString(value.tool)
+    && (value.mode === undefined || typeof value.mode === "string")
+    && typeof value.summary === "string"
+    && Array.isArray(value.nodeIds)
+    && value.nodeIds.every((nodeId) => typeof nodeId === "string");
+}
+
+function isPersistedDiagnostic(value: unknown): boolean {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, ["code", "severity", "message", "suggestion", "docsHint", "location", "source"])
+    || !isNonEmptyString(value.code)
+    || (value.severity !== "fatal" && value.severity !== "warning")
+    || typeof value.message !== "string"
+    || typeof value.suggestion !== "string"
+    || typeof value.docsHint !== "string") {
     return false;
   }
-  return typeof value.id === "string"
-    && typeof value.slug === "string"
-    && typeof value.createdAt === "string"
-    && typeof value.updatedAt === "string"
-    && isStringRecord(value.knownPages)
-    && Array.isArray(value.lastDiagnostics)
-    && Array.isArray(value.history)
-    && value.history.every((entry) => isRecord(entry) && Array.isArray(entry.nodeIds));
+  if (value.location !== undefined && (!isRecord(value.location)
+    || !hasOnlyKeys(value.location, ["line", "column"])
+    || !areOptionalPositiveIntegers(value.location, ["line", "column"]))) {
+    return false;
+  }
+  if (value.source !== undefined && (!isRecord(value.source)
+    || !hasOnlyKeys(value.source, ["scriptPath", "line", "column", "occurrences"])
+    || !isPersistedDiagnosticScriptPath(value.source.scriptPath)
+    || !areOptionalPositiveIntegers(value.source, ["line", "column"])
+    || (value.source.occurrences !== undefined && (!Array.isArray(value.source.occurrences)
+      || !value.source.occurrences.every((occurrence) => isRecord(occurrence)
+        && hasExactlyKeys(occurrence, ["line", "column"])
+        && areOptionalPositiveIntegers(occurrence, ["line", "column"])
+        && occurrence.line !== undefined
+        && occurrence.column !== undefined))))) {
+    return false;
+  }
+  return true;
+}
+
+function isPersistedDiagnosticScriptPath(value: unknown): value is string {
+  return value === "<inline eval>" || (isNonEmptyString(value) && isFullyQualifiedAbsolutePath(value));
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowedKeys: readonly string[]): boolean {
+  const allowed = new Set(allowedKeys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function hasExactlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length && hasOnlyKeys(value, keys);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function isIsoDateString(value: unknown): value is string {
+  return typeof value === "string"
+    && !Number.isNaN(Date.parse(value))
+    && new Date(value).toISOString() === value;
+}
+
+function areOptionalStrings(record: Record<string, unknown>, fields: readonly string[]): boolean {
+  return fields.every((field) => record[field] === undefined || typeof record[field] === "string");
+}
+
+function areOptionalPositiveIntegers(record: Record<string, unknown>, fields: readonly string[]): boolean {
+  return fields.every((field) => record[field] === undefined
+    || (typeof record[field] === "number" && Number.isInteger(record[field]) && record[field] > 0));
 }
 
 function assertNoLegacySessionHandles(value: unknown): void {

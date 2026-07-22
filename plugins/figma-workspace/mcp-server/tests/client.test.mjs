@@ -10,7 +10,7 @@ import {
   RemoteMcpClient,
   RemoteMcpOAuthError,
   startOAuthCallbackServer,
-} from "../dist/index.js";
+} from "../dist/runtime/workspace-runtime.js";
 
 test("RemoteMcpClient does not start the OAuth callback server when cached auth connects", async () => {
   const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-stdio-binent-"));
@@ -75,6 +75,59 @@ test("RemoteMcpClient reuses an in-flight connection attempt", async () => {
     resolveConnect();
     await Promise.all([firstConnect, secondConnect]);
     assert.equal(client.connectCalls, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("RemoteMcpClient forwards AbortSignal and the five-minute total deadline to SDK requests", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-request-options-"));
+  const calls = [];
+  try {
+    class RequestOptionsRemoteMcpClient extends RemoteMcpClient {
+      async connectOnce() {
+        return {
+          client: {
+            async listTools(params, options) {
+              calls.push(["listTools", params, options]);
+              return { tools: [] };
+            },
+            async callTool(params, schema, options) {
+              calls.push(["callTool", params, schema, options]);
+              return { content: [] };
+            },
+            async listResources(params, options) {
+              calls.push(["listResources", params, options]);
+              return { resources: [] };
+            },
+            async listResourceTemplates(params, options) {
+              calls.push(["listResourceTemplates", params, options]);
+              return { resourceTemplates: [] };
+            },
+            async readResource(params, options) {
+              calls.push(["readResource", params, options]);
+              return { contents: [] };
+            },
+          },
+          transport: { close: async () => undefined },
+        };
+      }
+    }
+    const client = new RequestOptionsRemoteMcpClient({ statePath: join(dir, "state.json") });
+    const controller = new AbortController();
+    await client.connect();
+    await client.listTools(controller.signal);
+    await client.callTool("whoami", {}, controller.signal);
+    await client.listResources(controller.signal);
+    await client.listResourceTemplates(controller.signal);
+    await client.readResource("figma://resource", controller.signal);
+
+    for (const call of calls) {
+      const options = call.at(-1);
+      assert.equal(options.signal, controller.signal, call[0]);
+      assert.equal(options.timeout, 5 * 60 * 1000, call[0]);
+      assert.equal(options.maxTotalTimeout, 5 * 60 * 1000, call[0]);
+    }
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

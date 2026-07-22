@@ -235,6 +235,7 @@ delay 应响应 `AbortSignal` 和 Ctrl+C. 如果 runtime 支持 cooperative canc
 5. sidecar 使用同目录 temporary file + atomic rename.
 6. `0` 可以定义为 always spill, 便于 machine consumer 获得完整 JSON.
 7. sidecar path 必须经过集中路径解析, 并有 retention, cleanup, permission 和 secret policy.
+8. 如果 remote mutation 已确认成功而本地 state/sidecar/lock 后处理失败, 保留已知业务结果和明确的 non-retry guidance, 不要用 generic failure 覆盖它.
 
 不要只截断 stdout 而丢失完整数据. 也不要把巨大 JSON blob 包在 Markdown fence 中绕过 budget.
 
@@ -253,7 +254,9 @@ explicit CLI path -> environment -> project-local default
 持久化要求:
 
 - parse 后严格验证 schema.
+- schema 需要显式版本, 并明确旧结构是 migrate, reject, 还是只读诊断.
 - write to sibling temp file, fsync when durability matters, then atomic rename.
+- managed root, ancestor 和 target 的 link/reparse-point policy 必须集中验证, 不能只靠 lexical path normalization.
 - lock owner 使用 unique owner id, 不只依赖 PID.
 - heartbeat 固定且内部化, 除非用户确实需要公开调节.
 - force recovery 只回收 malformed, ownerless 或确认 dead owner 的 lock.
@@ -383,6 +386,10 @@ command registry, transport command list, wrappers 和 npm scripts 很容易形�
 9. Public JSON command help 直接包含完整 schema, `--input -` 在 canonical 和 independent npm entrypoint 中都可用. Raw transport 只用于显式 debug, 不是 agent 查 schema 的依赖.
 10. Cross-file node URL 或 structured target 的 file context 只对当前 request 生效. Runtime 解析后应让主读取、enrichment 和 native execution 共享同一 fileKey, 且不得隐式重绑 persisted session.
 11. 删除无语义参数和复合 orchestrator 时采用 breaking change: script type-check 开关、guidance result mode 和复合 workflow command 都不保留 alias 或 migration layer.
+12. 0.3.0 将 `eval` 和 `script:run` 的旧 execution booleans 替换为必填 `executionOutcome`: pre-dispatch 为 `not_started`, confirmed completion 为 `succeeded`, dispatch 后无法确认时为 `outcome_unknown`. 后者必须指导 caller inspect/readback/reconcile, 禁止盲目 retry.
+13. State 采用严格 `{ "schemaVersion": 1, "sessions": [...] }` envelope, 旧 array fail closed. Managed state/workspace/output 路径拒绝 symlink, junction 和 reparse-point traversal; atomic writer 负责 exclusive create, sync, rename 和失败 cleanup.
+14. JSON input 严格拒绝 unknown field, node-scoped reads 使用 conditional target/file contract. Runtime 固定小文件边界并以 streaming 计数 input/output, 因此 256 KiB public JSON/manifest file, 64 manifest items, 16 MiB single asset, 64 MiB cumulative I/O, 5-minute total, 60-second idle 都有测试边界. Bridge 的 512 KiB request body 是独立 transport boundary, 不放宽 public CLI input.
+15. OAuth refresh 对同一 cache 做 coordination, transient error 保留 token, terminal credential error 才清除。`test:live` 使用 ignored local config 和正常 cache, 只针对 Design fixture 做 tag-scoped create/readback/capture/cleanup; typed facades 不再进入 build 或 pack contract.
 
 ## What Not To Copy
 
@@ -405,6 +412,7 @@ command registry, transport command list, wrappers 和 npm scripts 很容易形�
 - [ ] Deadlines are total and interruptible when the command is long-running.
 - [ ] Large results remain completely recoverable through tested sidecars.
 - [ ] State writes and locks are atomic and ownership-safe when state exists.
+- [ ] Remote-success/local-persistence failure retains the known operation outcome and blocks blind mutation replay.
 - [ ] Source, generated output, wrappers and package files are synchronized.
 - [ ] All entrypoints pass help smoke and representative runtime tests.
 - [ ] Packed artifact behavior matches source-tree behavior.

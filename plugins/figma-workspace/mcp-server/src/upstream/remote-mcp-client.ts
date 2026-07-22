@@ -28,6 +28,7 @@ interface RemoteMcpConnection {
 
 const OAUTH_CACHE_FILE_NAME = ".figma-workspace-oauth.json";
 const LOGIN_COMMAND = "npm run login:figma-http";
+const REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
 
 export const REMOTE_MCP_OAUTH_ERROR_CODES = [
   "FIGMA_UPSTREAM_AUTH_REQUIRED",
@@ -258,7 +259,8 @@ export class RemoteMcpClient {
       throw new StaleConnectionError();
     }
     try {
-      await client.connect(transport);
+      await this.authProvider.runWithRefreshLockIfNeeded(() =>
+        client.connect(transport));
     } catch (error) {
       if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
         await transport.close().catch(() => undefined);
@@ -284,27 +286,32 @@ export class RemoteMcpClient {
     return this.client;
   }
 
-  async listTools(): Promise<ListToolsResult> {
-    return this.requireClient().listTools();
+  async listTools(signal?: AbortSignal): Promise<ListToolsResult> {
+    return this.requireClient().listTools({}, remoteRequestOptions(signal));
   }
 
   async callTool(
     name: string,
     args: Record<string, unknown> = {},
+    signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requireClient().callTool({ name, arguments: args });
+    return this.requireClient().callTool(
+      { name, arguments: args },
+      undefined,
+      remoteRequestOptions(signal),
+    );
   }
 
-  async listResources(): Promise<ListResourcesResult> {
-    return this.requireClient().listResources();
+  async listResources(signal?: AbortSignal): Promise<ListResourcesResult> {
+    return this.requireClient().listResources({}, remoteRequestOptions(signal));
   }
 
-  async listResourceTemplates(): Promise<ListResourceTemplatesResult> {
-    return this.requireClient().listResourceTemplates();
+  async listResourceTemplates(signal?: AbortSignal): Promise<ListResourceTemplatesResult> {
+    return this.requireClient().listResourceTemplates({}, remoteRequestOptions(signal));
   }
 
-  async readResource(uri: string): Promise<ReadResourceResult> {
-    return this.requireClient().readResource({ uri });
+  async readResource(uri: string, signal?: AbortSignal): Promise<ReadResourceResult> {
+    return this.requireClient().readResource({ uri }, remoteRequestOptions(signal));
   }
 
   private async setConnectedIfCurrent(
@@ -403,6 +410,18 @@ export class RemoteMcpClient {
     this.closedCallbackServers.add(callbackServer);
     await callbackServer.close().catch(() => undefined);
   }
+}
+
+function remoteRequestOptions(signal: AbortSignal | undefined): {
+  signal?: AbortSignal;
+  timeout: number;
+  maxTotalTimeout: number;
+} {
+  return {
+    signal,
+    timeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS,
+    maxTotalTimeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS,
+  };
 }
 
 export function createRemoteMcpClient(

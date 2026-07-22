@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { AtomicCredentialStore } from "../dist/auth/credential-store.js";
 
 const serverName = "figma-http";
 const serverUrl = "http://127.0.0.1:18766/mcp";
@@ -14,9 +15,15 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const mcpServerRoot = resolve(scriptDir, "..");
 const pluginRoot = resolve(mcpServerRoot, "..");
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
-  const resolvedCachePath = resolveOAuthCachePath(process.env);
+export async function main(dependencies = {}) {
+  const argv = dependencies.argv ?? process.argv.slice(2);
+  const env = dependencies.env ?? process.env;
+  const ensureCommandAvailableImpl =
+    dependencies.ensureCommandAvailable ?? ensureCommandAvailable;
+  const startBridgeImpl = dependencies.startBridge ?? startBridge;
+  const invokeCodexMcpImpl = dependencies.invokeCodexMcp ?? invokeCodexMcp;
+  const options = parseArgs(argv);
+  const resolvedCachePath = resolveOAuthCachePath(env);
   if (!resolvedCachePath) {
     throw new Error(
       "Unable to resolve OAuth cache path. Set FIGMA_WORKSPACE_OAUTH_CACHE_PATH, CODEX_HOME, or USERPROFILE.",
@@ -26,12 +33,12 @@ async function main() {
   console.log("Figma MCP login");
   console.log(`Server name: ${serverName}`);
   console.log(`Server URL:  ${serverUrl}`);
-  console.log(`CODEX_HOME:  ${process.env.CODEX_HOME ?? ""}`);
-  console.log(`USERPROFILE: ${process.env.USERPROFILE ?? ""}`);
+  console.log(`CODEX_HOME:  ${env.CODEX_HOME ?? ""}`);
+  console.log(`USERPROFILE: ${env.USERPROFILE ?? ""}`);
   console.log(`Cache path:  ${resolvedCachePath}`);
   console.log(`Mode:        ${options.force ? "force reauthorize" : "ensure usable"}`);
 
-  await ensureCommandAvailable("codex");
+  await ensureCommandAvailableImpl("codex");
 
   const beforeSnapshot = await readOAuthCacheSnapshot(resolvedCachePath);
   let restorePreviousCache = undefined;
@@ -39,18 +46,20 @@ async function main() {
     restorePreviousCache = await removeOAuthCacheForForceLogin(resolvedCachePath);
   }
 
-  const bridgeProcess = await startBridge();
+  let bridgeProcess;
   let loginSucceeded = false;
+  let flowError;
   try {
-    await invokeCodexMcp(["mcp", "remove", serverName], { ignoreFailure: true });
-    await invokeCodexMcp(["mcp", "add", serverName, "--url", serverUrl]);
+    bridgeProcess = await startBridgeImpl();
+    await invokeCodexMcpImpl(["mcp", "remove", serverName], { ignoreFailure: true });
+    await invokeCodexMcpImpl(["mcp", "add", serverName, "--url", serverUrl]);
 
     let cacheStatus = await testOAuthCacheReady(resolvedCachePath);
     if (!cacheStatus.ready) {
       console.log(
         `OAuth cache is not ready after adding the temporary server. ${cacheStatus.reason}`,
       );
-      await invokeCodexMcp(["mcp", "login", serverName]);
+      await invokeCodexMcpImpl(["mcp", "login", serverName]);
       cacheStatus = await testOAuthCacheReady(resolvedCachePath);
     }
 
@@ -59,26 +68,38 @@ async function main() {
         `Figma MCP login did not produce a usable OAuth cache. ${cacheStatus.reason}`,
       );
       process.exitCode = 2;
-      if (restorePreviousCache) {
-        await restorePreviousCache();
-      }
-      return;
+    } else {
+      loginSucceeded = true;
+      const afterSnapshot = await readOAuthCacheSnapshot(resolvedCachePath);
+      reportOAuthCacheWriteStatus(beforeSnapshot, afterSnapshot, options);
+      console.log(`OAuth cache ready: ${resolvedCachePath}`);
     }
-
-    loginSucceeded = true;
-    const afterSnapshot = await readOAuthCacheSnapshot(resolvedCachePath);
-    reportOAuthCacheWriteStatus(beforeSnapshot, afterSnapshot, options);
-    console.log(`OAuth cache ready: ${resolvedCachePath}`);
   } catch (error) {
-    if (restorePreviousCache && !loginSucceeded) {
-      await restorePreviousCache();
-    }
-    throw error;
+    flowError = error;
   } finally {
-    await invokeCodexMcp(["mcp", "remove", serverName], { ignoreFailure: true });
+    if (restorePreviousCache && !loginSucceeded) {
+      try {
+        await restorePreviousCache();
+      } catch (rollbackError) {
+        flowError = flowError
+          ? new AggregateError(
+              [flowError, rollbackError],
+              "Figma MCP login failed and OAuth cache rollback also failed.",
+            )
+          : rollbackError;
+      }
+    }
+    await invokeCodexMcpImpl(["mcp", "remove", serverName], { ignoreFailure: true });
     if (bridgeProcess && !bridgeProcess.killed) {
       bridgeProcess.kill();
     }
+  }
+
+  if (flowError) {
+    throw flowError;
+  }
+  if (!loginSucceeded) {
+    return;
   }
 
   console.log("");
@@ -98,7 +119,8 @@ function parseArgs(args) {
       console.log("Usage: npm run login:figma-http -- [--force]");
       console.log("");
       console.log("Without --force, ensure the OAuth cache is usable and report whether this run changed it.");
-      console.log("With --force, remove the existing cache before login and restore it if login fails.");
+      console.log("With --force, install a unique attempt marker before login.");
+      console.log("A failed login restores the old cache only when no concurrent credential replaced that marker.");
       process.exit(0);
     }
     throw new Error(`Unknown argument: ${arg}`);
@@ -233,22 +255,63 @@ async function readOAuthCacheSnapshot(path) {
   }
 }
 
-async function removeOAuthCacheForForceLogin(path) {
-  const snapshot = await readOAuthCacheSnapshot(path);
-  if (!snapshot.exists) {
-    console.log("Force login requested; no existing OAuth cache to remove.");
-    return async () => {
-      await rm(path, { force: true });
-    };
-  }
+export async function removeOAuthCacheForForceLogin(path) {
+  const store = createOAuthCredentialStore(path);
+  const attemptId = randomUUID();
+  const markerBytes = Buffer.from(`${JSON.stringify({
+    figmaWorkspaceForceLoginAttempt: attemptId,
+  })}\n`, "utf8");
+  const markerFingerprint = createHash("sha256").update(markerBytes).digest("hex");
+  const snapshot = await store.withLock(async (locked) => {
+    const current = await locked.readSnapshot();
+    await locked.writeBytes(markerBytes);
+    return current;
+  });
 
-  await rm(path, { force: true });
-  console.log("Force login requested; existing OAuth cache was removed before login.");
+  console.log(
+    snapshot.exists
+      ? "Force login requested; existing OAuth cache was replaced by an attempt marker before login."
+      : "Force login requested; an attempt marker was installed before login.",
+  );
+
   return async () => {
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, snapshot.data);
-    console.error("Restored the previous OAuth cache after login failure.");
+    return store.withLock(async (locked) => {
+      const current = await locked.readSnapshot();
+      if (current.exists && current.fingerprint !== markerFingerprint) {
+        console.error(
+          "OAuth cache rollback conflict: credentials changed during force login; preserving the newer cache.",
+        );
+        return false;
+      }
+
+      if (snapshot.exists) {
+        if (!snapshot.bytes) {
+          throw new Error("OAuth cache snapshot bytes are unavailable for force-login rollback.");
+        }
+        await locked.writeBytes(snapshot.bytes);
+        console.error("Restored the previous OAuth cache after login failure.");
+      } else if (current.exists) {
+        const removed = await locked.clear(markerFingerprint);
+        if (!removed) {
+          throw new Error("OAuth cache attempt marker changed during rollback.");
+        }
+        console.error("Removed the force-login OAuth cache attempt marker after login failure.");
+      }
+      return true;
+    });
   };
+}
+
+function createOAuthCredentialStore(path) {
+  return new AtomicCredentialStore(path, {
+    empty: () => ({}),
+    parse(json) {
+      const value = JSON.parse(json);
+      return value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : {};
+    },
+  });
 }
 
 function reportOAuthCacheWriteStatus(beforeSnapshot, afterSnapshot, options) {
@@ -375,7 +438,10 @@ function delay(ms) {
   });
 }
 
-await main().catch((error) => {
-  console.error(error?.message ?? String(error));
-  process.exitCode = process.exitCode || 1;
-});
+const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : undefined;
+if (invokedPath === import.meta.url) {
+  await main().catch((error) => {
+    console.error(error?.message ?? String(error));
+    process.exitCode = process.exitCode || 1;
+  });
+}

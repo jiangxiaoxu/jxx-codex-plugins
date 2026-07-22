@@ -1,7 +1,13 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import type { FigmaWorkspaceRunScriptFileArguments } from "../contract/tool-args.js";
+import {
+  atomicWriteManagedBinaryFile,
+  atomicWriteManagedTextFile,
+  assertManagedFilePath,
+  ensureManagedDirectory,
+  removeManagedFile,
+} from "./managed-files.js";
 
 export const TASK_WORKSPACE_ROOT_ENV = "FIGMA_WORKSPACE_TASK_ROOT";
 
@@ -77,7 +83,11 @@ export function createScriptOutputWriter(
     files,
     async cleanupCompiledScriptFile() {
       if (files.compiledScriptFile) {
-        await removeFileIfExists(files.compiledScriptFile);
+        await removeManagedFile({
+          root: session?.workspace?.root ?? dirname(files.compiledScriptFile),
+          path: files.compiledScriptFile,
+          allowMissing: true,
+        });
       }
     },
     async write(payload) {
@@ -157,6 +167,18 @@ export function resolveWorkspaceAwareFile(
   return resolveWorkspaceFile(session.workspace.sessionDir, raw, argumentName);
 }
 
+export async function assertWorkspaceManagedInputFile(
+  path: string,
+  session: FigmaWorkspaceWorkspaceFileSession,
+): Promise<string> {
+  const resolvedPath = resolve(path);
+  const workspaceRoot = session.workspace?.root;
+  if (!workspaceRoot || !isPathInside(resolve(workspaceRoot), resolvedPath)) {
+    return resolvedPath;
+  }
+  return assertManagedFilePath({ root: workspaceRoot, path: resolvedPath });
+}
+
 export async function writeCaptureOutputFile(
   outputFile: string,
   upstream: unknown,
@@ -199,7 +221,6 @@ async function writeCaptureImageOutputFile(
   sourceMimeType?: CaptureImageMimeType,
 ): Promise<{ path: string; bytes: number; lineCount: 0; width?: number; height?: number }> {
   const output = resolveCaptureImageOutput(outputFile);
-  await mkdir(dirname(output.path), { recursive: true });
   const inputMimeType = sourceMimeType ?? detectCaptureImageMimeType(buffer);
   if (inputMimeType !== "image/png") {
     throw new Error(
@@ -207,7 +228,11 @@ async function writeCaptureImageOutputFile(
     );
   }
   const dimensions = readPngDimensions(buffer);
-  await writeFile(output.path, buffer);
+  await atomicWriteManagedBinaryFile({
+    root: dirname(output.path),
+    path: output.path,
+    overwrite: true,
+  }, buffer);
   return {
     path: output.path,
     bytes: buffer.byteLength,
@@ -295,9 +320,8 @@ export function effectiveInlineResultLimit(
 }
 
 export async function writeJsonFile(path: string, value: unknown): Promise<FilePointerMetadata> {
-  await mkdir(dirname(path), { recursive: true });
   const content = `${JSON.stringify(removeUndefined(value), null, 2)}\n`;
-  await writeFile(path, content, "utf8");
+  await atomicWriteManagedTextFile({ root: dirname(path), path, overwrite: true }, content);
   return textFileMetadata(path, content);
 }
 
@@ -336,7 +360,7 @@ export function createSessionWorkspace(options: {
 }
 
 export async function ensureWorkspaceDirectories(workspace: FigmaWorkspaceSessionWorkspace): Promise<void> {
-  await mkdir(workspace.sessionDir, { recursive: true });
+  await ensureManagedDirectory({ root: workspace.root, directory: workspace.sessionDir });
 }
 
 export function resolvePreparedTaskWorkspace(options: {
@@ -392,17 +416,7 @@ export function resultFileNameForScript(scriptName: string): string {
 }
 
 export async function writeTaskFile(path: string, content: string, overwrite: boolean): Promise<FilePointerMetadata> {
-  if (!overwrite) {
-    try {
-      await readFile(path, "utf8");
-      throw new Error(`Refusing to overwrite existing file without overwrite=true: ${path}`);
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith("Refusing to overwrite")) {
-        throw error;
-      }
-    }
-  }
-  await writeFile(path, content, "utf8");
+  await atomicWriteManagedTextFile({ root: dirname(path), path, overwrite }, content);
   return textFileMetadata(path, content);
 }
 
@@ -444,20 +458,8 @@ function resolveWorkspaceOutputFile(
 }
 
 async function writeTextFile(path: string, content: string): Promise<FilePointerMetadata> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, content, "utf8");
+  await atomicWriteManagedTextFile({ root: dirname(path), path, overwrite: true }, content);
   return textFileMetadata(path, content);
-}
-
-async function removeFileIfExists(path: string): Promise<void> {
-  try {
-    await unlink(path);
-  } catch (error) {
-    if (isMissingFileError(error)) {
-      return;
-    }
-    throw error;
-  }
 }
 
 function formatCompiledScriptFailureFile(
