@@ -148,7 +148,7 @@ test("release metadata keeps plugin, CLI package, lockfile, and OAuth client ver
   const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
   const expectedVersion = manifest.version;
 
-  assert.equal(expectedVersion, "0.4.0");
+  assert.equal(expectedVersion, "0.4.1");
   assert.equal(packageJson.version, expectedVersion);
   assert.equal(cliPackageJson.version, expectedVersion);
   assert.equal(cliLockfile.version, expectedVersion);
@@ -980,7 +980,7 @@ test("skill router maps every concrete public command and preserves the agent wo
     "--help",
     "Restricted Markdown",
     "outputFiles.cliResultFile",
-    "English canonical keywords",
+    "concise English keywords only",
     "figma:docs:catalog",
     "figma:docs:search",
     "figma:docs:read",
@@ -994,6 +994,30 @@ test("skill router maps every concrete public command and preserves the agent wo
   }
   assert.doesNotMatch(skill, /maintenance:raw|figma:raw|transport schema escape hatch/iu);
   assert.doesNotMatch(agentMetadata, /maintenance:raw|figma:raw|transport schema escape hatch/iu);
+  assert.doesNotMatch(skill, /translate non-English|convert non-English|translate the intent/iu);
+});
+
+test("skill publishes focused English-only search query recipes outside the runtime docs index", async () => {
+  const skill = await readFile(new URL("../skills/figma-workspace/SKILL.md", import.meta.url), "utf8");
+  const recipes = skill.match(/## Search Query Recipes\n(?<body>[\s\S]*?)\n## /u)?.groups?.body;
+  assert.notEqual(recipes, undefined, "SKILL must own one parseable query recipe table");
+  const rows = [...recipes.matchAll(/^\| (?<intent>[^|]+) \| `(?<query>[^`]+)` \|$/gmu)];
+  assert.equal(rows.length, 10);
+  assert.equal(new Set(rows.map((row) => row.groups.intent.trim())).size, 10);
+  for (const query of [
+    "text font loadFontAsync mixed fonts",
+    "auto layout sizing fill hug spacing",
+    "component variant component properties",
+    "variable collections modes scopes code syntax",
+    "available libraries components variables styles",
+    "implementation context layout assets",
+    "user journey sticky notes connectors",
+    "slide lifecycle grid row structure",
+    "motion easing keyframes transitions",
+    "outcome_unknown readback reconcile mutation",
+  ]) {
+    assert.ok(rows.some((row) => row.groups.query === query), query);
+  }
 });
 
 test("skill topic map stays aligned with the twelve committed canonical routes", async () => {
@@ -1023,8 +1047,8 @@ test("skill topic map stays aligned with the twelve committed canonical routes",
       assert.ok(row.includes(label), `${route.taskFamily} ${label} surface`);
     }
   }
-  assert.match(guidanceReference, /English aliases only/u);
-  assert.match(guidanceReference, /misspelled/u);
+  assert.match(guidanceReference, /concise English keywords only/u);
+  assert.match(guidanceReference, /misspelled/iu);
 });
 
 test("createBridgeConfig uses CODEX_HOME as the OAuth cache location", async () => {

@@ -4,7 +4,7 @@ Use this reference to route task documentation and Plugin API questions. Public 
 
 ## Route Intent
 
-- Compress the request to concise English canonical keywords before `figma:guidance` or automatic docs search. The route catalog has English aliases only; non-English, misspelled, generic, ambiguous, or out-of-vocabulary input can return low confidence.
+- `figma:guidance` and automatic docs search support concise English keywords only. Misspelled, generic, ambiguous, or out-of-vocabulary input can return low confidence; use the main skill's query recipes and the topic map below.
 - Pass a known `--surface design|figjam|slides`. Surface and `--task-family` are hard filters; do not use a Design fallback for a known FigJam or Slides task.
 - For non-trivial edits, generation, or uncertain routing, run `figma:guidance` first and follow only returned public `figma:*` next actions.
 - If guidance is ambiguous or has no route, run `figma:docs:catalog` without a family, select the compatible family, then narrow `figma:docs:search` with both the family and known surface.

@@ -20,13 +20,30 @@ Use only the public commands below. Do not expose transport names, internal iden
 ## Route The Intent
 
 - For an obvious read-only request, select its direct command from the map below.
-- For non-trivial edits, generation, or unclear intent, compress the request to concise English canonical keywords and run `figma:guidance` with `--surface design|figjam|slides` when known.
+- For non-trivial edits, generation, or unclear intent, run `figma:guidance` with concise English keywords and `--surface design|figjam|slides` when known.
 - If guidance is missing, ambiguous, or low confidence, run `figma:docs:catalog` to choose a task family, then `figma:docs:search` with explicit `--surface` and `--task-family`, and finally `figma:docs:read` with an exact returned `project:` or `canonical:` ID.
 - Treat `[label](canonical:<record-id>)` as another `figma:docs:read` call. Use `figma:docs:list` for the small project-document inventory.
 - Use `figma:api:search` for native Plugin API declarations. It accepts bare, qualified, and call-shaped queries such as `createFrame`, `figma.createFrame()`, and `ComponentNode.createInstance`.
-- The lookup router is English-only and has no fuzzy spelling correction. Translate non-English intent, use canonical terms from the topic map, and fall back to catalog instead of guessing.
+- Guidance and documentation lookup support concise English keywords only and have no fuzzy spelling correction. Use the recipes and canonical terms below, then fall back to catalog instead of guessing.
 
 Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for the complete topic-to-query map.
+
+## Search Query Recipes
+
+Use these English keyword patterns as search seeds. Add the known surface and task family as hard filters when available.
+
+| Intent | English keywords |
+| --- | --- |
+| Text and fonts | `text font loadFontAsync mixed fonts` |
+| Auto Layout | `auto layout sizing fill hug spacing` |
+| Components and variants | `component variant component properties` |
+| Variables and tokens | `variable collections modes scopes code syntax` |
+| Library audit | `available libraries components variables styles` |
+| Design to code | `implementation context layout assets` |
+| FigJam journey | `user journey sticky notes connectors` |
+| Slides structure | `slide lifecycle grid row structure` |
+| Motion | `motion easing keyframes transitions` |
+| Mutation recovery | `outcome_unknown readback reconcile mutation` |
 
 ## Public Command Map
 

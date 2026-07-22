@@ -1,4 +1,4 @@
 interface:
   display_name: "Figma Workspace"
   short_description: "Figma automation through independent npm commands and a stateful CLI"
-  default_prompt: "Use $figma-workspace and its public figma:* npm commands for Figma work. Discover commands with figma:help, reuse one absolute --state-file, route non-trivial intent through English guidance keywords and hard surface filters, read exact docs IDs or Plugin API symbols, run selected command help, and verify mutations without blindly retrying outcome_unknown."
+  default_prompt: "Use $figma-workspace and its public figma:* npm commands for Figma work. Discover commands with figma:help, reuse one absolute --state-file, use the English-only query recipes with hard surface filters, read exact docs IDs or Plugin API symbols, run selected command help, and verify mutations without blindly retrying outcome_unknown."

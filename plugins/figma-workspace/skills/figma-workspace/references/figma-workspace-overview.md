@@ -5,7 +5,7 @@ Use this reference to choose a command family. Public command help and typed res
 ## Select A Workflow
 
 - Run `figma:help` to discover the complete public command catalog. Use `figma:guidance` first for non-trivial, generated, or ambiguous Design, FigJam, or Slides work; obvious read-only tasks can go directly to their first-class command.
-- Convert non-English intent to concise English canonical keywords. If guidance is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected surface and task family, then read exact returned IDs with `figma:docs:read`.
+- Guidance and docs search support concise English keywords only. If guidance is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected surface and task family, then read exact returned IDs with `figma:docs:read`.
 - Use `figma:open` to establish existing-file context. Use `figma:task:prepare` and `figma:script:run` for repairable `.figma.ts` work; reserve `figma:eval` for a small native Plugin API transaction.
 - Use `figma:metadata` for broad discovery, then `figma:inspect` for targeted validation. Use `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries` for their named first-class reads.
 - Use `figma:assets:apply` for prepared local assets, `figma:assets:download` for official downloads, and `figma:capture` or queued `$.capture` for visual QA.
