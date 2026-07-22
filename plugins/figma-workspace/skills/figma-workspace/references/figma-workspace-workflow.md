@@ -4,7 +4,7 @@ Use this reference for an end-to-end Figma task. Command-specific help and runti
 
 ## Prepare, Edit, Verify
 
-1. Choose an absolute `--state-file`. For a non-trivial edit, convert the request to concise English keywords, use `figma:guidance` with the known surface, and follow the catalog/search/read fallback when routing is uncertain.
+1. Choose an absolute `--state-file`. For a non-trivial edit, use concise English keywords with `figma:guidance` and the known surface, then follow the catalog/search/read fallback when routing is uncertain.
 2. Establish file context with `figma:open` or an explicit target. Run `figma:metadata` for broad discovery before targeted `figma:inspect` when the structure is unfamiliar.
 3. Run `figma:task:prepare` to create a repairable `.figma.ts` workspace, then edit the generated file.
 4. Use native Figma Plugin API for editing, traversal, selection, layout, assets, cloning, and advanced work. `$` is frozen and non-callable, with only `$.text` and `$.capture`. Use `figma:api:search` for uncertain symbols.

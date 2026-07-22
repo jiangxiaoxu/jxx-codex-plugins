@@ -44,7 +44,7 @@ Upstream and bridge network requests have a 5-minute total deadline. The 60-seco
 
 ## Documentation And API Lookup
 
-For a non-trivial or ambiguous request, translate the intent to concise English keywords and use `figma:guidance` with the known surface. If routing is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected task family and surface, and use `figma:docs:read` for returned `project:` or `canonical:` IDs. Use `figma:api:search` for bare, qualified, or call-shaped Plugin API symbols. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references provide the complete intent-to-command and topic-to-query maps without duplicating generated CLI schemas.
+`figma:guidance` and documentation search support concise English keywords only. For a non-trivial or ambiguous request, select a query from the skill's Search Query Recipes and use the known surface. If routing is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected task family and surface, and use `figma:docs:read` for returned `project:` or `canonical:` IDs. Use `figma:api:search` for bare, qualified, or call-shaped Plugin API symbols. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references provide the complete intent-to-command and topic-to-query maps without duplicating generated CLI schemas.
 
 ## Live Design Verification
 
