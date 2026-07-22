@@ -6,8 +6,8 @@ Translation between Figma designs and SwiftUI code, both directions. This file i
 
 | Direction | Trigger | Reference |
 |---|---|---|
-| **Design → code** | User wants SwiftUI in their iOS project from a Figma file/frame | [references/design-to-code.md](references/design-to-code.md) |
-| **Code → design** | User wants to push SwiftUI views / screens / tokens into a Figma file | [references/code-to-design.md](references/code-to-design.md) |
+| **Design → code** | User wants SwiftUI in their iOS project from a Figma file/frame | [references/design-to-code.md](canonical:figma-swiftui/references/design-to-code.md) |
+| **Code → design** | User wants to push SwiftUI views / screens / tokens into a Figma file | [references/code-to-design.md](canonical:figma-swiftui/references/code-to-design.md) |
 
 If the request is ambiguous — a Figma URL and `.swift` files both present, no verb makes it clear — ask the user which direction before using a reference.
 
@@ -26,5 +26,5 @@ These points hold regardless of direction; the direction-specific references ass
 
 | Doc | When to load |
 |---|---|
-| [references/design-to-code.md](references/design-to-code.md) | Translating a Figma design / frame into SwiftUI |
-| [references/code-to-design.md](references/code-to-design.md) | Pushing SwiftUI views / screens / tokens into Figma |
+| [references/design-to-code.md](canonical:figma-swiftui/references/design-to-code.md) | Translating a Figma design / frame into SwiftUI |
+| [references/code-to-design.md](canonical:figma-swiftui/references/code-to-design.md) | Pushing SwiftUI views / screens / tokens into Figma |

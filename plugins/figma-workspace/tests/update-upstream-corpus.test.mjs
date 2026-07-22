@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import {
+  inspectCommittedUpstreamDrift,
   parseCliInvocation,
   updateUpstreamSnapshot,
 } from "../scripts/update-upstream-corpus.mjs";
@@ -95,7 +96,226 @@ test("updater publishes a complete dev snapshot and a content-addressed change r
   }
 });
 
-test("new, changed, and deleted upstream files affect only the dev report", async () => {
+test("committed drift inspection fails closed on malformed evidence and policy", async (suite) => {
+  await suite.test("snapshot corpus hash mismatch", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      const manifest = JSON.parse(await readFile(join(fixture.snapshotRoot, "manifest.json"), "utf8"));
+      await writeFile(join(fixture.snapshotRoot, manifest.corpus.file), "corrupt\n", "utf8");
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /snapshot failed whole-file integrity/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("change report hash mismatch", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      const manifest = JSON.parse(await readFile(join(fixture.changesRoot, "manifest.json"), "utf8"));
+      await writeFile(join(fixture.changesRoot, manifest.report.file), "corrupt\n", "utf8");
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /change report failed whole-file integrity/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("malformed content-addressed change report", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      const manifestPath = join(fixture.changesRoot, "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const invalidReport = "{\n";
+      const reportSha256 = sha256(invalidReport);
+      manifest.report.file = `report-${reportSha256}.json`;
+      manifest.report.sha256 = reportSha256;
+      await writeFile(join(fixture.changesRoot, manifest.report.file), invalidReport, "utf8");
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /change report is not valid JSON/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("unknown snapshot record field with recomputed corpus hash", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      const manifestPath = join(fixture.snapshotRoot, "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const corpusPath = join(fixture.snapshotRoot, manifest.corpus.file);
+      const records = parseJsonl(await readFile(corpusPath, "utf8"));
+      records[0].unexpected = true;
+      const corpusText = `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
+      const corpusSha256 = sha256(corpusText);
+      manifest.corpus.file = `corpus-${corpusSha256}.jsonl`;
+      manifest.corpus.sha256 = corpusSha256;
+      await writeFile(join(fixture.snapshotRoot, manifest.corpus.file), corpusText, "utf8");
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /snapshot record must contain exactly/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("unknown change report root field with recomputed report hash", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      await rewriteChangeReport(fixture, (report) => {
+        report.unexpected = true;
+      });
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /change report must contain exactly/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("unknown nested change record field with recomputed report hash", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      await rewriteChangeReport(fixture, (report) => {
+        report.changes.new[0].unexpected = true;
+      });
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /change report new record must contain exactly/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("missing nested report field with recomputed report hash", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      await rewriteChangeReport(fixture, (report) => {
+        delete report.summary.unchangedCount;
+      });
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /change report summary must contain exactly/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("fabricated deleted record with recomputed report and manifest hashes", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      await rewriteChangeReport(fixture, (report, manifest) => {
+        report.changes.deleted.push({
+          id: "ghost/SKILL.md",
+          skill: "ghost",
+          format: "markdown",
+          contentSha256: "0".repeat(64),
+        });
+        report.summary.deletedCount += 1;
+        manifest.report.deletedCount += 1;
+      });
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /does not match its retained from corpus/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("missing retained from corpus", async () => {
+    const fixture = await createDriftedInspectionFixture();
+    try {
+      const report = await readCommittedChangeReport(fixture);
+      await rm(join(fixture.snapshotRoot, `corpus-${report.from.corpusSha256}.jsonl`));
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /retained from corpus could not be read/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("retained from corpus hash mismatch", async () => {
+    const fixture = await createDriftedInspectionFixture();
+    try {
+      const report = await readCommittedChangeReport(fixture);
+      await writeFile(
+        join(fixture.snapshotRoot, `corpus-${report.from.corpusSha256}.jsonl`),
+        "corrupt\n",
+        "utf8",
+      );
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /retained from corpus failed whole-file integrity/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("missing from pointer field with recomputed report hash", async () => {
+    const fixture = await createDriftedInspectionFixture();
+    try {
+      await rewriteChangeReport(fixture, (report) => {
+        delete report.from.recordCount;
+      });
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /change report from pointer must contain exactly/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("adaptation manifest mismatch", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      const manifestPath = join(fixture.changesRoot, "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      manifest.adaptation.pendingCount += 1;
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /changes manifest adaptation contains invalid counts/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  await suite.test("duplicate policy record id", async () => {
+    const fixture = await createPublishedInspectionFixture();
+    try {
+      const policyPath = join(fixture.policyRoot, "alpha.json");
+      const fragment = JSON.parse(await readFile(policyPath, "utf8"));
+      fragment.records.push({ ...fragment.records[0] });
+      await writeFile(policyPath, `${JSON.stringify(fragment, null, 2)}\n`, "utf8");
+      await assert.rejects(
+        inspectCommittedUpstreamDrift(fixture),
+        /Duplicate canonical policy record id/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+});
+
+test("new, changed, and deleted upstream files warn without failing or changing canonical output", async () => {
   const fixture = await createRepositoryFixture();
   const snapshotRoot = join(fixture.root, "dev/upstream-snapshot");
   const changesRoot = join(fixture.root, "dev/upstream-changes");
@@ -116,13 +336,34 @@ test("new, changed, and deleted upstream files affect only the dev report", asyn
     await writeFile(join(fixture.worktree, "skills/alpha/references/new.md"), "# New\n", "utf8");
     commitFixture(fixture, "upstream drift");
 
-    const second = await updateUpstreamSnapshot({
+    const updateOptions = {
       repository: fixture.repository,
       snapshotRoot,
       changesRoot,
       policyRoot: fixture.policyRoot,
       expectedPolicyFragmentCount: 2,
       generatedAt: "2026-07-15T04:05:06.000Z",
+    };
+    const cliScript = [
+      `import { runCli } from ${JSON.stringify(new URL("../scripts/update-upstream-corpus.mjs", import.meta.url).href)};`,
+      `await runCli(["update-upstream-snapshot"], { updateOptions: ${JSON.stringify(updateOptions)} });`,
+    ].join("\n");
+    const cliResult = spawnSync(process.execPath, ["--input-type=module", "--eval", cliScript], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    assert.equal(cliResult.status, 0, cliResult.stderr);
+    assert.match(cliResult.stdout, /wrote 5 development snapshot records/u);
+    assert.match(cliResult.stderr, /warning: upstream drift has 2 pending canonical adaptation record\(s\)/u);
+    assert.match(cliResult.stderr, /alpha\/SKILL\.md \(changed\)/u);
+    assert.match(cliResult.stderr, /alpha\/references\/new\.md \(new\)/u);
+    assert.match(cliResult.stderr, /warning: upstream drift has 1 retired canonical policy record\(s\)/u);
+    assert.match(cliResult.stderr, /alpha\/scripts\/example\.js/u);
+    const second = await inspectCommittedUpstreamDrift({
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
     });
     assert.deepEqual(second.report.summary, {
       newCount: 1,
@@ -144,9 +385,11 @@ test("new, changed, and deleted upstream files affect only the dev report", asyn
       second.report.adaptation.retiredRecords.map(({ id }) => id),
       ["alpha/scripts/example.js"],
     );
-    assert.deepEqual(second.changeManifest.adaptation, second.report.adaptation);
+    assert.deepEqual(second.changesManifest.adaptation, second.report.adaptation);
     assert.equal(second.report.from.resolvedCommit, first.manifest.upstream.resolvedCommit);
     assert.equal(await readFile(canonicalSentinel, "utf8"), "canonical-sentinel\n");
+
+    assert.deepEqual(second.warnings, cliResult.stderr.trimEnd().split("\n"));
     assert.equal(
       (await readdir(snapshotRoot)).includes(first.manifest.corpus.file),
       true,
@@ -284,6 +527,76 @@ test("directory sync failure after change manifest rename rolls back both manife
     await rm(fixture.root, { recursive: true, force: true });
   }
 });
+
+async function rewriteChangeReport(fixture, mutate) {
+  const manifestPath = join(fixture.changesRoot, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const report = JSON.parse(await readFile(join(fixture.changesRoot, manifest.report.file), "utf8"));
+  mutate(report, manifest);
+  const reportText = `${JSON.stringify(report, null, 2)}\n`;
+  const reportSha256 = sha256(reportText);
+  manifest.report.file = `report-${reportSha256}.json`;
+  manifest.report.sha256 = reportSha256;
+  await writeFile(join(fixture.changesRoot, manifest.report.file), reportText, "utf8");
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
+async function readCommittedChangeReport(fixture) {
+  const manifest = JSON.parse(await readFile(join(fixture.changesRoot, "manifest.json"), "utf8"));
+  return JSON.parse(await readFile(join(fixture.changesRoot, manifest.report.file), "utf8"));
+}
+
+async function createDriftedInspectionFixture() {
+  const fixture = await createRepositoryFixture();
+  const snapshotRoot = join(fixture.root, "dev/upstream-snapshot");
+  const changesRoot = join(fixture.root, "dev/upstream-changes");
+  await updateUpstreamSnapshot({
+    repository: fixture.repository,
+    snapshotRoot,
+    changesRoot,
+    policyRoot: fixture.policyRoot,
+    expectedPolicyFragmentCount: 2,
+    generatedAt,
+  });
+  await writeFile(join(fixture.worktree, "skills/alpha/SKILL.md"), "# Alpha revised\n", "utf8");
+  commitFixture(fixture, "drifted inspection fixture");
+  await updateUpstreamSnapshot({
+    repository: fixture.repository,
+    snapshotRoot,
+    changesRoot,
+    policyRoot: fixture.policyRoot,
+    expectedPolicyFragmentCount: 2,
+    generatedAt: "2026-07-15T04:05:06.000Z",
+  });
+  return {
+    root: fixture.root,
+    snapshotRoot,
+    changesRoot,
+    policyRoot: fixture.policyRoot,
+    expectedPolicyFragmentCount: 2,
+  };
+}
+
+async function createPublishedInspectionFixture() {
+  const fixture = await createRepositoryFixture();
+  const snapshotRoot = join(fixture.root, "dev/upstream-snapshot");
+  const changesRoot = join(fixture.root, "dev/upstream-changes");
+  await updateUpstreamSnapshot({
+    repository: fixture.repository,
+    snapshotRoot,
+    changesRoot,
+    policyRoot: fixture.policyRoot,
+    expectedPolicyFragmentCount: 2,
+    generatedAt,
+  });
+  return {
+    root: fixture.root,
+    snapshotRoot,
+    changesRoot,
+    policyRoot: fixture.policyRoot,
+    expectedPolicyFragmentCount: 2,
+  };
+}
 
 async function createRepositoryFixture() {
   const root = await mkdtemp(join(tmpdir(), "figma-upstream-snapshot-fixture-"));

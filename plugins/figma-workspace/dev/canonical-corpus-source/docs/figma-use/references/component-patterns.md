@@ -2,7 +2,7 @@
 
 > Reference for local `.figma.ts` workflows using the Figma Plugin API. How to correctly use the Plugin API for components, variants, and component properties.
 >
-> For design system context (when to use variants vs properties, code-to-Figma translation, property model), see [wwds-components](working-with-design-systems/wwds-components.md).
+> For design system context (when to use variants vs properties, code-to-Figma translation, property model), see [wwds-components](canonical:figma-use/references/working-with-design-systems/wwds-components.md).
 
 ## Contents
 
@@ -107,7 +107,7 @@ const iconSlotKey = comp.addComponentProperty('Icon', 'INSTANCE_SWAP', iconCompo
 
 A property that is added but not linked to a child node does **nothing**. You must set `componentPropertyReferences` on the child:
 
-Follows the [canonical text-edit recipe](gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids) — load the font for every (family, style) you'll mutate (here `Inter Regular`; same rule for every other font) before any `characters`/`fontName`/`fontSize` write.
+Follows the [canonical text-edit recipe](canonical:figma-use/references/gotchas.md) — load the font for every (family, style) you'll mutate (here `Inter Regular`; same rule for every other font) before any `characters`/`fontName`/`fontSize` write.
 
 ```javascript
 // Load required font BEFORE any text mutation
@@ -254,7 +254,7 @@ const matches = figma.root.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT
 return matches.map(n => ({ pageName: n.parent?.name, name: n.name, type: n.type, id: n.id }));
 ```
 
-For page-dependent operations, a script may switch across multiple pages with awaited `setCurrentPageAsync()` calls. Keep the sequence explicit and account for document size when choosing between one document-wide script and multiple smaller transactions. See [gotchas.md](gotchas.md) for page-scoping performance tradeoffs.
+For page-dependent operations, a script may switch across multiple pages with awaited `setCurrentPageAsync()` calls. Keep the sequence explicit and account for document size when choosing between one document-wide script and multiple smaller transactions. See [gotchas.md](canonical:figma-use/references/gotchas.md) for page-scoping performance tradeoffs.
 
 ### Inspect an existing component set's variant naming pattern
 

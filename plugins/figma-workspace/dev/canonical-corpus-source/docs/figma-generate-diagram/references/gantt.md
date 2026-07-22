@@ -192,7 +192,7 @@ Gantt is a great fit for the 80% case: phases, sequenced tasks, milestones, a cl
 
 When a user asks for something in this territory, **don't stretch the gantt syntax to pretend it supports it** — the upstream diagram capability will silently drop or strip the relevant directives and the output will mislead the user.
 
-Instead, build the timeline directly on a FigJam canvas using a local `.figma.ts` script with `figma:script:run`. Read the linked [Plugin API](../../figma-use/SKILL.md) and [FigJam API](../../figma-use-figjam/SKILL.md) mirrors only for the specific operations needed: placing shapes and connectors, positioning nodes on a time axis, adding sticky notes and annotations, color-coding elements, and grouping content into sections. If a new FigJam file is required, discover the live file-creation schema before `figma:upstream:call`.
+Instead, build the timeline directly on a FigJam canvas using a local `.figma.ts` script with `figma:script:run`. Read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific operations needed: placing shapes and connectors, positioning nodes on a time axis, adding sticky notes and annotations, color-coding elements, and grouping content into sections. If a new FigJam file is required, discover the live file-creation schema before `figma:upstream:call`.
 
 Signals it's time to switch from the upstream diagram capability to a local `.figma.ts` script executed with `figma:script:run`:
 

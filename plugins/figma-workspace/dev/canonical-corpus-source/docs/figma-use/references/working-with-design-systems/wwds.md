@@ -49,7 +49,7 @@ npm --silent run figma:task:prepare -- --input task.json --state-file C:/work/pr
 npm --silent run figma:script:run -- --input run-script.json --state-file C:/work/project/.figma-workspace/state.json
 ```
 
-`run-script.json` supplies the saved session id, `.figma.ts` input path, and surface. TypeScript preflight is always enabled. Return concise evidence such as node ids, variable ids, component names, and validation notes. Make the script idempotent where retries could create duplicate system assets.
+`run-script.json` supplies the saved session id, `.figma.ts` input path, and surface. TypeScript preflight is always enabled. Return concise evidence such as node ids, variable ids, component names, and validation notes. Make the script idempotent and tag created assets so `outcome_unknown` can be inspected and reconciled before running only confirmed missing work.
 
 ```ts
 const component = figma.root
@@ -63,7 +63,7 @@ component.description =
 return { componentId: component.id, name: component.name };
 ```
 
-Fatal TypeScript preflight diagnostics mean that no change ran. Fix the `.figma.ts` diagnostics and rerun the same planned transaction. Do not bypass the script path with an untracked write.
+Fatal TypeScript preflight diagnostics report `executionOutcome: "not_started"`, confirming the request was not dispatched. Fix the `.figma.ts` diagnostics and rerun the same planned transaction. For `outcome_unknown`, inspect and reconcile tagged targets before any write. Do not bypass the script path with an untracked write.
 
 ## Review checklist and boundaries
 
@@ -73,4 +73,4 @@ Fatal TypeScript preflight diagnostics mean that no change ran. Fix the `.figma.
 - Stop for clarification when a request could change a shared library's public naming, delete or repoint tokens, create incompatible variants, or choose among unresolved code/design sources of truth.
 - Treat an exploratory artifact as local until the user confirms it should become a reusable or published system rule.
 
-Continue with [components](wwds-components.md), [variables](wwds-variables.md), [effect styles](wwds-effect-styles.md), and [text styles](wwds-text-styles.md) for asset-specific guidance.
+Continue with [components](canonical:figma-use/references/working-with-design-systems/wwds-components.md), [variables](canonical:figma-use/references/working-with-design-systems/wwds-variables.md), [effect styles](canonical:figma-use/references/working-with-design-systems/wwds-effect-styles.md), and [text styles](canonical:figma-use/references/working-with-design-systems/wwds-text-styles.md) for asset-specific guidance.

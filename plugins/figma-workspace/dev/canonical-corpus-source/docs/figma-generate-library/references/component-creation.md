@@ -1,4 +1,4 @@
-> Part of the [figma-generate-library skill](../SKILL.md).
+> Part of the [figma-generate-library skill](canonical:figma-generate-library/SKILL.md).
 
 # Component Creation Reference
 
@@ -8,7 +8,7 @@ Complete guide for Phase 3: building components with variant matrices, variable 
 
 > **Design files only.** Every snippet here (including `figma.createPage()`) targets Figma Design files (`figma.com/design/...`). `figma.createPage()` throws in both FigJam (`figma.com/board/...`) and Slides (`figma.com/slides/...`).
 >
-> **Every text mutation in this file follows the [canonical text-edit recipe](../../figma-use/references/gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids):** load font → `await` → mutate → return affected IDs. Examples use `Inter` because it's available everywhere; `loadFontAsync` is required for every (family, style) pair you mutate, including non-Inter brand fonts.
+> **Every text mutation in this file follows the [canonical text-edit recipe](canonical:figma-use/references/gotchas.md):** load font → `await` → mutate → return affected IDs. Examples use `Inter` because it's available everywhere; `loadFontAsync` is required for every (family, style) pair you mutate, including non-Inter brand fonts.
 
 ---
 
@@ -715,10 +715,10 @@ Args: { nodeId: "PAGE_NODE_ID", fileKey: "FILE_KEY" }
 
 | Screenshot shows | Diagnosis | Fix script |
 |-----------------|-----------|------------|
-| All variants stacked top-left | Grid layout wasn't applied after `combineAsVariants` | Re-run the grid layout script (§5) |
-| Everything black/same color | Variable bindings failed or variables don't have values for the active mode | Re-run variable binding, check mode values |
+| All variants stacked top-left | Grid layout wasn't applied after `combineAsVariants` | Read back child positions, then run the targeted grid layout correction (§5) |
+| Everything black/same color | Variable bindings failed or variables don't have values for the active mode | Inspect mode values and bindings, then correct only confirmed missing bindings |
 | No text visible | Font wasn't loaded, or text fill is same color as background | Call `listAvailableFontsAsync()` to verify the font exists, then check `loadFontAsync` was called before text writes; bind text fill to `color/text/*` variable |
-| Variants all same size | Padding/height not bound to size variables | Re-run `bindVariablesToComponent` with size-specific tokens |
+| Variants all same size | Padding/height not bound to size variables | Inspect bound variables, then apply `bindVariablesToComponent` only to confirmed gaps |
 | Component set frame tiny | `resizeWithoutConstraints` wasn't called or used wrong dimensions | Re-calculate bounds from children and resize |
 | Doc frame overlaps components | Component set positioned at same x,y as doc frame | Move component set: `cs.x = docFrame.x + docFrame.width + 60` |
 
@@ -750,7 +750,7 @@ This gives you positions (grid working?), dimensions (size differentiation?), an
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| All variants stacked at (0,0) | `combineAsVariants` was called but children were never repositioned | Re-run grid layout script |
+| All variants stacked at (0,0) | `combineAsVariants` was called but children were never repositioned | Read back child positions, then run the targeted grid layout correction |
 | Variants show wrong colors | Variable bindings applied after `combineAsVariants` instead of before | Rebind on component set children |
 | Variant count wrong | Clone loop indexing error | Print `components.map(c => c.name)` before combining |
 | BOOLEAN property has no effect | `componentPropertyReferences` was set on the component set frame, not on the child node | Find the actual child node and set references there |
@@ -979,7 +979,7 @@ return {
 ### Call 8: Validate with figma:capture
 
 **Goal:** Visual check — layout, colors, text.
-**Action:** Run `figma:capture` on the Button page and inspect `imageFile` with `view_image`. If variants are stacked, re-run Call 5. If colors look wrong, inspect variable bindings.
+**Action:** Run `figma:capture` on the Button page and inspect `imageFile` with `view_image`. If variants are stacked, read back the component set and run only the missing Call 5 layout work. If colors look wrong, inspect variable bindings.
 
 ### Checkpoint
 

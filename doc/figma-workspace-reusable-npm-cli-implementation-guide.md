@@ -224,6 +224,8 @@ perCallTimeout = min(remaining, transportMaximum)
 
 delay 应响应 `AbortSignal` 和 Ctrl+C. 如果 runtime 支持 cooperative cancel, timeout/interrupt 后先发送 cancel, 再用有界 cleanup deadline 等待 terminal acknowledgement. Ctrl+C 通常使用 exit `130`.
 
+idle deadline 只适用于可以可靠观察 activity 的 transport, 例如 HTTP/body stream 或 subprocess I/O. 对没有 progress signal 的 opaque remote RPC, 不要把无响应误判为 idle; 只执行 monotonic total deadline.
+
 ## Large Results And Sidecars
 
 当 complete result 可能超过稳定 inline budget 时:
@@ -371,25 +373,7 @@ command registry, transport command list, wrappers 和 npm scripts 很容易形�
 - Update concise user/agent routing docs after help and tests are stable.
 - Do not preserve hidden aliases unless compatibility is an explicit product requirement.
 
-## Applying This Guide To figma-workspace
-
-`figma-workspace` 本轮实际落地了以下边界. Compatibility 必须逐项判断, 不能因为它们属于同一批改动就一律标记为 breaking:
-
-1. Optimized help 由 typed omitted metadata 生成 required, default 或 unset 文案, 并生成 repeatability, integer range 和 enum allowlist. 这是 help contract 的兼容增强; 如果旧文案曾被逐字解析, 则仅该 consumer 需要迁移.
-2. Direct parser 支持精确 `--`; separator 后的 `-h` 和 `--help` 是 positional. JSON commands 和 raw transport 仍为 option-only. 这是 parser 能力扩展, 但依赖 separator 后 help 仍触发帮助的调用方会发生行为变化.
-3. Typed runtime 增加 presentation projection, 但不替换或重写原始 backend result; inline Markdown 展开原始字段, sidecar 保存完整原始 payload. 这是兼容的内部边界强化, 不是新的 canonical result envelope.
-4. 只有 unhealthy `doctor` 使用 `Status: observed unhealthy` 且 exit 0; 其他 top-level `ok: false` 仍 exit 1. Usage 保持 exit 2; `AbortError`, `ABORT_ERR` 和 `ERR_CANCELED` exit 130. Doctor exit change 和新增 typed interrupt mapping 需要 consumer 评估迁移, 其他 domain failure contract 保持不变.
-5. Public wrappers 与 package scripts 通过 registry 派生出的严格集合做一致性校验, 但 wrappers 并未由 registry 自动生成. Registry 只覆盖 public command namespace; login, cache, corpus update, build 和 test 等 maintenance scripts 明确排除. 这是维护时的兼容校验, 不扩展 public runtime surface.
-6. `check:dist` 执行 build 后检查 generated `dist` cleanliness, 只适合 clean checkout 或 CI. 它是维护/CI contract, 不应在含用户改动的 working tree 中作为普通本地验证运行.
-7. Transport state path 明确为 fully qualified absolute `--session-file` > fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE`; 二者缺失或路径依赖 current drive/cwd 时直接返回 usage error. State 与 sidecar 使用 sibling temp file + atomic rename; sidecar 可能含敏感 Figma 内容, 默认保留用于恢复并由用户手动清理, 不自动删除. 移除 cwd fallback 与 relative-path resolution 是 breaking path contract; caller 必须显式迁移.
-8. Session lock 只保证同机 local filesystem/process/PID model, 不保证 distributed, network filesystem 或 shared-volume safety. 这是现有能力边界的文档化, 不新增跨主机语义.
-9. Public JSON command help 直接包含完整 schema, `--input -` 在 canonical 和 independent npm entrypoint 中都可用. Raw transport 只用于显式 debug, 不是 agent 查 schema 的依赖.
-10. Cross-file node URL 或 structured target 的 file context 只对当前 request 生效. Runtime 解析后应让主读取、enrichment 和 native execution 共享同一 fileKey, 且不得隐式重绑 persisted session.
-11. 删除无语义参数和复合 orchestrator 时采用 breaking change: script type-check 开关、guidance result mode 和复合 workflow command 都不保留 alias 或 migration layer.
-12. 0.3.0 将 `eval` 和 `script:run` 的旧 execution booleans 替换为必填 `executionOutcome`: pre-dispatch 为 `not_started`, confirmed completion 为 `succeeded`, dispatch 后无法确认时为 `outcome_unknown`. 后者必须指导 caller inspect/readback/reconcile, 禁止盲目 retry.
-13. State 采用严格 `{ "schemaVersion": 1, "sessions": [...] }` envelope, 旧 array fail closed. Managed state/workspace/output 路径拒绝 symlink, junction 和 reparse-point traversal; atomic writer 负责 exclusive create, sync, rename 和失败 cleanup.
-14. JSON input 严格拒绝 unknown field, node-scoped reads 使用 conditional target/file contract. Runtime 固定小文件边界并以 streaming 计数 input/output, 因此 256 KiB public JSON/manifest file, 64 manifest items, 16 MiB single asset, 64 MiB cumulative I/O, 5-minute total, 60-second idle 都有测试边界. Bridge 的 512 KiB request body 是独立 transport boundary, 不放宽 public CLI input.
-15. OAuth refresh 对同一 cache 做 coordination, transient error 保留 token, terminal credential error 才清除。`test:live` 使用 ignored local config 和正常 cache, 只针对 Design fixture 做 tag-scoped create/readback/capture/cleanup; typed facades 不再进入 build 或 pack contract.
+For project-specific `figma-workspace` architecture, release, and validation rules, see [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md). Keep this guide generic rather than duplicating a current plugin's contract.
 
 ## What Not To Copy
 

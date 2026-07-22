@@ -1,76 +1,47 @@
 # JXX Codex Plugins Repository Guide
 
-## Purpose
+This repository is a local Codex plugin marketplace. It has no root-level package or test runner. Start from the owning plugin's source and validation entrypoints.
 
-This repository is a local Codex plugin marketplace. It contains three tracked plugins and no root-level package or test runner. Work from the plugin-specific source and validation entrypoints below.
+## Inventory
 
-## Source Map
+| Plugin | Primary source | Primary validation |
+| --- | --- | --- |
+| `chatgpt-research-prompt` | `plugins/chatgpt-research-prompt/skills/chatgpt-research-prompt/` | Validate the skill and plugin manifest. |
+| `task-memory` | `plugins/task-memory/skills/`, `src/`, and `scripts/commands/` | Run the plugin test suite and packed-artifact check. |
+| `figma-workspace` | `plugins/figma-workspace/skills/`, `mcp-server/src/`, `scripts/`, and focused tests | Run plugin-root and CLI-package validation. |
 
-| Path | Role |
-| --- | --- |
-| `.agents/plugins/marketplace.json` | Marketplace inventory, ordering, availability, authentication policy, and source paths. |
-| `plugins/<plugin>/.codex-plugin/plugin.json` | Plugin identity, numeric version, capabilities, and UI metadata. |
-| `plugins/<plugin>/skills/` | Skill routing and agent instructions shipped by a plugin. |
-| `plugins/<plugin>/scripts/` | Plugin-owned runtime or maintenance helpers. |
-| `doc/` | Repository and plugin maintenance documentation. |
-| `README.md` | Short public plugin inventory and repository entrypoint. |
+For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, marketplace entry, and root README inventory aligned when plugin identity, placement, or availability changes.
 
-The plugin directory, manifest, and marketplace entry should describe the same installed unit. Check all three when inventory or packaging looks inconsistent.
-
-## Plugin Inventory
-
-### `chatgpt-research-prompt`
-
-- Type: Skill-only productivity plugin.
-- Manifest: `plugins/chatgpt-research-prompt/.codex-plugin/plugin.json`.
-- Main source: `plugins/chatgpt-research-prompt/skills/chatgpt-research-prompt/SKILL.md`.
-- UI metadata: `plugins/chatgpt-research-prompt/skills/chatgpt-research-prompt/agents/openai.yaml`.
-- Tests: No plugin-owned automated test suite.
-
-### `task-memory`
-
-- Type: Skill plus Node.js npm CLI.
-- Manifest: `plugins/task-memory/.codex-plugin/plugin.json`.
-- Main source: `plugins/task-memory/skills/task-memory/SKILL.md`.
-- Public commands: `plugins/task-memory/package.json`.
-- Shared runtime: `plugins/task-memory/src/task-memory-cli.mjs`.
-- Command entrypoints: `plugins/task-memory/scripts/commands/*.mjs`.
-- UI metadata: `plugins/task-memory/skills/task-memory/agents/openai.yaml`.
-- Runtime task data: `<workspace>/task-memory/<task-id>/` contains `task_state.md` and `artifacts/`; this is task output, not plugin source.
-- Tests: `plugins/task-memory/tests/task-memory-cli.test.mjs` exercises CLI behavior in temporary workspaces and a packed plugin.
-
-### `figma-workspace`
-
-- Type: Skill, stateful Node CLI, OAuth bridge, private Node package, generated runtime, and tests.
-- Manifest: `plugins/figma-workspace/.codex-plugin/plugin.json`.
-- Skill router: `plugins/figma-workspace/skills/figma-workspace/SKILL.md`.
-- Agent CLI source: `plugins/figma-workspace/mcp-server/src/cli/figma-workspace-cli.ts`.
-- Agent invocation: use the canonical `npm --silent run figma -- <command>` CLI or the corresponding independent public `figma:<command>` npm executable. The contract has 18 direct commands, 8 JSON commands, and 21 raw transport commands available only through `figma:raw` and `figma:raw:help`. Public command help contains the complete input schema, and JSON commands accept `--input -` through both npm entrypoint forms while rejecting unknown fields. `figma:design-context`, `figma:motion-context`, and `figma:variables` require exactly one node source: a target or a `--file` URL with `node-id`. `figma:docs:list`, `figma:docs:catalog`, `figma:docs:read`, `figma:docs:search`, and `figma:api:search` are the documentation contract. `.figma.ts` and eval inject a frozen, non-callable `$` namespace with only `$.text` and `$.capture`; all other scripting uses native Figma Plugin API. Use `npm --silent` in every shell to preserve Restricted Markdown stdout after packaging. Put npm's `--` before arguments passed to an independent npm executable.
-- Agent result surface: Restricted Markdown on stdout for typed results; usage and thrown failures use stderr. `figma:eval` and `figma:script:run` carry required `executionOutcome`: `not_started`, `succeeded`, or `outcome_unknown`. An unknown outcome must be inspected/read back/reconciled before a mutation retry.
-- Project docs: `plugins/figma-workspace/skills/figma-workspace/references/*.md`; `docs:list` returns `project:` IDs, `docs:catalog` returns canonical records, and `docs:read` reads either namespace. `guidance` and `docs:search --scope auto` share English-only task routing with hard surface filters. The lightweight workflow references describe hard boundaries only; TypeScript and bundled Plugin API typings preflight scripts, while valid Plugin API operations are not subject to semantic AST policy.
-- OAuth bridge: `plugins/figma-workspace/scripts/server.mjs`.
-- Node runtime source: `plugins/figma-workspace/mcp-server/src/`; the directory name is legacy, not a local MCP registration.
-- Generated package output: `plugins/figma-workspace/mcp-server/dist/`; keep it synchronized with source changes through the package build. It ships CLI/runtime artifacts, not a supported typed import facade.
-- Primary maintenance guide: [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md).
-- Cross-repository CLI guide: [Reusable npm CLI Implementation Guide](figma-workspace-reusable-npm-cli-implementation-guide.md).
-- User-facing plugin guide: `plugins/figma-workspace/README.md`.
-- Package guide: `plugins/figma-workspace/mcp-server/README.md`.
-
-## Change Routing
+## Source And Change Routing
 
 | Change | Inspect first |
 | --- | --- |
-| Skill trigger or workflow | Plugin manifest, `SKILL.md`, and `agents/openai.yaml`. |
-| Plugin identity or UI metadata | `.codex-plugin/plugin.json` and the marketplace entry. |
-| Marketplace inventory | Plugin directories, manifests, marketplace JSON, and root README. |
-| `task-memory` behavior | `SKILL.md`, plugin-root `package.json`, shared CLI runtime, and tests. |
-| Figma agent workflow | Figma maintenance guide, skill router, CLI command contract, and focused tests. |
-| Figma runtime or public contract | `mcp-server/src/`, tests, package scripts, and generated `dist/`. |
-| Figma OAuth/login | Plugin README, bridge scripts, auth source, and auth tests. |
+| Skill trigger, routing, or agent UX | Plugin manifest, `SKILL.md`, `agents/openai.yaml`, and skill validator. |
+| Plugin identity, metadata, or marketplace inventory | Plugin manifest, `.agents/plugins/marketplace.json`, root README, and repository inventory. |
+| `task-memory` behavior | Plugin package scripts, shared CLI source, command entrypoints, and tests. |
+| Figma agent workflow or documentation | [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md), the skill router, public help, and focused tests. |
+| Figma CLI/runtime, OAuth, bridge, or packaging | `plugins/figma-workspace/mcp-server/src/`, owning tests, package scripts, and generated `dist/`. |
 
-## Validation Map
+### Figma corpus ownership
 
-Always run `git diff --check` and the checks owned by the changed plugin. Use the installed `skill-creator` and `plugin-creator` validators through their actual skill locations rather than hard-coding a user-specific path.
+`figma-workspace` keeps upstream material and runtime guidance deliberately separate:
+
+```text
+dev/upstream-snapshot + dev/upstream-changes
+    archive and drift evidence only
+        -> dev/canonical-corpus-source
+           reviewed manual authoring and policy
+               -> skills/.../canonical-corpus
+                  packaged runtime corpus
+                      -> mcp-server/dist
+                         generated package mirror
+```
+
+The snapshot updater writes only the archive and drift report. It never overwrites manual authoring, policy, runtime corpus, or `dist`. Pending or retired drift is a non-blocking review warning; malformed archive/report data and inconsistent policy/adaptation data remain validation failures. See the Figma maintenance guide for the detailed workflow.
+
+## Validation Routing
+
+Always run `git diff --check` and the checks owned by the changed plugin. Resolve the installed validator paths instead of hard-coding a user-specific location.
 
 ### Skills and manifests
 
@@ -88,40 +59,21 @@ npm test
 npm pack --dry-run --json
 ```
 
-The integration suite covers both independent npm entrypoints, `init`, `status`, help and output contracts, concurrent allocation, managed-path safety, malformed task structures, and packed-artifact execution.
-
 ### `figma-workspace`
 
 From `plugins/figma-workspace`:
 
 ```text
 npm test
+npm run build:canonical-corpus
 ```
-
-When the ignored local Design fixture configuration and standard OAuth cache are intentionally available, run the separately invoked release check:
-
-```text
-npm run test:live
-```
-
-It is not part of `npm test`; missing configuration is a usage error rather than a skipped suite.
 
 From `plugins/figma-workspace/mcp-server`:
 
 ```text
 npm run typecheck
 npm test
+npm run check:dist
 ```
 
-The CLI package build regenerates `dist`; review generated changes with the source diff. `npm run check:dist` belongs in a clean checkout or release/CI gate and must verify that removed typed facades are absent.
-
-## Generated And Local State
-
-- `plugins/figma-workspace/mcp-server/dist/` is checked-in generated output.
-- `plugins/figma-workspace/skills/figma-workspace/references/canonical-corpus/` is the only bundled workflow corpus read at runtime. It contains only the v2 manifest, shared English route catalog, and current content-addressed JSONL. The manifest validates 87 records: 46 `active`, 20 `conditional`, 12 `router`, and 9 `examples`. Each record publishes task family, surfaces, mapping profile, title, and summary. Examples are plugin-owned non-executable TypeScript-in-Markdown templates. Upstream source text is not packaged or read at runtime.
-- `plugins/figma-workspace/dev/canonical-corpus-source/` owns the 87 adapted Markdown mirrors and 12 policy fragments used to build the runtime JSONL. Keeping these authoring inputs outside `skills/` prevents nested upstream `SKILL.md` mirrors from being discovered as plugin skills. `plugins/figma-workspace/dev/upstream-snapshot/` is the complete development source snapshot, and `plugins/figma-workspace/dev/upstream-changes/` is its drift report. All three directories are maintenance inputs outside the npm package and `mcp-server/dist/`. `npm run update:upstream-snapshot -- --ref <git-ref>` updates only the snapshot and drift report. `npm run build:canonical-corpus` reads the adapted mirrors and policy from the canonical source root and publishes only the self-contained runtime corpus; source-identical content may be reported for human review but is not a mechanical publication failure.
-- `figma:api:search` reads a v2 plugin-owned symbol index generated during the package build from bundled `@figma/plugin-typings`; it supports bare, qualified, and call-shaped API queries and does not read the development snapshot. `figma:doctor` diagnoses the canonical corpus, generated API index, project docs, and TypeScript runtime assets. Upstream drift belongs to the maintenance updater, not `doctor`.
-- Figma OAuth cache files live outside the repository and may contain secrets. Resolution is `FIGMA_WORKSPACE_OAUTH_CACHE_PATH`, then `CODEX_HOME`, then `USERPROFILE/.codex/.figma-workspace-oauth.json`; transient refresh failures retain the cached credential.
-- Figma CLI state files are local runtime state and should not be committed by default. Their strict shape is `{ "schemaVersion": 1, "sessions": [...] }`; legacy arrays fail closed and must be replaced with a new state file. Every executing optimized command requires an explicit fully qualified absolute `--state-file`; its parent directory owns result sidecars. Prefer a Git-ignored project-local `.figma-workspace/`; otherwise use an explicitly selected Figma task-artifact directory. Do not reuse capability-specific output roots as generic task storage. The raw transport requires a fully qualified absolute `--session-file` or fully qualified absolute `FIGMA_WORKSPACE_SESSION_FILE` and has no current-directory default.
-- Managed Figma workspace and output paths reject symbolic links, Windows junctions, and other reparse points. State/output locks cover only same-machine local filesystems, not network shares or distributed use. Local live verification uses the Git-ignored `plugins/figma-workspace/.figma-workspace/live-test.json` configuration with no token or secret; it is Design-only and tag-scoped for cleanup.
-- Workspace `task-memory/` directories are runtime task state and should not be treated as repository documentation or plugin source.
+Use `check:dist` in a clean checkout or CI. Run the separate `npm run test:live` only when the user has intentionally supplied the ignored local Design configuration and OAuth cache; it is not part of ordinary tests.

@@ -2,7 +2,7 @@
 
 Use this reference when the user asks for a **software architecture diagram** — a view showing services, datastores, message queues, external integrations, and how they connect. These are flowcharts rendered by a bespoke grid-based layout (not ELK), controlled by the `useArchitectureLayoutCode` parameter on the upstream diagram capability.
 
-For generic flowcharts (decision trees, process flows, dependency graphs), use [flowchart.md](./flowchart.md) instead.
+For generic flowcharts (decision trees, process flows, dependency graphs), use [flowchart.md](canonical:figma-generate-diagram/references/flowchart.md) instead.
 
 ## Contents
 

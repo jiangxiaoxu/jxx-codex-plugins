@@ -70,7 +70,7 @@ frame.fills = [{ type: "SOLID", color: { r: 0.98, g: 0.98, b: 0.99 } }];
 
 ### Text
 
-Canonical recipe: load font → `await` → mutate → return affected IDs. This pattern is the same for every font — `Inter` happens to be preloaded so the missing-`loadFontAsync` bug usually only surfaces with other families. See [gotchas.md → Canonical text-edit recipe](gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids).
+Canonical recipe: load font → `await` → mutate → return affected IDs. This pattern is the same for every font — `Inter` happens to be preloaded so the missing-`loadFontAsync` bug usually only surfaces with other families. See [gotchas.md → Canonical text-edit recipe](canonical:figma-use/references/gotchas.md).
 
 ```javascript
 // Load font BEFORE any text mutation — required for every font, not just Inter

@@ -6,7 +6,7 @@ JavaScript-labelled blocks in this reference are Plugin API patterns to adapt in
 
 ## Adding text to a slide
 
-Canonical recipe: load font → `await` → mutate → return affected IDs. Inter is preloaded; for any other family the same `loadFontAsync` step is required or you'll hit `Cannot write to node with unloaded font "<family> <style>"`. See [figma-use → gotchas.md → Canonical text-edit recipe](../../figma-use/references/gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids).
+Canonical recipe: load font → `await` → mutate → return affected IDs. Inter is preloaded; for any other family the same `loadFontAsync` step is required or you'll hit `Cannot write to node with unloaded font "<family> <style>"`. See [figma-use → gotchas.md → Canonical text-edit recipe](canonical:figma-use/references/gotchas.md).
 
 ```js
 const slide = figma.getNodeById("SLIDE_ID");
@@ -118,7 +118,7 @@ return { createdNodeIds: [component.id, instance.id] };
 
 Slides have a fixed canvas size (typically 1920x1080). Position content using absolute `x`/`y` coordinates within the slide, or use auto-layout containers to handle positioning automatically.
 
-**Critical: MUST set `x`/`y` AFTER `appendChild` — at every level of nesting.** Setting position before parenting causes a `(−240, −240)` shift because new nodes are silently auto-parented to a slide context at absolute `(240, 240)`. The rule applies to frames inside other frames, not just the slide root. See [slide-gotchas.md](slide-gotchas.md#position-after-appendchild-critical) for the helper pattern (`addFrame` / `addText` / `addRect`) you should use to make the order impossible to write wrong.
+**Critical: MUST set `x`/`y` AFTER `appendChild` — at every level of nesting.** Setting position before parenting causes a `(−240, −240)` shift because new nodes are silently auto-parented to a slide context at absolute `(240, 240)`. The rule applies to frames inside other frames, not just the slide root. See [slide-gotchas.md](canonical:figma-use-slides/references/slide-gotchas.md) for the helper pattern (`addFrame` / `addText` / `addRect`) you should use to make the order impossible to write wrong.
 
 Recommended pattern — append first, then configure:
 

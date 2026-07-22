@@ -42,7 +42,7 @@ return grid.map((row, rowIdx) => ({
 }));
 ```
 
-The inner arrays are plain `SlideNode[]` — they are NOT `SLIDE_ROW` nodes. Setting `.name` or any other property on them mutates a JS array, not the underlying section. To touch the `SLIDE_ROW` itself (e.g. to rename a section), traverse the node tree via `SLIDE_GRID.children`. See [slide-lifecycle.md — Slide sections](slide-lifecycle.md#slide-sections).
+The inner arrays are plain `SlideNode[]` — they are NOT `SLIDE_ROW` nodes. Setting `.name` or any other property on them mutates a JS array, not the underlying section. To touch the `SLIDE_ROW` itself (e.g. to rename a section), traverse the node tree via `SLIDE_GRID.children`. See [slide-lifecycle.md — Slide sections](canonical:figma-use-slides/references/slide-lifecycle.md).
 
 ## Reordering the grid
 

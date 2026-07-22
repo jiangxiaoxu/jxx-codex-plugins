@@ -252,7 +252,7 @@ typography/body/font-size    typography/heading/line-height
 
 **Page separators**: `---` (most common) or `——— COMPONENTS ———`
 
-> Full naming reference: [naming-conventions.md](references/naming-conventions.md)
+> Full naming reference: [naming-conventions.md](canonical:figma-generate-library/references/naming-conventions.md)
 
 ---
 
@@ -262,7 +262,7 @@ typography/body/font-size    typography/heading/line-height
 |-----------|---------|
 | < 50 tokens | Single collection, 2 modes (Light/Dark) |
 | 50–200 tokens | **Standard**: Primitives (1 mode) + Color semantic (Light/Dark) + Spacing (1 mode) + Typography (1 mode) |
-| 200+ tokens | **Advanced**: Multiple semantic collections, 4–8 modes (Light/Dark × Contrast × Brand). See M3 pattern in [token-creation.md](references/token-creation.md) |
+| 200+ tokens | **Advanced**: Multiple semantic collections, 4–8 modes (Light/Dark × Contrast × Brand). See M3 pattern in [token-creation.md](canonical:figma-generate-library/references/token-creation.md) |
 
 Standard pattern (recommended starting point):
 ```
@@ -323,13 +323,13 @@ Use your file reading tool to read these docs when needed. Do not assume their c
 
 | Doc | Phase | Use when |
 |-----|-------|---------------------|-----------|
-| [discovery-phase.md](references/discovery-phase.md) | 0 | Starting a build — codebase analysis and Figma inspection |
-| [token-creation.md](references/token-creation.md) | 1 | Creating variables, collections, modes, or styles |
-| [documentation-creation.md](references/documentation-creation.md) | 2 | Creating cover pages, foundations docs, or swatches |
-| [component-creation.md](references/component-creation.md) | 3 | Creating a component or variant |
-| [code-connect-setup.md](references/code-connect-setup.md) | 3–4 | Setting Code Connect or variable code syntax |
-| [naming-conventions.md](references/naming-conventions.md) | Any | Naming variables, pages, variants, or styles |
-| [error-recovery.md](references/error-recovery.md) | Any | Recovering from a script failure or incomplete workflow |
+| [discovery-phase.md](canonical:figma-generate-library/references/discovery-phase.md) | 0 | Starting a build — codebase analysis and Figma inspection |
+| [token-creation.md](canonical:figma-generate-library/references/token-creation.md) | 1 | Creating variables, collections, modes, or styles |
+| [documentation-creation.md](canonical:figma-generate-library/references/documentation-creation.md) | 2 | Creating cover pages, foundations docs, or swatches |
+| [component-creation.md](canonical:figma-generate-library/references/component-creation.md) | 3 | Creating a component or variant |
+| [code-connect-setup.md](canonical:figma-generate-library/references/code-connect-setup.md) | 3–4 | Setting Code Connect or variable code syntax |
+| [naming-conventions.md](canonical:figma-generate-library/references/naming-conventions.md) | Any | Naming variables, pages, variants, or styles |
+| [error-recovery.md](canonical:figma-generate-library/references/error-recovery.md) | Any | Recovering from a script failure or incomplete workflow |
 
 ---
 

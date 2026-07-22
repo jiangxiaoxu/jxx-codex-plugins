@@ -8,10 +8,13 @@ Place the operation in the task's `.figma.ts` file and execute it with `figma:sc
 
 ```ts
 // callout-label.figma.ts
+// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
+const runId = 'figjam-<fresh-uuid>'
 const labelText = '1'
 if (labelText.length === 0 || labelText.length > 2) throw new Error('A label holds one or two characters')
 
 const label = figma.createShapeWithText()
+label.setSharedPluginData('figma_workspace', 'run_id', runId)
 label.shapeType = 'ELLIPSE'
 const labelFont = label.text.fontName
 if (labelFont === figma.mixed) throw new Error('Label text has mixed fonts')
@@ -28,7 +31,7 @@ label.x = 120
 label.y = 120
 label.name = `Callout ${labelText}`
 
-return { createdNodeIds: [label.id], label: { id: label.id, text: label.text.characters, size } }
+return { runId, createdNodeIds: [label.id], label: { id: label.id, text: label.text.characters, size } }
 ```
 
 Execute `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`, where the JSON supplies `sessionId`, `inputFile`, and `surface: "figjam"`.
@@ -44,4 +47,4 @@ Execute `npm --silent run figma:script:run -- --input <run-json> --state-file <a
 
 Return the ID, text, dimensions, and position. In a read-only script, verify `type === 'SHAPE_WITH_TEXT'`, `shapeType === 'ELLIPSE'`, the text, and `width === height`; capture the diagram area when alignment with its target matters and inspect the image locally.
 
-If text writes fail, load the label's current font and await it before the mutation. If the result is oval, one dimension was changed independently; call `resize(size, size)`. If the content exceeds two characters, use a standard shape-with-text rather than shrinking unreadable label text. Repair any TypeScript preflight diagnostic in the same `.figma.ts` file before rerunning.
+Generate and retain a unique `runId` before dispatch. Immediately after `createShapeWithText()`, tag the label with shared PluginData namespace `figma_workspace` and key `run_id`, before reading fonts, awaiting, or applying later properties, and return the same `runId` and ID. A fatal TypeScript preflight diagnostic reports `not_started` and can be repaired before rerunning. A text-write or unloaded-font failure occurs after dispatch and reports `outcome_unknown`; follow `retryGuidance`, query the exact retained run tag, and reconcile the label before any write. If the result is oval, one dimension was changed independently; call `resize(size, size)`. If the content exceeds two characters, use a standard shape-with-text rather than shrinking unreadable label text.

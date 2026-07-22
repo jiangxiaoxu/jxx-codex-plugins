@@ -57,14 +57,18 @@ Use standalone `figma:capture` when the node id is already known. If a script cr
 
 ## Error Recovery After Failed `.figma.ts` script
 
-**`.figma.ts` script is atomic — failed scripts do not execute.** If a script errors, no changes are made to the file. The file remains in exactly the same state as before the call. There are no partial nodes, no orphaned elements, and retrying after a fix is safe.
+Classify every result by its required `executionOutcome` before taking another write action:
+
+- `not_started`: validation, preflight, connection, or auth stopped the request before dispatch. Repair the cause, then resubmit the corrected script.
+- `succeeded`: Figma confirmed the script completed. If capture or local persistence failed afterward, keep the confirmed result and do not rerun the mutation.
+- `outcome_unknown`: dispatch occurred but completion cannot be confirmed. Partial or complete effects are possible. Follow `retryGuidance`, inspect or read back the intended targets, and reconcile them before deciding whether any mutation remains.
 
 **Recovery steps when `.figma.ts` script returns an error:**
-1. **STOP — do NOT immediately fix the code and retry.** Read the error message carefully first.
-2. **Understand the error.** Most errors are caused by wrong API usage, missing font loads, invalid property values, or referencing nodes that don't exist.
-3. **If the error is unclear**, call `figma:metadata` or `figma:capture` to understand the current file state and confirm nothing has changed.
-4. **Fix the script** based on the error message.
-5. **Retry** the corrected script.
+1. **STOP — do not immediately rerun the mutation.** Read `executionOutcome`, diagnostics, and `retryGuidance` first.
+2. **Understand the error.** Most pre-dispatch errors are caused by wrong API usage, missing font loads, invalid property values, or references to nodes that do not exist.
+3. For `outcome_unknown`, use `figma:metadata`, `figma:inspect`, or a read-only tagged-node query to reconcile structural state. Use `figma:capture` followed by `view_image` when visual evidence is needed.
+4. **Fix the script** based on the error and reconciled state.
+5. Retry only work confirmed not to have run. Direct retry is valid for a corrected `not_started` request, not for an un-reconciled `outcome_unknown` mutation.
 
 ## Recommended Workflow
 
@@ -76,9 +80,9 @@ Use standalone `figma:capture` when the node id is already known. If a script cr
 5. ... repeat as needed ...
 6. figma:capture   →  Visual check after each major milestone
 
-⚠️ ON ERROR at any step:
-   a. Read the error message carefully
-   b. figma:metadata / figma:capture  →  If the error is unclear, inspect file state
-   c. Fix the script based on the error
-   d. Retry the corrected script (safe — failed scripts don't modify the file)
+ON ERROR at any step:
+   a. Read executionOutcome, retryGuidance, and diagnostics
+   b. For outcome_unknown, inspect/read back and reconcile the intended targets
+   c. Fix the script based on the error and current state
+   d. Retry only work confirmed not to have run
 ```

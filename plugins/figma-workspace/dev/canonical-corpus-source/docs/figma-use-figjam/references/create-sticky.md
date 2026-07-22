@@ -8,7 +8,10 @@ Put the operation in a local `.figma.ts` task file, then invoke `figma:script:ru
 
 ```ts
 // research-note.figma.ts
+// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
+const runId = 'figjam-<fresh-uuid>'
 const sticky = figma.createSticky()
+sticky.setSharedPluginData('figma_workspace', 'run_id', runId)
 const stickyFont = sticky.text.fontName
 if (stickyFont === figma.mixed) throw new Error('Sticky text has mixed fonts')
 await figma.loadFontAsync(stickyFont)
@@ -19,6 +22,7 @@ sticky.y = 140
 sticky.name = 'Research insight'
 
 return {
+  runId,
   createdNodeIds: [sticky.id],
   sticky: { id: sticky.id, text: sticky.text.characters, width: sticky.width, height: sticky.height, wide: sticky.isWideWidth },
 }
@@ -38,10 +42,13 @@ Run `npm --silent run figma:script:run -- --input <run-json> --state-file <absol
 For multiple notes, create and populate all stickies first, then position them from their actual dimensions. This prevents overlap when one note grows taller.
 
 ```ts
+// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
+const runId = 'figjam-<fresh-uuid>'
 const ideas = ['Clarify onboarding', 'Test progress cue', 'Measure drop-off']
 const notes: StickyNode[] = []
 for (const idea of ideas) {
   const note = figma.createSticky()
+  note.setSharedPluginData('figma_workspace', 'run_id', runId)
   const noteFont = note.text.fontName
   if (noteFont === figma.mixed) throw new Error('Sticky text has mixed fonts')
   await figma.loadFontAsync(noteFont)
@@ -54,11 +61,11 @@ for (const note of notes) {
   note.y = 420
   x += note.width + 64
 }
-return { createdNodeIds: notes.map((note) => note.id), heights: notes.map((note) => note.height) }
+return { runId, createdNodeIds: notes.map((note) => note.id), heights: notes.map((note) => note.height) }
 ```
 
 ## Verify and common failures
 
 Use a read-only script to verify `type === 'STICKY'`, text, fill, `isWideWidth`, and final dimensions. Capture a completed cluster or section and inspect the local image when spacing and visual hierarchy matter.
 
-If a text write reports an unloaded font, await `loadFontAsync(sticky.text.fontName)` before the mutation. If batch notes overlap, their positions were based on assumed 240px heights or set before every note was populated; perform the two passes. If the content is instructional rather than an idea, replace the sticky with board text or a shape. Repair TypeScript preflight diagnostics in the same `.figma.ts` file before rerunning; failed runs make no partial board edits.
+Generate and retain a unique `runId` before dispatch. Every created sticky must immediately call `setSharedPluginData('figma_workspace', 'run_id', runId)` before reading fonts, awaiting, or applying other properties, and the result must return the same `runId` and IDs. A fatal TypeScript diagnostic is preflight and reports `not_started`. An unloaded-font error occurs during dispatched runtime execution and therefore reports `outcome_unknown`; follow `retryGuidance`, query shared PluginData namespace `figma_workspace` and key `run_id` for the exact retained value, and reconcile partial or complete board edits before deciding whether work remains. If batch notes overlap, their positions were based on assumed 240px heights or set before every note was populated; perform the two passes. If the content is instructional rather than an idea, replace the sticky with board text or a shape.

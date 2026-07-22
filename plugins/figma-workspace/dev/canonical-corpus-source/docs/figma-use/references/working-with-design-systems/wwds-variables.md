@@ -2,7 +2,7 @@
 
 Figma variables are typed, mode-aware values for colors, numbers, strings, and booleans. In a design system they usually play the role of tokens, while retaining Figma-specific behavior such as property scopes, aliases, and prototype or localized-content use cases.
 
-Use variables for individual values. Use [effect styles](wwds-effect-styles.md) for composite shadow or blur definitions and [text styles](wwds-text-styles.md) for type ramps. A style can still reference variables where its underlying properties support them.
+Use variables for individual values. Use [effect styles](canonical:figma-use/references/working-with-design-systems/wwds-effect-styles.md) for composite shadow or blur definitions and [text styles](canonical:figma-use/references/working-with-design-systems/wwds-text-styles.md) for type ramps. A style can still reference variables where its underlying properties support them.
 
 ## System model
 
@@ -71,7 +71,7 @@ text.fills = [figma.variables.setBoundVariableForPaint(basePaint, "color", seman
 return { targetId: text.id, variableId: semantic.id, variableName: semantic.name };
 ```
 
-Fatal TypeScript preflight failures mean the script did not execute. Fix source-line diagnostics, then rerun the same `.figma.ts`; do not turn a failed planned write into an unreviewable ad-hoc operation.
+Fatal TypeScript preflight failures report `executionOutcome: "not_started"`, confirming the request was not dispatched. Fix source-line diagnostics, then rerun the same `.figma.ts`; do not turn a planned write into an unreviewable ad-hoc operation. For `outcome_unknown`, inspect and reconcile stable variable names or tags before any write.
 
 ## Working rules
 
@@ -81,4 +81,4 @@ Fatal TypeScript preflight failures mean the script did not execute. Fix source-
 - Re-read the target after mutation and confirm the id, name, scope, and mode assumptions. For visible changes, capture and inspect the image with `view_image`.
 - Pause for a user decision if source code and Figma semantics conflict, no appropriate library token is available, mode behavior is unspecified, or a change would rename, delete, or repoint shared variables.
 
-For detailed task guidance, see [creating variables](wwds-variables--creating.md) and [using variables](wwds-variables--using.md).
+For detailed task guidance, see [creating variables](canonical:figma-use/references/working-with-design-systems/wwds-variables--creating.md) and [using variables](canonical:figma-use/references/working-with-design-systems/wwds-variables--using.md).

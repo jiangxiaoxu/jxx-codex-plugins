@@ -8,11 +8,14 @@ For a board change, edit a prepared local `.figma.ts` file and run it with `figm
 
 ```ts
 // review-decision.figma.ts
+// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
+const runId = 'figjam-<fresh-uuid>'
 const font: FontName = { family: 'Inter', style: 'Medium' }
 await figma.loadFontAsync(font)
 
 const text = 'Review request'
 const shape = figma.createShapeWithText()
+shape.setSharedPluginData('figma_workspace', 'run_id', runId)
 shape.shapeType = 'DIAMOND'
 shape.text.fontName = font
 shape.text.characters = text
@@ -24,7 +27,7 @@ shape.x = 240
 shape.y = 160
 shape.name = text
 
-return { createdNodeIds: [shape.id], shape: { id: shape.id, type: shape.shapeType, text } }
+return { runId, createdNodeIds: [shape.id], shape: { id: shape.id, type: shape.shapeType, text } }
 ```
 
 Execute it with `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`.
@@ -41,4 +44,4 @@ Execute it with `npm --silent run figma:script:run -- --input <run-json> --state
 
 Return the ID, type, text, dimensions, and location. A read-only script should confirm the node's `type`, `shapeType`, `text.characters`, and bounds; capture it if wrapping, clipping, or its relationship to connectors is important, then inspect that image locally.
 
-An unloaded-font error means the font load was skipped or not awaited. Clipped copy means the chosen dimensions do not fit the actual text; enlarge the existing shape after measuring rather than replace its content with an abbreviation. If a shape appears at the origin or overlaps board content, compute a clear anchor before creation. TypeScript preflight errors require fixing and rerunning the same local script; script failures are atomic.
+An unloaded-font error occurs during dispatched runtime execution and therefore reports `outcome_unknown`; it is not a TypeScript preflight result. Clipped copy means the chosen dimensions do not fit the actual text; enlarge the existing shape after measuring rather than replace its content with an abbreviation. If a shape appears at the origin or overlaps board content, compute a clear anchor before creation. Generate and retain a unique `runId` before dispatch; immediately after creation tag the shape with shared PluginData namespace `figma_workspace` and key `run_id`, before any setter can throw, and return the same `runId` and ID. A fatal TypeScript preflight diagnostic reports `not_started`. For `outcome_unknown`, follow `retryGuidance`, query that exact retained run tag, and reconcile the shape before any retry.

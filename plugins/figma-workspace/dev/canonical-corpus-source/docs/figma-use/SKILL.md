@@ -4,7 +4,7 @@ This is reference material for local `.figma.ts` workflows. It is not a routable
 
 Use `figma:task:prepare` to create a repairable workspace script, edit the generated `.figma.ts` file, then run it explicitly with `figma:script:run` and an absolute `--state-file`. For a small, bounded native Plugin API transaction, use `figma:eval` with JSON input. Use first-class commands for context and artifacts: `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, `figma:libraries`, `figma:assets:apply`, `figma:assets:download`, and `figma:capture`.
 
-Read `references/plugin-api-standalone.index.md` before searching the companion declaration file for exact Plugin API symbols. Start design-system work with `references/working-with-design-systems/wwds.md`.
+Use `figma:api:search` for exact Plugin API symbols and signatures. The curated `references/plugin-api-standalone.index.md` record is supplementary orientation, not a declaration-file entrypoint. Start design-system work with `references/working-with-design-systems/wwds.md`.
 
 ## 1. Critical Rules
 
@@ -16,20 +16,20 @@ Read `references/plugin-api-standalone.index.md` before searching the companion 
 5.  **Work incrementally in small steps.** Break large operations into multiple `.figma.ts` script run. Validate after each step. This is the single most important practice for avoiding bugs.
 6.  Colors are **0–1 range** (not 0–255): `{r: 1, g: 0, b: 0}` = red
 7.  Fills/strokes are **read-only arrays** — clone, modify, reassign
-8.  **Every text edit follows the canonical recipe: load font → `await` → mutate → return affected node IDs.** Skipping the load throws `Cannot write to node with unloaded font "<family> <style>"`. The rule covers more than `characters` — it applies to any operation on nodes with unloaded fonts (`appendChild`, `insertChild`, `setBoundVariable`, `setExplicitVariableModeForCollection`, `setValueForMode`, `findAll` callbacks touching text). When mutating existing text, load the node's *current* fonts via `getStyledTextSegments(['fontName'])`, not a hardcoded default. Inter is preloaded in most environments so other families surface this bug more often — the recipe is the same for every font. Use `await figma.listAvailableFontsAsync()` first if the style string is unverified. See [Canonical text-edit recipe](references/gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids).
+8.  **Every text edit follows the canonical recipe: load font → `await` → mutate → return affected node IDs.** Skipping the load throws `Cannot write to node with unloaded font "<family> <style>"`. The rule covers more than `characters` — it applies to any operation on nodes with unloaded fonts (`appendChild`, `insertChild`, `setBoundVariable`, `setExplicitVariableModeForCollection`, `setValueForMode`, `findAll` callbacks touching text). When mutating existing text, load the node's *current* fonts via `getStyledTextSegments(['fontName'])`, not a hardcoded default. Inter is preloaded in most environments so other families surface this bug more often — the recipe is the same for every font. Use `await figma.listAvailableFontsAsync()` first if the style string is unverified. See [Canonical text-edit recipe](canonical:figma-use/references/gotchas.md).
 9.  **Pages load incrementally** — use `await figma.setCurrentPageAsync(page)` to switch pages and load their content. The sync setter `figma.currentPage = page` does **NOT** work and will throw (see Page Rules below)
 10. `setBoundVariableForPaint` returns a **NEW** paint — must capture and reassign
 11. `createVariable` accepts collection **object or ID string** (object preferred)
-12. **`layoutSizingHorizontal/Vertical` is value-restricted by structural context — `FIXED` always works, `HUG` and `FILL` do not.** `'HUG'` is valid only on an auto-layout frame itself OR on a **TEXT** child of one. `'FILL'` is valid only on a child of an auto-layout frame that is also not absolute-positioned, not inside an immutable frame, and not a canvas-grid child. Practical consequence: append to an auto-layout parent FIRST, then set `HUG`/`FILL` — a newly-created or unparented node can't satisfy the rule yet. The property itself exists on every `SceneNode`; the error is value-rejection, not "no such property". See [Gotchas](references/gotchas.md#layoutsizinghorizontallayoutsizingvertical-value-rules-fixed-hug-fill).
+12. **`layoutSizingHorizontal/Vertical` is value-restricted by structural context — `FIXED` always works, `HUG` and `FILL` do not.** `'HUG'` is valid only on an auto-layout frame itself OR on a **TEXT** child of one. `'FILL'` is valid only on a child of an auto-layout frame that is also not absolute-positioned, not inside an immutable frame, and not a canvas-grid child. Practical consequence: append to an auto-layout parent FIRST, then set `HUG`/`FILL` — a newly-created or unparented node can't satisfy the rule yet. The property itself exists on every `SceneNode`; the error is value-rejection, not "no such property". See [Gotchas](canonical:figma-use/references/gotchas.md).
 12a. **Use auto-layout for containers that hold related children.** When children have a structural relationship — stacked, side-by-side, aligned, gapped, hugged — wrap them in `figma.createAutoLayout()`, not `figma.createFrame()` with absolute `x`/`y`. Absolute coordinates govern where a container sits on the canvas; auto-layout governs how its children relate inside it. Skipping the container leaves no protection against text reflow, content changes, or overlap.
-12b. **`layoutSizing*` and `*AxisSizingMode` are different enums — don't cross them.** `layoutSizingHorizontal`/`layoutSizingVertical` (set on a **child**) take `'FIXED'|'HUG'|'FILL'`; `primaryAxisSizingMode`/`counterAxisSizingMode` (set on the **frame** itself) take `'FIXED'|'AUTO'`. So `layoutSizingVertical = 'AUTO'` is invalid (use `'HUG'`), and `counterAxisSizingMode = 'FILL'` throws `Expected 'FIXED' | 'AUTO', received 'FILL'` (use `'FIXED'`/`'AUTO'`). Two more errors from the same setter — `Error: in set_layoutSizingHorizontal: node must be an auto-layout frame or a child of an auto-layout frame` and `Error: in set_layoutSizingHorizontal: FILL can only be set on children of auto-layout frames` — mean the node isn't in an auto-layout context yet; **recommendation: make the parent auto-layout (`figma.createAutoLayout()`) and `appendChild` the node before setting** (see Rule 12). See [Gotchas](references/gotchas.md#layoutsizing-vs-axissizingmode-two-different-sizing-enums).
-13. **Position new top-level nodes away from (0,0).** Nodes appended directly to the page default to (0,0). Scan `figma.currentPage.children` to find a clear position (e.g., to the right of the rightmost node). This only applies to page-level nodes — nodes nested inside other frames or auto-layout containers are positioned by their parent. See [Gotchas](references/gotchas.md).
-14. **On `.figma.ts` script error, STOP. Do NOT immediately retry.** Failed scripts are **atomic** — if a script errors, it is not executed at all and no changes are made to the file. Read the error message carefully, fix the script, then retry. See [Error Recovery](#6-error-recovery--self-correction).
+12b. **`layoutSizing*` and `*AxisSizingMode` are different enums — don't cross them.** `layoutSizingHorizontal`/`layoutSizingVertical` (set on a **child**) take `'FIXED'|'HUG'|'FILL'`; `primaryAxisSizingMode`/`counterAxisSizingMode` (set on the **frame** itself) take `'FIXED'|'AUTO'`. So `layoutSizingVertical = 'AUTO'` is invalid (use `'HUG'`), and `counterAxisSizingMode = 'FILL'` throws `Expected 'FIXED' | 'AUTO', received 'FILL'` (use `'FIXED'`/`'AUTO'`). Two more errors from the same setter — `Error: in set_layoutSizingHorizontal: node must be an auto-layout frame or a child of an auto-layout frame` and `Error: in set_layoutSizingHorizontal: FILL can only be set on children of auto-layout frames` — mean the node isn't in an auto-layout context yet; **recommendation: make the parent auto-layout (`figma.createAutoLayout()`) and `appendChild` the node before setting** (see Rule 12). See [Gotchas](canonical:figma-use/references/gotchas.md).
+13. **Position new top-level nodes away from (0,0).** Nodes appended directly to the page default to (0,0). Scan `figma.currentPage.children` to find a clear position (e.g., to the right of the rightmost node). This only applies to page-level nodes — nodes nested inside other frames or auto-layout containers are positioned by their parent. See [Gotchas](canonical:figma-use/references/gotchas.md).
+14. **On `.figma.ts` failure, STOP and classify `executionOutcome`.** `not_started` means validation, preflight, connection, or auth failed before dispatch, so repair the cause before retrying. `succeeded` means Figma confirmed execution; do not rerun a mutation to recover a later capture or persistence failure. `outcome_unknown` means the request was dispatched but completion is unconfirmed; inspect or read back the tagged targets and reconcile them before deciding whether any mutation remains to run. See [Error Recovery](#7-error-recovery--self-correction).
 15. **MUST `return` ALL created/mutated node IDs.** Whenever a script creates new nodes or mutates existing ones on the canvas, collect every affected node ID and return them in a structured object (e.g. `return { createdNodeIds: [...], mutatedNodeIds: [...] }`). This is essential for subsequent calls to reference, validate, or clean up those nodes.
-16. **Always set `variable.scopes` explicitly when creating variables.** The default `ALL_SCOPES` pollutes every property picker — almost never what you want. Use specific scopes like `["FRAME_FILL", "SHAPE_FILL"]` for backgrounds, `["TEXT_FILL"]` for text colors, `["GAP"]` for spacing, etc. See [variable-patterns.md](references/variable-patterns.md) for the full list.
+16. **Always set `variable.scopes` explicitly when creating variables.** The default `ALL_SCOPES` pollutes every property picker — almost never what you want. Use specific scopes like `["FRAME_FILL", "SHAPE_FILL"]` for backgrounds, `["TEXT_FILL"]` for text colors, `["GAP"]` for spacing, etc. See [variable-patterns.md](canonical:figma-use/references/variable-patterns.md) for the full list.
 17. **`await` every Promise.** Never leave a Promise unawaited — unawaited async calls (e.g. `figma.loadFontAsync(...)` without `await`, or `figma.setCurrentPageAsync(page)` without `await`) will fire-and-forget, causing silent failures or race conditions. The script may return before the async operation completes, leading to missing data or half-applied changes.
 
-> For detailed WRONG/CORRECT examples of each rule, see [Gotchas & Common Mistakes](references/gotchas.md).
+> For detailed WRONG/CORRECT examples of each rule, see [Gotchas & Common Mistakes](canonical:figma-use/references/gotchas.md).
 
 ## 2. Page Rules (Critical)
 
@@ -58,7 +58,7 @@ for (const page of figma.root.children) {
 }
 ```
 
-For large documents, smaller page-specific scripts can still be easier to retry and inspect. See [gotchas.md](references/gotchas.md) for traversal performance guidance.
+For large documents, smaller page-specific scripts can still be easier to retry and inspect. See [gotchas.md](canonical:figma-use/references/gotchas.md) for traversal performance guidance.
 
 ### Across script runs
 
@@ -246,7 +246,7 @@ return { frameId: frame.id, captureRequestId: ticket.requestId }
 
 The returned ticket contains only `requestId` and `nodeId`; the local `imageFile` is available after host-side post-processing. An explicitly supplied `imageFile` must be workspace-relative. A single script may queue at most 8 captures. Use standalone `figma:capture` when the node id is already known. Do not use inline screenshot methods or return PNG bytes/base64 from the script.
 
-If capture post-processing fails, the command reports `scriptExecutionSucceeded: true`, `captureProcessingSucceeded: false`, and `retryGuidance`. The script already completed and may have changed Figma; do not rerun it to recover the image. Retry the affected node with standalone `figma:capture`.
+If capture post-processing fails, the command reports `executionOutcome: "succeeded"`, `captureProcessingSucceeded: false`, and `retryGuidance`. The script already completed and may have changed Figma; do not rerun it to recover the image. Retry the affected node with standalone `figma:capture`.
 
 Native `exportAsync()` is separate: use it only when the script genuinely needs exported PNG, JPG, SVG, PDF, or other bytes/string for data processing, not for CLI visual QA.
 
@@ -256,7 +256,7 @@ The most common cause of bugs is trying to do too much in a single `.figma.ts` s
 
 ### Key rules
 
-- **Choose transaction size for recoverability and payload cost.** The runtime does not impose an operation-count policy. Split work when a smaller transaction is easier to retry or inspect; keep related independent edits together when one script is clearer. Slides are isolated subtrees, so deck work may naturally batch several slides or apply one edit across the deck. See [figma-use-slides](../figma-use-slides/SKILL.md) for the deck-building workflow.
+- **Choose transaction size for recoverability and payload cost.** The runtime does not impose an operation-count policy. Split work when a smaller transaction is easier to retry or inspect; keep related independent edits together when one script is clearer. Slides are isolated subtrees, so deck work may naturally batch several slides or apply one edit across the deck. See [figma-use-slides](canonical:figma-use-slides/SKILL.md) for the deck-building workflow.
 - **Build top-down, starting with placeholders.** Create the outer structure first with `placeholder = true` on each section, then incrementally replace placeholders with real content in subsequent calls.
 
 ### The pattern
@@ -292,22 +292,26 @@ Step 5: Final verification
 
 ## 7. Error Recovery & Self-Correction
 
-**`.figma.ts` script is atomic — failed scripts do not execute.** If a script errors, no changes are made to the file. The file remains in the same state as before the call. This means there are no partial nodes, no orphaned elements from the failed script, and retrying after a fix is safe.
+The result's required `executionOutcome` identifies the retry boundary:
+
+- `not_started`: the request was not dispatched. Repair validation, preflight, connection, or auth, then resubmit the corrected script.
+- `succeeded`: Figma confirmed the script completed. Preserve returned IDs and do not rerun the mutation because capture, state, sidecar, or lock post-processing failed.
+- `outcome_unknown`: the request was dispatched but completion cannot be confirmed. Assume partial or complete effects are possible. Follow `retryGuidance`, inspect or read back the intended targets, and reconcile by returned IDs, stable names, or dedicated PluginData tags before deciding whether any missing work should run.
 
 ### When `.figma.ts` script returns an error
 
-1. **STOP.** Do not immediately fix the code and retry.
-2. **Read the error message carefully.** Understand exactly what went wrong — wrong API usage, missing font, invalid property value, etc.
-3. **If the error is unclear**, call `figma:metadata` or `figma:capture` to understand the current file state.
-4. **Fix the script** based on the error message.
-5. **Retry** the corrected script.
+1. **STOP.** Do not immediately rerun the mutation.
+2. **Read `executionOutcome`, diagnostics, and `retryGuidance`.** Determine whether dispatch occurred and whether completion was confirmed.
+3. For `outcome_unknown`, call `figma:metadata`, `figma:inspect`, or a read-only tagged-node query to reconcile the current file state. Use `figma:capture` only when visual evidence is needed.
+4. **Fix the script** based on the diagnostics and reconciled state.
+5. Retry only work confirmed not to have run. A corrected `not_started` request can be retried directly; an `outcome_unknown` mutation cannot.
 
 ### Common self-correction patterns
 
 | Error message | Likely cause | How to fix |
 |---|---|---|
 | `"not implemented"` | Used `figma.notify()` | Remove it — use `return` for output |
-| `Error: in set_layoutSizingHorizontal: node must be an auto-layout frame or a child of an auto-layout frame` / `Error: in set_layoutSizingHorizontal: FILL can only be set on children of auto-layout frames` / `"HUG can only be set on auto-layout frames or text children of auto-layout frames"` / `"FILL cannot be set on absolute positioned auto-layout children"` / `"FILL cannot be set on canvas grid children"` | Tried to assign `HUG`/`FILL` to a node whose structural context doesn't allow it (e.g. parent isn't auto-layout, ran before `appendChild`, non-text child trying to `HUG`, absolute-positioned child trying to `FILL`) | Make the parent auto-layout via `figma.createAutoLayout()`; `appendChild` first; reserve `HUG` for the auto-layout frame itself or for TEXT children; for absolute/immutable/grid children use `FIXED` + `resize()`. See [gotchas.md](references/gotchas.md#layoutsizinghorizontallayoutsizingvertical-value-rules-fixed-hug-fill) |
+| `Error: in set_layoutSizingHorizontal: node must be an auto-layout frame or a child of an auto-layout frame` / `Error: in set_layoutSizingHorizontal: FILL can only be set on children of auto-layout frames` / `"HUG can only be set on auto-layout frames or text children of auto-layout frames"` / `"FILL cannot be set on absolute positioned auto-layout children"` / `"FILL cannot be set on canvas grid children"` | Tried to assign `HUG`/`FILL` to a node whose structural context doesn't allow it (e.g. parent isn't auto-layout, ran before `appendChild`, non-text child trying to `HUG`, absolute-positioned child trying to `FILL`) | Make the parent auto-layout via `figma.createAutoLayout()`; `appendChild` first; reserve `HUG` for the auto-layout frame itself or for TEXT children; for absolute/immutable/grid children use `FIXED` + `resize()`. See [gotchas.md](canonical:figma-use/references/gotchas.md) |
 | `"Setting figma.currentPage is not supported"` | Used sync page setter (`figma.currentPage = page`) which does NOT work | Use `await figma.setCurrentPageAsync(page)` — the only way to switch pages |
 | Property value out of range | Color channel > 1 (used 0–255 instead of 0–1) | Divide by 255 |
 | `"Cannot read properties of null"` | Node doesn't exist (wrong ID, wrong page) | Check page context, verify ID |
@@ -321,7 +325,7 @@ Step 5: Final verification
 3. Identify the discrepancy — is it structural (wrong hierarchy, missing nodes) or visual (wrong colors, broken layout, clipped content)?
 4. Write a targeted fix script that modifies only the broken parts — don't recreate everything.
 
-> For the full validation workflow, see [Validation & Error Recovery](references/validation-and-recovery.md).
+> For the full validation workflow, see [Validation & Error Recovery](canonical:figma-use/references/validation-and-recovery.md).
 
 ## 8. Pre-Flight Checklist
 
@@ -338,7 +342,7 @@ Before submitting ANY `.figma.ts` script run, verify:
 - [ ] Page switches use `await figma.setCurrentPageAsync(page)` (sync setter `figma.currentPage = page` does NOT work)
 - [ ] `layoutSizingVertical/Horizontal = 'FILL'` is set AFTER `parent.appendChild(child)`
 - [ ] Wrapping TEXT blocks set `textAutoResize = 'HEIGHT'` and an explicit width (`'FIXED'` + `resize()`) — NOT `FILL` alone, which the default `WIDTH_AND_HEIGHT` mode ignores, collapsing the node to a near-zero-width thread. Verify `node.width > 0`
-- [ ] Every text mutation follows the [canonical recipe](references/gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids): `loadFontAsync` → `await` → mutate `characters`/font/size/etc. → return affected node IDs. Works for ANY font family/style, not just Inter (which only happens to be preloaded).
+- [ ] Every text mutation follows the [canonical recipe](canonical:figma-use/references/gotchas.md): `loadFontAsync` → `await` → mutate `characters`/font/size/etc. → return affected node IDs. Works for ANY font family/style, not just Inter (which only happens to be preloaded).
 - [ ] Style names have already been verified via `listAvailableFontsAsync()` — NOT guessed from memory (`"SemiBold"` vs `"Semi Bold"` is a common footgun)
 - [ ] For `FONT_FAMILY`-scoped variables: every value across every relevant mode is loaded before `setBoundVariable("fontFamily", …)`, `setValueForMode`, or `setExplicitVariableModeForCollection`
 - [ ] `lineHeight`/`letterSpacing` use `{unit, value}` format (not bare numbers)
@@ -392,17 +396,17 @@ Load these as needed based on what your task involves:
 
 | Doc | When to load | What it covers |
 |-----|-------------|----------------|
-| [gotchas.md](references/gotchas.md) | Before any `.figma.ts` script | Every known pitfall with WRONG/CORRECT code examples — start with the [canonical text-edit recipe](references/gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids) |
-| [common-patterns.md](references/common-patterns.md) | Need working code examples | Script scaffolds: shapes, text, auto-layout, variables, components, multi-step workflows |
-| [plugin-api-patterns.md](references/plugin-api-patterns.md) | Creating/editing nodes | Fills, strokes, Auto Layout, effects, grouping, cloning, styles |
-| [api-reference.md](references/api-reference.md) | Need exact API surface | Node creation, variables API, core properties, what works and what doesn't |
-| [validation-and-recovery.md](references/validation-and-recovery.md) | Multi-step writes or error recovery | `figma:metadata` vs `figma:capture` workflow, mandatory error recovery steps |
-| [component-patterns.md](references/component-patterns.md) | Creating components/variants | combineAsVariants, component properties, INSTANCE_SWAP, variant layout, discovering existing components, metadata traversal |
-| [variable-patterns.md](references/variable-patterns.md) | Creating/binding variables | Collections, modes, scopes, aliasing, binding patterns, discovering existing variables |
-| [text-style-patterns.md](references/text-style-patterns.md) | Creating/applying text styles | Type ramps, font discovery via `listAvailableFontsAsync`, listing styles, applying styles to nodes |
-| [effect-style-patterns.md](references/effect-style-patterns.md) | Creating/applying effect styles | Drop shadows, listing styles, applying styles to nodes |
-| [plugin-api-standalone.index.md](references/plugin-api-standalone.index.md) | Need to understand the full API surface | Index of all types, methods, and properties in the Plugin API |
-| [plugin-api-standalone.d.ts](references/plugin-api-standalone.d.ts) | Need exact type signatures | Full typings file — grep for specific symbols, don't load all at once |
+| [gotchas.md](canonical:figma-use/references/gotchas.md) | Before any `.figma.ts` script | Every known pitfall with WRONG/CORRECT code examples — start with the [canonical text-edit recipe](canonical:figma-use/references/gotchas.md) |
+| [common-patterns.md](canonical:figma-use/references/common-patterns.md) | Need working code examples | Script scaffolds: shapes, text, auto-layout, variables, components, multi-step workflows |
+| [plugin-api-patterns.md](canonical:figma-use/references/plugin-api-patterns.md) | Creating/editing nodes | Fills, strokes, Auto Layout, effects, grouping, cloning, styles |
+| [api-reference.md](canonical:figma-use/references/api-reference.md) | Need exact API surface | Node creation, variables API, core properties, what works and what doesn't |
+| [validation-and-recovery.md](canonical:figma-use/references/validation-and-recovery.md) | Multi-step writes or error recovery | `figma:metadata` vs `figma:capture` workflow, mandatory error recovery steps |
+| [component-patterns.md](canonical:figma-use/references/component-patterns.md) | Creating components/variants | combineAsVariants, component properties, INSTANCE_SWAP, variant layout, discovering existing components, metadata traversal |
+| [variable-patterns.md](canonical:figma-use/references/variable-patterns.md) | Creating/binding variables | Collections, modes, scopes, aliasing, binding patterns, discovering existing variables |
+| [text-style-patterns.md](canonical:figma-use/references/text-style-patterns.md) | Creating/applying text styles | Type ramps, font discovery via `listAvailableFontsAsync`, listing styles, applying styles to nodes |
+| [effect-style-patterns.md](canonical:figma-use/references/effect-style-patterns.md) | Creating/applying effect styles | Drop shadows, listing styles, applying styles to nodes |
+| [plugin-api-standalone.index.md](canonical:figma-use/references/plugin-api-standalone.index.md) | Need to understand the full API surface | Index of all types, methods, and properties in the Plugin API |
+| `figma:api:search` | Need exact type signatures | Query a bare, qualified, or call-shaped Plugin API symbol |
 
 ## 11. Snippet examples
 

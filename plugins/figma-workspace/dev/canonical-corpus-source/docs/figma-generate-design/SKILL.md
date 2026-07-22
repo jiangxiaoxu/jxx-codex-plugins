@@ -9,8 +9,8 @@ Write native Plugin API code in a local `.figma.ts` file and execute it with `fi
 ## Workflow Boundaries
 
 - Use this workflow when the deliverable is a **composed Figma view** (new or updated) — full-page screens, modals, dialogs, drawers, sidebars, panels, or any multi-section container — built from design system component instances.
-- If the task creates **new reusable components or variants**, use the native Plugin API guidance in [figma-use](../figma-use/SKILL.md).
-- If the task writes **Code Connect mappings**, use the schema-gated workflow in [figma-code-connect](../figma-code-connect/SKILL.md).
+- If the task creates **new reusable components or variants**, use the native Plugin API guidance in [figma-use](canonical:figma-use/SKILL.md).
+- If the task writes **Code Connect mappings**, use the schema-gated workflow in [figma-code-connect](canonical:figma-code-connect/SKILL.md).
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ Before touching Figma, understand what you're building:
 1. If building from code, read the relevant source files to understand the structure, sections, and which components are used.
 2. Identify the major sections of the view (e.g., for a page: Header, Hero, Content Panels, Footer; for a modal: Title Bar, Form Sections, Action Bar; for a sidebar: Navigation, Content Area, Footer Actions).
 3. For each section, list the UI components involved (buttons, inputs, cards, navigation pills, accordions, etc.).
-4. **Identify the product's font family from the source. Do not default to Inter.** Find *which* typeface the product uses before writing any script. See [references/discover-product-font.md](references/discover-product-font.md) for where to look (CSS variables, component files) and how to resolve messy Figma font names.
+4. **Identify the product's font family from the source. Do not default to Inter.** Find *which* typeface the product uses before writing any script. See [references/discover-product-font.md](canonical:figma-generate-design/references/discover-product-font.md) for where to look (CSS variables, component files) and how to resolve messy Figma font names.
 5. **Check whether the view contains any images** (e.g., `<img>`, `<Image>`, background images, product photos, avatars, icons loaded from URLs). Identify an authorized source for each asset and plan either `figma:assets:download` or the asset manifest flow with `figma:assets:apply`.
 
 ### Step 2: Collect Component Keys, Variables, and Styles
@@ -172,7 +172,7 @@ return variables
 
 For library variables (remote = true), import them by key with `figma.variables.importVariableByKeyAsync(key)`. For local variables, use `figma.variables.getVariableByIdAsync(id)` directly.
 
-See [variable-patterns.md](../figma-use/references/variable-patterns.md) for binding patterns.
+See [variable-patterns.md](canonical:figma-use/references/variable-patterns.md) for binding patterns.
 
 #### 2c: Discover styles (text styles, effect styles)
 
@@ -204,7 +204,7 @@ return {
 
 Import library styles with `figma.importStyleByKeyAsync(key)`, then apply with `node.textStyleId = style.id` or `node.effectStyleId = style.id`.
 
-See [text-style-patterns.md](../figma-use/references/text-style-patterns.md) and [effect-style-patterns.md](../figma-use/references/effect-style-patterns.md) for details.
+See [text-style-patterns.md](canonical:figma-use/references/text-style-patterns.md) and [effect-style-patterns.md](canonical:figma-use/references/effect-style-patterns.md) for details.
 
 ### Step 3: Create the Wrapper Frame First
 
@@ -290,7 +290,7 @@ After each section, validate with `figma:capture` before moving on. Look closely
 
 #### Override instance text with setProperties()
 
-Component instances ship with placeholder text ("Title", "Heading", "Button"). Use the component property keys you discovered in Step 2 to override them with `setProperties()` — this is more reliable than direct `node.characters` manipulation. See [component-patterns.md](../figma-use/references/component-patterns.md#overriding-text-in-a-component-instance) for the full pattern.
+Component instances ship with placeholder text ("Title", "Heading", "Button"). Use the component property keys you discovered in Step 2 to override them with `setProperties()` — this is more reliable than direct `node.characters` manipulation. See [component-patterns.md](canonical:figma-use/references/component-patterns.md) for the full pattern.
 
 For nested instances that expose their own TEXT properties, call `setProperties()` on the nested instance:
 
@@ -328,7 +328,7 @@ Componentization is part of the **default** workflow, not an optional follow-up.
 - **Design-system instances are already componentized** (Step 2). Prefer them.
 - **For anything the design system does not cover that repeats or maps to a reusable source component, create a local component once with `figma.createComponent()` and place instances**, instead of hand-building N near-identical frames. One source component maps to one Figma main component.
 
-See [references/componentization.md](references/componentization.md) for the build-once-place-instances pattern and code.
+See [references/componentization.md](canonical:figma-generate-design/references/componentization.md) for the build-once-place-instances pattern and code.
 
 #### Icons: import the SVG, never reconstruct from rotated primitives
 
@@ -350,7 +350,7 @@ icon.resize(24, 24);          // scales the whole icon to the slot
 slotFrame.appendChild(icon);
 ```
 
-**Codebase SVGs usually use `currentColor`** (e.g. `stroke="currentColor"` / `fill="currentColor"`), which `createNodeFromSvg` imports as **black** — it does not inherit the parent's color. Set the intended color after import: substitute the literal color into the SVG string before importing, or bind the imported vector fills/strokes to a design-system color variable with `setBoundVariableForPaint` (same as any paint). To turn an imported SVG into a reusable icon component (for INSTANCE_SWAP), see [figma-generate-library → Creating Icon Components](../figma-generate-library/references/component-creation.md) and the [INSTANCE_SWAP pattern](../figma-use/references/component-patterns.md#instance_swap-avoiding-variant-explosion).
+**Codebase SVGs usually use `currentColor`** (e.g. `stroke="currentColor"` / `fill="currentColor"`), which `createNodeFromSvg` imports as **black** — it does not inherit the parent's color. Set the intended color after import: substitute the literal color into the SVG string before importing, or bind the imported vector fills/strokes to a design-system color variable with `setBoundVariableForPaint` (same as any paint). To turn an imported SVG into a reusable icon component (for INSTANCE_SWAP), see [figma-generate-library → Creating Icon Components](canonical:figma-generate-library/references/component-creation.md) and the [INSTANCE_SWAP pattern](canonical:figma-use/references/component-patterns.md).
 
 ### Step 5: Validate the Full View and Transfer Images
 
@@ -369,7 +369,7 @@ After composing all sections, call `figma:capture` on the wrapper frame and comp
 
 **You MUST explicitly assert that rendered text uses the product font(s) identified in Step 1**, and treat any mismatch as a failed validation. Do not assume a successfully loaded font is the correct font: loading Inter when the product uses SF Pro is a failure even if no errors occur. If you have a source reference such as a running web app or design mock, compare it with a local `figma:capture` of the completed Figma node — a near-miss style within the right family can pass a family check but still look wrong.
 
-See [references/discover-product-font.md](references/discover-product-font.md#verify-the-font-after-building) for the read-back script (which separates free-standing text you fix from design-system-governed text you flag) and the screenshot-comparison steps.
+See [references/discover-product-font.md](canonical:figma-generate-design/references/discover-product-font.md) for the read-back script (which separates free-standing text you fix from design-system-governed text you flag) and the screenshot-comparison steps.
 
 #### Apply source images through the asset workflow
 
@@ -408,23 +408,23 @@ return { success: true, mutatedNodeIds: [existingButton.id] };
 
 ## Reference Docs
 
-For detailed API patterns and gotchas, read these linked [Plugin API mirror](../figma-use/SKILL.md) references as needed:
+For detailed API patterns and gotchas, read these linked [Plugin API mirror](canonical:figma-use/SKILL.md) references as needed:
 
-- [component-patterns.md](../figma-use/references/component-patterns.md) — importing by key, finding variants, setProperties, text overrides, working with instances
-- [variable-patterns.md](../figma-use/references/variable-patterns.md) — creating/binding variables, importing library variables, scopes, aliasing, discovering existing variables
-- [text-style-patterns.md](../figma-use/references/text-style-patterns.md) — creating/applying text styles, importing library text styles, type ramps
-- [effect-style-patterns.md](../figma-use/references/effect-style-patterns.md) — creating/applying effect styles (shadows), importing library effect styles
-- [gotchas.md](../figma-use/references/gotchas.md) — layout pitfalls (HUG/FILL interactions, counterAxisAlignItems, sizing order), paint/color issues, page context resets
+- [component-patterns.md](canonical:figma-use/references/component-patterns.md) — importing by key, finding variants, setProperties, text overrides, working with instances
+- [variable-patterns.md](canonical:figma-use/references/variable-patterns.md) — creating/binding variables, importing library variables, scopes, aliasing, discovering existing variables
+- [text-style-patterns.md](canonical:figma-use/references/text-style-patterns.md) — creating/applying text styles, importing library text styles, type ramps
+- [effect-style-patterns.md](canonical:figma-use/references/effect-style-patterns.md) — creating/applying effect styles (shadows), importing library effect styles
+- [gotchas.md](canonical:figma-use/references/gotchas.md) — layout pitfalls (HUG/FILL interactions, counterAxisAlignItems, sizing order), paint/color issues, page context resets
 
 ## Error Recovery
 
-Follow the error recovery process from [figma-use](../figma-use/SKILL.md#6-error-recovery--self-correction):
+Follow the outcome-aware error recovery process from [figma-use](canonical:figma-use/SKILL.md):
 
-1. **STOP** on error — do not retry immediately.
-2. **Read the error message carefully** to understand what went wrong.
-3. If the error is unclear, call `figma:metadata` or `figma:capture` to inspect the current file state.
-4. **Fix the script** based on the error message.
-5. **Retry** the corrected script — this is safe because failed scripts are atomic (nothing is created if a script errors).
+1. **STOP** on error and read `executionOutcome`, diagnostics, and `retryGuidance`.
+2. For `not_started`, repair the validation, preflight, connection, or auth cause before retrying.
+3. For `succeeded`, preserve the confirmed result and do not rerun a mutation to recover capture or local persistence.
+4. For `outcome_unknown`, inspect or read back the intended section using returned IDs, stable names, or dedicated PluginData tags, then reconcile any partial or complete effect.
+5. Run only work confirmed to be missing; never blindly rerun an `outcome_unknown` mutation.
 
 Because this skill works incrementally (one section per call), errors are naturally scoped to a single section. Previous sections from successful calls remain intact.
 

@@ -8,12 +8,15 @@ For board edits, prepare a task workspace, edit the generated local `.figma.ts` 
 
 ```ts
 // <workspace>/figjam-code/figjam-code.figma.ts
+// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
+const runId = 'figjam-<fresh-uuid>'
 const existing = [...figma.currentPage.children]
 const right = existing.length === 0
   ? 0
   : Math.max(...existing.map((node) => node.x + node.width))
 
 const block = figma.createCodeBlock()
+block.setSharedPluginData('figma_workspace', 'run_id', runId)
 block.codeLanguage = 'TYPESCRIPT'
 block.code = `type Ticket = { id: string; status: "open" | "closed" }`
 block.x = right + 120
@@ -21,6 +24,7 @@ block.y = 120
 block.name = 'Ticket type example'
 
 return {
+  runId,
   createdNodeIds: [block.id],
   codeBlock: { id: block.id, language: block.codeLanguage, x: block.x, y: block.y },
 }
@@ -54,4 +58,4 @@ Return the node ID, language, and final position. In a follow-up read-only scrip
 - `createCodeBlock` fails: the bound file is not a FigJam board. Use a FigJam session; this API is unavailable in Design files.
 - Highlighting is absent: use one of the exact uppercase language values, otherwise deliberately choose `PLAINTEXT`.
 - The block obscures existing work: calculate a clear page-level anchor before creation, or append to the destination section before setting coordinates.
-- A script preflight error occurs: repair the same local `.figma.ts` file and rerun. Failed script runs are atomic, so do not create a compensating cleanup script.
+- Generate and retain a unique `runId` before dispatch. Immediately after `createCodeBlock()`, write it with shared PluginData namespace `figma_workspace` and key `run_id`, before any other setter can throw, and return the same `runId` and node ID. A fatal TypeScript preflight diagnostic reports `executionOutcome: "not_started"`; repair the same local `.figma.ts` file and rerun. For `outcome_unknown`, follow `retryGuidance`, query that exact namespace, key, and retained value, then reconcile the code block before any retry or cleanup.

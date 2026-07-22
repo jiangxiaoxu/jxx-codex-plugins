@@ -10,7 +10,7 @@ Create one local Figma variable collection, rename its required default mode, an
 
 ## Safety boundary
 
-This script refuses to create a collection when its name already exists, so a rerun cannot silently create a duplicate collection. It only creates the listed collection and modes; it never removes collections, modes, or variables. Review mode names and plan limits before execution, because mode limits depend on the Figma plan.
+This script refuses to create a collection when its name already exists, providing a stable readback key for `outcome_unknown` reconciliation and preventing duplicate creation when only missing work is run. It only creates the listed collection and modes; it never removes collections, modes, or variables. Review mode names and plan limits before execution, because mode limits depend on the Figma plan.
 
 ## Script
 

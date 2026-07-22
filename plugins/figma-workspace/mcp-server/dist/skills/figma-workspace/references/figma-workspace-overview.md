@@ -1,36 +1,18 @@
 # Figma Workspace Overview
 
-Use this reference to choose a public `figma:*` command before opening its CLI help. Help and typed result schemas are authoritative.
+Use this reference to choose a command family. Public command help and typed result schemas are authoritative.
 
-## Command Surface
+## Select A Workflow
 
-- The plugin has 18 direct query/read commands, 8 JSON commands, and 21 raw transport commands. Agents use only the public `figma:*` npm scripts; raw transport names and internal runtime operation names are not agent-facing contracts.
-- Every optimized command requires an absolute `--state-file`. Its parent owns `results/` sidecars. Guidance, docs, API, doctor, and upstream list/read do not require existing file context.
-- All optimized commands accept `--max-inline-bytes`; the shared default is 4096 UTF-8 bytes. JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help, and reject unknown JSON fields. File-context commands use `--session-id` and, where applicable, `--workspace`.
-- `figma:design-context`, `figma:motion-context`, and `figma:variables` require exactly one node source: a positional target, or `--file` containing a Figma `node-id`. Consult generated help for the complete conditional input rules.
-- Read Restricted Markdown on stdout. If it returns `outputFiles.cliResultFile`, read that JSON sidecar rather than parsing stdout.
+- Use `figma:guidance` first for non-trivial Design, FigJam, or Slides work. It routes concise English intent to public next actions; use `figma:docs:search` or `figma:docs:catalog` when the route needs more material.
+- Use `figma:open` to establish existing-file context. Use `figma:task:prepare` and `figma:script:run` for repairable `.figma.ts` work; reserve `figma:eval` for a small native Plugin API transaction.
+- Use `figma:metadata` for broad discovery, then `figma:inspect` for targeted validation. Prefer first-class context, motion, design-system, library, and variable commands over a raw upstream call.
+- Use `figma:assets:apply` for prepared local assets, `figma:assets:download` for official downloads, and `figma:capture` or queued `$.capture` for visual QA.
+- Use `figma:sessions:list` and `figma:sessions:read` to resume state. Use `figma:doctor` only for installed runtime assets, project docs, corpus, or Plugin API index faults.
+- Use `figma:upstream:list` and `figma:upstream:read` before `figma:upstream:call` when no first-class command covers an official capability.
 
-## Core Workflow
+## Shared Rules
 
-- Use `figma:open` to create or reopen persisted file context.
-- Use `figma:task:prepare` and `figma:script:run` for non-trivial, repairable `.figma.ts` changes.
-- Use `figma:eval` only for small native Plugin API transactions.
-- Compose repeatable workflows from the public script, asset, download, capture, and upstream commands.
-- Treat `figma:eval` and `figma:script:run` as three-state mutations. `executionOutcome: "not_started"` means no request was dispatched, `"succeeded"` confirms execution, and `"outcome_unknown"` requires inspect/readback/reconcile before any retry.
-
-## Context And Inspection
-
-- Use `figma:metadata` for broad structure discovery and `figma:inspect` for targeted validation.
-- Use `figma:design-context`, `figma:motion-context`, `figma:design-system`, `figma:libraries`, and `figma:variables` for first-class official reads.
-- Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for official asset downloads. Use standalone `figma:capture` when the node id is known, or queued `$.capture` when a script creates or resolves the target; inspect every saved PNG with `view_image`.
-
-## Planning And Reference
-
-- Use `figma:guidance` with concise English canonical keywords and an explicit known surface. Its compact result has route status/confidence, cards, API references, helper/wrapper/workflow summaries, reference context, and typed public `nextActions`.
-- Use `figma:docs:list` for project documents. Read returned `project:<topic>` IDs with `figma:docs:read`.
-- Use `figma:docs:catalog` to discover canonical task families and records. Read returned `canonical:<record-id>` IDs with `figma:docs:read`.
-- Use `figma:docs:search` with default `--scope auto`. Its `--surface` and `--task-family` options are hard filters; explicit scopes are `active|conditional|router|examples|all`. Auto routing never includes examples.
-- Use `figma:api:search` for generated Figma Plugin API declarations. It accepts bare, qualified, and call-shaped lookups such as `createFrame`, `figma.createFrame()`, and `ComponentNode.createInstance`.
-- Use `figma:sessions:list` and `figma:sessions:read` to inspect persisted state without reading session JSON directly.
-- Use `figma:doctor` for installed canonical-corpus, API-index, project-doc, and TypeScript-runtime faults.
-- Use `figma:upstream:list` and `figma:upstream:read` before `figma:upstream:call` when no first-class command covers the official capability.
+- Reuse one fully qualified absolute `--state-file` for a task. Read typed stdout as Restricted Markdown and follow any `outputFiles.cliResultFile` sidecar pointer.
+- Run `--help` for the chosen public `figma:*` command instead of inferring JSON fields, options, limits, or transport behavior.
+- Read [guidance and lookup](figma-workspace-guidance-and-lookup.md) for document navigation, [workflow](figma-workspace-workflow.md) for execution, and [safety](figma-workspace-safety.md) for non-bypassable boundaries.

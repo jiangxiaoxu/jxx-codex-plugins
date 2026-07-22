@@ -67,4 +67,4 @@ Use the returned `file_key` when opening a workspace session and running a `.fig
 
 A `slides` file produced by this tool starts with **zero rows and zero slides** — `figma.getSlideGrid()` returns `[]`, not a default first slide. The page's only child is the `SLIDE_GRID` node itself, which is empty until you create content. The first call to `figma.createSlide()` implicitly creates row 0 and inserts the new slide there.
 
-If your follow-up `.figma.ts` script assumes at least one slide exists (e.g. to read theme tokens off it), guard for the empty case or call `createSlide()` first. See [slide-grid](../figma-use-slides/references/slide-grid.md) for full details.
+If your follow-up `.figma.ts` script assumes at least one slide exists (e.g. to read theme tokens off it), guard for the empty case or call `createSlide()` first. See [slide-grid](canonical:figma-use-slides/references/slide-grid.md) for full details.

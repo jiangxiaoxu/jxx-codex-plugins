@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
@@ -139,6 +139,122 @@ test("auto docs search hard-filters family and surface and emits compact unique 
   assert.ok(explicit.results.every((result) => result.docId.startsWith("canonical:")));
   assert.ok(explicit.results.every((result) => result.taskFamily === "design-editing"));
   assert.ok(explicit.results.every((result) => result.surfaces.includes("design")));
+});
+
+test("Markdown search ranks labels and prose without indexing link destinations", async () => {
+  const safetyPath = resolve(referenceRoot, "figma-workspace-safety.md");
+  const sessionsPath = resolve(referenceRoot, "figma-workspace-sessions.md");
+  const [originalSafety, originalSessions] = await Promise.all([
+    readFile(safetyPath, "utf8"),
+    readFile(sessionsPath, "utf8"),
+  ]);
+  const safetyFixture = (destination) => [
+    "# Safety fixture",
+    `rankingneedle [visible label](${destination})`,
+    "[outer [inner]](canonical:nesteddestinationonlyneedle)",
+    String.raw`[escaped \] label](canonical:escapeddestinationonlyneedle)`,
+    "[balanced destination](canonical:path(nesteddestinationonlyneedle(inner)))",
+    "[reference label][destinationonlyneedle]",
+    "[destinationonlyneedle]: canonical:destinationonlyneedle",
+    '<a href="canonical:destinationonlyneedle">HTML label</a>',
+    "`inlinecodekeepneedle`",
+    "```text",
+    "fencedcodekeepneedle",
+    ...Array.from({ length: 24 }, (_, index) => `fenced filler ${index}`),
+    "[code label](canonical:crosschunkcodekeepneedle)",
+    "```",
+  ].join("\n");
+  try {
+    await Promise.all([
+      writeFile(safetyPath, safetyFixture("canonical:neutral-destination"), "utf8"),
+      writeFile(sessionsPath, "# Sessions fixture\nrankingneedle rankingneedle\n", "utf8"),
+    ]);
+    const baseline = await docs.searchReferenceFiles({
+      query: "rankingneedle",
+      files: ["figma-workspace-safety.md", "figma-workspace-sessions.md"],
+      maxResults: 10,
+      maxSnippetLines: 3,
+    });
+
+    await writeFile(
+      safetyPath,
+      safetyFixture(`canonical:inlinedestinationonlyneedle-${Array.from({ length: 20 }, () => "rankingneedle").join("-")}`),
+      "utf8",
+    );
+    const pollutedDestination = await docs.searchReferenceFiles({
+      query: "rankingneedle",
+      files: ["figma-workspace-safety.md", "figma-workspace-sessions.md"],
+      maxResults: 10,
+      maxSnippetLines: 3,
+    });
+    assert.deepEqual(
+      pollutedDestination.results.map((result) => result.docId),
+      baseline.results.map((result) => result.docId),
+    );
+    assert.deepEqual(baseline.results.map((result) => result.docId), ["project:sessions", "project:safety"]);
+
+    for (const query of [
+      "destinationonlyneedle",
+      "inlinedestinationonlyneedle",
+      "nesteddestinationonlyneedle",
+      "escapeddestinationonlyneedle",
+    ]) {
+      const destinationOnly = await docs.searchReferenceFiles({
+        query,
+        files: ["figma-workspace-safety.md"],
+        maxResults: 10,
+        maxSnippetLines: 3,
+      });
+      assert.deepEqual(destinationOnly.results, [], query);
+    }
+    for (const query of [
+      "visible label",
+      "outer inner",
+      "escaped label",
+      "balanced destination",
+      "reference label",
+      "HTML label",
+      "inlinecodekeepneedle",
+      "fencedcodekeepneedle",
+      "crosschunkcodekeepneedle",
+    ]) {
+      const searchableContent = await docs.searchReferenceFiles({
+        query,
+        files: ["figma-workspace-safety.md"],
+        maxResults: 10,
+        maxSnippetLines: 3,
+      });
+      assert.deepEqual(searchableContent.results.map((result) => result.docId), ["project:safety"], query);
+    }
+
+    await Promise.all([
+      writeFile(safetyPath, "# Safety fixture\ngenericboostalpha\n", "utf8"),
+      writeFile(sessionsPath, "# Sessions fixture\ngenericboostbeta\n", "utf8"),
+    ]);
+    const genericDocsWithoutPreferredFamily = await docs.searchReferenceFiles({
+      query: "genericboostalpha genericboostbeta",
+      files: ["figma-workspace-safety.md", "figma-workspace-sessions.md"],
+      maxResults: 10,
+      maxSnippetLines: 3,
+    });
+    assert.equal(genericDocsWithoutPreferredFamily.results.length, 2);
+    assert.ok(genericDocsWithoutPreferredFamily.results.every((result) => result.confidence === "low"));
+  } finally {
+    await Promise.all([
+      writeFile(safetyPath, originalSafety, "utf8"),
+      writeFile(sessionsPath, originalSessions, "utf8"),
+    ]);
+  }
+
+  const linkedDoc = docs.readFigmaWorkspaceCanonicalDoc("canonical:figma-use-slides/SKILL.md");
+  assert.match(linkedDoc.content, /\]\(canonical:figma-use-slides\/references\//u);
+  const logicalPathOnly = await docs.searchReferenceFiles({
+    query: "canonical:figma-use-slides",
+    scope: "all",
+    maxResults: 10,
+    maxSnippetLines: 3,
+  });
+  assert.deepEqual(logicalPathOnly.results, []);
 });
 
 test("Plugin API lookup supports qualified aliases without blind unknown-owner exact matches", async () => {
