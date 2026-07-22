@@ -1,6 +1,6 @@
 {
   "name": "@jxx-codex-plugins/figma-workspace",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Independent Node.js command entrypoints backed by one typed Figma workspace runtime.",
   "type": "module",
   "main": "./scripts/server.mjs",
@@ -21,8 +21,6 @@
   "scripts": {
     "figma": "node scripts/commands/figma.mjs",
     "figma:help": "node scripts/commands/figma-help.mjs",
-    "figma:raw": "node scripts/commands/figma-raw.mjs",
-    "figma:raw:help": "node scripts/commands/figma-raw-help.mjs",
     "figma:docs": "node scripts/commands/figma-docs.mjs",
     "figma:docs:list": "node scripts/commands/figma-docs-list.mjs",
     "figma:docs:catalog": "node scripts/commands/figma-docs-catalog.mjs",
@@ -53,6 +51,8 @@
     "figma:capture": "node scripts/commands/figma-capture.mjs",
     "figma:task:prepare": "node scripts/commands/figma-task-prepare.mjs",
     "figma:upstream:call": "node scripts/commands/figma-upstream-call.mjs",
+    "maintenance:raw": "node scripts/commands/maintenance-raw.mjs",
+    "maintenance:raw:help": "node scripts/commands/maintenance-raw-help.mjs",
     "login:figma-http": "node cli-runtime/scripts/login-figma-http.mjs",
     "oauth-cache:path": "python scripts/resolve-oauth-cache-path.py",
     "update:upstream-snapshot": "node scripts/update-upstream-corpus.mjs update-upstream-snapshot",

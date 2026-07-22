@@ -1,6 +1,6 @@
 # Figma Workspace Upstream Tools
 
-Use this reference when no first-class CLI command covers an official Figma capability.
+Use this reference when no first-class CLI command covers an official Figma capability. This is the only public capability fallback.
 
 ## Prefer The CLI Surface
 

@@ -4,12 +4,13 @@ Use this reference for an end-to-end Figma task. Command-specific help and runti
 
 ## Prepare, Edit, Verify
 
-1. Choose an absolute `--state-file`. Use `figma:guidance` and the docs/API lookup commands before a non-trivial edit.
-2. Run `figma:task:prepare` to create a repairable `.figma.ts` workspace, then edit the generated file.
-3. Use native Figma Plugin API for editing, traversal, selection, layout, assets, cloning, and advanced work. `$` is frozen and non-callable, with only `$.text` and `$.capture`.
-4. Run `figma:script:run` after repairing fatal TypeScript or Plugin API diagnostics. Return compact changed-node IDs and validation notes from the script.
-5. Use `figma:metadata` before targeted `figma:inspect` when broad structure discovery is needed. Use first-class context, motion, library, variable, asset, and capture commands before an upstream escape hatch.
-6. Capture visible changes and inspect the saved PNG with `view_image` before reporting visual success.
+1. Choose an absolute `--state-file`. For a non-trivial edit, convert the request to concise English keywords, use `figma:guidance` with the known surface, and follow the catalog/search/read fallback when routing is uncertain.
+2. Establish file context with `figma:open` or an explicit target. Run `figma:metadata` for broad discovery before targeted `figma:inspect` when the structure is unfamiliar.
+3. Run `figma:task:prepare` to create a repairable `.figma.ts` workspace, then edit the generated file.
+4. Use native Figma Plugin API for editing, traversal, selection, layout, assets, cloning, and advanced work. `$` is frozen and non-callable, with only `$.text` and `$.capture`. Use `figma:api:search` for uncertain symbols.
+5. Run `figma:script:run` after repairing fatal TypeScript or Plugin API diagnostics. Return compact changed-node IDs and validation notes from the script.
+6. Use first-class design, motion, library, variable, asset, and capture commands before the `figma:upstream:list` to `figma:upstream:read` to `figma:upstream:call` fallback.
+7. Capture visible changes and inspect the saved PNG with `view_image` before reporting visual success.
 
 ## Script Helpers
 
