@@ -1,6 +1,6 @@
 {
   "name": "@jxx-codex-plugins/figma-workspace-cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Stateful Figma Workspace CLI backed by the official Figma remote MCP.",
   "type": "module",

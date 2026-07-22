@@ -1,13 +1,12 @@
 {
   "name": "@jxx-codex-plugins/figma-workspace",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Independent Node.js command entrypoints backed by one typed Figma workspace runtime.",
   "type": "module",
   "main": "./scripts/server.mjs",
   "files": [
     ".codex-plugin",
     "assets",
-    "doc",
     "mcp-server/dist",
     "mcp-server/README.md",
     "mcp-server/scripts/login-figma-http.mjs",

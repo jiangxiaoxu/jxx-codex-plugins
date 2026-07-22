@@ -1,6 +1,6 @@
 # Slide Gotchas & Common Mistakes
 
-> Part of the [figma-use-slides skill](../SKILL.md). Pitfalls specific to working in Slides files.
+> Part of the [figma-use-slides skill](canonical:figma-use-slides/SKILL.md). Pitfalls specific to working in Slides files.
 
 ## Contents
 
@@ -17,7 +17,7 @@
 
 ## Canonical text-edit recipe (font load → await → mutate → return IDs)
 
-The same canonical recipe used in Design files applies inside slides — see [figma-use → gotchas.md → Canonical text-edit recipe](../../figma-use/references/gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids) for the full WRONG/CORRECT pair. Two slide-specific reminders:
+The same canonical recipe used in Design files applies inside slides — see [figma-use → gotchas.md → Canonical text-edit recipe](canonical:figma-use/references/gotchas.md) for the full WRONG/CORRECT pair. Two slide-specific reminders:
 
 1. **Inter preload doesn't cover deck-theme fonts.** Decks frequently switch the theme font to families like `Roboto Mono`, `Merriweather`, or a brand font — those still need an explicit `loadFontAsync` for every (family, style) you mutate.
 2. **When restyling existing slide text, load the node's *current* font, not a hardcoded default.** Slide theme tokens push fonts onto nodes that may differ from what you'd guess. Use `getStyledTextSegments(['fontName'])` and `loadFontAsync` each segment's font before any mutation.
@@ -35,7 +35,7 @@ return { mutatedNodeIds: [textNode.id] }
 
 ## Prefer indexed lookups over `findAll` / `findOne` full-tree scans
 
-Same rule as in design files (see [figma-use → gotchas.md → Prefer indexed lookups](../../figma-use/references/gotchas.md#prefer-indexed-lookups-over-findall--findone-full-tree-scans)). On slide trees, the most common offenders are `slide.findAll(n => n.type === 'TEXT')` (use `slide.findAllWithCriteria({ types: ['TEXT'] })`) and `slide.findAll(n => n.type === 'INTERACTIVE_SLIDE_ELEMENT')` (same fix). If you have a slide or element ID, use `figma.getNodeByIdAsync(id)` — never re-scan the tree.
+Same rule as in design files (see [figma-use → gotchas.md → Prefer indexed lookups](canonical:figma-use/references/gotchas.md)). On slide trees, the most common offenders are `slide.findAll(n => n.type === 'TEXT')` (use `slide.findAllWithCriteria({ types: ['TEXT'] })`) and `slide.findAll(n => n.type === 'INTERACTIVE_SLIDE_ELEMENT')` (same fix). If you have a slide or element ID, use `figma.getNodeByIdAsync(id)` — never re-scan the tree.
 
 
 ## Scope traversal to the smallest known ancestor
@@ -51,12 +51,12 @@ const slide = await figma.getNodeByIdAsync(SLIDE_ID)
 const texts = slide.findAllWithCriteria({ types: ['TEXT'] })
 ```
 
-See [figma-use → gotchas.md → Scope traversal to the smallest known ancestor](../../figma-use/references/gotchas.md#scope-traversal-to-the-smallest-known-ancestor).
+See [figma-use → gotchas.md → Scope traversal to the smallest known ancestor](canonical:figma-use/references/gotchas.md).
 
 
 ## Sequential awaits — batch independent async calls with `Promise.all`
 
-Same rule as in design files (see [figma-use → gotchas.md → Sequential awaits](../../figma-use/references/gotchas.md#sequential-awaits--batch-independent-async-calls-with-promiseall)). When building decks, the typical offenders are `loadFontAsync` for theme/brand fonts, `getNodeByIdAsync` for cached slide IDs, and `import*ByKeyAsync` for library variables and styles — all independent per call and all batchable.
+Same rule as in design files (see [figma-use → gotchas.md → Sequential awaits](canonical:figma-use/references/gotchas.md)). When building decks, the typical offenders are `loadFontAsync` for theme/brand fonts, `getNodeByIdAsync` for cached slide IDs, and `import*ByKeyAsync` for library variables and styles — all independent per call and all batchable.
 
 ```js
 // WRONG — sequential round-trips per slide
@@ -305,7 +305,7 @@ return { clean: issues.length === 0, issues };
 
 When building a **single complex slide** (data-heavy chart, intricate one-off layout), work incrementally within that slide — create the background and structure first, then add content, then decorative elements, validating between steps.
 
-When building a **deck** (multiple slides), build complete slides in each `figma:script:run` execution. The helpers (`addFrame`, `addText`, `addRect`) enforce the appendChild-before-position rule, so building a complete slide in one pass is safe. Validate using the [batch validation script](#batch-validation-script) above, not per-element captures. See [Deck-Building Workflow](../SKILL.md#deck-building-workflow) for the full process.
+When building a **deck** (multiple slides), build complete slides in each `figma:script:run` execution. The helpers (`addFrame`, `addText`, `addRect`) enforce the appendChild-before-position rule, so building a complete slide in one pass is safe. Validate using the [batch validation script](#batch-validation-script) above, not per-element captures. See [Deck-Building Workflow](canonical:figma-use-slides/SKILL.md) for the full process.
 
 
 ## Code preamble for deck-building scripts

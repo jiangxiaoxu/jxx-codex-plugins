@@ -1,53 +1,25 @@
 # Figma Workspace Workflow Reference
 
-Use this reference when root CLI help is not enough to choose a workflow. Command-specific help and runtime schemas remain the source of truth for public input contracts.
+Use this reference for an end-to-end Figma task. Command-specific help and runtime schemas define each public input contract.
 
-## Primary File Workflow
+## Prepare, Edit, Verify
 
-- Start non-trivial work with `figma:task:prepare -- --input <json-file|-> --state-file <absolute-path>` using JSON fields such as `file`, `taskName`, `workspaceDir`, and `surface`.
-- Edit the generated `.figma.ts` file in the task workspace.
-- Run `figma:script:run -- --input <json-file|-> --state-file <absolute-path>` with `sessionId`, `inputFile`, and `surface`; TypeScript diagnostics and compiled payload preflight always run before upstream execution.
-- If preflight diagnostics fail, repair the same file and rerun it.
-- Return a compact JSON value from the `.figma.ts` script with changed node ids and validation notes. The CLI renders that runtime value into its Restricted Markdown result; CLI stdout itself is not JSON.
-- Read the required `executionOutcome` from every `figma:eval` and `figma:script:run` result. `not_started` means preflight or connection stopped execution before dispatch. `succeeded` confirms the remote script completed. `outcome_unknown` requires inspect/readback/reconcile before any retry; never blindly replay a mutation.
+1. Choose an absolute `--state-file`. Use `figma:guidance` and the docs/API lookup commands before a non-trivial edit.
+2. Run `figma:task:prepare` to create a repairable `.figma.ts` workspace, then edit the generated file.
+3. Use native Figma Plugin API for editing, traversal, selection, layout, assets, cloning, and advanced work. `$` is frozen and non-callable, with only `$.text` and `$.capture`.
+4. Run `figma:script:run` after repairing fatal TypeScript or Plugin API diagnostics. Return compact changed-node IDs and validation notes from the script.
+5. Use `figma:metadata` before targeted `figma:inspect` when broad structure discovery is needed. Use first-class context, motion, library, variable, asset, and capture commands before an upstream escape hatch.
+6. Capture visible changes and inspect the saved PNG with `view_image` before reporting visual success.
 
-## Script Shape
+## Script Helpers
 
-- `.figma.ts` files are async TypeScript script bodies that run in Figma Plugin API context after mandatory TypeScript preflight.
-- Use native Plugin API for all editing, node traversal, selection, layout, assets, cloning, and advanced work. `$` is a frozen, non-callable namespace with only `$.text` and `$.capture`.
-- Use `await $.text({ target?, parent?, text, font? })` for font-safe text creation or replacement. `target` and `parent` accept a real node or raw node ID and are mutually exclusive. With no `target`, the helper creates a TextNode. An explicit font is loaded before mutation; a mixed-font target without an explicit font fails closed.
-- Use `figma:guidance -- <query> --state-file <absolute-path>` for task routing, workflow profiles, and Plugin API lookup hints.
-- There is no helper-selection analysis or semantic AST policy. Valid Plugin API operations are forwarded after TypeScript preflight; use direct Plugin API calls when they express the intended edit.
+- `await $.text({ target?, parent?, text, font? })` creates or updates font-safe text. `target` and `parent` are mutually exclusive; missing `target` creates a TextNode; mixed-font targets need an explicit font.
+- `await $.capture(target, options?)` queues a host-side PNG capture for a node created or resolved inside the script. The final CLI result provides local paths under `captures[]`; use standalone `figma:capture` when the node ID is already known.
+- Use native `exportAsync()` only for script-local export data. Do not return large raw export data in script JSON.
 
-## Workflow Add-ons
+## Recover The Result
 
-- Use `figma:metadata` for broad layer-tree discovery before detailed style, fill, or text inspection. File-binding commands accept `--session-id`, `--state-file`, `--workspace`, and `--max-inline-bytes`; node-scoped file-binding commands also accept `--file` when explicit file context is preferable.
-- Node URLs and structured `{ fileKey, nodeId }` targets provide request-scoped file context where supported. Cross-file requests do not rebind session file context, and a conflicting explicit `--file` fails closed. `figma:design-context`, `figma:motion-context`, and `figma:variables` require exactly one node source: a positional target or a `--file` URL containing `node-id`. Raw node IDs, `$selection`, and `$currentPage` resolve only against the selected session.
-- Use `figma:inspect` after `figma:open` or `figma:task:prepare` has established session context when a raw node ID or fixed selector is used. A node URL can provide request-scoped file context directly. Inspect supports inspection and style reads, not handle validation.
-- Use `figma:guidance` for wrapper profiles and workflow graph nodes when sequencing design-context, motion, or video calls.
-- Follow wrapper `guidanceRef.query` with `figma:guidance` when a thin wrapper output needs detailed next-step guidance.
-- Use `figma:design-system`, `figma:libraries`, and `figma:variables` for official design-system context. Repeat `--library <key>` to scope design-system search. Variable defs intentionally does not accept client hints; use design context for client-specific output. Node-scoped commands accept raw node ids, node URLs, or structured `{ fileKey, nodeId }` targets where supported.
-- Use `figma:assets:apply` for large local generated image assets. Create target rectangles in the script first, then upload/fill through the manifest.
-- Use `figma:assets:download` for official asset download workflows.
-- Use `figma:capture` for final visual QA captures saved as local PNG files. Use its command help for screenshot tuning; use `figma:upstream:call` for uncovered official screenshot parameters.
-- When the target is created or resolved inside a `.figma.ts` script, call `await $.capture(target, { imageFile?, maxDimension?, contentsOnly? })`. `imageFile`, when supplied, must be a safe workspace-relative path. The helper queues at most 8 host-side captures; after the script succeeds, the CLI runs the same capture implementation and returns local paths under `captures[]`. The helper's ticket does not contain image bytes or an in-script file path.
-- A queued capture failure keeps `executionOutcome: "succeeded"` and sets `captureProcessingSucceeded: false` with explicit `retryGuidance`. The script may already have changed Figma; do not rerun it just to recover the image. Retry the affected node with standalone `figma:capture`.
-- Do not use inline screenshot methods. When a script genuinely needs PNG, JPG, SVG, PDF, or other export bytes/string for data processing, use native `exportAsync()` for that script-local purpose; do not return large raw export data in the script JSON result.
-- Compose repeatable multi-step workflows from the public script, asset, download, capture, and upstream commands.
-
-## Payload And Output Files
-
-- Keep transactions small enough for the native Plugin API execution payload boundary.
-- Split dense work into skeleton, asset-target, upload-fill, and fix scripts when needed.
-- Clean success paths do not write JSON debug files for `figma:eval`, `figma:script:run`, `figma:upstream:call`, `figma:assets:apply`, or `figma:assets:download` calls.
-- Debug files are generated on demand for failures, diagnostics, and inline omissions under `outputFiles.debugFile`.
-
-## Reading CLI Results
-
-- Typed results on stdout use Restricted Markdown with a command title, `Input`, explicit status, and expanded fields. Complex nested values may appear in fenced `json` blocks.
-- Presentation classification preserves the backend result and complete sidecar. An unhealthy doctor observation uses `Status: observed unhealthy` and exits 0; every other top-level `ok: false` result retains the Markdown shape and exits 1. Usage exits 2 and typed interrupts exit 130.
-- If local state, sidecar, or lock processing fails after `executionOutcome: "succeeded"`, stdout reports `Status: failed after execution`, retains the known business result, and exits 1. Repair the named local stage; do not rerun the confirmed remote mutation.
-- Usage errors and thrown failures are text on stderr.
-- Do not pass stdout to `JSON.parse`; read Markdown fields and parse only a fenced `json` value when the workflow specifically needs that nested value.
-- JSON commands intentionally expose only `--input`, `--state-file`, `--max-inline-bytes`, and help. Public command help includes the complete input schema. JSON objects reject unknown fields, and `--input -` reads at most 256 KiB from stdin through the canonical or independent npm entrypoint.
-- Every executing optimized command requires an explicit absolute `--state-file`; its parent owns any `results/` sidecars. Commands that need no existing Figma file context still follow this requirement.
+- `not_started` means validation, preflight, connection, or auth stopped execution before dispatch. Repair that cause, then rerun.
+- `succeeded` confirms remote script execution. If queued capture processing failed, use standalone `figma:capture`; do not rerun the mutation script.
+- `outcome_unknown` means dispatch occurred but completion cannot be confirmed. Inspect, read back, or reconcile the intended effect before deciding whether a retry is safe.
+- `Status: failed after execution` means local state, sidecar, or lock handling failed after a confirmed remote operation. Repair the reported local stage and preserve the remote result.

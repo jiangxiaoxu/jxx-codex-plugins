@@ -50,7 +50,7 @@ for (const node of wrapper.findAll(n => n.type === "TEXT")) {
 return { expected: [...EXPECTED_FAMILIES], offenders, dsGaps };
 ```
 
-If `offenders` is non-empty, free-standing text you built is in the wrong font. Fix those nodes (load the correct family/style, then set `fontName` per the canonical text-edit recipe in [figma-use](../../figma-use/SKILL.md)) before finishing. `dsGaps` is handled differently: text inside a design-system **instance**, or carrying a published **text style**, is governed by the library and may legitimately use a different family (e.g. a mono style for code), so flag those as a design-system gap rather than forcing an override onto them.
+If `offenders` is non-empty, free-standing text you built is in the wrong font. Fix those nodes (load the correct family/style, then set `fontName` per the canonical text-edit recipe in [figma-use](canonical:figma-use/SKILL.md)) before finishing. `dsGaps` is handled differently: text inside a design-system **instance**, or carrying a published **text style**, is governed by the library and may legitimately use a different family (e.g. a mono style for code), so flag those as a design-system gap rather than forcing an override onto them.
 
 If you have a source reference (the running web app, a design mock, or the `figma:capture` capture), also compare rendered screenshots:
 

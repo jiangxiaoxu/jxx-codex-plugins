@@ -3,95 +3,52 @@ name: figma-workspace
 description: Route Figma, FigJam, Slides, design-system, token, component, Plugin API lookup, and Figma OAuth work through independent plugin-root npm command entrypoints backed by the bundled stateful Node CLI.
 ---
 
-# Figma Workspace Router
+# Figma Workspace
 
-Use the bundled Node CLI for every Figma Workspace operation. The plugin does not register or expose a local MCP server. The official Figma remote MCP is an internal transport, not an agent-facing tool surface.
+Use the bundled Node CLI for Figma work. It has no agent-facing local MCP server; the official remote MCP is internal transport only.
 
-## Start Here
+## Start
 
-- Resolve `<plugin-root>` as `<skill-dir>/../..`. Use `npm --silent` in every shell and place npm's `--` before arguments passed to an independent `figma:<command>` script.
-- Before executing any optimized command, choose one fully qualified absolute `--state-file` and reuse it. Its parent owns `results/` sidecars. Prefer a Git-ignored `<project>/.figma-workspace/state.json`.
-- Before first use of a command, run its `--help`. Public help includes the complete input schema and is authoritative.
-- Read stdout as Restricted Markdown. If it names `outputFiles.cliResultFile`, read that JSON sidecar for the complete result. Never call `JSON.parse` on stdout.
-- Use only public `figma:*` npm script IDs in plans, next steps, and agent-visible output. Do not use internal `figma_workspace_*` identifiers, raw transport names, MCP tools, or resource URIs.
-- Use `figma:doctor` only for installed canonical corpus, generated Plugin API index, project-doc, or TypeScript asset faults. It is not an upstream-drift diagnostic.
+- Resolve `<plugin-root>` as `<skill-dir>/../..`. Use `npm --silent`; put npm's `--` before arguments for an independent `figma:<command>` script.
+- Choose one fully qualified absolute `--state-file` before executing a command, reuse it for the task, and prefer a Git-ignored `<project>/.figma-workspace/state.json`.
+- Run the selected public `figma:*` command with `--help` before first use. Generated help is the only complete input schema and limit contract.
+- Read typed stdout as Restricted Markdown. If it gives `outputFiles.cliResultFile`, read that JSON sidecar; never parse stdout as JSON.
+- Use only public `figma:*` npm command IDs. Do not expose raw transport names, internal identifiers, MCP tools, resource URIs, or corpus files.
 
-## NPM Command Contract
+## Minimal Workflow
 
-```text
-npm --silent run figma:guidance -- "text font loadFontAsync" --surface design --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:docs:catalog -- --task-family design-editing --surface design --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:api:search -- "figma.createFrame()" --state-file C:/work/project/.figma-workspace/state.json
-```
+1. For non-trivial work, run `figma:guidance` with concise English keywords and an explicit known surface, then follow returned public next actions.
+2. Use `figma:docs:list`, `figma:docs:catalog`, `figma:docs:search`, and `figma:docs:read` for workflow material; use `figma:api:search` for Plugin API declarations.
+3. Open or prepare the task, edit the generated `.figma.ts` with native Figma Plugin API, and run `figma:script:run` after repairing fatal preflight diagnostics.
+4. Use first-class context, metadata, inspect, asset, and capture commands before `figma:upstream:call`.
+5. Inspect every generated or edited image, including capture PNGs, with `view_image` before reporting visual success.
 
-- Family entrypoints: `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream`.
-- The 18 direct query/read commands are `figma:guidance`, `figma:docs:list`, `figma:docs:catalog`, `figma:docs:read`, `figma:docs:search`, `figma:api:search`, `figma:doctor`, `figma:sessions:list`, `figma:sessions:read`, `figma:upstream:list`, `figma:upstream:read`, `figma:inspect`, `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries`.
-- The 8 JSON commands are `figma:open`, `figma:eval`, `figma:script:run`, `figma:assets:apply`, `figma:assets:download`, `figma:capture`, `figma:task:prepare`, and `figma:upstream:call`.
-- The 21 raw transport JSON commands are isolated behind `figma:raw` and `figma:raw:help` for explicit transport debugging. They are not agent-facing command IDs.
-- Every executing optimized command requires `--state-file` and supports `--max-inline-bytes`. The default inline-result limit is 4096 UTF-8 bytes. Direct file-context commands also expose `--session-id`; JSON commands expose only `--input`, `--state-file`, `--max-inline-bytes`, and help.
-- JSON input is exact. Unknown or misspelled fields are usage failures, so use the selected command's generated help instead of guessing fields. `figma:design-context`, `figma:motion-context`, and `figma:variables` require exactly one node source: pass a positional target, or pass `--file` with a Figma URL containing `node-id`.
-- Pass `--input -` to read JSON from stdin. This works through both the canonical `figma` entrypoint and independent `figma:<command>` npm scripts.
-- Usage failures exit 2. Typed interrupts exit 130. Other typed failures render Restricted Markdown and exit 1, except an unhealthy `figma:doctor` observation exits 0.
+Use `figma:metadata` for broad layer-tree discovery before targeted `figma:inspect`. Use `figma:sessions:list` or `figma:sessions:read` when resuming unfamiliar state.
 
-## Agent Documentation Routing
+## Mutation Results
 
-Compress the task into concise English canonical keywords before calling `figma:guidance` or `figma:docs:search`. The router has English aliases only and does not translate Chinese or other non-English intent. For non-English, out-of-vocabulary, generic, or ambiguous input, expect low or no confidence; use the returned catalog action, then select an English task family or query explicitly.
+- `figma:eval` and `figma:script:run` report `executionOutcome`: `not_started`, `succeeded`, or `outcome_unknown`.
+- Repair a `not_started` preflight or validation failure, then rerun only after the request was not dispatched.
+- Treat `succeeded` as confirmed remote execution, even if later local persistence fails.
+- For `outcome_unknown`, follow `retryGuidance`: inspect, read back, or reconcile the intended Figma effect before deciding whether a retry is safe. Never blindly replay a mutation.
+- If queued capture processing fails after `succeeded`, use standalone `figma:capture` for the affected node. If stdout says `Status: failed after execution`, repair the named local stage and preserve the confirmed mutation result.
 
-The stable task families are `code-connect`, `create-file`, `design-to-code`, `design-generation`, `diagram`, `library-generation`, `motion-implementation`, `swiftui`, `figjam`, `motion`, `slides`, and `design-editing`.
+## OAuth
 
-1. Run `figma:guidance -- <english-keywords> --surface <design|figjam|slides> --state-file <absolute-path>` before non-trivial work. The returned compact DTO contains `route`, cards, query hints, Plugin API references, helper/wrapper/workflow summaries, reference context, and typed `nextActions`. Follow its public `commandId` values.
-2. Run `figma:docs:list` for project documents. It returns stable `project:<topic>` IDs. Read them only with `figma:docs:read -- project:<topic>`.
-3. Run `figma:docs:catalog` to browse the 12 task-family summaries. Add `--task-family`, `--surface`, or `--classification active|conditional|router|examples` to obtain canonical records. Read a returned `canonical:<record-id>` with `figma:docs:read`.
-4. Run `figma:docs:search -- <english-keywords>` with its default `--scope auto`. Auto routing searches only project/bridge docs and compatible active, conditional, and router records from the resolved family. It never includes examples automatically. If examples are needed, explicitly pass `--scope examples`.
-5. Treat `--surface` and `--task-family` as hard filters. Explicit `--scope active|conditional|router|examples|all` is also strict; it does not expand a surface or family filter. Do not omit a known FigJam or Slides surface.
-6. Run `figma:api:search -- <symbol>` for Plugin API declarations. It accepts bare, qualified, and call-shaped queries such as `createFrame`, `figma.createFrame`, `figma.createFrame()`, `PluginAPI.createFrame`, `ComponentNode.createInstance`, and `figma.variables.createVariableCollection`.
-
-Canonical corpus records and API search results are compact public metadata and snippets. Do not read corpus JSONL, hashes, source paths, chunks, or generated declaration files directly. `figma:docs:read` is the only complete-document path and writes a sidecar rather than truncating a large document. Example records are non-executable reference material.
-
-## Default Workflow
-
-1. Choose one absolute `--state-file`; use `figma:sessions:list` or `figma:sessions:read` if resuming unknown state.
-2. Follow Agent Documentation Routing before writing a non-trivial script.
-3. For login, credential refresh, or auth repair, follow Figma Login below.
-4. Call `figma:task:prepare` once with JSON containing a Figma URL or key, slug-style `taskName`, absolute `workspaceDir`, and surface when needed.
-5. Edit the generated `.figma.ts`, then call `figma:script:run`. TypeScript and bundled Plugin API preflight are always enabled; repair every fatal diagnostic before rerunning.
-6. Use `figma:assets:apply`, `figma:assets:download`, or `figma:capture` for assets and visual QA. Compose repeatable workflows from these public commands.
-7. Inspect every generated or edited image, including a capture PNG, with `view_image` before reporting visual success.
-
-Use `figma:metadata` for broad layer-tree discovery before `figma:inspect`. Prefer first-class context, motion, library, variable, and design-system commands. Use `figma:upstream:list` or `figma:upstream:read` before the `figma:upstream:call` escape hatch.
-
-## Script And Workspace Contract
-
-- Write an ordinary async TypeScript body in `.figma.ts`. Use native Figma Plugin API for node creation, querying, layout, and advanced behavior.
-- `$` is a frozen, non-callable namespace with exactly two helpers: `$.text` and `$.capture`. Use native Figma Plugin API for node creation, querying, layout, selection, assets, cloning, and all advanced behavior.
-- `$.text({ target?, parent?, text, font? })` accepts a real node or raw node ID, creates a TextNode when `target` is omitted, and loads an explicit font before applying text. `target` and `parent` are mutually exclusive. Mixed fonts without an explicit font fail closed.
-- Keep each transaction small and repairable. Return compact JSON with changed node IDs and validation notes.
-- For large generated assets, create target rectangles in the script and use `figma:assets:apply`.
-- For visual QA, use `await $.capture(target, options?)` when the target is created or resolved inside the script. It queues a host-side `figma:capture` operation after the script succeeds; read the local PNG path from the final command result's `captures[]`, then inspect it with `view_image`. Use standalone `figma:capture` when the node id is already known.
-- `figma:eval` and `figma:script:run` always return `executionOutcome`: `not_started` means validation, preflight, connection, or auth stopped the request before dispatch; `succeeded` means Figma confirmed script execution; `outcome_unknown` means the request was dispatched but completion cannot be confirmed. No legacy execution boolean is returned.
-- For `outcome_unknown`, follow `retryGuidance`: inspect or read back the intended target and reconcile the effect before any retry. Never blindly rerun a mutation, because Figma may already have applied it.
-- If queued capture post-processing fails, `executionOutcome: "succeeded"` and `captureProcessingSucceeded: false` mean the script already ran and may have mutated Figma. Do not rerun the creation/edit script; retry the affected node with standalone `figma:capture`.
-- A typed result can report `Status: failed after execution` when local state, sidecar, or lock post-processing fails after a confirmed remote operation. Preserve the result and follow its recovery guidance; do not rerun the confirmed mutation.
-- Use native `exportAsync()` only when a `.figma.ts` script genuinely needs PNG, JPG, SVG, PDF, or other exported bytes/string. It is not a CLI visual-QA path, and raw export data must not be returned as a large JSON array.
-- Script preflight enforces TypeScript and the bundled Plugin API typings. It does not impose semantic AST policy on valid Plugin API operations such as selection changes, page switches, PluginData, root searches, image creation, or destructive edits. Keep mutations intentional and verify visible changes with capture.
-- Treat a node URL or structured `{ fileKey, nodeId }` target as request-scoped file context. It may address another file without rebinding the persisted session; a conflicting explicit file fails closed. Raw node IDs, `$selection`, and `$currentPage` continue to use current session context.
-
-## Reference Topics
-
-- Read [overview](references/figma-workspace-overview.md) for capability and command selection.
-- Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, assets, inspection, and response semantics.
-- Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for the routing contract and exact lookup examples.
-- Read [safety](references/figma-workspace-safety.md) for non-bypassable TypeScript, payload, path, capture, and output boundaries.
-- Read [diagnostics](references/figma-workspace-diagnostics.md) for corpus, API-index, and installed-asset repairs.
-- Read [sessions](references/figma-workspace-sessions.md) for persisted state and recovery.
-- Read [upstream tools](references/figma-workspace-upstream-tools.md) before official escape-hatch discovery and invocation.
-
-## Figma Login
-
-When a CLI Markdown result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or a code beginning with `FIGMA_UPSTREAM_OAUTH_`, ask the user whether to start browser authorization. If approved, run from `<plugin-root>`:
+If a result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or `FIGMA_UPSTREAM_OAUTH_*`, ask the user before opening browser authorization. After approval, run from `<plugin-root>`:
 
 ```text
 npm run login:figma-http
 ```
 
-Use `npm run login:figma-http -- --force` only when fresh browser authorization is required. Do not force reauthorization for a transient refresh failure such as rate limiting, a 5xx response, or a network failure: the CLI retains the existing credential and reports the transient fault. Then verify with `figma:upstream:call` using `toolName: "whoami"` and the same absolute state file. The helper is temporary; do not add a persistent local MCP entry.
+Use `--force` only when fresh authorization is actually needed. Treat rate limiting, 5xx responses, and network refresh faults as transient; they retain the cached credential. Do not add a persistent local MCP entry.
+
+## References
+
+- Read [overview](references/figma-workspace-overview.md) to select a command family.
+- Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture, and mutation recovery.
+- Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for documentation routing, `canonical:` links, and API lookup.
+- Read [safety](references/figma-workspace-safety.md) for hard runtime boundaries and timeout semantics.
+- Read [sessions](references/figma-workspace-sessions.md) for state, sidecars, and local locks.
+- Read [diagnostics](references/figma-workspace-diagnostics.md) only to choose a failure repair.
+- Read [upstream tools](references/figma-workspace-upstream-tools.md) before an official escape-hatch call.

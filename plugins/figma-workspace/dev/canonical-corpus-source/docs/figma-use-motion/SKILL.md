@@ -1,6 +1,6 @@
 # Figma Plugin API Motion
 
-Use the bundled Figma Workspace CLI for motion work. Write native Figma Plugin API code in a local `.figma.ts` file and run it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. [figma-use](../figma-use/SKILL.md) covers the foundational Plugin API rules.
+Use the bundled Figma Workspace CLI for motion work. Write native Figma Plugin API code in a local `.figma.ts` file and run it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. [figma-use](canonical:figma-use/SKILL.md) covers the foundational Plugin API rules.
 
 ## Runtime Gating
 
@@ -18,7 +18,7 @@ Use this guide whenever a Figma Workspace task involves:
 - Reading or writing timeline duration via `node.timelines` / `node.setTimelineDuration(id, seconds)`.
 - Choosing easing for any of the above.
 
-Static design work (creating shapes, components, variables, layout) follows [figma-use](../figma-use/SKILL.md); this guide is only for the time dimension.
+Static design work (creating shapes, components, variables, layout) follows [figma-use](canonical:figma-use/SKILL.md); this guide is only for the time dimension.
 
 ## Exposed motion API surface
 
@@ -28,7 +28,7 @@ Static design work (creating shapes, components, variables, layout) follows [fig
 - `node.applyAnimationStyle(styleId, presetData?)` / `node.removeAnimationStyle(id)` — apply a discovered style and remove an applied style instance by its returned/read-back `id`.
 - `node.timelines` — read-only timeline list for the containing top-level frame, with durations in seconds.
 - `node.setTimelineDuration(id, durationSeconds)` — write the containing top-level frame timeline duration.
-- `node.animations` — read-only resolved keyframe data (currently manual tracks only — see [motion-patterns.md](references/motion-patterns.md)).
+- `node.animations` — read-only resolved keyframe data (currently manual tracks only — see [motion-patterns.md](canonical:figma-use-motion/references/motion-patterns.md)).
 - `figma.motion.figmaAnimationStyles()` — read-only list of Figma's first-party animation styles.
 
 Authoring custom `"figma:motion"` preset module source code is out of scope. If the user wants a brand-new animation style, say so and stop; don't fabricate one.
@@ -39,8 +39,8 @@ Load these as needed based on what the task involves:
 
 | Doc | When to load | What it covers |
 |-----|-------------|----------------|
-| [motion-patterns.md](references/motion-patterns.md) | Adding/editing motion animation | Manual keyframes, animated fills/strokes, applying animation styles, timeline duration |
-| [motion-easing.md](references/motion-easing.md) | Setting animation easing | Keyframe easing objects, custom cubic/spring, `HOLD`, applying easing inside an animation style |
+| [motion-patterns.md](canonical:figma-use-motion/references/motion-patterns.md) | Adding/editing motion animation | Manual keyframes, animated fills/strokes, applying animation styles, timeline duration |
+| [motion-easing.md](canonical:figma-use-motion/references/motion-easing.md) | Setting animation easing | Keyframe easing objects, custom cubic/spring, `HOLD`, applying easing inside an animation style |
 
 ## Verifying the animation
 
@@ -60,13 +60,13 @@ Skip the export entirely for trivial or self-evident changes.
 
 ## Pre-flight checklist
 
-In addition to the [figma-use pre-flight checklist](../figma-use/SKILL.md#8-pre-flight-checklist), verify:
+In addition to the [figma-use pre-flight checklist](canonical:figma-use/SKILL.md), verify:
 
 - [ ] Easing uses the public `{ type: 'EASE_OUT', easingFunctionCubicBezier?: …, easingFunctionSpring?: … }` shape — not internal scenegraph names like `OUT_CUBIC`.
 - [ ] Ease-in-out uses the exact public enum `EASE_IN_AND_OUT` (or `EASE_IN_AND_OUT_BACK`); never emit the invalid alias `EASE_IN_OUT`.
 - [ ] The node being animated is not a top-level frame (direct child of a page). Animate descendants instead.
 - [ ] Timeline values are seconds in the public Plugin API. Extend via `setTimelineDuration`; never shorten unless the user asked.
 - [ ] Transform keyframe fields use public names (`TRANSLATION_X`, `TRANSLATION_Y`, `ROTATION`, `SCALE_X`, `SCALE_Y`, `SCALE_XY`), not internal `MOTION_*` scenegraph names.
-- [ ] Manual keyframe fields come from the public allowlist in [motion-patterns.md](references/motion-patterns.md#animatable-fields); generated/internal scenegraph fields intentionally throw.
+- [ ] Manual keyframe fields come from the public allowlist in [motion-patterns.md](canonical:figma-use-motion/references/motion-patterns.md); generated/internal scenegraph fields intentionally throw.
 - [ ] Mutated node IDs are returned (per `figma-use` Rule 15).
 - [ ] When motion correctness isn't self-evident and a frame extractor (`ffmpeg`) is available, verify via `export_video` + frame sampling — render small, low `fps`, iterate until right (see the Verifying the animation section above). `figma:capture` shows only the resting state.

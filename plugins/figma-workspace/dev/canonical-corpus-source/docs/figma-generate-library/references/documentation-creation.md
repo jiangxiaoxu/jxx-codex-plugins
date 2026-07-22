@@ -1,10 +1,10 @@
-> Part of the [figma-generate-library skill](../SKILL.md).
+> Part of the [figma-generate-library skill](canonical:figma-generate-library/SKILL.md).
 
 # Documentation Creation Reference
 
 This reference covers Phase 2 of the design system build: the cover page, foundations documentation page (color swatches, type specimens, spacing bars, shadow cards, radius demo), page layout dimensions, and inline component documentation. Every JavaScript block is a non-executable Plugin API example. Adapt it into a local `.figma.ts` file, then run it with `figma:script:run`.
 
-> **Every text mutation in this file follows the [canonical text-edit recipe](../../figma-use/references/gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids):** load font → `await` → mutate → return affected IDs. Examples use `Inter` because it's available everywhere, but `loadFontAsync` is required for every (family, style) pair you mutate — not just Inter.
+> **Every text mutation in this file follows the [canonical text-edit recipe](canonical:figma-use/references/gotchas.md):** load font → `await` → mutate → return affected IDs. Examples use `Inter` because it's available everywhere, but `loadFontAsync` is required for every (family, style) pair you mutate — not just Inter.
 
 > **Design files only.** Every snippet here (including `figma.createPage()`) targets Figma Design files (`figma.com/design/...`). `figma.createPage()` throws in both FigJam (`figma.com/board/...`) and Slides (`figma.com/slides/...`).
 

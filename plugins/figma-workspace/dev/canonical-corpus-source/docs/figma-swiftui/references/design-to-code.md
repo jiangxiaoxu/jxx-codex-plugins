@@ -1,12 +1,12 @@
 # Figma → SwiftUI (design → code)
 
-Translate a Figma design into idiomatic SwiftUI. Assumes the shared context in [SKILL.md](../SKILL.md) (URL parsing, `clientLanguages` / `clientFrameworks`, "React+Tailwind is a reference not a source", capture is truth).
+Translate a Figma design into idiomatic SwiftUI. Assumes the shared context in [SKILL.md](canonical:figma-swiftui/SKILL.md) (URL parsing, `clientLanguages` / `clientFrameworks`, "React+Tailwind is a reference not a source", capture is truth).
 
 The tables in this doc are illustrative samples, not exhaustive references — use them to infer the right mapping for similar inputs you encounter. If you find yourself reaching for `ZStack`, `HStack`, or `.offset(x:y:)` to approximate something the system already provides — a tab bar, toolbar, segmented control, list separator, glass material — stop and recognize the pattern instead; the substitution is in §6 or §10.
 
 ## 1. Pull the design
 
-Call `figma:design-context` with `nodeId` and `fileKey` extracted from the Figma URL (see [SKILL.md](../SKILL.md) shared context #1), passing:
+Call `figma:design-context` with `nodeId` and `fileKey` extracted from the Figma URL (see [SKILL.md](canonical:figma-swiftui/SKILL.md) shared context #1), passing:
 
 - `clientLanguages: "swift"`
 - `clientFrameworks: "swiftui"`

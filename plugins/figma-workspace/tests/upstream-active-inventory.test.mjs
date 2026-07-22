@@ -8,9 +8,9 @@ import {
   CANONICAL_SURFACES,
   CANONICAL_TASK_FAMILIES,
 } from "../scripts/lib/canonical-corpus.mjs";
+import { inspectCommittedUpstreamDrift } from "../scripts/update-upstream-corpus.mjs";
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const rawRoot = join(pluginRoot, "dev", "upstream-snapshot");
 const sourceRoot = join(pluginRoot, "dev", "canonical-corpus-source");
 const skillsRoot = join(pluginRoot, "skills");
 const canonicalRoot = join(
@@ -21,25 +21,12 @@ const canonicalRoot = join(
   "canonical-corpus",
 );
 
-test("committed policy classifies every raw snapshot record exactly once", async () => {
-  const rawManifest = JSON.parse(await readFile(join(rawRoot, "manifest.json"), "utf8"));
-  const rawRecords = parseJsonl(await readFile(join(rawRoot, rawManifest.corpus.file), "utf8"));
-  const policyFiles = (await readdir(join(sourceRoot, "policy")))
-    .filter((file) => file.endsWith(".json"))
-    .sort();
-  assert.equal(policyFiles.length, 12);
-  const policyRecords = (
-    await Promise.all(policyFiles.map(async (file) => {
-      const fragment = JSON.parse(await readFile(join(sourceRoot, "policy", file), "utf8"));
-      assert.equal(file, `${fragment.skill}.json`);
-      return fragment.records;
-    }))
-  ).flat();
+test("committed upstream inventory is valid while pending and retired drift remains non-blocking", async () => {
+  const inspection = await inspectCommittedUpstreamDrift();
+  for (const warning of inspection.warnings) process.stderr.write(`${warning}\n`);
+  const rawRecords = inspection.snapshotRecords;
+  const policyRecords = inspection.acceptedPolicies;
   assert.equal(policyRecords.length, 88);
-  assert.deepEqual(
-    [...new Set(policyRecords.map((record) => record.id))].sort(),
-    rawRecords.map((record) => record.id).sort(),
-  );
   assert.deepEqual(classificationCounts(policyRecords), {
     active: 46,
     conditional: 20,
@@ -47,10 +34,16 @@ test("committed policy classifies every raw snapshot record exactly once", async
     examples: 9,
     api: 1,
   });
-  const sourceHashes = new Map(rawRecords.map((record) => [record.id, record.contentSha256]));
-  for (const record of policyRecords) {
-    assert.equal(record.sourceContentSha256, sourceHashes.get(record.id), record.id);
-  }
+  assert.equal(
+    inspection.report.adaptation.readyCount + inspection.report.adaptation.pendingCount,
+    rawRecords.length,
+  );
+  assert.equal(
+    inspection.report.adaptation.readyCount
+      + inspection.report.adaptation.pendingRecords.filter((record) => record.drift === "changed").length
+      + inspection.report.adaptation.retiredCount,
+    policyRecords.length,
+  );
 });
 
 test("shared route catalog maps all policy skills to the fixed task families", async () => {

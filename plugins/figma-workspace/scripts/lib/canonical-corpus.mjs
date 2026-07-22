@@ -125,6 +125,7 @@ export async function buildCanonicalCorpus(options = {}) {
       `Expected ${expectedPublishedRecordCount} canonical records, found ${records.length}`,
     );
   }
+  validateCanonicalAuthoring(records);
   records.sort(compareRecords);
   const corpusJsonl = `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
   const corpusSha256 = sha256(corpusJsonl);
@@ -453,6 +454,394 @@ function extractTitle(text, id) {
   }
   const basename = id.split("/").at(-1)?.replace(/\.md$/u, "") ?? id;
   return truncateCharacters(collapseWhitespace(basename), 120);
+}
+
+function validateCanonicalAuthoring(records) {
+  const publishedIds = new Set(records.map((record) => record.id));
+  for (const record of records) {
+    const withoutFences = stripFencedCode(record.text);
+    const prose = stripHtmlComments(stripInlineCode(withoutFences));
+    validateCanonicalAuthoringLanguage(record.text, prose, record.id);
+    validateCanonicalAuthoringLinks(
+      prose,
+      collectMarkdownHeadingAnchors(withoutFences),
+      publishedIds,
+      record.id,
+    );
+  }
+}
+
+function validateCanonicalAuthoringLanguage(text, prose, recordId) {
+  if (/\bscriptExecutionSucceeded\b/u.test(text)) {
+    throw new Error(`Canonical authoring uses legacy scriptExecutionSucceeded: ${recordId}`);
+  }
+  if (/(?:["'`])?executed(?:["'`])?\s*(?:\?\s*)?:\s*(?:boolean|true|false)\b/iu.test(text)) {
+    throw new Error(`Canonical authoring uses legacy executed result field: ${recordId}`);
+  }
+  const normalized = prose
+    .replace(/[*_~]+/gu, " ")
+    .replace(/[ \t]+/gu, " ");
+  const unsafePatterns = [
+    /\b(?:failed scripts?|script failures?|failed script runs?|\.figma\.ts scripts?)\s+(?:are|is)\s+(?:fully\s+)?atomic\b/iu,
+    /\bscript\s+is\s+atomic\b/iu,
+    /\bfailed scripts?\s+(?:do not|don't)\s+(?:execute|modify)\b/iu,
+    /\bnothing\s+(?:was|is)\s+created\b[^.\n]{0,160}\b(?:script|retry)\b/iu,
+    /\bfailed (?:runs?|scripts?)\b[^.\n]{0,160}\b(?:make|leave|produce)\s+no\s+partial\b/iu,
+    /\bretry(?:ing)?\b[^.\n]{0,160}\b(?:is|this is)\s+safe\b/iu,
+    /\bretry (?:the )?corrected script\b/iu,
+  ];
+  if (unsafePatterns.some((pattern) => pattern.test(normalized))) {
+    throw new Error(
+      `Canonical authoring contains unsafe atomic or direct-retry guidance: ${recordId}`,
+    );
+  }
+  for (const sentence of normalized.split(/(?<=[.!?])(?:\s+|$)|\n+/u)) {
+    if (
+      /\b(?:blindly|directly|immediately)\s+(?:retry|rerun)\b/iu.test(sentence)
+      && !/\b(?:do not|don't|never|must not|cannot|can't)\b/iu.test(sentence)
+    ) {
+      throw new Error(
+        `Canonical authoring contains unsafe atomic or direct-retry guidance: ${recordId}`,
+      );
+    }
+  }
+}
+
+function validateCanonicalAuthoringLinks(prose, headingAnchors, publishedIds, recordId) {
+  for (const link of collectAuthoringLinkTargets(prose)) {
+    const destination = decodeMarkdownDestination(link.destination, recordId, link.line);
+    if (destination.startsWith("canonical:")) {
+      if (destination.includes("#") || /%23/iu.test(destination)) {
+        throw new Error(
+          `Canonical authoring link must not include a fragment: ${recordId}:${link.line}: ${destination}`,
+        );
+      }
+      const targetId = destination.slice("canonical:".length);
+      if (!publishedIds.has(targetId)) {
+        throw new Error(
+          `Canonical authoring link targets an unknown record: ${recordId}:${link.line}: ${destination}`,
+        );
+      }
+      continue;
+    }
+    if (destination.startsWith("#")) {
+      const anchor = decodeAnchor(destination.slice(1), recordId, link.line);
+      if (anchor.length === 0 || !headingAnchors.has(anchor)) {
+        throw new Error(
+          `Canonical authoring link targets an unknown same-document anchor: ${recordId}:${link.line}: ${destination}`,
+        );
+      }
+      continue;
+    }
+    if (/^(?:https?:|mailto:)/iu.test(destination)) {
+      continue;
+    }
+    throw new Error(
+      `Canonical authoring link must use canonical:<record-id>, a same-document anchor, or an external URL: ${recordId}:${link.line}: ${destination}`,
+    );
+  }
+}
+
+function collectAuthoringLinkTargets(text) {
+  return [
+    ...collectReferenceDefinitionTargets(text),
+    ...collectInlineMarkdownLinkTargets(text),
+    ...collectRawHtmlHrefTargets(text),
+  ];
+}
+
+function collectReferenceDefinitionTargets(text) {
+  const targets = [];
+  let offset = 0;
+  for (const line of text.split(/\r?\n/u)) {
+    const match = /^\s{0,3}\[(?:\\.|[^\]\\])+\]:[ \t]*(.*)$/u.exec(line);
+    if (match !== null) {
+      const destination = parseStandaloneMarkdownDestination(match[1]);
+      if (destination !== undefined) {
+        targets.push({
+          destination,
+          line: 1 + countOccurrences(text, "\n", offset),
+        });
+      }
+    }
+    offset += line.length + 1;
+  }
+  return targets;
+}
+
+function collectInlineMarkdownLinkTargets(text) {
+  const targets = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    if (text[cursor] !== "[" || isEscaped(text, cursor)) {
+      cursor += 1;
+      continue;
+    }
+    const labelEnd = findMatchingBracket(text, cursor);
+    if (labelEnd === -1 || text[labelEnd + 1] !== "(") {
+      cursor += 1;
+      continue;
+    }
+    const parsed = parseParenthesizedMarkdownDestination(text, labelEnd + 1);
+    if (parsed === undefined) {
+      cursor = labelEnd + 1;
+      continue;
+    }
+    if (parsed.destination.length > 0) {
+      targets.push({
+        destination: parsed.destination,
+        line: 1 + countOccurrences(text, "\n", cursor),
+      });
+    }
+    cursor = parsed.end;
+  }
+  return targets;
+}
+
+function collectRawHtmlHrefTargets(text) {
+  const targets = [];
+  const pattern = /<[A-Za-z][^>]*?\s+href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))[^>]*>/giu;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const destination = match[1] ?? match[2] ?? match[3];
+    if (destination.length > 0) {
+      targets.push({
+        destination: decodeHtmlAttribute(destination),
+        line: 1 + countOccurrences(text, "\n", match.index),
+      });
+    }
+  }
+  return targets;
+}
+
+function parseStandaloneMarkdownDestination(value) {
+  let cursor = 0;
+  while (cursor < value.length && /[ \t]/u.test(value[cursor])) cursor += 1;
+  if (value[cursor] === "<") {
+    const end = value.indexOf(">", cursor + 1);
+    return end === -1 ? undefined : value.slice(cursor + 1, end);
+  }
+  const start = cursor;
+  let depth = 0;
+  let escaped = false;
+  while (cursor < value.length) {
+    const character = value[cursor];
+    if (escaped) {
+      escaped = false;
+    } else if (character === "\\") {
+      escaped = true;
+    } else if (character === "(") {
+      depth += 1;
+    } else if (character === ")") {
+      if (depth === 0) break;
+      depth -= 1;
+    } else if (depth === 0 && /[ \t]/u.test(character)) {
+      break;
+    }
+    cursor += 1;
+  }
+  return cursor === start ? undefined : value.slice(start, cursor);
+}
+
+function parseParenthesizedMarkdownDestination(text, openParenthesis) {
+  let cursor = openParenthesis + 1;
+  while (cursor < text.length && /[ \t]/u.test(text[cursor])) cursor += 1;
+  let destination;
+  if (text[cursor] === "<") {
+    const end = text.indexOf(">", cursor + 1);
+    if (end === -1 || text.slice(cursor + 1, end).includes("\n")) return undefined;
+    destination = text.slice(cursor + 1, end);
+    cursor = end + 1;
+  } else {
+    const start = cursor;
+    let depth = 0;
+    let escaped = false;
+    while (cursor < text.length) {
+      const character = text[cursor];
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === "(") {
+        depth += 1;
+      } else if (character === ")") {
+        if (depth === 0) break;
+        depth -= 1;
+      } else if (depth === 0 && /[ \t\n]/u.test(character)) {
+        break;
+      }
+      cursor += 1;
+    }
+    destination = text.slice(start, cursor);
+  }
+  let titleQuote;
+  while (cursor < text.length && /[ \t]/u.test(text[cursor])) cursor += 1;
+  if (text[cursor] === '"' || text[cursor] === "'") {
+    titleQuote = text[cursor];
+    cursor += 1;
+    while (cursor < text.length && (text[cursor] !== titleQuote || isEscaped(text, cursor))) {
+      if (text[cursor] === "\n") return undefined;
+      cursor += 1;
+    }
+    if (text[cursor] !== titleQuote) return undefined;
+    cursor += 1;
+    while (cursor < text.length && /[ \t]/u.test(text[cursor])) cursor += 1;
+  }
+  if (text[cursor] !== ")") return undefined;
+  return { destination, end: cursor + 1 };
+}
+
+function findMatchingBracket(text, openBracket) {
+  let depth = 0;
+  for (let cursor = openBracket; cursor < text.length; cursor += 1) {
+    if (isEscaped(text, cursor)) continue;
+    if (text[cursor] === "[") depth += 1;
+    if (text[cursor] === "]") {
+      depth -= 1;
+      if (depth === 0) return cursor;
+    }
+    if (text[cursor] === "\n" && depth > 0) return -1;
+  }
+  return -1;
+}
+
+function isEscaped(text, index) {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
+function collectMarkdownHeadingAnchors(text) {
+  const anchors = new Set();
+  for (const line of text.split(/\r?\n/u)) {
+    const match = /^\s{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/u.exec(line);
+    if (match === null) continue;
+    const base = githubHeadingSlug(match[1]);
+    if (base.length === 0) continue;
+    let suffix = 0;
+    let anchor = base;
+    while (anchors.has(anchor)) {
+      suffix += 1;
+      anchor = `${base}-${suffix}`;
+    }
+    anchors.add(anchor);
+  }
+  return anchors;
+}
+
+function githubHeadingSlug(heading) {
+  return heading
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/gu, "$1")
+    .replace(/`+([^`]*)`+/gu, "$1")
+    .replace(/<[^>]*>/gu, "")
+    .replace(/\\([\\`*_[\]{}()#+\-.!])/gu, "$1")
+    .replace(/[*~]/gu, "")
+    .trim()
+    .toLocaleLowerCase("en-US")
+    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "")
+    .replace(/\s/gu, "-");
+}
+
+function stripFencedCode(text) {
+  const lines = text.match(/.*(?:\r?\n|$)/gu) ?? [];
+  let fence;
+  return lines.map((line) => {
+    const content = line.replace(/\r?\n$/u, "");
+    const lineEnding = line.slice(content.length);
+    if (fence === undefined) {
+      const opener = /^\s{0,3}(`{3,}|~{3,})/u.exec(content);
+      if (opener === null) return line;
+      fence = { marker: opener[1][0], length: opener[1].length };
+      return `${" ".repeat(content.length)}${lineEnding}`;
+    }
+    const closePattern = new RegExp(
+      `^\\s{0,3}${fence.marker === "`" ? "`" : "~"}{${fence.length},}\\s*$`,
+      "u",
+    );
+    if (closePattern.test(content)) fence = undefined;
+    return `${" ".repeat(content.length)}${lineEnding}`;
+  }).join("");
+}
+
+function stripInlineCode(text) {
+  const characters = Array.from(text);
+  let cursor = 0;
+  while (cursor < characters.length) {
+    if (characters[cursor] !== "`") {
+      cursor += 1;
+      continue;
+    }
+    let runLength = 1;
+    while (characters[cursor + runLength] === "`") runLength += 1;
+    let close = cursor + runLength;
+    while (close < characters.length) {
+      if (characters[close] !== "`") {
+        close += 1;
+        continue;
+      }
+      let closeLength = 1;
+      while (characters[close + closeLength] === "`") closeLength += 1;
+      if (closeLength === runLength) break;
+      close += closeLength;
+    }
+    if (close >= characters.length) {
+      cursor += runLength;
+      continue;
+    }
+    for (let index = cursor; index < close + runLength; index += 1) {
+      if (characters[index] !== "\n" && characters[index] !== "\r") characters[index] = " ";
+    }
+    cursor = close + runLength;
+  }
+  return characters.join("");
+}
+
+function stripHtmlComments(text) {
+  return text.replace(/<!--[\s\S]*?-->/gu, (comment) => comment.replace(/[^\r\n]/gu, " "));
+}
+
+function decodeHtmlAttribute(value) {
+  return value
+    .replace(/&#(\d+);/gu, (_, codePoint) => String.fromCodePoint(Number(codePoint)))
+    .replace(/&#x([0-9a-f]+);/giu, (_, codePoint) => String.fromCodePoint(Number.parseInt(codePoint, 16)))
+    .replace(/&colon;/giu, ":")
+    .replace(/&num;/giu, "#")
+    .replace(/&amp;/giu, "&")
+    .replace(/&quot;/giu, '"')
+    .replace(/&apos;/giu, "'");
+}
+
+function decodeMarkdownDestination(destination, recordId, line) {
+  const unescaped = destination.replace(/\\([\\()<>])/gu, "$1");
+  try {
+    return decodeURI(unescaped);
+  } catch {
+    throw new Error(
+      `Canonical authoring link has invalid URI encoding: ${recordId}:${line}: ${destination}`,
+    );
+  }
+}
+
+function decodeAnchor(anchor, recordId, line) {
+  try {
+    return decodeURIComponent(anchor);
+  } catch {
+    throw new Error(
+      `Canonical authoring link has invalid anchor encoding: ${recordId}:${line}: #${anchor}`,
+    );
+  }
+}
+
+function countOccurrences(value, needle, beforeIndex) {
+  let count = 0;
+  let cursor = value.indexOf(needle);
+  while (cursor !== -1 && cursor < beforeIndex) {
+    count += 1;
+    cursor = value.indexOf(needle, cursor + needle.length);
+  }
+  return count;
 }
 
 function extractSummary(text, title) {

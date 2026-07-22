@@ -1,4 +1,4 @@
-> Part of the [figma-generate-library skill](../SKILL.md).
+> Part of the [figma-generate-library skill](canonical:figma-generate-library/SKILL.md).
 
 # Error Recovery Reference
 
@@ -10,20 +10,21 @@ All JavaScript blocks are non-executable Plugin API examples. Use a local `.figm
 
 ---
 
-## 1. Core Protocol: STOP → Inspect → Fix → Retry
+## 1. Core Protocol: STOP → Classify → Inspect → Reconcile
 
-**A failed `figma:script:run` preflight does not execute the script.** If runtime execution errors, inspect the returned diagnostics and current state before retrying; earlier successful runs can still have persistent changes.
+Every `figma:script:run` result has a required `executionOutcome`. `not_started` means validation, preflight, connection, or auth stopped the request before dispatch. `succeeded` means Figma confirmed the script completed. `outcome_unknown` means dispatch occurred but completion cannot be confirmed, so partial or complete effects are possible.
 
 However, in multi-step workflows (20–100+ calls), **previously successful calls** will have created state that persists. If a workflow is abandoned mid-way, nodes from earlier successful calls remain in the file. The cleanup and idempotency patterns in this document handle that scenario.
 
 The recovery sequence for a failed script:
 
 ```
-1. STOP    — Do not run any more Figma write operations.
-2. INSPECT — Read the error carefully. Use `figma:metadata` or `figma:capture` followed by `view_image` to understand the current file state.
-3. FIX     — Correct the script that failed.
-4. RETRY   — Re-run the corrected script.
-5. PERSIST — Update the state ledger with the outcome.
+1. STOP      — Do not run another Figma write operation.
+2. CLASSIFY  — Read executionOutcome, retryGuidance, and diagnostics.
+3. INSPECT   — For outcome_unknown, read back exact run_id/key tags and use figma:metadata or figma:inspect; capture only when visual evidence is needed.
+4. RECONCILE — Record confirmed existing and missing entities before editing.
+5. CONTINUE  — Retry a corrected not_started request, or run only the missing work after reconciliation.
+6. PERSIST   — Update the state ledger with the confirmed outcome.
 ```
 
 For **abandoned multi-step workflows** (where you need to roll back nodes from previous *successful* calls), use the cleanup protocol in Section 2.
@@ -117,7 +118,7 @@ for (const page of pagesToSearch) {
 return { removed: removed.length, skipped: skipped.length, details: removed };
 ```
 
-After running cleanup, use `figma:metadata` on the target page to confirm the orphaned nodes are gone before retrying.
+After cleanup reports `executionOutcome: "succeeded"`, use `figma:metadata` on the target page to confirm the tagged nodes are gone before continuing. If cleanup reports `outcome_unknown`, follow `retryGuidance` and reconcile the same exact tags before any further write.
 
 ---
 
@@ -335,7 +336,7 @@ for (let i = 0; i < entries.length; i++) {
 return results;
 ```
 
-If any entity is missing, treat the phase that created it as incomplete and re-run from that checkpoint.
+If any entity is missing, treat the phase that created it as incomplete. Reconcile every expected `run_id`/`key`, then run only the confirmed missing work from that checkpoint.
 
 ---
 
@@ -411,30 +412,32 @@ Phase 3 complete (per component): componentSet exists + no pending validations +
 
 ## 6. Failure Taxonomy
 
-### Recoverable Errors
+### Reconciled Corrections
 
-These can be fixed and retried without affecting already-created entities:
+After readback identifies the affected entities and confirms the intended correction, these issues can be repaired without recreating already-correct entities:
 
 | Category | Examples | Recovery |
 |---|---|---|
-| Layout errors | Variants stacked at (0,0), wrong padding values | Re-run the positioning step only |
+| Layout errors | Variants stacked at (0,0), wrong padding values | Read back positions, then run the targeted positioning correction only |
 | Naming issues | Typo in variant name, wrong casing | Find nodes by `dsb_key`, update `name` property |
-| Missing property wiring | `componentPropertyReferences` not set | Find component set by ID, re-run the property wiring step |
+| Missing property wiring | `componentPropertyReferences` not set | Find the component set by ID, inspect definitions, then wire only confirmed gaps |
 | Variable binding omission | A fill was hardcoded instead of bound | Find nodes by `dsb_key`, re-bind the fill |
 | Wrong variable bound | Bound to wrong variable ID | Re-bind with correct variable ID |
-| Text not visible | Font not loaded before text write | Call `listAvailableFontsAsync()` to verify the font exists, then re-run text creation with `loadFontAsync` |
-| Script timeout | Script exceeded time limit before completing | Script is atomic — nothing was created. Reduce scope (fewer nodes per call) and retry |
+| Text not visible | Font not loaded before text write | Inspect whether the text node exists; load the verified font, then create missing text or correct the existing node as appropriate |
+| Script timeout | Script exceeded the time limit after dispatch | Treat as `outcome_unknown`; inspect `run_id`/`key` tags, reconcile partial or complete effects, then reduce only the confirmed missing scope |
 
 ### Structural Corruption (Requires Rollback or Restart)
 
 These errors leave the file in a state where continuing forward is unreliable:
 
+Rollback and restart are still mutations. Require a confirmed cleanup result, read back the exact `run_id`/`key` scope, and apply the same `not_started`/`succeeded`/`outcome_unknown` rules to every cleanup or rebuild call.
+
 | Category | Examples | Recovery |
 |---|---|---|
 | Component cycle | A component instance was accidentally nested inside itself | Full cleanup of the affected component, restart that component from Call 1 |
-| combineAsVariants with non-components | Mixed node types passed to combineAsVariants, causing unexpected merges | Remove the malformed component set, re-run from variant creation |
-| Variable collection ID drift | Collection was deleted and re-created, old IDs in state ledger are stale | Re-run Phase 1 completely; update all IDs in state ledger |
-| Page deletion | A page was deleted after component sets were created on it | Treat as Phase 2 incomplete; re-create the page + re-run affected component creations |
+| combineAsVariants with non-components | Mixed node types passed to combineAsVariants, causing unexpected merges | Reconcile exact tagged nodes, remove only the confirmed malformed set, then rebuild confirmed missing variants |
+| Variable collection ID drift | Collection was deleted and re-created, old IDs in state ledger are stale | Reconcile collections and variables, rebuild only missing Phase 1 entities, and update all IDs in the ledger |
+| Page deletion | A page was deleted after component sets were created on it | Treat Phase 2 as incomplete; reconcile surviving tags, then recreate only the missing page and affected components |
 | Mode limit exceeded | `addMode` threw because the plan is Starter or Professional | Redesign variable collection architecture to fit mode limits, restart Phase 1 |
 
 **Recovery from structural corruption**: run `cleanupOrphans` for the entire run ID, then restart from the affected phase. Do NOT attempt to patch corrupted structure in-place.
@@ -466,13 +469,13 @@ These errors leave the file in a state where continuing forward is unreliable:
 
 ### Phase 1 fails (variable creation)
 
-Preflight failures create nothing. The common Phase 1 scenario is that earlier script runs succeeded (creating some variables) while a later run failed.
+A Phase 1 preflight failure reports `executionOutcome: "not_started"`, confirming the request was not dispatched. Earlier successful script runs can still have created variables that persist.
 
 Recovery steps:
 1. Run inspection script to find all variables tagged with your `run_id`
 2. Compare against the plan to identify which variables were successfully created and which are still missing
 3. If a successfully created variable has wrong values, call `variable.remove()` and recreate it
-4. Fix the failed script and retry — it's safe since the failed call created nothing
+4. If the result is `not_started`, fix and retry it. If it is `outcome_unknown`, reconcile tagged variables before running only the missing work.
 5. Do NOT proceed to Phase 2 until ALL planned variables exist with correct scopes and code syntax
 
 **The most common Phase 1 failure:** script timeout when creating many variables. Fix: batch variable creation — create at most 20–30 variables per call.
@@ -490,37 +493,23 @@ Phase 2 failures rarely require Phase 1 rollback unless the page structure itsel
 
 ### Phase 3 fails (component creation)
 
-This is the most common failure mode in long builds. Previous successful component runs create persistent state, so recover according to the failed step in the sequence:
+This is the most common failure mode in long builds. Previous successful component runs create persistent state. For every failed call, first apply the outcome boundary:
 
 ```
-If failure in Call 1 (page creation):
-  → Nothing was created. Fix the script and retry.
+For any failed Call N:
+  → not_started: Calls 1 through N-1 keep their confirmed state; fix and retry Call N.
+  → succeeded: preserve Call N's returned IDs and do not rerun it because later capture or local persistence failed.
+  → outcome_unknown: inspect run_id/key tags and reconcile Call N before deciding which entities are missing.
 
-If failure in Call 2 (doc frame):
-  → Call 1's page exists. Fix Call 2 and retry — idempotency check handles it.
-
-If failure in Call 3 (base component):
-  → Calls 1-2 succeeded. Fix Call 3 and retry.
-
-If failure in Call 4 (variant creation):
-  → Call 3's base component exists. Fix Call 4 and retry.
-  → If you need to restart from Call 3, clean up Call 3's nodes first
-    using cleanupOrphans scoped to the component page.
-
-If failure in Call 5 (combineAsVariants + layout):
-  → Variant ComponentNodes from Call 4 exist but aren't combined yet.
-  → Fix Call 5 and retry.
-  → If the component set was already created by a prior attempt of Call 5
-    that succeeded, remove it first, then re-run.
-
-If failure in Call 6 (component properties):
-  → The component set already exists and is structurally sound.
-  → Fix Call 6 and retry — addComponentProperty is safe to retry if
-    you first check componentPropertyDefinitions for existing properties.
-  → Idempotency check: if 'Label' property already exists, skip addComponentProperty.
+Call-specific reconciliation:
+  → Call 1: check whether the tagged page exists.
+  → Call 2: check whether the tagged documentation frame exists under that page.
+  → Calls 3-4: inspect the base component and tagged variants; clean up only exact run_id/key matches if a restart is required.
+  → Call 5: determine whether variants remain loose or a tagged component set already exists before combining or removing anything.
+  → Call 6: inspect componentPropertyDefinitions; add only properties confirmed missing.
 ```
 
-**Idempotency for component properties (Call 6 retry):**
+**Idempotency for component properties after Call 6 reconciliation:**
 
 ```javascript
 const existingDefs = cs.componentPropertyDefinitions;

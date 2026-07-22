@@ -210,7 +210,7 @@ erDiagram
 
 ## 8. Layout (same ELK as flowcharts)
 
-ER diagrams render via the **same ELK layered layout** as flowcharts. The principles from [flowchart.md §5 (ELK survival guide)](./flowchart.md#5-elk-survival-guide) apply:
+ER diagrams render via the **same ELK layered layout** as flowcharts. The principles from [flowchart.md §5 (ELK survival guide)](canonical:figma-generate-diagram/references/flowchart.md) apply:
 
 - **Simple cycles render fine** — circular FKs (user → team → users) don't need workarounds at small scale.
 - **Pain scales with size** — 20+ entities in one diagram starts to crowd. Split into sub-domains (one diagram per bounded context).
@@ -229,7 +229,7 @@ the upstream diagram capability produces a clean, laid-out ER schema — tables 
    - **Color-coding** entities by category (core / lookup / junction / audit) using replacement shapes or rectangles layered behind the tables
    - **Sequence numbers** or badges for migration order, deprecation status, etc.
 
-Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin API](../../figma-use/SKILL.md) and [FigJam API](../../figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
+Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
 
 ### Signals the request needs the hybrid workflow
 

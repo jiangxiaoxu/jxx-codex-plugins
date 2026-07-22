@@ -2,7 +2,7 @@
 
 > Reference for local `.figma.ts` workflows using the Figma Plugin API. How to correctly create, bind, scope, and alias variables using the Plugin API.
 >
-> For design system context (aliasing strategy, mode decisions, code syntax philosophy, grouping conventions), see [wwds-variables](working-with-design-systems/wwds-variables.md).
+> For design system context (aliasing strategy, mode decisions, code syntax philosophy, grouping conventions), see [wwds-variables](canonical:figma-use/references/working-with-design-systems/wwds-variables.md).
 
 ## Contents
 
@@ -139,7 +139,7 @@ variable.scopes = [];                              // hidden from all pickers
 **All valid scope values:**
 `ALL_SCOPES`, `TEXT_CONTENT`, `CORNER_RADIUS`, `WIDTH_HEIGHT`, `GAP`, `ALL_FILLS`, `FRAME_FILL`, `SHAPE_FILL`, `TEXT_FILL`, `STROKE_COLOR`, `STROKE_FLOAT`, `EFFECT_FLOAT`, `EFFECT_COLOR`, `OPACITY`, `FONT_FAMILY`, `FONT_STYLE`, `FONT_WEIGHT`, `FONT_SIZE`, `LINE_HEIGHT`, `LETTER_SPACING`, `PARAGRAPH_SPACING`, `PARAGRAPH_INDENT`
 
-**Always set scopes explicitly** — `ALL_SCOPES` is the default but almost never what you want. For a comprehensive scope-to-use-case mapping table, see [token-creation.md § Variable Scopes — Complete Reference Table](../../figma-generate-library/references/token-creation.md).
+**Always set scopes explicitly** — `ALL_SCOPES` is the default but almost never what you want. For a comprehensive scope-to-use-case mapping table, see [token-creation.md § Variable Scopes — Complete Reference Table](canonical:figma-generate-library/references/token-creation.md).
 
 **Always check the existing file's scope patterns before creating variables** — match whatever convention is already in use. See "Discovering Existing Variables" below.
 
@@ -361,7 +361,7 @@ async function setVariableValueForMode(variableId, modeId, value) {
 
 ## Effect Styles (For Shadows)
 
-Shadows can't be stored as variables. Use effect styles. For comprehensive patterns, see [effect-style-patterns.md](effect-style-patterns.md).
+Shadows can't be stored as variables. Use effect styles. For comprehensive patterns, see [effect-style-patterns.md](canonical:figma-use/references/effect-style-patterns.md).
 
 ```javascript
 const shadow = figma.createEffectStyle();

@@ -84,4 +84,4 @@ Then execute it with the chosen absolute state file:
 npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/cleanup-orphans.json --state-file C:/work/project/.figma-workspace/state.json
 ```
 
-This example is not automatically executable: replace every placeholder, keep `dryRun` enabled until the returned plan exactly matches your review, and only then change it to `false`. Rerun only the same reviewed script and verify the returned IDs before proceeding.
+This example is not automatically executable: replace every placeholder, keep `dryRun` enabled until the returned plan exactly matches your review, and only then change it to `false`. Execute the same reviewed script once, require `executionOutcome: "succeeded"`, and verify the returned IDs before proceeding. For `outcome_unknown`, follow `retryGuidance` and read back the exact tags before any further cleanup.

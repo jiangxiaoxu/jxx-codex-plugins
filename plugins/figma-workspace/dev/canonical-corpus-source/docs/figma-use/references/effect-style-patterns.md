@@ -2,7 +2,7 @@
 
 > Reference for local `.figma.ts` workflows using the Figma Plugin API. How to create, apply, and inspect effect styles using the Plugin API.
 >
-> For design system context (effect types, variable bindings on effects, gotchas), see [wwds-effect-styles](working-with-design-systems/wwds-effect-styles.md).
+> For design system context (effect types, variable bindings on effects, gotchas), see [wwds-effect-styles](canonical:figma-use/references/working-with-design-systems/wwds-effect-styles.md).
 
 ## Contents
 

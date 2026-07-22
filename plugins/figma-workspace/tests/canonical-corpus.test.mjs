@@ -10,7 +10,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   buildCanonicalCorpus,
@@ -18,6 +19,7 @@ import {
 } from "../scripts/lib/canonical-corpus.mjs";
 
 const generatedAt = "2026-07-14T04:05:06.000Z";
+const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("builder publishes only self-contained mirrors with canonical identities", async () => {
   const fixture = await createFixture();
@@ -130,6 +132,12 @@ test("arbitrary upstream snapshot drift cannot change canonical output", async (
     const rawRoot = join(fixture.root, "dev/upstream-snapshot");
     await mkdir(rawRoot, { recursive: true });
     await writeFile(join(rawRoot, "manifest.json"), "changed, deleted, and new raw records\n", "utf8");
+    await mkdir(join(rawRoot, "docs/alpha"), { recursive: true });
+    await writeFile(
+      join(rawRoot, "docs/alpha/SKILL.md"),
+      "# Archived upstream\n\n[Relative](../missing.md) scriptExecutionSucceeded; failed scripts are atomic.\n",
+      "utf8",
+    );
     const second = await buildFixture(fixture, { publish: false });
     assert.deepEqual(second.records, first.records);
     assert.equal(second.manifest.corpus.sha256, first.manifest.corpus.sha256);
@@ -198,6 +206,222 @@ test("canonical examples fail closed without a TypeScript code fence", async (t)
         await rm(fixture.root, { recursive: true, force: true });
       }
     });
+  }
+});
+
+test("canonical authoring validator accepts resolvable links and ignores code examples", async () => {
+  const fixture = await createFixture();
+  try {
+    await writeFile(
+      join(fixture.sourceRoot, "docs/alpha/references/guide.md"),
+      [
+        "# Canonical safe guide",
+        "",
+        "Use the [router](canonical:alpha/SKILL.md), the [recovery section](#details--recovery),",
+        "and an [external reference](https://example.invalid/path_(one)).",
+        "The [router reference][router] and <a href=\"canonical:alpha/SKILL.md\">raw link</a> are valid.",
+        "",
+        "[router]: canonical:alpha/SKILL.md",
+        "",
+        "## Details & Recovery",
+        "",
+        "Never blindly rerun a mutation; inspect, read back, and reconcile first.",
+        "",
+        "`[ignored relative link](../missing.md) failed scripts are atomic`",
+        "`<a href=\"../ignored.md\">ignored raw link</a>`",
+        "",
+        "```md",
+        "[ignored canonical link](canonical:missing.md)",
+        "Immediately retry the mutation because failed scripts are atomic.",
+        "```",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const result = await buildFixture(fixture, { publish: false });
+    assert.equal(result.records.length, 3);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("canonical authoring links fail closed before publication", async (t) => {
+  for (const [name, text, pattern] of [
+    [
+      "unknown canonical record",
+      "# Guide\n\nRead [missing](canonical:alpha/references/missing.md).\n",
+      /targets an unknown record/u,
+    ],
+    [
+      "relative cross-document link",
+      "# Guide\n\nRead [router](..\/SKILL.md).\n",
+      /must use canonical:<record-id>/u,
+    ],
+    [
+      "unknown same-document anchor",
+      "# Guide\n\nRead [missing](#not-a-heading).\n",
+      /unknown same-document anchor/u,
+    ],
+    [
+      "canonical record fragment",
+      "# Guide\n\nRead [router section](canonical:alpha\/SKILL.md#workflow).\n",
+      /must not include a fragment/u,
+    ],
+    [
+      "reference-style relative link",
+      "# Guide\n\nRead [router][target].\n\n[target]: ..\/SKILL.md\n",
+      /must use canonical:<record-id>/u,
+    ],
+    [
+      "reference-style unknown canonical record",
+      "# Guide\n\nRead [missing][target].\n\n[target]: canonical:alpha\/missing.md\n",
+      /targets an unknown record/u,
+    ],
+    [
+      "nested label relative link",
+      "# Guide\n\nRead [outer [inner label]](..\/SKILL.md).\n",
+      /must use canonical:<record-id>/u,
+    ],
+    [
+      "raw HTML relative href",
+      "# Guide\n\n<a href=\"../SKILL.md\">Router</a>\n",
+      /must use canonical:<record-id>/u,
+    ],
+    [
+      "raw HTML unknown canonical href",
+      "# Guide\n\n<a href='canonical:alpha/missing.md'>Missing</a>\n",
+      /targets an unknown record/u,
+    ],
+  ]) {
+    await t.test(name, async () => {
+      const fixture = await createFixture();
+      try {
+        await writeFile(
+          join(fixture.sourceRoot, "docs/alpha/references/guide.md"),
+          text,
+          "utf8",
+        );
+        await assert.rejects(buildFixture(fixture), pattern);
+        await assert.rejects(
+          readFile(join(fixture.canonicalRoot, "manifest.json")),
+          { code: "ENOENT" },
+        );
+      } finally {
+        await rm(fixture.root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test("same-document heading anchors use globally occupied GitHub slug collisions", async () => {
+  const fixture = await createFixture();
+  try {
+    await writeFile(
+      join(fixture.sourceRoot, "docs/alpha/references/guide.md"),
+      [
+        "# Guide",
+        "",
+        "## Collision",
+        "",
+        "## Collision-1",
+        "",
+        "## Collision",
+        "",
+        "Read the [third collision](#collision-2).",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const result = await buildFixture(fixture, { publish: false });
+    assert.equal(result.records.length, 3);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("committed canonical corpus matches a publish-free rebuild", async () => {
+  const sourceRoot = join(pluginRoot, "dev/canonical-corpus-source");
+  const canonicalRoot = join(
+    pluginRoot,
+    "skills/figma-workspace/references/canonical-corpus",
+  );
+  const committedManifest = JSON.parse(
+    await readFile(join(canonicalRoot, "manifest.json"), "utf8"),
+  );
+  const result = await buildCanonicalCorpus({
+    sourceRoot,
+    publishRoot: canonicalRoot,
+    publish: false,
+    generatedAt: committedManifest.generatedAt,
+  });
+  const rebuiltCorpus = `${result.records.map((record) => JSON.stringify(record)).join("\n")}\n`;
+  assert.deepEqual(result.manifest.corpus, committedManifest.corpus);
+  assert.deepEqual(result.manifest.integrity, committedManifest.integrity);
+  assert.equal(
+    await readFile(join(canonicalRoot, committedManifest.corpus.file), "utf8"),
+    rebuiltCorpus,
+  );
+  assert.deepEqual(
+    result.records.map((record) => record.id),
+    Object.keys(committedManifest.integrity.contentHashes).sort(),
+  );
+});
+
+test("canonical authoring legacy execution and retry guidance fail closed", async (t) => {
+  for (const [name, statement, pattern] of [
+    [
+      "legacy execution field",
+      "Capture reports `scriptExecutionSucceeded: true` after execution.",
+      /legacy scriptExecutionSucceeded/u,
+    ],
+    [
+      "legacy executed result field",
+      "The result contains `executed: true` after execution.",
+      /legacy executed result field/u,
+    ],
+    [
+      "unsafe atomic claim",
+      "Failed scripts are atomic, so nothing changes.",
+      /unsafe atomic or direct-retry guidance/u,
+    ],
+    [
+      "unsafe direct retry",
+      "Retry the corrected script after any script error.",
+      /unsafe atomic or direct-retry guidance/u,
+    ],
+    [
+      "unsafe no-partial-effects claim",
+      "Repair TypeScript diagnostics before rerunning; failed runs make no partial board edits.",
+      /unsafe atomic or direct-retry guidance/u,
+    ],
+  ]) {
+    await t.test(name, async () => {
+      const fixture = await createFixture();
+      try {
+        await writeFile(
+          join(fixture.sourceRoot, "docs/alpha/references/guide.md"),
+          `# Guide\n\n${statement}\n`,
+          "utf8",
+        );
+        await assert.rejects(buildFixture(fixture), pattern);
+      } finally {
+        await rm(fixture.root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test("canonical authoring permits ordinary executed variable assignments", async () => {
+  const fixture = await createFixture();
+  try {
+    await writeFile(
+      join(fixture.sourceRoot, "docs/alpha/references/guide.md"),
+      "# Guide\n\n```ts\nlet executed = true;\n```\n",
+      "utf8",
+    );
+    await assert.doesNotReject(buildFixture(fixture));
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
   }
 });
 

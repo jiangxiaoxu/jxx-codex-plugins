@@ -224,7 +224,7 @@ If the user wants notes or color-coded states, see §10 for the hybrid workflow.
 
 ## 9. Layout (same ELK as flowcharts)
 
-State diagrams render via the **same ELK layered layout** as flowcharts. The layout principles from [flowchart.md §5 (ELK survival guide)](./flowchart.md#5-elk-survival-guide) apply directly:
+State diagrams render via the **same ELK layered layout** as flowcharts. The layout principles from [flowchart.md §5 (ELK survival guide)](canonical:figma-generate-diagram/references/flowchart.md) apply directly:
 
 - **Simple cycles render fine** — retry loops, reopen transitions, reactivation paths. Don't contort the state machine to avoid them.
 - **Subgraphs cluster cleanly** — composite states use this automatically.
@@ -249,7 +249,7 @@ State diagrams generated via the upstream diagram capability produce a clean, la
    - **Color-coding** states by category (terminal / active / error)
    - **Sequence numbers** on transitions for step-by-step walkthroughs
 
-Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin API](../../figma-use/SKILL.md) and [FigJam API](../../figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
+Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
 
 ### Signals the request needs the hybrid workflow
 

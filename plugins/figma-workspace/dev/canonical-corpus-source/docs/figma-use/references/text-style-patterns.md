@@ -2,9 +2,9 @@
 
 > Reference for local `.figma.ts` workflows using the Figma Plugin API. How to create, apply, and inspect text styles using the Plugin API.
 >
-> Every example here assumes the [canonical text-edit recipe](gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids): load font → `await` → mutate → return affected IDs. Examples use `Inter` because it's available everywhere, but the rule applies identically to any font family/style.
+> Every example here assumes the [canonical text-edit recipe](canonical:figma-use/references/gotchas.md): load font → `await` → mutate → return affected IDs. Examples use `Inter` because it's available everywhere, but the rule applies identically to any font family/style.
 >
-> For design system context (when to create text styles, how they relate to tokens, `.figma.ts` script limitations), see [wwds-text-styles](working-with-design-systems/wwds-text-styles.md).
+> For design system context (when to create text styles, how they relate to tokens, `.figma.ts` script limitations), see [wwds-text-styles](canonical:figma-use/references/working-with-design-systems/wwds-text-styles.md).
 
 ## Contents
 

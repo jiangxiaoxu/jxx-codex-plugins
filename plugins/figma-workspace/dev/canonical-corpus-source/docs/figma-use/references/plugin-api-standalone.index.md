@@ -1,7 +1,7 @@
 # Plugin API Index
 
-> Full typings: `plugin-api-standalone.d.ts` (11,292 lines)
-> Grep by symbol name to jump to definition. All `L#` line numbers refer to that file.
+> Public lookup: use `figma:api:search` for exact symbols and signatures. This record is a curated orientation index, not a declaration-file entrypoint.
+> The retained `L#` values are orientation metadata from the archived upstream declaration snapshot and may drift. Never use them for exact lookup; query the symbol with `figma:api:search` instead.
 
 ---
 
@@ -369,7 +369,7 @@ type BaseNode   (L10913) = DocumentNode | PageNode | SceneNode
 
 ## All Symbols (flat — grep these against the .d.ts file)
 
-To find any symbol: `grep -n "^interface Foo\|^type Foo\|^declare type Foo" plugin-api-standalone.d.ts`
+To find any symbol, run `figma:api:search` with a bare, qualified, or call-shaped query such as `createFrame`, `PluginAPI.createFrame`, or `figma.createFrame()`.
 
 ```
 PluginAPI               VariablesAPI            AnnotationsAPI          TeamLibraryAPI

@@ -743,7 +743,7 @@ test("guidance and lookup run locally against staged runtime assets", async () =
       ["motion implementation", "motion-implementation", "canonical:figma-implement-motion/SKILL.md"],
       ["swiftui design to code", "swiftui", "canonical:figma-swiftui/SKILL.md"],
       ["figjam board", "figjam", "canonical:figma-use-figjam/SKILL.md"],
-      ["motion design", "motion", "canonical:figma-use-motion/references/motion-patterns.md"],
+      ["motion design", "motion", "canonical:figma-use-motion/SKILL.md"],
       ["slides presentation", "slides", "canonical:figma-use-slides/references/slide-lifecycle.md"],
       ["design editing", "design-editing", "canonical:figma-use/SKILL.md"],
     ];
@@ -1026,6 +1026,12 @@ test("read-only discovery commands expose docs, runtime status, sessions, and li
     const canonicalDoc = await client.docs({ mode: "read", id: "canonical:figma-code-connect/references/advanced-patterns.md" });
     assert.equal(canonicalDoc.kind, "canonical");
     assert.match(canonicalDoc.content, /Code Connect/iu);
+    const crossLinkedDoc = await client.docs({ mode: "read", id: "canonical:figma-generate-design/SKILL.md" });
+    const canonicalLink = crossLinkedDoc.content.match(/\]\((canonical:[^)]+)\)/u)?.[1];
+    assert.equal(typeof canonicalLink, "string");
+    const followedCanonicalLink = await client.docs({ mode: "read", id: canonicalLink });
+    assert.equal(followedCanonicalLink.ok, true);
+    assert.equal(followedCanonicalLink.kind, "canonical");
 
     const doctor = await client.doctor();
     assert.equal(typeof doctor.runtime.projectDocs.ok, "boolean");

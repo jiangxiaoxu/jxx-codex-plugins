@@ -67,4 +67,4 @@ npm --silent run figma:api:search -- "setBoundVariable" --state-file C:/work/pro
 - When changing a reusable component, inspect representative variants rather than assuming one instance proves every state.
 - Use a capture followed by `view_image` when the binding affects visible output and visual correctness matters.
 - Stop for clarification when no appropriate variable exists, a requested variable is from an unavailable library, scopes reject the binding, or a requested mode conflicts with the active component contract.
-- If TypeScript preflight reports fatal diagnostics, no write has run. Repair the `.figma.ts` source and rerun; preserve the script as the reviewable mutation record.
+- Fatal TypeScript preflight diagnostics report `executionOutcome: "not_started"`, confirming no request was dispatched. Repair and rerun the `.figma.ts` source; preserve it as the reviewable mutation record. For `outcome_unknown`, inspect and reconcile targeted variables before any write.

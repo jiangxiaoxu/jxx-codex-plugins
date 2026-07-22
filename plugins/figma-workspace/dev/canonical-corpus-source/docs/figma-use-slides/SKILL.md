@@ -9,10 +9,10 @@ Use `figma:script:run` for deck creation, edits, reference-file styling, iterati
 ## Critical Rules (Slides-specific)
 
 1. **Newly created Slides files have a default light theme.** Treat it as structural scaffolding: overwrite theme colors, text styles, and variables with the deck's intended design direction. Do not rely on the default light-theme tokens.
-2. **MUST `appendChild` BEFORE setting `x`/`y` — for every node, at every level of nesting.** Newly created nodes are silently auto-parented to a slide context at absolute `(240, 240)` (the slide grid's `GRID_PADDING`). Writing `x`/`y` before `appendChild` causes the value to be stored against that hidden origin; the node then lands at `(intended − 240, intended − 240)` once you attach the real parent. The bug is **intermittent** — some frames in the same script escape it, so a working test is not proof you're safe. **Signature to recognize:** if any node ends up `(−240, −240)` from where you set it, your code set `x`/`y` before the final `appendChild`. Do NOT try to compensate by adding 240 back — that produces worse output on retry. Fix the order instead. See [slide-gotchas.md](references/slide-gotchas.md#position-after-appendchild-critical) for the helper pattern that makes the order impossible to get wrong.
-3. **SLIDE_GRID and SLIDE_ROW are opaque nodes** — do not access `.fills`, `.effects`, or layout properties on them. Only `SLIDE` nodes (type `'SLIDE'`) extend `BaseFrameMixin`. **Exception:** `SLIDE_ROW.name` IS settable — that's how plugins rename slide sections (e.g. `slideRow.name = "Intro"`). See [slide-lifecycle.md](references/slide-lifecycle.md).
+2. **MUST `appendChild` BEFORE setting `x`/`y` — for every node, at every level of nesting.** Newly created nodes are silently auto-parented to a slide context at absolute `(240, 240)` (the slide grid's `GRID_PADDING`). Writing `x`/`y` before `appendChild` causes the value to be stored against that hidden origin; the node then lands at `(intended − 240, intended − 240)` once you attach the real parent. The bug is **intermittent** — some frames in the same script escape it, so a working test is not proof you're safe. **Signature to recognize:** if any node ends up `(−240, −240)` from where you set it, your code set `x`/`y` before the final `appendChild`. Do NOT try to compensate by adding 240 back — that produces worse output on retry. Fix the order instead. See [slide-gotchas.md](canonical:figma-use-slides/references/slide-gotchas.md) for the helper pattern that makes the order impossible to get wrong.
+3. **SLIDE_GRID and SLIDE_ROW are opaque nodes** — do not access `.fills`, `.effects`, or layout properties on them. Only `SLIDE` nodes (type `'SLIDE'`) extend `BaseFrameMixin`. **Exception:** `SLIDE_ROW.name` IS settable — that's how plugins rename slide sections (e.g. `slideRow.name = "Intro"`). See [slide-lifecycle.md](canonical:figma-use-slides/references/slide-lifecycle.md).
 4. **Use `figma:script:run` read-only `.figma.ts` scripts for Slides validation.** Return created node positions and verify no overlapping bounding boxes; use `figma:capture` for visual QA.
-5. **Do NOT call `figma.createPage()` in Slides.** It throws `TypeError: figma.createPage no such property 'createPage' on the figma global object` — `createPage()` is a Design-file API only (`figma.com/design/...`); the Slides URL is `figma.com/slides/...`. Use the slide grid (`SLIDE_GRID` / `SLIDE_ROW` / `SLIDE`) to organize deck structure instead — see [slide-lifecycle.md](references/slide-lifecycle.md) and [slide-grid.md](references/slide-grid.md).
+5. **Do NOT call `figma.createPage()` in Slides.** It throws `TypeError: figma.createPage no such property 'createPage' on the figma global object` — `createPage()` is a Design-file API only (`figma.com/design/...`); the Slides URL is `figma.com/slides/...`. Use the slide grid (`SLIDE_GRID` / `SLIDE_ROW` / `SLIDE`) to organize deck structure instead — see [slide-lifecycle.md](canonical:figma-use-slides/references/slide-lifecycle.md) and [slide-grid.md](canonical:figma-use-slides/references/slide-grid.md).
 6. **Never delete existing slides to rebuild them.** When asked to improve, redesign, or restyle a deck, modify the existing slides in place. Only delete slides when the user explicitly asks to "start over" or "redo from scratch."
 
 ## Design Thinking
@@ -23,7 +23,7 @@ Not every task needs the same depth of design thinking. Before doing anything, i
 - **Structural additions** — adding slides, reworking a section's layout, changing the deck's color palette, introducing a new visual element. This includes requests to "improve," "redesign," or "restyle" a deck — those are in-place edits to what's already there, not a new deck. Design thinking applies, but in *inherit* mode: the existing deck is your design language. Inspect it, match its palette, type, spatial habits, and motifs. Extend the deck's existing character rather than reinventing it.
 - **New deck creation** — building a deck from scratch or from a blank file. Full design thinking applies as described below.
 
-For structural additions to existing decks: run the inspection scripts (below) and take screenshots before making changes. The answers to "what color story?" and "what type treatment?" are already in the file — your job is to read them and stay consistent. The design principles in [slide-design.md](references/slide-design.md) describe what you're *matching*, not what you're *choosing*.
+For structural additions to existing decks: run the inspection scripts (below) and take screenshots before making changes. The answers to "what color story?" and "what type treatment?" are already in the file — your job is to read them and stay consistent. The design principles in [slide-design.md](canonical:figma-use-slides/references/slide-design.md) describe what you're *matching*, not what you're *choosing*.
 
 ### New deck design process
 
@@ -45,7 +45,7 @@ What to look for in a reference file: the color palette (which hue leads, what t
 
 How closely to follow the reference depends on what the user asked for. "Make it look like this" means replicate the design language with new content. "Use this for inspiration" means echo the character but make it your own. "Here's our brand deck" means extract the brand system and apply it consistently. When in doubt, stay closer to the reference — it's easier for a user to ask you to diverge than to ask you to undo invented choices that conflict with their brand.
 
-Load [slide-design.md](references/slide-design.md) for specific guidance on color, type, layout patterns, composition, and what to avoid. When you have a reference file or brand guidelines, treat slide-design.md's principles as defaults for the decisions the user *didn't* make — not as overrides for the ones they did.
+Load [slide-design.md](canonical:figma-use-slides/references/slide-design.md) for specific guidance on color, type, layout patterns, composition, and what to avoid. When you have a reference file or brand guidelines, treat slide-design.md's principles as defaults for the decisions the user *didn't* make — not as overrides for the ones they did.
 
 ## Deck-Building Workflow
 
@@ -57,8 +57,8 @@ Complete the design thinking process above (read the brief, check for a design l
 
 1. **Slide-by-slide plan.** For every slide: its purpose/content, layout approach described spatially (e.g. "title anchored upper-left, spec card filling the right third, decorative circle bleeding off top-right edge"), and background treatment (dark/light/gradient). Do NOT compute pixel coordinates during planning — describe layouts in spatial terms. Coordinate math happens during code generation.
 2. **Shared constants.** Declare the font families and styles you'll use, the color palette as named roles (primary, accent, bgDark, surface, textPrimary, textMuted, etc.), and the recurring motif or signature element.
-3. **Layout variety check.** Read through the slide plans in sequence. If the layout descriptions feel repetitive — "two-column, two-column, grid, two-column" — rearrange before building. This is the cheapest moment to diversify. See [slide-design.md](references/slide-design.md) for anti-patterns.
-4. **Code preamble.** Write out the reusable preamble you'll paste at the top of every build script: a `const C = { ... }` color palette object, a `Promise.all([...])` font-loading block, and the `addFrame`/`addText`/`addRect` helpers from [slide-gotchas.md](references/slide-gotchas.md#position-after-appendchild-critical).
+3. **Layout variety check.** Read through the slide plans in sequence. If the layout descriptions feel repetitive — "two-column, two-column, grid, two-column" — rearrange before building. This is the cheapest moment to diversify. See [slide-design.md](canonical:figma-use-slides/references/slide-design.md) for anti-patterns.
+4. **Code preamble.** Write out the reusable preamble you'll paste at the top of every build script: a `const C = { ... }` color palette object, a `Promise.all([...])` font-loading block, and the `addFrame`/`addText`/`addRect` helpers from [slide-gotchas.md](canonical:figma-use-slides/references/slide-gotchas.md).
 
 ### Phase 2 — Build
 
@@ -67,7 +67,7 @@ Execute the plan in large batches. The goal is to minimize the number of think-t
 - **3–5 slides per `figma:script:run` execution.** Structurally similar slides (e.g. a series of product feature slides) can go in the same batch. Each slide is an isolated subtree — cross-slide dependencies don't exist, so large batches are safe.
 - **Do NOT re-plan between batches.** The design was decided in Phase 1. If a batch succeeds and passes validation, move to the next batch immediately. Only re-plan if a batch fails or produces a visual problem that requires changing the approach.
 - **Paste the code preamble** (colors, fonts, helpers) at the top of every build script. Copy it from Phase 1 verbatim — do not re-derive it.
-- **Validate every batch** with the deterministic batch validation script from [slide-gotchas.md](references/slide-gotchas.md#batch-validation-script). This checks for overlapping elements, text clipping, and out-of-bounds nodes in ~3 seconds. If the check passes, proceed without a screenshot. If it fails, screenshot the affected slides and fix before continuing.
+- **Validate every batch** with the deterministic batch validation script from [slide-gotchas.md](canonical:figma-use-slides/references/slide-gotchas.md). This checks for overlapping elements, text clipping, and out-of-bounds nodes in ~3 seconds. If the check passes, proceed without a screenshot. If it fails, screenshot the affected slides and fix before continuing.
 - **Capture at checkpoints only** — after the first batch (validates the visual system: colors, typography, design direction), and after the final batch (overall quality). Use `figma:capture` for 1–2 representative slides per checkpoint and inspect each output image.
 - **Return all created node IDs** from every build script, as always.
 
@@ -125,7 +125,7 @@ Speaker notes are for the *presenter*, not the audience. They should feel like a
 
 ### Formatting
 
-`slide.speakerNotes` accepts a markdown string. Prefer bullet lists as the primary structure; bold is useful for emphasis on key phrases the presenter shouldn't skip. See [slide-properties.md](references/slide-properties.md#supported-formatting) for the full list of supported (lists, bold, italic, strikethrough) and unsupported (headings, code blocks, inline code, links) markdown.
+`slide.speakerNotes` accepts a markdown string. Prefer bullet lists as the primary structure; bold is useful for emphasis on key phrases the presenter shouldn't skip. See [slide-properties.md](canonical:figma-use-slides/references/slide-properties.md) for the full list of supported (lists, bold, italic, strikethrough) and unsupported (headings, code blocks, inline code, links) markdown.
 
 ## Inspecting Slides Files
 
@@ -186,9 +186,9 @@ return textNodes.map(t => ({
 
 Load only the references your task needs:
 
-- [slide-gotchas](references/slide-gotchas.md) — Pitfalls specific to Slides (coordinate offsets, opaque node types, validation workarounds)
-- [slide-lifecycle](references/slide-lifecycle.md) — Create, clone, delete, and reorder slides and slide rows
-- [slide-grid](references/slide-grid.md) — Work with the slide grid layout (`getSlideGrid`, `setSlideGrid`)
-- [slide-content](references/slide-content.md) — Build content within slides (text, shapes, auto-layout — SlideNode extends BaseFrameMixin)
-- [slide-properties](references/slide-properties.md) — Slide-specific properties (`speakerNotes`, `isSkippedSlide`, `focusedSlide`, `focusedNode`, `slideThemeId`, `InteractiveSlideElementNode`)
-- [slide-design](references/slide-design.md) — Design principles for visually interesting, varied decks (color strategy, typography, layout variety, spatial composition, anti-patterns)
+- [slide-gotchas](canonical:figma-use-slides/references/slide-gotchas.md) — Pitfalls specific to Slides (coordinate offsets, opaque node types, validation workarounds)
+- [slide-lifecycle](canonical:figma-use-slides/references/slide-lifecycle.md) — Create, clone, delete, and reorder slides and slide rows
+- [slide-grid](canonical:figma-use-slides/references/slide-grid.md) — Work with the slide grid layout (`getSlideGrid`, `setSlideGrid`)
+- [slide-content](canonical:figma-use-slides/references/slide-content.md) — Build content within slides (text, shapes, auto-layout — SlideNode extends BaseFrameMixin)
+- [slide-properties](canonical:figma-use-slides/references/slide-properties.md) — Slide-specific properties (`speakerNotes`, `isSkippedSlide`, `focusedSlide`, `focusedNode`, `slideThemeId`, `InteractiveSlideElementNode`)
+- [slide-design](canonical:figma-use-slides/references/slide-design.md) — Design principles for visually interesting, varied decks (color strategy, typography, layout variety, spatial composition, anti-patterns)

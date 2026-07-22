@@ -2,7 +2,7 @@
 
 Use this reference with the Figma Workspace CLI. Put a native Figma Plugin API async script body in a local `.figma.ts` file and execute it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. Run `figma:guidance` or `figma:api:search` first when an API detail is uncertain.
 
-> **FigJam URL is `figma.com/board/...`.** Do NOT call `figma.createPage()` in FigJam — it throws `TypeError: figma.createPage no such property 'createPage' on the figma global object`. `createPage()` is a Design-file API only (`figma.com/design/...`). FigJam files have a single implicit page; organize content with sections instead (see [create-section](references/create-section.md)).
+> **FigJam URL is `figma.com/board/...`.** Do NOT call `figma.createPage()` in FigJam — it throws `TypeError: figma.createPage no such property 'createPage' on the figma global object`. `createPage()` is a Design-file API only (`figma.com/design/...`). FigJam files have a single implicit page; organize content with sections instead (see [create-section](canonical:figma-use-figjam/references/create-section.md)).
 
 ## Inspecting FigJam Files
 
@@ -31,18 +31,18 @@ Use `figma:assets:apply` for prepared local image assets and `figma:assets:downl
 
 ## Reference Docs
 
-- [plan-board-content](references/plan-board-content.md) - Read this for any board content request — board template, retro, brainstorm, ice breaker, meeting board, scaffold
+- [plan-board-content](canonical:figma-use-figjam/references/plan-board-content.md) - Read this for any board content request — board template, retro, brainstorm, ice breaker, meeting board, scaffold
   - Covers planning of generated board content, including sequential outline, sections, intents, and hierarchical text
   - Delegates to other references for specific API details
-- [create-section](references/create-section.md) — Create and configure FigJam sections (sizing, naming, colors, content visibility, organizing nodes, column layouts)
-- [create-sticky](references/create-sticky.md) — Create and configure FigJam sticky notes (colors, sizing, text, author visibility, batch creation)
-- [create-connector](references/create-connector.md) — Create and configure FigJam connectors (endpoints, arrows, line types, labels, colors, diagram wiring)
-- [create-text](references/create-text.md) — Create and configure FigJam text nodes (font loading, preset fonts and colors, sizing, lists, mind map operations)
-- [position-figjam-nodes](references/position-figjam-nodes.md) — Position, size, and reparent nodes on the canvas (including within sections)
-- [create-shape-with-text](references/create-shape-with-text.md) — Create and configure FigJam shapes with embedded text (shape types, color presets, sizing to fit text, diagram layouts)
-- [create-code-block](references/create-code-block.md) — Create and configure FigJam code block nodes (languages, syntax highlighting, positioning, embedding in sections)
-- [create-table](references/create-table.md) — Create and configure FigJam tables (rows, columns, cell text, color presets, resizing)
-- [edit-text](references/edit-text.md) — Edit existing text nodes (font loading, styled ranges, find/replace, FigJam Charcoal default color)
-- [create-label](references/create-label.md) — Create and configure FigJam label nodes (small numbered/lettered circle callout markers, sequences, positioning)
-- [batch-modify](references/batch-modify.md) — Patterns for modifying many existing nodes at once (bulk style changes, repositioning, property updates)
-- [figjam-colors](references/figjam-colors.md) — Canonical FigJam color palettes for every node type (sticky, section, connector, shape, label) plus the `hex/255` notation rule and the `h()` helper
+- [create-section](canonical:figma-use-figjam/references/create-section.md) — Create and configure FigJam sections (sizing, naming, colors, content visibility, organizing nodes, column layouts)
+- [create-sticky](canonical:figma-use-figjam/references/create-sticky.md) — Create and configure FigJam sticky notes (colors, sizing, text, author visibility, batch creation)
+- [create-connector](canonical:figma-use-figjam/references/create-connector.md) — Create and configure FigJam connectors (endpoints, arrows, line types, labels, colors, diagram wiring)
+- [create-text](canonical:figma-use-figjam/references/create-text.md) — Create and configure FigJam text nodes (font loading, preset fonts and colors, sizing, lists, mind map operations)
+- [position-figjam-nodes](canonical:figma-use-figjam/references/position-figjam-nodes.md) — Position, size, and reparent nodes on the canvas (including within sections)
+- [create-shape-with-text](canonical:figma-use-figjam/references/create-shape-with-text.md) — Create and configure FigJam shapes with embedded text (shape types, color presets, sizing to fit text, diagram layouts)
+- [create-code-block](canonical:figma-use-figjam/references/create-code-block.md) — Create and configure FigJam code block nodes (languages, syntax highlighting, positioning, embedding in sections)
+- [create-table](canonical:figma-use-figjam/references/create-table.md) — Create and configure FigJam tables (rows, columns, cell text, color presets, resizing)
+- [edit-text](canonical:figma-use-figjam/references/edit-text.md) — Edit existing text nodes (font loading, styled ranges, find/replace, FigJam Charcoal default color)
+- [create-label](canonical:figma-use-figjam/references/create-label.md) — Create and configure FigJam label nodes (small numbered/lettered circle callout markers, sequences, positioning)
+- [batch-modify](canonical:figma-use-figjam/references/batch-modify.md) — Patterns for modifying many existing nodes at once (bulk style changes, repositioning, property updates)
+- [figjam-colors](canonical:figma-use-figjam/references/figjam-colors.md) — Canonical FigJam color palettes for every node type (sticky, section, connector, shape, label) plus the `hex/255` notation rule and the `h()` helper

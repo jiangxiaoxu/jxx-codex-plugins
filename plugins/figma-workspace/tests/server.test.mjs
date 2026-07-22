@@ -765,7 +765,7 @@ test("fresh Git-visible source fixture builds and packs the plugin without ignor
     assert.equal(catalogResult.stderr, "");
 
     const searchResult = runNpm(
-      ["--silent", "run", "figma:docs:search", "--", "code connect advanced patterns", "--task-family", "code-connect", "--state-file", join(tempDir, "state.json")],
+      ["--silent", "run", "figma:docs:search", "--", "code connect advanced patterns", "--task-family", "code-connect", "--max-inline-bytes", "0", "--state-file", join(tempDir, "state.json")],
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(searchResult.status, 0, searchResult.stderr);
@@ -776,7 +776,7 @@ test("fresh Git-visible source fixture builds and packs the plugin without ignor
     assert.equal(searchResult.stderr, "");
 
     const canonicalReadResult = runNpm(
-      ["--silent", "run", "figma:docs:read", "--", "canonical:figma-code-connect/references/api.md", "--state-file", join(tempDir, "state.json")],
+      ["--silent", "run", "figma:docs:read", "--", "canonical:figma-code-connect/references/api.md", "--max-inline-bytes", "0", "--state-file", join(tempDir, "state.json")],
       { cwd: join(extractDir, "package"), encoding: "utf8" },
     );
     assert.equal(canonicalReadResult.status, 0, canonicalReadResult.stderr);
@@ -1905,8 +1905,18 @@ async function createFreshPluginFixture() {
     { cwd: repositoryRoot, encoding: "utf8" },
   );
   assert.equal(listedFiles.status, 0, listedFiles.stderr);
+  const listedDeletedFiles = spawnSync(
+    "git",
+    ["ls-files", "-z", "--deleted", "--", "plugins/figma-workspace"],
+    { cwd: repositoryRoot, encoding: "utf8" },
+  );
+  assert.equal(listedDeletedFiles.status, 0, listedDeletedFiles.stderr);
+  const deletedFiles = new Set(listedDeletedFiles.stdout.split("\0").filter(Boolean));
   try {
     for (const relativePath of listedFiles.stdout.split("\0").filter(Boolean)) {
+      if (deletedFiles.has(relativePath)) {
+        continue;
+      }
       assert.equal(
         relativePath.split("/").includes("node_modules"),
         false,

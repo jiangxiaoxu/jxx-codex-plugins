@@ -50,7 +50,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.3.0";
+    DEFAULT_CLIENT_VERSION = "0.3.1";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -19892,7 +19892,8 @@ async function searchReferenceFiles(options) {
     queryTokens,
     maxSnippetLines: options.maxSnippetLines,
     exactSymbol: Boolean(options.exactSymbol),
-    apiQuery
+    apiQuery,
+    preferredTaskFamily: options.taskFamily
   });
   results.sort((left, right) => right.score - left.score || compareAscii(left.taskFamily ?? "", right.taskFamily ?? "") || compareAscii(referenceResultId(left), referenceResultId(right)) || left.lineStart - right.lineStart);
   const deduplicated = deduplicateResultsByPublicRecord(results);
@@ -20033,6 +20034,8 @@ function buildPluginApiReferenceChunk(record2) {
     lineEnd: record2.lineEnd,
     text,
     lines,
+    searchText: text,
+    searchLines: lines,
     tokens,
     tokenCounts: countTokens(tokens),
     metadata: pluginApiReferenceMetadata(record2),
@@ -20047,6 +20050,7 @@ function buildReferenceChunks(file, text, metadata) {
   return buildMarkdownReferenceChunks(file, lines, metadata);
 }
 function buildMarkdownReferenceChunks(file, lines, metadata) {
+  const searchLines = markdownSearchLines(lines);
   const sections = [];
   let sectionStart = 0;
   let sectionTitle;
@@ -20075,7 +20079,9 @@ function buildMarkdownReferenceChunks(file, lines, metadata) {
       end: section.end,
       title: section.title,
       idPrefix: `md-${sectionIndex}`,
-      metadata
+      metadata,
+      markdown: true,
+      searchLines
     })
   );
 }
@@ -20119,7 +20125,9 @@ function createWindowedReferenceChunks(options) {
       end,
       title: options.title,
       id: `${options.idPrefix}-${chunks.length}`,
-      metadata: options.metadata
+      metadata: options.metadata,
+      markdown: options.markdown,
+      searchLines: options.searchLines
     }));
     if (end >= options.end) {
       break;
@@ -20132,7 +20140,12 @@ function createReferenceChunk(options) {
   const titlePrefix = options.title ? `${options.title}
 ` : "";
   const text = `${titlePrefix}${chunkLines.join("\n")}`;
-  const tokens = tokenizeReferenceText(text);
+  const searchLines = options.searchLines?.slice(options.start, options.end) ?? chunkLines;
+  const searchTitle = options.markdown && options.title ? markdownSearchLines([options.title])[0] : options.title;
+  const searchTitlePrefix = searchTitle ? `${searchTitle}
+` : "";
+  const searchText = `${searchTitlePrefix}${searchLines.join("\n")}`;
+  const tokens = tokenizeReferenceText(searchText);
   return {
     id: `${options.file}:${options.id}`,
     file: options.file,
@@ -20141,6 +20154,8 @@ function createReferenceChunk(options) {
     lineEnd: options.end,
     text,
     lines: chunkLines,
+    searchText,
+    searchLines,
     tokens,
     tokenCounts: countTokens(tokens),
     metadata: options.metadata
@@ -20244,9 +20259,9 @@ function scoreReferenceChunks(options) {
   const lowerQuery = options.query.toLowerCase();
   const exactPattern = options.exactSymbol ? new RegExp(`\\b${escapeRegExp(options.query)}\\b`, "iu") : void 0;
   const scored = options.chunks.map((chunk) => {
-    const lowerText = chunk.text.toLowerCase();
+    const lowerText = chunk.searchText.toLowerCase();
     const apiExact = options.apiQuery ? pluginApiExactMatch(chunk.metadata, options.apiQuery) : void 0;
-    const exactHit = options.exactSymbol ? options.apiQuery ? apiExact?.exact === true : chunk.metadata.indexedSymbol === options.query : exactPattern?.test(chunk.text) ?? false;
+    const exactHit = options.exactSymbol ? options.apiQuery ? apiExact?.exact === true : chunk.metadata.indexedSymbol === options.query : exactPattern?.test(chunk.searchText) ?? false;
     const phraseHit = lowerText.includes(lowerQuery);
     const tokenHits = options.queryTokens.filter((token) => chunk.tokenCounts.has(token));
     if (!exactHit && !phraseHit && tokenHits.length === 0) {
@@ -20259,7 +20274,7 @@ function scoreReferenceChunks(options) {
       documentCount: options.chunks.length,
       averageLength
     });
-    const score = bm25 + (exactHit ? apiExact?.ownerMatch === true ? 18 : 12 : 0) + (phraseHit ? 4 : 0) + (chunk.file.endsWith(".d.ts") && exactHit ? 2 : 0);
+    const score = bm25 + (exactHit ? apiExact?.ownerMatch === true ? 18 : 12 : 0) + (phraseHit ? 4 : 0) + (options.preferredTaskFamily !== void 0 && chunk.metadata.taskFamily === options.preferredTaskFamily ? 4 : 0) + (chunk.file.endsWith(".d.ts") && exactHit ? 2 : 0);
     const matchType = exactHit ? "exact-symbol" : phraseHit ? "phrase" : "token";
     return {
       chunk,
@@ -20325,15 +20340,123 @@ function findBestSnippetLine(chunk, options) {
   let bestIndex = 0;
   let bestScore = -1;
   for (let index = 0; index < chunk.lines.length; index += 1) {
-    const line = chunk.lines[index];
-    const lowerLine = line.toLowerCase();
-    const score = (options.exactPattern?.test(line) ? 20 : 0) + (lowerLine.includes(lowerQuery) ? 8 : 0) + options.queryTokens.filter((token) => lowerLine.includes(token)).length;
+    const searchLine = chunk.searchLines[index] ?? "";
+    const lowerLine = searchLine.toLowerCase();
+    const score = (options.exactPattern?.test(searchLine) ? 20 : 0) + (lowerLine.includes(lowerQuery) ? 8 : 0) + options.queryTokens.filter((token) => lowerLine.includes(token)).length;
     if (score > bestScore) {
       bestScore = score;
       bestIndex = index;
     }
   }
   return bestIndex;
+}
+function markdownSearchLines(lines) {
+  const searchLines = [];
+  let fence;
+  for (const line of lines) {
+    const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/u.exec(line);
+    if (fence) {
+      searchLines.push(line);
+      if (fenceMatch && fenceMatch[1][0] === fence.marker && fenceMatch[1].length >= fence.length && /^\s*$/u.test(line.slice(fenceMatch[0].length))) {
+        fence = void 0;
+      }
+      continue;
+    }
+    if (fenceMatch) {
+      fence = {
+        marker: fenceMatch[1][0],
+        length: fenceMatch[1].length
+      };
+      searchLines.push(line);
+      continue;
+    }
+    searchLines.push(markdownProseLineForSearch(line));
+  }
+  return searchLines;
+}
+function markdownProseLineForSearch(line) {
+  const inlineCode = [];
+  const protectedLine = line.replace(/(`+)(.+?)\1/gu, (match) => {
+    inlineCode.push(match);
+    return "\uE000";
+  });
+  if (isMarkdownReferenceDefinition(protectedLine)) {
+    return "";
+  }
+  const withoutDestinations = stripMarkdownLinkDestinations(protectedLine).replace(/\s+href\s*=\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s>]+)/giu, "").replace(/<(?:https?:\/\/|mailto:|canonical:)[^>\r\n]+>/giu, "");
+  let inlineCodeIndex = 0;
+  return withoutDestinations.replace(/\uE000/gu, () => inlineCode[inlineCodeIndex++] ?? "");
+}
+function isMarkdownReferenceDefinition(line) {
+  let labelStart = 0;
+  while (labelStart < 3 && line[labelStart] === " ") {
+    labelStart += 1;
+  }
+  if (line[labelStart] !== "[") {
+    return false;
+  }
+  const labelEnd = findBalancedMarkdownDelimiter(line, labelStart, "[", "]");
+  return labelEnd !== void 0 && line[labelEnd + 1] === ":";
+}
+function stripMarkdownLinkDestinations(line) {
+  let result = "";
+  for (let index = 0; index < line.length; ) {
+    if (line[index] === "\\" && index + 1 < line.length) {
+      result += line.slice(index, index + 2);
+      index += 2;
+      continue;
+    }
+    const image = line[index] === "!" && line[index + 1] === "[";
+    const labelStart = image ? index + 1 : index;
+    if (line[labelStart] !== "[") {
+      result += line[index];
+      index += 1;
+      continue;
+    }
+    const labelEnd = findBalancedMarkdownDelimiter(line, labelStart, "[", "]");
+    if (labelEnd === void 0) {
+      result += line[index];
+      index += 1;
+      continue;
+    }
+    let destinationStart = labelEnd + 1;
+    while (line[destinationStart] === " " || line[destinationStart] === "	") {
+      destinationStart += 1;
+    }
+    const destinationMarker = line[destinationStart];
+    const destinationEnd = destinationMarker === "(" ? findBalancedMarkdownDelimiter(line, destinationStart, "(", ")") : destinationMarker === "[" ? findBalancedMarkdownDelimiter(line, destinationStart, "[", "]") : void 0;
+    if (destinationEnd === void 0) {
+      result += line[index];
+      index += 1;
+      continue;
+    }
+    result += line.slice(index, labelEnd + 1);
+    index = destinationEnd + 1;
+  }
+  return result;
+}
+function findBalancedMarkdownDelimiter(text, start, open5, close) {
+  if (text[start] !== open5) {
+    return void 0;
+  }
+  let depth = 0;
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === "\\") {
+      index += 1;
+      continue;
+    }
+    if (text[index] === open5) {
+      depth += 1;
+      continue;
+    }
+    if (text[index] === close) {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return void 0;
 }
 function confidenceForReferenceScore(score, matchType) {
   if (matchType === "exact-symbol" || score >= 8) {

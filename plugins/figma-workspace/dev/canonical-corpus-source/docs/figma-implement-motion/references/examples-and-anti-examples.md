@@ -16,7 +16,7 @@ Keep the outer motion wrapper, the static-transform wrapper, and the inner node 
 
 ## SVG path motion
 
-When `figma:motion-context` targets a path inside an SVG asset, inline the SVG, preserve its layout wrapper and `data-node-id`, and apply wrapper and path animation at their respective layers. See [svg-and-path-motion.md](svg-and-path-motion.md).
+When `figma:motion-context` targets a path inside an SVG asset, inline the SVG, preserve its layout wrapper and `data-node-id`, and apply wrapper and path animation at their respective layers. See [svg-and-path-motion.md](canonical:figma-implement-motion/references/svg-and-path-motion.md).
 
 ## Component instances
 

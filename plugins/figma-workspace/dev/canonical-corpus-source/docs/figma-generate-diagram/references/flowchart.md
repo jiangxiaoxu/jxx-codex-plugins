@@ -1,6 +1,6 @@
 # Flowcharts (non-architecture)
 
-Use this reference for **generic flowcharts** — decision trees, process flows, pipelines, dependency graphs, user journeys, anything that is not a software architecture diagram (those go to [architecture.md](./architecture.md)).
+Use this reference for **generic flowcharts** — decision trees, process flows, pipelines, dependency graphs, user journeys, anything that is not a software architecture diagram (those go to [architecture.md](canonical:figma-generate-diagram/references/architecture.md)).
 
 These diagrams render via ELK (Eclipse Layout Kernel) with an orthogonal, layered layout. The rules below are tuned to produce diagrams that read well, use FigJam's shape vocabulary, and avoid the layout traps ELK struggles with.
 
@@ -388,13 +388,13 @@ flowchart LR
 
 ## 11. When a flowchart is NOT the right choice
 
-Route back to [SKILL.md](../SKILL.md) and pick a different diagram type if the user wants:
+Route back to [SKILL.md](canonical:figma-generate-diagram/SKILL.md) and pick a different diagram type if the user wants:
 
 - **Interactions over time between parties** → sequence diagram
 - **Data model / entity relationships** → ER diagram
 - **State machine with explicit states and transitions** → state diagram
 - **Project schedule with dates** → gantt chart
-- **Software architecture (services, datastores, queues)** → [architecture.md](./architecture.md)
+- **Software architecture (services, datastores, queues)** → [architecture.md](canonical:figma-generate-diagram/references/architecture.md)
 - **Pie, mindmap, venn, class diagram, journey, timeline, quadrant** → not supported by the upstream diagram capability; tell the user directly
 
 ## 12. Calling the upstream diagram capability

@@ -192,7 +192,7 @@ the upstream diagram capability produces a clean baseline — participants arran
    - Labeled groups (e.g. a rectangle around a block of messages labeled "retry loop") to stand in for `loop`/`alt`/`opt`
    - Surrounding narrative, adjacent diagrams, or screenshots on the same board
 
-Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin API](../../figma-use/SKILL.md) and [FigJam API](../../figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
+Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
 
 ### When to skip the upstream diagram capability entirely
 

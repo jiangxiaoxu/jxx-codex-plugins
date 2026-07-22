@@ -280,7 +280,7 @@ This applies to icons, badges, labels, and any other nested instance that is con
 
 ### Nested component example
 
-For multi-level nested components or metadata prop passing between templates, see [advanced-patterns.md](references/advanced-patterns.md).
+For multi-level nested components or metadata prop passing between templates, see [advanced-patterns.md](canonical:figma-code-connect/references/advanced-patterns.md).
 
 ```ts
 const icon = instance.getInstanceSwap('Icon')
@@ -324,7 +324,7 @@ Read back the `.figma.ts` file and review it against the following:
 - **Rules and Pitfalls** — check for the common mistakes listed below (string concatenation of template results, unnecessary `hasCodeConnect()` guards, missing `type === 'INSTANCE'` checks, etc.)
 - **Interpolation wrapping** — strings (`getString`, `getEnum`, `textContent`) wrapped in quotes, instance/section values (`executeTemplate().example`) wrapped in braces, slot sections (`getSlot`) interpolated as snippet sections inside `` figma.code`...` ``, booleans using conditionals
 
-If anything looks uncertain, consult [api.md](references/api.md) for API details and [advanced-patterns.md](references/advanced-patterns.md) for complex nesting.
+If anything looks uncertain, consult [api.md](canonical:figma-code-connect/references/api.md) for API details and [advanced-patterns.md](canonical:figma-code-connect/references/advanced-patterns.md) for complex nesting.
 
 ## Inline Quick Reference
 
@@ -523,5 +523,5 @@ export default {
 
 For advanced patterns (multi-level nested components, `findConnectedInstances` filtering, metadata prop passing between parent/child templates):
 
-- [api.md](references/api.md) — Full Code Connect API reference
-- [advanced-patterns.md](references/advanced-patterns.md) — Advanced nesting, metadata props, and descendant patterns
+- [api.md](canonical:figma-code-connect/references/api.md) — Full Code Connect API reference
+- [advanced-patterns.md](canonical:figma-code-connect/references/advanced-patterns.md) — Advanced nesting, metadata props, and descendant patterns

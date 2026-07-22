@@ -422,7 +422,7 @@ await Promise.all(uniqueFonts.map(f => figma.loadFontAsync(f)))
 |---|---|---|
 | One specific node, you have its ID | `page.findOne(n => n.id === id)` | `await figma.getNodeByIdAsync(id)` |
 | All nodes of a given type | `page.findAll(n => n.type === 'TEXT')` | `page.findAllWithCriteria({ types: ['TEXT'] })` |
-| Type + a few cheap attributes (`name`, `visible`, etc.) | `page.findAll(n => n.type === 'TEXT' && n.name === 'Title')` | `page.query('TEXT[name=Title]')` (see [SKILL.md → node.query](../SKILL.md#nodequeryselector--css-like-node-search)) |
+| Type + a few cheap attributes (`name`, `visible`, etc.) | `page.findAll(n => n.type === 'TEXT' && n.name === 'Title')` | `page.query('TEXT[name=Title]')` (see [SKILL.md → node.query](canonical:figma-use/SKILL.md)) |
 | Nodes with plugin data | `page.findAll(n => n.getPluginData('key'))` | `page.findAllWithCriteria({ pluginData: { keys: ['key'] } })` |
 | Nodes with shared plugin data | `page.findAll(n => n.getSharedPluginData('ns', 'key'))` | `page.findAllWithCriteria({ sharedPluginData: { namespace: 'ns', keys: ['key'] } })` |
 
@@ -510,7 +510,7 @@ When you don't have a frame ID handy, capture one from a parent call and pass it
 
 ## Font style names are file-dependent — use `listAvailableFontsAsync` to discover them
 
-Font style names vary per provider and per Figma file. Always call `figma.listAvailableFontsAsync()` to discover exact style strings before loading — never guess or probe with try/catch. See [text-style-patterns.md](text-style-patterns.md#discovering-available-font-styles) for the discovery + load pattern.
+Font style names vary per provider and per Figma file. Always call `figma.listAvailableFontsAsync()` to discover exact style strings before loading — never guess or probe with try/catch. See [text-style-patterns.md](canonical:figma-use/references/text-style-patterns.md) for the discovery + load pattern.
 
 ## combineAsVariants does NOT auto-layout in `.figma.ts` script
 
@@ -619,7 +619,7 @@ al2.appendChild(t)
 t.layoutSizingHorizontal = 'HUG'     // ok — TEXT child of auto-layout
 ```
 
-`figma.createAutoLayout()` returns a frame with `layoutMode` already set and both axes hugging content, so its children can immediately use `'FILL'`/`'HUG'` after being appended — preferred over `figma.createFrame()` whenever the container holds related children. See Rule 12a in [SKILL.md](../SKILL.md).
+`figma.createAutoLayout()` returns a frame with `layoutMode` already set and both axes hugging content, so its children can immediately use `'FILL'`/`'HUG'` after being appended — preferred over `figma.createFrame()` whenever the container holds related children. See Rule 12a in [SKILL.md](canonical:figma-use/SKILL.md).
 
 The next gotcha (`## HUG parents collapse FILL children`) layers on top of the rules above: even when assignment succeeds, a `HUG` parent gives `FILL` children no room to expand. The validation rule above is about whether the assignment is _allowed_; the next gotcha is about whether it produces useful layout.
 
@@ -954,7 +954,7 @@ Common shapes the bug takes — what you tried vs. where the member actually liv
 | `defaultVariant`, `variantGroupProperties` | `COMPONENT_SET` only | every other type |
 | `figma.createPage` | Design files only (`figma.com/design/...`) | FigJam (`/board/`) and Slides (`/slides/`) — see Page Rules |
 
-Verify any member you're unsure about against [plugin-api-standalone.d.ts](plugin-api-standalone.d.ts) before using it. Names that "sound plausible" but aren't in the typings will always throw — the typings are the source of truth.
+Verify any member you're unsure about with `figma:api:search` before using it. Names that "sound plausible" but aren't in the bundled Plugin API typings will fail preflight or throw; the lookup result is the public source of truth.
 
 **Optional chaining (`?.`) does NOT defend against this.** The property access happens before `?.` is evaluated, so `node.children?.length` still throws on a `TEXT` node. The same applies to `try { node.fills }` — the access throws inside the try, which works for catching, but you should narrow up front instead.
 
@@ -980,7 +980,7 @@ v.dashPattern = [4, 8]
 node.customColor = '#ff0000'  // Error — not a real API property
 ```
 
-**How to avoid this**: Before setting any property, verify it exists on the node type by grepping [plugin-api-standalone.d.ts](plugin-api-standalone.d.ts). Property names that sound plausible but aren't in the typings will always throw.
+**How to avoid this**: Before setting any property, query its bare, qualified, or call-shaped symbol with `figma:api:search` and verify that it exists on the node type. Property names that sound plausible but aren't in the bundled typings will fail preflight or throw.
 
 ## `detachInstance()` invalidates ancestor node IDs
 
@@ -1018,4 +1018,4 @@ const icon = figma.createNodeFromSvg(
 icon.resize(24, 24); // scales the whole icon — createNodeFromSvg children carry SCALE constraints
 ```
 
-**Sizing:** the SVG string must include a `viewBox` plus explicit `width`/`height`. Without `width`/`height` the node falls back to the `viewBox` size, which is often smaller than the slot and reads as "the icon didn't size properly." To fit an icon to a target box, set the SVG's `width`/`height` to the target or call `icon.resize(size, size)` after import. See [figma-generate-design](../../figma-generate-design/SKILL.md) for the screen-building icon workflow.
+**Sizing:** the SVG string must include a `viewBox` plus explicit `width`/`height`. Without `width`/`height` the node falls back to the `viewBox` size, which is often smaller than the slot and reads as "the icon didn't size properly." To fit an icon to a target box, set the SVG's `width`/`height` to the target or call `icon.resize(size, size)` after import. See [figma-generate-design](canonical:figma-generate-design/SKILL.md) for the screen-building icon workflow.

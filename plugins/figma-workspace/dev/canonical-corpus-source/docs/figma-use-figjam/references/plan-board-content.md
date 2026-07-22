@@ -6,7 +6,7 @@ For flowcharts, architecture diagrams, sequence diagrams, state diagrams, or ent
 
 Use this reference when determining **what content to include** for generated FigJam board content. Given a user's request (e.g. "make a brainstorm template", "retro board", "ice breaker", "scaffold"), produce a **sequential outline** for the `.figma.ts` implementation that creates sections, text, stickies, and layout.
 
-For implementation details, read the relevant sibling references such as [create-section](create-section.md), [create-sticky](create-sticky.md), [create-text](create-text.md), and [position-figjam-nodes](position-figjam-nodes.md), then execute the adapted code with `figma:script:run`.
+For implementation details, read the relevant sibling references such as [create-section](canonical:figma-use-figjam/references/create-section.md), [create-sticky](canonical:figma-use-figjam/references/create-sticky.md), [create-text](canonical:figma-use-figjam/references/create-text.md), and [position-figjam-nodes](canonical:figma-use-figjam/references/position-figjam-nodes.md), then execute the adapted code with `figma:script:run`.
 
 ## Part 1: Design Principles
 
@@ -99,7 +99,7 @@ const spacing = {
 
 ### Color palette
 
-For the canonical FigJam palettes (sticky / section / connector / shape / label), see [figjam-colors](figjam-colors.md). The palette below is a derived set of accent colors and section tints used specifically for board-content layouts (templates, retros, brainstorms) — they're not exact FigJam palette swatches.
+For the canonical FigJam palettes (sticky / section / connector / shape / label), see [figjam-colors](canonical:figma-use-figjam/references/figjam-colors.md). The palette below is a derived set of accent colors and section tints used specifically for board-content layouts (templates, retros, brainstorms) — they're not exact FigJam palette swatches.
 
 ```js
 const black = { r: 0.07, g: 0.07, b: 0.07 }
@@ -163,7 +163,7 @@ Sections nest. A board is a section that contains zone sections, which contain c
 
 ### Text
 
-Canonical recipe: load every (family, style) you'll mutate → `await` → mutate → return IDs. Inter is preloaded in most environments but every style still needs an explicit load — and any non-Inter family (e.g. `Merriweather`, `Roboto Mono`, `Figma Hand`) absolutely does. See [figma-use → gotchas.md → Canonical text-edit recipe](../../figma-use/references/gotchas.md#canonical-text-edit-recipe-font-load--await--mutate--return-ids).
+Canonical recipe: load every (family, style) you'll mutate → `await` → mutate → return IDs. Inter is preloaded in most environments but every style still needs an explicit load — and any non-Inter family (e.g. `Merriweather`, `Roboto Mono`, `Figma Hand`) absolutely does. See [figma-use → gotchas.md → Canonical text-edit recipe](canonical:figma-use/references/gotchas.md).
 
 ```js
 // Load every (family, style) you'll mutate before any createText / characters write

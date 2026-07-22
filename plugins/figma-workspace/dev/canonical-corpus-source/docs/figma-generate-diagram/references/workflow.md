@@ -1,6 +1,6 @@
 # Hybrid Diagram Workflow
 
-Mermaid's syntax can't express everything a good diagram needs — annotations tied to specific data, domain color-coding, callouts that live _next_ to the diagram rather than inside it. This reference covers the **hybrid workflow**: use the upstream diagram capability to scaffold the structural diagram, then use a local `.figma.ts` script executed with `figma:script:run` to layer on what Mermaid can't do. Consult the [FigJam API mirror](../../figma-use-figjam/SKILL.md) only for the specific Plugin API operations needed.
+Mermaid's syntax can't express everything a good diagram needs — annotations tied to specific data, domain color-coding, callouts that live _next_ to the diagram rather than inside it. This reference covers the **hybrid workflow**: use the upstream diagram capability to scaffold the structural diagram, then use a local `.figma.ts` script executed with `figma:script:run` to layer on what Mermaid can't do. Consult the [FigJam API mirror](canonical:figma-use-figjam/SKILL.md) only for the specific Plugin API operations needed.
 
 **This is a judgment tool, not a procedure.** The hybrid workflow costs extra tokens and latency. Deploy it when the user's ask genuinely benefits — not on every diagram. When in doubt, ship the base diagram first; the user can tell you what's missing.
 
@@ -18,7 +18,7 @@ Signals that say **no, single-tool is enough**:
 - Short / self-explanatory request (_"diagram our auth flow"_ with no adjectives).
 - User appears to be testing or exploring — small scope, minimal language, no data to attach.
 - Small diagram (<8 nodes) where any annotation would be noisier than useful.
-- Flowchart request where the only "extension" would be color — Mermaid subgraph styling already handles this (see [flowchart.md §4](./flowchart.md)).
+- Flowchart request where the only "extension" would be color — Mermaid subgraph styling already handles this (see [flowchart.md §4](canonical:figma-generate-diagram/references/flowchart.md)).
 
 Bias toward action. The end goal is giving the user a file they can work with and keep iterating on — not producing a perfect artifact. Something is better than nothing; nothing is frustrating.
 
@@ -26,7 +26,7 @@ Bias toward action. The end goal is giving the user a file they can work with an
 
 Not all diagram types benefit equally. Rough priority for deploying the workflow:
 
-1. **Flowchart** — highest value is _annotation_ (notes, callouts, attached data). Color-coding is already covered natively by Mermaid subgraph styling — **skip color recipes for flowcharts** and route to [flowchart.md](./flowchart.md) if that's all the user wants.
+1. **Flowchart** — highest value is _annotation_ (notes, callouts, attached data). Color-coding is already covered natively by Mermaid subgraph styling — **skip color recipes for flowcharts** and route to [flowchart.md](canonical:figma-generate-diagram/references/flowchart.md) if that's all the user wants.
 2. **ERD** — highest value is _domain color-coding_ (group tables by auth / billing / content / etc.) and _table-level annotations_. Mermaid's ERD styling is stripped by our preprocessor, so a local `.figma.ts` script executed by `figma:script:run` is the only path.
 3. **Sequence / state / gantt** — smaller audiences; be conservative. Use the same recipes if the user explicitly asks, but don't volunteer heavy workflow on these.
 
@@ -52,7 +52,7 @@ The single most universal extension. Works for every diagram type. Proven especi
 
 Place a small numbered circle ("pin") on or near each annotated node, then cluster the corresponding sticky notes as a **legend** off to the side of the diagram. The diagram stays clean; readers can reference "point 3" unambiguously; 10 annotations is as scannable as 3.
 
-Use [create-label](../../figma-use-figjam/references/create-label.md) for the pin circles and [create-sticky](../../figma-use-figjam/references/create-sticky.md) for the legend entries. That reference has a full worked example of the label-plus-legend pattern (`## Label + Sticky Legend` section) — follow it.
+Use [create-label](canonical:figma-use-figjam/references/create-label.md) for the pin circles and [create-sticky](canonical:figma-use-figjam/references/create-sticky.md) for the legend entries. That reference has a full worked example of the label-plus-legend pattern (`## Label + Sticky Legend` section) — follow it.
 
 **When to use:**
 
@@ -85,13 +85,13 @@ If the user wants to annotate just one or two nodes and a legend would be visual
 
 - **ERD** — color tables by domain (auth / billing / content). Primary use case.
 - **Sequence / state** — color participants or states by role (user-facing vs internal, terminal vs active vs error).
-- **NOT flowchart** — use Mermaid subgraph styling via [flowchart.md §4](./flowchart.md) instead. If the user specifically wants per-node coloring that Mermaid can't do, fall through to this recipe, but start with the native path.
+- **NOT flowchart** — use Mermaid subgraph styling via [flowchart.md §4](canonical:figma-generate-diagram/references/flowchart.md) instead. If the user specifically wants per-node coloring that Mermaid can't do, fall through to this recipe, but start with the native path.
 
 **How:**
 
 1. Run `npm --silent run figma:metadata -- --file <file-key> --state-file <absolute-path>` to find the node IDs you want to recolor.
-2. Use `batch-modify` (see [figma-use-figjam/references/batch-modify.md](../../figma-use-figjam/references/batch-modify.md)) to update fills in a single call. Group by color assignment so one batch covers all nodes getting the same tint.
-3. Pick from FigJam's built-in palette (documented in [create-shape-with-text.md](../../figma-use-figjam/references/create-shape-with-text.md)) rather than freehand hex values — keeps the diagram visually coherent with the rest of the canvas.
+2. Use `batch-modify` (see [figma-use-figjam/references/batch-modify.md](canonical:figma-use-figjam/references/batch-modify.md)) to update fills in a single call. Group by color assignment so one batch covers all nodes getting the same tint.
+3. Pick from FigJam's built-in palette (documented in [create-shape-with-text.md](canonical:figma-use-figjam/references/create-shape-with-text.md)) rather than freehand hex values — keeps the diagram visually coherent with the rest of the canvas.
 
 **Don'ts:**
 
@@ -112,10 +112,11 @@ Ambiguous request? Pick a reasonable extension, do it, and narrate what you chos
 
 ## 7. When extensions fail partway
 
-If a local `.figma.ts` script executed with `figma:script:run` fails after the upstream diagram capability succeeded, the user already has the file link from step 3 of the communication flow. The failure message just needs to tell them the state of the file:
+If a local `.figma.ts` script executed with `figma:script:run` fails after the upstream diagram capability succeeded, the user already has the file link from step 3 of the communication flow. Classify the extension result before describing the file:
 
-- **Do not** retry in a loop or churn trying to fix it.
-- **Do** report clearly what landed and what didn't. _"The diagram is in the file, but I couldn't add the callout labels — a local `.figma.ts` script executed with `figma:script:run` failed with {short error}. You can add them manually or ask me to try again."_
+- **Do not** retry in a loop or blindly rerun an `outcome_unknown` extension.
+- Before dispatch, generate and retain a unique extension `runId`. Every created extension node must immediately call `setSharedPluginData('figma_workspace', 'run_id', runId)` before any possible await or throw, and the script must return the same `runId` and node IDs. For `outcome_unknown`, follow `retryGuidance` and query this exact namespace, key, and retained value to reconcile which callouts landed. For `not_started`, repair the pre-dispatch cause before another attempt. For `succeeded`, retain the confirmed extension even if later local persistence failed.
+- **Do** report clearly what landed and what remains. _"The base diagram is in the file. The callout extension has an unknown outcome, so I inspected its tags: two callouts landed and one remains. I did not rerun the mutation."_
 - Partial progress is still progress. The user can open the file and continue from there.
 
 ## 8. What NOT to do in MVP

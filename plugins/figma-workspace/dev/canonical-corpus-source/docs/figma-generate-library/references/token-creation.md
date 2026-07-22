@@ -1,4 +1,4 @@
-> Part of the [figma-generate-library skill](../SKILL.md).
+> Part of the [figma-generate-library skill](canonical:figma-generate-library/SKILL.md).
 
 # Token Creation Reference
 
@@ -727,7 +727,7 @@ return { created, count: created.length };
 
 ## 8. Idempotency — Check-Before-Create Pattern
 
-Every creation script should check whether the entity already exists before creating it. This prevents duplicates when a script is re-run after partial failure.
+Every creation script should check whether the entity already exists before creating it. This supports readback reconciliation after `outcome_unknown` and prevents duplicates when only confirmed missing work is run.
 
 ### Check-Before-Create for Collections
 
@@ -829,7 +829,7 @@ return {
 };
 ```
 
-Interpret: `missingScopes > 0` (for non-primitives and non-BOOLEANs) → scope-setting failed, re-run scope script. `missingCodeSyntax > 0` → code syntax not set, run batch code syntax script.
+Interpret: `missingScopes > 0` (for non-primitives and non-BOOLEANs) means some scope-setting work is missing; target only the confirmed missing variables. `missingCodeSyntax > 0` means code syntax is missing; run a batch script for that confirmed set. Do not rerun the entire mutation after `outcome_unknown`.
 
 Note: primitives correctly have `scopes = []` (empty, hidden). `missingScopes` above counts non-BOOLEAN variables with empty scopes — review the list to confirm they are all primitives.
 
@@ -867,7 +867,7 @@ return {
 };
 ```
 
-Interpret: `brokenCount > 0` means a semantic variable references a primitive that was deleted or not yet created. Create the missing primitives, then re-run alias creation for the affected semantic variables.
+Interpret: `brokenCount > 0` means a semantic variable references a primitive that was deleted or not yet created. Create the confirmed missing primitives, then repair aliases only for the affected semantic variables.
 
 ### Verify Style Counts
 

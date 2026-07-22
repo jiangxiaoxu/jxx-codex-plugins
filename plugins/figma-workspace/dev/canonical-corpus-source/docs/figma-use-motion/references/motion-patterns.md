@@ -2,7 +2,7 @@
 
 Use this reference when a Figma Workspace task adds, edits, removes, or inspects Motion animation on Figma design nodes.
 
-Write the Plugin API code in a `.figma.ts` file and run it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. Follow the main `figma-use` rules: use top-level `await`, use `return` for output, do not call `figma.closePlugin()`, do not use `figma.notify()`, and return every mutated node ID. Runtime gating (`metronome`) and the exposed API surface are summarised in [figma-use-motion/SKILL.md](../SKILL.md) — bail closed on `"not a supported API"`.
+Write the Plugin API code in a `.figma.ts` file and run it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. Follow the main `figma-use` rules: use top-level `await`, use `return` for output, do not call `figma.closePlugin()`, do not use `figma.notify()`, and return every mutated node ID. Runtime gating (`metronome`) and the exposed API surface are summarised in [figma-use-motion/SKILL.md](canonical:figma-use-motion/SKILL.md) — bail closed on `"not a supported API"`.
 
 **`node.animations` reflects manual-keyframe tracks only at present.** Applying an animation style writes its metadata to `node.animationStyles` but the style-generated tracks are not materialized into `node.animations` yet. Validate style writes by reading back `node.animationStyles`, not `node.animations`.
 
@@ -68,7 +68,7 @@ Timeline positions are in seconds.
 }
 ```
 
-The easing on a keyframe controls how to animate from the previous keyframe to this keyframe. See [motion-easing.md](motion-easing.md) for the full easing object shape (including `CUSTOM_CUBIC_BEZIER`, `CUSTOM_SPRING`, and `HOLD`).
+The easing on a keyframe controls how to animate from the previous keyframe to this keyframe. See [motion-easing.md](canonical:figma-use-motion/references/motion-easing.md) for the full easing object shape (including `CUSTOM_CUBIC_BEZIER`, `CUSTOM_SPRING`, and `HOLD`).
 
 ### Animatable Fields
 
@@ -417,7 +417,7 @@ return styles.map((style) => ({
 }));
 ```
 
-The `props` field returns **documentation strings**, not setter shapes. For example, the Fade style reports its easing default as `"easing // default: { easingType: OUT_CUBIC }"` — that string is a signature hint, not a value to copy. When writing easing on a style's `props`, always use the public `{ type: 'EASE_OUT' }` form (see [motion-easing.md](motion-easing.md)).
+The `props` field returns **documentation strings**, not setter shapes. For example, the Fade style reports its easing default as `"easing // default: { easingType: OUT_CUBIC }"` — that string is a signature hint, not a value to copy. When writing easing on a style's `props`, always use the public `{ type: 'EASE_OUT' }` form (see [motion-easing.md](canonical:figma-use-motion/references/motion-easing.md)).
 
 ### Apply A Style
 
