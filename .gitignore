@@ -2,8 +2,8 @@ node_modules/
 dist/
 
 # Figma Workspace ships a curated generated runtime; its package-local rules select the files.
-!plugins/figma-workspace/mcp-server/dist/
-!plugins/figma-workspace/mcp-server/dist/**
+!plugins/figma-workspace/cli-runtime/dist/
+!plugins/figma-workspace/cli-runtime/dist/**
 
 downloads/
 tmp/

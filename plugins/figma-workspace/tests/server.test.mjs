@@ -12,7 +12,7 @@ import {
   FIGMA_DIRECT_COMMANDS,
   FIGMA_JSON_COMMANDS,
   runFigmaCommandCli as runFigmaCli,
-} from "../mcp-server/dist/cli/figma-command-runtime.js";
+} from "../cli-runtime/dist/cli/figma-command-runtime.js";
 import {
   OAuthCache,
   OAuthRefreshError,
@@ -607,22 +607,22 @@ test("npm package includes runtime surfaces and excludes local state and source 
   ));
   for (const requiredPath of [
     ".codex-plugin/plugin.json",
-    "mcp-server/dist/cli/figma-command-runtime.js",
+    "cli-runtime/dist/cli/figma-command-runtime.js",
     "scripts/commands/figma.mjs",
     "skills/figma-workspace/SKILL.md",
-    "mcp-server/dist/skills/figma-workspace/references/figma-workspace-overview.md",
-    "mcp-server/dist/skills/figma-workspace/references/figma-workspace-workflow.md",
-    "mcp-server/dist/skills/figma-workspace/references/figma-workspace-guidance-and-lookup.md",
-    "mcp-server/dist/skills/figma-workspace/references/figma-workspace-safety.md",
-    "mcp-server/dist/skills/figma-workspace/references/figma-workspace-diagnostics.md",
-    "mcp-server/dist/skills/figma-workspace/references/figma-workspace-sessions.md",
-    "mcp-server/dist/skills/figma-workspace/references/figma-workspace-upstream-tools.md",
+    "cli-runtime/dist/skills/figma-workspace/references/figma-workspace-overview.md",
+    "cli-runtime/dist/skills/figma-workspace/references/figma-workspace-workflow.md",
+    "cli-runtime/dist/skills/figma-workspace/references/figma-workspace-guidance-and-lookup.md",
+    "cli-runtime/dist/skills/figma-workspace/references/figma-workspace-safety.md",
+    "cli-runtime/dist/skills/figma-workspace/references/figma-workspace-diagnostics.md",
+    "cli-runtime/dist/skills/figma-workspace/references/figma-workspace-sessions.md",
+    "cli-runtime/dist/skills/figma-workspace/references/figma-workspace-upstream-tools.md",
     "skills/figma-workspace/references/canonical-corpus/manifest.json",
     "skills/figma-workspace/references/canonical-corpus/routes.json",
     `skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
-    "mcp-server/dist/skills/figma-workspace/references/canonical-corpus/manifest.json",
-    "mcp-server/dist/skills/figma-workspace/references/canonical-corpus/routes.json",
-    `mcp-server/dist/skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
+    "cli-runtime/dist/skills/figma-workspace/references/canonical-corpus/manifest.json",
+    "cli-runtime/dist/skills/figma-workspace/references/canonical-corpus/routes.json",
+    `cli-runtime/dist/skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
   ]) {
     assert.ok(paths.includes(requiredPath), `packed files must include ${requiredPath}`);
   }
@@ -634,11 +634,16 @@ test("npm package includes runtime surfaces and excludes local state and source 
     }
   }
   for (const removedFacade of [
-    "mcp-server/dist/index.js",
-    "mcp-server/dist/workspace-client.js",
+    "cli-runtime/dist/index.js",
+    "cli-runtime/dist/workspace-client.js",
   ]) {
     assert.equal(paths.includes(removedFacade), false, `packed files must not include ${removedFacade}`);
   }
+  assert.equal(
+    paths.some((path) => path === "mcp-server" || path.startsWith("mcp-server/")),
+    false,
+    "packed files must not retain the removed mcp-server layout",
+  );
   assert.equal(paths.some((path) => path.split("/").includes(".figma-workspace")), false);
   assert.equal(paths.some((path) => path.includes("/src/") || path.includes("/tests/")), false);
   assert.equal(paths.some((path) => /canonical-corpus\/(?:policy|docs)\//u.test(path)), false);
@@ -650,7 +655,7 @@ test("npm package includes runtime surfaces and excludes local state and source 
   assert.deepEqual(
     paths.filter((path) => /canonical-corpus\/corpus-[a-f0-9]{64}\.jsonl$/u.test(path)).sort(),
     [
-      `mcp-server/dist/skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
+      `cli-runtime/dist/skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
       `skills/figma-workspace/references/canonical-corpus/${corpusManifest.corpus.file}`,
     ],
   );
@@ -666,7 +671,7 @@ test("generated project docs are visible to Git and packed", () => {
     "figma-workspace-diagnostics.md",
     "figma-workspace-sessions.md",
     "figma-workspace-upstream-tools.md",
-  ].map((file) => `plugins/figma-workspace/mcp-server/dist/skills/figma-workspace/references/${file}`);
+  ].map((file) => `plugins/figma-workspace/cli-runtime/dist/skills/figma-workspace/references/${file}`);
   const result = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", ...docs], {
     cwd: resolve(pluginRoot, "../.."),
     encoding: "utf8",
@@ -684,7 +689,7 @@ test("fresh Git-visible source fixture builds and packs the plugin without ignor
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-pack-"));
   try {
     const installResult = runNpm(["ci", "--ignore-scripts"], {
-      cwd: fixture.mcpServerRoot,
+      cwd: fixture.cliRuntimeRoot,
       encoding: "utf8",
     });
     assert.equal(
@@ -694,7 +699,7 @@ test("fresh Git-visible source fixture builds and packs the plugin without ignor
     );
 
     const fixtureTypingsPackage = join(
-      fixture.mcpServerRoot,
+      fixture.cliRuntimeRoot,
       "node_modules",
       "@figma",
       "plugin-typings",
@@ -704,7 +709,7 @@ test("fresh Git-visible source fixture builds and packs the plugin without ignor
     const resolutionProbe = spawnSync(
       process.execPath,
       ["--eval", 'console.log(require.resolve("@figma/plugin-typings/package.json"))'],
-      { cwd: fixture.mcpServerRoot, encoding: "utf8" },
+      { cwd: fixture.cliRuntimeRoot, encoding: "utf8" },
     );
     assert.equal(resolutionProbe.status, 0, resolutionProbe.stderr);
     assert.equal(
@@ -714,12 +719,12 @@ test("fresh Git-visible source fixture builds and packs the plugin without ignor
     );
 
     const buildResult = runNpm(["run", "build"], {
-      cwd: fixture.mcpServerRoot,
+      cwd: fixture.cliRuntimeRoot,
       encoding: "utf8",
     });
     assert.equal(buildResult.status, 0, buildResult.stderr);
     for (const removedFacade of ["index.js", "workspace-client.js"]) {
-      const facadePath = join(fixture.pluginRoot, "mcp-server", "dist", removedFacade);
+      const facadePath = join(fixture.pluginRoot, "cli-runtime", "dist", removedFacade);
       await assert.rejects(readFile(facadePath, "utf8"), /ENOENT/u);
     }
 
@@ -1006,7 +1011,7 @@ test("resolve-oauth-cache-path.py can require an existing cache file", async () 
 
 test("login-figma-http.mjs runs in foreground and validates OAuth cache", async () => {
   const script = await readFile(
-    new URL("../mcp-server/scripts/login-figma-http.mjs", import.meta.url),
+    new URL("../cli-runtime/scripts/login-figma-http.mjs", import.meta.url),
     "utf8",
   );
 
@@ -1931,7 +1936,7 @@ async function createFreshPluginFixture() {
     return {
       container,
       pluginRoot: fixturePluginRoot,
-      mcpServerRoot: join(fixturePluginRoot, "mcp-server"),
+      cliRuntimeRoot: join(fixturePluginRoot, "cli-runtime"),
     };
   } catch (error) {
     await rm(container, { recursive: true, force: true });

@@ -211803,7 +211803,7 @@ function typescriptRuntimeAssetFailureDiagnostic(scriptPath, failure) {
       `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`
     ].join("; "),
-    suggestion: "Rebuild the mcp-server dist if bundled declaration files are missing, then rerun figma:script:run with the same --state-file.",
+    suggestion: "Rebuild the cli-runtime dist if bundled declaration files are missing, then rerun figma:script:run with the same --state-file.",
     docsHint: "Figma Workspace CLI: figma:script:run --help",
     source: { scriptPath }
   };

@@ -12,11 +12,11 @@
 
 - `plugins/figma-workspace/package.json`: public npm command directory.
 - `plugins/figma-workspace/scripts/commands/*.mjs`: independent thin executable entrypoints.
-- `plugins/figma-workspace/mcp-server/src/cli/figma-command-runtime.ts`: optimized typed command specs, parser, help and transport mapping.
-- `plugins/figma-workspace/mcp-server/src/cli/figma-workspace-cli.ts`: complete transport CLI, Restricted Markdown, state, sidecar and exit behavior.
+- `plugins/figma-workspace/cli-runtime/src/cli/figma-command-runtime.ts`: optimized typed command specs, parser, help and transport mapping.
+- `plugins/figma-workspace/cli-runtime/src/cli/figma-workspace-cli.ts`: complete transport CLI, Restricted Markdown, state, sidecar and exit behavior.
 - `plugins/figma-workspace/tests/server.test.mjs`: plugin-root command, package and pack/install contract.
-- `plugins/figma-workspace/mcp-server/tests/figma-command-runtime.test.mjs`: optimized command mapping and help contract.
-- `plugins/figma-workspace/mcp-server/tests/build-output.test.mjs`: built CLI, output, sidecar, state and concurrency contract.
+- `plugins/figma-workspace/cli-runtime/tests/figma-command-runtime.test.mjs`: optimized command mapping and help contract.
+- `plugins/figma-workspace/cli-runtime/tests/build-output.test.mjs`: built CLI, output, sidecar, state and concurrency contract.
 
 CthulhuGame Editor automation CLI 提供了另一组已验证经验: structured help defaults, option/positional order independence, strict integer parsing, canonical result envelope, observation exit semantics, total deadlines, opaque log cursors, bounded workflow streaming, project-operation locks, all-entrypoint help smoke 和 documentation routing validation.
 

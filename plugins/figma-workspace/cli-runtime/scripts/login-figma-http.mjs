@@ -12,8 +12,8 @@ const metadataUrl = "http://127.0.0.1:18766/.well-known/oauth-protected-resource
 const oauthCacheFilename = ".figma-workspace-oauth.json";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-const mcpServerRoot = resolve(scriptDir, "..");
-const pluginRoot = resolve(mcpServerRoot, "..");
+const cliRuntimeRoot = resolve(scriptDir, "..");
+const pluginRoot = resolve(cliRuntimeRoot, "..");
 
 export async function main(dependencies = {}) {
   const argv = dependencies.argv ?? process.argv.slice(2);

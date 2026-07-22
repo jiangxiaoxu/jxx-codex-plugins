@@ -8,7 +8,7 @@ This repository is a local Codex plugin marketplace. It has no root-level packag
 | --- | --- | --- |
 | `chatgpt-research-prompt` | `plugins/chatgpt-research-prompt/skills/chatgpt-research-prompt/` | Validate the skill and plugin manifest. |
 | `task-memory` | `plugins/task-memory/skills/`, `src/`, and `scripts/commands/` | Run the plugin test suite and packed-artifact check. |
-| `figma-workspace` | `plugins/figma-workspace/skills/`, `mcp-server/src/`, `scripts/`, and focused tests | Run plugin-root and CLI-package validation. |
+| `figma-workspace` | `plugins/figma-workspace/skills/`, `cli-runtime/src/`, `scripts/`, and focused tests | Run plugin-root and CLI-package validation. |
 
 For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, marketplace entry, and root README inventory aligned when plugin identity, placement, or availability changes.
 
@@ -20,7 +20,7 @@ For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, market
 | Plugin identity, metadata, or marketplace inventory | Plugin manifest, `.agents/plugins/marketplace.json`, root README, and repository inventory. |
 | `task-memory` behavior | Plugin package scripts, shared CLI source, command entrypoints, and tests. |
 | Figma agent workflow or documentation | [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md), the skill router, public help, and focused tests. |
-| Figma CLI/runtime, OAuth, bridge, or packaging | `plugins/figma-workspace/mcp-server/src/`, owning tests, package scripts, and generated `dist/`. |
+| Figma CLI/runtime, OAuth, bridge, or packaging | `plugins/figma-workspace/cli-runtime/src/`, owning tests, package scripts, and generated `dist/`. |
 
 ### Figma corpus ownership
 
@@ -33,7 +33,7 @@ dev/upstream-snapshot + dev/upstream-changes
            reviewed manual authoring and policy
                -> skills/.../canonical-corpus
                   packaged runtime corpus
-                      -> mcp-server/dist
+                      -> cli-runtime/dist
                          generated package mirror
 ```
 
@@ -68,7 +68,7 @@ npm test
 npm run build:canonical-corpus
 ```
 
-From `plugins/figma-workspace/mcp-server`:
+From `plugins/figma-workspace/cli-runtime`:
 
 ```text
 npm run typecheck

@@ -46,6 +46,14 @@ const commandMethods = {
   "upstream-tools": "upstreamTools",
 };
 
+test("workspace client source is not presented as a local MCP server", async () => {
+  await readFile(resolve(packageRoot, "src/runtime/workspace-client.ts"), "utf8");
+  await assert.rejects(
+    readFile(resolve(packageRoot, "src/mcp/workspace-mcp-server.ts"), "utf8"),
+    /ENOENT/u,
+  );
+});
+
 test("build publishes a private package with only the figma-workspace CLI bin", async () => {
   const packageData = JSON.parse(await readFile(resolve(packageRoot, "package.json"), "utf8"));
   const distFiles = (await readdir(resolve(packageRoot, "dist"), { recursive: true }))

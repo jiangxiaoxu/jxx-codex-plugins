@@ -27,7 +27,7 @@ import {
   normalizeLookupQuery,
   normalizeLookupRankingQuery,
   searchReferenceFiles,
-} from "../runtime/doc-search.js";
+} from "./doc-search.js";
 import {
   FIGMA_WORKSPACE_COMMON_TASK_LABELS,
   FIGMA_WORKSPACE_INTENT_EXAMPLE_QUERIES,
@@ -43,9 +43,9 @@ import {
   type FigmaWorkspaceWrapperLookupProfile,
   type FigmaWorkspaceWrapperWorkflow,
   uniqueStrings,
-} from "../runtime/guidance-catalog.js";
-import { resolveTaskRoute, type TaskRouteResult } from "../runtime/task-routing.js";
-import type { FigmaWorkspacePublicCommandId } from "../runtime/public-command-registry.js";
+} from "./guidance-catalog.js";
+import { resolveTaskRoute, type TaskRouteResult } from "./task-routing.js";
+import type { FigmaWorkspacePublicCommandId } from "./public-command-registry.js";
 import {
   compileFigmaWorkspaceEvalCode,
   compileFigmaWorkspaceScriptFile,
@@ -57,7 +57,7 @@ import {
   type FigmaWorkspaceFileDiagnostic,
   type FigmaWorkspaceRepairPlan,
   type FigmaWorkspaceSurface,
-} from "../runtime/script-runner.js";
+} from "./script-runner.js";
 import {
   asApplyAssetManifestArgs,
   asCallUpstreamToolArgs,
@@ -110,7 +110,7 @@ import {
   getFigmaWorkspaceProjectDocsRuntimeInfo,
   listFigmaWorkspaceProjectDocs,
   readFigmaWorkspaceProjectDoc,
-} from "../runtime/project-docs.js";
+} from "./project-docs.js";
 import { isLocalWorkspaceToolName, type LocalWorkspaceToolName } from "../contract/tool-registry.js";
 import {
   FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION,
@@ -140,11 +140,11 @@ import {
   writeJsonFile,
   writeTaskFile,
   type FigmaWorkspaceSessionWorkspace,
-} from "../runtime/workspace-files.js";
+} from "./workspace-files.js";
 import {
   atomicWriteManagedBinaryFile,
   atomicWriteManagedStreamFile,
-} from "../runtime/managed-files.js";
+} from "./managed-files.js";
 
 export const FIGMA_WORKSPACE_DEFAULT_SESSION_ID = "default";
 
@@ -173,7 +173,7 @@ export type {
   FigmaWorkspaceFileDiagnostic,
   FigmaWorkspaceSurface,
 };
-export type { FigmaWorkspaceSessionWorkspace } from "../runtime/workspace-files.js";
+export type { FigmaWorkspaceSessionWorkspace } from "./workspace-files.js";
 export type {
   FigmaWorkspaceApplyAssetManifestArguments,
   FigmaWorkspaceAssetManifestAsset,
@@ -472,7 +472,7 @@ function createSkippedOptionalUpstreamDiagnostic(options: {
     code: "FIGMA_WORKSPACE_UPSTREAM_OPTIONAL_SKIPPED",
     severity: "warning",
     message: `The command skipped optional upstream argument "${options.property}" because the live official ${options.upstreamKind} capability does not advertise inputSchema.properties.${options.property}.`,
-    suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/mcp-server to audit official schema drift.",
+    suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/cli-runtime to audit official schema drift.",
     docsHint: "Prefer first-class figma:* commands for covered workflows; use figma:upstream:call for uncovered official capabilities.",
   };
 }
@@ -4875,7 +4875,7 @@ async function handleLookup(
         ok: false,
         results: [],
         diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error)]),
-        guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the mcp-server dist after confirming those bundled assets exist, then start a new CLI command.",
+        guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the cli-runtime dist after confirming those bundled assets exist, then start a new CLI command.",
         runtime: error.failure,
       });
     }
@@ -4943,7 +4943,7 @@ function lookupCorpusDiagnostic(error: FigmaWorkspaceLookupCorpusUnavailableErro
       `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`,
     ].join("; "),
-    suggestion: "Rebuild the mcp-server dist if canonical docs or generated Plugin API index assets are missing, then rerun the same figma:* command with the same --state-file.",
+    suggestion: "Rebuild the cli-runtime dist if canonical docs or generated Plugin API index assets are missing, then rerun the same figma:* command with the same --state-file.",
     docsHint: "Figma Workspace CLI: lookup --help",
   };
 }
@@ -5226,7 +5226,7 @@ function upstreamToolRequiredProperties(tool: UpstreamToolInfo): Set<string> {
 }
 
 /**
- * @internal Internal wrapper builder used by the Figma Workspace server and tests.
+ * @internal Internal wrapper builder used by the Figma Workspace CLI runtime and tests.
  * This is not a stable CLI input contract; callers should use figma:eval or figma:script:run.
  */
 export function buildFigmaEvalScript(options: {

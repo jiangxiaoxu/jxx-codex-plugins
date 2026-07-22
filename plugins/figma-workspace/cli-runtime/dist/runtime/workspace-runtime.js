@@ -50,7 +50,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.3.1";
+    DEFAULT_CLIENT_VERSION = "0.3.2";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -20794,8 +20794,8 @@ function pluginApiIndexRootCandidates(moduleDir, cwd) {
     resolve5(moduleDir, "figma-plugin-api-index"),
     resolve5(moduleDir, "../runtime/figma-plugin-api-index"),
     resolve5(cwd, "dist/runtime/figma-plugin-api-index"),
-    resolve5(cwd, "mcp-server/dist/runtime/figma-plugin-api-index"),
-    resolve5(cwd, "plugins/figma-workspace/mcp-server/dist/runtime/figma-plugin-api-index")
+    resolve5(cwd, "cli-runtime/dist/runtime/figma-plugin-api-index"),
+    resolve5(cwd, "plugins/figma-workspace/cli-runtime/dist/runtime/figma-plugin-api-index")
   ];
 }
 function readPluginApiIndex(root, manifest) {
@@ -23732,9 +23732,9 @@ var init_workspace_files = __esm({
   }
 });
 
-// src/mcp/workspace-mcp-server.ts
-var workspace_mcp_server_exports = {};
-__export(workspace_mcp_server_exports, {
+// src/runtime/workspace-client.ts
+var workspace_client_exports = {};
+__export(workspace_client_exports, {
   FIGMA_WORKSPACE_DEFAULT_SESSION_ID: () => FIGMA_WORKSPACE_DEFAULT_SESSION_ID,
   FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS: () => FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS,
   buildFigmaEvalScript: () => buildFigmaEvalScript,
@@ -23878,7 +23878,7 @@ function createSkippedOptionalUpstreamDiagnostic(options) {
     code: "FIGMA_WORKSPACE_UPSTREAM_OPTIONAL_SKIPPED",
     severity: "warning",
     message: `The command skipped optional upstream argument "${options.property}" because the live official ${options.upstreamKind} capability does not advertise inputSchema.properties.${options.property}.`,
-    suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/mcp-server to audit official schema drift.",
+    suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/cli-runtime to audit official schema drift.",
     docsHint: "Prefer first-class figma:* commands for covered workflows; use figma:upstream:call for uncovered official capabilities."
   };
 }
@@ -26968,7 +26968,7 @@ async function handleLookup(args) {
         ok: false,
         results: [],
         diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error2)]),
-        guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the mcp-server dist after confirming those bundled assets exist, then start a new CLI command.",
+        guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the cli-runtime dist after confirming those bundled assets exist, then start a new CLI command.",
         runtime: error2.failure
       });
     }
@@ -27026,7 +27026,7 @@ function lookupCorpusDiagnostic(error2) {
       `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`
     ].join("; "),
-    suggestion: "Rebuild the mcp-server dist if canonical docs or generated Plugin API index assets are missing, then rerun the same figma:* command with the same --state-file.",
+    suggestion: "Rebuild the cli-runtime dist if canonical docs or generated Plugin API index assets are missing, then rerun the same figma:* command with the same --state-file.",
     docsHint: "Figma Workspace CLI: lookup --help"
   };
 }
@@ -29537,8 +29537,8 @@ function literal3(value) {
   return JSON.stringify(value);
 }
 var FIGMA_WORKSPACE_DEFAULT_SESSION_ID, FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_HISTORY_LIMIT, DEFAULT_INLINE_RESULT_LIMIT, MAX_INLINE_RESULT_LIMIT2, MAX_QUEUED_CAPTURE_REQUESTS, MAX_MANIFEST_ITEMS, MAX_MANIFEST_FILE_BYTES, MAX_SINGLE_ASSET_BYTES, MAX_COMMAND_DATA_PLANE_BYTES, NETWORK_REQUEST_TOTAL_TIMEOUT_MS, NETWORK_REQUEST_IDLE_TIMEOUT_MS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, UNKNOWN_EXECUTION_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, DataPlaneResourceBudget, COMMAND_RESOURCE_CONTEXT, NetworkRequestDeadline, PostResponseResourceError, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, PUBLIC_HISTORY_COMMAND_IDS, PUBLIC_HISTORY_KINDS, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
-var init_workspace_mcp_server = __esm({
-  "src/mcp/workspace-mcp-server.ts"() {
+var init_workspace_client = __esm({
+  "src/runtime/workspace-client.ts"() {
     "use strict";
     init_remote_mcp_client();
     init_doc_search();
@@ -29778,10 +29778,10 @@ init_oauth_state();
 init_oauth_provider();
 init_oauth_callback();
 init_remote_mcp_client();
-init_workspace_mcp_server();
+init_workspace_client();
 
 // src/runtime/workspace-runtime.ts
-init_workspace_mcp_server();
+init_workspace_client();
 
 // src/cli/figma-workspace-cli.ts
 init_tool_args();
@@ -30656,7 +30656,7 @@ function toolOutputSchema(properties, requiredProperties = []) {
 }
 
 // src/cli/figma-workspace-cli.ts
-init_workspace_mcp_server();
+init_workspace_client();
 init_doc_search();
 init_managed_files();
 init_workspace_files();
@@ -31983,10 +31983,10 @@ function installGlobal2(name, value) {
 installNodeReplWebStreamGlobals();
 var [
   clientModule,
-  replServerModule
+  workspaceClientModule
 ] = await Promise.all([
   Promise.resolve().then(() => (init_remote_mcp_client(), remote_mcp_client_exports)),
-  Promise.resolve().then(() => (init_workspace_mcp_server(), workspace_mcp_server_exports))
+  Promise.resolve().then(() => (init_workspace_client(), workspace_client_exports))
 ]);
 var RemoteMcpClient2 = clientModule.RemoteMcpClient;
 var isRemoteMcpOAuthError2 = clientModule.isRemoteMcpOAuthError;
@@ -31994,7 +31994,7 @@ function createRemoteMcpClient2(options = {}) {
   return clientModule.createRemoteMcpClient(withNodeReplRemoteDefaults(options));
 }
 function createFigmaWorkspaceClient2(options = {}) {
-  return replServerModule.createFigmaWorkspaceClient(withNodeReplReplDefaults(options));
+  return workspaceClientModule.createFigmaWorkspaceClient(withNodeWorkspaceDefaults(options));
 }
 function withNodeReplRemoteDefaults(options) {
   if (options.statePath || options.useBridgeOAuthCache === false) {
@@ -32006,7 +32006,7 @@ function withNodeReplRemoteDefaults(options) {
     useBridgeOAuthCache: false
   };
 }
-function withNodeReplReplDefaults(options) {
+function withNodeWorkspaceDefaults(options) {
   if (options.client) {
     return options;
   }

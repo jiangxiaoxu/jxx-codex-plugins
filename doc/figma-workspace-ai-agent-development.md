@@ -24,7 +24,7 @@ The workflow corpus has three intentionally separate layers:
 
 1. `dev/upstream-snapshot/` and `dev/upstream-changes/` are an upstream archive and drift evidence. They are not packaged or read at runtime.
 2. `dev/canonical-corpus-source/` is manual, CLI-native authoring plus policy. Maintainers absorb upstream changes here after review; it is not published directly.
-3. `skills/figma-workspace/references/canonical-corpus/` is the packaged runtime corpus. `mcp-server/dist/` contains the generated package mirror.
+3. `skills/figma-workspace/references/canonical-corpus/` is the packaged runtime corpus. `cli-runtime/dist/` contains the generated package mirror.
 
 `npm run update:upstream-snapshot -- --ref <git-ref>` updates only the archive and drift report. It must never overwrite manual authoring, policy, runtime corpus, or `dist`. Pending or retired upstream drift is a review warning and does not block canonical publication. Malformed snapshot/report data, duplicate policy ownership, or inconsistent adaptation data still fail closed.
 
@@ -34,15 +34,15 @@ The workflow corpus has three intentionally separate layers:
 
 | Area | Canonical owner | Maintenance rule |
 | --- | --- | --- |
-| Public CLI contract | `mcp-server/src/cli/`, `mcp-server/src/contract/`, generated help | Change schema and help before concise user-facing summaries. |
-| Runtime operations | `mcp-server/src/mcp/`, `mcp-server/src/runtime/` | Keep the CLI as the only agent-facing integration boundary. |
-| Upstream transport and OAuth | `mcp-server/src/upstream/`, `mcp-server/src/auth/`, `scripts/server.mjs` | Reuse the canonical credential implementation; do not create a second cache format or bridge behavior. |
-| Managed files and state | `mcp-server/src/runtime/managed-files.ts` and related runtime modules | Reuse containment, link rejection, atomic publication, and lock primitives. |
+| Public CLI contract | `cli-runtime/src/cli/`, `cli-runtime/src/contract/`, generated help | Change schema and help before concise user-facing summaries. |
+| Runtime operations | `cli-runtime/src/mcp/`, `cli-runtime/src/runtime/` | Keep the CLI as the only agent-facing integration boundary. |
+| Upstream transport and OAuth | `cli-runtime/src/upstream/`, `cli-runtime/src/auth/`, `scripts/server.mjs` | Reuse the canonical credential implementation; do not create a second cache format or bridge behavior. |
+| Managed files and state | `cli-runtime/src/runtime/managed-files.ts` and related runtime modules | Reuse containment, link rejection, atomic publication, and lock primitives. |
 | Public wrappers | `scripts/commands/` and plugin-root `package.json` | Keep each public wrapper thin and aligned with generated help. |
 | Corpus archive | `dev/upstream-snapshot/`, `dev/upstream-changes/` | Preserve as upstream evidence; never edit it to make local guidance correct. |
 | Corpus authoring | `dev/canonical-corpus-source/` | Make reviewed CLI-native edits here and keep stable record IDs. |
 | Runtime corpus | `skills/figma-workspace/references/canonical-corpus/`, generated `dist/` | Generate it from reviewed canonical authoring; do not hand-edit generated files. |
-| Plugin API index | Bundled `@figma/plugin-typings`, `mcp-server/scripts/build.mjs`, generated `dist/` | Generate it during the package build; do not treat corpus authoring as its source. |
+| Plugin API index | Bundled `@figma/plugin-typings`, `cli-runtime/scripts/build.mjs`, generated `dist/` | Generate it during the package build; do not treat corpus authoring as its source. |
 | User routing | `skills/figma-workspace/SKILL.md` and its references | Keep it concise and route detailed usage to public help and docs commands. |
 | Maintenance documentation | `doc/`, plugin README, package README | Assign one owner per fact and link rather than copy contract details. |
 
@@ -53,7 +53,7 @@ The workflow corpus has three intentionally separate layers:
 3. For public CLI changes, update typed schema/help, runtime behavior, and contract tests first. Then update the skill and README summaries. Breaking changes are preferred when they simplify the active contract; do not retain hidden aliases or legacy result fields.
 4. For corpus work, use the archive only to understand upstream drift. Make semantic corrections in manual authoring, update policy/provenance when upstream content changed, validate links and records, then rebuild the runtime corpus. Do not refresh the upstream ref merely to publish a local correction.
 5. For filesystem, sidecar, state, capture, download, or OAuth changes, reuse the shared primitives and retain known operation outcomes through local failures. Test retries, concurrent access, partial-output cleanup, and terminal versus transient authentication behavior at the owning layer.
-6. Rebuild checked-in `mcp-server/dist/` only from source. Keep package allowlists, generated artifacts, wrappers, and source synchronized; never restore an importable typed facade.
+6. Rebuild checked-in `cli-runtime/dist/` only from source. Keep package allowlists, generated artifacts, wrappers, and source synchronized; never restore an importable typed facade.
 7. Keep user docs as routing and recovery summaries. Exact command syntax, limits, result shapes, and generated corpus internals stay in help, schemas, and tests.
 
 For Design live verification, use only the ignored plugin-local `live-test.json` configuration and normal OAuth cache resolution. It contains no secret, runs separately from deterministic tests, tags its own nodes, reconciles an unknown creation before cleanup, and removes only nodes proven to belong to that run.
@@ -69,7 +69,7 @@ npm run build:canonical-corpus
 npm test
 ```
 
-From `plugins/figma-workspace/mcp-server`:
+From `plugins/figma-workspace/cli-runtime`:
 
 ```text
 npm run typecheck
