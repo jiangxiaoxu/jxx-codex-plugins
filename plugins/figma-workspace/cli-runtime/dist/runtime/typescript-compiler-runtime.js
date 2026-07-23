@@ -211763,11 +211763,12 @@ function loadFigmaWorkspaceTypescriptRuntimeAssets() {
   }
 }
 function runtimeAssetCandidates(relativePath) {
-  return [
+  return [.../* @__PURE__ */ new Set([
     resolve(runtimeDirname, relativePath),
+    resolve(runtimeDirname, "../runtime", relativePath),
     resolve(runtimeDirname, "../mcp", relativePath),
     resolve(runtimeDirname, "../upstream", relativePath)
-  ];
+  ])];
 }
 function resolveReadableFile(candidates) {
   for (const candidate of candidates) {

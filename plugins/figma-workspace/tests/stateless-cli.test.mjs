@@ -341,6 +341,21 @@ test("packed plugin contains every fixed leaf wrapper and can run local stateles
     assert.equal(runHelp.status, 0, commandOutput(runHelp));
     assert.match(runHelp.stdout, /--script/u);
     assert.doesNotMatch(runHelp.stdout, oldSessionTokens);
+
+    const doctor = runNpm(["--silent", "run", "figma:doctor"], {
+      cwd: packedRoot,
+      encoding: "utf8",
+    });
+    assert.equal(doctor.status, 0, commandOutput(doctor));
+    assert.match(doctor.stdout, /^Status: succeeded$/mu);
+    const doctorJson = /```json\r?\n(?<json>[\s\S]+?)\r?\n```/u.exec(doctor.stdout)?.groups?.json;
+    assert.notEqual(doctorJson, undefined, doctor.stdout);
+    const doctorPayload = JSON.parse(doctorJson);
+    assert.equal(doctorPayload.runtime.typescript.ok, true);
+    assert.match(
+      doctorPayload.runtime.typescript.helperDeclarationsPath.replaceAll("\\", "/"),
+      /cli-runtime\/dist\/runtime\/figma-workspace-helpers\.d\.ts$/u,
+    );
   } finally {
     await rm(tempDir, { recursive: true, force: true });
     await rm(fixture.container, { recursive: true, force: true });
