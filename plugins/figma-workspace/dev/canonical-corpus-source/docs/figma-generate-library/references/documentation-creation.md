@@ -2,7 +2,7 @@
 
 # Documentation Creation Reference
 
-This reference covers Phase 2 of the design system build: the cover page, foundations documentation page (color swatches, type specimens, spacing bars, shadow cards, radius demo), page layout dimensions, and inline component documentation. Every JavaScript block is a non-executable Plugin API example. Adapt it into a local `.figma.ts` file, then run it with `figma:script:run`.
+This reference covers Phase 2 of the design system build: the cover page, foundations documentation page (color swatches, type specimens, spacing bars, shadow cards, radius demo), page layout dimensions, and inline component documentation. Every JavaScript block is a non-executable Plugin API example. Adapt it into a local `.figma.ts` file, then run it with `figma:run`.
 
 > **Every text mutation in this file follows the [canonical text-edit recipe](canonical:figma-use/references/gotchas.md):** load font → `await` → mutate → return affected IDs. Examples use `Inter` because it's available everywhere, but `loadFontAsync` is required for every (family, style) pair you mutate — not just Inter.
 

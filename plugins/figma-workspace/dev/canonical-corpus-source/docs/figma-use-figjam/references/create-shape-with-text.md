@@ -4,7 +4,7 @@ Use `SHAPE_WITH_TEXT` nodes for diagram steps, decisions, named concepts, and br
 
 ## Build in a task file
 
-For a board change, edit a prepared local `.figma.ts` file and run it with `figma:script:run`, passing JSON with `sessionId`, `inputFile`, and `surface: "figjam"`, plus an absolute `--state-file`. TypeScript preflight is always enabled. Return all changed node IDs. `figma:eval` is only suitable for a small self-contained transaction.
+For a board change, edit a local `.figma.ts` file and run it with `figma:run`, passing an explicit FigJam file target, `--surface figjam`, and the script path. TypeScript preflight is always enabled. Return all changed node IDs.
 
 ```ts
 // review-decision.figma.ts
@@ -30,7 +30,7 @@ shape.name = text
 return { runId, createdNodeIds: [shape.id], shape: { id: shape.id, type: shape.shapeType, text } }
 ```
 
-Execute it with `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`.
+Execute it with `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>`.
 
 ## API and layout guidance
 

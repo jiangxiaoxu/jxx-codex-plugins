@@ -1,17 +1,17 @@
 # Slides Plugin API Reference
 
-Use this reference with the Figma Workspace CLI. Put a native Figma Plugin API async script body in a local `.figma.ts` file and execute it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. Use `figma:open` to bind the file, and use `figma:guidance` or `figma:api:search` when an API detail is uncertain.
+Use this reference with the Figma Workspace CLI. Put a native Plugin API async script body in a local `.figma.ts` file and execute it with `figma:run -- --file <slides-file-url-or-key> --surface slides --script <path/to/script.figma.ts>`. Use an explicit Slides URL or fileKey on every invocation. For uncertain routing, use `figma:docs:catalog`, `figma:docs:search -- --surface slides`, or `figma:api:search`.
 
 ## Choosing How to Build a Slides Deck
 
-Use `figma:script:run` for deck creation, edits, reference-file styling, iterative refinement, speaker notes, and layout work. Keep a deck request in one CLI-backed workflow to avoid duplicate artifacts.
+Use `figma:run` for deck creation, edits, reference-file styling, iterative refinement, speaker notes, and layout work. Keep a deck request in one CLI-backed workflow to avoid duplicate artifacts.
 
 ## Critical Rules (Slides-specific)
 
 1. **Newly created Slides files have a default light theme.** Treat it as structural scaffolding: overwrite theme colors, text styles, and variables with the deck's intended design direction. Do not rely on the default light-theme tokens.
 2. **MUST `appendChild` BEFORE setting `x`/`y` — for every node, at every level of nesting.** Newly created nodes are silently auto-parented to a slide context at absolute `(240, 240)` (the slide grid's `GRID_PADDING`). Writing `x`/`y` before `appendChild` causes the value to be stored against that hidden origin; the node then lands at `(intended − 240, intended − 240)` once you attach the real parent. The bug is **intermittent** — some frames in the same script escape it, so a working test is not proof you're safe. **Signature to recognize:** if any node ends up `(−240, −240)` from where you set it, your code set `x`/`y` before the final `appendChild`. Do NOT try to compensate by adding 240 back — that produces worse output on retry. Fix the order instead. See [slide-gotchas.md](canonical:figma-use-slides/references/slide-gotchas.md) for the helper pattern that makes the order impossible to get wrong.
 3. **SLIDE_GRID and SLIDE_ROW are opaque nodes** — do not access `.fills`, `.effects`, or layout properties on them. Only `SLIDE` nodes (type `'SLIDE'`) extend `BaseFrameMixin`. **Exception:** `SLIDE_ROW.name` IS settable — that's how plugins rename slide sections (e.g. `slideRow.name = "Intro"`). See [slide-lifecycle.md](canonical:figma-use-slides/references/slide-lifecycle.md).
-4. **Use `figma:script:run` read-only `.figma.ts` scripts for Slides validation.** Return created node positions and verify no overlapping bounding boxes; use `figma:capture` for visual QA.
+4. **Use `figma:run` read-only `.figma.ts` scripts for Slides validation.** Return created node positions and verify no overlapping bounding boxes; use `figma:capture` for visual QA.
 5. **Do NOT call `figma.createPage()` in Slides.** It throws `TypeError: figma.createPage no such property 'createPage' on the figma global object` — `createPage()` is a Design-file API only (`figma.com/design/...`); the Slides URL is `figma.com/slides/...`. Use the slide grid (`SLIDE_GRID` / `SLIDE_ROW` / `SLIDE`) to organize deck structure instead — see [slide-lifecycle.md](canonical:figma-use-slides/references/slide-lifecycle.md) and [slide-grid.md](canonical:figma-use-slides/references/slide-grid.md).
 6. **Never delete existing slides to rebuild them.** When asked to improve, redesign, or restyle a deck, modify the existing slides in place. Only delete slides when the user explicitly asks to "start over" or "redo from scratch."
 
@@ -38,7 +38,7 @@ Before writing any Plugin API code for a new deck, decide what it should *feel* 
 
 When the user provides a link to a Figma file as a reference, study it before designing anything. What you extract depends on what the file is:
 
-- **A Slides file**: Use `figma:open` with the reference file, `figma:script:run` read-only `.figma.ts` scripts to extract theme variables, colors, fonts, and layout patterns, and `figma:capture` for visual reference.
+- **A Slides file**: Pass the reference file explicitly to read-only `figma:run` scripts to extract theme variables, colors, fonts, and layout patterns, and use `figma:capture` for visual reference.
 - **A Design file**: Use `figma:design-context` for colors, typography, and layout structure, `figma:variables` for variable definitions, and `figma:capture` for visual reference.
 
 What to look for in a reference file: the color palette (which hue leads, what the accent is, how dark/light backgrounds are used), the type choices (families, weights, how hierarchy is handled), the spatial habits (where content anchors, how much whitespace, whether things bleed off edges), and any recurring motifs (shapes, line treatments, decorative elements). These are the decisions you inherit — everything else is yours.
@@ -64,7 +64,7 @@ Complete the design thinking process above (read the brief, check for a design l
 
 Execute the plan in large batches. The goal is to minimize the number of think-then-build cycles — not to minimize elements per script.
 
-- **3–5 slides per `figma:script:run` execution.** Structurally similar slides (e.g. a series of product feature slides) can go in the same batch. Each slide is an isolated subtree — cross-slide dependencies don't exist, so large batches are safe.
+- **3–5 slides per `figma:run` execution.** Structurally similar slides (e.g. a series of product feature slides) can go in the same batch. Each slide is an isolated subtree — cross-slide dependencies don't exist, so large batches are safe.
 - **Do NOT re-plan between batches.** The design was decided in Phase 1. If a batch succeeds and passes validation, move to the next batch immediately. Only re-plan if a batch fails or produces a visual problem that requires changing the approach.
 - **Paste the code preamble** (colors, fonts, helpers) at the top of every build script. Copy it from Phase 1 verbatim — do not re-derive it.
 - **Validate every batch** with the deterministic batch validation script from [slide-gotchas.md](canonical:figma-use-slides/references/slide-gotchas.md). This checks for overlapping elements, text clipping, and out-of-bounds nodes in ~3 seconds. If the check passes, proceed without a screenshot. If it fails, screenshot the affected slides and fix before continuing.
@@ -129,7 +129,7 @@ Speaker notes are for the *presenter*, not the audience. They should feel like a
 
 ## Inspecting Slides Files
 
-Use read-only `.figma.ts` scripts through `figma:script:run` for Slides inspection, and `figma:capture` for visual context.
+Use read-only `.figma.ts` scripts through `figma:run` for Slides inspection, and `figma:capture` for visual context.
 
 - **Inspect before creating.** Before creating anything, run a read-only `.figma.ts` script to discover existing slides, text, components, and naming conventions.
 - **Use `figma:metadata` only for supported design-file discovery.** Slides structure should be read through a script.

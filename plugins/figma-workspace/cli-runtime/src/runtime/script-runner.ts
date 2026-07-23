@@ -85,7 +85,7 @@ export function compileFigmaWorkspaceScriptFile(options: {
   if (options.targetPageId) {
     lines.push(createTargetPageBootstrap(options.targetPageId));
   }
-  lines.push(`// figma:script:run source: ${options.scriptPath}`);
+  lines.push(`// figma:run source: ${options.scriptPath}`);
   lines.push(preparedSource.source);
   return {
     code: lines.join("\n"),
@@ -149,8 +149,8 @@ export function diagnoseWrappedScriptSize(
     code: "FIGMA_WORKSPACE_SCRIPT_PAYLOAD_TOO_LARGE",
     severity: "fatal",
     message: `Compiled Figma script payload is ${byteLength} bytes; the maximum is ${UPSTREAM_EVAL_CODE_LIMIT_BYTES} UTF-8 bytes.`,
-    suggestion: "Split the work into smaller .figma.ts files, for example skeleton, asset targets, upload fills, and visual fixes.",
-    docsHint: "Figma Workspace CLI: figma:script:run --help",
+    suggestion: "Split the work into smaller .figma.ts files, then run each with figma:run --file <url|key> and exactly one of --script <path.figma.ts> or --source -.",
+    docsHint: "Figma Workspace CLI: figma:run --help",
     source: { scriptPath },
   }];
 }

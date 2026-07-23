@@ -1,5 +1,9 @@
 #!/usr/bin/env node
+// @ts-check
 
-import { runFigmaCommandCli } from "../../cli-runtime/dist/cli/figma-command-runtime.js";
+import { runFigmaCommandEntrypoint } from "./command-entrypoint.mjs";
 
-process.exitCode = await runFigmaCommandCli(["--help"]);
+await runFigmaCommandEntrypoint({
+  commandName: "figma:help",
+  rootHelp: true,
+});

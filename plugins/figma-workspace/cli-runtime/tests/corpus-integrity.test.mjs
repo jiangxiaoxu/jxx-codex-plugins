@@ -236,10 +236,6 @@ function runCliCommand(root, command, input) {
     command,
     "--input",
     "-",
-    "--session-file",
-    join(root, "state.json"),
-    "--inline-result-limit",
-    "10000",
   ], {
     cwd: root,
     input: JSON.stringify(input),

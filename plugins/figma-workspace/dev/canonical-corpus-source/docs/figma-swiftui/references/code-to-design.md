@@ -1,6 +1,6 @@
 # SwiftUI → Figma (code → design)
 
-Translate SwiftUI source code into a Figma design with a `.figma.ts` script executed by `figma:script:run`. This doc covers SwiftUI-specific translation knowledge; use the related design assembly and component / variable workflow guidance as the scope requires, and use this doc to drive the *SwiftUI semantic interpretation* of the source.
+Translate SwiftUI source code into a Figma design with a `.figma.ts` script executed by `figma:run`. This doc covers SwiftUI-specific translation knowledge; use the related design assembly and component / variable workflow guidance as the scope requires, and use this doc to drive the *SwiftUI semantic interpretation* of the source.
 
 Assumes the shared context in [SKILL.md](canonical:figma-swiftui/SKILL.md).
 

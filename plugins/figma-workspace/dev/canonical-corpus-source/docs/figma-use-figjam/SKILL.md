@@ -1,6 +1,6 @@
 # FigJam Plugin API Reference
 
-Use this reference with the Figma Workspace CLI. Put a native Figma Plugin API async script body in a local `.figma.ts` file and execute it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. Run `figma:guidance` or `figma:api:search` first when an API detail is uncertain.
+Use this reference with the Figma Workspace CLI. Put a native Plugin API async script body in a local `.figma.ts` file and execute it with `figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>`. For uncertain routing, use `figma:docs:catalog`, `figma:docs:search -- --surface figjam`, or `figma:api:search`.
 
 > **FigJam URL is `figma.com/board/...`.** Do NOT call `figma.createPage()` in FigJam — it throws `TypeError: figma.createPage no such property 'createPage' on the figma global object`. `createPage()` is a Design-file API only (`figma.com/design/...`). FigJam files have a single implicit page; organize content with sections instead (see [create-section](canonical:figma-use-figjam/references/create-section.md)).
 
@@ -19,7 +19,7 @@ Load only the references your task needs — but when you do need to load multip
 
 ## Command Selection
 
-Run the selected `figma:<command>` with `--help` before first use. Use `figma:open` to bind a FigJam file, `figma:metadata` and `figma:inspect` for reads, `figma:script:run` for local `.figma.ts` work, and `figma:capture` for visual QA. Every executing command needs the same absolute `--state-file`.
+Run the selected `figma:<command>` with `--help` before first use. Pass an explicit FigJam URL or fileKey to `figma:metadata` and `figma:inspect` for reads, use `figma:run` for local `.figma.ts` work, and use `figma:capture` for visual QA. Every remote command receives its target in that invocation.
 
 ## Text Mutations — Canonical Recipe
 

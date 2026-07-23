@@ -4,21 +4,13 @@
 
 ## `.figma.ts` 前置与执行
 
-先明确内容、层级、坐标和是否需要固定宽度换行。把这些值放在一个本地脚本中，并用已建立 FigJam session 运行：
-
-```json
-{
-  "sessionId": "<session-id>",
-  "inputFile": "C:/work/project/.figma-workspace/board/add-instructions.figma.ts",
-  "surface": "figjam"
-}
-```
+先明确内容、层级、坐标和是否需要固定宽度换行。把这些值放在一个本地脚本中，并显式传入 FigJam file target、`--surface figjam` 和脚本路径运行：
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/add-instructions.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
-`figma:eval` 仅可用于已知单节点的一次小型、自足变更；新建文本通常包含字体、排版和位置，保留在 `.figma.ts` 更容易检查和重跑。
+新建文本通常包含字体、排版和位置，保留在 `.figma.ts` 更容易检查和重跑。
 
 ## Plugin API 步骤
 

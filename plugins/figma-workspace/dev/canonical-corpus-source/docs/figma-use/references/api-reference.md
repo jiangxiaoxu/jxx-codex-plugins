@@ -262,7 +262,7 @@ The native Plugin API supports `figma.createImage(data)` for PNG, JPEG, or GIF b
 When using `figma:assets:apply`, provide a prepared asset manifest as JSON input. Read its help before preparing the manifest because the JSON contract, upload instructions, and placement fields are authoritative there.
 
 ```text
-npm --silent run figma:assets:apply -- --input <asset-manifest.json> --state-file <absolute-path>
+npm --silent run figma:assets:apply -- --file <figma-file-url-or-key> --input <asset-manifest.json>
 ```
 
 ### Re-using an existing imageHash
@@ -302,7 +302,7 @@ figma.createComponentFromNode(node) // Convert existing node to component (Desig
 
 ## Plugin Lifecycle
 
-Scripts are saved as an ordinary async TypeScript body and run through `figma:script:run` after TypeScript preflight. Use `return` to send data back:
+Scripts are saved as an ordinary async TypeScript body and run through `figma:run` after TypeScript preflight. Use `return` to send data back:
 
 ```js
 return { nodeId: frame.id }     // Return object — auto-serialized to JSON

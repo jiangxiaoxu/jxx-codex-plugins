@@ -19,7 +19,7 @@ Figma Workspace exposes motion through two first-class CLI commands:
 
 ## Prerequisites
 
-- One fully qualified absolute Figma Workspace `--state-file`, reused for the related CLI calls.
+- An explicit Figma node URL, or fileKey plus nodeId, for every related CLI call.
 - Node ID parsed from the Figma URL the user provides. URL format: `https://figma.com/design/:fileKey/:fileName?node-id=1-2` — extract `fileKey` (the segment after `/design/`) and `nodeId` (the value of the `node-id` query parameter, e.g. `42-15`).
 - Target codebase. Motion output format adapts to stack (see [Framework Recommendations](#framework-recommendations)).
 
@@ -40,7 +40,7 @@ For motion implementation, use both tools with distinct roles:
 ### Step 1: Confirm static design context is available
 
 ```
-npm --silent run figma:design-context -- <node-id> --file <file-key> --state-file <absolute-path>
+npm --silent run figma:design-context -- --file <file-key> --node <node-id>
 ```
 
 If `figma:design-context` has already been called for this node, reuse that output. If not, call it now.
@@ -50,7 +50,7 @@ Use it as the **structure of record** — hierarchy, sizing, styling, assets, Co
 ### Step 2: Fetch authoritative motion data
 
 ```
-npm --silent run figma:motion-context -- <node-id> --file <file-key> --recursive --state-file <absolute-path>
+npm --silent run figma:motion-context -- --file <file-key> --node <node-id> --recursive
 ```
 
 Response shape (one entry per animated node):

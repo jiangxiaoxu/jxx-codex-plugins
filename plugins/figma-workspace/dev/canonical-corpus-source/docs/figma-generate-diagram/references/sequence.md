@@ -2,7 +2,7 @@
 
 Use this reference for **sequence diagrams** — interactions over time between parties (services, users, systems). API request/response flows, auth handshakes, multi-service choreography, RPC call traces, event cascades.
 
-The renderer is a **narrow subset** of full Mermaid sequence — read §5 carefully, because several features people commonly reach for (notes, loops, alt/else, activation boxes, colored blocks, autonumber) are silently dropped by our handler. The good news: most of those can be added back on top of the generated diagram with a local `.figma.ts` script executed with `figma:script:run` — see §7 for the hybrid workflow.
+The renderer is a **narrow subset** of full Mermaid sequence — read §5 carefully, because several features people commonly reach for (notes, loops, alt/else, activation boxes, colored blocks, autonumber) are silently dropped by our handler. The good news: most of those can be added back on top of the generated diagram with a local `.figma.ts` script executed with `figma:run` — see §7 for the hybrid workflow.
 
 ## Contents
 
@@ -105,7 +105,7 @@ Syntax notes:
 
 Consequence: **don't bother with type annotations** — they're visual noise in the Mermaid source with no payoff. Just use `participant` for everything.
 
-If the user specifically wants visually distinct participant shapes (a cylinder for a database, a horizontal cylinder for a queue, a stick figure for a user), generate the base sequence here and then use a local `.figma.ts` script executed with `figma:script:run` to swap in the right shapes on top — see §7.
+If the user specifically wants visually distinct participant shapes (a cylinder for a database, a horizontal cylinder for a queue, a stick figure for a user), generate the base sequence here and then use a local `.figma.ts` script executed with `figma:run` to swap in the right shapes on top — see §7.
 
 ### Implicit participants
 
@@ -164,7 +164,7 @@ Our renderer is a **substantial** subset of full Mermaid sequence. The following
 - **Links** — `link X: ...`, `links X: ...`. Not supported.
 - **Box groupings** — `box ... end` around participants. Not rendered.
 
-**If the user asks for any of these**, don't stretch the Mermaid syntax trying to imitate them — the output will silently omit the feature. The better move in most cases is to generate the core sequence (participants + messages) with this tool, then layer the missing pieces on top with a local `.figma.ts` script executed with `figma:script:run`. See §7 for the hybrid workflow.
+**If the user asks for any of these**, don't stretch the Mermaid syntax trying to imitate them — the output will silently omit the feature. The better move in most cases is to generate the core sequence (participants + messages) with this tool, then layer the missing pieces on top with a local `.figma.ts` script executed with `figma:run`. See §7 for the hybrid workflow.
 
 ## 6. Best practices
 
@@ -178,12 +178,12 @@ Our renderer is a **substantial** subset of full Mermaid sequence. The following
 
 ## 7. Hybrid workflow
 
-the upstream diagram capability produces a clean baseline — participants arranged in columns, labeled messages in order, consistent layout. That's the hard part. Most of what our renderer _doesn't_ support (notes, colored regions, step numbers, distinct participant shapes, annotations, callouts) is exactly the kind of layered-on content that a local `.figma.ts` script executed with `figma:script:run` handles well once a baseline exists.
+the upstream diagram capability produces a clean baseline — participants arranged in columns, labeled messages in order, consistent layout. That's the hard part. Most of what our renderer _doesn't_ support (notes, colored regions, step numbers, distinct participant shapes, annotations, callouts) is exactly the kind of layered-on content that a local `.figma.ts` script executed with `figma:run` handles well once a baseline exists.
 
 **Default workflow for any sequence that needs more than raw messages:**
 
 1. **Scaffold with the upstream diagram capability** — generate the participants + messages as a clean Mermaid sequence. Skip the features that get dropped (notes, loops, alt/else wrappers, activation bars, rects, autonumber). The output is a FigJam file with a laid-out sequence.
-2. **Extend with a local `.figma.ts` script executed with `figma:script:run`** — open the same file (via `fileKey`) and add the pieces the Mermaid syntax couldn't express:
+2. **Extend with a local `.figma.ts` script executed with `figma:run`** — open the same file (via `fileKey`) and add the pieces the Mermaid syntax couldn't express:
    - Sticky notes or text blocks for **annotations** anchored to specific messages
    - Rectangles behind groups of messages for **phase highlighting**
    - Vertical rectangles on a lifeline for **activation bars**
@@ -192,7 +192,7 @@ the upstream diagram capability produces a clean baseline — participants arran
    - Labeled groups (e.g. a rectangle around a block of messages labeled "retry loop") to stand in for `loop`/`alt`/`opt`
    - Surrounding narrative, adjacent diagrams, or screenshots on the same board
 
-Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
+Use a local `.figma.ts` script with `figma:run`; read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
 
 ### When to skip the upstream diagram capability entirely
 
@@ -202,7 +202,7 @@ Only if the baseline the tool would produce isn't useful. For example:
 - The user has a **specific reference mock** they want matched closely, and the auto-layout would fight it.
 - The sequence is **tiny** (2–3 messages) and it's faster to place shapes manually than to prompt two tools.
 
-In those cases, go straight to a local `.figma.ts` script executed with `figma:script:run`.
+In those cases, go straight to a local `.figma.ts` script executed with `figma:run`.
 
 ### Signals the request needs the hybrid workflow (not pure the upstream diagram capability)
 

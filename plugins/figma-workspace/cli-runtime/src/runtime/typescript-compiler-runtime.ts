@@ -162,7 +162,7 @@ export function compileFigmaWorkspaceTypescriptSource(
       severity: "fatal",
       message: "TypeScript preflight could not extract the compiled Figma script body.",
       suggestion: "Remove unusual top-level wrapper-like code and rerun the .figma.ts script.",
-      docsHint: "lookup kind=docs query=\"TypeScript Figma plugin typings\"",
+      docsHint: "Figma Workspace CLI: figma:docs:search \"TypeScript Figma plugin typings\"",
       source: { scriptPath },
     });
   }
@@ -312,8 +312,8 @@ function typescriptRuntimeAssetFailureDiagnostic(
       `packageVersion=${failure.packageVersion ?? "<unknown>"}`,
       `attemptedPaths=${failure.attemptedPaths.join(" | ")}`,
     ].join("; "),
-    suggestion: "Rebuild the cli-runtime dist if bundled declaration files are missing, then rerun figma:script:run with the same --state-file.",
-    docsHint: "Figma Workspace CLI: figma:script:run --help",
+    suggestion: "Rebuild the cli-runtime dist if bundled declaration files are missing, then rerun figma:run with an explicit --file target and exactly one of --script <path.figma.ts> or --source -.",
+    docsHint: "Figma Workspace CLI: figma:run --help",
     source: { scriptPath },
   };
 }
@@ -384,8 +384,8 @@ function typescriptDiagnosticToFileDiagnostic(
       ? "Fix all TypeScript syntax errors before running the Figma Workspace script; rerun afterward to get guardrail diagnostics."
       : "Fix the TypeScript error before running the Figma script. Use Figma Plugin API node types such as FrameNode, PageNode, or RectangleNode to model allowed methods.",
     docsHint: syntaxError
-      ? "Figma Workspace CLI: figma:script:run --help"
-      : "lookup kind=api symbol=ChildrenMixin.appendChild",
+      ? "Figma Workspace CLI: figma:run --help"
+      : "Figma Workspace CLI: figma:api:search ChildrenMixin.appendChild",
     source: {
       scriptPath,
       ...location,

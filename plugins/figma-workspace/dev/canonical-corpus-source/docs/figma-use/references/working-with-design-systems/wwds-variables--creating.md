@@ -4,13 +4,13 @@ Create variables only after establishing the existing system and the intended so
 
 ## Discover before changing
 
-Use the Figma Workspace CLI with one absolute state file throughout the task:
+Use the Figma Workspace CLI with an explicit file target on every remote call:
 
 ```text
 npm --silent run figma:variables -- --help
-npm --silent run figma:variables -- --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:libraries -- --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:design-system -- "button background color" --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:variables -- --file <figma-url-or-file-key> --node <node-id>
+npm --silent run figma:libraries -- --file <figma-url-or-file-key>
+npm --silent run figma:design-system -- "button background color" --file <figma-url-or-file-key>
 ```
 
 - Use `figma:variables` to inventory local collections, modes, names, values, aliases, and scopes before proposing a change.
@@ -33,14 +33,13 @@ Name variables with slash-delimited groups that communicate purpose. Apply narro
 
 ## Make the write repairable
 
-All mutations belong in a local `.figma.ts` file and run through `figma:script:run`. Prepare a workspace first, then edit the generated script:
+All mutations belong in a local `.figma.ts` file created by the shell and run through `figma:run` with an explicit target:
 
 ```text
-npm --silent run figma:task:prepare -- --input task.json --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:script:run -- --input run-variable-script.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
-`task.json` identifies the Figma file, an absolute `workspaceDir`, and a slug-style task name. `run-variable-script.json` supplies the persisted session id, the `.figma.ts` `inputFile`, and the required surface. TypeScript preflight is always enabled. Consult each command's `--help` before first use.
+The command receives the file target, surface, and `.figma.ts` path directly. TypeScript preflight is always enabled. Consult each command's `--help` before first use.
 
 Use an idempotent script: find collections and variables by a stable name before creating anything, then return the created or reused ids. This prevents silent duplicate names and gives `outcome_unknown` reconciliation a stable readback key; inspect first and run only confirmed missing work.
 
@@ -77,4 +76,4 @@ semantic.setValueForMode(modeId, { type: "VARIABLE_ALIAS", id: blue500.id });
 - Check every mode, not only the default mode, before declaring a collection complete.
 - Keep text hierarchy in text styles and shadows or blur in effect styles; bind their individual supported values to variables when useful.
 - Stop and ask for direction when the source conflicts with an existing semantic layer, the mode mapping is ambiguous, a library token cannot be imported, or the task would rename/delete shared variables.
-- Treat `script:run` preflight diagnostics as a non-execution result. Fix fatal TypeScript diagnostics before rerunning; do not switch to ad-hoc write calls to bypass preflight.
+- Treat `figma:run` preflight diagnostics as a non-execution result. Fix fatal TypeScript diagnostics, then rerun with an explicit `--file` target and exactly one of `--script <path.figma.ts>` or `--source -`; do not switch to ad-hoc write calls to bypass preflight.

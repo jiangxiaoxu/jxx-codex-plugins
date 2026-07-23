@@ -2,7 +2,7 @@
 
 Build professional-grade design systems in Figma that match code. Use the multi-phase workflow below with the Figma Workspace CLI.
 
-Write Plugin API work as local `.figma.ts` files and execute it with `figma:script:run`. Use `figma:eval` only for small, focused Plugin API transactions. JavaScript under this source skill's `scripts/` directory is preserved as non-executable reference material: do not run it directly or route it as a tool.
+Write Plugin API work as local `.figma.ts` files and execute it with `figma:run`; this is the only Plugin API execution path for both small and substantial transactions. JavaScript under this source skill's `scripts/` directory is preserved as non-executable reference material: do not run it directly or route it as a tool.
 
 ---
 
@@ -175,10 +175,10 @@ Maintain a state ledger tracking:
 
 **Idempotency check** before every create: query by name + state ledger ID. If exists, skip or update — never duplicate.
 
-**Resume protocol**: at session start or after context truncation, use `figma:metadata`, `figma:variables`, and `figma:design-system` to reconstruct the `{key → id}` map, then re-read the state file if available.
+**Resume protocol**: after context truncation, use `figma:metadata`, `figma:variables`, and `figma:design-system` with the explicit file target to reconstruct the `{key → id}` map, then consult caller-owned notes or returned artifacts if needed.
 
 **Continuation note** (give this to the user when resuming in a new chat):
-> "I'm continuing a design system build. Run ID: {RUN_ID}. Resume from the last completed step using the saved ledger and Figma Workspace CLI state."
+> "I'm continuing a design system build. Run ID: {RUN_ID}. Resume from the last completed step using the saved ledger, explicit Figma target, and returned artifacts."
 
 ---
 
@@ -186,11 +186,11 @@ Maintain a state ledger tracking:
 
 Search FIRST in Phase 0, then again immediately before each component creation.
 
-**Start with `figma:libraries`** to understand what libraries are available before searching blindly. Then use `figma:design-system` to search components, variables, and styles with the selected workspace and optional repeated `--library` filters.
+**Start with `figma:libraries`** to understand what libraries are available before searching blindly. Then use `figma:design-system` to search components, variables, and styles with the selected file and optional repeated `--library` filters.
 
 ```
 // Discover all libraries accessible to the file
-npm --silent run figma:libraries -- --workspace <absolute-workspace> --state-file <absolute-path>
+npm --silent run figma:libraries -- --file <figma-file-url-or-key>
 ```
 
 Use returned library identifiers as repeatable `--library` filters for `figma:design-system`. This avoids noisy results when many libraries are available.

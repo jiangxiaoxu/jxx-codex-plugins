@@ -27,7 +27,6 @@ export interface FigmaWorkspaceWrapperParameterMatrix {
   fixedUpstream: readonly string[];
   passthroughOptional: readonly string[];
   hiddenUpstreamOptional: readonly string[];
-  localOnly: readonly string[];
 }
 
 export interface FigmaWorkspaceWrapperContract {
@@ -53,7 +52,6 @@ const EMPTY_PARAMETER_MATRIX = {
   fixedUpstream: [],
   passthroughOptional: [],
   hiddenUpstreamOptional: [],
-  localOnly: [],
 } as const satisfies FigmaWorkspaceWrapperParameterMatrix;
 
 function parameterMatrix(
@@ -66,12 +64,11 @@ function parameterMatrix(
     fixedUpstream: matrix.fixedUpstream ?? EMPTY_PARAMETER_MATRIX.fixedUpstream,
     passthroughOptional: matrix.passthroughOptional ?? EMPTY_PARAMETER_MATRIX.passthroughOptional,
     hiddenUpstreamOptional: matrix.hiddenUpstreamOptional ?? EMPTY_PARAMETER_MATRIX.hiddenUpstreamOptional,
-    localOnly: matrix.localOnly ?? EMPTY_PARAMETER_MATRIX.localOnly,
   };
 }
 
 export const FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION =
-  "Accepts a string raw node id, string node URL, or exact { fileKey, nodeId } object. Raw node ids require an open or prepared file-context session; node URLs and { fileKey, nodeId } can supply file context directly.";
+  "Accepts a raw node id paired with file, a Figma node URL, or exact { fileKey, nodeId }. Dynamic selectors are not supported.";
 
 export const FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES = [
   "use_figma",
@@ -91,29 +88,7 @@ export const FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE =
 
 export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
   {
-    toolName: "figma_workspace_eval",
-    category: "fixed-execution",
-    upstreamToolName: "use_figma",
-    upstreamKind: "execution",
-    requiredUpstreamProperties: ["code", "description", "fileKey"],
-    optionalUpstreamProperties: ["skillNames"],
-    parameterMatrix: parameterMatrix({
-      requiredUpstream: ["code", "description", "fileKey"],
-      publicPassthrough: ["code"],
-      derivedUpstream: ["fileKey"],
-      fixedUpstream: ["description"],
-      hiddenUpstreamOptional: ["skillNames"],
-      localOnly: ["title", "sessionId", "typescript", "surface", "inlineResultLimit"],
-    }),
-    targetSupport: "none",
-    outputPolicy: {
-      inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-      debugFiles: ["debugFile", "upstreamFile"],
-      upstreamEnvelope: true,
-    },
-  },
-  {
-    toolName: "figma_workspace_run_script_file",
+    toolName: "figma_workspace_run",
     category: "fixed-execution",
     upstreamToolName: "use_figma",
     upstreamKind: "execution",
@@ -124,12 +99,11 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       derivedUpstream: ["code", "fileKey"],
       fixedUpstream: ["description"],
       hiddenUpstreamOptional: ["skillNames"],
-      localOnly: ["title", "sessionId", "scriptPath", "inputFile", "surface", "targetPageId", "inlineResultLimit"],
     }),
     targetSupport: "none",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-      debugFiles: ["debugFile", "upstreamFile", "compiledScriptFile"],
+      debugFiles: ["debugFile", "upstreamFile"],
       upstreamEnvelope: true,
     },
   },
@@ -145,7 +119,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       derivedUpstream: ["fileKey"],
       fixedUpstream: ["code", "description"],
       hiddenUpstreamOptional: ["skillNames"],
-      localOnly: ["title", "sessionId", "mode", "target", "depth"],
     }),
     targetSupport: "string-only",
     outputPolicy: {
@@ -166,7 +139,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       publicPassthrough: ["nodeId", "clientLanguages", "clientFrameworks"],
       derivedUpstream: ["fileKey"],
       passthroughOptional: ["nodeId", "clientLanguages", "clientFrameworks"],
-      localOnly: ["title", "sessionId", "file", "workspaceDir", "target", "refresh", "inlineResultLimit"],
     }),
     targetSupport: "node-scoped",
     outputPolicy: {
@@ -190,7 +162,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       publicPassthrough: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
       derivedUpstream: ["fileKey", "nodeId"],
       passthroughOptional: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
-      localOnly: ["title", "sessionId", "file", "workspaceDir", "target", "refresh", "inlineResultLimit"],
     }),
     targetSupport: "node-scoped",
     outputPolicy: {
@@ -214,7 +185,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       publicPassthrough: ["recursive", "clientLanguages", "clientFrameworks"],
       derivedUpstream: ["fileKey", "nodeId"],
       passthroughOptional: ["recursive", "clientLanguages", "clientFrameworks"],
-      localOnly: ["title", "sessionId", "file", "workspaceDir", "target", "refresh", "inlineResultLimit"],
     }),
     targetSupport: "node-scoped",
     outputPolicy: {
@@ -244,7 +214,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       publicPassthrough: ["query", "disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"],
       derivedUpstream: ["fileKey"],
       passthroughOptional: ["disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"],
-      localOnly: ["title", "sessionId", "file", "workspaceDir", "refresh", "inlineResultLimit"],
     }),
     targetSupport: "none",
     outputPolicy: {
@@ -268,7 +237,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       publicPassthrough: ["offset"],
       derivedUpstream: ["fileKey"],
       passthroughOptional: ["offset"],
-      localOnly: ["title", "sessionId", "file", "workspaceDir", "refresh", "inlineResultLimit"],
     }),
     targetSupport: "none",
     outputPolicy: {
@@ -289,7 +257,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     parameterMatrix: parameterMatrix({
       requiredUpstream: ["fileKey", "nodeId"],
       derivedUpstream: ["fileKey", "nodeId"],
-      localOnly: ["title", "sessionId", "file", "workspaceDir", "target", "refresh", "inlineResultLimit"],
     }),
     targetSupport: "node-scoped",
     outputPolicy: {
@@ -313,7 +280,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       derivedUpstream: ["fileKey", "nodeId", "scaleMode"],
       fixedUpstream: ["count"],
       hiddenUpstreamOptional: ["batchCommit"],
-      localOnly: ["title", "sessionId", "assets", "manifestPath", "validateTargets"],
     }),
     targetSupport: "node-scoped-list",
     outputPolicy: {
@@ -334,7 +300,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       publicPassthrough: ["defaultFormat", "defaultScale"],
       derivedUpstream: ["fileKey", "nodeId"],
       passthroughOptional: ["defaultFormat", "defaultScale"],
-      localOnly: ["title", "sessionId", "targets", "manifestPath", "outputDir"],
     }),
     targetSupport: "node-scoped-list",
     outputPolicy: {
@@ -356,7 +321,6 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       derivedUpstream: ["fileKey", "nodeId"],
       passthroughOptional: ["maxDimension", "contentsOnly"],
       hiddenUpstreamOptional: ["enableBase64Response"],
-      localOnly: ["title", "sessionId", "target", "imageFile"],
     }),
     targetSupport: "node-scoped",
     outputPolicy: {
@@ -368,9 +332,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
   {
     toolName: "figma_workspace_call_upstream_tool",
     category: "upstream-escape-hatch",
-    parameterMatrix: parameterMatrix({
-      localOnly: ["title", "sessionId", "toolName", "arguments", "refresh", "inlineResultLimit"],
-    }),
+    parameterMatrix: parameterMatrix({}),
     targetSupport: "freeform-upstream",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,

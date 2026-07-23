@@ -19,7 +19,7 @@ For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, market
 | Skill trigger, routing, or agent UX | Plugin manifest, `SKILL.md`, `agents/openai.yaml`, and skill validator. |
 | Plugin identity, metadata, or marketplace inventory | Plugin manifest, `.agents/plugins/marketplace.json`, root README, and repository inventory. |
 | `task-memory` behavior | Plugin package scripts, shared CLI source, command entrypoints, and tests. |
-| Figma agent workflow or documentation | [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md), the skill router, public help, and focused tests. |
+| Figma agent workflow or documentation | [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md), the fixed leaf-command help, and focused tests. |
 | Figma CLI/runtime, OAuth, bridge, or packaging | `plugins/figma-workspace/cli-runtime/src/`, owning tests, package scripts, and generated `dist/`. |
 
 ### Figma corpus ownership

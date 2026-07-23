@@ -2,11 +2,11 @@
 
 **When not to use this reference:** Do not use it for analysis, summarization, or investigation of existing board content (e.g. "summarize this board", "what themes are here?", "analyze the feedback"). It is exclusively for planning new content to be created on the board.
 
-For flowcharts, architecture diagrams, sequence diagrams, state diagrams, or entity relationship diagrams (ERDs), use a local `.figma.ts` script with the appropriate native Plugin API nodes and execute it through `figma:script:run`.
+For flowcharts, architecture diagrams, sequence diagrams, state diagrams, or entity relationship diagrams (ERDs), use a local `.figma.ts` script with the appropriate native Plugin API nodes and execute it through `figma:run`.
 
 Use this reference when determining **what content to include** for generated FigJam board content. Given a user's request (e.g. "make a brainstorm template", "retro board", "ice breaker", "scaffold"), produce a **sequential outline** for the `.figma.ts` implementation that creates sections, text, stickies, and layout.
 
-For implementation details, read the relevant sibling references such as [create-section](canonical:figma-use-figjam/references/create-section.md), [create-sticky](canonical:figma-use-figjam/references/create-sticky.md), [create-text](canonical:figma-use-figjam/references/create-text.md), and [position-figjam-nodes](canonical:figma-use-figjam/references/position-figjam-nodes.md), then execute the adapted code with `figma:script:run`.
+For implementation details, read the relevant sibling references such as [create-section](canonical:figma-use-figjam/references/create-section.md), [create-sticky](canonical:figma-use-figjam/references/create-sticky.md), [create-text](canonical:figma-use-figjam/references/create-text.md), and [position-figjam-nodes](canonical:figma-use-figjam/references/position-figjam-nodes.md), then execute the adapted code with `figma:run`.
 
 ## Part 1: Design Principles
 
@@ -322,7 +322,7 @@ Vertical flowchart. Green Yes / Red No pills on connector paths. Distinct fills 
 - Don't over-emphasize. One or two markers per section max.
 - Don't use red for attention. Gold draws the eye without implying failure.
 - Don't use em dashes. Periods, commas, or restructure.
-- Don't build the entire board in one script execution. Work incrementally with small `.figma.ts` batches through `figma:script:run`.
+- Don't build the entire board in one script execution. Work incrementally with small `.figma.ts` batches through `figma:run`.
 - Don't guess text height. Always `textAutoResize = 'HEIGHT'` and reflow.
 - Don't use body text below 20px or metadata below 16px.
 - Don't skip the wrapper section. Every board is one movable unit.

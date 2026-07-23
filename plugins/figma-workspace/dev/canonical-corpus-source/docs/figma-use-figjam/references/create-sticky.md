@@ -4,7 +4,7 @@ Use a sticky for a single idea, response, observation, or piece of workshop inpu
 
 ## Create through a repairable script
 
-Put the operation in a local `.figma.ts` task file, then invoke `figma:script:run` with a JSON input containing `sessionId`, `inputFile`, and `surface: "figjam"`; provide an absolute `--state-file`. TypeScript preflight is always enabled. Return the sticky IDs and the dimensions observed after writing text. `figma:eval` is only a small-transaction exception.
+Put the operation in a local `.figma.ts` file, then invoke `figma:run` with an explicit FigJam file target, `--surface figjam`, and the script path. TypeScript preflight is always enabled. Return the sticky IDs and the dimensions observed after writing text.
 
 ```ts
 // research-note.figma.ts
@@ -28,7 +28,7 @@ return {
 }
 ```
 
-Run `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>` after saving the file.
+Run `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>` after saving the file.
 
 ## Plugin API facts
 

@@ -4,12 +4,12 @@ Use a variable because it expresses the intended meaning at the point of use, no
 
 ## Establish the available choices
 
-Start with reads, using the same fully qualified `--state-file` for the task:
+Start with reads, passing the same explicit Figma file target to each file-scoped command:
 
 ```text
-npm --silent run figma:variables -- --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:design-system -- "primary button" --file <figma-url-or-file-key> --library <library-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:libraries -- --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:variables -- --file <figma-url-or-file-key> --node <node-id>
+npm --silent run figma:design-system -- "primary button" --file <figma-url-or-file-key> --library <library-key>
+npm --silent run figma:libraries -- --file <figma-url-or-file-key>
 ```
 
 Use `figma:variables` to inspect collections, modes, variable scopes, aliases, and current values. Use `figma:design-system` to identify the component and semantic convention that owns the choice; use `figma:libraries` to distinguish local tokens from reusable library sources. When broad file discovery is needed, use `figma:metadata`, then use `figma:inspect` for the specific raw node ID. Use `figma:api:search` only if the exact Plugin API binding method or property type is uncertain.
@@ -28,7 +28,7 @@ Spacing and padding need the same care as color. Infer their role from the compo
 
 ## Bind through a repairable script
 
-Do writes in a local `.figma.ts` file and execute it through `figma:script:run`; do not make an untracked one-off mutation. A focused script can resolve a local variable, load a target node, bind it, and return evidence for review.
+Do writes in a local `.figma.ts` file and execute it through `figma:run`; do not make an untracked one-off mutation. A focused script can resolve a local variable, load a target node, bind it, and return evidence for review.
 
 ```ts
 const variable = figma.variables
@@ -49,16 +49,16 @@ node.fills = [figma.variables.setBoundVariableForPaint(basePaint, "color", varia
 return { nodeId: node.id, boundVariable: variable.name };
 ```
 
-Run the prepared script with the persisted session id in its JSON input. TypeScript preflight is always enabled:
+Run the prepared script with its explicit file target, Design surface, and script path. TypeScript preflight is always enabled:
 
 ```text
-npm --silent run figma:script:run -- --input bind-token.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 For a target whose node type or property support is unclear, search the exact API first:
 
 ```text
-npm --silent run figma:api:search -- "setBoundVariable" --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:api:search -- "setBoundVariable"
 ```
 
 ## Verify and stop safely

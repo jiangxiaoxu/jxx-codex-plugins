@@ -2,7 +2,7 @@
 
 Use Slides nodes as a deck structure, not ordinary frames arranged by guesswork. `createSlide()` returns a `SlideNode` and parents it into the page's slide grid. `createSlideRow()` returns a `SlideRowNode`; each row is a section that can be named for both editor navigation and presenter navigation.
 
-Create, rename, or reorganize slides in a local `.figma.ts` file, then execute the file through `figma:script:run` with a persistent session/state file. Start a structural edit by inspecting existing metadata when the deck was not created in the current task; do not assume that a page child index stays stable across prior edits.
+Create, rename, or reorganize slides in a local `.figma.ts` file, then execute it through `figma:run` with an explicit Slides target. Start a structural edit by inspecting existing metadata when the deck was not created in the current task; do not assume that a page child index stays stable across prior edits.
 
 ```ts
 // Append a section and two slides. The row's name is the section label.
@@ -38,6 +38,6 @@ For changes that mix layout and lifecycle, do the structural operation first and
 
 ## Validate before reporting success
 
-Run `figma:script:run` only after TypeScript preflight is clean. A fatal diagnostic means no partial lifecycle operation was executed. After a successful run, inspect the returned nodes or fresh metadata to confirm section names, slide count, and order; then use `figma:capture` on representative slides and inspect each local image with `view_image`.
+Run `figma:run` only after TypeScript preflight is clean. A fatal diagnostic means no partial lifecycle operation was executed. After a successful run, inspect the returned nodes or fresh metadata to confirm section names, slide count, and order; then use `figma:capture` on representative slides and inspect each local image with `view_image`.
 
 Capture cannot prove presenter navigation or transitions, and still images do not reveal an empty section outside the selected view. If the requested reorder could remove or relocate user-authored slides, inspect first, make the smallest explicit structural change, and report the resulting ids and order rather than treating an inferred grid layout as authoritative.

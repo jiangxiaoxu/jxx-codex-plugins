@@ -205,7 +205,7 @@ slide.fills = [{ type: "SOLID", color: { r: 0.06, g: 0.09, b: 0.16 } }];
 
 ## Validation without a Slides metadata read
 
-Use `figma:script:run` with a read-only `.figma.ts` script for Slides structural validation, and use `figma:capture` for visual validation. Inspect every captured image before reporting success.
+Use `figma:run` with a read-only `.figma.ts` script for Slides structural validation, and use `figma:capture` for visual validation. Inspect every captured image before reporting success.
 
 **Post-creation validation pattern:**
 ```js
@@ -240,7 +240,7 @@ Run this after creating slide content to catch layout issues before they compoun
 
 ### Batch validation script
 
-When building a deck, run this validation after every batch of slides. It checks the three most common layout failures — overlapping siblings, text clipping past containers, and elements beyond slide bounds — through a read-only `.figma.ts` script executed by `figma:script:run`. Capture only the affected slides when issues are found.
+When building a deck, run this validation after every batch of slides. It checks the three most common layout failures — overlapping siblings, text clipping past containers, and elements beyond slide bounds — through a read-only `.figma.ts` script executed by `figma:run`. Capture only the affected slides when issues are found.
 
 ```js
 // Pass the slide IDs built in the current batch
@@ -305,7 +305,7 @@ return { clean: issues.length === 0, issues };
 
 When building a **single complex slide** (data-heavy chart, intricate one-off layout), work incrementally within that slide — create the background and structure first, then add content, then decorative elements, validating between steps.
 
-When building a **deck** (multiple slides), build complete slides in each `figma:script:run` execution. The helpers (`addFrame`, `addText`, `addRect`) enforce the appendChild-before-position rule, so building a complete slide in one pass is safe. Validate using the [batch validation script](#batch-validation-script) above, not per-element captures. See [Deck-Building Workflow](canonical:figma-use-slides/SKILL.md) for the full process.
+When building a **deck** (multiple slides), build complete slides in each `figma:run` execution. The helpers (`addFrame`, `addText`, `addRect`) enforce the appendChild-before-position rule, so building a complete slide in one pass is safe. Validate using the [batch validation script](#batch-validation-script) above, not per-element captures. See [Deck-Building Workflow](canonical:figma-use-slides/SKILL.md) for the full process.
 
 
 ## Code preamble for deck-building scripts

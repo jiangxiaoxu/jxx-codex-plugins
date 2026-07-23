@@ -1,450 +1,54 @@
-import { readFile } from "node:fs/promises";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
 import {
-  isFullyQualifiedAbsolutePath,
-  getFigmaWorkspaceCommandInputSchema,
   runFigmaWorkspaceCli,
-  type FigmaWorkspaceCliCommand,
   type FigmaWorkspaceCliDependencies,
   type FigmaWorkspaceCliIo,
-} from "../runtime/workspace-runtime.js";
+} from "./figma-workspace-cli.js";
 
 const EXIT_SUCCESS = 0;
 const EXIT_USAGE = 2;
+const MAX_INPUT_BYTES = 256 * 1024;
 
 type CommandInput = Record<string, unknown>;
-type WriteOutput = (value: string) => void;
-type RunWorkspaceCli = (
-  argv: readonly string[],
-  dependencies?: FigmaWorkspaceCliDependencies,
-) => Promise<number>;
+type RunWorkspaceCli = (argv: readonly string[], dependencies?: FigmaWorkspaceCliDependencies) => Promise<number>;
 
 export interface FigmaCommandRuntimeDependencies {
   runCli?: RunWorkspaceCli;
   cwd?: FigmaWorkspaceCliIo["cwd"];
   env?: FigmaWorkspaceCliIo["env"];
   readFile?: FigmaWorkspaceCliIo["readFile"];
-  writeStdout?: WriteOutput;
-  writeStderr?: WriteOutput;
+  readStdin?: FigmaWorkspaceCliIo["readStdin"];
+  writeStdout?: (value: string) => void;
+  writeStderr?: (value: string) => void;
 }
 
-interface OptionBase<Key extends string, Type extends string> {
-  readonly key: Key;
-  readonly type: Type;
-  readonly description: string;
-  readonly omitted: OmittedValue;
-  readonly repeatable: boolean;
-}
+export const FIGMA_TASK_FAMILIES = ["code-connect", "create-file", "design-to-code", "design-generation", "diagram", "library-generation", "motion-implementation", "swiftui", "figjam", "motion", "slides", "design-editing"] as const;
 
-type OmittedValue =
-  | { readonly state: "required" }
-  | { readonly state: "default"; readonly value: string }
-  | { readonly state: "unset" };
-
-const UNSET_VALUE = { state: "unset" } as const satisfies OmittedValue;
-
-interface ValueOptionBase<Key extends string, Type extends string> extends OptionBase<Key, Type> {
-  readonly value: string;
-}
-
-type StringOption<Key extends string = string> = ValueOptionBase<Key, "string">;
-type IntegerOption<Key extends string = string> = ValueOptionBase<Key, "integer"> & {
-  readonly min?: number;
-  readonly max?: number;
-};
-type BooleanOption<Key extends string = string> = OptionBase<Key, "boolean"> & {
-  readonly mappedValue: boolean;
-};
-type EnumOption<Key extends string = string> = ValueOptionBase<Key, "enum"> & {
-  readonly values: readonly string[];
-};
-type RepeatOption<Key extends string = string> = ValueOptionBase<Key, "repeat">;
-type InputOption = StringOption | IntegerOption | BooleanOption | EnumOption | RepeatOption;
-
-interface GlobalOption<Type extends "global" | "global-integer"> {
-  readonly type: Type;
-  readonly forwardFlag: "--session-file" | "--inline-result-limit";
-  readonly value: string;
-  readonly description: string;
-  readonly omitted: OmittedValue;
-  readonly repeatable: false;
-  readonly min?: number;
-  readonly max?: number;
-}
-
-type DirectOption = InputOption | GlobalOption<"global"> | GlobalOption<"global-integer">;
-type DirectOptionMap = Readonly<Record<string, DirectOption>>;
-
-interface ForwardOption {
-  readonly type: "forward";
-  readonly forwardFlag: "--input";
-  readonly value: string;
-  readonly description: string;
-  readonly omitted: OmittedValue;
-  readonly repeatable: false;
-}
-
-interface PositionSpec<Key extends string = string> {
-  readonly key: Key;
-  readonly label: string;
-  readonly omitted: Extract<OmittedValue, { readonly state: "required" | "unset" }>;
-  readonly repeatable: false;
-  readonly description: string;
-}
-
-interface DirectCommandSpec {
-  readonly command: string;
-  readonly purpose: string;
-  readonly position?: PositionSpec;
-  readonly fixedInput?: Readonly<CommandInput>;
-  readonly options: Readonly<Record<`--${string}`, InputOption>>;
-  readonly sessionId?: boolean;
-  readonly outputLimit?: boolean;
-  readonly examples?: readonly string[];
-}
-
-interface JsonCommandSpec {
-  readonly command: FigmaWorkspaceCliCommand;
-  readonly purpose: string;
-  readonly inputRequired: boolean;
-}
-
-const STATE_FILE_OPTION: GlobalOption<"global"> = {
-  type: "global",
-  forwardFlag: "--session-file",
-  value: "<path>",
-  description: "Fully qualified absolute path to the persisted workspace state file and result-sidecar anchor.",
-  omitted: { state: "required" },
-  repeatable: false,
-};
-const STATE_FILE_EXAMPLE = "--state-file C:/work/project/.figma-workspace/state.json";
-
-const MAX_INLINE_BYTES_OPTION: GlobalOption<"global-integer"> = {
-  type: "global-integer",
-  forwardFlag: "--inline-result-limit",
-  value: "<bytes>",
-  description: "Maximum inline Markdown bytes from 0 to 10000; 0 forces a complete JSON sidecar.",
-  omitted: { state: "default", value: "4096" },
-  repeatable: false,
-  min: 0,
-  max: 10000,
-};
-
-const JSON_MAX_INLINE_BYTES_OPTION: GlobalOption<"global-integer"> = {
-  ...MAX_INLINE_BYTES_OPTION,
-  omitted: { state: "default", value: "input inlineResultLimit when present, otherwise 4096" },
-};
-
-const SESSION_ID_OPTION = {
-  ...stringOption("sessionId", "<id>", "Logical workspace session id."),
-  omitted: { state: "default", value: "the runtime default session" },
-} as const satisfies StringOption<"sessionId">;
-
-function stringOption<Key extends string>(key: Key, value: string, description: string): StringOption<Key> {
-  return { key, type: "string", value, description, omitted: UNSET_VALUE, repeatable: false };
-}
-
-function integerOption<Key extends string>(
-  key: Key,
-  value: string,
-  description: string,
-  bounds: Readonly<Pick<IntegerOption<Key>, "min" | "max">> = {},
-): IntegerOption<Key> {
-  return { key, type: "integer", value, description, omitted: UNSET_VALUE, repeatable: false, ...bounds };
-}
-
-function booleanOption<Key extends string>(
-  key: Key,
-  description: string,
-  mappedValue = true,
-): BooleanOption<Key> {
-  return { key, type: "boolean", description, mappedValue, omitted: UNSET_VALUE, repeatable: false };
-}
-
-function enumOption<Key extends string, Value extends string>(
-  key: Key,
-  values: readonly Value[],
-  description: string,
-): EnumOption<Key> & { readonly values: readonly Value[] } {
-  return {
-    key, type: "enum", value: `<${values.join("|")}>`, values, description,
-    omitted: UNSET_VALUE, repeatable: false,
-  };
-}
-
-function repeatOption<Key extends string>(key: Key, value: string, description: string): RepeatOption<Key> {
-  return { key, type: "repeat", value, description, omitted: UNSET_VALUE, repeatable: true };
-}
-
-function fileContextOptions() {
-  return {
-    "--file": stringOption("file", "<url-or-key>", "Explicit Figma file URL or key."),
-    "--workspace": stringOption("workspaceDir", "<path>", "Absolute local workspace root."),
-    "--refresh": booleanOption("refresh", "Refresh upstream data when supported."),
-  } as const;
-}
-
-export const FIGMA_TASK_FAMILIES = [
-  "code-connect",
-  "create-file",
-  "design-to-code",
-  "design-generation",
-  "diagram",
-  "library-generation",
-  "motion-implementation",
-  "swiftui",
-  "figjam",
-  "motion",
-  "slides",
-  "design-editing",
+const PUBLIC_COMMANDS = [
+  "docs:list", "docs:catalog", "docs:read", "docs:search", "api:search",
+  "doctor",
+  "metadata", "inspect", "design-context", "motion-context", "variables", "design-system", "libraries",
+  "run", "capture", "assets:apply", "assets:download",
+  "upstream:list", "upstream:read", "upstream:call",
 ] as const;
 
-export const FIGMA_GUIDANCE_WORKFLOWS = [
-  "design-implementation-context",
-  "motion-implementation",
-] as const;
+export type FigmaConcreteCommandName = typeof PUBLIC_COMMANDS[number];
+export type FigmaCommandFamily = "docs" | "api" | "upstream";
+export type FigmaCommandName = FigmaConcreteCommandName | FigmaCommandFamily;
 
-const SCRIPT_NAMES_BY_TRANSPORT_COMMAND = {
-  "get-metadata": "metadata",
-  "get-design-context": "design-context",
-  "get-motion-context": "motion-context",
-  "get-variable-defs": "variables",
-} as const satisfies Readonly<Record<string, string>>;
-
-function npmScriptForCommand(command: string): string {
-  return hasOwn(SCRIPT_NAMES_BY_TRANSPORT_COMMAND, command)
-    ? SCRIPT_NAMES_BY_TRANSPORT_COMMAND[command]
-    : command;
-}
-
-function targetSpec(
-  command: string,
-  purpose: string,
-  extraOptions: Readonly<Record<`--${string}`, InputOption>> = {},
-  requiresNodeFile = false,
-): DirectCommandSpec {
-  return {
-    command,
-    purpose,
-    sessionId: true,
-    outputLimit: true,
-    position: {
-      key: "target",
-      label: "target",
-      omitted: UNSET_VALUE,
-      repeatable: false,
-      description: "Raw node id or node URL. A node-scoped --file URL can supply the target instead.",
-    },
-    options: {
-      ...fileContextOptions(),
-      ...(requiresNodeFile
-        ? { "--file": stringOption("file", "<node-url>", "Figma node URL containing node-id; supplies the required target when the positional target is omitted.") }
-        : {}),
-      ...extraOptions,
-    },
-    examples: [`npm --silent run figma:${npmScriptForCommand(command)} -- '12:34' --session-id default ${STATE_FILE_EXAMPLE}`],
-  };
-}
-
-export const FIGMA_DIRECT_COMMANDS = {
-  guidance: {
-    command: "guidance",
-    purpose: "Get task-oriented workflow guidance from a direct keyword query.",
-    position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Compact planning keywords." },
-    options: {
-      "--surface": enumOption("surface", ["design", "figjam", "slides"], "Expected Figma surface."),
-      "--workflow": enumOption("workflow", FIGMA_GUIDANCE_WORKFLOWS, "Existing workflow id used to filter workflow and wrapper summaries."),
-      "--card-limit": integerOption("maxCards", "<n>", "Maximum returned cards from 1 to 8.", { min: 1, max: 8 }),
-    },
-    outputLimit: true,
-    examples: [`npm --silent run figma:guidance -- "text font loadFontAsync" --surface design ${STATE_FILE_EXAMPLE}`],
-  },
-  "docs:list": {
-    command: "docs", purpose: "List canonical project Markdown topics.", fixedInput: { mode: "list" }, options: {}, outputLimit: true,
-    examples: [`npm --silent run figma:docs:list -- ${STATE_FILE_EXAMPLE}`],
-  },
-  "docs:catalog": {
-    command: "docs", purpose: "Browse canonical task families or filtered canonical document records.", fixedInput: { mode: "catalog" },
-    options: {
-      "--task-family": enumOption("taskFamily", FIGMA_TASK_FAMILIES, "Canonical task family. Omit to list task-family summaries."),
-      "--surface": enumOption("surface", ["design", "figjam", "slides"], "Required canonical document surface."),
-      "--classification": enumOption("classification", ["active", "conditional", "router", "examples"], "Canonical document classification."),
-      "--limit": integerOption("limit", "<n>", "Maximum returned catalog entries from 1 to 100.", { min: 1, max: 100 }),
-    },
-    outputLimit: true,
-    examples: [`npm --silent run figma:docs:catalog -- --task-family code-connect --surface design --limit 20 ${STATE_FILE_EXAMPLE}`],
-  },
-  "docs:read": {
-    command: "docs", purpose: "Read one complete project or canonical Markdown document.", fixedInput: { mode: "read" },
-    position: { key: "id", label: "doc-id", omitted: { state: "required" }, repeatable: false, description: "Stable project: or canonical: id returned by figma:docs:list or figma:docs:catalog." },
-    options: {}, outputLimit: true, examples: [`npm --silent run figma:docs:read -- project:workflow ${STATE_FILE_EXAMPLE}`],
-  },
-  "docs:search": {
-    command: "lookup", purpose: "Search project and canonical workflow documentation with automatic task routing.", fixedInput: { kind: "docs", scope: "auto" },
-    position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Documentation search text." },
-    options: {
-      "--scope": {
-        ...enumOption("scope", ["auto", "active", "conditional", "router", "examples", "all"], "Documentation lookup scope."),
-        omitted: { state: "default", value: "auto" },
-      },
-      "--surface": enumOption("surface", ["design", "figjam", "slides"], "Required documentation surface."),
-      "--task-family": enumOption("taskFamily", FIGMA_TASK_FAMILIES, "Required canonical task family."),
-      "--limit": integerOption("maxResults", "<n>", "Maximum returned snippets from 1 to 10.", { min: 1, max: 10 }),
-      "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 }),
-    },
-    outputLimit: true, examples: [`npm --silent run figma:docs:search -- "session recovery" --limit 5 ${STATE_FILE_EXAMPLE}`],
-  },
-  "api:search": {
-    command: "lookup", purpose: "Search exact or near-exact Figma Plugin API symbol documentation.", fixedInput: { kind: "api" },
-    position: { key: "symbol", label: "symbol", omitted: { state: "required" }, repeatable: false, description: "Plugin API symbol or search text." },
-    options: {
-      "--limit": integerOption("maxResults", "<n>", "Maximum returned snippets from 1 to 10.", { min: 1, max: 10 }),
-      "--snippet-lines": integerOption("maxSnippetLines", "<n>", "Maximum lines per snippet from 1 to 8.", { min: 1, max: 8 }),
-    },
-    outputLimit: true, examples: [`npm --silent run figma:api:search -- createFrame ${STATE_FILE_EXAMPLE}`],
-  },
-  doctor: {
-    command: "doctor", purpose: "Inspect canonical docs, generated Plugin API index, and TypeScript runtime availability.",
-    options: {}, outputLimit: true, examples: [`npm --silent run figma:doctor -- ${STATE_FILE_EXAMPLE}`],
-  },
-  "sessions:list": {
-    command: "sessions", purpose: "List compact persisted session summaries.", options: {},
-    outputLimit: true, examples: [`npm --silent run figma:sessions:list -- ${STATE_FILE_EXAMPLE}`],
-  },
-  "sessions:read": {
-    command: "sessions", purpose: "Read one persisted session with optional history.",
-    position: { key: "sessionId", label: "session-id", omitted: { state: "required" }, repeatable: false, description: "Exact persisted session id." },
-    options: {
-      "--with-history": booleanOption("includeHistory", "Include full history entries."),
-    },
-    outputLimit: true, examples: [`npm --silent run figma:sessions:read -- default --with-history ${STATE_FILE_EXAMPLE}`],
-  },
-  "upstream:list": {
-    command: "upstream-tools", purpose: "List the live official Figma upstream tool directory.",
-    options: { "--refresh": booleanOption("refresh", "Refresh upstream discovery before reading.") },
-    outputLimit: true, examples: [`npm --silent run figma:upstream:list -- --refresh ${STATE_FILE_EXAMPLE}`],
-  },
-  "upstream:read": {
-    command: "upstream-tools", purpose: "Read one live official upstream tool description and input schema.",
-    position: { key: "name", label: "name", omitted: { state: "required" }, repeatable: false, description: "Exact official upstream tool name." },
-    options: { "--refresh": booleanOption("refresh", "Refresh upstream discovery before reading.") },
-    outputLimit: true, examples: [`npm --silent run figma:upstream:read -- whoami --refresh ${STATE_FILE_EXAMPLE}`],
-  },
-  inspect: {
-    command: "inspect", purpose: "Inspect a target or read a compact style audit using direct positional syntax.",
-    sessionId: true, outputLimit: true,
-    position: { key: "target", label: "target", omitted: UNSET_VALUE, repeatable: false, description: "Raw node id, node URL, $selection, or $currentPage." },
-    options: {
-      "--mode": enumOption("mode", ["inspect", "style"], "Inspection mode."),
-      "--depth": integerOption("depth", "<n>", "Positive traversal depth.", { min: 1 }),
-    },
-    examples: [`npm --silent run figma:inspect -- '$selection' --mode inspect --session-id default ${STATE_FILE_EXAMPLE}`],
-  },
-  metadata: targetSpec("get-metadata", "Read broad Figma metadata for an optional target."),
-  "design-context": targetSpec("get-design-context", "Read official design implementation context.", {
-    "--force-code": booleanOption("forceCode", "Force code generation when supported."),
-    "--no-code-connect": booleanOption("disableCodeConnect", "Disable Code Connect context."),
-    "--exclude-screenshot": booleanOption("excludeScreenshot", "Exclude screenshots from context."),
-  }, true),
-  "motion-context": targetSpec("get-motion-context", "Read official motion context.", {
-    "--recursive": booleanOption("recursive", "Include recursive motion context."),
-  }, true),
-  variables: targetSpec("get-variable-defs", "Read variable definitions for a target.", {}, true),
-  "design-system": {
-    command: "search-design-system", purpose: "Search official design-system components, variables, and styles.",
-    sessionId: true, outputLimit: true,
-    position: { key: "query", label: "query", omitted: { state: "required" }, repeatable: false, description: "Design-system search text." },
-    options: {
-      ...fileContextOptions(),
-      "--components": booleanOption("includeComponents", "Include components."),
-      "--no-components": booleanOption("includeComponents", "Exclude components.", false),
-      "--variables": booleanOption("includeVariables", "Include variables."),
-      "--no-variables": booleanOption("includeVariables", "Exclude variables.", false),
-      "--styles": booleanOption("includeStyles", "Include styles."),
-      "--no-styles": booleanOption("includeStyles", "Exclude styles.", false),
-      "--no-code-connect": booleanOption("disableCodeConnect", "Disable Code Connect context."),
-      "--library": repeatOption("includeLibraryKeys", "<key>", "Include one library key; repeat as needed."),
-    },
-    examples: [`npm --silent run figma:design-system -- "button primary" --components --variables ${STATE_FILE_EXAMPLE}`],
-  },
-  libraries: {
-    command: "get-libraries", purpose: "List available Figma libraries.",
-    sessionId: true, outputLimit: true,
-    options: { ...fileContextOptions(), "--offset": integerOption("offset", "<n>", "Non-negative pagination offset.", { min: 0 }) },
-    examples: [`npm --silent run figma:libraries -- --session-id default ${STATE_FILE_EXAMPLE}`],
-  },
-} as const satisfies Readonly<Record<string, DirectCommandSpec>>;
-
-export type FigmaDirectCommandName = keyof typeof FIGMA_DIRECT_COMMANDS;
-
-const REQUIRED_NODE_SCOPED_DIRECT_COMMANDS = new Set<FigmaDirectCommandName>([
-  "design-context",
-  "motion-context",
-  "variables",
-]);
-
-export const FIGMA_JSON_COMMANDS = {
-  open: { command: "open", purpose: "Create or reopen persisted Figma workspace context.", inputRequired: false },
-  eval: { command: "eval", purpose: "Run a small native Plugin API transaction with optional queued local captures.", inputRequired: true },
-  "script:run": { command: "run-script-file", purpose: "Preflight and execute a local .figma.ts file with optional queued local captures.", inputRequired: true },
-  "assets:apply": { command: "apply-asset-manifest", purpose: "Apply a prepared local asset manifest.", inputRequired: true },
-  "assets:download": { command: "download-assets", purpose: "Download official Figma assets to local files.", inputRequired: true },
-  capture: { command: "capture-node", purpose: "Capture a Figma node to a local PNG file.", inputRequired: true },
-  "task:prepare": { command: "prepare-task", purpose: "Create a repairable local .figma.ts task workspace.", inputRequired: true },
-  "upstream:call": { command: "call-upstream-tool", purpose: "Invoke one uncovered official upstream capability.", inputRequired: true },
-} as const satisfies Readonly<Record<string, JsonCommandSpec>>;
-
-export type FigmaJsonCommandName = keyof typeof FIGMA_JSON_COMMANDS;
-
-export type FigmaConcreteCommandName = FigmaDirectCommandName | FigmaJsonCommandName;
-
-interface FigmaRootHelpGroup {
-  readonly title: string;
-  readonly commands: readonly FigmaConcreteCommandName[];
-}
-
-export const FIGMA_ROOT_HELP_GROUPS = [
-  {
-    title: "Plan, documentation, and Plugin API lookup",
-    commands: ["guidance", "docs:list", "docs:catalog", "docs:read", "docs:search", "api:search", "doctor"],
-  },
-  {
-    title: "Open files and understand existing work",
-    commands: ["open", "sessions:list", "sessions:read", "metadata", "inspect"],
-  },
-  {
-    title: "Implementation context and design systems",
-    commands: ["design-context", "motion-context", "variables", "design-system", "libraries"],
-  },
-  {
-    title: "Implement, manage assets, and verify",
-    commands: ["task:prepare", "script:run", "eval", "assets:apply", "assets:download", "capture"],
-  },
-  {
-    title: "Official capability fallback",
-    commands: ["upstream:list", "upstream:read", "upstream:call"],
-  },
-] as const satisfies readonly FigmaRootHelpGroup[];
-
-export const FIGMA_COMMAND_FAMILIES = {
+const FAMILY_COMMANDS: Record<FigmaCommandFamily, readonly FigmaConcreteCommandName[]> = {
   docs: ["docs:list", "docs:catalog", "docs:read", "docs:search"],
   api: ["api:search"],
-  sessions: ["sessions:list", "sessions:read"],
   upstream: ["upstream:list", "upstream:read", "upstream:call"],
-} as const satisfies Readonly<Record<string, readonly (FigmaDirectCommandName | FigmaJsonCommandName)[]>>;
+};
 
-export type FigmaCommandFamily = keyof typeof FIGMA_COMMAND_FAMILIES;
-export type FigmaCommandName = FigmaDirectCommandName | FigmaJsonCommandName | FigmaCommandFamily;
-
-export async function runFigmaCommandCli(
-  argv: readonly string[],
-  dependencies: FigmaCommandRuntimeDependencies = {},
-): Promise<number> {
-  const commandName = argv[0];
-  if (commandName === undefined || isHelpToken(commandName)) {
-    writer(dependencies.writeStdout, process.stdout.write.bind(process.stdout))(formatRootHelp());
+export async function runFigmaCommandCli(argv: readonly string[], dependencies: FigmaCommandRuntimeDependencies = {}): Promise<number> {
+  if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
+    write(dependencies.writeStdout, false)(formatRootHelp());
     return EXIT_SUCCESS;
   }
-  return runFigmaCommand(commandName, argv.slice(1), dependencies);
+  return runFigmaCommand(argv[0]!, argv.slice(1), dependencies);
 }
 
 export async function runFigmaCommand(
@@ -452,505 +56,270 @@ export async function runFigmaCommand(
   argv: readonly string[],
   dependencies: FigmaCommandRuntimeDependencies = {},
 ): Promise<number> {
-  const writeStdout = writer(dependencies.writeStdout, process.stdout.write.bind(process.stdout));
-  const writeStderr = writer(dependencies.writeStderr, process.stderr.write.bind(process.stderr));
-
-  if (isCommandFamily(commandName)) {
-    if (argv.length === 0 || argv.some(isHelpFlag) || (argv.length === 1 && argv[0] === "help")) {
-      writeStdout(formatFamilyHelp(commandName));
-      return EXIT_SUCCESS;
-    }
-    writeStderr(`Unknown figma ${commandName} family argument: ${argv[0]}\n\n${formatFamilyHelp(commandName)}`);
+  const stdout = write(dependencies.writeStdout, false);
+  const stderr = write(dependencies.writeStderr, true);
+  if (isFamily(commandName)) {
+    if (argv.length === 0 || argv.every(isHelp)) { stdout(formatFamilyHelp(commandName)); return EXIT_SUCCESS; }
+    stderr(`Unknown figma:${commandName}:help argument: ${argv[0]}\n\n${formatFamilyHelp(commandName)}`); return EXIT_USAGE;
+  }
+  if (!isPublicCommand(commandName)) {
+    stderr(`Unknown Figma command: ${commandName}\n\n${formatRootHelp()}`); return EXIT_USAGE;
+  }
+  if (argv.some(isHelp)) { stdout(formatCommandHelp(commandName)); return EXIT_SUCCESS; }
+  try {
+    const parsed = await parsePublicArguments(commandName, argv, dependencies);
+    normalizeExplicitPaths(commandName, parsed.input, dependencies.cwd?.() ?? process.cwd());
+    assertStrictFigmaReferences(parsed.input);
+    return await invoke(parsed.internalCommand, parsed.input, dependencies, parsed.inlineResultLimit);
+  } catch (error) {
+    stderr(`${formatError(error)}\n\n${formatCommandHelp(commandName)}`);
     return EXIT_USAGE;
   }
-
-  if (isDirectCommand(commandName)) {
-    const spec: DirectCommandSpec = FIGMA_DIRECT_COMMANDS[commandName];
-    if (hasDirectHelpFlag(argv)) {
-      writeStdout(formatDirectHelp(commandName, spec));
-      return EXIT_SUCCESS;
-    }
-    try {
-      const parsed = parseDirectArguments(commandName, spec, argv);
-      const runCli = dependencies.runCli ?? runFigmaWorkspaceCli;
-      return await runCli(
-        [spec.command, "--input", "-", ...parsed.globalArgs],
-        { io: createMappedIo(parsed.input, dependencies) },
-      );
-    } catch (error) {
-      writeStderr(`${formatError(error)}\n\n${formatDirectHelp(commandName, spec)}`);
-      return EXIT_USAGE;
-    }
-  }
-
-  if (isJsonCommand(commandName)) {
-    const spec: JsonCommandSpec = FIGMA_JSON_COMMANDS[commandName];
-    if (argv.some(isHelpFlag)) {
-      writeStdout(formatJsonHelp(commandName, spec));
-      return EXIT_SUCCESS;
-    }
-    try {
-      const forwardedArgs = parseJsonArguments(
-        commandName,
-        spec,
-        normalizeNpmForwardedJsonArguments(argv, dependencies.env ?? ((name) => process.env[name])),
-      );
-      return await (dependencies.runCli ?? runFigmaWorkspaceCli)([spec.command, ...forwardedArgs]);
-    } catch (error) {
-      writeStderr(`${formatError(error)}\n\n${formatJsonHelp(commandName, spec)}`);
-      return EXIT_USAGE;
-    }
-  }
-
-  writeStderr(`Unknown Figma command: ${commandName}\n\n${formatRootHelp()}`);
-  return EXIT_USAGE;
 }
 
-function normalizeNpmForwardedJsonArguments(
+interface ParsedPublicCommand {
+  internalCommand: Parameters<typeof invoke>[0];
+  input: CommandInput;
+  inlineResultLimit?: number;
+}
+
+async function parsePublicArguments(
+  command: FigmaConcreteCommandName,
   argv: readonly string[],
-  env: FigmaWorkspaceCliIo["env"],
-): readonly string[] {
-  if (argv.some((token) => token.startsWith("--"))) return argv;
-
-  const inputForwarded = env("npm_config_input") === "true";
-  const stateFileForwarded = env("npm_config_state_file") === "true";
-  const maxInlineBytesForwarded = env("npm_config_max_inline_bytes") === "true";
-  if (!inputForwarded && !stateFileForwarded && !maxInlineBytesForwarded) return argv;
-
-  const remaining = argv.map((value, index) => ({ value, index }));
-  const takeAt = (index: number): string => {
-    const [entry] = remaining.splice(index, 1);
-    if (entry === undefined) throw new Error("npm removed a JSON command option without forwarding its value.");
-    return entry.value;
-  };
-  const normalized: Array<{ index: number; option: string; value: string }> = [];
-
-  if (inputForwarded) {
-    const stdinIndex = remaining.findIndex(({ value }) => value === "-");
-    const entry = remaining[stdinIndex >= 0 ? stdinIndex : 0];
-    if (entry === undefined) throw new Error("npm removed --input without forwarding its value.");
-    normalized.push({ index: entry.index, option: "--input", value: takeAt(stdinIndex >= 0 ? stdinIndex : 0) });
+  dependencies: FigmaCommandRuntimeDependencies,
+): Promise<ParsedPublicCommand> {
+  if (command === "docs:list") return noArgs("docs", { mode: "list" }, argv);
+  if (command === "doctor") return noArgs("doctor", {}, argv);
+  if (command === "docs:catalog") {
+    const { positionals, options } = parseTokens(argv, optionSet("task-family", "surface", "classification", "limit"));
+    assertNoPositionals(positionals);
+    return { internalCommand: "docs", input: clean({ mode: "catalog", taskFamily: options["task-family"], surface: options.surface, classification: options.classification, limit: integer(options.limit, "--limit") }) };
   }
-
-  if (maxInlineBytesForwarded) {
-    const integerIndex = remaining.findIndex(({ value }) => /^\d+$/u.test(value));
-    const entry = remaining[integerIndex];
-    if (entry === undefined) throw new Error("npm removed --max-inline-bytes without forwarding its value.");
-    normalized.push({ index: entry.index, option: "--max-inline-bytes", value: takeAt(integerIndex) });
+  if (command === "docs:read") {
+    const { positionals } = parseTokens(argv, optionSet()); requirePositionals(positionals, 1, "doc-id");
+    return { internalCommand: "docs", input: { mode: "read", id: positionals[0] } };
   }
-
-  if (stateFileForwarded) {
-    if (remaining.length === 0) throw new Error("npm removed --state-file without forwarding its value.");
-    const entry = remaining[remaining.length - 1];
-    if (entry === undefined) throw new Error("npm removed --state-file without forwarding its value.");
-    normalized.push({ index: entry.index, option: "--state-file", value: takeAt(remaining.length - 1) });
+  if (command === "docs:search" || command === "api:search") {
+    const names = command === "docs:search" ? optionSet("scope", "surface", "task-family", "limit", "snippet-lines") : optionSet("limit", "snippet-lines");
+    const { positionals, options } = parseTokens(argv, names); requirePositionals(positionals, 1, command === "docs:search" ? "query" : "symbol");
+    return { internalCommand: "lookup", input: clean({ kind: command === "docs:search" ? "docs" : "api", [command === "docs:search" ? "query" : "symbol"]: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: integer(options.limit, "--limit"), maxSnippetLines: integer(options["snippet-lines"], "--snippet-lines") }) };
   }
-
-  if (remaining.length > 0) return argv;
-  return normalized
-    .sort((left, right) => left.index - right.index)
-    .flatMap(({ option, value }) => [option, value]);
+  if (command === "run") return parseRun(argv, dependencies);
+  if (command === "capture") return parseCapture(argv);
+  if (command === "assets:apply" || command === "assets:download" || command === "upstream:call") return parseJsonLeaf(command, argv, dependencies);
+  if (command === "upstream:list") {
+    const { positionals, options, flags } = parseTokens(argv, optionSet("max-inline-bytes"), flagSet("refresh")); assertNoPositionals(positionals);
+    return direct("upstream-tools", clean({ refresh: flags.has("refresh") ? true : undefined }), options);
+  }
+  if (command === "upstream:read") {
+    const { positionals, options, flags } = parseTokens(argv, optionSet("max-inline-bytes"), flagSet("refresh")); requirePositionals(positionals, 1, "name");
+    return direct("upstream-tools", clean({ name: positionals[0], refresh: flags.has("refresh") ? true : undefined }), options);
+  }
+  return parseReadLeaf(command, argv);
 }
 
-export interface ParsedDirectArguments {
-  readonly input: CommandInput;
-  readonly globalArgs: readonly string[];
-}
-
-export function parseDirectArguments(
-  commandName: string,
-  spec: DirectCommandSpec,
-  argv: readonly string[],
-): ParsedDirectArguments {
-  const input: CommandInput = { ...(spec.fixedInput ?? {}) };
-  const globalArgs: string[] = [];
-  const options = directOptions(spec);
-  const seenKeys = new Set<string>();
-  let positionalSeen = false;
-  let positionalOnly = false;
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (token === undefined) continue;
-    if (!positionalOnly && token === "--") {
-      positionalOnly = true;
-      continue;
-    }
-    if (!positionalOnly && token.startsWith("-")) {
-      const option = options[token];
-      if (option === undefined) throw new Error(`Unknown option for figma ${commandName}: ${token}`);
-      if (option.type === "boolean") {
-        if (seenKeys.has(option.key)) throw new Error(`Duplicate option for figma ${commandName}: ${token}`);
-        seenKeys.add(option.key);
-        input[option.key] = option.mappedValue;
-        continue;
-      }
-      const value = argv[index + 1];
-      if (value === undefined || value.startsWith("--")) throw new Error(`Option ${token} requires ${option.value}.`);
-      index += 1;
-      if (option.type === "global" || option.type === "global-integer") {
-        if (seenKeys.has(token)) throw new Error(`Duplicate option for figma ${commandName}: ${token}`);
-        seenKeys.add(token);
-        if (token === "--state-file" && !isFullyQualifiedAbsolutePath(value)) {
-          throw new Error("Option --state-file requires a fully qualified absolute path.");
-        }
-        const forwardedValue = option.type === "global-integer" ? String(parseIntegerOption(option, value, token)) : value;
-        globalArgs.push(option.forwardFlag, forwardedValue);
-        continue;
-      }
-      if (option.type !== "repeat" && seenKeys.has(option.key)) {
-        throw new Error(`Duplicate option for figma ${commandName}: ${token}`);
-      }
-      seenKeys.add(option.key);
-      assignOptionValue(input, option, value, token);
-      continue;
-    }
-    if (spec.position === undefined) throw new Error(`Unexpected argument for figma ${commandName}: ${token}`);
-    if (positionalSeen) {
-      throw new Error(`figma ${commandName} accepts one <${spec.position.label}> argument; quote multi-word values.`);
-    }
-    input[spec.position.key] = token;
-    positionalSeen = true;
+async function parseRun(argv: readonly string[], dependencies: FigmaCommandRuntimeDependencies): Promise<ParsedPublicCommand> {
+  const { positionals, options } = parseTokens(argv, optionSet("file", "surface", "script", "source", "target-page", "output-dir", "max-inline-bytes"));
+  assertNoPositionals(positionals);
+  const script = options.script;
+  const sourceOption = options.source;
+  if (!options.file) throw new Error("--file <url|key> is required.");
+  if (!isFigmaUrl(options.file) && !options.surface) throw new Error("A raw file key requires --surface design|figjam|slides.");
+  if (Boolean(script) === Boolean(sourceOption)) throw new Error("Exactly one of --script or --source - is required.");
+  if (sourceOption !== undefined && sourceOption !== "-") throw new Error("--source accepts only '-' and reads TypeScript source from stdin.");
+  let scriptPath: string | undefined;
+  let source: string | undefined;
+  if (script) {
+    scriptPath = resolve(dependencies.cwd?.() ?? process.cwd(), script);
+    await assertSafeScriptFile(scriptPath);
+  } else {
+    source = await readRawStdin(dependencies, MAX_INPUT_BYTES);
   }
-  if (spec.position?.omitted.state === "required" && !positionalSeen) {
-    throw new Error(`Missing required <${spec.position.label}> for figma ${commandName}.`);
-  }
-  if (!seenKeys.has("--state-file")) {
-    throw new Error(`figma ${commandName} requires --state-file <path>.`);
-  }
-  if (REQUIRED_NODE_SCOPED_DIRECT_COMMANDS.has(commandName as FigmaDirectCommandName)) {
-    const file = typeof input.file === "string" ? input.file : undefined;
-    const fileSuppliesNode = file !== undefined && isFigmaNodeUrl(file);
-    if (positionalSeen === fileSuppliesNode) {
-      throw new Error(
-        `figma ${commandName} requires exactly one node target: pass <target>, or pass --file with a Figma URL containing node-id.`,
-      );
-    }
-    if (file !== undefined && !fileSuppliesNode) {
-      throw new Error(`Option --file for figma ${commandName} must be a Figma URL containing node-id when <target> is omitted.`);
-    }
-  }
-  return { input, globalArgs };
+  return direct("run", clean({ file: options.file, surface: options.surface, scriptPath, source, targetPageId: options["target-page"], outputDir: options["output-dir"] }), options);
 }
 
-function isFigmaNodeUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return (url.hostname === "figma.com" || url.hostname.endsWith(".figma.com"))
-      && (url.protocol === "https:" || url.protocol === "http:")
-      && (url.searchParams.get("node-id")?.trim() ?? "") !== "";
-  } catch {
-    return false;
-  }
+function parseCapture(argv: readonly string[]): ParsedPublicCommand {
+  const { positionals, options, flags } = parseTokens(argv, optionSet("file", "node", "target", "surface", "image-file", "output-dir", "max-dimension", "max-inline-bytes"), flagSet("contents-only"));
+  assertNoPositionals(positionals);
+  if (options.target && (options.file || options.node)) throw new Error("--target is mutually exclusive with --file/--node.");
+  if (!options.target && (!options.file || !options.node)) throw new Error("Pass --target <node-url>, or both --file and --node.");
+  return direct("capture-node", clean({ file: options.file, target: options.target ?? options.node, surface: options.surface, imageFile: options["image-file"], outputDir: options["output-dir"], maxDimension: integer(options["max-dimension"], "--max-dimension"), contentsOnly: flags.has("contents-only") ? true : undefined }), options);
 }
 
-export function parseJsonArguments(
-  commandName: string,
-  spec: JsonCommandSpec,
-  argv: readonly string[],
-): readonly string[] {
-  const options = jsonOptions(spec);
-  const forwardedArgs: string[] = [];
-  const seen = new Set<string>();
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (token === "-") {
-      if (seen.has("--input")) throw new Error(`Duplicate input for figma ${commandName}.`);
-      seen.add("--input");
-      forwardedArgs.push("--input", "-");
-      continue;
-    }
-    if (token === undefined || !hasOwn(options, token)) throw new Error(`Unknown option for figma ${commandName}: ${token}`);
-    const option = options[token];
-    if (seen.has(token)) throw new Error(`Duplicate option for figma ${commandName}: ${token}`);
-    const value = argv[index + 1];
-    if (value === undefined || value.startsWith("--")) throw new Error(`Option ${token} requires ${option.value}.`);
-    if (token === "--state-file" && !isFullyQualifiedAbsolutePath(value)) {
-      throw new Error("Option --state-file requires a fully qualified absolute path.");
-    }
-    seen.add(token);
-    const forwardedValue = option.type === "global-integer" ? String(parseIntegerOption(option, value, token)) : value;
-    forwardedArgs.push(option.forwardFlag, forwardedValue);
-    index += 1;
-  }
-  if (spec.inputRequired && !seen.has("--input")) throw new Error(`figma ${commandName} requires --input <json-file|->.`);
-  if (!seen.has("--state-file")) throw new Error(`figma ${commandName} requires --state-file <path>.`);
-  return forwardedArgs;
-}
-
-function jsonOptions(spec: JsonCommandSpec) {
-  return {
-    "--input": {
-      type: "forward",
-      forwardFlag: "--input",
-      value: "<json-file|->",
-      description: "Read the command JSON object from a file or stdin.",
-      omitted: spec.inputRequired ? { state: "required" } : UNSET_VALUE,
-      repeatable: false,
-    } satisfies ForwardOption,
-    "--state-file": STATE_FILE_OPTION,
-    "--max-inline-bytes": JSON_MAX_INLINE_BYTES_OPTION,
-  } as const;
-}
-
-function directOptions(spec: DirectCommandSpec): DirectOptionMap {
-  return {
-    "--state-file": STATE_FILE_OPTION,
-    ...(spec.sessionId === true
-      ? { "--session-id": SESSION_ID_OPTION }
-      : {}),
-    ...(spec.outputLimit === true ? { "--max-inline-bytes": MAX_INLINE_BYTES_OPTION } : {}),
-    ...spec.options,
-  };
-}
-
-function assignOptionValue(input: CommandInput, option: InputOption, value: string, token: string): void {
-  switch (option.type) {
-    case "integer": input[option.key] = parseIntegerOption(option, value, token); return;
-    case "enum":
-      if (!option.values.some((candidate) => candidate === value)) {
-        throw new Error(`Option ${token} must be one of: ${option.values.join(", ")}.`);
-      }
-      input[option.key] = value;
-      return;
-    case "repeat": {
-      const current = input[option.key];
-      if (current === undefined) input[option.key] = [value];
-      else if (Array.isArray(current)) current.push(value);
-      else throw new Error(`Option ${token} cannot be combined with a non-list value.`);
-      return;
-    }
-    case "string": input[option.key] = value; return;
-    case "boolean": input[option.key] = option.mappedValue;
-  }
-}
-
-function parseIntegerOption(
-  option: Readonly<{ min?: number; max?: number }>,
-  value: string,
-  token: string,
-): number {
-  if (!/^-?\d+$/u.test(value)) throw new Error(`Option ${token} requires an integer.`);
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed)) throw new Error(`Option ${token} requires a safe integer.`);
-  if (option.min !== undefined && parsed < option.min) throw new Error(`Option ${token} must be at least ${option.min}.`);
-  if (option.max !== undefined && parsed > option.max) throw new Error(`Option ${token} must be at most ${option.max}.`);
-  return parsed;
-}
-
-function createMappedIo(input: CommandInput, dependencies: FigmaCommandRuntimeDependencies): FigmaWorkspaceCliIo {
-  return {
-    cwd: dependencies.cwd ?? (() => process.cwd()),
-    env: dependencies.env ?? ((name) => process.env[name]),
-    readFile: dependencies.readFile ?? ((path) => readFile(path, "utf8")),
-    readStdin: async () => JSON.stringify(input),
-    writeStdout: writer(dependencies.writeStdout, process.stdout.write.bind(process.stdout)),
-    writeStderr: writer(dependencies.writeStderr, process.stderr.write.bind(process.stderr)),
-  };
-}
-
-export function formatDirectHelp(commandName: string, spec: DirectCommandSpec): string {
-  const usagePosition = spec.position === undefined
-    ? ""
-    : ` ${spec.position.omitted.state === "required" ? `<${spec.position.label}>` : `[${spec.position.label}]`}`;
-  const lines = [
-    `# figma ${commandName} help`, "", "## Purpose", spec.purpose, "", "## Usage",
-    `- \`npm --silent run figma -- ${commandName}${usagePosition} [options]\``,
-    `- \`npm --silent run figma:${commandName} --${usagePosition} [options]\``,
-  ];
-  if (spec.position !== undefined) {
-    lines.push(
-      "", "## Arguments",
-      `- \`<${spec.position.label}>\`: ${spec.position.description} ${formatOmittedValue(spec.position.omitted)} Repeatable: no.`,
+async function parseJsonLeaf(command: "assets:apply" | "assets:download" | "upstream:call", argv: readonly string[], dependencies: FigmaCommandRuntimeDependencies): Promise<ParsedPublicCommand> {
+  const { positionals, options } = parseTokens(argv, optionSet("input", "file", "surface", "output-dir", "max-inline-bytes")); assertNoPositionals(positionals);
+  if (!options.input) throw new Error("--input <json-file|-> is required.");
+  const source = options.input === "-"
+    ? await readRawStdin(dependencies, MAX_INPUT_BYTES)
+    : await readBoundedText(
+      (dependencies.readFile ?? defaultReadFile)(resolve(dependencies.cwd?.() ?? process.cwd(), options.input), MAX_INPUT_BYTES),
+      MAX_INPUT_BYTES,
     );
+  let input: unknown; try { input=JSON.parse(source); } catch (error) { throw new Error(`--input must contain valid JSON: ${formatError(error)}`); }
+  if (!isRecord(input)) throw new Error("--input JSON must be an object.");
+  for (const [key, value] of Object.entries({ file: options.file, surface: options.surface, outputDir: options["output-dir"] })) if (value !== undefined) { if (input[key] !== undefined && input[key] !== value) throw new Error(`Conflicting ${key} in --input and CLI option.`); input[key]=value; }
+  if (command === "assets:apply") {
+    if (typeof input.file !== "string" || !input.file.trim()) throw new Error("figma:assets:apply requires --file <url|key> or a file field in --input JSON.");
+    if (!isFigmaUrl(input.file) && typeof input.surface !== "string") throw new Error("figma:assets:apply with a raw file key requires --surface design|figjam|slides.");
   }
-  lines.push("", "## Options", "- `-h`, `--help`: Show this command help without running Figma.");
-  for (const [flag, option] of Object.entries(directOptions(spec))) {
-    const value = "value" in option ? ` ${option.value}` : "";
-    lines.push(`- \`${flag}${value}\`: ${option.description} ${formatOptionMetadata(option)}`);
-  }
-  lines.push("", "## Output", "Restricted Markdown on stdout. Follow `outputFiles.cliResultFile` for an oversized complete JSON result.");
-  if (spec.examples !== undefined && spec.examples.length > 0) {
-    lines.push("", "## Examples", ...spec.examples.map((example) => `- \`${example}\``));
-  }
-  return `${lines.join("\n")}\n`;
+  return direct(command === "assets:apply" ? "apply-asset-manifest" : command === "assets:download" ? "download-assets" : "call-upstream-tool", input, options);
 }
 
-export function formatFamilyHelp(family: FigmaCommandFamily): string {
-  const commands = FIGMA_COMMAND_FAMILIES[family];
-  return [
-    `# figma ${family} help`, "", "## Purpose", `Browse the figma ${family} command family.`, "", "## Commands",
-    ...commands.map((commandName) => `- \`npm --silent run figma -- ${commandName} --help\``), "",
-    "## NPM Scripts", ...commands.map((commandName) => `- \`npm --silent run figma:${commandName} -- --help\``), "",
-    "## Help", "Use `-h` or `--help` on a concrete command before first use.", "",
-  ].join("\n");
-}
-
-export function formatJsonHelp(commandName: string, spec: JsonCommandSpec): string {
-  const inputUsage = spec.inputRequired ? " --input <json-file|->" : " [--input <json-file|->]";
-  const lines = [
-    `# figma ${commandName} help`, "", "## Purpose", spec.purpose, "", "## Usage",
-    `- \`npm --silent run figma -- ${commandName}${inputUsage} [options]\``,
-    `- \`npm --silent run figma:${commandName} --${inputUsage} [options]\``, "", "## Options",
-  ];
-  for (const [flag, option] of Object.entries(jsonOptions(spec))) {
-    lines.push(`- \`${flag} ${option.value}\`: ${option.description} ${formatOptionMetadata(option)}`);
+function parseReadLeaf(command: Exclude<FigmaConcreteCommandName, "docs:list" | "docs:catalog" | "docs:read" | "docs:search" | "api:search" | "doctor" | "run" | "capture" | "assets:apply" | "assets:download" | "upstream:list" | "upstream:read" | "upstream:call">, argv: readonly string[]): ParsedPublicCommand {
+  if (command === "design-system") {
+    const { positionals, options, flags, repeats } = parseTokens(argv, optionSet("file", "surface", "output-dir", "max-inline-bytes"), flagSet("components", "no-components", "variables", "no-variables", "styles", "no-styles", "no-code-connect", "refresh"), repeatSet("library"));
+    requirePositionals(positionals, 1, "query");
+    return direct("search-design-system", clean({ file: options.file, surface: options.surface, outputDir: options["output-dir"], query: positionals[0], includeComponents: chooseBool(flags, "components", "no-components"), includeVariables: chooseBool(flags, "variables", "no-variables"), includeStyles: chooseBool(flags, "styles", "no-styles"), disableCodeConnect: flags.has("no-code-connect") ? true : undefined, includeLibraryKeys: repeats.library, refresh: flags.has("refresh") ? true : undefined }), options);
   }
-  lines.push(
-    "- `-h`, `--help`: Show this command help without running Figma.", "", "## Input JSON Schema",
-    "```json", JSON.stringify(publicJsonSchema(spec.command), null, 2), "```", "",
-    "## Output", "Restricted Markdown on stdout. Follow `outputFiles.cliResultFile` for an oversized complete JSON result.", "",
-  );
-  return lines.join("\n");
-}
-
-const PUBLIC_SCHEMA_COMMAND_REPLACEMENTS: Readonly<Record<string, string>> = {
-  figma_workspace_apply_asset_manifest: "figma:assets:apply",
-  figma_workspace_call_upstream_tool: "figma:upstream:call",
-  figma_workspace_capture_node: "figma:capture",
-  figma_workspace_download_assets: "figma:assets:download",
-  figma_workspace_eval: "figma:eval",
-  figma_workspace_get_design_context: "figma:design-context",
-  figma_workspace_get_libraries: "figma:libraries",
-  figma_workspace_get_metadata: "figma:metadata",
-  figma_workspace_get_motion_context: "figma:motion-context",
-  figma_workspace_get_variable_defs: "figma:variables",
-  figma_workspace_guidance: "figma:guidance",
-  figma_workspace_inspect: "figma:inspect",
-  figma_workspace_lookup: "figma:docs:search or figma:api:search",
-  figma_workspace_open: "figma:open",
-  figma_workspace_prepare_task: "figma:task:prepare",
-  figma_workspace_run_script_file: "figma:script:run",
-  figma_workspace_search_design_system: "figma:design-system",
-  figma_workspace_sessions: "figma:sessions:list or figma:sessions:read",
-  figma_workspace_upstream_tools: "figma:upstream:list or figma:upstream:read",
-  "apply-asset-manifest": "figma:assets:apply",
-  "call-upstream-tool": "figma:upstream:call",
-  "capture-node": "figma:capture",
-  "download-assets": "figma:assets:download",
-  "prepare-task": "figma:task:prepare",
-  "run-script-file": "figma:script:run",
-  download_assets: "figma:assets:download",
-  get_design_context: "figma:design-context",
-  get_libraries: "figma:libraries",
-  get_metadata: "figma:metadata",
-  get_motion_context: "figma:motion-context",
-  get_screenshot: "figma:capture",
-  get_variable_defs: "figma:variables",
-  search_design_system: "figma:design-system",
-  upload_assets: "figma:assets:apply",
-  use_figma: "native Plugin API execution",
-};
-
-function publicJsonSchema(command: FigmaWorkspaceCliCommand): unknown {
-  return mapSchemaValue(
-    getFigmaWorkspaceCommandInputSchema(command),
-    sanitizePublicSchemaText,
-  );
-}
-
-function mapSchemaValue(value: unknown, mapText: (value: string) => string): unknown {
-  if (typeof value === "string") return mapText(value);
-  if (Array.isArray(value)) return value.map((entry) => mapSchemaValue(entry, mapText));
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, mapSchemaValue(entry, mapText)]),
-    );
+  if (command === "libraries") {
+    const { positionals, options, flags } = parseTokens(argv, optionSet("file", "surface", "output-dir", "offset", "max-inline-bytes"), flagSet("refresh")); assertNoPositionals(positionals);
+    return direct("get-libraries", clean({ file: options.file, surface: options.surface, outputDir: options["output-dir"], offset: integer(options.offset, "--offset"), refresh: flags.has("refresh") ? true : undefined }), options);
   }
-  return value;
+  const { positionals, options, flags } = parseTokens(argv, optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "client-languages", "client-frameworks", "max-inline-bytes"), flagSet("refresh", "force-code", "no-code-connect", "exclude-screenshot", "recursive"));
+  assertNoPositionals(positionals);
+  if (options.target && options.node) throw new Error("Use either --target or --node, not both.");
+  const input = clean({ file: options.file, target: options.target ?? options.node, surface: options.surface, outputDir: options["output-dir"], mode: options.mode, depth: integer(options.depth, "--depth"), clientLanguages: options["client-languages"], clientFrameworks: options["client-frameworks"], refresh: flags.has("refresh") ? true : undefined, forceCode: flags.has("force-code") ? true : undefined, disableCodeConnect: flags.has("no-code-connect") ? true : undefined, excludeScreenshot: flags.has("exclude-screenshot") ? true : undefined, recursive: flags.has("recursive") ? true : undefined });
+  const internal = { metadata: "get-metadata", inspect: "inspect", "design-context": "get-design-context", "motion-context": "get-motion-context", variables: "get-variable-defs" } as const;
+  return direct(internal[command], input, options);
 }
 
-function sanitizePublicSchemaText(value: string): string {
-  let sanitized = value;
-  for (const [internalName, commandId] of Object.entries(PUBLIC_SCHEMA_COMMAND_REPLACEMENTS)) {
-    sanitized = sanitized.replaceAll(internalName, commandId);
-  }
-  return sanitized;
+type InternalCommand = "run" | "apply-asset-manifest" | "download-assets" | "capture-node" | "inspect" | "get-metadata" | "get-design-context" | "get-motion-context" | "search-design-system" | "get-libraries" | "get-variable-defs" | "call-upstream-tool" | "lookup" | "docs" | "doctor" | "upstream-tools";
+
+async function invoke(internalCommand: InternalCommand, input: CommandInput, dependencies: FigmaCommandRuntimeDependencies, inlineResultLimit?: number): Promise<number> {
+  const runCli = dependencies.runCli ?? runFigmaWorkspaceCli;
+  return runCli([internalCommand, "--input", "-", ...(inlineResultLimit === undefined ? [] : ["--inline-result-limit", String(inlineResultLimit)])], {
+    io: mappedIo(input, dependencies),
+  });
 }
 
-function formatOptionMetadata(option: DirectOption | ForwardOption): string {
-  const metadata = [formatOmittedValue(option.omitted), `Repeatable: ${option.repeatable ? "yes" : "no"}.`];
-  if (option.type === "integer" || option.type === "global-integer") {
-    metadata.push(`Range: ${option.min ?? Number.MIN_SAFE_INTEGER} to ${option.max ?? Number.MAX_SAFE_INTEGER}.`);
-  }
-  if (option.type === "enum") metadata.push(`Allowed: ${option.values.join(", ")}.`);
-  return metadata.join(" ");
+function mappedIo(input: CommandInput, dependencies: FigmaCommandRuntimeDependencies): FigmaWorkspaceCliIo {
+  return {
+    cwd: dependencies.cwd ?? (() => process.cwd()), env: dependencies.env ?? ((name) => process.env[name]),
+    readFile: dependencies.readFile ?? defaultReadFile,
+    readStdin: async (maxBytes = MAX_INPUT_BYTES) => assertTextWithinLimit(JSON.stringify(input), maxBytes),
+    writeStdout: write(dependencies.writeStdout, false), writeStderr: write(dependencies.writeStderr, true),
+  };
 }
 
-function formatOmittedValue(omitted: OmittedValue): string {
-  switch (omitted.state) {
-    case "required": return "Required.";
-    case "default": return `Default: ${omitted.value}.`;
-    case "unset": return "Default: unset.";
+interface ParsedTokens { positionals: string[]; options: Record<string, string | undefined>; flags: Set<string>; repeats: Record<string, string[]> }
+function parseTokens(argv: readonly string[], optionNames: Set<string>, flagNames=new Set<string>(), repeatNames=new Set<string>()): ParsedTokens {
+  const positionals:string[]=[]; const options:Record<string,string|undefined>={}; const flags=new Set<string>(); const repeats:Record<string,string[]>={};
+  for(let i=0;i<argv.length;i+=1){const token=argv[i]!; if(!token.startsWith("--")){positionals.push(token);continue;} const name=token.slice(2); if(flagNames.has(name)){if(flags.has(name))throw new Error(`Option --${name} may be specified only once.`);flags.add(name);continue;} if(!optionNames.has(name)&&!repeatNames.has(name))throw new Error(`Unknown option: --${name}`); const value=argv[++i];if(!value||value.startsWith("--"))throw new Error(`Option --${name} requires a value.`);if(repeatNames.has(name)){(repeats[name]??=[]).push(value);continue;}if(options[name]!==undefined)throw new Error(`Option --${name} may be specified only once.`);options[name]=value;}
+  return {positionals,options,flags,repeats};
+}
+function optionSet(...names:string[]):Set<string>{return new Set(names);} function flagSet(...names:string[]):Set<string>{return new Set(names);} function repeatSet(...names:string[]):Set<string>{return new Set(names);}
+function direct(internalCommand:InternalCommand,input:CommandInput,options:Record<string,string|undefined>):ParsedPublicCommand{return{internalCommand,input,inlineResultLimit:integer(options["max-inline-bytes"],"--max-inline-bytes")};}
+function noArgs(internalCommand:InternalCommand,input:CommandInput,argv:readonly string[]):ParsedPublicCommand{if(argv.length)throw new Error("This command accepts no arguments.");return{internalCommand,input};}
+function integer(value:string|undefined,label:string):number|undefined{if(value===undefined)return undefined;const parsed=Number(value);if(!Number.isInteger(parsed)||parsed<0)throw new Error(`${label} must be a non-negative integer.`);return parsed;}
+function requirePositionals(values:string[],count:number,label:string):void{if(values.length!==count)throw new Error(`Expected exactly one ${label}.`);} function assertNoPositionals(values:string[]):void{if(values.length)throw new Error(`Unexpected positional argument: ${values[0]}`);}
+function chooseBool(flags:Set<string>,yes:string,no:string):boolean|undefined{if(flags.has(yes)&&flags.has(no))throw new Error(`--${yes} and --${no} are mutually exclusive.`);return flags.has(yes)?true:flags.has(no)?false:undefined;}
+function clean(value:CommandInput):CommandInput{return Object.fromEntries(Object.entries(value).filter(([,item])=>item!==undefined));}
+async function readRawStdin(dependencies:FigmaCommandRuntimeDependencies,maxBytes:number):Promise<string>{return readBoundedText((dependencies.readStdin??defaultReadStdin)(maxBytes),maxBytes);}
+async function readBoundedText(source:Promise<string>,maxBytes:number):Promise<string>{return assertTextWithinLimit(await source,maxBytes);}
+function assertTextWithinLimit(value:string,maxBytes:number):string{if(Buffer.byteLength(value,"utf8")>maxBytes)throw new Error(`Input exceeds ${maxBytes} bytes.`);return value;}
+async function defaultReadFile(path:string,maxBytes=MAX_INPUT_BYTES):Promise<string>{const info=await stat(path);if(info.size>maxBytes)throw new Error(`Input exceeds ${maxBytes} bytes.`);return assertTextWithinLimit(await readFile(path,"utf8"),maxBytes);}
+async function defaultReadStdin(maxBytes=MAX_INPUT_BYTES):Promise<string>{const chunks:Buffer[]=[];let bytes=0;for await(const chunk of process.stdin){const value=Buffer.from(chunk);bytes+=value.byteLength;if(bytes>maxBytes)throw new Error(`Input exceeds ${maxBytes} bytes.`);chunks.push(value);}return Buffer.concat(chunks).toString("utf8");}
+
+function normalizeExplicitPaths(command: FigmaConcreteCommandName, input: CommandInput, cwd: string): void {
+  for (const field of ["outputDir", "imageFile", "manifestPath"] as const) {
+    if (typeof input[field] === "string" && input[field].trim()) input[field] = resolve(cwd, input[field]);
   }
+  if (command !== "assets:apply" || !Array.isArray(input.assets)) return;
+  input.assets = input.assets.map((value) => {
+    if (!isRecord(value) || typeof value.path !== "string" || !value.path.trim()) return value;
+    return { ...value, path: resolve(cwd, value.path) };
+  });
+}
+
+function assertStrictFigmaReferences(input: CommandInput): void {
+  assertFileReference(input.file, 'Tool argument "file"');
+  assertNodeTargetReference(input.target, 'Tool argument "target"');
+  for (const [collection, label] of [[input.assets, "assets"], [input.targets, "targets"]] as const) {
+    if (!Array.isArray(collection)) continue;
+    collection.forEach((entry, index) => {
+      if (isRecord(entry)) assertNodeTargetReference(entry.target, `Tool argument "${label}[${index}].target"`);
+    });
+  }
+  if (isRecord(input.arguments)) assertFileReference(input.arguments.fileKey, 'Tool argument "arguments.fileKey"');
+}
+
+function assertFileReference(value: unknown, label: string): void {
+  if (typeof value !== "string" || !value.trim()) return;
+  const trimmed = value.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) {
+    parseStrictFigmaUrl(trimmed, label, false);
+    return;
+  }
+  if (trimmed.includes("/") || trimmed.includes("\\") || trimmed.includes("..")) {
+    throw new Error(`${label} must be a valid Figma URL or a simple Figma file key.`);
+  }
+}
+
+function assertNodeTargetReference(value: unknown, label: string): void {
+  if (typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(value.trim())) {
+    parseStrictFigmaUrl(value.trim(), label, true);
+  }
+  if (isRecord(value)) assertFileReference(value.fileKey, `${label}.fileKey`);
+}
+
+function parseStrictFigmaUrl(value: string, label: string, requireNode: boolean): URL {
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error(`${label} must be a valid Figma URL.`); }
+  if (url.protocol !== "https:" || (url.hostname !== "figma.com" && !url.hostname.endsWith(".figma.com"))) {
+    throw new Error(`${label} must use an https://*.figma.com Figma URL.`);
+  }
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (!["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "") || !parts[1]) {
+    throw new Error(`${label} must include a valid Design, FigJam, or Slides file path and file key.`);
+  }
+  if (requireNode && !(url.searchParams.get("node-id") ?? url.searchParams.get("node_id"))) {
+    throw new Error(`${label} must include a node-id query parameter.`);
+  }
+  return url;
+}
+
+export async function assertSafeScriptFile(path: string): Promise<void> {
+  if (!isAbsolute(path) || !path.endsWith(".figma.ts")) throw new Error("--script must resolve to a .figma.ts file.");
+  const info = await lstat(path);
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error("--script must be a regular non-symlink .figma.ts file.");
+  const resolvedRealPath = await realpath(path);
+  if (resolve(resolvedRealPath) !== resolve(path)) throw new Error("--script must not traverse a symlink, junction, or reparse target.");
 }
 
 export function formatRootHelp(): string {
-  const lines = [
-    "# Figma command CLI help", "", "## Start here",
-    "1. Run `npm --silent run figma:help` to open this agent-facing catalog.",
-    "2. Select a concrete `figma:*` command below, then run its `--help` before first use.",
-    "3. Use `npm --silent run figma -- <command> [arguments] [options]` when an umbrella invocation is more convenient.",
-    "", "## Recommended order",
-    "1. For non-trivial, generated, or unclear work, start with `figma:guidance`.",
-    "2. Find workflow material with `figma:docs:catalog`, `figma:docs:search`, and `figma:docs:read`; find native Plugin API symbols with `figma:api:search`.",
-    "3. Establish context with `figma:open`, use `figma:metadata` before targeted `figma:inspect`, then implement and verify with `figma:capture`.",
-    "4. For an uncovered official capability, use `figma:upstream:list`, then `figma:upstream:read`, then `figma:upstream:call`.",
-    "", "## Discovery entrypoints",
-    "- Root: `npm --silent run figma:help` or `npm --silent run figma -- --help`.",
-    "- Families: `npm --silent run figma:docs -- --help`, `npm --silent run figma:api -- --help`, `npm --silent run figma:sessions -- --help`, and `npm --silent run figma:upstream -- --help`.",
-    "", "## Concrete commands",
-  ];
-
-  for (const group of FIGMA_ROOT_HELP_GROUPS) {
-    lines.push("", `### ${group.title}`);
-    for (const commandName of group.commands) {
-      const spec = isDirectCommand(commandName)
-        ? FIGMA_DIRECT_COMMANDS[commandName]
-        : FIGMA_JSON_COMMANDS[commandName];
-      lines.push(`- \`npm --silent run figma:${commandName} -- --help\`: ${spec.purpose}`);
-    }
-  }
-
-  lines.push("");
-  return lines.join("\n");
+  return ["# Figma Workspace stateless CLI", "", "Every remote leaf command receives a complete Figma URL/file key and node target in the same invocation.", "", "## Documentation", "", "  figma:docs:help  figma:docs:list  figma:docs:catalog  figma:docs:read  figma:docs:search  figma:api:help  figma:api:search  figma:doctor", "", "## Read and execute", "", "  figma:metadata  figma:inspect  figma:design-context  figma:motion-context  figma:variables  figma:design-system  figma:libraries  figma:run", "", "## Assets and fallback", "", "  figma:capture  figma:assets:apply  figma:assets:download  figma:upstream:help  figma:upstream:list  figma:upstream:read  figma:upstream:call", ""].join("\n");
+}
+export function formatFamilyHelp(family:FigmaCommandFamily):string{return[`# figma:${family}:help`,"",...FAMILY_COMMANDS[family].map((name)=>`  figma:${name}`),""].join("\n");}
+export function formatCommandHelp(command:string):string{
+  if(!isPublicCommand(command))return `# figma:${command}\n\nUnknown public leaf. Use figma:help for the complete stateless command inventory.\n`;
+  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":"";
+  return `# figma:${command}\n\nUsage: ${PUBLIC_COMMAND_USAGE[command]}${details}\n`;
 }
 
-function writer(candidate: WriteOutput | undefined, fallback: WriteOutput): WriteOutput {
-  return candidate ?? fallback;
-}
+const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
+  "docs:list":"figma:docs:list",
+  "docs:catalog":"figma:docs:catalog [--task-family <family>] [--surface design|figjam|slides] [--classification active|conditional|router|examples] [--limit <n>]",
+  "docs:read":"figma:docs:read <doc-id>",
+  "docs:search":"figma:docs:search <query> [--scope auto|active|conditional|router|examples|all] [--surface design|figjam|slides] [--task-family <family>] [--limit <n>] [--snippet-lines <n>]",
+  "api:search":"figma:api:search <symbol> [--limit <n>] [--snippet-lines <n>]",
+  doctor:"figma:doctor",
+  metadata:"figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  inspect:"figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <n>] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  "design-context":"figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  "motion-context":"figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  variables:"figma:variables (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  "design-system":"figma:design-system <query> --file <url|key> [--surface design|figjam|slides] [--components|--no-components] [--variables|--no-variables] [--styles|--no-styles] [--no-code-connect] [--library <key>]... [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  libraries:"figma:libraries --file <url|key> [--surface design|figjam|slides] [--offset <n>] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  run:"figma:run --file <url|key> (--script <path.figma.ts> | --source -) [--surface design|figjam|slides] [--target-page <node-id>] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  capture:"figma:capture (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--image-file <path>] [--output-dir <path>] [--max-dimension <n>] [--contents-only] [--max-inline-bytes <0..10000>]",
+  "assets:apply":"figma:assets:apply --input <json-file|-> --file <url|key> [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  "assets:download":"figma:assets:download --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  "upstream:list":"figma:upstream:list [--refresh] [--max-inline-bytes <0..10000>]",
+  "upstream:read":"figma:upstream:read <name> [--refresh] [--max-inline-bytes <0..10000>]",
+  "upstream:call":"figma:upstream:call --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+};
 
-function hasOwn<ObjectType extends object>(value: ObjectType, key: PropertyKey): key is keyof ObjectType {
-  return Object.prototype.hasOwnProperty.call(value, key);
-}
-
-function isDirectCommand(value: string): value is FigmaDirectCommandName {
-  return hasOwn(FIGMA_DIRECT_COMMANDS, value);
-}
-
-function isJsonCommand(value: string): value is FigmaJsonCommandName {
-  return hasOwn(FIGMA_JSON_COMMANDS, value);
-}
-
-function isCommandFamily(value: string): value is FigmaCommandFamily {
-  return hasOwn(FIGMA_COMMAND_FAMILIES, value);
-}
-
-function isHelpToken(token: string): boolean {
-  return token === "-h" || token === "--help" || token === "help";
-}
-
-function isHelpFlag(token: string): boolean {
-  return token === "-h" || token === "--help";
-}
-
-function hasDirectHelpFlag(argv: readonly string[]): boolean {
-  for (const token of argv) {
-    if (token === "--") return false;
-    if (isHelpFlag(token)) return true;
-  }
-  return false;
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+function isPublicCommand(value:string):value is FigmaConcreteCommandName{return(PUBLIC_COMMANDS as readonly string[]).includes(value);} function isFamily(value:string):value is FigmaCommandFamily{return value==="docs"||value==="api"||value==="upstream";} function isHelp(value:string):boolean{return value==="--help"||value==="-h"||value==="help";}
+function write(override:((value:string)=>void)|undefined,stderr:boolean):(value:string)=>void{return override??(stderr?process.stderr.write.bind(process.stderr):process.stdout.write.bind(process.stdout));}
+function formatError(error:unknown):string{return error instanceof Error?error.message:String(error);} function isRecord(value:unknown):value is Record<string,unknown>{return Boolean(value)&&typeof value==="object"&&!Array.isArray(value);}
+function isFigmaUrl(value:string):boolean{try{parseStrictFigmaUrl(value,'Tool argument "file"',false);return true;}catch{return false;}}

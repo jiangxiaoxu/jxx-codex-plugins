@@ -15,7 +15,7 @@ For an existing deck, inspect its canvas, hierarchy, palette, typography, spacin
 
 ## Build through the CLI workflow
 
-Prepare the Slides task, edit the generated `.figma.ts`, and use `figma:script:run`; TypeScript preflight is always enabled. Keep a slide's creation and its local layout together so each transaction is small and repairable. Slides are isolated subtrees, so building several simple slides in one run is reasonable; split a complex deck at section boundaries.
+Prepare the Slides task, edit the generated `.figma.ts`, and use `figma:run`; TypeScript preflight is always enabled. Keep a slide's creation and its local layout together so each transaction is small and repairable. Slides are isolated subtrees, so building several simple slides in one run is reasonable; split a complex deck at section boundaries.
 
 ```ts
 const slide = figma.createSlide();

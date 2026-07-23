@@ -3,10 +3,12 @@
 import { randomUUID } from "node:crypto";
 import { spawn as spawnProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { access, readFile, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import {
   dirname,
   isAbsolute,
+  join,
   normalize,
   posix,
   relative,
@@ -16,7 +18,7 @@ import {
 import { fileURLToPath } from "node:url";
 
 export const LIVE_TEST_CONFIG_RELATIVE_PATH = ".figma-workspace/live-test.json";
-export const LIVE_TEST_CONFIG_SCHEMA_VERSION = 1;
+export const LIVE_TEST_CONFIG_SCHEMA_VERSION = 2;
 export const LIVE_SMOKE_PLUGIN_DATA_NAMESPACE = "figma_workspace.live_smoke";
 export const LIVE_SMOKE_PLUGIN_DATA_KEY = "run_id";
 export const COMMAND_TOTAL_TIMEOUT_MS = 5 * 60 * 1_000;
@@ -28,11 +30,10 @@ const PLUGIN_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CONFIG_ALLOWED_KEYS = new Set([
   "schemaVersion",
   "designFileUrl",
-  "stateFile",
-  "workspaceDir",
+  "outputDir",
   "allowMutationCleanup",
 ]);
-const CONFIG_REQUIRED_KEYS = [...CONFIG_ALLOWED_KEYS];
+const CONFIG_REQUIRED_KEYS = ["schemaVersion", "designFileUrl", "allowMutationCleanup"];
 const SECRET_CONFIG_KEY_PATTERN = /(?:api[-_]?key|authorization|credential|oauth|password|secret|token)/iu;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -160,8 +161,9 @@ export function parseLiveTestConfig(value, options = {}) {
   return Object.freeze({
     schemaVersion: LIVE_TEST_CONFIG_SCHEMA_VERSION,
     designFileUrl: assertDesignFileUrl(value.designFileUrl),
-    stateFile: assertConfigAbsolutePath(value.stateFile, "stateFile"),
-    workspaceDir: assertConfigAbsolutePath(value.workspaceDir, "workspaceDir"),
+    outputDir: value.outputDir === undefined
+      ? undefined
+      : assertConfigAbsolutePath(value.outputDir, "outputDir"),
     allowMutationCleanup: true,
   });
 }
@@ -229,6 +231,9 @@ export async function assertOAuthCacheFile(options = {}) {
 function stringifyCommandInput(input) {
   if (input === undefined) {
     return undefined;
+  }
+  if (typeof input === "string") {
+    return input.endsWith("\n") ? input : `${input}\n`;
   }
   return `${JSON.stringify(input)}\n`;
 }
@@ -405,18 +410,24 @@ export function extractCliResultSidecarPath(stdout) {
   return pathMatch[1];
 }
 
-function assertSafeSidecarPath(sidecarPath, stateFile) {
-  if (!isFullyQualifiedAbsolutePath(sidecarPath)) {
-    throw new LiveSmokeCommandError("Command result sidecar path must be a normalized fully qualified absolute path.");
+function assertSafeArtifactPath(path, outputDir, description) {
+  if (!isFullyQualifiedAbsolutePath(path)) {
+    throw new LiveSmokeCommandError(`${description} path must be a normalized fully qualified absolute path.`);
   }
-  const resultRoot = resolve(dirname(stateFile), "results");
-  const resolvedSidecar = resolve(sidecarPath);
-  if (!isPathInside(resultRoot, resolvedSidecar)) {
+  const resolvedPath = resolve(path);
+  const permittedRoot = outputDir === undefined
+    ? resolve(tmpdir(), "figma-workspace")
+    : resolve(outputDir);
+  if (!isPathInside(permittedRoot, resolvedPath)) {
     throw new LiveSmokeCommandError(
-      `Command result sidecar must remain inside ${resultRoot}.`,
+      `${description} must remain inside ${permittedRoot}.`,
     );
   }
-  return resolvedSidecar;
+  return resolvedPath;
+}
+
+function assertSafeSidecarPath(sidecarPath, outputDir) {
+  return assertSafeArtifactPath(sidecarPath, outputDir, "Command result sidecar");
 }
 
 async function hydrateOmittedUpstreamResult(result, options) {
@@ -505,7 +516,7 @@ async function runFigmaSidecarCommand(options) {
   let sidecarPath;
   let result;
   try {
-    sidecarPath = assertSafeSidecarPath(extractCliResultSidecarPath(String(execution.stdout ?? "")), options.stateFile);
+    sidecarPath = assertSafeSidecarPath(extractCliResultSidecarPath(String(execution.stdout ?? "")), options.outputDir);
     result = JSON.parse(String(await options.readFile(sidecarPath, "utf8")));
   } catch (error) {
     throw new LiveSmokeCommandError(describeExecutionFailure(options.step, execution), {
@@ -535,24 +546,31 @@ async function runFigmaSidecarCommand(options) {
   return { execution, result, sidecarPath };
 }
 
-function commonCommandArgs(stateFile) {
-  return ["--state-file", stateFile, "--max-inline-bytes", "0"];
+function commonCommandArgs() {
+  return ["--max-inline-bytes", "0"];
 }
 
 async function runDirectCommand(options) {
   return runFigmaSidecarCommand({
     ...options,
     script: `figma:${options.commandName}`,
-    args: [...(options.positionals ?? []), ...(options.options ?? []), ...commonCommandArgs(options.stateFile)],
+    args: [...(options.positionals ?? []), ...(options.options ?? []), ...commonCommandArgs()],
   });
 }
 
-async function runJsonCommand(options) {
+async function runScriptCommand(options) {
+  const outputDirArgs = options.outputDir === undefined ? [] : ["--output-dir", options.outputDir];
   return runFigmaSidecarCommand({
     ...options,
-    script: `figma:${options.commandName}`,
-    args: ["--input", "-", ...commonCommandArgs(options.stateFile)],
-    input: options.input,
+    script: "figma:run",
+    args: [
+      "--file", options.designFileUrl,
+      "--source", "-",
+      "--surface", "design",
+      ...outputDirArgs,
+      ...commonCommandArgs(),
+    ],
+    input: options.source,
   });
 }
 
@@ -580,14 +598,6 @@ function requireUpstreamResult(record, command) {
     throw new LiveSmokeCommandError(`${command} did not report upstream.ok: true.`);
   }
   return requireRecordField(upstream, "result", command);
-}
-
-function requireSessionId(record, command) {
-  const session = requireRecordField(record, "session", command);
-  if (!isNonEmptyString(session.id)) {
-    throw new LiveSmokeCommandError(`${command} result is missing session.id.`);
-  }
-  return session.id;
 }
 
 function requireExecutionOutcome(invocation, command) {
@@ -774,23 +784,17 @@ function requireCreationChangedNodeIds(invocation, command, frame, text, tagName
 }
 
 async function reconcileTaggedNodes(options) {
-  const invocation = await runJsonCommand({
+  const invocation = await runScriptCommand({
     ...options,
     step: options.step,
-    commandName: "eval",
-    input: {
-      sessionId: options.sessionId,
-      surface: "design",
-      typescript: true,
-      code: liveReadbackCode(options.tagNamespace, options.tagKey, options.runId),
-    },
+    source: liveReadbackCode(options.tagNamespace, options.tagKey, options.runId),
   });
-  requireExecutionOutcome(invocation, `${options.step} figma:eval`);
+  requireExecutionOutcome(invocation, `${options.step} figma:run`);
   return {
     invocation,
     ...normalizeReadback(
       invocation.result,
-      `${options.step} figma:eval`,
+      `${options.step} figma:run`,
       options.tagNamespace,
       options.tagKey,
       options.runId,
@@ -807,19 +811,13 @@ async function cleanupTaggedNodes(options) {
   let deleteInvocation;
   let deleteError;
   try {
-    deleteInvocation = await runJsonCommand({
+    deleteInvocation = await runScriptCommand({
       ...options,
       step: "cleanup deletion",
-      commandName: "eval",
       totalTimeoutMs: COMMAND_TOTAL_TIMEOUT_MS,
-      input: {
-        sessionId: options.sessionId,
-        surface: "design",
-        typescript: true,
-        code: liveCleanupCode(options.tagNamespace, options.tagKey, options.runId),
-      },
+      source: liveCleanupCode(options.tagNamespace, options.tagKey, options.runId),
     });
-    requireExecutionOutcome(deleteInvocation, "cleanup deletion figma:eval");
+    requireExecutionOutcome(deleteInvocation, "cleanup deletion figma:run");
   } catch (error) {
     deleteError = error;
   }
@@ -848,7 +846,7 @@ async function cleanupTaggedNodes(options) {
   }
   if (after.matches.length > 0) {
     throw new LiveSmokeCommandError(
-      "Cleanup left nodes with this exact live-smoke PluginData tag. Do not reuse the state file until they are reconciled.",
+      "Cleanup left nodes with this exact live-smoke PluginData tag. Reconcile them before another live smoke run.",
     );
   }
   return { before, deleteInvocation, after };
@@ -857,8 +855,8 @@ async function cleanupTaggedNodes(options) {
 function formatEvidence(evidence) {
   return [
     `Config: ${evidence.configPath}`,
-    `State file: ${evidence.stateFile}`,
-    `Workspace: ${evidence.workspaceDir}`,
+    `Design file: ${evidence.designFileUrl}`,
+    ...(evidence.outputDir ? [`Output directory: ${evidence.outputDir}`] : []),
     ...(evidence.captureFile ? [`Capture: ${evidence.captureFile}`] : []),
   ].join("\n");
 }
@@ -886,6 +884,23 @@ function asLiveSmokeError(error, evidence) {
   });
 }
 
+async function runPublicDoctor(options) {
+  const execution = await options.executor({
+    script: "figma:doctor",
+    args: [],
+    totalTimeoutMs: COMMAND_TOTAL_TIMEOUT_MS,
+    idleTimeoutMs: COMMAND_IDLE_TIMEOUT_MS,
+  });
+  if (!isRecord(execution) || execution.timedOut || execution.spawnError || execution.exitCode !== 0) {
+    throw new LiveSmokeCommandError(describeExecutionFailure("figma:doctor", execution ?? {}), {
+      command: "figma:doctor",
+      execution,
+      evidence: options.evidence,
+    });
+  }
+  return execution;
+}
+
 export async function runLiveSmokeTest(options = {}) {
   const loaded = options.config === undefined
     ? await loadLiveTestConfig({ pluginRoot: options.pluginRoot, readFile: options.readFile })
@@ -907,18 +922,18 @@ export async function runLiveSmokeTest(options = {}) {
   }
   const evidence = {
     configPath: loaded.configPath,
-    stateFile: config.stateFile,
-    workspaceDir: config.workspaceDir,
+    designFileUrl: config.designFileUrl,
+    outputDir: config.outputDir,
     captureFile: undefined,
   };
   const commandOptions = {
     executor,
     readFile: read,
     stat: options.stat ?? stat,
-    stateFile: config.stateFile,
+    designFileUrl: config.designFileUrl,
+    outputDir: config.outputDir,
     evidence,
   };
-  let sessionId = `live-smoke-${runId}`;
   let creationIssued = false;
   let workflowError;
   let summary;
@@ -926,11 +941,11 @@ export async function runLiveSmokeTest(options = {}) {
   try {
     oauthCachePath = await assertOAuthCacheFile({ env: options.env, stat: options.stat });
 
-    const doctor = await runDirectCommand({ ...commandOptions, step: "doctor", commandName: "doctor" });
-    requireSuccessfulResult("figma:doctor", doctor);
+    await runPublicDoctor(commandOptions);
 
     const upstreamContract = await runDirectCommand({
       ...commandOptions,
+      outputDir: undefined,
       step: "whoami upstream contract", commandName: "upstream:read", positionals: ["whoami"], options: ["--refresh"],
     });
     const upstreamContractResult = requireSuccessfulResult("figma:upstream:read whoami", upstreamContract);
@@ -938,61 +953,28 @@ export async function runLiveSmokeTest(options = {}) {
       throw new LiveSmokeCommandError("figma:upstream:read did not confirm the whoami contract.");
     }
 
-    const whoami = await runJsonCommand({
-      ...commandOptions,
-      step: "whoami", commandName: "upstream:call", input: { toolName: "whoami", arguments: {} },
-    });
-    const whoamiResult = requireSuccessfulResult("figma:upstream:call whoami", whoami);
-    requireUpstreamResult(whoamiResult, "figma:upstream:call whoami");
-    if (options.stopAfterWhoami === true) {
-      return {
-        configPath: loaded.configPath,
-        oauthCachePath,
-        stateFile: config.stateFile,
-        workspaceDir: config.workspaceDir,
-        preflight: "whoami",
-      };
-    }
-
-    const open = await runJsonCommand({
-      ...commandOptions,
-      step: "open Design fixture", commandName: "open", input: {
-        sessionId,
-        file: config.designFileUrl,
-        workspaceDir: config.workspaceDir,
-        surface: "design",
-        reset: true,
-        connect: true,
-      },
-    });
-    const openResult = requireSuccessfulResult("figma:open", open);
-    sessionId = requireSessionId(openResult, "figma:open");
-
     const metadata = await runDirectCommand({
       ...commandOptions,
       step: "read Design metadata",
       commandName: "metadata",
-      positionals: [config.designFileUrl],
-      options: ["--session-id", sessionId],
+      options: [
+        "--file", config.designFileUrl,
+        ...(config.outputDir === undefined ? [] : ["--output-dir", config.outputDir]),
+      ],
     });
     requireSuccessfulResult("figma:metadata", metadata);
 
     creationIssued = true;
-    const creation = await runJsonCommand({
+    const creation = await runScriptCommand({
       ...commandOptions,
-      step: "create tagged smoke nodes", commandName: "eval", input: {
-        sessionId,
-        surface: "design",
-        typescript: true,
-        code: liveCreationCode(LIVE_SMOKE_PLUGIN_DATA_NAMESPACE, LIVE_SMOKE_PLUGIN_DATA_KEY, runId),
-      },
+      step: "create tagged smoke nodes",
+      source: liveCreationCode(LIVE_SMOKE_PLUGIN_DATA_NAMESPACE, LIVE_SMOKE_PLUGIN_DATA_KEY, runId),
     });
-    const creationOutcome = requireExecutionOutcome(creation, "creation figma:eval");
+    const creationOutcome = requireExecutionOutcome(creation, "creation figma:run");
 
     const readback = await reconcileTaggedNodes({
       ...commandOptions,
       step: creationOutcome === "outcome_unknown" ? "creation unknown-outcome reconciliation" : "creation reconciliation",
-      sessionId,
       tagNamespace: LIVE_SMOKE_PLUGIN_DATA_NAMESPACE,
       tagKey: LIVE_SMOKE_PLUGIN_DATA_KEY,
       runId,
@@ -1007,7 +989,7 @@ export async function runLiveSmokeTest(options = {}) {
     if (creationOutcome === "succeeded") {
       requireCreationChangedNodeIds(
         creation,
-        "creation figma:eval",
+        "creation figma:run",
         frame,
         text,
         LIVE_SMOKE_PLUGIN_DATA_NAMESPACE,
@@ -1016,20 +998,24 @@ export async function runLiveSmokeTest(options = {}) {
       );
     }
 
-    const capture = await runJsonCommand({
+    const captureOutputArgs = config.outputDir === undefined ? [] : ["--output-dir", config.outputDir];
+    const captureImageFile = config.outputDir === undefined
+      ? undefined
+      : join(config.outputDir, captureFileName);
+    const capture = await runDirectCommand({
       ...commandOptions,
-      step: "capture reconciled frame", commandName: "capture", input: {
-        sessionId,
-        target: frame.id,
-        imageFile: captureFileName,
-        maxDimension: 1024,
-      },
+      step: "capture reconciled frame",
+      commandName: "capture",
+      options: [
+        "--file", config.designFileUrl,
+        "--node", frame.id,
+        "--max-dimension", "1024",
+        ...captureOutputArgs,
+        ...(captureImageFile === undefined ? [] : ["--image-file", captureImageFile]),
+      ],
     });
     const captureResult = requireSuccessfulResult("figma:capture", capture);
-    if (!isFullyQualifiedAbsolutePath(captureResult.imageFile)) {
-      throw new LiveSmokeCommandError("figma:capture did not return an absolute imageFile.");
-    }
-    evidence.captureFile = resolve(captureResult.imageFile);
+    evidence.captureFile = assertSafeArtifactPath(captureResult.imageFile, config.outputDir, "figma:capture imageFile");
     const image = await read(evidence.captureFile);
     const imageBytes = Buffer.isBuffer(image) ? image : Buffer.from(image);
     if (imageBytes.byteLength < PNG_SIGNATURE.byteLength || !imageBytes.subarray(0, PNG_SIGNATURE.byteLength).equals(PNG_SIGNATURE)) {
@@ -1038,9 +1024,8 @@ export async function runLiveSmokeTest(options = {}) {
     summary = {
       configPath: loaded.configPath,
       oauthCachePath,
-      stateFile: config.stateFile,
-      workspaceDir: config.workspaceDir,
-      sessionId,
+      designFileUrl: config.designFileUrl,
+      outputDir: config.outputDir,
       runId,
       creationOutcome,
       frameId: frame.id,
@@ -1058,7 +1043,6 @@ export async function runLiveSmokeTest(options = {}) {
     try {
       cleanup = await cleanupTaggedNodes({
         ...commandOptions,
-        sessionId,
         tagNamespace: LIVE_SMOKE_PLUGIN_DATA_NAMESPACE,
         tagKey: LIVE_SMOKE_PLUGIN_DATA_KEY,
         runId,
@@ -1091,8 +1075,8 @@ export async function main(argv = process.argv.slice(2)) {
     "Figma Workspace live smoke succeeded.",
     `Run ID: ${result.runId}`,
     `Capture: ${result.captureFile}`,
-    `State file: ${result.stateFile}`,
-    `Workspace: ${result.workspaceDir}`,
+    `Design file: ${result.designFileUrl}`,
+    ...(result.outputDir ? [`Output directory: ${result.outputDir}`] : []),
     "Cleanup: exact PluginData-tagged nodes reconciled and removed.",
     "",
   ].join("\n"));

@@ -2,7 +2,7 @@
 
 Use this reference when a Figma Workspace task adds, edits, removes, or inspects Motion animation on Figma design nodes.
 
-Write the Plugin API code in a `.figma.ts` file and run it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. Follow the main `figma-use` rules: use top-level `await`, use `return` for output, do not call `figma.closePlugin()`, do not use `figma.notify()`, and return every mutated node ID. Runtime gating (`metronome`) and the exposed API surface are summarised in [figma-use-motion/SKILL.md](canonical:figma-use-motion/SKILL.md) — bail closed on `"not a supported API"`.
+Write the Plugin API code in a `.figma.ts` file and run it with `figma:run`. Follow the main `figma-use` rules: use top-level `await`, use `return` for output, do not call `figma.closePlugin()`, do not use `figma.notify()`, and return every mutated node ID. Runtime gating (`metronome`) and the exposed API surface are summarised in [figma-use-motion/SKILL.md](canonical:figma-use-motion/SKILL.md) — bail closed on `"not a supported API"`.
 
 **`node.animations` reflects manual-keyframe tracks only at present.** Applying an animation style writes its metadata to `node.animationStyles` but the style-generated tracks are not materialized into `node.animations` yet. Validate style writes by reading back `node.animationStyles`, not `node.animations`.
 

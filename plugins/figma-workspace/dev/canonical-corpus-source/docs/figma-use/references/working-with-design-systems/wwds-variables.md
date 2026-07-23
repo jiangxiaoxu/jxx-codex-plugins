@@ -30,7 +30,7 @@ Scopes constrain where a variable appears and can be bound. Use precise fill, st
 
 ## Command selection
 
-The Figma Workspace CLI is the read surface for design-system investigation. Pass an absolute `--state-file` to every command and run the selected command's `--help` before first use.
+The Figma Workspace CLI is the read surface for design-system investigation. Pass the explicit file or node target required by every remote command and run the selected command's `--help` before first use.
 
 | Need | Command | Why |
 | --- | --- | --- |
@@ -43,14 +43,14 @@ The Figma Workspace CLI is the read surface for design-system investigation. Pas
 Example read sequence:
 
 ```text
-npm --silent run figma:variables -- --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:design-system -- "surface color" --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:api:search -- "VariableScope" --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:variables -- --file <figma-url-or-file-key> --node <node-id>
+npm --silent run figma:design-system -- "surface color" --file <figma-url-or-file-key>
+npm --silent run figma:api:search -- "VariableScope"
 ```
 
 ## Creation and binding boundary
 
-Reads identify the model; writes belong in a local `.figma.ts` script. Create a task workspace with `figma:task:prepare`, edit the generated script, and execute it through `figma:script:run` using JSON input that names the persisted session, script file, and surface. TypeScript preflight is always enabled. Keep scripts small, idempotent, and explicit about ids and names they create or bind.
+Reads identify the model; writes belong in a local `.figma.ts` script created by the shell. Execute it through `figma:run` with the explicit file target, surface, and script path. TypeScript preflight is always enabled. Keep scripts small, idempotent, and explicit about ids and names they create or bind.
 
 ```ts
 const semantic = figma.variables

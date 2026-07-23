@@ -7,7 +7,7 @@ Create a small, reviewed batch of semantic Figma variables that aliases existing
 - Create the target collection and its modes first, and create the primitive variables to be referenced.
 - Inspect local variables and replace every `TODO` placeholder with actual collection names, primitive names, CSS syntax, and approved token definitions.
 - Primitive targets must be local to the same Figma file and have the same resolved type as the semantic variable.
-- Save this file as `C:/work/project/.figma-workspace/create-semantic-tokens.figma.ts`.
+- Save this file as `C:/work/project/figma-scripts/create-semantic-tokens.figma.ts`.
 
 ## Safety boundary
 
@@ -87,13 +87,8 @@ return { collectionId: collection.id, created, count: created.length };
 
 After replacing every placeholder and reviewing aliases, scopes, and code syntax, save and run the local `.figma.ts` file. The example is not automatically executable.
 
-```powershell
-@'
-{
-  "scriptPath": "C:/work/project/.figma-workspace/create-semantic-tokens.figma.ts",
-  "surface": "design"
-}
-'@ | npm --silent run figma:script:run -- --input - --state-file C:/work/project/.figma-workspace/state.json
+```text
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 Validate the returned IDs and inspect the collection afterward. Confirm that every alias resolves, every semantic token has targeted scopes, and the Web syntax matches the actual codebase token name.

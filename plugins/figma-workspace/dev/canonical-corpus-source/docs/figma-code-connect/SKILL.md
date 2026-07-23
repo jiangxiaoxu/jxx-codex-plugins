@@ -2,13 +2,13 @@
 
 ## Active mirror execution contract
 
-Code Connect template files are mapping artifacts, not Figma Workspace Plugin API scripts. Never pass their template dialect to `figma:script:run` or `figma:eval`. Code Connect suggestions, context reads, registration, and writes are not covered by a typed command: inspect the live schema with `figma:upstream:list` or `figma:upstream:read`, then use `figma:upstream:call` with only the discovered tool name and input shape. Use a separate reviewed `.figma.ts` Plugin API script through `figma:script:run` only when the task independently needs canvas inspection or mutation.
+Code Connect template files are mapping artifacts, not Figma Workspace Plugin API scripts. Never pass their template dialect to `figma:run`. Code Connect suggestions, context reads, registration, and writes are not covered by a typed command: inspect the live schema with `figma:upstream:list` or `figma:upstream:read`, then use `figma:upstream:call` with only the discovered tool name and input shape. Use a separate reviewed `.figma.ts` Plugin API script through `figma:run` only when the task independently needs canvas inspection or mutation.
 
 ## Overview
 
 Create Code Connect template files (`.figma.ts`) that map Figma components to code snippets. Given a Figma URL, follow the steps below to create a template.
 
-> **Note:** This project may also contain parser-based `.figma.tsx` files using `figma.connect()`. The `.figma.ts` files described here use the Code Connect template dialect (`import figma from 'figma'` and `figma.selectedInstance`); their extension does not make them valid `figma:script:run` inputs.
+> **Note:** This project may also contain parser-based `.figma.tsx` files using `figma.connect()`. The `.figma.ts` files described here use the Code Connect template dialect (`import figma from 'figma'` and `figma.selectedInstance`); their extension does not make them valid `figma:run` inputs.
 
 ## Prerequisites
 
@@ -103,7 +103,7 @@ Place the file alongside existing Code Connect templates (`.figma.tsx` or `.figm
 
 Every template file follows this structure:
 
-The following TypeScript is consumed by Code Connect tooling. It is not an async Plugin API body and must not be executed with `figma:script:run`.
+The following TypeScript is consumed by Code Connect tooling. It is not an async Plugin API body and must not be executed with `figma:run`.
 
 ```ts
 // url=https://www.figma.com/file/{fileKey}/{fileName}?node-id={nodeId}

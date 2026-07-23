@@ -7,7 +7,7 @@ Create one Figma Design page with a consistent documentation layout: a title, an
 - Run this only in a Figma Design file. `figma.createPage()` is unavailable in FigJam and Slides.
 - Inspect existing pages first and replace every `TODO` placeholder with the approved page name and content.
 - The example uses Inter `Bold` and `Regular`. Confirm those exact font styles are available before editing text.
-- Save the script locally as `C:/work/project/.figma-workspace/create-documentation-page.figma.ts` (or another absolute path).
+- Save the script locally as `C:/work/project/figma-scripts/create-documentation-page.figma.ts` (or another caller-owned path).
 
 ## Safety boundary
 
@@ -120,13 +120,8 @@ return { pageId: page.id, rootId: root.id, titleId: title.id, sectionIds };
 
 After replacing the placeholders and reviewing the script, run it explicitly. It is not automatically executable merely because it appears in this document.
 
-```powershell
-@'
-{
-  "scriptPath": "C:/work/project/.figma-workspace/create-documentation-page.figma.ts",
-  "surface": "design"
-}
-'@ | npm --silent run figma:script:run -- --input - --state-file C:/work/project/.figma-workspace/state.json
+```text
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 Review the returned IDs, then use `figma:metadata` and `figma:capture` to validate the new page before extending it.

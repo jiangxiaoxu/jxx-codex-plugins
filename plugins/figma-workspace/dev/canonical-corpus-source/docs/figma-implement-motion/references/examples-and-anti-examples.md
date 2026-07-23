@@ -1,6 +1,6 @@
 # Motion Implementation Examples
 
-Each example joins `figma:design-context` structure with `figma:motion-context` animation data by `data-node-id`. Run both commands with the same absolute `--state-file` and file session.
+Each example joins `figma:design-context` structure with `figma:motion-context` animation data by `data-node-id`. Run both commands with the same explicit file and node target in their individual invocations.
 
 ## One element
 

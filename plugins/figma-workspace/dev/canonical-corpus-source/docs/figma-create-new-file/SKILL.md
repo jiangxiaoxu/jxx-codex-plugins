@@ -1,6 +1,6 @@
 # Create a New Figma File
 
-Use the live upstream schema to create a new blank Figma file in the user's drafts folder. This is typically used before creating a `.figma.ts` script for `figma:script:run`.
+Use the live upstream schema to create a new blank Figma file in the user's drafts folder. This is typically used before creating a `.figma.ts` script for `figma:run`.
 
 ## Inputs
 
@@ -53,13 +53,13 @@ The tool returns:
 - `file_key` — the key of the newly created file
 - `file_url` — a direct URL to open the file in Figma
 
-Use the returned `file_key` when opening a workspace session and running a `.figma.ts` script with `figma:script:run`.
+Use the returned `file_key` as the explicit `--file` value when running a `.figma.ts` script with `figma:run`.
 
 ## Important Notes
 
 - The file is created in the user's **drafts folder** for the selected plan.
 - Supported editor types are `"design"`, `"figjam"`, and `"slides"`.
-- If a mutation is the next step, prepare a `.figma.ts` script and run it with `figma:script:run`.
+- If a mutation is the next step, prepare a `.figma.ts` script and run it with `figma:run`.
 
 ## Editor-specific notes
 

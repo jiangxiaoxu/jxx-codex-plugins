@@ -1,19 +1,21 @@
 # Figma Workspace Overview
 
-Use this reference to choose a command family. Public command help and typed result schemas are authoritative.
+Use this reference to choose a public command family. Generated help and typed result schemas are authoritative.
 
 ## Select A Workflow
 
-- Run `figma:help` to discover the complete public command catalog. Use `figma:guidance` first for non-trivial, generated, or ambiguous Design, FigJam, or Slides work; obvious read-only tasks can go directly to their first-class command.
-- Guidance and docs search support concise English keywords only. If guidance is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected surface and task family, then read exact returned IDs with `figma:docs:read`.
-- Use `figma:open` to establish existing-file context. Use `figma:task:prepare` and `figma:script:run` for repairable `.figma.ts` work; reserve `figma:eval` for a small native Plugin API transaction.
-- Use `figma:metadata` for broad discovery, then `figma:inspect` for targeted validation. Use `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries` for their named first-class reads.
+- Run `figma:help` to discover the fixed public leaf-command catalog. Each remote action is independent and must receive its target in the same invocation.
+- For non-trivial, generated, or ambiguous Design, FigJam, or Slides work, use `figma:docs:catalog`, narrow with `figma:docs:search`, and read exact IDs with `figma:docs:read`. Use `figma:api:search` for exact Plugin API symbols.
+- Use `figma:doctor` only to diagnose packaged docs, corpus, TypeScript, or Plugin API index faults. It is local-only and does not take a Figma target.
+- Use `figma:metadata` for broad discovery and `figma:inspect` for targeted validation. Use `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries` for their named first-class reads.
+- Use `figma:run` for every native Plugin API script, whether it is a small inspection or a repairable mutation. The shell owns local `.figma.ts` creation.
 - Use `figma:assets:apply` for prepared local assets, `figma:assets:download` for official downloads, and `figma:capture` or queued `$.capture` for visual QA.
-- Use `figma:sessions:list` and `figma:sessions:read` to resume state. Use `figma:doctor` only for installed runtime assets, project docs, corpus, or Plugin API index faults.
 - Use `figma:upstream:list` and `figma:upstream:read` before `figma:upstream:call` only when no first-class command covers an official capability.
 
 ## Shared Rules
 
-- Reuse one fully qualified absolute `--state-file` for a task. Read typed stdout as Restricted Markdown and follow any `outputFiles.cliResultFile` sidecar pointer.
-- Run `--help` for the chosen public `figma:*` command instead of inferring JSON fields, options, limits, or transport behavior.
-- Read [guidance and lookup](figma-workspace-guidance-and-lookup.md) for document navigation, [workflow](figma-workspace-workflow.md) for execution, and [safety](figma-workspace-safety.md) for non-bypassable boundaries.
+- File-scoped commands take `--file <Figma-file-URL|fileKey>`. Node-scoped commands take a full node URL through `--target`, or `--file` plus `--node <nodeId>`; bare node IDs are rejected.
+- A URL determines the surface. A raw fileKey needs `--surface` whenever the command requires one.
+- Run `--help` for the chosen public leaf command instead of inferring fields, options, limits, or transport behavior.
+- Read typed stdout as Restricted Markdown and follow any `outputFiles.cliResultFile` sidecar pointer.
+- Read [guidance and lookup](figma-workspace-guidance-and-lookup.md) for static route selection, [workflow](figma-workspace-workflow.md) for execution, and [safety](figma-workspace-safety.md) for non-bypassable boundaries.

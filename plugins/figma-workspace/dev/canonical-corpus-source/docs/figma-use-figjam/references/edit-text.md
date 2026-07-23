@@ -6,19 +6,15 @@
 
 脚本应把目标 id、预期旧值和新值写成明确常量，先验证类型和当前内容再写入。执行 JSON 形状如下：
 
-```json
-{
-  "sessionId": "<session-id>",
-  "inputFile": "C:/work/project/.figma-workspace/board/revise-copy.figma.ts",
-  "surface": "figjam"
-}
+```text
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/revise-copy.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
-已知 id 上的单个短文本修正可作为 `figma:eval` 小事务例外；涉及 font loading、范围样式、多个节点或 find/replace 时，使用 `.figma.ts`。
+已知 id 上的单个短文本修正可作为 `figma:run` 小事务例外；涉及 font loading、范围样式、多个节点或 find/replace 时，使用 `.figma.ts`。
 
 ## Plugin API 步骤
 

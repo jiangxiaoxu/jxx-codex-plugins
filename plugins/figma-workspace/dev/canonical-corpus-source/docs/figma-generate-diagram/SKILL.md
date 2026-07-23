@@ -2,7 +2,7 @@
 
 ## Active mirror execution contract
 
-Diagram generation has no typed CLI command. Before every diagram operation, use `figma:upstream:list` or `figma:upstream:read` to confirm the live upstream schema, then invoke the discovered capability with `figma:upstream:call`. Do not assume a tool name, parameter name, or return shape from this mirror. For follow-up canvas work, write a local `.figma.ts` script and execute it with `figma:script:run`; use `figma:eval` only for a small transaction. Use `figma:metadata`, `figma:design-context`, or `figma:capture` where their typed operation fits the required read or visual check.
+Diagram generation has no typed CLI command. Before every diagram operation, use `figma:upstream:list` or `figma:upstream:read` to confirm the live upstream schema, then invoke the discovered capability with `figma:upstream:call`. Do not assume a tool name, parameter name, or return shape from this mirror. For follow-up canvas work, write a local `.figma.ts` script and execute it with `figma:run` using the explicit FigJam target. Use `figma:metadata`, `figma:design-context`, or `figma:capture` where their typed operation fits the required read or visual check.
 
 The upstream capability accepts Mermaid syntax and produces an editable FigJam diagram. This guide routes you to the right per-type guidance and sets universal constraints.
 
@@ -50,7 +50,7 @@ If a flowchart is requested and it describes software infrastructure (services, 
 5. **Node IDs**: camelCase (`userService`), no spaces. Underscores can break edge routing in some processors.
 6. **Special characters in labels** must be wrapped in quotes: `A["Process (main)"]`, `-->|"O(1) lookup"|`.
 7. **Sequence diagrams** — Mermaid `Note over X` / `Note left of X` / `Note right of X` are silently stripped by the renderer; don't put them in the source. If the user wants annotations on a sequence diagram, generate the base diagram first and add stickies/text via the hybrid workflow ([references/workflow.md](canonical:figma-generate-diagram/references/workflow.md)).
-8. **Gantt charts** — `classDef`, `class`, and any other styling are stripped by preprocessing; the rendered chart will not have colors. If the user wants color-coded phases, milestones, or tasks, generate the base chart first and add color/annotations via the hybrid workflow ([references/workflow.md](canonical:figma-generate-diagram/references/workflow.md)) — or, for diagrams that fundamentally need styling, build the timeline directly with a local `.figma.ts` script executed with `figma:script:run` instead (see [references/gantt.md](canonical:figma-generate-diagram/references/gantt.md) §11).
+8. **Gantt charts** — `classDef`, `class`, and any other styling are stripped by preprocessing; the rendered chart will not have colors. If the user wants color-coded phases, milestones, or tasks, generate the base chart first and add color/annotations via the hybrid workflow ([references/workflow.md](canonical:figma-generate-diagram/references/workflow.md)) — or, for diagrams that fundamentally need styling, build the timeline directly with a local `.figma.ts` script executed with `figma:run` instead (see [references/gantt.md](canonical:figma-generate-diagram/references/gantt.md) §11).
 9. **Use FigJam-only APIs in any local `.figma.ts` script extension.** The upstream diagram capability output lands in a FigJam file (`figma.com/board/...`), so hybrid extensions must stick to FigJam-supported APIs. Do NOT call `figma.createPage()` — it's Design-only (`figma.com/design/...`) and throws `TypeError: figma.createPage no such property 'createPage' on the figma global object` in FigJam. Organize content with FigJam sections instead; consult the [FigJam API mirror](canonical:figma-use-figjam/SKILL.md) for the exact operation.
 
 ## Step 4: Garbage in, garbage out
@@ -69,7 +69,7 @@ Don't invent edges, labels, or entities to "round out" a diagram. Missing inform
 
 ## Step 5: Will the diagram need more than Mermaid can express?
 
-Mermaid can't do everything. Sticky-note annotations tied to specific nodes, per-node domain coloring on ERDs, callouts with attached data — these all require composing the upstream diagram capability with a local `.figma.ts` script executed with `figma:script:run`. This is the **hybrid workflow**; consult the linked [FigJam API mirror](canonical:figma-use-figjam/SKILL.md) only for needed Plugin API details.
+Mermaid can't do everything. Sticky-note annotations tied to specific nodes, per-node domain coloring on ERDs, callouts with attached data — these all require composing the upstream diagram capability with a local `.figma.ts` script executed with `figma:run`. This is the **hybrid workflow**; consult the linked [FigJam API mirror](canonical:figma-use-figjam/SKILL.md) only for needed Plugin API details.
 
 It's a judgment call, not a default. Deploy it when the user's ask clearly benefits — skip it when the base diagram is obviously enough. Signals that say yes: user explicitly asked for notes, colors, callouts, or "X attached to each node"; they shared data that maps to specific nodes; the diagram is a shareable artifact, not a thinking sketch. Signals that say no: short/self-explanatory request, small diagram, user exploring or testing.
 
@@ -91,7 +91,7 @@ Do **not** call `schema-confirmed upstream file creation` before the upstream di
 ## Step 7: After generation
 
 - The tool returns a link (or widget) the user can click to open the diagram in FigJam. Show it as a markdown link unless the client renders an inline widget.
-- If extensions are warranted (see Step 5), compose with a local `.figma.ts` script executed with `figma:script:run` now — the pattern and recipes are in [references/workflow.md](canonical:figma-generate-diagram/references/workflow.md).
+- If extensions are warranted (see Step 5), compose with a local `.figma.ts` script executed with `figma:run` now — the pattern and recipes are in [references/workflow.md](canonical:figma-generate-diagram/references/workflow.md).
 - If the user is dissatisfied after 2 attempts at the same diagram, stop regenerating. Ask what specifically is wrong, or suggest they open it in Figma and edit manually rather than burning more tool calls.
 
 ### Reuse the same file when iterating or adding related diagrams
@@ -104,6 +104,6 @@ Every call to the upstream diagram capability without a `fileKey` creates a new 
 How to reuse:
 
 1. **Pass `fileKey`** on subsequent the upstream diagram capability calls. Extract from a `figma.com/board/{fileKey}/...` URL. The diagram is added to the existing file rather than creating a new one.
-2. If you want to replace the previous diagram rather than adding next to it, use a local `.figma.ts` script with `figma:script:run` to delete the old diagram's nodes first, then call the upstream diagram capability with the same `fileKey`. Or leave the old diagram and place the new one beside it — readers often benefit from seeing the history of attempts.
+2. If you want to replace the previous diagram rather than adding next to it, use a local `.figma.ts` script with `figma:run` to delete the old diagram's nodes first, then call the upstream diagram capability with the same `fileKey`. Or leave the old diagram and place the new one beside it — readers often benefit from seeing the history of attempts.
 
-Ask the user which they prefer the first time you iterate — "regenerate over the old one, or keep both side-by-side?" — and remember their answer for subsequent iterations in the session.
+Ask the user which they prefer the first time you iterate — "regenerate over the old one, or keep both side-by-side?" — and retain their answer for later iterations in the task.

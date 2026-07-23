@@ -1,12 +1,12 @@
 # Motion implementation failure boundaries
 
-Treat motion data as a visual contract, not as a reason to add generic browser animation. Before adapting an animated file, query its first-class motion data and keep the returned context with the task's persistent state file.
+Treat motion data as a visual contract, not as a reason to add generic browser animation. Before adapting an animated file, query its first-class motion data and retain the returned context in the caller's own task notes or artifact directory.
 
 ```text
-npm --silent run figma:motion-context -- --session-id <session-id> --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:motion-context -- --file <figma-file-url-or-key> --node <node-id>
 ```
 
-Use the returned timing, values, easing, and origin data when available. A local `.figma.ts` script is for inspecting or changing Figma nodes; `figma:script:run` should not invent an exported web-motion representation that the motion context does not support. Capture the relevant node after a Figma-side edit and inspect the image locally with `view_image`.
+Use the returned timing, values, easing, and origin data when available. A local `.figma.ts` script is for inspecting or changing Figma nodes; `figma:run` should not invent an exported web-motion representation that the motion context does not support. Capture the relevant node after a Figma-side edit and inspect the image locally with `view_image`.
 
 ## Preserve these semantics
 
@@ -34,4 +34,4 @@ Animating a group behind a mask is supported when the mask is only following the
 
 Apply `will-change` only to currently animating target elements. It allocates compositing resources and is not a blanket quality fix.
 
-For node changes, run the small `.figma.ts` transaction through `figma:script:run`, return changed ids and validation notes, then use `figma:capture` and `view_image`. A capture verifies a still frame only; it cannot prove timeline interpolation or looping behavior. Test the full motion in the target runtime before claiming fidelity. If motion context is missing or conflicts with visual evidence, stop at the documented data, report the ambiguity, and do not fabricate timing or easing.
+For node changes, run the small `.figma.ts` transaction through `figma:run`, return changed ids and validation notes, then use `figma:capture` and `view_image`. A capture verifies a still frame only; it cannot prove timeline interpolation or looping behavior. Test the full motion in the target runtime before claiming fidelity. If motion context is missing or conflicts with visual evidence, stop at the documented data, report the ambiguity, and do not fabricate timing or easing.

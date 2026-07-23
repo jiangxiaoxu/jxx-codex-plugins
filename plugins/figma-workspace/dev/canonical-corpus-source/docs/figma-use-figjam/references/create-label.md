@@ -4,7 +4,7 @@ Use a label for a one- or two-character step marker such as `1`, `A`, or `10`. I
 
 ## Prepare and run a local script
 
-Place the operation in the task's `.figma.ts` file and execute it with `figma:script:run`, using the persisted FigJam session and an absolute state file. TypeScript preflight is always enabled. Return every created ID. Reserve `figma:eval` for a small, isolated transaction only.
+Place the operation in a local `.figma.ts` file and execute it with `figma:run`, using an explicit FigJam file target, `--surface figjam`, and the script path. TypeScript preflight is always enabled. Return every created ID.
 
 ```ts
 // callout-label.figma.ts
@@ -34,7 +34,7 @@ label.name = `Callout ${labelText}`
 return { runId, createdNodeIds: [label.id], label: { id: label.id, text: label.text.characters, size } }
 ```
 
-Execute `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`, where the JSON supplies `sessionId`, `inputFile`, and `surface: "figjam"`.
+Execute `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>` after saving the reviewed script.
 
 ## Plugin API rules
 

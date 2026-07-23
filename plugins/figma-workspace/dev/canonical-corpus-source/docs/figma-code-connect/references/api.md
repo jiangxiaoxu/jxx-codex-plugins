@@ -6,7 +6,7 @@ Code Connect reads and writes are uncovered upstream capabilities. Treat operati
 
 Code Connect uses template files (`.figma.js`) to connect your code components to Figma designs. This API reference covers the complete template system for creating these mappings.
 
-These files are Code Connect mapping artifacts, not Figma Workspace Plugin API scripts. Never pass a `.figma.js` template to `figma:script:run`; canvas inspection or mutation still belongs in a reviewed `.figma.ts` file executed through `figma:script:run`.
+These files are Code Connect mapping artifacts, not Figma Workspace Plugin API scripts. Never pass a `.figma.js` template to `figma:run`; canvas inspection or mutation still belongs in a reviewed `.figma.ts` file executed through `figma:run`.
 
 ## Quick Start
 

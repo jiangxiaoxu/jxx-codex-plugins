@@ -6,19 +6,15 @@
 
 先通过 `figma:metadata` 和 `figma:inspect` 获得 anchor node 与 parent/section 的准确 id、尺寸和现有内容。把间距、局部坐标和最小 section 边界写在本地 `.figma.ts`：
 
-```json
-{
-  "sessionId": "<session-id>",
-  "inputFile": "C:/work/project/.figma-workspace/board/place-summary.figma.ts",
-  "surface": "figjam"
-}
+```text
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/place-summary.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
-已知 node 的单次 `x`/`y` 调整可作为 `figma:eval` 小事务例外；涉及 parent 变更、多个节点或 section 尺寸计算时必须以脚本运行并返回最终 bounds。
+已知 node 的单次 `x`/`y` 调整可作为 `figma:run` 小事务例外；涉及 parent 变更、多个节点或 section 尺寸计算时必须以脚本运行并返回最终 bounds。
 
 ## Plugin API 步骤
 

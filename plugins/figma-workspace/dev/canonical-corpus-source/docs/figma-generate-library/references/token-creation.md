@@ -2,7 +2,7 @@
 
 # Token Creation Reference
 
-This document covers Phase 1: creating variable collections, modes, primitives, semantic aliases, scopes, code syntax, styles, and validation. All JavaScript is non-executable Plugin API example code; adapt it into a local `.figma.ts` script and run it with `figma:script:run`.
+This document covers Phase 1: creating variable collections, modes, primitives, semantic aliases, scopes, code syntax, styles, and validation. All JavaScript is non-executable Plugin API example code; adapt it into a local `.figma.ts` script and run it with `figma:run`.
 
 ---
 

@@ -2,10 +2,11 @@
 
 This private Node package builds the checked-in CLI/runtime artifacts used by the Figma Workspace plugin. It keeps the official Figma remote MCP behind the CLI transport, does not register a local MCP server, and exposes no supported typed import facade.
 
-The public agent contract belongs to the [plugin README](../README.md) and generated command help. From the plugin root, use:
+The public 0.5.0 agent contract is a stateless set of fixed `figma:*` leaf commands. Every remote invocation carries an explicit Figma URL or file/node target; shell orchestration owns local `.figma.ts` script creation. The [plugin README](../README.md) and generated command help own the public contract. From the plugin root, use:
 
 ```text
-npm --silent run figma -- <command> --help
+npm --silent run figma:help
+npm --silent run figma:run -- --help
 ```
 
 ## Build And Test

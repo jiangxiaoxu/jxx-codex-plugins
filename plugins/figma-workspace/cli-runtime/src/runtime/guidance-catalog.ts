@@ -136,7 +136,7 @@ export const FIGMA_WORKSPACE_HELPER_PROFILES: FigmaWorkspaceHelperProfile[] = [
     avoidWhen: ["Changing TextNode.characters manually before loading fonts.", "Guessing unavailable font family/style pairs."],
     allowedPatterns: ["await $.text({ parent: frame, text: \"Settings\", font })", "await $.text({ target: textNode, text: \"Updated\" })"],
     forbiddenPatterns: ["Calling $.text with both target and parent."],
-    publicCommandIds: ["figma:api:search", "figma:script:run"],
+    publicCommandIds: ["figma:api:search", "figma:run"],
     apiReferences: [
       { displayExpression: "figma.createText()", lookupQuery: "PluginAPI.createText", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
       { displayExpression: "figma.loadFontAsync()", lookupQuery: "PluginAPI.loadFontAsync", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -228,7 +228,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["create", "frame", "rectangle", "ui", "layout"],
     surface: "design",
     helpers: [],
-    publicCommandIds: ["figma:script:run", "figma:api:search"],
+    publicCommandIds: ["figma:run", "figma:api:search"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.createFrame()", lookupQuery: "PluginAPI.createFrame", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -246,7 +246,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["text", "font", "copy", "label", "typography"],
     surface: "design",
     helpers: ["$.text"],
-    publicCommandIds: ["figma:api:search", "figma:script:run"],
+    publicCommandIds: ["figma:api:search", "figma:run"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.createText()", lookupQuery: "PluginAPI.createText", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -264,7 +264,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["layout", "spacing", "padding", "stack", "responsive"],
     surface: "design",
     helpers: [],
-    publicCommandIds: ["figma:api:search", "figma:script:run"],
+    publicCommandIds: ["figma:api:search", "figma:run"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "frame.layoutMode", lookupQuery: "AutoLayoutMixin.layoutMode", ownerHint: "AutoLayoutMixin", symbolKind: "plugin-api" },
@@ -282,7 +282,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["variable", "variables", "bind", "binding", "token", "color", "theme", "mode"],
     surface: "design",
     helpers: [],
-    publicCommandIds: ["figma:api:search", "figma:script:run", "figma:variables"],
+    publicCommandIds: ["figma:api:search", "figma:run", "figma:variables"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.variables.createVariableCollection()", lookupQuery: "VariablesAPI.createVariableCollection", ownerHint: "VariablesAPI", symbolKind: "plugin-api" },
@@ -301,7 +301,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["style", "styles", "paint", "typography", "library", "apply style"],
     surface: "design",
     helpers: [],
-    publicCommandIds: ["figma:api:search", "figma:script:run"],
+    publicCommandIds: ["figma:api:search", "figma:run"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.createTextStyle()", lookupQuery: "PluginAPI.createTextStyle", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -320,7 +320,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["component", "components", "variant", "variants", "component set", "design system"],
     surface: "design",
     helpers: [],
-    publicCommandIds: ["figma:api:search", "figma:script:run", "figma:design-system"],
+    publicCommandIds: ["figma:api:search", "figma:run", "figma:design-system"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.createComponent()", lookupQuery: "PluginAPI.createComponent", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -338,7 +338,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["implement", "implementation", "handoff", "figma to code", "production code", "design context"],
     surface: "design",
     helpers: [],
-    publicCommandIds: ["figma:design-context", "figma:capture", "figma:guidance", "figma:docs:search"],
+    publicCommandIds: ["figma:design-context", "figma:capture", "figma:docs:search"],
     upstreamTools: ["get_design_context", "get_screenshot"],
     apiReferences: [],
     queryHints: ["get design context before implementation", "capture node screenshot before coding", "reuse project tokens and components"],
@@ -364,7 +364,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["instance", "instances", "property", "properties", "component property", "set properties", "variant property"],
     surface: "design",
     helpers: [],
-    publicCommandIds: ["figma:api:search", "figma:script:run"],
+    publicCommandIds: ["figma:api:search", "figma:run"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "instance.componentProperties", lookupQuery: "InstanceNode.componentProperties", ownerHint: "InstanceNode", symbolKind: "plugin-api" },
@@ -398,7 +398,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["image", "images", "fill", "asset", "assets", "png", "jpeg", "upload", "generated"],
     surface: "design",
     helpers: [],
-    publicCommandIds: ["figma:assets:apply", "figma:script:run", "figma:api:search"],
+    publicCommandIds: ["figma:assets:apply", "figma:run", "figma:api:search"],
     upstreamTools: ["upload_assets"],
     apiReferences: [
       { displayExpression: "figma.createImage()", lookupQuery: "PluginAPI.createImage", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -417,7 +417,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["capture", "screenshot", "qa", "visual", "review", "inspect image"],
     surface: "any",
     helpers: ["$.capture"],
-    publicCommandIds: ["figma:capture", "figma:script:run"],
+    publicCommandIds: ["figma:capture", "figma:run"],
     upstreamTools: ["get_screenshot"],
     apiReferences: [],
     queryHints: ["capture node screenshot", "write screenshot to imageFile", "visual QA warnings"],
@@ -445,7 +445,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["figjam", "board", "sticky", "connector", "shape with text", "brainstorm"],
     surface: "figjam",
     helpers: [],
-    publicCommandIds: ["figma:open", "figma:api:search"],
+    publicCommandIds: ["figma:metadata", "figma:api:search"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.createSticky()", lookupQuery: "PluginAPI.createSticky", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -464,7 +464,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["slides", "slide", "deck", "presentation", "speaker notes", "slide row"],
     surface: "slides",
     helpers: [],
-    publicCommandIds: ["figma:open", "figma:api:search", "figma:capture"],
+    publicCommandIds: ["figma:metadata", "figma:api:search", "figma:capture"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.createSlide()", lookupQuery: "PluginAPI.createSlide", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -484,7 +484,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["page", "surface", "current page", "navigation"],
     surface: "any",
     helpers: [],
-    publicCommandIds: ["figma:open", "figma:api:search"],
+    publicCommandIds: ["figma:metadata", "figma:api:search"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.setCurrentPageAsync()", lookupQuery: "PluginAPI.setCurrentPageAsync", ownerHint: "PluginAPI", symbolKind: "plugin-api" },

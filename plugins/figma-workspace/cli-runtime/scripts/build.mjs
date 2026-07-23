@@ -172,7 +172,7 @@ async function stageProjectDocs() {
     "figma-workspace-guidance-and-lookup.md",
     "figma-workspace-safety.md",
     "figma-workspace-diagnostics.md",
-    "figma-workspace-sessions.md",
+    "figma-workspace-artifacts.md",
     "figma-workspace-upstream-tools.md",
   ];
   await mkdir(target, { recursive: true });

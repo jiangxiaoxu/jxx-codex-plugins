@@ -6,7 +6,7 @@ Create one local Figma variable collection, rename its required default mode, an
 
 - Inspect local collections first. Replace each `TODO` placeholder with the approved collection name and ordered mode names.
 - A collection always begins with one mode. This example renames that mode instead of adding a duplicate first mode.
-- Save the script locally as `C:/work/project/.figma-workspace/create-variable-collection.figma.ts`.
+- Save the script locally as `C:/work/project/figma-scripts/create-variable-collection.figma.ts`.
 
 ## Safety boundary
 
@@ -50,13 +50,8 @@ return {
 
 Replace placeholders, review the result, save it as the `.figma.ts` file above, then execute it explicitly. Documentation code does not run by itself.
 
-```powershell
-@'
-{
-  "scriptPath": "C:/work/project/.figma-workspace/create-variable-collection.figma.ts",
-  "surface": "design"
-}
-'@ | npm --silent run figma:script:run -- --input - --state-file C:/work/project/.figma-workspace/state.json
+```text
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 Record the returned `collectionId` and `modeIds`, then inspect variables before creating primitives or semantics.

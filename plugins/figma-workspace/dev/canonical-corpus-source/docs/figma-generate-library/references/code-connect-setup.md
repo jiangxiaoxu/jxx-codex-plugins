@@ -2,7 +2,7 @@
 
 # Code Connect Setup Reference
 
-This reference covers Code Connect and variable code syntax. Code Connect writes are not first-class CLI capabilities: use `figma:upstream:list` or `figma:upstream:read` to inspect the live official schema, then use `figma:upstream:call` only for the uncovered operation. Write variable syntax in a local `.figma.ts` script and run it with `figma:script:run`.
+This reference covers Code Connect and variable code syntax. Code Connect writes are not first-class CLI capabilities: use `figma:upstream:list` or `figma:upstream:read` to inspect the live official schema, then use `figma:upstream:call` only for the uncovered operation. Write variable syntax in a local `.figma.ts` script and run it with `figma:run`.
 
 All JavaScript blocks and files in this reference are non-executable Plugin API examples. Do not run them directly.
 

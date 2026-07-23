@@ -1,5 +1,9 @@
 #!/usr/bin/env node
+// @ts-check
 
-import { runFigmaCommand } from "../../cli-runtime/dist/cli/figma-command-runtime.js";
+import { runFigmaCommandEntrypoint } from "./command-entrypoint.mjs";
 
-process.exitCode = await runFigmaCommand("assets:download", process.argv.slice(2));
+await runFigmaCommandEntrypoint({
+  commandName: "figma:assets:download",
+  fixedArgs: ["assets:download"],
+});

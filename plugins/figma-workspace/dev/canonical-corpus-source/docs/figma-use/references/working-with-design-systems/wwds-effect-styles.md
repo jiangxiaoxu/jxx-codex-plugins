@@ -7,11 +7,11 @@ Effect style 是可命名复用的阴影、内阴影和模糊定义, 常对应 e
 先检查库和设计系统中是否已有 elevation 或 surface style, 再读取目标节点和它的变量。这样可以区分“应应用现有 style”和“确实缺少 style”两种任务。
 
 ```text
-npm --silent run figma:libraries -- --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:design-system -- "elevation shadow" --styles --variables --library <library-key> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:metadata -- <target> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:variables -- <target> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:api:search -- setBoundVariableForEffect --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:libraries -- --file <file-url-or-key>
+npm --silent run figma:design-system -- "elevation shadow" --styles --variables --library <library-key> --file <file-url-or-key>
+npm --silent run figma:metadata -- --file <file-url-or-key> --node <target>
+npm --silent run figma:variables -- --file <file-url-or-key> --node <target>
+npm --silent run figma:api:search -- setBoundVariableForEffect
 ```
 
 使用 `figma:design-system` 搜索样式和变量, `figma:libraries` 确认来源, `figma:metadata` 定位目标, `figma:variables` 核对现存 token/mode。仅当需要确认 effect API 的字段、可绑定性或返回类型时才使用 `figma:api:search`。
@@ -49,10 +49,10 @@ target.effectStyleId = style.id;
 return { styleId: style.id, targetId: target.id, effects: style.effects };
 ```
 
-将脚本和运行输入保存到同一任务目录, 再由严格模式执行。执行前先查看 `figma:script:run -- --help`; fatal preflight diagnostics 表示没有写入。
+将脚本和运行输入保存到同一任务目录, 再由严格模式执行。执行前先查看 `figma:run -- --help`; fatal preflight diagnostics 表示没有写入。
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/elevation/run.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 ## 检查清单和失败边界

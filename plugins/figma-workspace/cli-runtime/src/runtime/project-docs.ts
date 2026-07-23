@@ -64,11 +64,11 @@ const PROJECT_DOC_DEFINITIONS = [
     id: "project:diagnostics",
   },
   {
-    topic: "sessions",
-    title: "Sessions",
-    description: "Open, persist, select, and recover CLI workspace sessions.",
-    fileName: "figma-workspace-sessions.md",
-    id: "project:sessions",
+    topic: "artifacts",
+    title: "Local artifacts",
+    description: "Manage invocation-local output, sidecars, and same-machine mutation coordination.",
+    fileName: "figma-workspace-artifacts.md",
+    id: "project:artifacts",
   },
   {
     topic: "upstream-tools",

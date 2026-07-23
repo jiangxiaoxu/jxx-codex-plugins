@@ -4,7 +4,7 @@ Use a FigJam section to make a named board area: a workshop phase, a flowchart b
 
 ## Local `.figma.ts` workflow
 
-Prepare a task workspace, make the change in its local `.figma.ts` file, and execute it with `figma:script:run`. The run JSON supplies the persisted `sessionId`, `inputFile`, and `surface: "figjam"`; the command always receives an absolute `--state-file`, and TypeScript preflight is always enabled. A tiny, one-off API transaction may use `figma:eval`, but a section and its content normally belong in the repairable script.
+Create a local `.figma.ts` file, make the change, and execute it with `figma:run` using an explicit FigJam file target, `--surface figjam`, and the script path. TypeScript preflight is always enabled. Keep a section and its content in the same reviewed script when that makes the edit easier to validate.
 
 ```ts
 // discovery-section.figma.ts
@@ -39,7 +39,7 @@ return {
 }
 ```
 
-Run `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>` after saving the file.
+Run `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>` after saving the file.
 
 ## Plugin API rules
 

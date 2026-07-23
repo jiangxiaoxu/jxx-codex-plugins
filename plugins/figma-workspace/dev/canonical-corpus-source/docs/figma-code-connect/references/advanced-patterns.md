@@ -2,7 +2,7 @@
 
 Code Connect reads and writes are uncovered upstream capabilities. Before applying any operation named in this reference, inspect its live schema with `figma:upstream:list` and `figma:upstream:read`, then invoke it only through `figma:upstream:call` with schema-confirmed arguments.
 
-Every JavaScript block below uses the Code Connect mapping-template dialect. Treat it as material for a Code Connect artifact, never as a Figma Workspace Plugin API script; do not pass these blocks to `figma:script:run` or `figma:eval`. Use a separate `.figma.ts` script only for independent canvas work.
+Every JavaScript block below uses the Code Connect mapping-template dialect. Treat it as material for a Code Connect artifact, never as a Figma Workspace Plugin API script; do not pass these blocks to `figma:run`. Use a separate `.figma.ts` script only for independent canvas work.
 
 ## Contents
 - [Basic component property retrieval](#basic-component-property-retrieval)
