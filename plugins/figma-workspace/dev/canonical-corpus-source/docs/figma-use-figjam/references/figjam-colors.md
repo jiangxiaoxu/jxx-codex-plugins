@@ -4,21 +4,17 @@
 
 ## `.figma.ts` 前置与执行
 
-颜色变更应作为目标节点的脚本步骤，与节点创建或已验证的 id 放在一起。执行本地脚本时使用相同的 `sessionId` 与绝对 state 文件：
+颜色变更应作为目标节点的脚本步骤，与节点创建或已验证的 id 放在一起。执行本地脚本时显式传入 FigJam file target、`--surface figjam` 与脚本路径：
 
-```json
-{
-  "sessionId": "<session-id>",
-  "inputFile": "C:/work/project/.figma-workspace/board/apply-colors.figma.ts",
-  "surface": "figjam"
-}
+```text
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/apply-colors.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
-对一个已确认节点的一次 `fills` 修正可使用 `figma:eval` 小事务；协调多个节点、填充与文本色时使用脚本并返回实际更新的 id。
+对一个已确认节点的一次 `fills` 修正可使用 `figma:run` 小事务；协调多个节点、填充与文本色时使用脚本并返回实际更新的 id。
 
 ## 关键 API 规则
 

@@ -74,20 +74,16 @@ return {
 
 ## Run and review
 
-Run `npm --silent run figma:script:run -- --help` first. Then write a JSON input file with the persisted session and script file name, for example:
-
-```json
-{
-  "sessionId": "YOUR_SESSION_ID",
-  "inputFile": "bind-variables-to-component.figma.ts",
-  "surface": "design"
-}
-```
-
-Execute it with an explicit absolute state file:
+Run `npm --silent run figma:run -- --help` first. Save the reviewed local `.figma.ts` file, then run it with its explicit Design file target:
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/bind-variables.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
+```
+
+Execute it with the explicit Design file target:
+
+```text
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 This is not automatically executable: replace all placeholders, review the resolved component and variables, then inspect the returned IDs and bindings before continuing. For a component set, apply the script to each intended variant ID; do not assume a binding on the set changes every child.

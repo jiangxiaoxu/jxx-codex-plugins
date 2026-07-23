@@ -203,9 +203,9 @@ erDiagram
 
 ## 7. What's NOT supported
 
-- **Styling** — `classDef`, `class Foo styleName`, `:::styleName` inline, and `style EntityId fill:#hex,stroke:#hex`. Silently dropped (no color applied). Unlike state diagrams, styling statements don't create phantom entities — they just have no effect. Color-code entities via a local `.figma.ts` script executed with `figma:script:run` post-generation instead (§9).
+- **Styling** — `classDef`, `class Foo styleName`, `:::styleName` inline, and `style EntityId fill:#hex,stroke:#hex`. Silently dropped (no color applied). Unlike state diagrams, styling statements don't create phantom entities — they just have no effect. Color-code entities via a local `.figma.ts` script executed with `figma:run` post-generation instead (§9).
 - **Inheritance / subtype relationships** — Mermaid has no native syntax; model the parent-child relationship as a normal 1:1 and annotate in the label.
-- **Notes** — no `note` construct in ERDs. Add callouts via a local `.figma.ts` script executed with `figma:script:run`.
+- **Notes** — no `note` construct in ERDs. Add callouts via a local `.figma.ts` script executed with `figma:run`.
 - **Aliases in relationship lines** — see §3 gotcha. Declare entities with aliases first, then reference by ID.
 
 ## 8. Layout (same ELK as flowcharts)
@@ -218,18 +218,18 @@ ER diagrams render via the **same ELK layered layout** as flowcharts. The princi
 
 ## 9. Hybrid workflow
 
-the upstream diagram capability produces a clean, laid-out ER schema — tables with attributes, cardinality caps, connected relationships. Most of what our renderer doesn't support (color-coded entities, notes, phase/domain highlighting, annotations on specific columns) can be added on top with a local `.figma.ts` script executed with `figma:script:run`.
+the upstream diagram capability produces a clean, laid-out ER schema — tables with attributes, cardinality caps, connected relationships. Most of what our renderer doesn't support (color-coded entities, notes, phase/domain highlighting, annotations on specific columns) can be added on top with a local `.figma.ts` script executed with `figma:run`.
 
 **Default workflow when the schema needs more than bare tables + relationships:**
 
 1. **Scaffold with the upstream diagram capability** — entities (with or without attributes), relationships, cardinalities, labels. Skip the features that get dropped (styling).
-2. **Extend with a local `.figma.ts` script executed with `figma:script:run`** — open the same file (via `fileKey`) and add:
+2. **Extend with a local `.figma.ts` script executed with `figma:run`** — open the same file (via `fileKey`) and add:
    - Sticky notes or text blocks for **annotations** on specific entities, columns, or relationships
    - Background rectangles behind **domain groupings** (auth entities vs. billing entities vs. content entities)
    - **Color-coding** entities by category (core / lookup / junction / audit) using replacement shapes or rectangles layered behind the tables
    - **Sequence numbers** or badges for migration order, deprecation status, etc.
 
-Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
+Use a local `.figma.ts` script with `figma:run`; read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
 
 ### Signals the request needs the hybrid workflow
 
@@ -239,7 +239,7 @@ Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin 
 
 ### When to skip the upstream diagram capability entirely
 
-Only if the baseline layout isn't useful — e.g. the user wants a **radial schema diagram**, a **Visio-style database map**, or a **heavily-stylized slide visual**. In those cases, go straight to a local `.figma.ts` script executed with `figma:script:run`.
+Only if the baseline layout isn't useful — e.g. the user wants a **radial schema diagram**, a **Visio-style database map**, or a **heavily-stylized slide visual**. In those cases, go straight to a local `.figma.ts` script executed with `figma:run`.
 
 ### Be pragmatic, not performative
 

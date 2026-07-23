@@ -1,6 +1,6 @@
 # Figma Plugin API Motion
 
-Use the bundled Figma Workspace CLI for motion work. Write native Figma Plugin API code in a local `.figma.ts` file and run it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. [figma-use](canonical:figma-use/SKILL.md) covers the foundational Plugin API rules.
+Use the bundled Figma Workspace CLI for motion work. Write native Figma Plugin API code in a local `.figma.ts` file and run it with `figma:run`. [figma-use](canonical:figma-use/SKILL.md) covers the foundational Plugin API rules.
 
 ## Runtime Gating
 

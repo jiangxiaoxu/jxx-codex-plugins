@@ -143,10 +143,10 @@ test("auto docs search hard-filters family and surface and emits compact unique 
 
 test("Markdown search ranks labels and prose without indexing link destinations", async () => {
   const safetyPath = resolve(referenceRoot, "figma-workspace-safety.md");
-  const sessionsPath = resolve(referenceRoot, "figma-workspace-sessions.md");
-  const [originalSafety, originalSessions] = await Promise.all([
+  const artifactsPath = resolve(referenceRoot, "figma-workspace-artifacts.md");
+  const [originalSafety, originalArtifacts] = await Promise.all([
     readFile(safetyPath, "utf8"),
-    readFile(sessionsPath, "utf8"),
+    readFile(artifactsPath, "utf8"),
   ]);
   const safetyFixture = (destination) => [
     "# Safety fixture",
@@ -167,11 +167,11 @@ test("Markdown search ranks labels and prose without indexing link destinations"
   try {
     await Promise.all([
       writeFile(safetyPath, safetyFixture("canonical:neutral-destination"), "utf8"),
-      writeFile(sessionsPath, "# Sessions fixture\nrankingneedle rankingneedle\n", "utf8"),
+      writeFile(artifactsPath, "# Local artifacts fixture\nrankingneedle rankingneedle\n", "utf8"),
     ]);
     const baseline = await docs.searchReferenceFiles({
       query: "rankingneedle",
-      files: ["figma-workspace-safety.md", "figma-workspace-sessions.md"],
+      files: ["figma-workspace-safety.md", "figma-workspace-artifacts.md"],
       maxResults: 10,
       maxSnippetLines: 3,
     });
@@ -183,7 +183,7 @@ test("Markdown search ranks labels and prose without indexing link destinations"
     );
     const pollutedDestination = await docs.searchReferenceFiles({
       query: "rankingneedle",
-      files: ["figma-workspace-safety.md", "figma-workspace-sessions.md"],
+      files: ["figma-workspace-safety.md", "figma-workspace-artifacts.md"],
       maxResults: 10,
       maxSnippetLines: 3,
     });
@@ -191,7 +191,7 @@ test("Markdown search ranks labels and prose without indexing link destinations"
       pollutedDestination.results.map((result) => result.docId),
       baseline.results.map((result) => result.docId),
     );
-    assert.deepEqual(baseline.results.map((result) => result.docId), ["project:sessions", "project:safety"]);
+    assert.deepEqual(baseline.results.map((result) => result.docId), ["project:artifacts", "project:safety"]);
 
     for (const query of [
       "destinationonlyneedle",
@@ -229,11 +229,11 @@ test("Markdown search ranks labels and prose without indexing link destinations"
 
     await Promise.all([
       writeFile(safetyPath, "# Safety fixture\ngenericboostalpha\n", "utf8"),
-      writeFile(sessionsPath, "# Sessions fixture\ngenericboostbeta\n", "utf8"),
+      writeFile(artifactsPath, "# Local artifacts fixture\ngenericboostbeta\n", "utf8"),
     ]);
     const genericDocsWithoutPreferredFamily = await docs.searchReferenceFiles({
       query: "genericboostalpha genericboostbeta",
-      files: ["figma-workspace-safety.md", "figma-workspace-sessions.md"],
+      files: ["figma-workspace-safety.md", "figma-workspace-artifacts.md"],
       maxResults: 10,
       maxSnippetLines: 3,
     });
@@ -242,7 +242,7 @@ test("Markdown search ranks labels and prose without indexing link destinations"
   } finally {
     await Promise.all([
       writeFile(safetyPath, originalSafety, "utf8"),
-      writeFile(sessionsPath, originalSessions, "utf8"),
+      writeFile(artifactsPath, originalArtifacts, "utf8"),
     ]);
   }
 

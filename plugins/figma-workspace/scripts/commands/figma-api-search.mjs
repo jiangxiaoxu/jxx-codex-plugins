@@ -1,5 +1,9 @@
 #!/usr/bin/env node
+// @ts-check
 
-import { runFigmaCommand } from "../../cli-runtime/dist/cli/figma-command-runtime.js";
+import { runFigmaCommandEntrypoint } from "./command-entrypoint.mjs";
 
-process.exitCode = await runFigmaCommand("api:search", process.argv.slice(2));
+await runFigmaCommandEntrypoint({
+  commandName: "figma:api:search",
+  fixedArgs: ["api:search"],
+});

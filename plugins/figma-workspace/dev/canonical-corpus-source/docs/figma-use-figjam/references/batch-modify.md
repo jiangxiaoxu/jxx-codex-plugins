@@ -4,23 +4,19 @@
 
 ## 先准备脚本
 
-先用 `figma:metadata` 了解文件结构, 并用 `figma:inspect` 确认目标 section、table 或节点的 raw node ID. 为任务准备一个本地 `.figma.ts` 文件. 执行命令需要同一个绝对 `--state-file`, 脚本输入同时指定已持久化的 `sessionId`、脚本路径和 surface; TypeScript 预检始终启用:
+先用 `figma:metadata` 了解文件结构, 并用 `figma:inspect` 确认目标 section、table 或节点的 raw node ID. 在调用者选择的本地目录创建 `.figma.ts` 文件. 每次执行显式传入 FigJam file target、`--surface figjam` 和脚本路径; TypeScript 预检始终启用:
 
-```json
-{
-  "sessionId": "<session-id>",
-  "inputFile": "C:/work/project/.figma-workspace/board/normalize-labels.figma.ts",
-  "surface": "figjam"
-}
+```text
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
 运行前先查看该命令的 help，然后执行：
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/run.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
-`figma:eval` 只适合一个小而自足的事务，例如已知单个节点的一个属性修正；范围搜索、字体加载或多节点更新都放在 `.figma.ts`。
+`figma:run` 只适合一个小而自足的事务，例如已知单个节点的一个属性修正；范围搜索、字体加载或多节点更新都放在 `.figma.ts`。
 
 ## Plugin API 步骤
 

@@ -6,7 +6,7 @@ Check that specific nodes from a completed creation step still exist and meet ex
 
 ## Prerequisites and inputs
 
-- An opened Design file and a persisted workspace session.
+- An explicit Design file URL or fileKey.
 - The node IDs must come from a previous command result or inspected state ledger; never guess them.
 - Replace the sample values in `checks` with the expected nodes and properties for the reviewed creation step.
 
@@ -16,20 +16,10 @@ The script is read-only. It does not repair missing nodes, rename incorrect node
 
 ## Save and run
 
-Save this body as `<absolute-task-directory>/validate-creation.figma.ts`. Create `<absolute-task-directory>/run-validate-creation.json`:
-
-```json
-{
-  "sessionId": "<persisted-session-id>",
-  "scriptPath": "<absolute-task-directory>/validate-creation.figma.ts",
-  "surface": "design"
-}
-```
-
-Replace the placeholders, review every expected value, then run:
+Save this body as `<path/to/validate-creation.figma.ts>`, then execute it with the explicit file target:
 
 ```text
-npm --silent run figma:script:run -- --input <absolute-task-directory>/run-validate-creation.json --state-file <absolute-task-directory>/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 This example is not automatically executable. Do not continue to the next creation step until failed checks are understood and the file has been reviewed.

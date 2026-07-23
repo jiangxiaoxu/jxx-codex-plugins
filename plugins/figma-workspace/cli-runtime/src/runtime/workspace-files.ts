@@ -1,6 +1,6 @@
-import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
-import type { FigmaWorkspaceRunScriptFileArguments } from "../contract/tool-args.js";
+import { lstat, realpath } from "node:fs/promises";
+import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
+import type { FigmaWorkspaceRunArguments } from "../contract/tool-args.js";
 import {
   atomicWriteManagedBinaryFile,
   atomicWriteManagedTextFile,
@@ -9,35 +9,11 @@ import {
   removeManagedFile,
 } from "./managed-files.js";
 
-export const TASK_WORKSPACE_ROOT_ENV = "FIGMA_WORKSPACE_TASK_ROOT";
-
 type CaptureImageMimeType = "image/png";
 
-function readProcessEnv(name: string): string | undefined {
-  return typeof process === "undefined" ? undefined : process.env?.[name];
-}
-
-function defaultTaskWorkspaceRoot(): string {
-  return readProcessEnv(TASK_WORKSPACE_ROOT_ENV) ?? resolve(tmpdir(), "figma-workspace", "tasks");
-}
-
-export interface FigmaWorkspaceSessionWorkspace {
+export interface FigmaWorkspaceInvocationWorkspace {
   root: string;
-  fileDir: string;
-  fileContext: string;
-  fileKey?: string;
-  fileSlug: string;
-  intentSlug: string;
-  /**
-   * Compatibility alias for the file-context directory.
-   */
-  sessionDir: string;
-  scriptPath: string;
-  resultFile: string;
-  files: {
-    script: string;
-    result: string;
-  };
+  outputDir: string;
 }
 
 export interface ScriptOutputFilePaths {
@@ -56,9 +32,10 @@ export interface ScriptOutputFileMetadata {
   compiledScriptFile?: FilePointerMetadata;
 }
 
-export interface FigmaWorkspaceWorkspaceFileSession {
-  workspace?: FigmaWorkspaceSessionWorkspace;
-  fileKey?: string;
+export interface FigmaWorkspaceInvocationFileContext {
+  cwd: string;
+  outputRoot: string;
+  workspace?: FigmaWorkspaceInvocationWorkspace;
 }
 
 interface ParsedCaptureResult {
@@ -66,9 +43,9 @@ interface ParsedCaptureResult {
   json?: unknown;
 }
 
-export function createScriptOutputWriter(
-  args: FigmaWorkspaceRunScriptFileArguments,
-  session: FigmaWorkspaceWorkspaceFileSession | undefined,
+export function createRunOutputWriter(
+  args: FigmaWorkspaceRunArguments,
+  invocation: FigmaWorkspaceInvocationFileContext | undefined,
 ): {
   files: ScriptOutputFilePaths;
   cleanupCompiledScriptFile(): Promise<void>;
@@ -78,13 +55,13 @@ export function createScriptOutputWriter(
     writeResult?: boolean;
   }): Promise<ScriptOutputFileMetadata>;
 } {
-  const files = resolveScriptOutputFiles(args, session);
+  const files = resolveRunOutputFiles(invocation);
   return {
     files,
     async cleanupCompiledScriptFile() {
       if (files.compiledScriptFile) {
         await removeManagedFile({
-          root: session?.workspace?.root ?? dirname(files.compiledScriptFile),
+          root: invocation?.workspace?.root ?? dirname(files.compiledScriptFile),
           path: files.compiledScriptFile,
           allowMissing: true,
         });
@@ -98,7 +75,7 @@ export function createScriptOutputWriter(
       if (payload.compiledScript && files.compiledScriptFile) {
         written.compiledScriptFile = await writeTextFile(
           files.compiledScriptFile,
-          formatCompiledScriptFailureFile(payload.compiledScript, args, session),
+          formatCompiledScriptFailureFile(payload.compiledScript, args),
         );
       }
       return written;
@@ -107,26 +84,17 @@ export function createScriptOutputWriter(
 }
 
 export function resolveScriptInputPath(
-  args: FigmaWorkspaceRunScriptFileArguments,
-  session: FigmaWorkspaceWorkspaceFileSession,
+  args: FigmaWorkspaceRunArguments,
 ): string {
   const scriptPath = asOptionalString(args.scriptPath);
-  if (scriptPath) {
-    if (!isAbsolute(scriptPath)) {
-      throw new Error('Input "scriptPath" must be an absolute path. Use inputFile after figma:task:prepare for workspace-relative files.');
-    }
-    assertFigmaTypescriptScriptPath(scriptPath, "scriptPath");
-    return scriptPath;
+  if (!scriptPath) {
+    throw new Error('Tool argument "scriptPath" is required when figma:run does not receive stdin source.');
   }
-  const inputFile = asOptionalString(args.inputFile);
-  if (!inputFile) {
-    throw new Error('Tool argument "scriptPath" or "inputFile" is required.');
+  if (!isAbsolute(scriptPath)) {
+    throw new Error('Tool argument "scriptPath" must be an absolute path. figma:run resolves --script from the caller cwd before dispatch.');
   }
-  if (!session.workspace) {
-    throw new Error("inputFile requires an initialized file-context workspace. Run figma:task:prepare first.");
-  }
-  assertFigmaTypescriptScriptPath(inputFile, "inputFile");
-  return resolveWorkspaceFile(session.workspace.sessionDir, inputFile, "inputFile");
+  assertFigmaTypescriptScriptPath(scriptPath, "scriptPath");
+  return scriptPath;
 }
 
 function assertFigmaTypescriptScriptPath(path: string, argumentName: string): void {
@@ -135,21 +103,9 @@ function assertFigmaTypescriptScriptPath(path: string, argumentName: string): vo
   }
 }
 
-export function resolveRequiredWorkspaceAwareFile(
+export function resolveInvocationAwareFile(
   value: unknown,
-  session: FigmaWorkspaceWorkspaceFileSession,
-  argumentName: string,
-): string {
-  const resolved = resolveWorkspaceAwareFile(value, session, argumentName);
-  if (!resolved) {
-    throw new Error(`Tool argument "${argumentName}" is required.`);
-  }
-  return resolved;
-}
-
-export function resolveWorkspaceAwareFile(
-  value: unknown,
-  session: FigmaWorkspaceWorkspaceFileSession,
+  invocation: FigmaWorkspaceInvocationFileContext,
   argumentName: string,
 ): string | undefined {
   const raw = asOptionalString(value);
@@ -157,23 +113,26 @@ export function resolveWorkspaceAwareFile(
     return undefined;
   }
   if (isAbsolute(raw)) {
-    return raw;
+    return resolve(raw);
   }
-  if (!session.workspace) {
-    throw new Error(
-      `Tool argument "${argumentName}" must be an absolute path unless the session has an initialized file-context workspace.`,
-    );
-  }
-  return resolveWorkspaceFile(session.workspace.sessionDir, raw, argumentName);
+  return resolve(invocation.cwd, raw);
 }
 
-export async function assertWorkspaceManagedInputFile(
+export async function assertInvocationManagedInputFile(
   path: string,
-  session: FigmaWorkspaceWorkspaceFileSession,
+  invocation: FigmaWorkspaceInvocationFileContext,
 ): Promise<string> {
   const resolvedPath = resolve(path);
-  const workspaceRoot = session.workspace?.root;
+  const workspaceRoot = invocation.workspace?.root;
   if (!workspaceRoot || !isPathInside(resolve(workspaceRoot), resolvedPath)) {
+    const metadata = await lstat(resolvedPath);
+    if (metadata.isSymbolicLink()) {
+      throw new Error(`Managed input file must not be a symlink or reparse target: ${resolvedPath}`);
+    }
+    const canonicalPath = await realpath(resolvedPath);
+    if (resolve(canonicalPath) !== resolvedPath) {
+      throw new Error(`Managed input file must not traverse a symlink, junction, or reparse target: ${resolvedPath}`);
+    }
     return resolvedPath;
   }
   return assertManagedFilePath({ root: workspaceRoot, path: resolvedPath });
@@ -308,84 +267,26 @@ function withFileExtension(path: string, extension: ".png" | ".txt"): string {
   return `${path.slice(0, -currentExtension.length)}${extension}`;
 }
 
-export function effectiveInlineResultLimit(
-  value: unknown,
-  files: ScriptOutputFilePaths,
-  defaultInlineResultLimit: number,
-): unknown {
-  if (value !== undefined && value !== null) {
-    return value;
-  }
-  return files.resultFile ? defaultInlineResultLimit : undefined;
-}
-
 export async function writeJsonFile(path: string, value: unknown): Promise<FilePointerMetadata> {
   const content = `${JSON.stringify(removeUndefined(value), null, 2)}\n`;
   await atomicWriteManagedTextFile({ root: dirname(path), path, overwrite: true }, content);
   return textFileMetadata(path, content);
 }
 
-export function createSessionWorkspace(options: {
-  workspaceDir: string;
-  fileKey?: string;
-  fileSlug: string;
-  intentSlug: string;
-}): FigmaWorkspaceSessionWorkspace {
-  if (!isAbsolute(options.workspaceDir)) {
-    throw new Error('Tool argument "workspaceDir" must be an absolute path.');
+export function createInvocationWorkspace(options: {
+  outputDir: string;
+}): FigmaWorkspaceInvocationWorkspace {
+  if (!isAbsolute(options.outputDir)) {
+    throw new Error('Tool argument "outputDir" must be an absolute path.');
   }
-  const root = resolve(options.workspaceDir);
-  const fileContext = normalizeFileContextDirectory(options.fileKey, options.fileSlug);
-  const fileDir = resolve(root, fileContext);
-  if (!isPathInside(root, fileDir)) {
-    throw new Error("Resolved file workspace must stay inside the workspace root.");
-  }
-  const script = `${options.intentSlug}.figma.ts`;
-  const result = `${options.intentSlug}.result.json`;
-  return {
-    root,
-    fileDir,
-    fileContext,
-    fileKey: options.fileKey,
-    fileSlug: options.fileSlug,
-    intentSlug: options.intentSlug,
-    sessionDir: fileDir,
-    scriptPath: resolve(fileDir, script),
-    resultFile: resolve(fileDir, result),
-    files: {
-      script,
-      result,
-    },
-  };
+  const outputDir = resolve(options.outputDir);
+  return { root: outputDir, outputDir };
 }
 
-export async function ensureWorkspaceDirectories(workspace: FigmaWorkspaceSessionWorkspace): Promise<void> {
-  await ensureManagedDirectory({ root: workspace.root, directory: workspace.sessionDir });
-}
-
-export function resolvePreparedTaskWorkspace(options: {
-  args: { workspaceDir?: unknown };
-  taskName: string;
-  fileSlug: string;
-  session?: FigmaWorkspaceWorkspaceFileSession;
-}): FigmaWorkspaceSessionWorkspace {
-  if (options.session?.workspace && !options.args.workspaceDir) {
-    return createWorkspaceFromFileDir({
-      root: options.session.workspace.root,
-      fileDir: resolve(options.session.workspace.root, normalizeFileContextDirectory(options.session.fileKey, options.fileSlug)),
-      fileKey: options.session.fileKey,
-      fileSlug: options.fileSlug,
-      intentSlug: options.taskName,
-    });
-  }
-  const explicitWorkspaceDir = asOptionalString(options.args.workspaceDir);
-  if (!explicitWorkspaceDir) {
-    throw new Error('Tool argument "workspaceDir" is required. Pass a Git-ignored project-local .figma-workspace directory or an explicitly selected Figma task-artifact directory.');
-  }
-  if (!isAbsolute(explicitWorkspaceDir)) {
-    throw new Error('Tool argument "workspaceDir" must be an absolute path.');
-  }
-  return createWorkspaceFromSessionDir(explicitWorkspaceDir, options.taskName);
+export async function ensureInvocationWorkspaceDirectory(
+  workspace: FigmaWorkspaceInvocationWorkspace,
+): Promise<void> {
+  await ensureManagedDirectory({ root: workspace.root, directory: workspace.outputDir });
 }
 
 export function resolveWorkspaceFile(baseDir: string, fileName: string, argumentName: string): string {
@@ -394,41 +295,20 @@ export function resolveWorkspaceFile(baseDir: string, fileName: string, argument
   }
   const resolved = resolve(baseDir, fileName);
   if (!isPathInside(baseDir, resolved)) {
-    throw new Error(`Tool argument "${argumentName}" must stay inside the file-context workspace.`);
+    throw new Error(`Tool argument "${argumentName}" must stay inside the invocation output directory.`);
   }
   return resolved;
 }
 
-export function normalizeTaskScriptName(value: unknown, taskName: string): string {
-  const scriptName = asOptionalString(value) ?? `${taskName}.figma.ts`;
-  if (isAbsolute(scriptName) || scriptName.includes("/") || scriptName.includes("\\")) {
-    throw new Error('Tool argument "fileName" must be a file name, not a path.');
-  }
-  assertFigmaTypescriptScriptPath(scriptName, "fileName");
-  return scriptName;
-}
-
-export function resultFileNameForScript(scriptName: string): string {
-  if (scriptName.endsWith(".figma.ts")) {
-    return `${scriptName.slice(0, -".figma.ts".length)}.result.json`;
-  }
-  return `${slugifyTaskName(scriptName)}.result.json`;
-}
-
-export async function writeTaskFile(path: string, content: string, overwrite: boolean): Promise<FilePointerMetadata> {
-  await atomicWriteManagedTextFile({ root: dirname(path), path, overwrite }, content);
-  return textFileMetadata(path, content);
-}
-
-function resolveScriptOutputFiles(
-  args: FigmaWorkspaceRunScriptFileArguments,
-  session?: FigmaWorkspaceWorkspaceFileSession,
+function resolveRunOutputFiles(
+  invocation?: FigmaWorkspaceInvocationFileContext,
 ): ScriptOutputFilePaths {
-  if (session?.workspace) {
-    const sessionDir = session.workspace.sessionDir;
-    const inputFile = asOptionalString(args.inputFile);
-    const defaultResult = inputFile ? resultFileNameForScript(inputFile) : session.workspace.files.result;
-    const resultFile = resolveWorkspaceOutputFile(undefined, sessionDir, defaultResult, "debugFile");
+  if (invocation?.workspace) {
+    const resultFile = resolveWorkspaceFile(
+      invocation.workspace.outputDir,
+      "figma-run.result.json",
+      "debugFile",
+    );
     return {
       resultFile,
       compiledScriptFile: compiledFilePathForResultFile(resultFile),
@@ -447,16 +327,6 @@ function compiledFilePathForResultFile(resultFile: string): string {
   return `${resultFile}.failure.compiled.txt`;
 }
 
-function resolveWorkspaceOutputFile(
-  value: unknown,
-  baseDir: string,
-  fallbackName: string,
-  argumentName: string,
-): string {
-  const raw = asOptionalString(value) ?? fallbackName;
-  return isAbsolute(raw) ? raw : resolveWorkspaceFile(baseDir, raw, argumentName);
-}
-
 async function writeTextFile(path: string, content: string): Promise<FilePointerMetadata> {
   await atomicWriteManagedTextFile({ root: dirname(path), path, overwrite: true }, content);
   return textFileMetadata(path, content);
@@ -464,29 +334,23 @@ async function writeTextFile(path: string, content: string): Promise<FilePointer
 
 function formatCompiledScriptFailureFile(
   compiledScript: string,
-  args: FigmaWorkspaceRunScriptFileArguments,
-  session: FigmaWorkspaceWorkspaceFileSession | undefined,
+  args: FigmaWorkspaceRunArguments,
 ): string {
-  const source = compiledScriptSourceDescription(args, session);
+  const source = compiledScriptSourceDescription(args);
   return [
-    "// Generated by figma:script:run after upstream execution failure.",
+    "// Generated by figma:run after upstream execution failure.",
     `// Source: ${source}`,
     "// This is the compiled payload sent to upstream Figma MCP for stack trace debugging.",
-    "// It is deleted at the start of the next figma:script:run command with the same output context.",
+    "// It is deleted at the start of the next figma:run command with the same output directory.",
     "",
     compiledScript,
   ].join("\n");
 }
 
 function compiledScriptSourceDescription(
-  args: FigmaWorkspaceRunScriptFileArguments,
-  session: FigmaWorkspaceWorkspaceFileSession | undefined,
+  args: FigmaWorkspaceRunArguments,
 ): string {
-  const inputFile = asOptionalString(args.inputFile);
-  if (inputFile) {
-    return session?.workspace ? `${session.workspace.fileContext}/${inputFile}` : inputFile;
-  }
-  return asOptionalString(args.scriptPath) ?? "unknown";
+  return asOptionalString(args.scriptPath) ?? "stdin";
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
@@ -515,54 +379,6 @@ function countTextLines(content: string): number {
   }
   const newlineCount = content.match(/\n/gu)?.length ?? 0;
   return content.endsWith("\n") ? newlineCount : newlineCount + 1;
-}
-
-function createWorkspaceFromSessionDir(sessionDir: string, taskName: string): FigmaWorkspaceSessionWorkspace {
-  return createWorkspaceFromFileDir({
-    root: dirname(sessionDir),
-    fileDir: sessionDir,
-    fileSlug: slugifyTaskName(basename(sessionDir)),
-    intentSlug: taskName,
-  });
-}
-
-function createWorkspaceFromFileDir(options: {
-  root: string;
-  fileDir: string;
-  fileKey?: string;
-  fileSlug: string;
-  intentSlug: string;
-}): FigmaWorkspaceSessionWorkspace {
-  const script = `${options.intentSlug}.figma.ts`;
-  const result = `${options.intentSlug}.result.json`;
-  if (!isPathInside(options.root, options.fileDir)) {
-    throw new Error("Resolved file workspace must stay inside the workspace root.");
-  }
-  return {
-    root: options.root,
-    fileDir: options.fileDir,
-    fileContext: normalizeFileContextDirectory(options.fileKey, options.fileSlug),
-    fileKey: options.fileKey,
-    fileSlug: options.fileSlug,
-    intentSlug: options.intentSlug,
-    sessionDir: options.fileDir,
-    scriptPath: resolve(options.fileDir, script),
-    resultFile: resolve(options.fileDir, result),
-    files: {
-      script,
-      result,
-    },
-  };
-}
-
-function normalizeFileContextDirectory(fileKey: string | undefined, fileSlug: string): string {
-  if (fileKey) {
-    if (isAbsolute(fileKey) || fileKey.includes("/") || fileKey.includes("\\") || fileKey.includes("..")) {
-      throw new Error('Derived Figma file key must be a simple file key.');
-    }
-    return fileKey;
-  }
-  return fileSlug;
 }
 
 function extractCaptureImageUrl(
@@ -682,17 +498,6 @@ function parseJsonLenient(text: string): unknown {
     }
     return undefined;
   }
-}
-
-function slugifyTaskName(value: unknown): string {
-  const source = typeof value === "string" ? value : "figma-task";
-  const slug = source
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 80);
-  return slug || "figma-task";
 }
 
 function isPathInside(root: string, path: string): boolean {

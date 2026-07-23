@@ -6,30 +6,20 @@ Create a read-only inventory before planning library work. The result lists page
 
 ## Prerequisites and inputs
 
-- An opened Design file and a persisted workspace session.
-- An absolute path for the local script and an absolute `--state-file` path.
+- An explicit Design file URL or fileKey.
+- A local `.figma.ts` path chosen by the caller.
 - Replace every `<...>` placeholder below and review the script against the target file before running it.
 
 ## Safety boundary
 
-This script only reads Figma objects. It does not create, rename, remove, reparent, or select nodes, and it does not change `figma.currentPage`. Its result can contain file structure and naming data; keep state files and result sidecars in an approved local task directory.
+This script only reads Figma objects. It does not create, rename, remove, reparent, or select nodes, and it does not change `figma.currentPage`. Its result can contain file structure and naming data; keep caller-owned artifacts in an approved local directory when retention is needed.
 
 ## Save and run
 
-Save the following body as `<absolute-task-directory>/inspect-file-structure.figma.ts`. Then create an input JSON file such as `<absolute-task-directory>/run-inspect-file-structure.json`:
-
-```json
-{
-  "sessionId": "<persisted-session-id>",
-  "scriptPath": "<absolute-task-directory>/inspect-file-structure.figma.ts",
-  "surface": "design"
-}
-```
-
-Run it explicitly after reviewing the replacements:
+Save the following body as `<path/to/inspect-file-structure.figma.ts>`, then execute that file directly:
 
 ```text
-npm --silent run figma:script:run -- --input <absolute-task-directory>/run-inspect-file-structure.json --state-file <absolute-task-directory>/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 The CLI does not execute this document or pasted code automatically. Review the returned inventory before using it to decide what may be created or updated.

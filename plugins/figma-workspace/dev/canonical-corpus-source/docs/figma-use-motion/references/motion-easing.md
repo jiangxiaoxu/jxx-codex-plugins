@@ -1,6 +1,6 @@
 # Motion Easing
 
-Use this reference when setting `easing` on a `manualKeyframeTracks` keyframe or on an `animationStyles[].props.easing` value in `.figma.ts` scripts run with `figma:script:run`.
+Use this reference when setting `easing` on a `manualKeyframeTracks` keyframe or on an `animationStyles[].props.easing` value in `.figma.ts` scripts run with `figma:run`.
 
 The motion easing object is the same shape used by smart-animate transitions, with `'HOLD'` added for motion-only step interpolation. The full set of accepted `type` values is listed below.
 

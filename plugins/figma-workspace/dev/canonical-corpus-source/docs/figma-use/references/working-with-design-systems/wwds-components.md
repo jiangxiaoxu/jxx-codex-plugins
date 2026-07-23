@@ -4,7 +4,7 @@
 
 ## 读操作的选择
 
-先选定一个绝对 state 文件并复用它。命令标准输出是 Restricted Markdown; 结果指向 sidecar 时读取该 JSON 文件, 不要把标准输出当 JSON。
+每次命令都显式传入 Figma file 或 node target。命令标准输出是 Restricted Markdown; 结果指向 sidecar 时读取该 JSON 文件, 不要把标准输出当 JSON。
 
 | 需要回答的问题 | 使用的命令 |
 | --- | --- |
@@ -14,11 +14,11 @@
 | 某个 Plugin API 成员的准确名称或类型是什么? | `figma:api:search` |
 
 ```text
-npm --silent run figma:metadata -- <target> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:libraries -- --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:design-system -- "input field" --components --library <library-key> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:variables -- <target> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:api:search -- componentPropertyReferences --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:metadata -- --file <file-url-or-key> --node <target>
+npm --silent run figma:libraries -- --file <file-url-or-key>
+npm --silent run figma:design-system -- "input field" --components --library <library-key> --file <file-url-or-key>
+npm --silent run figma:variables -- --file <file-url-or-key> --node <target>
+npm --silent run figma:api:search -- componentPropertyReferences
 ```
 
 `componentPropertyDefinitions` 描述组件或 Component Set 对外提供的属性。验证属性是否真的生效还要遍历 descendants: 文本看 `characters`, 可见性看 `visible`, 嵌套实例替换看 `mainComponent`。名称可读即可; 映射到代码 prop 的责任应放在明确的交付约定中, 不能靠猜测命名规则。
@@ -51,10 +51,10 @@ return {
 };
 ```
 
-预检与运行仍通过 `figma:script:run`; 将实际 session、路径和 surface 写入 JSON 输入。先运行 `figma:script:run -- --help` 获取本安装版本的完整输入说明。
+预检与运行仍通过 `figma:run`; 在命令行显式提供 file target、surface 和 `.figma.ts` 路径。先运行 `figma:run -- --help` 获取本安装版本的完整输入说明。
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/audit-component.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 ## 描述与使用规则

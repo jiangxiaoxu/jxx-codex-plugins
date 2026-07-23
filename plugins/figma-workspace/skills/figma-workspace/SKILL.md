@@ -1,32 +1,39 @@
 ---
 name: figma-workspace
-description: Route Figma, FigJam, Slides, design-system, token, component, Plugin API lookup, OAuth, creation, editing, inspection, capture, validation, and mutation recovery through the public figma:* npm CLI.
+description: Route Figma, FigJam, Slides, design-system, token, component, Plugin API lookup, OAuth, creation, editing, inspection, capture, validation, and mutation recovery through stateless public figma:* leaf commands.
 ---
 
 # Figma Workspace
 
-Use the bundled Node CLI for Figma work. It has no agent-facing local MCP server; the official remote MCP is internal transport only.
+Use the bundled Node CLI for Figma work. It has no agent-facing local MCP server; the official remote MCP is internal transport only. Each invocation is independent: provide the Figma target again for every remote operation.
 
 ## Start And Discover
 
 1. Resolve `<plugin-root>` as `<skill-dir>/../..` and run commands there with `npm --silent`.
-2. Choose one fully qualified absolute `--state-file`, reuse it for the task, and prefer a Git-ignored `<project>/.figma-workspace/state.json`.
-3. For a first or unfamiliar task, run `npm --silent run figma:help`. The `figma`, `figma:docs`, `figma:api`, `figma:sessions`, and `figma:upstream` scripts are umbrella or family discovery entrypoints.
-4. Select a concrete public command, then run `npm --silent run figma:<command> -- --help` before first use. Generated help is the complete input schema and limit contract.
-5. Read stdout as Restricted Markdown. If it gives `outputFiles.cliResultFile`, read that complete JSON sidecar; never parse stdout as JSON.
+2. Run `npm --silent run figma:help` for the public leaf-command inventory. Use the selected leaf command's `--help` before first use; generated help owns exact input schemas, limits, result fields, and exit behavior.
+3. Read stdout as Restricted Markdown. If it provides `outputFiles.cliResultFile`, read that complete JSON sidecar; never parse stdout as JSON.
+
+Use `figma:docs:help`, `figma:api:help`, or `figma:upstream:help` only to browse the corresponding fixed command family; they do not establish target context.
 
 Use only the public commands below. Do not expose transport names, internal identifiers, MCP tools, resource URIs, or corpus files.
 
+## Address Figma Explicitly
+
+- File-scoped work takes `--file <Figma-file-URL|fileKey>`.
+- Node-scoped work takes a full node URL through `--target <URL>`, or the explicit pair `--file <URL|fileKey> --node <nodeId>`.
+- A URL `node-id=230-2` normalizes to Plugin API node ID `230:2`; the slug and `t` query parameter are not identity. A bare node ID is never sufficient.
+- A Figma URL determines the Design, FigJam, or Slides surface. With a raw fileKey, provide `--surface` whenever the selected command requires a surface.
+- Do not derive a target from a local selection, page shortcut, prior invocation, or persisted context. Conflicting explicit file and node URL values fail before dispatch.
+
 ## Route The Intent
 
-- For an obvious read-only request, select its direct command from the map below.
-- For non-trivial edits, generation, or unclear intent, run `figma:guidance` with concise English keywords and `--surface design|figjam|slides` when known.
-- If guidance is missing, ambiguous, or low confidence, run `figma:docs:catalog` to choose a task family, then `figma:docs:search` with explicit `--surface` and `--task-family`, and finally `figma:docs:read` with an exact returned `project:` or `canonical:` ID.
-- Treat `[label](canonical:<record-id>)` as another `figma:docs:read` call. Use `figma:docs:list` for the small project-document inventory.
+- For an obvious read-only request, select its direct command below.
+- For non-trivial, generated, or unclear work, use `figma:docs:catalog`, then narrow with `figma:docs:search` using concise English task terms and the known surface. Read exact returned `project:` or `canonical:` IDs through `figma:docs:read`.
 - Use `figma:api:search` for native Plugin API declarations. It accepts bare, qualified, and call-shaped queries such as `createFrame`, `figma.createFrame()`, and `ComponentNode.createInstance`.
-- Guidance and documentation lookup support concise English keywords only and have no fuzzy spelling correction. Use the recipes and canonical terms below, then fall back to catalog instead of guessing.
+- Use `figma:doctor` only to diagnose packaged docs, corpus, TypeScript, or Plugin API index faults. It is local-only and requires no Figma target.
+- If routing remains unclear, use the Search Query Recipes and catalog rather than guessing. Docs and API lookup are local-only and need no Figma target.
 
-Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for the complete topic-to-query map.
+Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for the static topic-to-query map.
 
 ## Search Query Recipes
 
@@ -55,39 +62,44 @@ Use these English keyword patterns as search seeds. Add the known surface and ta
 
 ## Public Command Map
 
-| Intent | Public commands | Selection rule |
+| Intent | Public commands | Target rule |
 | --- | --- | --- |
-| Plan and route | `figma:guidance` | Use before non-trivial, generated, or ambiguous work. |
-| Find workflow docs | `figma:docs:list`, `figma:docs:catalog`, `figma:docs:search`, `figma:docs:read` | List project docs, choose a family, search narrowly, then read exact IDs. |
-| Find Plugin API | `figma:api:search` | Look up exact native symbols instead of guessing typings. |
-| Diagnose installed assets | `figma:doctor` | Check bundled docs, corpus, TypeScript, and Plugin API index faults. |
-| Establish or resume context | `figma:open`, `figma:sessions:list`, `figma:sessions:read` | Open a file/session or inspect persisted session summaries and history. |
-| Understand a file | `figma:metadata`, `figma:inspect` | Discover the broad layer tree first, then inspect or style-audit a target. |
-| Read implementation context | `figma:design-context`, `figma:motion-context` | Read official design/code or motion context for a node-scoped target. |
-| Read design systems | `figma:variables`, `figma:design-system`, `figma:libraries` | Read target variables, search components/variables/styles, or enumerate libraries. |
-| Implement a repairable edit | `figma:task:prepare`, `figma:script:run` | Prepare and edit `.figma.ts`, repair preflight diagnostics, then execute. |
-| Run a bounded edit | `figma:eval` | Use only for a small, clear native Plugin API transaction. |
-| Move assets | `figma:assets:apply`, `figma:assets:download` | Apply a prepared local manifest or download official assets. |
-| Verify visually | `figma:capture` | Save a node PNG, then inspect it with `view_image`. |
-| Use an uncovered official capability | `figma:upstream:list`, `figma:upstream:read`, `figma:upstream:call` | Discover, read the exact official schema, then call only when no first-class command fits. |
+| Find workflow docs | `figma:docs:help`, `figma:docs:list`, `figma:docs:catalog`, `figma:docs:search`, `figma:docs:read` | No Figma target. |
+| Find Plugin API | `figma:api:help`, `figma:api:search` | No Figma target. |
+| Diagnose installed runtime assets | `figma:doctor` | No Figma target. |
+| Understand a file | `figma:metadata`, `figma:inspect` | File for metadata; node URL or file-plus-node for inspect. |
+| Read implementation context | `figma:design-context`, `figma:motion-context` | Explicit node target. |
+| Read design systems | `figma:variables`, `figma:design-system`, `figma:libraries` | Explicit file or node target as required by help. |
+| Execute Plugin API | `figma:run` | Explicit file plus a local `.figma.ts` script or stdin source. |
+| Move assets | `figma:assets:apply`, `figma:assets:download` | Every manifest or operation target is explicit. |
+| Verify visually | `figma:capture` | Explicit node target; inspect the saved PNG with `view_image`. |
+| Use an uncovered official capability | `figma:upstream:help`, `figma:upstream:list`, `figma:upstream:read`, `figma:upstream:call` | Read live schema first; provide an explicit target whenever that schema needs one. |
 
 ## Implement And Verify
 
-1. Use `figma:open` or an explicit URL/target to establish file context. When resuming unfamiliar state, inspect `figma:sessions:list` or `figma:sessions:read` first.
-2. Use `figma:metadata` for broad discovery before targeted `figma:inspect`. Read design, motion, variable, library, or design-system context only as required.
-3. For repairable work, run `figma:task:prepare`, edit the generated `.figma.ts` with native Figma Plugin API, look up uncertain symbols with `figma:api:search`, and run `figma:script:run` after repairing fatal preflight diagnostics.
-4. Return compact changed-node IDs and validation notes. Capture visible results with queued `$.capture` or standalone `figma:capture`, then inspect every generated or edited image with `view_image` before reporting visual success.
+1. Start with a full Figma URL whenever available. Use `figma:metadata` for broad discovery, then use targeted `figma:inspect` and the first-class context commands only as required.
+2. Create `.figma.ts` files in the shell or project working directory. For a file script, run:
+
+   ```text
+   npm --silent run figma:run -- --file <URL|fileKey> --surface <design|figjam|slides> --script <path/to/change.figma.ts>
+   ```
+
+   To provide source on stdin, use `--source -` instead of `--script`. The two source modes are mutually exclusive.
+3. Use native Figma Plugin API for edits and `figma:api:search` for uncertain symbols. Keep scripts repairable, return compact changed-node IDs and validation notes, and repair fatal preflight diagnostics before dispatch.
+4. Capture visible results through queued `$.capture` or standalone `figma:capture`, then inspect every generated or edited PNG with `view_image` before reporting visual success.
 5. Prefer first-class commands. Use `figma:upstream:list`, `figma:upstream:read`, and `figma:upstream:call` only for an uncovered official capability.
 
-Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture, and recovery details.
+Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture, local artifacts, and mutation recovery details.
 
-## Mutation Results
+## Local Artifacts And Mutation Results
 
-- `figma:eval` and `figma:script:run` report `executionOutcome`: `not_started`, `succeeded`, or `outcome_unknown`.
-- Repair and rerun `not_started` only because dispatch did not occur.
-- Treat `succeeded` as confirmed remote execution even if later local persistence fails.
+- Pure inline reads do not create a persistent workspace record. When an invocation must write a sidecar, diagnostic, capture, or download and no explicit output path is supplied, the CLI returns an absolute path beneath its invocation-specific OS temp directory.
+- Use explicit `--output-dir`, `--image-file`, or download output options when the caller needs a durable local location. Managed paths reject links and reparse points and publish atomically.
+- Same-machine mutations are serialized per fileKey through a temporary lock. This is coordination only, not distributed durability.
+- `figma:run` reports `executionOutcome`: `not_started`, `succeeded`, or `outcome_unknown`.
+- Repair and rerun `not_started` only because dispatch did not occur. Treat `succeeded` as confirmed remote execution even if later local output processing fails.
 - For `outcome_unknown`, follow `retryGuidance` and inspect, read back, or tag-reconcile the intended effect before deciding whether a retry is safe. Never blindly replay a mutation.
-- If capture processing fails after `succeeded`, use standalone `figma:capture`. If stdout says `Status: failed after execution`, repair the named local stage and preserve the confirmed mutation result.
+- If capture processing fails after `succeeded`, use standalone `figma:capture`. If stdout reports `Status: failed after execution`, repair the named local stage and preserve the confirmed mutation result.
 
 ## OAuth
 
@@ -96,9 +108,9 @@ If a result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or `FIGMA_UPSTREAM_OAUTH_*`, 
 ## Reference Routing
 
 - Read [overview](references/figma-workspace-overview.md) for command-family selection.
-- Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for topic keywords, docs navigation, `canonical:` links, and API lookup.
-- Read [workflow](references/figma-workspace-workflow.md) for execution, capture, and mutation recovery.
+- Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for static topic keywords, docs navigation, `canonical:` links, and API lookup.
+- Read [workflow](references/figma-workspace-workflow.md) for execution, capture, local artifacts, and mutation recovery.
 - Read [safety](references/figma-workspace-safety.md) for hard runtime boundaries and timeout semantics.
-- Read [sessions](references/figma-workspace-sessions.md) for state, sidecars, and local locks.
+- Read [local artifacts](references/figma-workspace-artifacts.md) for output, sidecar, and same-machine lock behavior.
 - Read [diagnostics](references/figma-workspace-diagnostics.md) only to choose a failure repair.
 - Read [upstream tools](references/figma-workspace-upstream-tools.md) before an official fallback call.

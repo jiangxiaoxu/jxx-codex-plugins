@@ -4,11 +4,10 @@ Use this reference only to choose the narrowest repair. Command results and diag
 
 ## Choose The Repair
 
-- For missing installed project docs, canonical corpus, Plugin API index, or TypeScript assets, run `figma:doctor` with the task state file and follow its reported repair. Upstream snapshot drift is a maintenance concern, not a doctor diagnosis.
+- For missing packaged docs, canonical corpus, Plugin API index, or TypeScript assets, run the public local-only `figma:doctor` command. It requires no Figma target.
 - For TypeScript or Plugin API diagnostics, repair the reported source location and use `figma:api:search -- <symbol>` for the declaration.
-- For rejected state, legacy arrays, or unsafe persisted paths, preserve the file and reopen a new state file. See [sessions](figma-workspace-sessions.md).
-- For missing file context, run `figma:open` with the same state file or use a supported node URL or structured target. For a surface mismatch, choose the correct Design, FigJam, or Slides surface and compatible API.
-- For workspace, asset, capture, or result-path failures, use a real non-linked permitted directory. See [safety](figma-workspace-safety.md).
+- For a missing or conflicting Figma target, pass a supported full node URL or an explicit file-plus-node pair. For a surface mismatch, choose the correct Design, FigJam, or Slides surface and compatible API.
+- For artifact, capture, or result-path failures, use a real non-linked permitted directory. See [local artifacts](figma-workspace-artifacts.md) and [safety](figma-workspace-safety.md).
 - For a complete oversized result, read `outputFiles.cliResultFile` instead of parsing Restricted Markdown stdout.
 
 ## Preserve Mutation Evidence

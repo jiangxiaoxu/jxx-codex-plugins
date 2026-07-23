@@ -4,7 +4,7 @@ Use a connector to express a relationship or flow between existing FigJam nodes.
 
 ## Script-first workflow
 
-Create or update connectors in a local `.figma.ts` task file, then execute it using `figma:script:run` with a persisted session ID, `surface: "figjam"`, and an absolute `--state-file`. TypeScript preflight is always enabled. Keep the returned IDs for inspection and later edits. `figma:eval` is appropriate only for a single, bounded transaction.
+Create or update connectors in a local `.figma.ts` file, then execute it using `figma:run` with an explicit FigJam file target, `--surface figjam`, and the script path. TypeScript preflight is always enabled. Keep the returned IDs for inspection and later edits.
 
 ```ts
 // flow-connector.figma.ts
@@ -33,7 +33,7 @@ connector.text.characters = 'approves'
 return { runId, createdNodeIds: [connector.id], connector: { id: connector.id, start: start.id, end: end.id } }
 ```
 
-Run it with `npm --silent run figma:script:run -- --input <run-json> --state-file <absolute-path>`. The input JSON contains `sessionId`, `inputFile`, and `surface: "figjam"`.
+Run it with `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>` after saving the reviewed script.
 
 ## API choices
 

@@ -68,20 +68,16 @@ return { dryRun: false, removed: planned };
 
 ## Run and review
 
-Run `npm --silent run figma:script:run -- --help` first. Use this JSON input for the dry run:
-
-```json
-{
-  "sessionId": "YOUR_SESSION_ID",
-  "inputFile": "cleanup-orphans.figma.ts",
-  "surface": "design"
-}
-```
-
-Then execute it with the chosen absolute state file:
+Run `npm --silent run figma:run -- --help` first. Keep `dryRun` set to `true` in the reviewed script for the first execution:
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/cleanup-orphans.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
+```
+
+Then execute it with the explicit Design file target:
+
+```text
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 This example is not automatically executable: replace every placeholder, keep `dryRun` enabled until the returned plan exactly matches your review, and only then change it to `false`. Execute the same reviewed script once, require `executionOutcome: "succeeded"`, and verify the returned IDs before proceeding. For `outcome_unknown`, follow `retryGuidance` and read back the exact tags before any further cleanup.

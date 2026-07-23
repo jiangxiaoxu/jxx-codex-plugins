@@ -1,31 +1,29 @@
-# Figma Workspace Guidance And Lookup Reference
+# Figma Workspace Route And Lookup Reference
 
-Use this reference to route task documentation and Plugin API questions. Public help and returned IDs define the exact CLI contract.
+Use this static reference to route task documentation and Plugin API questions. Public help and returned IDs define the exact CLI contract.
 
 ## Route Intent
 
-- `figma:guidance` and automatic docs search support concise English keywords only. Misspelled, generic, ambiguous, or out-of-vocabulary input can return low confidence; use the main skill's query recipes and the topic map below.
-- Pass a known `--surface design|figjam|slides`. Surface and `--task-family` are hard filters; do not use a Design fallback for a known FigJam or Slides task.
-- For non-trivial edits, generation, or uncertain routing, run `figma:guidance` first and follow only returned public `figma:*` next actions.
-- If guidance is ambiguous or has no route, run `figma:docs:catalog` without a family, select the compatible family, then narrow `figma:docs:search` with both the family and known surface.
+- Documentation search accepts concise English keywords. Use the main skill's Search Query Recipes and the topic map below instead of guessing from a generic request.
+- Pass a known `--surface design|figjam|slides` to docs search. Surface and `--task-family` are hard filters; do not use a Design fallback for a known FigJam or Slides task.
+- For non-trivial edits, generation, or uncertain routing, run `figma:docs:catalog`, select the compatible family, then narrow `figma:docs:search` with the family and known surface.
+- If the topic is still ambiguous, read the most specific returned record with `figma:docs:read` before selecting a remote command.
 
 ## Topic Map
-
-Use these stable task-family names and English queries. Read the selected family with `figma:docs:catalog` or `figma:docs:search`, then use the listed first-class commands as appropriate.
 
 | Task family | Surface | English query | Use for | Typical next commands |
 | --- | --- | --- | --- | --- |
 | `code-connect` | Design | `component code mapping` | Code Connect mapping, metadata, and component-to-code workflows | `figma:docs:search`, `figma:design-context`, then an explicitly discovered official capability if needed |
 | `create-file` | Design, FigJam, Slides | `new Figma file` | New file creation and surface selection | `figma:docs:search`, then `figma:upstream:list`, `figma:upstream:read`, `figma:upstream:call` when required |
-| `design-editing` | Design | `text editing` | Text, layout, components, variables, and general edits | `figma:api:search`, `figma:task:prepare`, `figma:script:run` |
-| `design-generation` | Design | `create interface design` | Generate interfaces, screens, mockups, or structured design content | `figma:task:prepare`, `figma:script:run`, `figma:capture` |
+| `design-editing` | Design | `text editing` | Text, layout, components, variables, and general edits | `figma:api:search`, shell-created `.figma.ts`, `figma:run` |
+| `design-generation` | Design | `create interface design` | Generate interfaces, screens, mockups, or structured design content | shell-created `.figma.ts`, `figma:run`, `figma:capture` |
 | `design-to-code` | Design | `implement from Figma` | Inspect a design and obtain implementation context | `figma:metadata`, `figma:design-context`, `figma:inspect`, `figma:capture` |
-| `diagram` | FigJam | `flowchart` | Flowcharts, sequence diagrams, architecture diagrams, and ER diagrams | `figma:api:search`, `figma:task:prepare`, `figma:script:run` |
-| `figjam` | FigJam | `sticky notes` | Boards, sticky notes, connectors, sections, and tables | `figma:api:search`, `figma:task:prepare`, `figma:script:run` |
-| `library-generation` | Design | `create component library` | Component libraries, tokens, variables, and styles | `figma:libraries`, `figma:design-system`, `figma:variables`, `figma:script:run` |
+| `diagram` | FigJam | `flowchart` | Flowcharts, sequence diagrams, architecture diagrams, and ER diagrams | `figma:api:search`, shell-created `.figma.ts`, `figma:run` |
+| `figjam` | FigJam | `sticky notes` | Boards, sticky notes, connectors, sections, and tables | `figma:api:search`, shell-created `.figma.ts`, `figma:run` |
+| `library-generation` | Design | `create component library` | Component libraries, tokens, variables, and styles | `figma:libraries`, `figma:design-system`, `figma:variables`, `figma:run` |
 | `motion` | Design | `motion easing` | Motion inventory, timing, easing, and animation patterns | `figma:motion-context`, `figma:capture`, `figma:docs:read` |
 | `motion-implementation` | Design | `implement animation` | Translate motion context into implementation behavior | `figma:motion-context`, `figma:design-context`, `figma:docs:read` |
-| `slides` | Slides | `slide deck` | Slide lifecycle, deck creation, presentation editing, and validation | `figma:metadata`, `figma:task:prepare`, `figma:script:run`, `figma:capture` |
+| `slides` | Slides | `slide deck` | Slide lifecycle, deck creation, presentation editing, and validation | `figma:metadata`, shell-created `.figma.ts`, `figma:run`, `figma:capture` |
 | `swiftui` | Design | `swiftui code to design` | SwiftUI design-to-code or code-to-design workflows | `figma:design-context`, `figma:docs:search`, `figma:docs:read` |
 
 ## Read Documentation

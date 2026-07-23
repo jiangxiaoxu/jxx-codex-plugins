@@ -216,8 +216,8 @@ Fork splits into parallel paths; join merges them back. Renders as distinct bar 
 
 ## 8. What's NOT supported
 
-- **Notes** — `note left of X`, `note right of X`, `note above/below`. **Avoid strictly.** These interact badly with our preprocessor: the `X: text` inside a note is recognized as a state definition, producing phantom duplicate states. The resulting diagram is actively wrong, not just missing the note. If the user wants notes, generate the diagram without them and add real sticky notes or text blocks via a local `.figma.ts` script executed with `figma:script:run` (§10).
-- **Styling** — `classDef`, `class Foo styleName`, `:::styleName` inline, and `style StateId fill:#hex,stroke:#hex`. **Avoid strictly.** These are not applied, AND the state names referenced in these statements get registered as standalone states, creating phantom orphan boxes above or beside the real diagram. The failure mode is the same shape as notes: not just missing, actively wrong. Color-code states via a local `.figma.ts` script executed with `figma:script:run` post-generation instead (§10).
+- **Notes** — `note left of X`, `note right of X`, `note above/below`. **Avoid strictly.** These interact badly with our preprocessor: the `X: text` inside a note is recognized as a state definition, producing phantom duplicate states. The resulting diagram is actively wrong, not just missing the note. If the user wants notes, generate the diagram without them and add real sticky notes or text blocks via a local `.figma.ts` script executed with `figma:run` (§10).
+- **Styling** — `classDef`, `class Foo styleName`, `:::styleName` inline, and `style StateId fill:#hex,stroke:#hex`. **Avoid strictly.** These are not applied, AND the state names referenced in these statements get registered as standalone states, creating phantom orphan boxes above or beside the real diagram. The failure mode is the same shape as notes: not just missing, actively wrong. Color-code states via a local `.figma.ts` script executed with `figma:run` post-generation instead (§10).
 - **Transitions reaching into another composite's children** — forbidden by Mermaid itself; transition to/from the outer composite.
 
 If the user wants notes or color-coded states, see §10 for the hybrid workflow.
@@ -237,19 +237,19 @@ Additionally, for state diagrams specifically:
 
 ## 10. Hybrid workflow
 
-State diagrams generated via the upstream diagram capability produce a clean, laid-out state machine — the hard part. Most of what our renderer doesn't support (notes, colored states, step annotations, phase highlighting) can be added on top with a local `.figma.ts` script executed with `figma:script:run`.
+State diagrams generated via the upstream diagram capability produce a clean, laid-out state machine — the hard part. Most of what our renderer doesn't support (notes, colored states, step annotations, phase highlighting) can be added on top with a local `.figma.ts` script executed with `figma:run`.
 
 **Default workflow when the request needs more than bare states and transitions:**
 
 1. **Scaffold with the upstream diagram capability** — states, transitions, composites, concurrent regions (`--`), special states (choice/fork/join), start/end. Skip the features that get dropped (notes, classDef).
-2. **Extend with a local `.figma.ts` script executed with `figma:script:run`** — open the same file (via `fileKey`) and add:
+2. **Extend with a local `.figma.ts` script executed with `figma:run`** — open the same file (via `fileKey`) and add:
    - Sticky notes or text blocks for **annotations** anchored to specific states or transitions
    - Background rectangles behind groups of states for **phase highlighting**
    - Tinted fills on composites/subgraphs so boundaries stand out
    - **Color-coding** states by category (terminal / active / error)
    - **Sequence numbers** on transitions for step-by-step walkthroughs
 
-Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
+Use a local `.figma.ts` script with `figma:run`; read the linked [Plugin API](canonical:figma-use/SKILL.md) and [FigJam API](canonical:figma-use-figjam/SKILL.md) mirrors only for the specific edit being implemented.
 
 ### Signals the request needs the hybrid workflow
 
@@ -258,7 +258,7 @@ Use a local `.figma.ts` script with `figma:script:run`; read the linked [Plugin 
 
 ### When to skip the upstream diagram capability entirely
 
-Only if the baseline layout isn't useful — e.g. the user wants a non-standard layout (circular state wheel, hand-drawn sketch, a heavily-stylized enterprise template). In those cases, go straight to a local `.figma.ts` script executed with `figma:script:run`.
+Only if the baseline layout isn't useful — e.g. the user wants a non-standard layout (circular state wheel, hand-drawn sketch, a heavily-stylized enterprise template). In those cases, go straight to a local `.figma.ts` script executed with `figma:run`.
 
 ### Be pragmatic, not performative
 
@@ -283,8 +283,8 @@ Before calling the upstream diagram capability:
 2. All transitions use `-->` (double dash).
 3. Every `[*]` marker is on one side of a transition — never on its own.
 4. State IDs are simple words (no spaces); descriptions via `:` or `as` when longer text is needed.
-5. No `note left of`, `note right of`, etc. — they corrupt the diagram by creating phantom states (§8). Add real notes via a local `.figma.ts` script executed with `figma:script:run` later.
-6. No `classDef`, `class`, `:::`, or `style` styling lines — they don't color anything AND create phantom orphan states (§8). Apply colors via a local `.figma.ts` script executed with `figma:script:run` later.
+5. No `note left of`, `note right of`, etc. — they corrupt the diagram by creating phantom states (§8). Add real notes via a local `.figma.ts` script executed with `figma:run` later.
+6. No `classDef`, `class`, `:::`, or `style` styling lines — they don't color anything AND create phantom orphan states (§8). Apply colors via a local `.figma.ts` script executed with `figma:run` later.
 7. No transitions reaching into another composite's children.
 8. Composite nesting is ≤ 2 levels.
 9. Under ~20 states, or the diagram is split.

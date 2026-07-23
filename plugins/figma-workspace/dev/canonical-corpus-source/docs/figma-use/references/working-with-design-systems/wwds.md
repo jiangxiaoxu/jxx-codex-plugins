@@ -16,13 +16,13 @@ This classification changes the safety bar. An exploratory button may accept a l
 
 ## Read the system with the CLI
 
-Use one absolute `--state-file` across related calls. Run `--help` for a selected command before using it, and use `npm --silent` so stdout remains readable Restricted Markdown.
+Pass the explicit file target to every remote call. Run `--help` for a selected command before using it, and use `npm --silent` so stdout remains readable Restricted Markdown.
 
 ```text
-npm --silent run figma:metadata -- --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:libraries -- --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:design-system -- "button primary" --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:variables -- --file <figma-url-or-file-key> --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:metadata -- --file <figma-url-or-file-key>
+npm --silent run figma:libraries -- --file <figma-url-or-file-key>
+npm --silent run figma:design-system -- "button primary" --file <figma-url-or-file-key>
+npm --silent run figma:variables -- --file <figma-url-or-file-key> --node <node-id>
 ```
 
 Choose commands by question:
@@ -42,14 +42,11 @@ Names, descriptions, variants, code syntax, and scopes are part of the translati
 
 ## Make changes in `.figma.ts`
 
-Read commands establish facts. Put every planned mutation in a local `.figma.ts` file and run it through `figma:script:run`. Begin with `figma:task:prepare` when a repairable workspace is needed; its JSON input identifies the Figma file, slug-style task name, absolute workspace directory, and surface.
+Read commands establish facts. Put every planned mutation in a local `.figma.ts` file created by the shell, then run it with the explicit file target. TypeScript preflight is always enabled.
 
 ```text
-npm --silent run figma:task:prepare -- --input task.json --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:script:run -- --input run-script.json --state-file C:/work/project/.figma-workspace/state.json
-```
-
-`run-script.json` supplies the saved session id, `.figma.ts` input path, and surface. TypeScript preflight is always enabled. Return concise evidence such as node ids, variable ids, component names, and validation notes. Make the script idempotent and tag created assets so `outcome_unknown` can be inspected and reconciled before running only confirmed missing work.
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
+``` Return concise evidence such as node ids, variable ids, component names, and validation notes. Make the script idempotent and tag created assets so `outcome_unknown` can be inspected and reconciled before running only confirmed missing work.
 
 ```ts
 const component = figma.root

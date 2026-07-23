@@ -1,6 +1,6 @@
 # Implement a Figma Design as Code (Design → Code)
 
-Use this workflow to turn a Figma design into code in a target codebase. This is the **read-FROM-Figma** direction: pull design context out of Figma with `figma:design-context`, then adapt it into the project's real stack. For the reverse direction — building or updating a design *in* Figma from code — use a `.figma.ts` script executed with `figma:script:run`.
+Use this workflow to turn a Figma design into code in a target codebase. This is the **read-FROM-Figma** direction: pull design context out of Figma with `figma:design-context`, then adapt it into the project's real stack. For the reverse direction — building or updating a design *in* Figma from code — use a `.figma.ts` script executed with `figma:run`.
 
 Parameter mechanics (nodeId / fileKey / branchKey extraction, URL parsing, `format` / `query` options, and response shape) live in `figma:design-context --help`; follow that contract.
 

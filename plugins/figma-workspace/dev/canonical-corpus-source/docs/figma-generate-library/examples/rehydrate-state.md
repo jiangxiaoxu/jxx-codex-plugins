@@ -6,9 +6,9 @@ Rebuild a conservative state map after an interrupted library build. The script 
 
 ## Prerequisites and inputs
 
-- An opened Design file and a persisted workspace session.
+- An explicit Design file URL or fileKey.
 - Replace `<run-id>` with the exact run identifier used when tagging nodes. Use an empty string only when deliberately reviewing every node in the namespace.
-- Replace `<namespace>` with the stable namespace used by the build, and replace all path and session placeholders before review.
+- Replace `<namespace>` with the stable namespace used by the build, and replace all file-target and path placeholders before review.
 
 ## Safety boundary
 
@@ -16,20 +16,10 @@ This is a read-only scan. It neither creates nor edits Figma objects, does not a
 
 ## Save and run
 
-Save this body as `<absolute-task-directory>/rehydrate-state.figma.ts`. Use an input JSON file such as:
-
-```json
-{
-  "sessionId": "<persisted-session-id>",
-  "scriptPath": "<absolute-task-directory>/rehydrate-state.figma.ts",
-  "surface": "design"
-}
-```
-
-After replacing placeholders and reviewing the scope, execute:
+Save this body as `<path/to/rehydrate-state.figma.ts>`, then execute that file directly:
 
 ```text
-npm --silent run figma:script:run -- --input <absolute-task-directory>/run-rehydrate-state.json --state-file <absolute-task-directory>/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 The command runs only the saved `.figma.ts` file. It is not automatic; review the returned state map and reconcile it with the build ledger before making changes.

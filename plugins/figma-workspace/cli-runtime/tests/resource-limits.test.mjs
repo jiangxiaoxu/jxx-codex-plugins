@@ -14,6 +14,8 @@ test("asset and download manifests reject more than 64 items", async () => {
   try {
     await assert.rejects(
       client.applyAssetManifest({
+        file: "ManifestLimitFileKey123",
+        surface: "design",
         assets: Array.from({ length: 65 }, (_, index) => ({
           path: resolve(tmpdir(), `asset-${index}.png`),
           target: { fileKey: "ManifestLimitFileKey123", nodeId: `1:${index + 1}` },
@@ -84,12 +86,12 @@ test("asset manifest files accept exactly 256 KiB and reject 256 KiB plus one by
     }),
   });
   try {
-    const boundary = await client.applyAssetManifest({ manifestPath: boundaryPath, validateTargets: false });
+    const boundary = await client.applyAssetManifest({ file: "ManifestBoundaryFileKey123", surface: "design", manifestPath: boundaryPath, validateTargets: false, outputDir: tempDir });
     assert.equal(boundary.ok, false);
     assert.equal(upstreamCalls, 1);
     assert.doesNotMatch(JSON.stringify(boundary), /resource limit|256 KiB per-item limit/iu);
 
-    const result = await client.applyAssetManifest({ manifestPath, validateTargets: false });
+    const result = await client.applyAssetManifest({ file: "ManifestBoundaryFileKey123", surface: "design", manifestPath, validateTargets: false, outputDir: tempDir });
     assert.equal(result.ok, false);
     assert.equal(upstreamCalls, 1);
     assert.match(result.diagnostics[0].message, /256 KiB per-item limit/iu);
@@ -124,6 +126,9 @@ test("asset upload accepts the 16 MiB boundary and streams an exact Content-Leng
   });
   try {
     const result = await client.applyAssetManifest({
+      file: "UploadStreamFileKey123",
+      surface: "design",
+      outputDir: tempDir,
       assets: [{
         path: assetPath,
         target: { fileKey: "UploadStreamFileKey123", nodeId: "1:1" },
@@ -186,8 +191,10 @@ test("asset upload keeps the safely opened file handle across a path-to-symlink 
     }),
   });
   try {
-    await client.prepareTask({ workspaceDir, taskName: "upload-toctou", fileName: "task.figma.ts" });
     const result = await client.applyAssetManifest({
+      file: "UploadToctouFileKey123",
+      surface: "design",
+      outputDir: workspaceDir,
       assets: [{ path: assetPath, target: { fileKey: "UploadToctouFileKey123", nodeId: "1:1" } }],
       validateTargets: false,
     });
@@ -228,7 +235,9 @@ test("download rejects oversized Content-Length before writing a partial target"
     assert.equal(result.ok, false);
     assert.match(JSON.stringify(result), /16 MiB per-item limit/iu);
     await assert.rejects(readFile(resolve(outputDir, "2-2", "exported.png")), { code: "ENOENT" });
-    assert.deepEqual(await listFilesIfPresent(outputDir), []);
+    const files = await listFilesIfPresent(outputDir);
+    assert.deepEqual(files.filter((name) => !name.endsWith(".downloads.result.json")), []);
+    assert.equal(files.some((name) => name.endsWith(".downloads.result.json")), true);
   } finally {
     await client.close();
     server.closeAllConnections?.();
@@ -259,7 +268,9 @@ test("interrupted chunked downloads do not leave partial target files", async ()
     });
     assert.equal(result.ok, false);
     await assert.rejects(readFile(resolve(outputDir, "5-5", "exported.png")), { code: "ENOENT" });
-    assert.deepEqual(await listFilesIfPresent(outputDir), []);
+    const files = await listFilesIfPresent(outputDir);
+    assert.deepEqual(files.filter((name) => !name.endsWith(".downloads.result.json")), []);
+    assert.equal(files.some((name) => name.endsWith(".downloads.result.json")), true);
   } finally {
     await client.close();
     server.closeAllConnections?.();

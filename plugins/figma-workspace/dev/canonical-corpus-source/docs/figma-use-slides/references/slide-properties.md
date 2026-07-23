@@ -1,6 +1,6 @@
 # Slide-Specific Properties
 
-JavaScript-labelled blocks in this reference are Plugin API patterns to adapt into a reviewed local `.figma.ts` file and execute with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction.
+JavaScript-labelled blocks in this reference are Plugin API patterns to adapt into a reviewed local `.figma.ts` file and execute with `figma:run`.
 
 ## isSkippedSlide
 

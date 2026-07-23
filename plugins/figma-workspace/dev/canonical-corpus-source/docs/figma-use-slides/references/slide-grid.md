@@ -2,7 +2,7 @@
 
 The slide grid is a 2D array of `SlideNode` objects, organized by rows.
 
-JavaScript-labelled blocks in this reference are Plugin API patterns to adapt into a reviewed local `.figma.ts` file and execute with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction.
+JavaScript-labelled blocks in this reference are Plugin API patterns to adapt into a reviewed local `.figma.ts` file and execute with `figma:run`.
 
 ## Newly created files have an empty grid
 

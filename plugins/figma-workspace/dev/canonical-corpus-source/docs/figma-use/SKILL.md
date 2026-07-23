@@ -2,14 +2,14 @@
 
 This is reference material for local `.figma.ts` workflows. It is not a routable skill and does not invoke tools by itself.
 
-Use `figma:task:prepare` to create a repairable workspace script, edit the generated `.figma.ts` file, then run it explicitly with `figma:script:run` and an absolute `--state-file`. For a small, bounded native Plugin API transaction, use `figma:eval` with JSON input. Use first-class commands for context and artifacts: `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, `figma:libraries`, `figma:assets:apply`, `figma:assets:download`, and `figma:capture`.
+Create a reviewed local `.figma.ts` file in the shell, then execute it with `figma:run -- --file <URL|fileKey> --surface <design|figjam|slides> --script <path/to/script.figma.ts>`. Use `--source -` only when the shell deliberately provides TypeScript on stdin. Every Plugin API transaction, including a small bounded one, uses `figma:run`. Use first-class commands for context and artifacts: `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, `figma:libraries`, `figma:assets:apply`, `figma:assets:download`, and `figma:capture`.
 
 Use `figma:api:search` for exact Plugin API symbols and signatures. The curated `references/plugin-api-standalone.index.md` record is supplementary orientation, not a declaration-file entrypoint. Start design-system work with `references/working-with-design-systems/wwds.md`.
 
 ## 1. Critical Rules
 
 1.  **Use `return` to send data back.** The return value is JSON-serialized automatically (objects, arrays, strings, numbers). Do NOT call `figma.closePlugin()` or wrap code in an async IIFE — this is handled for you.
-2.  **Write a TypeScript script body with top-level `await` and `return`.** Save it in a local `.figma.ts` file and execute it explicitly with `figma:script:run`; JavaScript snippets in references are input material to adapt, not files to run directly.
+2.  **Write a TypeScript script body with top-level `await` and `return`.** Save it in a local `.figma.ts` file and execute it explicitly with `figma:run`; JavaScript snippets in references are input material to adapt, not files to run directly.
 3.  `figma.notify()` **throws "not implemented"** — never use it
 3a. `getPluginData()` / `setPluginData()` store data private to the executing plugin. `getSharedPluginData()` / `setSharedPluginData()` use an explicit namespace when data must be shared across plugins. Choose the storage model that matches the ownership requirement.
 4.  `console.log()` is NOT returned — use `return` for output
@@ -92,7 +92,7 @@ Available in Slides mode: Rectangle, Frame, Component, Text, Ellipse, Star, Line
 
 **Design-only APIs (not just node types):** `figma.createPage()` is available only in Design files (`figma.com/design/...`). In both FigJam (`figma.com/board/...`) and Slides (`figma.com/slides/...`) it throws `TypeError: figma.createPage no such property 'createPage' on the figma global object`. Do not emit `figma.createPage()` in FigJam or Slides workflows.
 
-> **Slides note:** There is no dedicated read tool for Slides files yet. Use read-only `.figma.ts` scripts for inspection (see Section 6 "Inspect first" pattern), and use `figma:capture` or queued `$.capture()` for visual context. For Slides-specific API guidance, use `figma:guidance` and `figma:api:search` with the `slides` surface.
+> **Slides note:** There is no dedicated read tool for Slides files yet. Use read-only `.figma.ts` scripts for inspection (see Section 6 "Inspect first" pattern), and use `figma:capture` or queued `$.capture()` for visual context. For Slides-specific API guidance, use `figma:docs:catalog`, `figma:docs:search -- --surface slides`, and `figma:api:search`.
 
 ## 5. Efficient APIs — Prefer These Over Verbose Alternatives
 
@@ -244,7 +244,7 @@ const ticket = await $.capture(frame, {
 return { frameId: frame.id, captureRequestId: ticket.requestId }
 ```
 
-The returned ticket contains only `requestId` and `nodeId`; the local `imageFile` is available after host-side post-processing. An explicitly supplied `imageFile` must be workspace-relative. A single script may queue at most 8 captures. Use standalone `figma:capture` when the node id is already known. Do not use inline screenshot methods or return PNG bytes/base64 from the script.
+The returned ticket contains only `requestId` and `nodeId`; the local `imageFile` is available after host-side post-processing. An explicitly supplied relative `imageFile` resolves beneath the current `--output-dir`, or beneath the invocation-specific OS temp output root when `--output-dir` is omitted. A single script may queue at most 8 captures. Use standalone `figma:capture` when the node id is already known. Do not use inline screenshot methods or return PNG bytes/base64 from the script.
 
 If capture post-processing fails, the command reports `executionOutcome: "succeeded"`, `captureProcessingSucceeded: false`, and `retryGuidance`. The script already completed and may have changed Figma; do not rerun it to recover the image. Retry the affected node with standalone `figma:capture`.
 

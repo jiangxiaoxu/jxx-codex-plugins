@@ -2,7 +2,7 @@
 
 # Component Creation Reference
 
-All JavaScript blocks are non-executable Plugin API examples. Put adapted code in a local `.figma.ts` file and run it with `figma:script:run`; reserve `figma:eval` for small focused transactions.
+All JavaScript blocks are non-executable Plugin API examples. Put adapted code in a local `.figma.ts` file and run it with `figma:run`.
 
 Complete guide for Phase 3: building components with variant matrices, variable bindings, component properties, and documentation.
 
@@ -725,7 +725,7 @@ Args: { nodeId: "PAGE_NODE_ID", fileKey: "FILE_KEY" }
 **When visual analysis isn't available:**
 If your model can't process images (text-only mode), validate structurally instead:
 1. Use `figma:metadata` on the component set — verify child count, property definitions, variant names
-2. Run a small `figma:eval` transaction that samples key properties:
+2. Run a small `figma:run` transaction that samples key properties:
 ```javascript
 const cs = await figma.getNodeByIdAsync(CS_ID);
 const sample = cs.children.slice(0, 3).map(c => ({

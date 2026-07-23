@@ -1,6 +1,6 @@
 # Hybrid Diagram Workflow
 
-Mermaid's syntax can't express everything a good diagram needs — annotations tied to specific data, domain color-coding, callouts that live _next_ to the diagram rather than inside it. This reference covers the **hybrid workflow**: use the upstream diagram capability to scaffold the structural diagram, then use a local `.figma.ts` script executed with `figma:script:run` to layer on what Mermaid can't do. Consult the [FigJam API mirror](canonical:figma-use-figjam/SKILL.md) only for the specific Plugin API operations needed.
+Mermaid's syntax can't express everything a good diagram needs — annotations tied to specific data, domain color-coding, callouts that live _next_ to the diagram rather than inside it. This reference covers the **hybrid workflow**: use the upstream diagram capability to scaffold the structural diagram, then use a local `.figma.ts` script executed with `figma:run` to layer on what Mermaid can't do. Consult the [FigJam API mirror](canonical:figma-use-figjam/SKILL.md) only for the specific Plugin API operations needed.
 
 **This is a judgment tool, not a procedure.** The hybrid workflow costs extra tokens and latency. Deploy it when the user's ask genuinely benefits — not on every diagram. When in doubt, ship the base diagram first; the user can tell you what's missing.
 
@@ -27,20 +27,20 @@ Bias toward action. The end goal is giving the user a file they can work with an
 Not all diagram types benefit equally. Rough priority for deploying the workflow:
 
 1. **Flowchart** — highest value is _annotation_ (notes, callouts, attached data). Color-coding is already covered natively by Mermaid subgraph styling — **skip color recipes for flowcharts** and route to [flowchart.md](canonical:figma-generate-diagram/references/flowchart.md) if that's all the user wants.
-2. **ERD** — highest value is _domain color-coding_ (group tables by auth / billing / content / etc.) and _table-level annotations_. Mermaid's ERD styling is stripped by our preprocessor, so a local `.figma.ts` script executed by `figma:script:run` is the only path.
+2. **ERD** — highest value is _domain color-coding_ (group tables by auth / billing / content / etc.) and _table-level annotations_. Mermaid's ERD styling is stripped by our preprocessor, so a local `.figma.ts` script executed by `figma:run` is the only path.
 3. **Sequence / state / gantt** — smaller audiences; be conservative. Use the same recipes if the user explicitly asks, but don't volunteer heavy workflow on these.
 
 ## 3. The pattern
 
 ```
 1. Generate: call the upstream diagram capability → capture fileKey from the returned URL
-2. (Optional) Inspect: run `npm --silent run figma:metadata -- --file <file-key> --state-file <absolute-path>`
+2. (Optional) Inspect: run `npm --silent run figma:metadata -- --file <file-key>`
    to discover node IDs and positions when extensions need precise anchors
-3. Extend: run a local `.figma.ts` script with `figma:script:run` with the same fileKey, applying one or more recipes
+3. Extend: run a local `.figma.ts` script with `figma:run` with the same fileKey, applying one or more recipes
 4. Report: share the file link + a one-line summary of what you added
 ```
 
-**fileKey reuse is non-negotiable.** Every `figma:script:run` call after generation must pass the `fileKey` you parsed from the the upstream diagram capability response URL (`figma.com/board/{fileKey}/...`). Never call `schema-confirmed upstream file creation` in this workflow — extensions go into the same file as the diagram. Multiple drafts pollute the user's file list.
+**fileKey reuse is non-negotiable.** Every `figma:run` call after generation must pass the `fileKey` you parsed from the the upstream diagram capability response URL (`figma.com/board/{fileKey}/...`). Never call `schema-confirmed upstream file creation` in this workflow — extensions go into the same file as the diagram. Multiple drafts pollute the user's file list.
 
 **Inspection is optional.** Skip `figma:metadata` when your extensions don't need precise anchoring (e.g., adding a title text block above the diagram, adding a legend off to one side). Call it when you need to know where a specific node ended up (e.g., placing a sticky note adjacent to "Login" step).
 
@@ -63,7 +63,7 @@ Use [create-label](canonical:figma-use-figjam/references/create-label.md) for th
 
 **How:**
 
-1. Run `npm --silent run figma:metadata -- --file <file-key> --state-file <absolute-path>` to read back the diagram and find node IDs and bounding boxes for the nodes you're annotating.
+1. Run `npm --silent run figma:metadata -- --file <file-key>` to read back the diagram and find node IDs and bounding boxes for the nodes you're annotating.
 2. Create one label circle per annotated node, colored consistently (e.g. all `PRESET_BLUE`), positioned at the node's top-left corner (offset by half the label size so it overlaps the corner slightly).
 3. Create the matching stickies in a vertical column to the right of the diagram, prefixed with the number (`1. Drop-off: 42% last quarter`).
 4. Follow the create-label reference's three-pass pattern (create labels, position on nodes, cluster legend) — especially the conflict-detection logic for pushing the legend past any existing content.
@@ -89,7 +89,7 @@ If the user wants to annotate just one or two nodes and a legend would be visual
 
 **How:**
 
-1. Run `npm --silent run figma:metadata -- --file <file-key> --state-file <absolute-path>` to find the node IDs you want to recolor.
+1. Run `npm --silent run figma:metadata -- --file <file-key>` to find the node IDs you want to recolor.
 2. Use `batch-modify` (see [figma-use-figjam/references/batch-modify.md](canonical:figma-use-figjam/references/batch-modify.md)) to update fills in a single call. Group by color assignment so one batch covers all nodes getting the same tint.
 3. Pick from FigJam's built-in palette (documented in [create-shape-with-text.md](canonical:figma-use-figjam/references/create-shape-with-text.md)) rather than freehand hex values — keeps the diagram visually coherent with the rest of the canvas.
 
@@ -112,7 +112,7 @@ Ambiguous request? Pick a reasonable extension, do it, and narrate what you chos
 
 ## 7. When extensions fail partway
 
-If a local `.figma.ts` script executed with `figma:script:run` fails after the upstream diagram capability succeeded, the user already has the file link from step 3 of the communication flow. Classify the extension result before describing the file:
+If a local `.figma.ts` script executed with `figma:run` fails after the upstream diagram capability succeeded, the user already has the file link from step 3 of the communication flow. Classify the extension result before describing the file:
 
 - **Do not** retry in a loop or blindly rerun an `outcome_unknown` extension.
 - Before dispatch, generate and retain a unique extension `runId`. Every created extension node must immediately call `setSharedPluginData('figma_workspace', 'run_id', runId)` before any possible await or throw, and the script must return the same `runId` and node IDs. For `outcome_unknown`, follow `retryGuidance` and query this exact namespace, key, and retained value to reconcile which callouts landed. For `not_started`, repair the pre-dispatch cause before another attempt. For `succeeded`, retain the confirmed extension even if later local persistence failed.
@@ -121,8 +121,8 @@ If a local `.figma.ts` script executed with `figma:script:run` fails after the u
 
 ## 8. What NOT to do in MVP
 
-- **Don't reposition nodes.** ELK's layout is what it is for now. If the diagram looks cramped or tangled, the fix is better Mermaid, not manual repositioning via a local `.figma.ts` script executed with `figma:script:run`.
-- **Don't build the diagram from scratch with a local `.figma.ts` script executed with `figma:script:run`.** If the upstream diagram capability can produce a reasonable base, use it. a local `.figma.ts` script executed with `figma:script:run` is for additive extensions, not replacement.
+- **Don't reposition nodes.** ELK's layout is what it is for now. If the diagram looks cramped or tangled, the fix is better Mermaid, not manual repositioning via a local `.figma.ts` script executed with `figma:run`.
+- **Do not default to building the diagram from scratch with a local `.figma.ts` script.** If the upstream diagram capability can produce a reasonable base, use it; reserve `figma:run` scripts for additive extensions, not replacement.
 - **Don't over-extend.** If the user asked for something simple, give them something simple. Every unrequested sticky or color choice is noise.
 - **Don't turn the workflow into a checklist.** If the user says _"diagram our API flow"_ with no qualifiers, the right answer is a single the upstream diagram capability call — not a scaffold-and-extend ceremony.
 

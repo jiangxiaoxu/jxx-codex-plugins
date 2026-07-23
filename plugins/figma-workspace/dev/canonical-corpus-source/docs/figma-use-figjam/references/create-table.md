@@ -6,21 +6,17 @@
 
 ## `.figma.ts` 前置与执行
 
-将目标位置、二维数据和尺寸约束写进本地 `.figma.ts`。先确保已为 FigJam 文件准备好 session，再使用同一个绝对 state 文件运行：
+将目标位置、二维数据和尺寸约束写进本地 `.figma.ts`。使用显式 FigJam file target、`--surface figjam` 和脚本路径运行：
 
-```json
-{
-  "sessionId": "<session-id>",
-  "inputFile": "C:/work/project/.figma-workspace/board/create-roster.figma.ts",
-  "surface": "figjam"
-}
+```text
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/create-roster.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>
 ```
 
-对于已知 table 的一次单格修正，`figma:eval` 可以是小事务例外；创建或填充完整表格应使用脚本，使数据、尺寸和结果可复查。
+对于已知 table 的一次单格修正，`figma:run` 可以是小事务例外；创建或填充完整表格应使用脚本，使数据、尺寸和结果可复查。
 
 ## Plugin API 步骤
 

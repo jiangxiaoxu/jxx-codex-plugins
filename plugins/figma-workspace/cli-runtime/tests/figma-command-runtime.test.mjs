@@ -1,456 +1,225 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
-  FIGMA_COMMAND_FAMILIES,
-  FIGMA_DIRECT_COMMANDS,
-  FIGMA_JSON_COMMANDS,
-  FIGMA_ROOT_HELP_GROUPS,
-  FIGMA_TASK_FAMILIES,
+  formatCommandHelp,
   formatRootHelp,
   runFigmaCommand,
   runFigmaCommandCli,
 } from "../dist/cli/figma-command-runtime.js";
 
-const packageRoot = resolve(import.meta.dirname, "..");
-const runtimePath = resolve(packageRoot, "dist/cli/figma-command-runtime.js");
-const stateFile = resolve(packageRoot, ".test-state.json");
-
-test("build publishes the typed shared Figma command runtime", async () => {
-  const source = await readFile(runtimePath, "utf8");
-  assert.match(source, /runFigmaCommandCli/u);
-  assert.equal(typeof runFigmaCommandCli, "function");
-  assert.equal(typeof runFigmaCommand, "function");
-  assert.equal(Object.keys(FIGMA_DIRECT_COMMANDS).length, 18);
-  assert.equal(Object.keys(FIGMA_JSON_COMMANDS).length, 8);
-  assert.equal(FIGMA_TASK_FAMILIES.length, 12);
-  assert.deepEqual(Object.keys(FIGMA_COMMAND_FAMILIES), ["docs", "api", "sessions", "upstream"]);
-});
-
-test("direct command parsing maps typed input and optimized global arguments", async () => {
+function harness(options = {}) {
+  const stdout = [];
+  const stderr = [];
   const calls = [];
-  const output = createOutput();
-  const exitCode = await runFigmaCommand("inspect", [
-    "123:456", "--mode", "style", "--depth", "2",
-    "--session-id", "workspace", "--state-file", stateFile, "--max-inline-bytes", "512",
-  ], {
-    ...output.dependencies,
-    runCli: async (argv, dependencies) => {
-      calls.push({ argv, input: JSON.parse(await dependencies.io.readStdin()) });
-      return 0;
-    },
-  });
-  assert.equal(exitCode, 0, output.stderr);
-  assert.deepEqual(calls, [{
-    argv: ["inspect", "--input", "-", "--session-file", stateFile, "--inline-result-limit", "512"],
-    input: {
-      target: "123:456", mode: "style", depth: 2, sessionId: "workspace",
-    },
-  }]);
-});
-
-test("node-scoped direct commands require exactly one positional target or node-id file URL", async () => {
-  const nodeUrl = "https://www.figma.com/design/ExampleFileKey/Fixture?node-id=12-34";
-  for (const commandName of ["design-context", "motion-context", "variables"]) {
-    const calls = [];
-    const runCli = async (argv, dependencies) => {
-      calls.push({ argv, input: JSON.parse(await dependencies.io.readStdin()) });
-      return 0;
-    };
-    assert.equal(await runFigmaCommand(commandName, ["12:34", "--state-file", stateFile], { runCli }), 0);
-    assert.equal(calls.at(-1).input.target, "12:34");
-    assert.equal(await runFigmaCommand(commandName, ["--file", nodeUrl, "--state-file", stateFile], { runCli }), 0);
-    assert.equal(calls.at(-1).input.file, nodeUrl);
-
-    for (const invalidArgs of [
-      ["--state-file", stateFile],
-      ["--file", "ExampleFileKey", "--state-file", stateFile],
-      ["12:34", "--file", nodeUrl, "--state-file", stateFile],
-    ]) {
-      const output = createOutput();
-      assert.equal(await runFigmaCommand(commandName, invalidArgs, {
-        ...output.dependencies,
-        runCli: async () => assert.fail("invalid node target must fail before runtime"),
-      }), 2);
-      assert.match(output.stderr, /exactly one node target|must be a Figma URL containing node-id/iu);
-    }
-
-    const help = createOutput();
-    assert.equal(await runFigmaCommand(commandName, ["--help"], help.dependencies), 0);
-    assert.match(help.stdout, /--file <node-url>.*must.*node-id|--file <node-url>.*containing node-id/iu);
-    assert.doesNotMatch(help.stdout, /--file <url-or-key>/u);
-  }
-
-  const metadataHelp = createOutput();
-  assert.equal(await runFigmaCommand("metadata", ["--help"], metadataHelp.dependencies), 0);
-  assert.match(metadataHelp.stdout, /--file <url-or-key>/u);
-  assert.doesNotMatch(metadataHelp.stdout, /--file <node-url>/u);
-});
-
-test("removed handle and policy options fail as optimized CLI usage errors", async () => {
-  const cases = [
-    ["sessions:read", ["default", "--with-handles"]],
-    ["inspect", ["123:456", "--handle", "hero"]],
-    ["inspect", ["123:456", "--mode", "validate"]],
-    ["eval", ["--input", "eval.json", "--mode", "write"]],
-    ["eval", ["--input", "eval.json", "--allow-dangerous-operations"]],
-    ["eval", ["--input", "eval.json", "--handle-updates", "replace"]],
-    ["script:run", ["--input", "script.json", "--allow-dangerous-operations"]],
-  ];
-
-  for (const [commandName, args] of cases) {
-    const output = createOutput();
-    assert.equal(await runFigmaCommand(commandName, [
-      ...args,
-      "--state-file", stateFile,
-    ], {
-      ...output.dependencies,
-      runCli: async () => assert.fail(`${commandName} must reject removed options before runtime`),
-    }), 2, `${commandName} ${args.join(" ")}`);
-    assert.match(output.stderr, /Unknown option|must be one of: inspect, style/u);
-  }
-});
-
-test("direct parsing supports option order and an exact positional separator", async () => {
-  const calls = [];
-  const runCli = async (argv, dependencies) => {
-    calls.push({ argv, input: JSON.parse(await dependencies.io.readStdin()) });
-    return 0;
-  };
-
-  assert.equal(await runFigmaCommand("api:search", ["--limit", "2", "createFrame", "--state-file", stateFile], { runCli }), 0);
-  assert.equal(await runFigmaCommand("api:search", ["createFrame", "--limit", "2", "--state-file", stateFile], { runCli }), 0);
-  assert.equal(await runFigmaCommand("api:search", ["--limit", "2", "--state-file", stateFile, "--", "--help"], { runCli }), 0);
-  assert.deepEqual(calls.map(({ input }) => input), [
-    { kind: "api", symbol: "createFrame", maxResults: 2 },
-    { kind: "api", symbol: "createFrame", maxResults: 2 },
-    { kind: "api", symbol: "--help", maxResults: 2 },
-  ]);
-});
-
-test("docs commands map catalog filters, stable ids, and automatic search routing", async () => {
-  const calls = [];
-  const runCli = async (_argv, dependencies) => {
-    calls.push(JSON.parse(await dependencies.io.readStdin()));
-    return 0;
-  };
-
-  assert.equal(await runFigmaCommand("docs:list", ["--state-file", stateFile], { runCli }), 0);
-  assert.equal(await runFigmaCommand("docs:catalog", [
-    "--task-family", "code-connect", "--surface", "design", "--classification", "conditional",
-    "--limit", "25", "--state-file", stateFile,
-  ], { runCli }), 0);
-  assert.equal(await runFigmaCommand("docs:read", ["canonical:code-connect/router", "--state-file", stateFile], { runCli }), 0);
-  assert.equal(await runFigmaCommand("docs:search", ["components", "--state-file", stateFile], { runCli }), 0);
-  assert.equal(await runFigmaCommand("docs:search", [
-    "components", "--scope", "router", "--surface", "design", "--task-family", "design-editing",
-    "--state-file", stateFile,
-  ], { runCli }), 0);
-  assert.deepEqual(calls, [
-    { mode: "list" },
-    { mode: "catalog", taskFamily: "code-connect", surface: "design", classification: "conditional", limit: 25 },
-    { mode: "read", id: "canonical:code-connect/router" },
-    { kind: "docs", scope: "auto", query: "components" },
-    { kind: "docs", scope: "router", query: "components", surface: "design", taskFamily: "design-editing" },
-  ]);
-
-  for (const scope of ["unknown", "Auto", "example"]) {
-    const output = createOutput();
-    assert.equal(await runFigmaCommand("docs:search", [
-      "components", "--scope", scope, "--state-file", stateFile,
-    ], { ...output.dependencies, runCli }), 2, scope);
-    assert.match(output.stderr, /must be one of: auto, active, conditional, router, examples, all/u, scope);
-  }
-
-  const catalogOutput = createOutput();
-  assert.equal(await runFigmaCommand("docs:catalog", [
-    "--task-family", "create-new-file", "--state-file", stateFile,
-  ], { ...catalogOutput.dependencies, runCli }), 2);
-  assert.match(catalogOutput.stderr, /must be one of: code-connect, create-file/u);
-
-  const workflowCalls = [];
-  assert.equal(await runFigmaCommand("guidance", [
-    "motion implementation", "--workflow", "motion-implementation", "--state-file", stateFile,
-  ], {
-    runCli: async (_argv, dependencies) => {
-      workflowCalls.push(JSON.parse(await dependencies.io.readStdin()));
-      return 0;
-    },
-  }), 0);
-  assert.deepEqual(workflowCalls, [{
-    query: "motion implementation",
-    workflow: "motion-implementation",
-  }]);
-
-  const unknownWorkflowOutput = createOutput();
-  assert.equal(await runFigmaCommand("guidance", [
-    "motion implementation", "--workflow", "missing-workflow", "--state-file", stateFile,
-  ], {
-    ...unknownWorkflowOutput.dependencies,
-    runCli: async () => assert.fail("unknown workflow must fail before runtime"),
-  }), 2);
-  assert.match(unknownWorkflowOutput.stderr, /must be one of: design-implementation-context, motion-implementation/u);
-
-  const apiOutput = createOutput();
-  assert.equal(await runFigmaCommand("api:search", [
-    "createFrame", "--scope", "active", "--state-file", stateFile,
-  ], { ...apiOutput.dependencies, runCli }), 2);
-  assert.match(apiOutput.stderr, /Unknown option for figma api:search: --scope/u);
-});
-
-test("strict integers accept exact boundaries and reject non-decimal or unsafe values before runtime", async () => {
-  const accepted = [];
-  for (const value of ["0", "10000"]) {
-    assert.equal(await runFigmaCommand("doctor", ["--state-file", stateFile, "--max-inline-bytes", value], {
-      runCli: async (argv) => { accepted.push(argv); return 0; },
-    }), 0);
-  }
-  assert.deepEqual(accepted, [
-    ["doctor", "--input", "-", "--session-file", stateFile, "--inline-result-limit", "0"],
-    ["doctor", "--input", "-", "--session-file", stateFile, "--inline-result-limit", "10000"],
-  ]);
-
-  for (const value of ["", "+1", "1.0", "1e3", "9007199254740992", "-9007199254740992"]) {
-    const output = createOutput();
-    assert.equal(await runFigmaCommand("doctor", ["--state-file", stateFile, "--max-inline-bytes", value], {
-      ...output.dependencies,
-      readFile: async () => assert.fail("invalid input must fail before file I/O"),
-      runCli: async () => assert.fail("invalid input must fail before runtime"),
-    }), 2, value);
-    assert.match(output.stderr, /requires an integer|requires a safe integer/u, value);
-  }
-});
-
-test("JSON commands retain optimized option validation and transport mapping", async () => {
-  const calls = [];
-  const output = createOutput();
-  assert.equal(await runFigmaCommand("task:prepare", [
-    "--input", "task.json", "--state-file", stateFile, "--max-inline-bytes", "0",
-  ], {
-    ...output.dependencies,
-    runCli: async (argv) => { calls.push(argv); return 7; },
-  }), 7);
-  assert.deepEqual(calls, [[
-    "prepare-task", "--input", "task.json", "--session-file", stateFile, "--inline-result-limit", "0",
-  ]]);
-
-  assert.equal(await runFigmaCommand("task:prepare", ["--state-file", stateFile], output.dependencies), 2);
-  assert.match(output.stderr, /requires --input <json-file\|->/u);
-});
-
-test("JSON commands normalize an npm-forwarded standalone dash to stdin and reject duplicate input", async () => {
-  const calls = [];
-  assert.equal(await runFigmaCommand("eval", [
-    "--state-file", stateFile, "-",
-  ], {
-    runCli: async (argv) => { calls.push(argv); return 0; },
-  }), 0);
-  assert.deepEqual(calls, [["eval", "--session-file", stateFile, "--input", "-"]]);
-
-  const output = createOutput();
-  assert.equal(await runFigmaCommand("eval", [
-    "--input", "eval.json", "--state-file", stateFile, "-",
-  ], {
-    ...output.dependencies,
-    runCli: async () => assert.fail("duplicate input must fail before runtime"),
-  }), 2);
-  assert.match(output.stderr, /Duplicate input/u);
-});
-
-test("every executing optimized command requires an explicit absolute state file", async () => {
-  for (const commandName of Object.keys(FIGMA_DIRECT_COMMANDS)) {
-    const output = createOutput();
-    const args = commandName === "guidance" ? ["query"]
-      : commandName === "docs:read" ? ["project:overview"]
-        : commandName === "docs:search" || commandName === "api:search" || commandName === "design-system" ? ["query"]
-          : commandName === "sessions:read" ? ["default"]
-            : commandName === "upstream:read" ? ["whoami"]
-              : [];
-    assert.equal(await runFigmaCommand(commandName, args, {
-      ...output.dependencies,
-      runCli: async () => assert.fail("missing state file must fail before runtime"),
-    }), 2, commandName);
-    assert.match(output.stderr, /requires --state-file <path>/u, commandName);
-  }
-
-  for (const commandName of Object.keys(FIGMA_JSON_COMMANDS)) {
-    const output = createOutput();
-    const inputArgs = commandName === "open" ? [] : ["--input", "input.json"];
-    assert.equal(await runFigmaCommand(commandName, inputArgs, {
-      ...output.dependencies,
-      runCli: async () => assert.fail("missing state file must fail before runtime"),
-    }), 2, commandName);
-    assert.match(output.stderr, /requires --state-file <path>/u, commandName);
-  }
-
-  const invalidStateFiles = [
-    "relative/state.json",
-    ...(process.platform === "win32" ? ["/state.json", "\\state.json"] : []),
-  ];
-  for (const [commandName, args] of [["guidance", ["query"]], ["open", []]]) {
-    for (const invalidStateFile of invalidStateFiles) {
-      const output = createOutput();
-      assert.equal(await runFigmaCommand(commandName, [...args, "--state-file", invalidStateFile], {
-        ...output.dependencies,
-        runCli: async () => assert.fail("invalid state file must fail before runtime"),
-      }), 2, `${commandName} ${invalidStateFile}`);
-      assert.match(output.stderr, /requires a fully qualified absolute path/u, `${commandName} ${invalidStateFile}`);
-    }
-  }
-});
-
-test("bare help remains a legal positional or option value", async () => {
-  const directCalls = [];
-  const directOutput = createOutput();
-  assert.equal(await runFigmaCommand("api:search", ["help", "--state-file", stateFile], {
-    ...directOutput.dependencies,
-    runCli: async (argv, dependencies) => {
-      directCalls.push({ argv, input: JSON.parse(await dependencies.io.readStdin()) });
-      return 0;
-    },
-  }), 0);
-  assert.deepEqual(directCalls, [{
-    argv: ["lookup", "--input", "-", "--session-file", stateFile],
-    input: { kind: "api", symbol: "help" },
-  }]);
-  assert.equal(directOutput.stdout, "");
-
-  const jsonCalls = [];
-  const jsonOutput = createOutput();
-  assert.equal(await runFigmaCommand("eval", ["--input", "help", "--state-file", stateFile], {
-    ...jsonOutput.dependencies,
-    runCli: async (argv) => { jsonCalls.push(argv); return 0; },
-  }), 0);
-  assert.deepEqual(jsonCalls, [["eval", "--input", "help", "--session-file", stateFile]]);
-  assert.equal(jsonOutput.stdout, "");
-});
-
-test("root, family, direct, and JSON help remain locally formatted", async () => {
-  const root = createOutput();
-  assert.equal(await runFigmaCommandCli(["--help"], root.dependencies), 0);
-  assert.equal(root.stdout, formatRootHelp());
-  assert.match(root.stdout, /^# Figma command CLI help/u);
-  assert.match(root.stdout, /## Start here/u);
-  assert.match(root.stdout, /## Recommended order/u);
-  assert.match(root.stdout, /## Discovery entrypoints/u);
-  assert.match(root.stdout, /npm --silent run figma:docs -- --help/u);
-  assert.match(root.stdout, /npm --silent run figma:api -- --help/u);
-  assert.match(root.stdout, /npm --silent run figma:sessions -- --help/u);
-  assert.match(root.stdout, /npm --silent run figma:upstream -- --help/u);
-
-  const concreteCommandNames = [
-    ...Object.keys(FIGMA_DIRECT_COMMANDS),
-    ...Object.keys(FIGMA_JSON_COMMANDS),
-  ].sort();
-  const groupedCommandNames = FIGMA_ROOT_HELP_GROUPS.flatMap((group) => group.commands).sort();
-  assert.equal(groupedCommandNames.length, 26);
-  assert.equal(new Set(groupedCommandNames).size, 26);
-  assert.deepEqual(groupedCommandNames, concreteCommandNames);
-
-  for (const commandName of concreteCommandNames) {
-    const spec = commandName in FIGMA_DIRECT_COMMANDS
-      ? FIGMA_DIRECT_COMMANDS[commandName]
-      : FIGMA_JSON_COMMANDS[commandName];
-    assert.ok(root.stdout.includes(`\`npm --silent run figma:${commandName} -- --help\``), commandName);
-    assert.ok(root.stdout.includes(spec.purpose), commandName);
-  }
-  assert.doesNotMatch(
-    root.stdout,
-    /\braw\b|maintenance:|run-script-file|apply-asset-manifest|download-assets|capture-node|prepare-task|call-upstream-tool|upstream-tools|get-metadata|get-design-context|get-motion-context|get-variable-defs|search-design-system|get-libraries|\bMCP\b|figma-workspace:\/\/|resource:\/\//iu,
-  );
-  assert.doesNotMatch(root.stdout, /task:run|run-task-plan/u);
-
-  const family = createOutput();
-  assert.equal(await runFigmaCommand("docs", [], family.dependencies), 0);
-  assert.match(family.stdout, /^# figma docs help/u);
-  assert.match(family.stdout, /figma:docs:catalog/u);
-  assert.match(family.stdout, /figma:docs:search/u);
-
-  const direct = createOutput();
-  assert.equal(await runFigmaCommand("guidance", ["--help"], direct.dependencies), 0);
-  assert.match(direct.stdout, /--card-limit <n>/u);
-  assert.doesNotMatch(direct.stdout, /--mode|card mode|catalog mode/iu);
-  assert.match(direct.stdout, /--state-file <path>.*Required\./u);
-  assert.match(direct.stdout, /--max-inline-bytes <bytes>/u);
-  assert.match(direct.stdout, /<query>.*Required\./u);
-  assert.match(direct.stdout, /--workflow <design-implementation-context\|motion-implementation>.*Default: unset\./u);
-  assert.match(direct.stdout, /--card-limit <n>.*Range: 1 to 8\./u);
-  assert.match(direct.stdout, /--max-inline-bytes <bytes>.*Default: 4096\..*Range: 0 to 10000\./u);
-
-  const json = createOutput();
-  assert.equal(await runFigmaCommand("capture", ["-h"], json.dependencies), 0);
-  assert.match(json.stdout, /## Input JSON Schema/u);
-  assert.match(json.stdout, /"target"/u);
-  assert.match(json.stdout, /"required": \[\s*"target"/u);
-  assert.doesNotMatch(json.stdout, /figma:raw|capture-node|get_screenshot|figma_workspace_/u);
-  assert.match(json.stdout, /--input <json-file\|->.*Required\./u);
-  assert.match(json.stdout, /--state-file <path>.*Required\./u);
-  assert.match(json.stdout, /--max-inline-bytes <bytes>.*Default: input inlineResultLimit when present, otherwise 4096\./u);
-
-  const inspect = createOutput();
-  assert.equal(await runFigmaCommand("inspect", ["--help"], inspect.dependencies), 0);
-  assert.match(inspect.stdout, /--mode <inspect\|style>/u);
-  assert.doesNotMatch(inspect.stdout, /--handle|validate|\$handle|handles/u);
-
-  const sessionsRead = createOutput();
-  assert.equal(await runFigmaCommand("sessions:read", ["--help"], sessionsRead.dependencies), 0);
-  assert.match(sessionsRead.stdout, /--with-history/u);
-  assert.doesNotMatch(sessionsRead.stdout, /--with-handles|handles|\$handle/u);
-
-  for (const commandName of ["open", "eval", "script:run"]) {
-    const output = createOutput();
-    assert.equal(await runFigmaCommand(commandName, ["--help"], output.dependencies), 0);
-    assert.doesNotMatch(output.stdout, /allowDangerousOperations|allow-dangerous-operations|handleUpdates|handle-updates|handles|"strict"/u, commandName);
-  }
-
-  for (const commandName of Object.keys(FIGMA_JSON_COMMANDS)) {
-    const output = createOutput();
-    assert.equal(await runFigmaCommand(commandName, ["--help"], output.dependencies), 0);
-    const schemaSource = output.stdout.match(/## Input JSON Schema\n```json\n([\s\S]*?)\n```/u)?.[1];
-    assert.notEqual(schemaSource, undefined, commandName);
-    const schema = JSON.parse(schemaSource);
-    assert.equal(schema.type, "object", commandName);
-    assert.equal(typeof schema.properties, "object", commandName);
-    assert.equal(Array.isArray(schema.required), true, commandName);
-    assert.doesNotMatch(
-      output.stdout,
-      /figma_workspace_|figma-workspace:\/\/|run-script-file|apply-asset-manifest|download-assets|capture-node|prepare-task|call-upstream-tool|use_figma/u,
-      commandName,
-    );
-  }
-
-  const docsSearch = createOutput();
-  assert.equal(await runFigmaCommand("docs:search", ["--help"], docsSearch.dependencies), 0);
-  assert.match(docsSearch.stdout, /--scope <auto\|active\|conditional\|router\|examples\|all>/u);
-  assert.match(docsSearch.stdout, /--scope .*Default: auto\..*Allowed: auto, active, conditional, router, examples, all\./u);
-  assert.match(docsSearch.stdout, /--surface <design\|figjam\|slides>/u);
-  assert.match(docsSearch.stdout, /--task-family <code-connect\|create-file\|design-to-code/u);
-
-  const docsCatalog = createOutput();
-  assert.equal(await runFigmaCommand("docs:catalog", ["--help"], docsCatalog.dependencies), 0);
-  assert.match(docsCatalog.stdout, /--classification <active\|conditional\|router\|examples>/u);
-  assert.match(docsCatalog.stdout, /--limit <n>.*Range: 1 to 100\./u);
-
-  const docsRead = createOutput();
-  assert.equal(await runFigmaCommand("docs:read", ["--help"], docsRead.dependencies), 0);
-  assert.match(docsRead.stdout, /<doc-id>.*Required\./u);
-  assert.match(docsRead.stdout, /project:workflow/u);
-
-  const apiSearch = createOutput();
-  assert.equal(await runFigmaCommand("api:search", ["--help"], apiSearch.dependencies), 0);
-  assert.doesNotMatch(apiSearch.stdout, /--scope/u);
-});
-
-function createOutput() {
-  let stdout = "";
-  let stderr = "";
   return {
-    get stdout() { return stdout; },
-    get stderr() { return stderr; },
+    stdout,
+    stderr,
+    calls,
     dependencies: {
-      writeStdout: (value) => { stdout += value; },
-      writeStderr: (value) => { stderr += value; },
+      cwd: () => options.cwd ?? process.cwd(),
+      readFile: options.readFile,
+      readStdin: async (maxBytes) => {
+        options.stdinLimits?.push(maxBytes);
+        return options.stdin ?? "";
+      },
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+      runCli: async (argv, dependencies) => {
+        calls.push({ argv: [...argv], input: JSON.parse(await dependencies.io.readStdin(options.mappedMaxBytes)) });
+        return 0;
+      },
     },
   };
 }
+
+test("root and family help expose only stateless fixed leaf commands", async () => {
+  const root = harness();
+  assert.equal(await runFigmaCommandCli(["--help"], root.dependencies), 0);
+  assert.match(root.stdout.join(""), /^# Figma Workspace/um);
+  assert.match(root.stdout.join(""), /figma:run/u);
+  assert.match(root.stdout.join(""), /figma:doctor/u);
+  assert.doesNotMatch(root.stdout.join(""), /state-file|session-file|figma:open|task:prepare|script:run|figma:eval|figma:guidance/u);
+
+  for (const family of ["docs", "api", "upstream"]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand(family, [], current.dependencies), 0);
+    assert.match(current.stdout.join(""), new RegExp(`^# figma:${family}:help`, "mu"));
+  }
+  assert.doesNotMatch(formatRootHelp(), /figma:sessions/u);
+});
+
+test("run forwards one explicit file and safe TypeScript file", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-stateless-run-"));
+  try {
+    const script = resolve(directory, "change.figma.ts");
+    await writeFile(script, "return { ok: true };\n", "utf8");
+    const current = harness({ cwd: directory });
+    assert.equal(await runFigmaCommand("run", ["--file", "https://www.figma.com/design/ExampleKey/UI", "--script", "change.figma.ts", "--output-dir", "results", "--max-inline-bytes", "2048"], current.dependencies), 0);
+    assert.deepEqual(current.calls[0].argv, ["run", "--input", "-", "--inline-result-limit", "2048"]);
+    assert.equal(current.calls[0].input.file, "https://www.figma.com/design/ExampleKey/UI");
+    assert.equal(current.calls[0].input.scriptPath, script);
+    assert.equal(current.calls[0].input.outputDir, resolve(directory, "results"));
+    assert.equal("sessionId" in current.calls[0].input, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("run accepts TypeScript stdin and rejects ambiguous or unsafe input", async () => {
+  const source = "return { ok: true };";
+  const current = harness({ stdin: source });
+  assert.equal(await runFigmaCommand("run", ["--file", "ExampleKey", "--surface", "design", "--source", "-"], current.dependencies), 0);
+  assert.equal(current.calls[0].input.source, source);
+
+  for (const argv of [
+    ["--file", "ExampleKey", "--surface", "design"],
+    ["--file", "ExampleKey", "--surface", "design", "--source", "inline"],
+    ["--file", "ExampleKey", "--surface", "design", "--source", "-", "--state-file", "state.json"],
+  ]) {
+    const invalid = harness({ stdin: source });
+    assert.equal(await runFigmaCommand("run", argv, invalid.dependencies), 2);
+    assert.equal(invalid.calls.length, 0);
+  }
+});
+
+test("run rejects symlink script targets", async (t) => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-stateless-symlink-"));
+  try {
+    const target = resolve(directory, "target.figma.ts");
+    const link = resolve(directory, "link.figma.ts");
+    await writeFile(target, "return {};\n", "utf8");
+    try { await symlink(target, link, "file"); } catch (error) { if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("symlinks unavailable"); throw error; }
+    const current = harness();
+    assert.equal(await runFigmaCommand("run", ["--file", "ExampleKey", "--surface", "design", "--script", link], current.dependencies), 2);
+    assert.match(current.stderr.join(""), /non-symlink|reparse/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("capture supports file+node or one full node URL", async () => {
+  const pair = harness();
+  assert.equal(await runFigmaCommand("capture", ["--file", "ExampleKey", "--node", "230:2", "--surface", "design", "--image-file", "capture.png", "--output-dir", "out"], pair.dependencies), 0);
+  assert.deepEqual(pair.calls[0].input, { file: "ExampleKey", target: "230:2", surface: "design", imageFile: resolve("capture.png"), outputDir: resolve("out") });
+
+  const url = "https://www.figma.com/design/ExampleKey/UI?node-id=230-2";
+  const direct = harness();
+  assert.equal(await runFigmaCommand("capture", ["--target", url], direct.dependencies), 0);
+  assert.equal(direct.calls[0].input.target, url);
+
+  const conflict = harness();
+  assert.equal(await runFigmaCommand("capture", ["--target", url, "--file", "Other", "--node", "1:2"], conflict.dependencies), 2);
+});
+
+test("doctor is public, local-only, and argument-free", async () => {
+  const current = harness();
+  assert.equal(await runFigmaCommand("doctor", [], current.dependencies), 0);
+  assert.deepEqual(current.calls[0], { argv: ["doctor", "--input", "-"], input: {} });
+  const invalid = harness();
+  assert.equal(await runFigmaCommand("doctor", ["--file", "ExampleKey"], invalid.dependencies), 2);
+});
+
+test("local docs and API leaves reject remote inline-result limits", async () => {
+  for (const [command, argv] of [
+    ["docs:catalog", ["--max-inline-bytes", "100"]],
+    ["docs:read", ["project:README.md", "--max-inline-bytes", "100"]],
+    ["docs:search", ["layout", "--max-inline-bytes", "100"]],
+    ["api:search", ["createFrame", "--max-inline-bytes", "100"]],
+  ]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand(command, argv, current.dependencies), 2, command);
+    assert.equal(current.calls.length, 0, command);
+  }
+});
+
+test("removed umbrella and stateful commands fail as usage errors", async () => {
+  for (const command of ["open", "sessions", "sessions:list", "task:prepare", "eval", "script:run", "guidance", "maintenance:doctor"]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand(command, [], current.dependencies), 2, command);
+    assert.equal(current.calls.length, 0, command);
+  }
+});
+
+test("every public leaf help publishes its real argv contract", () => {
+  const leaves = [
+    "docs:list", "docs:catalog", "docs:read", "docs:search", "api:search", "doctor",
+    "metadata", "inspect", "design-context", "motion-context", "variables", "design-system", "libraries",
+    "run", "capture", "assets:apply", "assets:download", "upstream:list", "upstream:read", "upstream:call",
+  ];
+  for (const leaf of leaves) {
+    const help = formatCommandHelp(leaf);
+    assert.match(help, new RegExp(`Usage: figma:${leaf.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`), leaf);
+    assert.doesNotMatch(help, /Use figma:help for the complete/u, leaf);
+  }
+  for (const leaf of ["design-context", "motion-context", "variables"]) {
+    assert.match(formatCommandHelp(leaf), /--node <node-id>/u, leaf);
+  }
+  assert.match(formatCommandHelp("metadata"), /--file <url\|key> \[--node <node-id>\]/u);
+});
+
+test("official read leaves accept raw file keys without surface while native leaves defer to their strict contract", async () => {
+  for (const [command, argv] of [
+    ["metadata", ["--file", "ExampleKey"]],
+    ["design-context", ["--file", "ExampleKey", "--node", "1:2"]],
+    ["motion-context", ["--file", "ExampleKey", "--node", "1:2"]],
+    ["variables", ["--file", "ExampleKey", "--node", "1:2"]],
+    ["design-system", ["button", "--file", "ExampleKey"]],
+    ["libraries", ["--file", "ExampleKey"]],
+  ]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand(command, argv, current.dependencies), 0, command);
+  }
+});
+
+test("explicit public paths resolve from invocation cwd instead of outputDir", async () => {
+  const cwd = resolve(tmpdir(), "figma-public-path-base");
+  const manifest = JSON.stringify({
+    file: "ExampleKey",
+    surface: "design",
+    outputDir: "artifacts",
+    manifestPath: "manifests/assets.json",
+    assets: [{ path: "images/a.png", target: "1:2" }],
+  });
+  const current = harness({ cwd, stdin: manifest });
+  assert.equal(await runFigmaCommand("assets:apply", ["--input", "-"], current.dependencies), 0);
+  assert.equal(current.calls[0].input.outputDir, resolve(cwd, "artifacts"));
+  assert.equal(current.calls[0].input.manifestPath, resolve(cwd, "manifests/assets.json"));
+  assert.equal(current.calls[0].input.assets[0].path, resolve(cwd, "images/a.png"));
+});
+
+test("public stdin, JSON files, and mapped input honor the 256 KiB boundary", async () => {
+  const limit = 256 * 1024;
+  const prefix = '{"toolName":"x","arguments":{"pad":"';
+  const suffix = '"}}';
+  const boundary = `${prefix}${"a".repeat(limit - Buffer.byteLength(prefix) - Buffer.byteLength(suffix))}${suffix}`;
+  assert.equal(Buffer.byteLength(boundary), limit);
+
+  const ok = harness({ stdin: boundary });
+  assert.equal(await runFigmaCommand("upstream:call", ["--input", "-"], ok.dependencies), 0);
+
+  const oversizedStdin = harness({ stdin: `${boundary} ` });
+  assert.equal(await runFigmaCommand("upstream:call", ["--input", "-"], oversizedStdin.dependencies), 2);
+  assert.match(oversizedStdin.stderr.join(""), /Input exceeds 262144 bytes/u);
+
+  const oversizedFile = harness({ readFile: async () => `${boundary} ` });
+  assert.equal(await runFigmaCommand("upstream:call", ["--input", "input.json"], oversizedFile.dependencies), 2);
+
+  const mapped = harness({ stdin: '{"toolName":"x"}', mappedMaxBytes: 8 });
+  assert.equal(await runFigmaCommand("upstream:call", ["--input", "-"], mapped.dependencies), 2);
+  assert.match(mapped.stderr.join(""), /Input exceeds 8 bytes/u);
+});
+
+test("public leaves reject non-Figma and malformed Figma URLs before dispatch", async () => {
+  for (const [command, argv] of [
+    ["run", ["--file", "https://evil.example/design/ExampleKey/UI", "--surface", "design", "--source", "-"]],
+    ["metadata", ["--file", "https://www.figma.com/community/ExampleKey"]],
+    ["capture", ["--target", "https://evil.example/design/ExampleKey/UI?node-id=1-2"]],
+  ]) {
+    const current = harness({ stdin: "return {};" });
+    assert.equal(await runFigmaCommand(command, argv, current.dependencies), 2, command);
+    assert.equal(current.calls.length, 0, command);
+  }
+});

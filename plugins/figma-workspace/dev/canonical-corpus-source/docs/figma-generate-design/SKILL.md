@@ -4,7 +4,7 @@ Use this workflow to create or update **screens, views, and multi-section UI con
 
 ## Active mirror execution contract
 
-Write native Plugin API code in a local `.figma.ts` file and execute it with `figma:script:run`; use `figma:eval` only for a small, self-contained transaction. Use first-class reads for discovery: `figma:metadata`, `figma:design-context`, `figma:variables`, and `figma:libraries`; use `figma:design-system` for design-system search and `figma:capture` for a supported local capture workflow. For a capability without a typed command, first inspect its live schema through `figma:upstream:list` or `figma:upstream:read`, then call it with `figma:upstream:call`. The live schema is authoritative.
+Write native Plugin API code in a local `.figma.ts` file and execute it with `figma:run` using an explicit Figma file target. The same command handles small and substantial transactions. Use first-class reads for discovery: `figma:metadata`, `figma:design-context`, `figma:variables`, and `figma:libraries`; use `figma:design-system` for design-system search and `figma:capture` for a supported local capture workflow. For a capability without a typed command, first inspect its live schema through `figma:upstream:list` or `figma:upstream:read`, then call it with `figma:upstream:call`. The live schema is authoritative.
 
 ## Workflow Boundaries
 
@@ -14,7 +14,7 @@ Write native Plugin API code in a local `.figma.ts` file and execute it with `fi
 
 ## Prerequisites
 
-- The CLI state file must be selected and the required Figma access available
+- An explicit target Figma URL or fileKey and the required Figma access are available
 - The target Figma file must have a published design system with components (or access to a team library)
 - User must provide a target Figma file (URL or `fileKey`). If a new-file capability is required, inspect its live schema with `figma:upstream:list` or `figma:upstream:read`, then invoke it through `figma:upstream:call` and reuse the returned identifier.
 - Source code or description of the screen/view to build/update
@@ -34,7 +34,7 @@ For source images, obtain authorized bytes through the project or `figma:assets:
 > **Hard gates — forbidden shortcuts:**
 >
 > - **Forbidden:** `figma:design-system` for component keys until 2a-i is complete and 2a-ii is attempted or logged N/A (e.g. "empty file, no existing screens").
-> - **Forbidden:** Any `figma:script:run` call that mutates the canvas (Step 3+) until all Step 2 rows in the checklist below are filled in.
+> - **Forbidden:** Any `figma:run` call that mutates the canvas (Step 3+) until all Step 2 rows in the checklist below are filled in.
 
 ### Step 1: Understand the Deliverable
 
@@ -62,9 +62,9 @@ You need three things from the design system: **components** (buttons, cards, et
 
 For each component you need (e.g., Button, Card, Input), search for its Code Connect file — glob or grep by component name (e.g., `**/Button.figma.tsx`, `**/Card.figma.ts`). Only read files that match components you actually need.
 
-From each matching Code Connect file, extract the Figma component URL. Parse `fileKey` and `nodeId` from the URL (convert hyphens to colons: `123-456` → `123:456`). Then resolve component keys via a local `.figma.ts` script executed with `figma:script:run`:
+From each matching Code Connect file, extract the Figma component URL. Parse `fileKey` and `nodeId` from the URL (convert hyphens to colons: `123-456` → `123:456`). Then resolve component keys via a local `.figma.ts` script executed with `figma:run`:
 
-**Example:** Code Connect file contains `// url=https://figma.com/design/ABC123/File?node-id=609-35535`. Parse `fileKey` = `ABC123`, `nodeId` = `609:35535`. Run a local `.figma.ts` script executed with `figma:script:run` against the **library file** (fileKey `ABC123`, not the target file) to resolve the key:
+**Example:** Code Connect file contains `// url=https://figma.com/design/ABC123/File?node-id=609-35535`. Parse `fileKey` = `ABC123`, `nodeId` = `609:35535`. Run a local `.figma.ts` script executed with `figma:run` against the **library file** (fileKey `ABC123`, not the target file) to resolve the key:
 
 ```js
 const node = await figma.getNodeByIdAsync("609:35535");
@@ -76,7 +76,7 @@ Batch multiple lookups in a single call. Use the returned keys with `importCompo
 
 Mark resolved components. If all components are resolved, skip 2a-ii and 2a-iii. If none of the needed components have Code Connect files, proceed to 2a-ii.
 
-**2a-ii — REQUIRED if unresolved components remain: Inspect existing screens.** Check if the target file already contains screens using the same design system. A single `figma:script:run` call that walks an existing frame's instances gives you an exact, authoritative component map:
+**2a-ii — REQUIRED if unresolved components remain: Inspect existing screens.** Check if the target file already contains screens using the same design system. A single `figma:run` call that walks an existing frame's instances gives you an exact, authoritative component map:
 
 ```js
 const frame = figma.currentPage.findOne(n => n.name === "Existing Screen");
@@ -101,10 +101,10 @@ Before searching, call `figma:libraries` to discover which libraries are availab
 
 ```text
 // Step 1: Discover available libraries
-npm --silent run figma:libraries -- --file <file-key> --state-file <absolute-path>
+npm --silent run figma:libraries -- --file <file-key>
 
 // Step 2: Search within a specific library using its libraryKey
-npm --silent run figma:design-system -- "button" --file <file-key> --components --library <library-key> --state-file <absolute-path>
+npm --silent run figma:design-system -- "button" --file <file-key> --components --library <library-key>
 ```
 
 When the libraries result reports a next offset, call `figma:libraries` again with `--offset <n>`. If the user names a specific library you don't see in the current page, page further before giving up.
@@ -208,9 +208,9 @@ See [text-style-patterns.md](canonical:figma-use/references/text-style-patterns.
 
 ### Step 3: Create the Wrapper Frame First
 
-**Do NOT build sections as top-level page children and reparent them later** — moving nodes across separate `figma:script:run` calls with `appendChild()` silently fails and produces orphaned frames. Instead, create the wrapper first, then build each section directly inside it.
+**Do NOT build sections as top-level page children and reparent them later** — moving nodes across separate `figma:run` calls with `appendChild()` silently fails and produces orphaned frames. Instead, create the wrapper first, then build each section directly inside it.
 
-Create the wrapper in its own `figma:script:run` call. Position it away from existing content and return its ID:
+Create the wrapper in its own `figma:run` call. Position it away from existing content and return its ID:
 
 ```js
 // Find clear space
@@ -241,7 +241,7 @@ return { success: true, wrapperId: wrapper.id };
 
 ### Step 4: Build Each Section Inside the Wrapper
 
-**This is the most important step.** Build one section at a time, each in its own `figma:script:run` call. At the start of each script, fetch the wrapper by ID and append new content directly to it.
+**This is the most important step.** Build one section at a time, each in its own `figma:run` call. At the start of each script, fetch the wrapper by ID and append new content directly to it.
 
 ```js
 const createdNodeIds = [];
@@ -354,7 +354,7 @@ slotFrame.appendChild(icon);
 
 ### Step 5: Validate the Full View and Transfer Images
 
-After composing all sections, call `figma:capture` on the wrapper frame and compare against the source. Fix any issues with targeted `figma:script:run` calls — don't rebuild the entire view.
+After composing all sections, call `figma:capture` on the wrapper frame and compare against the source. Fix any issues with targeted `figma:run` calls — don't rebuild the entire view.
 
 **Screenshot individual sections, not just the full view.** A full-view screenshot at reduced resolution hides text truncation, wrong colors, and placeholder text that hasn't been overridden. Take a screenshot of each section by node ID to catch:
 - **Cropped/clipped text** — line heights or frame sizing cutting off descenders, ascenders, or entire lines
@@ -435,7 +435,7 @@ Because this skill works incrementally (one section per call), errors are natura
 - **Prefer design system tokens over hardcoded values.** Use variable bindings for colors, spacing, and radii. Use text styles for typography. Use effect styles for shadows. This keeps the screen linked to the design system.
 - **Prefer component instances over manual builds.** Instances stay linked to the source component and update automatically when the design system evolves.
 - **Componentize by default.** Build repeated or reusable elements as a component once, then place instances. Do not ship a flat tree of one-off frames that needs a second "make it componentized" pass.
-- **Work section by section.** Never build more than one major section per `figma:script:run` call.
+- **Work section by section.** Never build more than one major section per `figma:run` call.
 - **Return node IDs from every call.** You'll need them to compose sections and for error recovery.
 - **Validate visually after each section.** Use `figma:capture` to catch issues early.
 - **Assert the font family, not just a successful load.** A script can load the wrong font without error. After building, verify rendered text uses the product font identified in Step 1 (see Step 5).

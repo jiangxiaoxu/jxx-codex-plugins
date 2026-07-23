@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import {
@@ -17,14 +17,18 @@ import {
 
 const PNG_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
 
-function configFor(tempDir) {
-  return {
-    schemaVersion: 1,
+function configFor(tempDir, options = {}) {
+  const config = {
+    schemaVersion: 2,
     designFileUrl: "https://www.figma.com/design/live-fixture/Live-Smoke-Fixture",
-    stateFile: resolve(tempDir, "state.json"),
-    workspaceDir: resolve(tempDir, "workspace"),
     allowMutationCleanup: true,
   };
+  if (options.outputDir !== undefined) {
+    config.outputDir = options.outputDir;
+  } else if (options.withoutOutputDir !== true) {
+    config.outputDir = resolve(tempDir, "output");
+  }
+  return config;
 }
 
 function sidecarMarkdown(path) {
@@ -42,10 +46,13 @@ function sidecarMarkdown(path) {
   ].join("\n");
 }
 
-function createLiveScenario(tempDir, options = {}) {
-  const stateFile = resolve(tempDir, "state.json");
+function createLiveScenario(tempDir, config, options = {}) {
   const runId = options.runId ?? "live-smoke-run-0001";
-  const capturePath = resolve(tempDir, "workspace", "capture-results", "live-smoke.png");
+  const temporaryOutputRoot = resolve(tmpdir(), "figma-workspace", "live-test-invocation");
+  const outputRoot = config.outputDir ?? temporaryOutputRoot;
+  const capturePath = config.outputDir === undefined
+    ? resolve(outputRoot, "captures", `live-smoke-${runId}.png`)
+    : resolve(config.outputDir, `live-smoke-${runId}.png`);
   const sources = new Map([[capturePath, PNG_BYTES]]);
   const commands = [];
   let sidecarIndex = 0;
@@ -56,60 +63,33 @@ function createLiveScenario(tempDir, options = {}) {
     { id: "100:2", type: "TEXT", parentId: "100:1", tag: runId },
   ];
   const matches = options.matches ?? completeMatches;
-  const evalSuccess = (payload) => ({
+  const runSuccess = (payload) => ({
     ok: true,
     executionOutcome: "succeeded",
     upstream: { ok: true, result: payload },
   });
-  const reconcile = (entries) => evalSuccess({
+  const reconcile = (entries) => runSuccess({
     tagNamespace: LIVE_SMOKE_PLUGIN_DATA_NAMESPACE,
     tagKey: LIVE_SMOKE_PLUGIN_DATA_KEY,
     runId,
     matches: entries,
   });
   const nextResult = (command) => {
-    if (command.script === "figma:doctor") return { result: { ok: true }, exitCode: 0 };
+    if (command.script === "figma:doctor") return { result: undefined, exitCode: 0 };
     if (command.script === "figma:upstream:read") {
       return { result: { ok: true, name: "whoami", inputSchema: { type: "object" } }, exitCode: 0 };
     }
-    if (command.script === "figma:upstream:call") {
-      if (options.omitWhoamiUpstreamResult) {
-        const upstreamPath = resolve(tempDir, "workspace", "whoami.upstream.json");
-        const upstream = { kind: "json", ok: true, result: { account: "live-test" } };
-        const source = JSON.stringify(upstream);
-        sources.set(upstreamPath, source);
-        return {
-          result: {
-            ok: true,
-            upstream: { kind: "json", ok: true },
-            outputFiles: {
-              upstreamFile: {
-                path: upstreamPath,
-                bytes: Buffer.byteLength(source, "utf8"),
-                lineCount: 1,
-              },
-            },
-          },
-          exitCode: 0,
-        };
-      }
-      return { result: { ok: true, upstream: { ok: true, result: { account: "live-test" } } }, exitCode: 0 };
-    }
-    if (command.script === "figma:open") {
-      return { result: { ok: true, session: { id: "live-smoke-opened" } }, exitCode: 0 };
-    }
-    if (command.script === "figma:metadata") {
-      return { result: { ok: true, session: { id: "live-smoke-opened" } }, exitCode: 0 };
-    }
+    if (command.script === "figma:metadata") return { result: { ok: true }, exitCode: 0 };
     if (command.script === "figma:capture") {
       return {
         result: { ok: true, nodeId: "100:1", imageFile: capturePath, bytes: PNG_BYTES.byteLength },
         exitCode: 0,
       };
     }
-    if (command.script === "figma:eval") {
-      const code = command.input.code;
-      if (code.includes("const frame = figma.createFrame();")) {
+    if (command.script === "figma:run") {
+      const source = command.input;
+      if (typeof source !== "string") throw new Error("figma:run must receive TypeScript source on stdin.");
+      if (source.includes("const frame = figma.createFrame();")) {
         if (options.creationOutcomeUnknown || options.loadFontPartialFailure) {
           return {
             result: {
@@ -124,7 +104,7 @@ function createLiveScenario(tempDir, options = {}) {
           };
         }
         return {
-          result: evalSuccess({
+          result: runSuccess({
             tagNamespace: LIVE_SMOKE_PLUGIN_DATA_NAMESPACE,
             tagKey: LIVE_SMOKE_PLUGIN_DATA_KEY,
             runId,
@@ -135,7 +115,7 @@ function createLiveScenario(tempDir, options = {}) {
           exitCode: 0,
         };
       }
-      if (code.includes("const ordered = [...matches].sort")) {
+      if (source.includes("const ordered = [...matches].sort")) {
         if (options.deleteOutcomeUnknown) {
           return {
             result: {
@@ -147,7 +127,7 @@ function createLiveScenario(tempDir, options = {}) {
           };
         }
         return {
-          result: evalSuccess({
+          result: runSuccess({
             tagNamespace: LIVE_SMOKE_PLUGIN_DATA_NAMESPACE,
             tagKey: LIVE_SMOKE_PLUGIN_DATA_KEY,
             runId,
@@ -157,7 +137,7 @@ function createLiveScenario(tempDir, options = {}) {
           exitCode: 0,
         };
       }
-      if (code.includes("const matches = figma.currentPage.findAll")) {
+      if (source.includes("const matches = figma.currentPage.findAll")) {
         const result = readbackCount < 2 ? reconcile(matches) : reconcile([]);
         readbackCount += 1;
         return { result, exitCode: 0 };
@@ -168,6 +148,7 @@ function createLiveScenario(tempDir, options = {}) {
 
   return {
     commands,
+    capturePath,
     readFile: async (path, encoding) => {
       const source = sources.get(resolve(path));
       if (source === undefined) throw new Error(`Missing fake file: ${path}`);
@@ -177,7 +158,17 @@ function createLiveScenario(tempDir, options = {}) {
     executor: async (command) => {
       commands.push(command);
       const next = nextResult(command);
-      const sidecarPath = resolve(dirname(stateFile), "results", `${sidecarIndex += 1}.json`);
+      if (command.script === "figma:doctor") {
+        return {
+          exitCode: next.exitCode,
+          stdout: "figma doctor succeeded\n",
+          stderr: "",
+          timedOut: false,
+          spawnError: undefined,
+        };
+      }
+      const sidecarRoot = command.args.includes("--output-dir") ? outputRoot : temporaryOutputRoot;
+      const sidecarPath = resolve(sidecarRoot, "results", `${sidecarIndex += 1}.json`);
       sources.set(sidecarPath, JSON.stringify(next.result));
       return {
         exitCode: next.exitCode,
@@ -190,17 +181,45 @@ function createLiveScenario(tempDir, options = {}) {
   };
 }
 
-test("live config is fixed, strict, and rejects secrets or unknown fields", async () => {
+function smokeOptions(tempDir, config, scenario, runId) {
+  return {
+    config,
+    configPath: resolve(tempDir, ".figma-workspace", "live-test.json"),
+    runId,
+    executor: scenario.executor,
+    readFile: scenario.readFile,
+    stat: async () => ({ isFile: () => true, size: 0 }),
+    env: { FIGMA_WORKSPACE_OAUTH_CACHE_PATH: resolve(tempDir, "oauth.json") },
+  };
+}
+
+function runCommands(commands) {
+  return commands.filter((command) => command.script === "figma:run");
+}
+
+test("live config is strict, supports an optional outputDir, and rejects legacy state fields", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-config-"));
   try {
     const valid = configFor(tempDir);
     assert.deepEqual(parseLiveTestConfig(valid, { configPath: "live-test.json" }), valid);
+    assert.deepEqual(
+      parseLiveTestConfig(configFor(tempDir, { withoutOutputDir: true }), { configPath: "live-test.json" }),
+      { ...configFor(tempDir, { withoutOutputDir: true }), outputDir: undefined },
+    );
+    assert.throws(
+      () => parseLiveTestConfig({ ...valid, schemaVersion: 1 }, { configPath: "live-test.json" }),
+      /must equal 2/u,
+    );
     assert.throws(
       () => parseLiveTestConfig({ ...valid, accessToken: "not-allowed" }, { configPath: "live-test.json" }),
       LiveSmokeUsageError,
     );
     assert.throws(
-      () => parseLiveTestConfig({ ...valid, extra: true }, { configPath: "live-test.json" }),
+      () => parseLiveTestConfig({ ...valid, stateFile: resolve(tempDir, "state.json") }, { configPath: "live-test.json" }),
+      /does not allow unknown field/u,
+    );
+    assert.throws(
+      () => parseLiveTestConfig({ ...valid, workspaceDir: resolve(tempDir, "workspace") }, { configPath: "live-test.json" }),
       /does not allow unknown field/u,
     );
     assert.throws(
@@ -223,231 +242,209 @@ test("live config is fixed, strict, and rejects secrets or unknown fields", asyn
   }
 });
 
-test("live smoke reconciles a loadFont partial failure only after its complete tagged hierarchy exists", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-unknown-"));
+test("live smoke runs against an explicit Design target with TypeScript stdin and captures the tagged frame", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-stateless-"));
   try {
     const runId = "live-smoke-run-0001";
-    const scenario = createLiveScenario(tempDir, {
-      runId,
-      loadFontPartialFailure: true,
-      deleteOutcomeUnknown: true,
-    });
-    const result = await runLiveSmokeTest({
-      config: configFor(tempDir),
-      configPath: resolve(tempDir, ".figma-workspace", "live-test.json"),
-      runId,
-      executor: scenario.executor,
-      readFile: scenario.readFile,
-      stat: async () => ({ isFile: () => true }),
-      env: { FIGMA_WORKSPACE_OAUTH_CACHE_PATH: resolve(tempDir, "oauth.json") },
-    });
+    const config = configFor(tempDir);
+    const scenario = createLiveScenario(tempDir, config, { runId });
+    const result = await runLiveSmokeTest(smokeOptions(tempDir, config, scenario, runId));
 
-    assert.equal(result.creationOutcome, "outcome_unknown");
-    const evalCommands = scenario.commands.filter((command) => command.script === "figma:eval");
-    const creationCommands = evalCommands.filter((command) => command.input.code.includes("const frame = figma.createFrame();"));
-    const deletionCommands = evalCommands.filter((command) => command.input.code.includes("const ordered = [...matches].sort"));
-    const readbackCommands = evalCommands.filter((command) => command.input.code.includes("changedNodeIds: matches.map"));
-    assert.equal(creationCommands.length, 1);
-    assert.equal(deletionCommands.length, 1);
-    assert.equal(readbackCommands.length, 3);
-    const creationCode = creationCommands[0].input.code;
-    const firstAwait = creationCode.indexOf("await figma.loadFontAsync");
+    assert.equal(result.creationOutcome, "succeeded");
+    assert.equal(result.cleanup.after.matches.length, 0);
+    assert.equal(result.designFileUrl, config.designFileUrl);
+    assert.equal(result.outputDir, config.outputDir);
+    assert.equal(result.captureFile, scenario.capturePath);
+    assert.equal(scenario.commands[0].script, "figma:doctor");
+    assert.equal(scenario.commands.some((command) => command.script === "figma:open"), false);
+    assert.equal(scenario.commands.some((command) => command.script === "figma:eval"), false);
+    assert.equal(scenario.commands.some((command) => command.script === "figma:script:run"), false);
+
+    const metadata = scenario.commands.find((command) => command.script === "figma:metadata");
+    assert.ok(metadata);
+    assert.deepEqual(metadata.args, [
+      "--file", config.designFileUrl,
+      "--output-dir", config.outputDir,
+      "--max-inline-bytes", "0",
+    ]);
+
+    const runs = runCommands(scenario.commands);
+    assert.equal(runs.length, 5);
+    for (const command of runs) {
+      assert.deepEqual(command.args, [
+        "--file", config.designFileUrl,
+        "--source", "-",
+        "--surface", "design",
+        "--output-dir", config.outputDir,
+        "--max-inline-bytes", "0",
+      ]);
+      assert.equal(typeof command.input, "string");
+      assert.doesNotMatch(command.input, /"sessionId"|"code"/u);
+    }
+    const creation = runs.find((command) => command.input.includes("const frame = figma.createFrame();"));
+    assert.ok(creation);
+    const firstAwait = creation.input.indexOf("await figma.loadFontAsync");
     assert.ok(firstAwait > 0);
     for (const requiredSetup of [
       "frame.setSharedPluginData(tagNamespace, tagKey, runId);",
       "text.setSharedPluginData(tagNamespace, tagKey, runId);",
       "frame.appendChild(text);",
     ]) {
-      assert.ok(creationCode.indexOf(requiredSetup) >= 0 && creationCode.indexOf(requiredSetup) < firstAwait, requiredSetup);
+      assert.ok(creation.input.indexOf(requiredSetup) >= 0 && creation.input.indexOf(requiredSetup) < firstAwait, requiredSetup);
     }
-    assert.match(readbackCommands[0].input.code, /parentId: node\.parent\?\.id \?\? null/u);
-    assert.match(readbackCommands[0].input.code, /tag: node\.getSharedPluginData\(tagNamespace, tagKey\)/u);
-    const metadataCommand = scenario.commands.find((command) => command.script === "figma:metadata");
-    assert.ok(metadataCommand);
-    assert.equal(metadataCommand.args[0], configFor(tempDir).designFileUrl);
-    assert.equal(scenario.commands.some((command) => command.script === "figma:capture"), true);
+
+    const capture = scenario.commands.find((command) => command.script === "figma:capture");
+    assert.ok(capture);
+    assert.deepEqual(capture.args, [
+      "--file", config.designFileUrl,
+      "--node", "100:1",
+      "--max-dimension", "1024",
+      "--output-dir", config.outputDir,
+      "--image-file", scenario.capturePath,
+      "--max-inline-bytes", "0",
+    ]);
+    assert.equal(isSafeRelativePngFileName(`live-smoke-${runId}.png`), true);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test("live smoke hydrates an omitted nested upstream result from the bounded upstream sidecar", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-upstream-sidecar-"));
+test("live smoke uses the invocation temp root when outputDir is omitted", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-temp-output-"));
   try {
-    const runId = "live-smoke-run-0007";
-    const scenario = createLiveScenario(tempDir, { runId, omitWhoamiUpstreamResult: true });
-    const result = await runLiveSmokeTest({
-      config: configFor(tempDir),
-      runId,
-      executor: scenario.executor,
-      readFile: scenario.readFile,
-      stat: async () => ({ isFile: () => true, size: 0 }),
-      env: { FIGMA_WORKSPACE_OAUTH_CACHE_PATH: resolve(tempDir, "oauth.json") },
-    });
-    assert.equal(result.creationOutcome, "succeeded");
-    const whoami = scenario.commands.find((command) => command.script === "figma:upstream:call");
-    assert.ok(whoami);
-    assert.equal(scenario.commands.some((command) => command.script === "figma:open"), true);
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
-});
+    const runId = "live-smoke-run-0010";
+    const config = configFor(tempDir, { withoutOutputDir: true });
+    const scenario = createLiveScenario(tempDir, config, { runId });
+    const result = await runLiveSmokeTest(smokeOptions(tempDir, config, scenario, runId));
 
-test("live smoke uses an exact PluginData tag for cleanup and sends bounded sidecar commands", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-cleanup-"));
-  try {
-    const runId = "live-smoke-run-0002";
-    const scenario = createLiveScenario(tempDir, { runId });
-    const result = await runLiveSmokeTest({
-      config: configFor(tempDir),
-      runId,
-      executor: scenario.executor,
-      readFile: scenario.readFile,
-      stat: async () => ({ isFile: () => true }),
-      env: { FIGMA_WORKSPACE_OAUTH_CACHE_PATH: resolve(tempDir, "oauth.json") },
-    });
-
-    assert.equal(result.cleanup.after.matches.length, 0);
-    const cleanup = scenario.commands.find((command) => (
-      command.script === "figma:eval" && command.input.code.includes("const ordered = [...matches].sort")
-    ));
-    assert.ok(cleanup);
-    assert.match(cleanup.input.code, /getSharedPluginData\(tagNamespace, tagKey\) === runId/u);
-    assert.doesNotMatch(cleanup.input.code, /includes\(runId\)|indexOf\(runId\)/u);
-    assert.match(cleanup.input.code, /const depthOf = \(node: SceneNode\): number =>/u);
-    assert.match(cleanup.input.code, /depthOf\(right\) - depthOf\(left\)/u);
-    assert.match(cleanup.input.code, /for \(const node of ordered\)/u);
-    assert.match(cleanup.input.code, /const untaggedNodes = figma\.currentPage\.findAll/u);
-    assert.match(cleanup.input.code, /blockedNodeIds\.push\(node\.id\)/u);
-    assert.doesNotMatch(cleanup.input.code, /const roots =/u);
-    for (const command of scenario.commands) {
-      assert.equal(command.script.startsWith("figma:"), true, command.script);
-      assert.deepEqual(command.args.slice(-4), ["--state-file", configFor(tempDir).stateFile, "--max-inline-bytes", "0"]);
+    assert.equal(result.outputDir, undefined);
+    assert.match(result.captureFile, /figma-workspace/u);
+    for (const command of runCommands(scenario.commands)) {
+      assert.deepEqual(command.args, [
+        "--file", config.designFileUrl,
+        "--source", "-",
+        "--surface", "design",
+        "--max-inline-bytes", "0",
+      ]);
     }
     const capture = scenario.commands.find((command) => command.script === "figma:capture");
     assert.ok(capture);
-    assert.equal(isSafeRelativePngFileName(capture.input.imageFile), true);
-    assert.equal(capture.input.imageFile, `live-smoke-${runId}.png`);
+    assert.equal(capture.args.includes("--output-dir"), false);
+    assert.equal(capture.args.includes("--image-file"), false);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test("live smoke rejects FRAME-only reconciliation before capture and still cleans the exact tag", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-frame-only-"));
+test("live smoke reconciles a loadFont partial failure only after its complete tagged hierarchy exists", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-unknown-"));
+  try {
+    const runId = "live-smoke-run-0002";
+    const config = configFor(tempDir);
+    const scenario = createLiveScenario(tempDir, config, {
+      runId,
+      loadFontPartialFailure: true,
+      deleteOutcomeUnknown: true,
+    });
+    const result = await runLiveSmokeTest(smokeOptions(tempDir, config, scenario, runId));
+
+    assert.equal(result.creationOutcome, "outcome_unknown");
+    const runs = runCommands(scenario.commands);
+    const creationCommands = runs.filter((command) => command.input.includes("const frame = figma.createFrame();"));
+    const deletionCommands = runs.filter((command) => command.input.includes("const ordered = [...matches].sort"));
+    const readbackCommands = runs.filter((command) => command.input.includes("changedNodeIds: matches.map"));
+    assert.equal(creationCommands.length, 1);
+    assert.equal(deletionCommands.length, 1);
+    assert.equal(readbackCommands.length, 3);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("live smoke uses an exact PluginData tag for cleanup", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-cleanup-"));
   try {
     const runId = "live-smoke-run-0003";
-    const scenario = createLiveScenario(tempDir, {
-      runId,
-      creationOutcomeUnknown: true,
-      matches: [{ id: "100:1", type: "FRAME", parentId: "0:1", tag: runId }],
-    });
-    await assert.rejects(
-      () => runLiveSmokeTest({
-        config: configFor(tempDir),
-        runId,
-        executor: scenario.executor,
-        readFile: scenario.readFile,
-        stat: async () => ({ isFile: () => true }),
-        env: { FIGMA_WORKSPACE_OAUTH_CACHE_PATH: resolve(tempDir, "oauth.json") },
-      }),
-      /exactly one figma_workspace\.live_smoke\/run_id-tagged FRAME and one figma_workspace\.live_smoke\/run_id-tagged TEXT/u,
-    );
-    assert.equal(scenario.commands.some((command) => command.script === "figma:capture"), false);
-    assert.equal(
-      scenario.commands.filter((command) => command.script === "figma:eval" && command.input.code.includes("const ordered = [...matches].sort")).length,
-      1,
-    );
+    const config = configFor(tempDir);
+    const scenario = createLiveScenario(tempDir, config, { runId });
+    const result = await runLiveSmokeTest(smokeOptions(tempDir, config, scenario, runId));
+
+    assert.equal(result.cleanup.after.matches.length, 0);
+    const cleanup = runCommands(scenario.commands).find((command) => command.input.includes("const ordered = [...matches].sort"));
+    assert.ok(cleanup);
+    assert.match(cleanup.input, /getSharedPluginData\(tagNamespace, tagKey\) === runId/u);
+    assert.doesNotMatch(cleanup.input, /includes\(runId\)|indexOf\(runId\)/u);
+    assert.match(cleanup.input, /const depthOf = \(node: SceneNode\): number =>/u);
+    assert.match(cleanup.input, /depthOf\(right\) - depthOf\(left\)/u);
+    assert.match(cleanup.input, /const untaggedNodes = figma\.currentPage\.findAll/u);
+    assert.match(cleanup.input, /blockedNodeIds\.push\(node\.id\)/u);
+    assert.doesNotMatch(cleanup.input, /const roots =/u);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test("live smoke rejects TEXT-only reconciliation before capture and still cleans the exact tag", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-text-only-"));
-  try {
-    const runId = "live-smoke-run-0006";
-    const scenario = createLiveScenario(tempDir, {
-      runId,
-      creationOutcomeUnknown: true,
-      matches: [{ id: "100:2", type: "TEXT", parentId: "100:1", tag: runId }],
-    });
-    await assert.rejects(
-      () => runLiveSmokeTest({
-        config: configFor(tempDir),
-        runId,
-        executor: scenario.executor,
-        readFile: scenario.readFile,
-        stat: async () => ({ isFile: () => true }),
-        env: { FIGMA_WORKSPACE_OAUTH_CACHE_PATH: resolve(tempDir, "oauth.json") },
-      }),
-      /exactly one figma_workspace\.live_smoke\/run_id-tagged FRAME and one figma_workspace\.live_smoke\/run_id-tagged TEXT/u,
-    );
-    assert.equal(scenario.commands.some((command) => command.script === "figma:capture"), false);
-    assert.equal(
-      scenario.commands.filter((command) => command.script === "figma:eval" && command.input.code.includes("const ordered = [...matches].sort")).length,
-      1,
-    );
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
-});
-
-test("live smoke rejects duplicate tagged nodes before capture and cleans the malformed tag set", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-duplicate-"));
-  try {
-    const runId = "live-smoke-run-0004";
-    const scenario = createLiveScenario(tempDir, {
-      runId,
-      matches: [
-        { id: "100:1", type: "FRAME", parentId: "0:1", tag: runId },
-        { id: "100:2", type: "TEXT", parentId: "100:1", tag: runId },
-        { id: "100:3", type: "TEXT", parentId: "100:1", tag: runId },
-      ],
-    });
-    await assert.rejects(
-      () => runLiveSmokeTest({
-        config: configFor(tempDir),
-        runId,
-        executor: scenario.executor,
-        readFile: scenario.readFile,
-        stat: async () => ({ isFile: () => true }),
-        env: { FIGMA_WORKSPACE_OAUTH_CACHE_PATH: resolve(tempDir, "oauth.json") },
-      }),
-      /exactly one figma_workspace\.live_smoke\/run_id-tagged FRAME and one figma_workspace\.live_smoke\/run_id-tagged TEXT/u,
-    );
-    assert.equal(scenario.commands.some((command) => command.script === "figma:capture"), false);
-    assert.equal(
-      scenario.commands.filter((command) => command.script === "figma:eval" && command.input.code.includes("const ordered = [...matches].sort")).length,
-      1,
-    );
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
-});
+for (const scenarioCase of [
+  {
+    name: "FRAME-only",
+    runId: "live-smoke-run-0004",
+    matches: [{ id: "100:1", type: "FRAME", parentId: "0:1", tag: "live-smoke-run-0004" }],
+  },
+  {
+    name: "TEXT-only",
+    runId: "live-smoke-run-0005",
+    matches: [{ id: "100:2", type: "TEXT", parentId: "100:1", tag: "live-smoke-run-0005" }],
+  },
+  {
+    name: "duplicate tagged nodes",
+    runId: "live-smoke-run-0006",
+    matches: [
+      { id: "100:1", type: "FRAME", parentId: "0:1", tag: "live-smoke-run-0006" },
+      { id: "100:2", type: "TEXT", parentId: "100:1", tag: "live-smoke-run-0006" },
+      { id: "100:3", type: "TEXT", parentId: "100:1", tag: "live-smoke-run-0006" },
+    ],
+  },
+]) {
+  test(`live smoke rejects ${scenarioCase.name} reconciliation before capture and still cleans the exact tag`, async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-malformed-"));
+    try {
+      const config = configFor(tempDir);
+      const scenario = createLiveScenario(tempDir, config, {
+        runId: scenarioCase.runId,
+        creationOutcomeUnknown: true,
+        matches: scenarioCase.matches,
+      });
+      await assert.rejects(
+        () => runLiveSmokeTest(smokeOptions(tempDir, config, scenario, scenarioCase.runId)),
+        /exactly one figma_workspace\.live_smoke\/run_id-tagged FRAME and one figma_workspace\.live_smoke\/run_id-tagged TEXT/u,
+      );
+      assert.equal(scenario.commands.some((command) => command.script === "figma:capture"), false);
+      assert.equal(
+        runCommands(scenario.commands).filter((command) => command.input.includes("const ordered = [...matches].sort")).length,
+        1,
+      );
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+}
 
 test("live smoke requires confirmed creation changedNodeIds to cover both reconciled nodes", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-changed-node-ids-"));
   try {
-    const runId = "live-smoke-run-0005";
-    const scenario = createLiveScenario(tempDir, {
+    const runId = "live-smoke-run-0007";
+    const config = configFor(tempDir);
+    const scenario = createLiveScenario(tempDir, config, {
       runId,
       creationChangedNodeIds: ["100:1"],
     });
     await assert.rejects(
-      () => runLiveSmokeTest({
-        config: configFor(tempDir),
-        runId,
-        executor: scenario.executor,
-        readFile: scenario.readFile,
-        stat: async () => ({ isFile: () => true }),
-        env: { FIGMA_WORKSPACE_OAUTH_CACHE_PATH: resolve(tempDir, "oauth.json") },
-      }),
+      () => runLiveSmokeTest(smokeOptions(tempDir, config, scenario, runId)),
       /upstream\.result\.changedNodeIds did not cover the reconciled nodes: 100:2/u,
     );
     assert.equal(scenario.commands.some((command) => command.script === "figma:capture"), false);
     assert.equal(
-      scenario.commands.filter((command) => command.script === "figma:eval" && command.input.code.includes("const ordered = [...matches].sort")).length,
+      runCommands(scenario.commands).filter((command) => command.input.includes("const ordered = [...matches].sort")).length,
       1,
     );
   } finally {
@@ -455,7 +452,7 @@ test("live smoke requires confirmed creation changedNodeIds to cover both reconc
   }
 });
 
-test("npm command executor uses public npm --silent argv and streams JSON stdin", async () => {
+test("npm command executor uses public npm --silent argv and streams TypeScript stdin unchanged", async () => {
   const spawned = [];
   const stdinValues = [];
   const fakeSpawn = (command, args, options) => {
@@ -481,16 +478,16 @@ test("npm command executor uses public npm --silent argv and streams JSON stdin"
     spawn: fakeSpawn,
   });
   const result = await executor({
-    script: "figma:eval",
-    args: ["--input", "-", "--state-file", "C:/figma-workspace/state.json", "--max-inline-bytes", "0"],
-    input: { sessionId: "live-smoke", code: "return 1;" },
+    script: "figma:run",
+    args: ["--file", "https://www.figma.com/design/file-key/Test", "--source", "-"],
+    input: "return 1;",
   });
 
   assert.deepEqual(spawned[0], {
     command: "npm-test",
     args: [
-      "--silent", "run", "figma:eval", "--", "--input", "-",
-      "--state-file", "C:/figma-workspace/state.json", "--max-inline-bytes", "0",
+      "--silent", "run", "figma:run", "--",
+      "--file", "https://www.figma.com/design/file-key/Test", "--source", "-",
     ],
     options: {
       cwd: "C:/figma-workspace",
@@ -499,29 +496,20 @@ test("npm command executor uses public npm --silent argv and streams JSON stdin"
       windowsHide: true,
     },
   });
-  assert.deepEqual(JSON.parse(stdinValues[0]), { sessionId: "live-smoke", code: "return 1;" });
+  assert.equal(stdinValues[0], "return 1;\n");
   assert.equal(result.exitCode, 0);
   assert.equal(result.stdout, "partial stdout");
   assert.equal(result.timedOut, false);
 });
 
-test("default npm command executor starts the offline doctor child without Windows npm.cmd spawning", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-doctor-child-"));
-  try {
-    const executor = createNpmCommandExecutor();
-    const result = await executor({
-      script: "figma:doctor",
-      args: ["--state-file", resolve(tempDir, "state.json"), "--max-inline-bytes", "0"],
-    });
-    assert.equal(result.timedOut, false);
-    assert.equal(result.spawnError, undefined);
-    assert.equal(result.exitCode, 0);
-    assert.match(result.stdout, /Cli Result File/u);
-    if (process.platform === "win32") {
-      assert.equal(result.command, process.execPath);
-      assert.match(result.args[0], /npm-cli\.js$/iu);
-    }
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
+test("default npm command executor starts the public doctor leaf without Windows npm.cmd spawning", async () => {
+  const executor = createNpmCommandExecutor();
+  const result = await executor({ script: "figma:doctor", args: [] });
+  assert.equal(result.timedOut, false);
+  assert.equal(result.spawnError, undefined);
+  assert.equal(result.exitCode, 0);
+  if (process.platform === "win32") {
+    assert.equal(result.command, process.execPath);
+    assert.match(result.args[0], /npm-cli\.js$/iu);
   }
 });

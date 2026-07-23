@@ -87,20 +87,10 @@ return {
 
 ## Run and review
 
-Run `npm --silent run figma:script:run -- --help` first. Then create an input file such as:
-
-```json
-{
-  "sessionId": "YOUR_SESSION_ID",
-  "inputFile": "create-component-with-variants.figma.ts",
-  "surface": "design"
-}
-```
-
-Execute the local TypeScript script through the CLI:
+Run `npm --silent run figma:run -- --help` first. Save the reviewed local TypeScript script, then execute it through the CLI:
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/create-component-with-variants.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 This is not automatically executable. Replace every placeholder and review the proposed variant count, page, name, layout, and colors before running it. After execution, inspect the returned IDs and visually verify that the variants form the expected grid rather than overlapping.

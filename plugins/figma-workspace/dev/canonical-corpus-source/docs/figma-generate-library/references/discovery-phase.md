@@ -4,7 +4,7 @@
 
 This document covers everything needed for Phase 0 of a design system build: analyzing the codebase for tokens, inspecting the Figma file for existing conventions, searching subscribed libraries, building the plan, and resolving conflicts before any write operations begin.
 
-JavaScript blocks are non-executable Plugin API examples. Use first-class CLI reads for discovery; place adapted mutations in local `.figma.ts` files and execute them with `figma:script:run`.
+JavaScript blocks are non-executable Plugin API examples. Use first-class CLI reads for discovery; place adapted mutations in local `.figma.ts` files and execute them with `figma:run`.
 
 ---
 
@@ -311,11 +311,11 @@ return {
 
 ### Step 1: Discover Available Libraries with `figma:libraries`
 
-Before searching, run `figma:libraries` for the selected workspace. Use its `--help` output for the typed arguments and result fields.
+Before searching, run `figma:libraries` for the selected file. Use its `--help` output for the typed arguments and result fields.
 
 ```text
 npm --silent run figma:libraries -- --help
-npm --silent run figma:libraries -- --workspace <workspace> --state-file <absolute-path>
+npm --silent run figma:libraries -- --file <figma-file-url-or-key>
 ```
 
 Use returned library identifiers to narrow a later design-system search. If a required library is unavailable, ask the user to subscribe it.
@@ -334,8 +334,8 @@ Use repeated `--library` filters to narrow the search when many libraries are av
 
 ```text
 npm --silent run figma:design-system -- --help
-npm --silent run figma:design-system -- "button" --workspace <workspace> --state-file <absolute-path>
-npm --silent run figma:design-system -- "button" --workspace <workspace> --library <library-id> --state-file <absolute-path>
+npm --silent run figma:design-system -- "button" --file <figma-file-url-or-key>
+npm --silent run figma:design-system -- "button" --file <figma-file-url-or-key> --library <library-id>
 ```
 
 ### What It Returns

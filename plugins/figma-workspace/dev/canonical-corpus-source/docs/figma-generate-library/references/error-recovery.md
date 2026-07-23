@@ -4,7 +4,7 @@
 
 Protocol for handling failures and incomplete runs across a 20–100+ call design system build.
 
-All JavaScript blocks are non-executable Plugin API examples. Use a local `.figma.ts` script with `figma:script:run` for substantial work, or `figma:eval` for a small focused transaction.
+All JavaScript blocks are non-executable Plugin API examples. Use a local `.figma.ts` script with `figma:run` for substantial work.
 
 > **Design files only.** Every snippet here (including `figma.createPage()`) targets Figma Design files (`figma.com/design/...`). `figma.createPage()` throws in both FigJam (`figma.com/board/...`) and Slides (`figma.com/slides/...`).
 
@@ -12,7 +12,7 @@ All JavaScript blocks are non-executable Plugin API examples. Use a local `.figm
 
 ## 1. Core Protocol: STOP → Classify → Inspect → Reconcile
 
-Every `figma:script:run` result has a required `executionOutcome`. `not_started` means validation, preflight, connection, or auth stopped the request before dispatch. `succeeded` means Figma confirmed the script completed. `outcome_unknown` means dispatch occurred but completion cannot be confirmed, so partial or complete effects are possible.
+Every `figma:run` result has a required `executionOutcome`. `not_started` means validation, preflight, connection, or auth stopped the request before dispatch. `succeeded` means Figma confirmed the script completed. `outcome_unknown` means dispatch occurred but completion cannot be confirmed, so partial or complete effects are possible.
 
 However, in multi-step workflows (20–100+ calls), **previously successful calls** will have created state that persists. If a workflow is abandoned mid-way, nodes from earlier successful calls remain in the file. The cleanup and idempotency patterns in this document handle that scenario.
 
@@ -307,7 +307,7 @@ After every successful script run:
 4. Remove from `pendingValidations` if this call validated something
 5. Update `phase` and `step` to the current position
 
-### Rehydrating at session start
+### Rehydrating after workflow resumption
 
 If a conversation is interrupted and resumed, read the state ledger and verify key entities still exist:
 

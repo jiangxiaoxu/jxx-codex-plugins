@@ -6,10 +6,10 @@ Use a published design-system component when it already expresses the needed sem
 
 ## Decide before writing the script
 
-Start by reading the implementation context for the selected file/session. This makes existing instances, component keys, layout conventions, and likely reuse boundaries observable before new nodes are created.
+Start by reading the implementation context for the selected file and node target. This makes existing instances, component keys, layout conventions, and likely reuse boundaries observable before new nodes are created.
 
 ```text
-npm --silent run figma:design-context -- --session-id <session-id> --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:design-context -- --file <figma-file-url-or-key> --node <node-id>
 ```
 
 Then choose the narrowest structure that preserves editing intent:
@@ -25,7 +25,7 @@ Do not detach a library instance merely to alter it. If the requested result can
 
 ## Implement in a `.figma.ts` transaction
 
-Use the normal TypeScript script workflow: prepare/open the task, edit the local `.figma.ts`, and execute it with `figma:script:run` using a JSON input that names the persisted session and script file. TypeScript preflight must pass before the transaction reaches Figma.
+Use the normal TypeScript script workflow: create a local `.figma.ts`, then execute it with `figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>`. TypeScript preflight must pass before the transaction reaches Figma.
 
 ```ts
 const metrics: ReadonlyArray<{ label: string }> = [
@@ -73,6 +73,6 @@ Keep the main component in a dedicated local-components area or safely outside t
 
 ## Verify the delivered structure
 
-After `figma:script:run`, use `figma:inspect` on the returned raw node IDs to confirm the component and instance relationship, then use `figma:capture` for visual QA of the consuming screen. Inspect the captured local image with `view_image`; an instance tree that is structurally correct but has clipped content, unexpected fixed sizing, or a visible component staging area is not complete.
+After `figma:run`, use `figma:inspect` on the returned raw node IDs to confirm the component and instance relationship, then use `figma:capture` for visual QA of the consuming screen. Inspect the captured local image with `view_image`; an instance tree that is structurally correct but has clipped content, unexpected fixed sizing, or a visible component staging area is not complete.
 
 Failure boundaries are deliberate: fatal TypeScript diagnostics mean the script did not execute; an unavailable raw node ID requires re-inspection before reuse; and an unavailable library component is not permission to approximate its internals. For a large migration, split the work into small repairable script runs and validate each repeated unit before replacing the next one.

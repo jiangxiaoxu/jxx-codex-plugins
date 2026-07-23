@@ -7,11 +7,11 @@ Text style 是可复用的排版契约: font family、style、size、line height
 先用设计系统和库发现标准 type ramp, 再用 metadata 定位文本和容器, 用 variables 检查 token/mode。只有需要精确 API 细节时才查询 API。
 
 ```text
-npm --silent run figma:libraries -- --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:design-system -- "heading body typography" --styles --variables --library <library-key> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:metadata -- <text-node-id> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:variables -- <text-node-id> --file <file-url-or-key> --state-file C:/work/project/.figma-workspace/state.json
-npm --silent run figma:api:search -- loadFontAsync --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:libraries -- --file <file-url-or-key>
+npm --silent run figma:design-system -- "heading body typography" --styles --variables --library <library-key> --file <file-url-or-key>
+npm --silent run figma:metadata -- --file <file-url-or-key> --node <text-node-id>
+npm --silent run figma:variables -- --file <file-url-or-key> --node <text-node-id>
+npm --silent run figma:api:search -- loadFontAsync
 ```
 
 `figma:design-system --styles --variables` 帮助辨别可应用的 type style 和 token; `figma:libraries` 确认其来源; `figma:metadata` 不应被跳过, 因为文本节点可能继承复杂的局部上下文。还需要了解 `TextStyle`, `setBoundVariable`、`lineHeight` 或 `letterSpacing` 时, 分别用 `figma:api:search` 查询。
@@ -56,10 +56,10 @@ target.textStyleId = style.id;
 return { styleId: style.id, targetId: target.id, font: desiredFont };
 ```
 
-TypeScript 预检和执行只通过 JSON 输入的 `figma:script:run`. 输入文件带有会话, 脚本绝对路径和对应 surface; TypeScript 预检始终启用. 先运行命令 help 确认当前 schema.
+TypeScript 预检和执行只通过 JSON 输入的 `figma:run`. 输入文件带有会话, 脚本绝对路径和对应 surface; TypeScript 预检始终启用. 先运行命令 help 确认当前 schema.
 
 ```text
-npm --silent run figma:script:run -- --input C:/work/project/.figma-workspace/type-ramp/run.json --state-file C:/work/project/.figma-workspace/state.json
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
 ## 检查清单和失败边界
