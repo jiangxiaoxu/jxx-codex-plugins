@@ -264,11 +264,12 @@ function loadFigmaWorkspaceTypescriptRuntimeAssets(): FigmaWorkspaceTypescriptRu
 }
 
 function runtimeAssetCandidates(relativePath: string): string[] {
-  return [
+  return [...new Set([
     resolve(runtimeDirname, relativePath),
+    resolve(runtimeDirname, "../runtime", relativePath),
     resolve(runtimeDirname, "../mcp", relativePath),
     resolve(runtimeDirname, "../upstream", relativePath),
-  ];
+  ])];
 }
 
 function resolveReadableFile(candidates: string[]): string {
