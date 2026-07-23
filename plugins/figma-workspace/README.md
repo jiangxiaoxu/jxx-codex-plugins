@@ -1,6 +1,6 @@
 # Figma Workspace
 
-Figma Workspace 0.5.0 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
+Figma Workspace 0.5.1 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
 
 ## Quick Start
 
@@ -12,6 +12,7 @@ npm --silent run figma:docs:help
 npm --silent run figma:docs:catalog -- --task-family design-editing --surface design
 npm --silent run figma:api:help
 npm --silent run figma:api:search -- "figma.createFrame()"
+npm --silent run figma:api:read -- "<api-id-from-search>"
 npm --silent run figma:metadata -- --file "https://www.figma.com/design/FILE_KEY/File"
 npm --silent run figma:inspect -- --file FILE_KEY --node 230:2 --surface design
 npm --silent run figma:run -- --file "https://www.figma.com/design/FILE_KEY/File" --script C:/work/project/change.figma.ts
@@ -51,7 +52,7 @@ Upstream and bridge network requests have a 5-minute total deadline. The 60-seco
 
 ## Documentation And API Lookup
 
-Documentation search supports concise English keywords only. For a non-trivial or ambiguous request, select a query from the skill's Search Query Recipes and use the known surface. If routing is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected task family and surface, and use `figma:docs:read` for returned `project:` or `canonical:` IDs. Use `figma:api:search` for bare, qualified, or call-shaped Plugin API symbols. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references provide the complete static intent-to-command and topic-to-query maps without duplicating generated CLI schemas.
+Documentation search supports concise English keywords only. For a non-trivial or ambiguous request, select a query from the skill's Search Query Recipes and use the known surface. If routing is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected task family and surface, and use `figma:docs:read` for returned `project:` or `canonical:` IDs. Use `figma:api:search` for bare, qualified, or call-shaped Plugin API symbols, then use `figma:api:read` with a returned `apiId` when the complete declaration is needed. Catalog and search display limits are clamped to the ranges shown by command help and reported in `parameterAdjustments`; traversal, pagination, capture sizing, and remote inline-result boundaries remain strict. Search has no per-snippet byte cap; one 12000-byte UTF-8 budget applies across returned snippets, with any truncation reported in `snippetBudget`. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references provide the complete static intent-to-command and topic-to-query maps without duplicating generated CLI schemas.
 
 Use `figma:doctor` for local packaged-doc, corpus, TypeScript, or Plugin API index diagnosis. It is a public local-only leaf command and never needs a Figma target.
 

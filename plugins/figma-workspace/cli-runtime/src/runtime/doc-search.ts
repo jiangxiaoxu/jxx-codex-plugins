@@ -12,21 +12,25 @@ import {
   type TaskRouteDefinition,
   type TaskSurface,
 } from "./task-routing.js";
-import type {
-  FigmaWorkspaceDocsLookupScope,
-  FigmaWorkspaceTaskFamily,
+import {
+  DOCS_CATALOG_LIMIT_MAX,
+  DOCS_CATALOG_LIMIT_MIN,
+  LOOKUP_RESULTS_MAX,
+  LOOKUP_SNIPPET_LINES_MAX,
+  type FigmaWorkspaceDocsLookupScope,
+  type FigmaWorkspaceTaskFamily,
 } from "../contract/tool-args.js";
 
 export const DEFAULT_DOCS_SEARCH_MAX_RESULTS = 5;
 export const DEFAULT_DOCS_SEARCH_SNIPPET_LINES = 3;
-export const MAX_DOCS_SEARCH_RESULTS = 10;
-export const MAX_DOCS_SEARCH_SNIPPET_LINES = 8;
+export const MAX_DOCS_SEARCH_RESULTS = LOOKUP_RESULTS_MAX;
+export const MAX_DOCS_SEARCH_SNIPPET_LINES = LOOKUP_SNIPPET_LINES_MAX;
 export const DEFAULT_REFERENCE_CONTEXT_SNIPPETS = 2;
 export const MAX_LOOKUP_QUERY_LENGTH = 120;
 
 const MAX_REFERENCE_CHUNK_LINES = 24;
 const REFERENCE_CHUNK_OVERLAP_LINES = 4;
-const MAX_PUBLIC_SNIPPET_BYTES = 1200;
+const MAX_SEARCH_SNIPPET_BYTES = 12_000;
 
 export const BRIDGE_DOCS_SEARCH_FILES = [
   "bridge/guidance-ref.md",
@@ -54,6 +58,16 @@ export interface ReferenceSearchResult {
   surfaces?: TaskSurface[];
   nonExecutable?: boolean;
   ownerMatch?: boolean;
+  snippetTruncated?: boolean;
+}
+
+export interface ReferenceSearchSnippetBudget {
+  limitBytes: number;
+  originalBytes: number;
+  returnedBytes: number;
+  selectedResultCount: number;
+  returnedResultCount: number;
+  truncated: true;
 }
 
 interface RankedReferenceSearchResult extends ReferenceSearchResult {
@@ -138,7 +152,7 @@ interface CanonicalCorpus {
 }
 
 interface PluginApiIndexManifest {
-  schemaVersion: 2;
+  schemaVersion: 3;
   source: {
     package: "@figma/plugin-typings";
     version: string;
@@ -149,7 +163,7 @@ interface PluginApiIndexManifest {
 }
 
 interface PluginApiIndexRecord {
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: string;
   symbol: string;
   ownerSymbol: string | null;
@@ -157,13 +171,15 @@ interface PluginApiIndexRecord {
   qualifiedAliases: string[];
   sourceFile: string;
   declarationLine: number;
+  declarationLineStart: number;
+  declarationLineEnd: number;
   lineStart: number;
   lineEnd: number;
   contentSha256: string;
   text: string;
 }
 
-type PluginApiDeclarationKind =
+export type PluginApiDeclarationKind =
   | "interface"
   | "type-alias"
   | "class"
@@ -210,6 +226,25 @@ export interface FigmaWorkspaceCanonicalRecordSummary {
 
 export interface FigmaWorkspaceCanonicalDoc extends FigmaWorkspaceCanonicalRecordSummary {
   kind: "canonical";
+  content: string;
+}
+
+export interface FigmaWorkspacePluginApiDeclaration {
+  kind: "api";
+  apiId: string;
+  symbol: string;
+  ownerSymbol: string | null;
+  declarationKind: PluginApiDeclarationKind;
+  qualifiedAliases: string[];
+  source: {
+    package: "@figma/plugin-typings";
+    version: string;
+    file: string;
+    declarationLine: number;
+    lineStart: number;
+    lineEnd: number;
+  };
+  contentSha256: string;
   content: string;
 }
 
@@ -421,6 +456,54 @@ export function readFigmaWorkspaceCanonicalDoc(id: string): FigmaWorkspaceCanoni
   };
 }
 
+export function readFigmaWorkspacePluginApiDeclaration(apiId: string): FigmaWorkspacePluginApiDeclaration {
+  const prefix = "api:";
+  const index = loadPluginApiIndex();
+  const record = apiId.startsWith(prefix) && apiId.length <= 512
+    ? index.records.get(apiId.slice(prefix.length))
+    : undefined;
+  if (!record) {
+    throw new Error(
+      `Unknown Figma Plugin API id "${apiId}". Use figma:api:search to discover an exact api: id.`,
+    );
+  }
+  const sourceEntry = index.manifest.source.files.find((entry) => entry.file === record.sourceFile);
+  if (!sourceEntry) {
+    throw new Error(`Generated Figma Plugin API record references an unknown source file: ${record.sourceFile}.`);
+  }
+  const sourceText = normalizeLineEndings(
+    readFileSync(resolve(index.root, "../figma-plugin-typings", record.sourceFile), "utf8"),
+  );
+  if (sha256(sourceText) !== sourceEntry.sha256) {
+    throw new Error(`Bundled Figma Plugin API typings SHA-256 mismatch: ${record.sourceFile}`);
+  }
+  const sourceLines = sourceText.split("\n");
+  if (record.declarationLineEnd > sourceLines.length) {
+    throw new Error(`Generated Figma Plugin API declaration range exceeds ${record.sourceFile}.`);
+  }
+  const content = sourceLines
+    .slice(record.declarationLineStart - 1, record.declarationLineEnd)
+    .join("\n");
+  return {
+    kind: "api",
+    apiId,
+    symbol: record.symbol,
+    ownerSymbol: record.ownerSymbol,
+    declarationKind: record.declarationKind,
+    qualifiedAliases: [...record.qualifiedAliases],
+    source: {
+      package: index.manifest.source.package,
+      version: index.manifest.source.version,
+      file: record.sourceFile,
+      declarationLine: record.declarationLine,
+      lineStart: record.declarationLineStart,
+      lineEnd: record.declarationLineEnd,
+    },
+    contentSha256: sha256(content),
+    content,
+  };
+}
+
 export function getFigmaWorkspaceLookupRuntimeInfo(): FigmaWorkspaceLookupRuntimeInfo {
   if (!canonicalCorpusState.ok) {
     return { ...canonicalCorpusState.failure };
@@ -476,6 +559,7 @@ export async function searchReferenceFiles(options: {
   normalizedSymbol?: string;
   ownerHint?: string;
   results: ReferenceSearchResult[];
+  snippetBudget?: ReferenceSearchSnippetBudget;
 }> {
   const useApiCorpus = options.corpus === "api";
   const canonicalCorpus = useApiCorpus ? undefined : loadCanonicalCorpus();
@@ -540,12 +624,17 @@ export async function searchReferenceFiles(options: {
     || compareAscii(referenceResultId(left), referenceResultId(right))
     || left.lineStart - right.lineStart);
   const deduplicated = deduplicateResultsByPublicRecord(results);
+  const selected = deduplicated
+    .slice(0, options.maxResults)
+    .map(({ score: _score, ...result }) => result);
+  const budgeted = applySearchSnippetBudget(selected, MAX_SEARCH_SNIPPET_BYTES);
   return {
     maxResults: options.maxResults,
     maxSnippetLines: options.maxSnippetLines,
     normalizedSymbol: apiQuery?.normalizedSymbol,
     ownerHint: apiQuery?.ownerHint,
-    results: deduplicated.slice(0, options.maxResults).map(({ score: _score, ...result }) => result),
+    results: budgeted.results,
+    ...(budgeted.snippetBudget ? { snippetBudget: budgeted.snippetBudget } : {}),
   };
 }
 
@@ -1053,7 +1142,7 @@ function scoredChunkToResult(entry: ScoredReferenceChunk, options: {
   const contextBefore = Math.floor((options.maxSnippetLines - 1) / 2);
   const start = Math.max(0, bestLine - contextBefore);
   const end = Math.min(entry.chunk.lines.length, start + options.maxSnippetLines);
-  const snippet = truncateUtf8(entry.chunk.lines.slice(start, end).join("\n"), MAX_PUBLIC_SNIPPET_BYTES);
+  const snippet = entry.chunk.lines.slice(start, end).join("\n");
   const metadata = entry.chunk.metadata;
   return {
     lineStart: entry.chunk.lineStart + start,
@@ -1288,10 +1377,56 @@ function truncateUtf8(value: string, maximumBytes: number): string {
   return result;
 }
 
+function applySearchSnippetBudget(
+  results: readonly ReferenceSearchResult[],
+  limitBytes: number,
+): { results: ReferenceSearchResult[]; snippetBudget?: ReferenceSearchSnippetBudget } {
+  const originalBytes = results.reduce(
+    (total, result) => total + Buffer.byteLength(result.snippet, "utf8"),
+    0,
+  );
+  if (originalBytes <= limitBytes) return { results: [...results] };
+
+  const budgetedResults: ReferenceSearchResult[] = [];
+  let returnedBytes = 0;
+  for (const result of results) {
+    const remainingBytes = limitBytes - returnedBytes;
+    if (remainingBytes <= 0) break;
+    const originalSnippetBytes = Buffer.byteLength(result.snippet, "utf8");
+    if (originalSnippetBytes <= remainingBytes) {
+      budgetedResults.push(result);
+      returnedBytes += originalSnippetBytes;
+      continue;
+    }
+    const snippet = truncateUtf8(result.snippet, remainingBytes).replace(/\n$/u, "");
+    if (!snippet) break;
+    const lineCount = snippet.split("\n").length;
+    budgetedResults.push({
+      ...result,
+      lineEnd: Math.min(result.lineEnd, result.lineStart + lineCount - 1),
+      snippet,
+      snippetTruncated: true,
+    });
+    returnedBytes += Buffer.byteLength(snippet, "utf8");
+    break;
+  }
+  return {
+    results: budgetedResults,
+    snippetBudget: {
+      limitBytes,
+      originalBytes,
+      returnedBytes,
+      selectedResultCount: results.length,
+      returnedResultCount: budgetedResults.length,
+      truncated: true,
+    },
+  };
+}
+
 function normalizeCatalogLimit(value: number | undefined): number {
-  if (value === undefined) return 100;
-  if (!Number.isSafeInteger(value) || value < 1 || value > 100) {
-    throw new Error("Canonical catalog limit must be an integer from 1 to 100.");
+  if (value === undefined) return DOCS_CATALOG_LIMIT_MAX;
+  if (!Number.isSafeInteger(value) || value < DOCS_CATALOG_LIMIT_MIN || value > DOCS_CATALOG_LIMIT_MAX) {
+    throw new Error(`Canonical catalog limit must be an integer from ${DOCS_CATALOG_LIMIT_MIN} to ${DOCS_CATALOG_LIMIT_MAX}.`);
   }
   return value;
 }
@@ -1710,7 +1845,7 @@ function parsePluginApiIndexManifest(text: string): PluginApiIndexManifest {
   const value: unknown = JSON.parse(text);
   if (
     !isObject(value) ||
-    value.schemaVersion !== 2 ||
+    value.schemaVersion !== 3 ||
     !isObject(value.source) ||
     value.source.package !== "@figma/plugin-typings" ||
     typeof value.source.version !== "string" ||
@@ -1740,7 +1875,7 @@ function parsePluginApiIndexManifest(text: string): PluginApiIndexManifest {
     throw new Error("Invalid generated Figma Plugin API index manifest.");
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     source: {
       package: "@figma/plugin-typings",
       version: value.source.version,
@@ -1762,7 +1897,7 @@ function parsePluginApiIndexRecord(line: string): PluginApiIndexRecord {
   const value: unknown = JSON.parse(line);
   if (
     !isObject(value) ||
-    value.schemaVersion !== 2 ||
+    value.schemaVersion !== 3 ||
     typeof value.id !== "string" ||
     typeof value.symbol !== "string" || !isPluginApiIdentifier(value.symbol) ||
     (value.ownerSymbol !== null && (typeof value.ownerSymbol !== "string" || !isPluginApiIdentifier(value.ownerSymbol))) ||
@@ -1775,6 +1910,11 @@ function parsePluginApiIndexRecord(line: string): PluginApiIndexRecord {
     new Set(value.qualifiedAliases).size !== value.qualifiedAliases.length ||
     typeof value.sourceFile !== "string" ||
     !isPositiveInteger(value.declarationLine) ||
+    !isPositiveInteger(value.declarationLineStart) ||
+    !isPositiveInteger(value.declarationLineEnd) ||
+    value.declarationLine < value.declarationLineStart ||
+    value.declarationLine > value.declarationLineEnd ||
+    value.declarationLineEnd < value.declarationLineStart ||
     !isPositiveInteger(value.lineStart) ||
     !isPositiveInteger(value.lineEnd) ||
     value.declarationLine < value.lineStart ||
@@ -1787,7 +1927,7 @@ function parsePluginApiIndexRecord(line: string): PluginApiIndexRecord {
     throw new Error("Invalid generated Figma Plugin API index JSONL record.");
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: value.id,
     symbol: value.symbol,
     ownerSymbol: value.ownerSymbol,
@@ -1795,6 +1935,8 @@ function parsePluginApiIndexRecord(line: string): PluginApiIndexRecord {
     qualifiedAliases: [...value.qualifiedAliases],
     sourceFile: value.sourceFile,
     declarationLine: value.declarationLine,
+    declarationLineStart: value.declarationLineStart,
+    declarationLineEnd: value.declarationLineEnd,
     lineStart: value.lineStart,
     lineEnd: value.lineEnd,
     contentSha256: value.contentSha256,

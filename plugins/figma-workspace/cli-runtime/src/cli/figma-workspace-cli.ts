@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   FigmaWorkspaceToolArgumentError,
+  INLINE_RESULT_LIMIT_MAX,
+  INLINE_RESULT_LIMIT_MIN,
   type FigmaWorkspaceApplyAssetManifestArguments,
   type FigmaWorkspaceCallUpstreamToolArguments,
   type FigmaWorkspaceCaptureNodeArguments,
@@ -34,7 +36,6 @@ export const FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR = 2;
 export const FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT = 130;
 
 const DEFAULT_INLINE_RESULT_LIMIT = 4_096;
-const MAX_INLINE_RESULT_LIMIT = 10_000;
 const MAX_INPUT_BYTES = 256 * 1024;
 const LOCK_TIMEOUT_MS = 30_000;
 const LOCK_RETRY_MS = 100;
@@ -275,7 +276,7 @@ export const FIGMA_WORKSPACE_CLI_HELP = [
   "Stateless Figma Workspace internal runtime.",
   "",
   "Usage: figma-workspace <command> [--input <json-file|->]",
-  "Remote result option: [--inline-result-limit <bytes>]",
+  `Remote result option: [--inline-result-limit <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "",
   `Commands: ${FIGMA_WORKSPACE_CLI_COMMANDS.join(", ")}`,
   "",
@@ -284,7 +285,7 @@ export const FIGMA_WORKSPACE_CLI_HELP = [
 ].join("\n");
 
 export function createFigmaWorkspaceCommandHelp(command: FigmaWorkspaceCliCommand): string {
-  const inlineLimit = isLocalOnlyCommand(command) ? "" : " [--inline-result-limit <bytes>]";
+  const inlineLimit = isLocalOnlyCommand(command) ? "" : ` [--inline-result-limit <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`;
   return `${publicCommandName(command)}\n\nUsage: figma-workspace ${command} [--input <json-file|->]${inlineLimit}\n`;
 }
 
@@ -512,10 +513,10 @@ function createProcessIo(): FigmaWorkspaceCliIo {
 
 function normalizeInlineLimit(value: unknown): number {
   if (value === undefined) return DEFAULT_INLINE_RESULT_LIMIT;
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_INLINE_RESULT_LIMIT) return value;
-  throw new FigmaWorkspaceCliUsageError(`inlineResultLimit must be an integer from 0 to ${MAX_INLINE_RESULT_LIMIT}.`);
+  if (typeof value === "number" && Number.isInteger(value) && value >= INLINE_RESULT_LIMIT_MIN && value <= INLINE_RESULT_LIMIT_MAX) return value;
+  throw new FigmaWorkspaceCliUsageError(`inlineResultLimit must be an integer from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`);
 }
-function parseInlineLimit(value: string): number { const parsed=Number(value); if(!Number.isInteger(parsed)||parsed<0||parsed>MAX_INLINE_RESULT_LIMIT) throw new FigmaWorkspaceCliUsageError(`--inline-result-limit must be from 0 to ${MAX_INLINE_RESULT_LIMIT}.`); return parsed; }
+function parseInlineLimit(value: string): number { if(!/^\d+$/u.test(value))throw new FigmaWorkspaceCliUsageError(`--inline-result-limit must be an integer from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`);const parsed=Number(value);if(!Number.isSafeInteger(parsed)||parsed<INLINE_RESULT_LIMIT_MIN||parsed>INLINE_RESULT_LIMIT_MAX)throw new FigmaWorkspaceCliUsageError(`--inline-result-limit must be an integer from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`);return parsed; }
 function extractFileKey(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   try {

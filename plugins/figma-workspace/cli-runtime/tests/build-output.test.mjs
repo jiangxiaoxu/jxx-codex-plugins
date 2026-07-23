@@ -14,7 +14,7 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.5.0");
+  assert.equal(packageJson.version, "0.5.1");
 });
 
 test("internal CLI inventory is stateless and includes public doctor", () => {
@@ -32,6 +32,21 @@ test("internal CLI inventory is stateless and includes public doctor", () => {
     ["lookup", "--inline-result-limit", "100"],
   ]) {
     assert.throws(() => parseFigmaWorkspaceCliArguments(args), /Unknown option|available only/iu);
+  }
+  for (const value of ["10000.1", "1e3", "9007199254740991.1"]) {
+    assert.throws(
+      () => parseFigmaWorkspaceCliArguments(["run", "--inline-result-limit", value]),
+      /integer from 0 to 10000/iu,
+    );
+  }
+});
+
+test("internal CLI help publishes the strict inline-result range", async () => {
+  for (const argv of [["--help"], ["run", "--help"]]) {
+    const output = createIo();
+    const exit = await runFigmaWorkspaceCli(argv, { io: output.io });
+    assert.equal(exit, 0);
+    assert.match(output.stdout.join(""), /--inline-result-limit <0\.\.10000>/u);
   }
 });
 
@@ -149,15 +164,17 @@ test("local commands reject inlineResultLimit supplied through internal JSON inp
 });
 
 test("remote commands reject an invalid inlineResultLimit before client creation", async () => {
-  const output = createIo(JSON.stringify({ file: "ExampleKey", inlineResultLimit: "1000" }));
-  let createClientCalls = 0;
-  const exit = await runFigmaWorkspaceCli(["get-metadata", "--input", "-"], {
-    io: output.io,
-    createClient: () => { createClientCalls += 1; return { close: async () => {}, getMetadata: async () => ({ ok: true }) }; },
-  });
-  assert.equal(exit, 2);
-  assert.equal(createClientCalls, 0);
-  assert.match(output.stderr.join(""), /inlineResultLimit must be an integer/u);
+  for (const inlineResultLimit of ["1000", 1.5, 10_001]) {
+    const output = createIo(JSON.stringify({ file: "ExampleKey", inlineResultLimit }));
+    let createClientCalls = 0;
+    const exit = await runFigmaWorkspaceCli(["get-metadata", "--input", "-"], {
+      io: output.io,
+      createClient: () => { createClientCalls += 1; return { close: async () => {}, getMetadata: async () => ({ ok: true }) }; },
+    });
+    assert.equal(exit, 2, String(inlineResultLimit));
+    assert.equal(createClientCalls, 0, String(inlineResultLimit));
+    assert.match(output.stderr.join(""), /inlineResultLimit must be an integer/u);
+  }
 });
 
 test("oversized replacement preserves mutation recovery facts", async () => {

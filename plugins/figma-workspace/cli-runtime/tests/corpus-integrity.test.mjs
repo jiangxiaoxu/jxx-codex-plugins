@@ -182,6 +182,16 @@ test("doctor reports generated API index integrity failures", async () => {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /^Status: observed unhealthy$/mu);
     assert.match(result.stdout, /API index record SHA-256 mismatch/u);
+
+    const searchFailure = runLookup(fixture.root, { kind: "api", symbol: "createFrame" });
+    assert.equal(searchFailure.status, 1, searchFailure.stderr);
+    assert.match(searchFailure.stdout, /"mode": "search"/u);
+    assert.match(searchFailure.stdout, /"results": \[\]/u);
+
+    const readFailure = runLookup(fixture.root, { kind: "api", apiId: `api:${records[0].id}` });
+    assert.equal(readFailure.status, 1, readFailure.stderr);
+    assert.match(readFailure.stdout, /"mode": "read"/u);
+    assert.doesNotMatch(readFailure.stdout, /"results"/u);
   });
 });
 

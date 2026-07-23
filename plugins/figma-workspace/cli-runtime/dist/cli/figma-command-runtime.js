@@ -218449,10 +218449,23 @@ import { isAbsolute as isAbsolute4, relative as relative4, resolve as resolve10 
 var FigmaWorkspaceToolArgumentError = class extends Error {
   name = "FigmaWorkspaceToolArgumentError";
 };
+var LOOKUP_RESULTS_MIN = 1;
+var LOOKUP_RESULTS_MAX = 10;
+var LOOKUP_SNIPPET_LINES_MIN = 1;
+var LOOKUP_SNIPPET_LINES_MAX = 16;
+var DOCS_CATALOG_LIMIT_MIN = 1;
+var DOCS_CATALOG_LIMIT_MAX = 100;
+var CAPTURE_MAX_DIMENSION_MIN = 1;
+var CAPTURE_MAX_DIMENSION_MAX = 65536;
+var INSPECT_DEPTH_MIN = 1;
+var INSPECT_DEPTH_MAX = Number.MAX_SAFE_INTEGER;
+var LIBRARIES_OFFSET_MIN = 0;
+var LIBRARIES_OFFSET_MAX = Number.MAX_SAFE_INTEGER;
+var INLINE_RESULT_LIMIT_MIN = 0;
+var INLINE_RESULT_LIMIT_MAX = 1e4;
 var SURFACES = ["design", "figjam", "slides"];
 var DOC_SCOPES = ["auto", "active", "conditional", "router", "examples", "all"];
 var TASK_FAMILIES = ["code-connect", "create-file", "design-to-code", "design-generation", "diagram", "library-generation", "motion-implementation", "swiftui", "figjam", "motion", "slides", "design-editing"];
-var MAX_INLINE_RESULT_LIMIT = 1e4;
 var MAX_MANIFEST_ITEMS = 64;
 function asRunArgs(value) {
   const args = parse(value);
@@ -218490,7 +218503,7 @@ function asCaptureNodeArgs(value) {
   strings(args, ["title", "file", "outputDir", "nodeId", "imageFile"]);
   invocation(args);
   target(args.target, "target");
-  integer(args, "maxDimension", 1, 65536);
+  integer(args, "maxDimension", CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX);
   booleans(args, ["contentsOnly"]);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "imageFile", "maxDimension", "contentsOnly"]);
   normalizeNodeAlias(args);
@@ -218503,7 +218516,7 @@ function asInspectArgs(value) {
   invocation(args);
   target(args.target, "target");
   enumeration(args, "mode", ["inspect", "style"]);
-  integer(args, "depth", 1, Number.MAX_SAFE_INTEGER);
+  integer(args, "depth", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "mode", "target", "nodeId", "depth"]);
   normalizeNodeAlias(args);
   requireStableNodeTarget(args, "figma:inspect");
@@ -218568,7 +218581,7 @@ function asGetLibrariesArgs(value) {
   const args = parse(value);
   strings(args, ["title", "file", "outputDir"]);
   invocation(args);
-  integer(args, "offset", 0, Number.MAX_SAFE_INTEGER);
+  integer(args, "offset", LIBRARIES_OFFSET_MIN, LIBRARIES_OFFSET_MAX);
   booleans(args, ["refresh"]);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "offset", "refresh"]);
   requiredFile(args, "figma:libraries");
@@ -218580,10 +218593,16 @@ function asLookupArgs(value) {
   enumeration(args, "scope", DOC_SCOPES);
   enumeration(args, "surface", SURFACES);
   enumeration(args, "taskFamily", TASK_FAMILIES);
-  strings(args, ["title", "query", "symbol"]);
-  integer(args, "maxResults", 1, 10);
-  integer(args, "maxSnippetLines", 1, 8);
-  allowed(args, ["title", "kind", "scope", "surface", "taskFamily", "query", "symbol", "maxResults", "maxSnippetLines"]);
+  strings(args, ["title", "query", "symbol", "apiId"]);
+  clampableInteger(args, "maxResults");
+  clampableInteger(args, "maxSnippetLines");
+  allowed(args, ["title", "kind", "scope", "surface", "taskFamily", "query", "symbol", "apiId", "maxResults", "maxSnippetLines"]);
+  if (args.apiId !== void 0) {
+    if (args.kind !== "api" || args.query !== void 0 || args.symbol !== void 0 || args.scope !== void 0 || args.surface !== void 0 || args.taskFamily !== void 0 || args.maxResults !== void 0 || args.maxSnippetLines !== void 0) {
+      throw new FigmaWorkspaceToolArgumentError('Tool argument "apiId" is exclusive to an exact API read.');
+    }
+    return args;
+  }
   if (args.kind === "docs") args.scope ??= "auto";
   return args;
 }
@@ -218596,7 +218615,7 @@ function asDocsArgs(value) {
     enumeration(args, "taskFamily", TASK_FAMILIES);
     enumeration(args, "surface", SURFACES);
     enumeration(args, "classification", ["active", "conditional", "router", "examples"]);
-    integer(args, "limit", 1, 100);
+    clampableInteger(args, "limit");
     return args;
   }
   if (args.mode === "read" && typeof args.id === "string" && args.id.trim()) return args;
@@ -218622,7 +218641,7 @@ function commonRead(args, extraStrings) {
 }
 function invocation(args) {
   enumeration(args, "surface", SURFACES);
-  integer(args, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  integer(args, "inlineResultLimit", INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX);
 }
 function normalizeNodeAlias(args) {
   if (args.nodeId !== void 0) {
@@ -218705,6 +218724,10 @@ function booleans(record3, keys) {
 function integer(record3, key, min, max) {
   const value = record3[key];
   if (value !== void 0 && (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be an integer from ${min} to ${max}.`);
+}
+function clampableInteger(record3, key) {
+  const value = record3[key];
+  if (value !== void 0 && (typeof value !== "number" || !Number.isSafeInteger(value))) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be a safe integer; out-of-range integers are clamped.`);
 }
 function enumeration(record3, key, values) {
   const value = record3[key];
@@ -228989,7 +229012,7 @@ var DEFAULT_CALLBACK_PORT = 18765;
 var DEFAULT_CALLBACK_PATH = "/oauth/callback";
 var DEFAULT_AUTH_TIMEOUT_MS = 18e4;
 var DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-var DEFAULT_CLIENT_VERSION = "0.5.0";
+var DEFAULT_CLIENT_VERSION = "0.5.1";
 var BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
 var distDir = dirname(fileURLToPath(import.meta.url));
 var PLUGIN_ROOT = resolve(distDir, "..");
@@ -230813,12 +230836,12 @@ function compareText(left, right) {
 // src/runtime/doc-search.ts
 var DEFAULT_DOCS_SEARCH_MAX_RESULTS = 5;
 var DEFAULT_DOCS_SEARCH_SNIPPET_LINES = 3;
-var MAX_DOCS_SEARCH_RESULTS = 10;
-var MAX_DOCS_SEARCH_SNIPPET_LINES = 8;
+var MAX_DOCS_SEARCH_RESULTS = LOOKUP_RESULTS_MAX;
+var MAX_DOCS_SEARCH_SNIPPET_LINES = LOOKUP_SNIPPET_LINES_MAX;
 var MAX_LOOKUP_QUERY_LENGTH = 120;
 var MAX_REFERENCE_CHUNK_LINES = 24;
 var REFERENCE_CHUNK_OVERLAP_LINES = 4;
-var MAX_PUBLIC_SNIPPET_BYTES = 1200;
+var MAX_SEARCH_SNIPPET_BYTES = 12e3;
 var BRIDGE_DOCS_SEARCH_FILES = [
   "bridge/guidance-ref.md",
   "bridge/wrapper-profiles.md",
@@ -230936,6 +230959,49 @@ function readFigmaWorkspaceCanonicalDoc(id) {
     content: record3.text
   };
 }
+function readFigmaWorkspacePluginApiDeclaration(apiId) {
+  const prefix = "api:";
+  const index = loadPluginApiIndex();
+  const record3 = apiId.startsWith(prefix) && apiId.length <= 512 ? index.records.get(apiId.slice(prefix.length)) : void 0;
+  if (!record3) {
+    throw new Error(
+      `Unknown Figma Plugin API id "${apiId}". Use figma:api:search to discover an exact api: id.`
+    );
+  }
+  const sourceEntry = index.manifest.source.files.find((entry) => entry.file === record3.sourceFile);
+  if (!sourceEntry) {
+    throw new Error(`Generated Figma Plugin API record references an unknown source file: ${record3.sourceFile}.`);
+  }
+  const sourceText = normalizeLineEndings(
+    readFileSync2(resolve5(index.root, "../figma-plugin-typings", record3.sourceFile), "utf8")
+  );
+  if (sha256(sourceText) !== sourceEntry.sha256) {
+    throw new Error(`Bundled Figma Plugin API typings SHA-256 mismatch: ${record3.sourceFile}`);
+  }
+  const sourceLines = sourceText.split("\n");
+  if (record3.declarationLineEnd > sourceLines.length) {
+    throw new Error(`Generated Figma Plugin API declaration range exceeds ${record3.sourceFile}.`);
+  }
+  const content = sourceLines.slice(record3.declarationLineStart - 1, record3.declarationLineEnd).join("\n");
+  return {
+    kind: "api",
+    apiId,
+    symbol: record3.symbol,
+    ownerSymbol: record3.ownerSymbol,
+    declarationKind: record3.declarationKind,
+    qualifiedAliases: [...record3.qualifiedAliases],
+    source: {
+      package: index.manifest.source.package,
+      version: index.manifest.source.version,
+      file: record3.sourceFile,
+      declarationLine: record3.declarationLine,
+      lineStart: record3.declarationLineStart,
+      lineEnd: record3.declarationLineEnd
+    },
+    contentSha256: sha256(content),
+    content
+  };
+}
 function getFigmaWorkspaceLookupRuntimeInfo() {
   if (!canonicalCorpusState.ok) {
     return { ...canonicalCorpusState.failure };
@@ -231027,12 +231093,15 @@ async function searchReferenceFiles(options) {
   });
   results.sort((left, right) => right.score - left.score || compareAscii(left.taskFamily ?? "", right.taskFamily ?? "") || compareAscii(referenceResultId(left), referenceResultId(right)) || left.lineStart - right.lineStart);
   const deduplicated = deduplicateResultsByPublicRecord(results);
+  const selected = deduplicated.slice(0, options.maxResults).map(({ score: _score, ...result }) => result);
+  const budgeted = applySearchSnippetBudget(selected, MAX_SEARCH_SNIPPET_BYTES);
   return {
     maxResults: options.maxResults,
     maxSnippetLines: options.maxSnippetLines,
     normalizedSymbol: apiQuery?.normalizedSymbol,
     ownerHint: apiQuery?.ownerHint,
-    results: deduplicated.slice(0, options.maxResults).map(({ score: _score, ...result }) => result)
+    results: budgeted.results,
+    ...budgeted.snippetBudget ? { snippetBudget: budgeted.snippetBudget } : {}
   };
 }
 function normalizeLookupQuery(value, name) {
@@ -231433,7 +231502,7 @@ function scoredChunkToResult(entry, options) {
   const contextBefore = Math.floor((options.maxSnippetLines - 1) / 2);
   const start = Math.max(0, bestLine - contextBefore);
   const end = Math.min(entry.chunk.lines.length, start + options.maxSnippetLines);
-  const snippet = truncateUtf8(entry.chunk.lines.slice(start, end).join("\n"), MAX_PUBLIC_SNIPPET_BYTES);
+  const snippet = entry.chunk.lines.slice(start, end).join("\n");
   const metadata = entry.chunk.metadata;
   return {
     lineStart: entry.chunk.lineStart + start,
@@ -231625,10 +231694,51 @@ function truncateUtf8(value, maximumBytes) {
   }
   return result;
 }
+function applySearchSnippetBudget(results, limitBytes) {
+  const originalBytes = results.reduce(
+    (total, result) => total + Buffer.byteLength(result.snippet, "utf8"),
+    0
+  );
+  if (originalBytes <= limitBytes) return { results: [...results] };
+  const budgetedResults = [];
+  let returnedBytes = 0;
+  for (const result of results) {
+    const remainingBytes = limitBytes - returnedBytes;
+    if (remainingBytes <= 0) break;
+    const originalSnippetBytes = Buffer.byteLength(result.snippet, "utf8");
+    if (originalSnippetBytes <= remainingBytes) {
+      budgetedResults.push(result);
+      returnedBytes += originalSnippetBytes;
+      continue;
+    }
+    const snippet = truncateUtf8(result.snippet, remainingBytes).replace(/\n$/u, "");
+    if (!snippet) break;
+    const lineCount = snippet.split("\n").length;
+    budgetedResults.push({
+      ...result,
+      lineEnd: Math.min(result.lineEnd, result.lineStart + lineCount - 1),
+      snippet,
+      snippetTruncated: true
+    });
+    returnedBytes += Buffer.byteLength(snippet, "utf8");
+    break;
+  }
+  return {
+    results: budgetedResults,
+    snippetBudget: {
+      limitBytes,
+      originalBytes,
+      returnedBytes,
+      selectedResultCount: results.length,
+      returnedResultCount: budgetedResults.length,
+      truncated: true
+    }
+  };
+}
 function normalizeCatalogLimit(value) {
-  if (value === void 0) return 100;
-  if (!Number.isSafeInteger(value) || value < 1 || value > 100) {
-    throw new Error("Canonical catalog limit must be an integer from 1 to 100.");
+  if (value === void 0) return DOCS_CATALOG_LIMIT_MAX;
+  if (!Number.isSafeInteger(value) || value < DOCS_CATALOG_LIMIT_MIN || value > DOCS_CATALOG_LIMIT_MAX) {
+    throw new Error(`Canonical catalog limit must be an integer from ${DOCS_CATALOG_LIMIT_MIN} to ${DOCS_CATALOG_LIMIT_MAX}.`);
   }
   return value;
 }
@@ -231947,7 +232057,7 @@ function readPluginApiIndex(root, manifest) {
 }
 function parsePluginApiIndexManifest(text) {
   const value = JSON.parse(text);
-  if (!isObject2(value) || value.schemaVersion !== 2 || !isObject2(value.source) || value.source.package !== "@figma/plugin-typings" || typeof value.source.version !== "string" || !Array.isArray(value.source.files) || !isObject2(value.index) || !isObject2(value.integrity) || value.integrity.algorithm !== "sha256" || !isObject2(value.integrity.contentHashes)) {
+  if (!isObject2(value) || value.schemaVersion !== 3 || !isObject2(value.source) || value.source.package !== "@figma/plugin-typings" || typeof value.source.version !== "string" || !Array.isArray(value.source.files) || !isObject2(value.index) || !isObject2(value.integrity) || value.integrity.algorithm !== "sha256" || !isObject2(value.integrity.contentHashes)) {
     throw new Error("Invalid generated Figma Plugin API index manifest.");
   }
   const sourceFiles = value.source.files.filter((entry) => isObject2(entry) && (entry.file === "index.d.ts" || entry.file === "plugin-api.d.ts") && typeof entry.sha256 === "string" && isSha256(entry.sha256));
@@ -231955,7 +232065,7 @@ function parsePluginApiIndexManifest(text) {
     throw new Error("Invalid generated Figma Plugin API index manifest.");
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     source: {
       package: "@figma/plugin-typings",
       version: value.source.version,
@@ -231974,11 +232084,11 @@ function parsePluginApiIndexManifest(text) {
 }
 function parsePluginApiIndexRecord(line) {
   const value = JSON.parse(line);
-  if (!isObject2(value) || value.schemaVersion !== 2 || typeof value.id !== "string" || typeof value.symbol !== "string" || !isPluginApiIdentifier(value.symbol) || value.ownerSymbol !== null && (typeof value.ownerSymbol !== "string" || !isPluginApiIdentifier(value.ownerSymbol)) || !isPluginApiDeclarationKind(value.declarationKind) || !Array.isArray(value.qualifiedAliases) || value.qualifiedAliases.some((alias) => typeof alias !== "string" || !alias.endsWith(`.${value.symbol}`) || alias.split(".").some((segment) => !isPluginApiIdentifier(segment))) || new Set(value.qualifiedAliases).size !== value.qualifiedAliases.length || typeof value.sourceFile !== "string" || !isPositiveInteger(value.declarationLine) || !isPositiveInteger(value.lineStart) || !isPositiveInteger(value.lineEnd) || value.declarationLine < value.lineStart || value.declarationLine > value.lineEnd || value.lineEnd < value.lineStart || typeof value.contentSha256 !== "string" || !isSha256(value.contentSha256) || typeof value.text !== "string") {
+  if (!isObject2(value) || value.schemaVersion !== 3 || typeof value.id !== "string" || typeof value.symbol !== "string" || !isPluginApiIdentifier(value.symbol) || value.ownerSymbol !== null && (typeof value.ownerSymbol !== "string" || !isPluginApiIdentifier(value.ownerSymbol)) || !isPluginApiDeclarationKind(value.declarationKind) || !Array.isArray(value.qualifiedAliases) || value.qualifiedAliases.some((alias) => typeof alias !== "string" || !alias.endsWith(`.${value.symbol}`) || alias.split(".").some((segment) => !isPluginApiIdentifier(segment))) || new Set(value.qualifiedAliases).size !== value.qualifiedAliases.length || typeof value.sourceFile !== "string" || !isPositiveInteger(value.declarationLine) || !isPositiveInteger(value.declarationLineStart) || !isPositiveInteger(value.declarationLineEnd) || value.declarationLine < value.declarationLineStart || value.declarationLine > value.declarationLineEnd || value.declarationLineEnd < value.declarationLineStart || !isPositiveInteger(value.lineStart) || !isPositiveInteger(value.lineEnd) || value.declarationLine < value.lineStart || value.declarationLine > value.lineEnd || value.lineEnd < value.lineStart || typeof value.contentSha256 !== "string" || !isSha256(value.contentSha256) || typeof value.text !== "string") {
     throw new Error("Invalid generated Figma Plugin API index JSONL record.");
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: value.id,
     symbol: value.symbol,
     ownerSymbol: value.ownerSymbol,
@@ -231986,6 +232096,8 @@ function parsePluginApiIndexRecord(line) {
     qualifiedAliases: [...value.qualifiedAliases],
     sourceFile: value.sourceFile,
     declarationLine: value.declarationLine,
+    declarationLineStart: value.declarationLineStart,
+    declarationLineEnd: value.declarationLineEnd,
     lineStart: value.lineStart,
     lineEnd: value.lineEnd,
     contentSha256: value.contentSha256,
@@ -233670,7 +233782,6 @@ var DEFAULT_EVAL_TOOL_NAME = requireWrapperUpstreamToolName(DEFAULT_EVAL_CONTRAC
 var DEFAULT_EVAL_ARGUMENT_NAME = requireWrapperUpstreamProperty(DEFAULT_EVAL_CONTRACT, "code");
 var DEFAULT_EVAL_DESCRIPTION = "Figma Workspace Plugin API execution";
 var DEFAULT_INLINE_RESULT_LIMIT = 4096;
-var MAX_INLINE_RESULT_LIMIT2 = 1e4;
 var MAX_QUEUED_CAPTURE_REQUESTS = 8;
 var MAX_MANIFEST_ITEMS2 = 64;
 var MAX_MANIFEST_FILE_BYTES = 256 * 1024;
@@ -234029,13 +234140,32 @@ function handleDocs(args) {
     return { ok: true, mode: "list", topics: listFigmaWorkspaceProjectDocs() };
   }
   if (args.mode === "catalog") {
+    const parameterAdjustments = [];
+    const limit = clampIntegerParameter({
+      option: "--limit",
+      requested: args.limit,
+      fallback: DOCS_CATALOG_LIMIT_MAX,
+      min: DOCS_CATALOG_LIMIT_MIN,
+      max: DOCS_CATALOG_LIMIT_MAX,
+      parameterAdjustments
+    });
     const catalog = listFigmaWorkspaceCanonicalCatalog({
       taskFamily: args.taskFamily,
       surface: args.surface,
       classification: args.classification,
-      limit: args.limit
+      limit
     });
-    return args.taskFamily === void 0 ? { ok: true, mode: "catalog", taskFamilies: catalog } : { ok: true, mode: "catalog", records: catalog };
+    return args.taskFamily === void 0 ? {
+      ok: true,
+      mode: "catalog",
+      taskFamilies: catalog,
+      ...parameterAdjustments.length > 0 ? { parameterAdjustments } : {}
+    } : {
+      ok: true,
+      mode: "catalog",
+      records: catalog,
+      ...parameterAdjustments.length > 0 ? { parameterAdjustments } : {}
+    };
   }
   const doc = args.id.startsWith("project:") ? readFigmaWorkspaceProjectDoc(args.id) : readFigmaWorkspaceCanonicalDoc(args.id);
   return { ok: true, mode: "read", ...doc };
@@ -236341,7 +236471,19 @@ async function executeCallUpstreamTool(args, runtime) {
 }
 async function handleLookup(args) {
   try {
+    if (args.kind === "api" && args.apiId !== void 0) {
+      return makeJsonToolResult({
+        ok: true,
+        mode: "read",
+        declaration: readFigmaWorkspacePluginApiDeclaration(args.apiId),
+        guidance: "Use the exact bundled declaration for Plugin API typing decisions, then execute changes through figma:run."
+      });
+    }
     if (args.kind === "docs") {
+      const normalized2 = normalizeLookupParameters(args, {
+        maxResults: DEFAULT_DOCS_SEARCH_MAX_RESULTS,
+        maxSnippetLines: DEFAULT_DOCS_SEARCH_SNIPPET_LINES
+      });
       const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
       const requestedScope = args.scope ?? "auto";
       const route = resolveTaskRoute({
@@ -236358,23 +236500,18 @@ async function handleLookup(args) {
         surface: args.surface,
         taskFamily: selectedTaskFamily,
         effectiveScopes,
-        maxResults: normalizeBoundedInteger(
-          args.maxResults,
-          DEFAULT_DOCS_SEARCH_MAX_RESULTS,
-          MAX_DOCS_SEARCH_RESULTS
-        ),
-        maxSnippetLines: normalizeBoundedInteger(
-          args.maxSnippetLines,
-          DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
-          MAX_DOCS_SEARCH_SNIPPET_LINES
-        )
+        maxResults: normalized2.maxResults,
+        maxSnippetLines: normalized2.maxSnippetLines
       });
       const payload2 = {
         ok: true,
+        mode: "search",
         requestedScope,
         effectiveScopes,
         route,
         results: matches2.results,
+        ...matches2.snippetBudget ? { snippetBudget: matches2.snippetBudget } : {},
+        ...normalized2.parameterAdjustments.length > 0 ? { parameterAdjustments: normalized2.parameterAdjustments } : {},
         nextActions: createDocsLookupNextActions({ query, route, results: matches2.results }),
         guidance: "Use these compact routed snippets, then run figma:docs:read with an exact project: or canonical: id for complete context."
       };
@@ -236384,26 +236521,44 @@ async function handleLookup(args) {
       throw new Error('Tool argument "kind" must be one of: docs, api.');
     }
     const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
+    const normalized = normalizeLookupParameters(args, {
+      maxResults: 5,
+      maxSnippetLines: 5
+    });
     const matches = await searchReferenceFiles({
       query: symbol,
-      maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
-      maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
+      maxResults: normalized.maxResults,
+      maxSnippetLines: normalized.maxSnippetLines,
       exactSymbol: true,
       corpus: "api"
     });
+    const apiId = matches.results.find((result) => result.apiId !== void 0)?.apiId;
     const payload = {
       ok: true,
+      mode: "search",
       normalizedSymbol: matches.normalizedSymbol,
       ownerHint: matches.ownerHint,
       results: matches.results,
-      guidance: "Results are compact declarations from the generated bundled typings index. Qualified aliases and direct owner matches rank before bare-symbol fallbacks."
+      ...matches.snippetBudget ? { snippetBudget: matches.snippetBudget } : {},
+      ...normalized.parameterAdjustments.length > 0 ? { parameterAdjustments: normalized.parameterAdjustments } : {},
+      ...apiId ? {
+        nextActions: [{
+          commandId: "figma:api:read",
+          args: { id: apiId },
+          reason: "Read the exact declaration record in full.",
+          priority: 1
+        }]
+      } : {},
+      guidance: "Results are compact declarations from the generated bundled typings index. Use figma:api:read with a returned apiId for the complete declaration record."
     };
     return makeJsonToolResult(payload);
   } catch (error2) {
     if (error2 instanceof FigmaWorkspaceLookupCorpusUnavailableError) {
+      const mode = args.kind === "api" && args.apiId !== void 0 ? "read" : "search";
       return makeJsonToolResult({
         ok: false,
-        results: [],
+        mode,
+        ...mode === "search" ? { results: [] } : {},
         diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error2)]),
         guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the cli-runtime dist after confirming those bundled assets exist, then start a new CLI command.",
         runtime: error2.failure
@@ -237962,10 +238117,10 @@ function normalizeInlineResultLimit(value) {
     return void 0;
   }
   const number4 = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(number4) || number4 < 0) {
-    throw new Error(`Tool argument "inlineResultLimit" must be a non-negative number of bytes up to ${MAX_INLINE_RESULT_LIMIT2} bytes (${formatBytesHuman(MAX_INLINE_RESULT_LIMIT2)}).`);
+  if (!Number.isSafeInteger(number4) || number4 < INLINE_RESULT_LIMIT_MIN || number4 > INLINE_RESULT_LIMIT_MAX) {
+    throw new Error(`Tool argument "inlineResultLimit" must be an integer from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX} bytes (${formatBytesHuman(INLINE_RESULT_LIMIT_MAX)} maximum).`);
   }
-  return Math.min(Math.floor(number4), MAX_INLINE_RESULT_LIMIT2);
+  return number4;
 }
 function formatBytesHuman(bytes) {
   if (bytes < 1e3) {
@@ -238733,8 +238888,38 @@ function normalizePositiveInteger(value, fallback) {
   }
   return Math.floor(number4);
 }
-function normalizeBoundedInteger(value, fallback, max) {
-  return Math.min(normalizePositiveInteger(value, fallback), max);
+function normalizeLookupParameters(args, defaults) {
+  const parameterAdjustments = [];
+  const maxResults = clampIntegerParameter({
+    option: "--limit",
+    requested: args.maxResults,
+    fallback: defaults.maxResults,
+    min: LOOKUP_RESULTS_MIN,
+    max: MAX_DOCS_SEARCH_RESULTS,
+    parameterAdjustments
+  });
+  const maxSnippetLines = clampIntegerParameter({
+    option: "--snippet-lines",
+    requested: args.maxSnippetLines,
+    fallback: defaults.maxSnippetLines,
+    min: LOOKUP_SNIPPET_LINES_MIN,
+    max: MAX_DOCS_SEARCH_SNIPPET_LINES,
+    parameterAdjustments
+  });
+  return { maxResults, maxSnippetLines, parameterAdjustments };
+}
+function clampIntegerParameter(options) {
+  if (options.requested === void 0) return options.fallback;
+  const applied = Math.min(Math.max(options.requested, options.min), options.max);
+  if (applied !== options.requested) {
+    options.parameterAdjustments.push({
+      option: options.option,
+      requested: options.requested,
+      applied,
+      range: [options.min, options.max]
+    });
+  }
+  return applied;
 }
 function literal3(value) {
   return JSON.stringify(value);
@@ -238746,7 +238931,6 @@ var FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR = 1;
 var FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR = 2;
 var FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT = 130;
 var DEFAULT_INLINE_RESULT_LIMIT2 = 4096;
-var MAX_INLINE_RESULT_LIMIT3 = 1e4;
 var MAX_INPUT_BYTES = 256 * 1024;
 var LOCK_TIMEOUT_MS = 3e4;
 var LOCK_RETRY_MS = 100;
@@ -238944,7 +239128,7 @@ var FIGMA_WORKSPACE_CLI_HELP = [
   "Stateless Figma Workspace internal runtime.",
   "",
   "Usage: figma-workspace <command> [--input <json-file|->]",
-  "Remote result option: [--inline-result-limit <bytes>]",
+  `Remote result option: [--inline-result-limit <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "",
   `Commands: ${FIGMA_WORKSPACE_CLI_COMMANDS.join(", ")}`,
   "",
@@ -238952,7 +239136,7 @@ var FIGMA_WORKSPACE_CLI_HELP = [
   ""
 ].join("\n");
 function createFigmaWorkspaceCommandHelp(command) {
-  const inlineLimit = isLocalOnlyCommand(command) ? "" : " [--inline-result-limit <bytes>]";
+  const inlineLimit = isLocalOnlyCommand(command) ? "" : ` [--inline-result-limit <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`;
   return `${publicCommandName(command)}
 
 Usage: figma-workspace ${command} [--input <json-file|->]${inlineLimit}
@@ -239175,12 +239359,13 @@ function createProcessIo() {
 }
 function normalizeInlineLimit(value) {
   if (value === void 0) return DEFAULT_INLINE_RESULT_LIMIT2;
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_INLINE_RESULT_LIMIT3) return value;
-  throw new FigmaWorkspaceCliUsageError(`inlineResultLimit must be an integer from 0 to ${MAX_INLINE_RESULT_LIMIT3}.`);
+  if (typeof value === "number" && Number.isInteger(value) && value >= INLINE_RESULT_LIMIT_MIN && value <= INLINE_RESULT_LIMIT_MAX) return value;
+  throw new FigmaWorkspaceCliUsageError(`inlineResultLimit must be an integer from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`);
 }
 function parseInlineLimit(value) {
+  if (!/^\d+$/u.test(value)) throw new FigmaWorkspaceCliUsageError(`--inline-result-limit must be an integer from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`);
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > MAX_INLINE_RESULT_LIMIT3) throw new FigmaWorkspaceCliUsageError(`--inline-result-limit must be from 0 to ${MAX_INLINE_RESULT_LIMIT3}.`);
+  if (!Number.isSafeInteger(parsed) || parsed < INLINE_RESULT_LIMIT_MIN || parsed > INLINE_RESULT_LIMIT_MAX) throw new FigmaWorkspaceCliUsageError(`--inline-result-limit must be an integer from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`);
   return parsed;
 }
 function extractFileKey(value) {
@@ -239279,6 +239464,7 @@ var PUBLIC_COMMANDS = [
   "docs:catalog",
   "docs:read",
   "docs:search",
+  "api:read",
   "api:search",
   "doctor",
   "metadata",
@@ -239298,7 +239484,7 @@ var PUBLIC_COMMANDS = [
 ];
 var FAMILY_COMMANDS = {
   docs: ["docs:list", "docs:catalog", "docs:read", "docs:search"],
-  api: ["api:search"],
+  api: ["api:read", "api:search"],
   upstream: ["upstream:list", "upstream:read", "upstream:call"]
 };
 async function runFigmaCommandCli(argv, dependencies = {}) {
@@ -239349,18 +239535,23 @@ async function parsePublicArguments(command, argv, dependencies) {
   if (command === "docs:catalog") {
     const { positionals, options } = parseTokens(argv, optionSet("task-family", "surface", "classification", "limit"));
     assertNoPositionals(positionals);
-    return { internalCommand: "docs", input: clean({ mode: "catalog", taskFamily: options["task-family"], surface: options.surface, classification: options.classification, limit: integer3(options.limit, "--limit") }) };
+    return { internalCommand: "docs", input: clean({ mode: "catalog", taskFamily: options["task-family"], surface: options.surface, classification: options.classification, limit: clampableInteger2(options.limit, "--limit") }) };
   }
   if (command === "docs:read") {
     const { positionals } = parseTokens(argv, optionSet());
     requirePositionals(positionals, 1, "doc-id");
     return { internalCommand: "docs", input: { mode: "read", id: positionals[0] } };
   }
+  if (command === "api:read") {
+    const { positionals } = parseTokens(argv, optionSet());
+    requirePositionals(positionals, 1, "api-id");
+    return { internalCommand: "lookup", input: { kind: "api", apiId: positionals[0] } };
+  }
   if (command === "docs:search" || command === "api:search") {
     const names = command === "docs:search" ? optionSet("scope", "surface", "task-family", "limit", "snippet-lines") : optionSet("limit", "snippet-lines");
     const { positionals, options } = parseTokens(argv, names);
     requirePositionals(positionals, 1, command === "docs:search" ? "query" : "symbol");
-    return { internalCommand: "lookup", input: clean({ kind: command === "docs:search" ? "docs" : "api", [command === "docs:search" ? "query" : "symbol"]: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: integer3(options.limit, "--limit"), maxSnippetLines: integer3(options["snippet-lines"], "--snippet-lines") }) };
+    return { internalCommand: "lookup", input: clean({ kind: command === "docs:search" ? "docs" : "api", [command === "docs:search" ? "query" : "symbol"]: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: clampableInteger2(options.limit, "--limit"), maxSnippetLines: clampableInteger2(options["snippet-lines"], "--snippet-lines") }) };
   }
   if (command === "run") return parseRun(argv, dependencies);
   if (command === "capture") return parseCapture(argv);
@@ -239509,8 +239700,18 @@ function noArgs(internalCommand, input, argv) {
 }
 function integer3(value, label) {
   if (value === void 0) return void 0;
+  const parsed = parseSafeIntegerToken(value, label);
+  if (parsed < 0) throw new Error(`${label} must be a non-negative safe integer.`);
+  return parsed;
+}
+function clampableInteger2(value, label) {
+  if (value === void 0) return void 0;
+  return parseSafeIntegerToken(value, label, "must be a safe integer; out-of-range integers are clamped.");
+}
+function parseSafeIntegerToken(value, label, errorSuffix = "must be a safe integer.") {
+  if (!/^-?\d+$/u.test(value)) throw new Error(`${label} ${errorSuffix}`);
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${label} must be a non-negative integer.`);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${label} ${errorSuffix}`);
   return parsed;
 }
 function requirePositionals(values, count, label) {
@@ -239617,7 +239818,7 @@ async function assertSafeScriptFile(path) {
   if (resolve11(resolvedRealPath) !== resolve11(path)) throw new Error("--script must not traverse a symlink, junction, or reparse target.");
 }
 function formatRootHelp() {
-  return ["# Figma Workspace stateless CLI", "", "Every remote leaf command receives a complete Figma URL/file key and node target in the same invocation.", "", "## Documentation", "", "  figma:docs:help  figma:docs:list  figma:docs:catalog  figma:docs:read  figma:docs:search  figma:api:help  figma:api:search  figma:doctor", "", "## Read and execute", "", "  figma:metadata  figma:inspect  figma:design-context  figma:motion-context  figma:variables  figma:design-system  figma:libraries  figma:run", "", "## Assets and fallback", "", "  figma:capture  figma:assets:apply  figma:assets:download  figma:upstream:help  figma:upstream:list  figma:upstream:read  figma:upstream:call", ""].join("\n");
+  return ["# Figma Workspace stateless CLI", "", "Every remote leaf command receives a complete Figma URL/file key and node target in the same invocation.", "", "## Documentation", "", "  figma:docs:help  figma:docs:list  figma:docs:catalog  figma:docs:read  figma:docs:search  figma:api:help  figma:api:read  figma:api:search  figma:doctor", "", "## Read and execute", "", "  figma:metadata  figma:inspect  figma:design-context  figma:motion-context  figma:variables  figma:design-system  figma:libraries  figma:run", "", "## Assets and fallback", "", "  figma:capture  figma:assets:apply  figma:assets:download  figma:upstream:help  figma:upstream:list  figma:upstream:read  figma:upstream:call", ""].join("\n");
 }
 function formatFamilyHelp(family) {
   return [`# figma:${family}:help`, "", ...FAMILY_COMMANDS[family].map((name) => `  figma:${name}`), ""].join("\n");
@@ -239627,7 +239828,7 @@ function formatCommandHelp(command) {
 
 Unknown public leaf. Use figma:help for the complete stateless command inventory.
 `;
-  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : "";
+  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : command === "docs:catalog" ? "\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments." : command === "docs:search" || command === "api:search" ? "\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : "";
   return `# figma:${command}
 
 Usage: ${PUBLIC_COMMAND_USAGE[command]}${details}
@@ -239635,25 +239836,26 @@ Usage: ${PUBLIC_COMMAND_USAGE[command]}${details}
 }
 var PUBLIC_COMMAND_USAGE = {
   "docs:list": "figma:docs:list",
-  "docs:catalog": "figma:docs:catalog [--task-family <family>] [--surface design|figjam|slides] [--classification active|conditional|router|examples] [--limit <n>]",
+  "docs:catalog": `figma:docs:catalog [--task-family <family>] [--surface design|figjam|slides] [--classification active|conditional|router|examples] [--limit <${DOCS_CATALOG_LIMIT_MIN}..${DOCS_CATALOG_LIMIT_MAX}>]`,
   "docs:read": "figma:docs:read <doc-id>",
-  "docs:search": "figma:docs:search <query> [--scope auto|active|conditional|router|examples|all] [--surface design|figjam|slides] [--task-family <family>] [--limit <n>] [--snippet-lines <n>]",
-  "api:search": "figma:api:search <symbol> [--limit <n>] [--snippet-lines <n>]",
+  "docs:search": `figma:docs:search <query> [--scope auto|active|conditional|router|examples|all] [--surface design|figjam|slides] [--task-family <family>] [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
+  "api:read": "figma:api:read <api-id>",
+  "api:search": `figma:api:search <symbol> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
   doctor: "figma:doctor",
-  metadata: "figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  inspect: "figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <n>] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "design-context": "figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "motion-context": "figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  variables: "figma:variables (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "design-system": "figma:design-system <query> --file <url|key> [--surface design|figjam|slides] [--components|--no-components] [--variables|--no-variables] [--styles|--no-styles] [--no-code-connect] [--library <key>]... [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  libraries: "figma:libraries --file <url|key> [--surface design|figjam|slides] [--offset <n>] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  run: "figma:run --file <url|key> (--script <path.figma.ts> | --source -) [--surface design|figjam|slides] [--target-page <node-id>] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  capture: "figma:capture (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--image-file <path>] [--output-dir <path>] [--max-dimension <n>] [--contents-only] [--max-inline-bytes <0..10000>]",
-  "assets:apply": "figma:assets:apply --input <json-file|-> --file <url|key> [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "assets:download": "figma:assets:download --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "upstream:list": "figma:upstream:list [--refresh] [--max-inline-bytes <0..10000>]",
-  "upstream:read": "figma:upstream:read <name> [--refresh] [--max-inline-bytes <0..10000>]",
-  "upstream:call": "figma:upstream:call --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <0..10000>]"
+  metadata: `figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  inspect: `figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <${INSPECT_DEPTH_MIN}..${INSPECT_DEPTH_MAX}>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "design-context": `figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "motion-context": `figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  variables: `figma:variables (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "design-system": `figma:design-system <query> --file <url|key> [--surface design|figjam|slides] [--components|--no-components] [--variables|--no-variables] [--styles|--no-styles] [--no-code-connect] [--library <key>]... [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  libraries: `figma:libraries --file <url|key> [--surface design|figjam|slides] [--offset <${LIBRARIES_OFFSET_MIN}..${LIBRARIES_OFFSET_MAX}>] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  run: `figma:run --file <url|key> (--script <path.figma.ts> | --source -) [--surface design|figjam|slides] [--target-page <node-id>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  capture: `figma:capture (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--image-file <path>] [--output-dir <path>] [--max-dimension <${CAPTURE_MAX_DIMENSION_MIN}..${CAPTURE_MAX_DIMENSION_MAX}>] [--contents-only] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "assets:apply": `figma:assets:apply --input <json-file|-> --file <url|key> [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "assets:download": `figma:assets:download --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "upstream:list": `figma:upstream:list [--refresh] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "upstream:read": `figma:upstream:read <name> [--refresh] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "upstream:call": `figma:upstream:call --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`
 };
 function isPublicCommand(value) {
   return PUBLIC_COMMANDS.includes(value);

@@ -23,7 +23,10 @@ import {
   getFigmaWorkspaceLookupRuntimeInfo,
   listFigmaWorkspaceCanonicalCatalog,
   readFigmaWorkspaceCanonicalDoc,
+  readFigmaWorkspacePluginApiDeclaration,
+  type FigmaWorkspacePluginApiDeclaration,
   type ReferenceSearchResult,
+  type ReferenceSearchSnippetBudget,
   normalizeLookupQuery,
   normalizeLookupRankingQuery,
   searchReferenceFiles,
@@ -61,6 +64,12 @@ import {
   asRunArgs,
   asSearchDesignSystemArgs,
   asUpstreamToolsArgs,
+  DOCS_CATALOG_LIMIT_MAX,
+  DOCS_CATALOG_LIMIT_MIN,
+  INLINE_RESULT_LIMIT_MAX,
+  INLINE_RESULT_LIMIT_MIN,
+  LOOKUP_RESULTS_MIN,
+  LOOKUP_SNIPPET_LINES_MIN,
   withDefaultTitle,
 } from "../contract/tool-args.js";
 import type {
@@ -157,7 +166,6 @@ const DEFAULT_EVAL_TOOL_NAME = requireWrapperUpstreamToolName(DEFAULT_EVAL_CONTR
 const DEFAULT_EVAL_ARGUMENT_NAME = requireWrapperUpstreamProperty(DEFAULT_EVAL_CONTRACT, "code");
 const DEFAULT_EVAL_DESCRIPTION = "Figma Workspace Plugin API execution";
 const DEFAULT_INLINE_RESULT_LIMIT = 4_096;
-const MAX_INLINE_RESULT_LIMIT = 10_000;
 const MAX_QUEUED_CAPTURE_REQUESTS = 8;
 const MAX_MANIFEST_ITEMS = 64;
 const MAX_MANIFEST_FILE_BYTES = 256 * 1024;
@@ -738,16 +746,57 @@ export interface FigmaWorkspaceGetMetadataResult extends FigmaWorkspaceToolResul
   inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
 
-export interface FigmaWorkspaceLookupResult extends FigmaWorkspaceToolResultBase {
+interface FigmaWorkspaceLookupResultBase extends FigmaWorkspaceToolResultBase {
+  guidance: string;
+  diagnostics?: FigmaWorkspaceDiagnostic[];
+  runtime?: Record<string, unknown>;
+}
+
+export interface FigmaWorkspaceLookupSearchResult extends FigmaWorkspaceLookupResultBase {
+  ok: true;
+  mode: "search";
   requestedScope?: "auto" | "active" | "conditional" | "router" | "examples" | "all";
   effectiveScopes?: string[];
   route?: TaskRouteResult;
   results: ReferenceSearchResult[];
+  snippetBudget?: ReferenceSearchSnippetBudget;
+  parameterAdjustments?: FigmaWorkspaceLookupParameterAdjustment[];
   nextActions?: FigmaWorkspaceNextAction[];
-  diagnostics?: FigmaWorkspaceDiagnostic[];
-  guidance: string;
-  runtime?: Record<string, unknown>;
 }
+
+export interface FigmaWorkspaceLookupReadResult extends FigmaWorkspaceLookupResultBase {
+  ok: true;
+  mode: "read";
+  declaration: FigmaWorkspacePluginApiDeclaration;
+}
+
+export interface FigmaWorkspaceLookupFailureResult extends FigmaWorkspaceLookupResultBase {
+  ok: false;
+  mode: "search" | "read";
+  results?: [];
+}
+
+export type FigmaWorkspaceLookupResult =
+  | FigmaWorkspaceLookupSearchResult
+  | FigmaWorkspaceLookupReadResult
+  | FigmaWorkspaceLookupFailureResult;
+
+export interface FigmaWorkspaceIntegerParameterAdjustment<
+  Option extends string = string,
+> {
+  option: Option;
+  requested: number;
+  applied: number;
+  range: [number, number];
+}
+
+export type FigmaWorkspaceLookupParameterAdjustment = FigmaWorkspaceIntegerParameterAdjustment<
+  "--limit" | "--snippet-lines"
+>;
+
+export type FigmaWorkspaceDocsParameterAdjustment = FigmaWorkspaceIntegerParameterAdjustment<
+  "--limit"
+>;
 
 export interface FigmaWorkspaceDocsResult extends FigmaWorkspaceToolResultBase {
   mode: "list" | "catalog" | "read";
@@ -765,6 +814,7 @@ export interface FigmaWorkspaceDocsResult extends FigmaWorkspaceToolResultBase {
   mappingProfile?: string;
   nonExecutable?: boolean;
   content?: string;
+  parameterAdjustments?: FigmaWorkspaceDocsParameterAdjustment[];
 }
 
 export interface FigmaWorkspaceDoctorResult extends FigmaWorkspaceToolResultBase {
@@ -1058,15 +1108,34 @@ function handleDocs(args: FigmaWorkspaceDocsArguments): FigmaWorkspaceDocsResult
     return { ok: true, mode: "list", topics: listFigmaWorkspaceProjectDocs() };
   }
   if (args.mode === "catalog") {
+    const parameterAdjustments: FigmaWorkspaceDocsParameterAdjustment[] = [];
+    const limit = clampIntegerParameter({
+      option: "--limit",
+      requested: args.limit,
+      fallback: DOCS_CATALOG_LIMIT_MAX,
+      min: DOCS_CATALOG_LIMIT_MIN,
+      max: DOCS_CATALOG_LIMIT_MAX,
+      parameterAdjustments,
+    });
     const catalog = listFigmaWorkspaceCanonicalCatalog({
       taskFamily: args.taskFamily,
       surface: args.surface,
       classification: args.classification,
-      limit: args.limit,
+      limit,
     });
     return args.taskFamily === undefined
-      ? { ok: true, mode: "catalog", taskFamilies: catalog }
-      : { ok: true, mode: "catalog", records: catalog };
+      ? {
+        ok: true,
+        mode: "catalog",
+        taskFamilies: catalog,
+        ...(parameterAdjustments.length > 0 ? { parameterAdjustments } : {}),
+      }
+      : {
+        ok: true,
+        mode: "catalog",
+        records: catalog,
+        ...(parameterAdjustments.length > 0 ? { parameterAdjustments } : {}),
+      };
   }
   const doc = args.id.startsWith("project:")
     ? readFigmaWorkspaceProjectDoc(args.id)
@@ -3837,7 +3906,19 @@ async function handleLookup(
   args: FigmaWorkspaceLookupArguments,
 ): Promise<Record<string, unknown>> {
   try {
+    if (args.kind === "api" && args.apiId !== undefined) {
+      return makeJsonToolResult({
+        ok: true,
+        mode: "read",
+        declaration: readFigmaWorkspacePluginApiDeclaration(args.apiId),
+        guidance: "Use the exact bundled declaration for Plugin API typing decisions, then execute changes through figma:run.",
+      });
+    }
     if (args.kind === "docs") {
+      const normalized = normalizeLookupParameters(args, {
+        maxResults: DEFAULT_DOCS_SEARCH_MAX_RESULTS,
+        maxSnippetLines: DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
+      });
       const query = normalizeLookupQuery(args.query ?? args.symbol, "query");
       const requestedScope = args.scope ?? "auto";
       const route = resolveTaskRoute({
@@ -3858,23 +3939,20 @@ async function handleLookup(
         surface: args.surface,
         taskFamily: selectedTaskFamily,
         effectiveScopes,
-        maxResults: normalizeBoundedInteger(
-          args.maxResults,
-          DEFAULT_DOCS_SEARCH_MAX_RESULTS,
-          MAX_DOCS_SEARCH_RESULTS,
-        ),
-        maxSnippetLines: normalizeBoundedInteger(
-          args.maxSnippetLines,
-          DEFAULT_DOCS_SEARCH_SNIPPET_LINES,
-          MAX_DOCS_SEARCH_SNIPPET_LINES,
-        ),
+        maxResults: normalized.maxResults,
+        maxSnippetLines: normalized.maxSnippetLines,
       });
       const payload = {
         ok: true,
+        mode: "search",
         requestedScope,
         effectiveScopes,
         route,
         results: matches.results,
+        ...(matches.snippetBudget ? { snippetBudget: matches.snippetBudget } : {}),
+        ...(normalized.parameterAdjustments.length > 0
+          ? { parameterAdjustments: normalized.parameterAdjustments }
+          : {}),
         nextActions: createDocsLookupNextActions({ query, route, results: matches.results }),
         guidance:
           "Use these compact routed snippets, then run figma:docs:read with an exact project: or canonical: id for complete context.",
@@ -3885,27 +3963,49 @@ async function handleLookup(
       throw new Error('Tool argument "kind" must be one of: docs, api.');
     }
     const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
+    const normalized = normalizeLookupParameters(args, {
+      maxResults: 5,
+      maxSnippetLines: 5,
+    });
     const matches = await searchReferenceFiles({
       query: symbol,
-      maxResults: normalizeBoundedInteger(args.maxResults, 5, MAX_DOCS_SEARCH_RESULTS),
-      maxSnippetLines: normalizeBoundedInteger(args.maxSnippetLines, 5, MAX_DOCS_SEARCH_SNIPPET_LINES),
+      maxResults: normalized.maxResults,
+      maxSnippetLines: normalized.maxSnippetLines,
       exactSymbol: true,
       corpus: "api",
     });
+    const apiId = matches.results.find((result) => result.apiId !== undefined)?.apiId;
     const payload = {
       ok: true,
+      mode: "search",
       normalizedSymbol: matches.normalizedSymbol,
       ownerHint: matches.ownerHint,
       results: matches.results,
+      ...(matches.snippetBudget ? { snippetBudget: matches.snippetBudget } : {}),
+      ...(normalized.parameterAdjustments.length > 0
+        ? { parameterAdjustments: normalized.parameterAdjustments }
+        : {}),
+      ...(apiId
+        ? {
+          nextActions: [{
+            commandId: "figma:api:read" as const,
+            args: { id: apiId },
+            reason: "Read the exact declaration record in full.",
+            priority: 1,
+          }],
+        }
+        : {}),
       guidance:
-        "Results are compact declarations from the generated bundled typings index. Qualified aliases and direct owner matches rank before bare-symbol fallbacks.",
+        "Results are compact declarations from the generated bundled typings index. Use figma:api:read with a returned apiId for the complete declaration record.",
     };
     return makeJsonToolResult(payload);
   } catch (error) {
     if (error instanceof FigmaWorkspaceLookupCorpusUnavailableError) {
+      const mode = args.kind === "api" && args.apiId !== undefined ? "read" : "search";
       return makeJsonToolResult({
         ok: false,
-        results: [],
+        mode,
+        ...(mode === "search" ? { results: [] } : {}),
         diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error)]),
         guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the cli-runtime dist after confirming those bundled assets exist, then start a new CLI command.",
         runtime: error.failure,
@@ -5810,10 +5910,14 @@ function normalizeInlineResultLimit(value: unknown): number | undefined {
     return undefined;
   }
   const number = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(number) || number < 0) {
-    throw new Error(`Tool argument "inlineResultLimit" must be a non-negative number of bytes up to ${MAX_INLINE_RESULT_LIMIT} bytes (${formatBytesHuman(MAX_INLINE_RESULT_LIMIT)}).`);
+  if (
+    !Number.isSafeInteger(number)
+    || number < INLINE_RESULT_LIMIT_MIN
+    || number > INLINE_RESULT_LIMIT_MAX
+  ) {
+    throw new Error(`Tool argument "inlineResultLimit" must be an integer from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX} bytes (${formatBytesHuman(INLINE_RESULT_LIMIT_MAX)} maximum).`);
   }
-  return Math.min(Math.floor(number), MAX_INLINE_RESULT_LIMIT);
+  return number;
 }
 
 function formatBytesHuman(bytes: number): string {
@@ -6805,8 +6909,53 @@ function normalizePositiveInteger(value: unknown, fallback: number): number {
   return Math.floor(number);
 }
 
-function normalizeBoundedInteger(value: unknown, fallback: number, max: number): number {
-  return Math.min(normalizePositiveInteger(value, fallback), max);
+function normalizeLookupParameters(
+  args: Pick<FigmaWorkspaceLookupArguments, "maxResults" | "maxSnippetLines">,
+  defaults: { maxResults: number; maxSnippetLines: number },
+): {
+  maxResults: number;
+  maxSnippetLines: number;
+  parameterAdjustments: FigmaWorkspaceLookupParameterAdjustment[];
+} {
+  const parameterAdjustments: FigmaWorkspaceLookupParameterAdjustment[] = [];
+  const maxResults = clampIntegerParameter({
+    option: "--limit",
+    requested: args.maxResults,
+    fallback: defaults.maxResults,
+    min: LOOKUP_RESULTS_MIN,
+    max: MAX_DOCS_SEARCH_RESULTS,
+    parameterAdjustments,
+  });
+  const maxSnippetLines = clampIntegerParameter({
+    option: "--snippet-lines",
+    requested: args.maxSnippetLines,
+    fallback: defaults.maxSnippetLines,
+    min: LOOKUP_SNIPPET_LINES_MIN,
+    max: MAX_DOCS_SEARCH_SNIPPET_LINES,
+    parameterAdjustments,
+  });
+  return { maxResults, maxSnippetLines, parameterAdjustments };
+}
+
+function clampIntegerParameter<Option extends string>(options: {
+  option: Option;
+  requested: number | undefined;
+  fallback: number;
+  min: number;
+  max: number;
+  parameterAdjustments: FigmaWorkspaceIntegerParameterAdjustment<Option>[];
+}): number {
+  if (options.requested === undefined) return options.fallback;
+  const applied = Math.min(Math.max(options.requested, options.min), options.max);
+  if (applied !== options.requested) {
+    options.parameterAdjustments.push({
+      option: options.option,
+      requested: options.requested,
+      applied,
+      range: [options.min, options.max],
+    });
+  }
+  return applied;
 }
 
 function literal(value: unknown): string {

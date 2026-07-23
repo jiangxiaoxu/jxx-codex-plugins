@@ -5,6 +5,22 @@ import {
   type FigmaWorkspaceCliDependencies,
   type FigmaWorkspaceCliIo,
 } from "./figma-workspace-cli.js";
+import {
+  CAPTURE_MAX_DIMENSION_MAX,
+  CAPTURE_MAX_DIMENSION_MIN,
+  DOCS_CATALOG_LIMIT_MAX,
+  DOCS_CATALOG_LIMIT_MIN,
+  INLINE_RESULT_LIMIT_MAX,
+  INLINE_RESULT_LIMIT_MIN,
+  INSPECT_DEPTH_MAX,
+  INSPECT_DEPTH_MIN,
+  LIBRARIES_OFFSET_MAX,
+  LIBRARIES_OFFSET_MIN,
+  LOOKUP_RESULTS_MAX,
+  LOOKUP_RESULTS_MIN,
+  LOOKUP_SNIPPET_LINES_MAX,
+  LOOKUP_SNIPPET_LINES_MIN,
+} from "../contract/tool-args.js";
 
 const EXIT_SUCCESS = 0;
 const EXIT_USAGE = 2;
@@ -26,7 +42,7 @@ export interface FigmaCommandRuntimeDependencies {
 export const FIGMA_TASK_FAMILIES = ["code-connect", "create-file", "design-to-code", "design-generation", "diagram", "library-generation", "motion-implementation", "swiftui", "figjam", "motion", "slides", "design-editing"] as const;
 
 const PUBLIC_COMMANDS = [
-  "docs:list", "docs:catalog", "docs:read", "docs:search", "api:search",
+  "docs:list", "docs:catalog", "docs:read", "docs:search", "api:read", "api:search",
   "doctor",
   "metadata", "inspect", "design-context", "motion-context", "variables", "design-system", "libraries",
   "run", "capture", "assets:apply", "assets:download",
@@ -39,7 +55,7 @@ export type FigmaCommandName = FigmaConcreteCommandName | FigmaCommandFamily;
 
 const FAMILY_COMMANDS: Record<FigmaCommandFamily, readonly FigmaConcreteCommandName[]> = {
   docs: ["docs:list", "docs:catalog", "docs:read", "docs:search"],
-  api: ["api:search"],
+  api: ["api:read", "api:search"],
   upstream: ["upstream:list", "upstream:read", "upstream:call"],
 };
 
@@ -93,16 +109,20 @@ async function parsePublicArguments(
   if (command === "docs:catalog") {
     const { positionals, options } = parseTokens(argv, optionSet("task-family", "surface", "classification", "limit"));
     assertNoPositionals(positionals);
-    return { internalCommand: "docs", input: clean({ mode: "catalog", taskFamily: options["task-family"], surface: options.surface, classification: options.classification, limit: integer(options.limit, "--limit") }) };
+    return { internalCommand: "docs", input: clean({ mode: "catalog", taskFamily: options["task-family"], surface: options.surface, classification: options.classification, limit: clampableInteger(options.limit, "--limit") }) };
   }
   if (command === "docs:read") {
     const { positionals } = parseTokens(argv, optionSet()); requirePositionals(positionals, 1, "doc-id");
     return { internalCommand: "docs", input: { mode: "read", id: positionals[0] } };
   }
+  if (command === "api:read") {
+    const { positionals } = parseTokens(argv, optionSet()); requirePositionals(positionals, 1, "api-id");
+    return { internalCommand: "lookup", input: { kind: "api", apiId: positionals[0] } };
+  }
   if (command === "docs:search" || command === "api:search") {
     const names = command === "docs:search" ? optionSet("scope", "surface", "task-family", "limit", "snippet-lines") : optionSet("limit", "snippet-lines");
     const { positionals, options } = parseTokens(argv, names); requirePositionals(positionals, 1, command === "docs:search" ? "query" : "symbol");
-    return { internalCommand: "lookup", input: clean({ kind: command === "docs:search" ? "docs" : "api", [command === "docs:search" ? "query" : "symbol"]: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: integer(options.limit, "--limit"), maxSnippetLines: integer(options["snippet-lines"], "--snippet-lines") }) };
+    return { internalCommand: "lookup", input: clean({ kind: command === "docs:search" ? "docs" : "api", [command === "docs:search" ? "query" : "symbol"]: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: clampableInteger(options.limit, "--limit"), maxSnippetLines: clampableInteger(options["snippet-lines"], "--snippet-lines") }) };
   }
   if (command === "run") return parseRun(argv, dependencies);
   if (command === "capture") return parseCapture(argv);
@@ -165,7 +185,7 @@ async function parseJsonLeaf(command: "assets:apply" | "assets:download" | "upst
   return direct(command === "assets:apply" ? "apply-asset-manifest" : command === "assets:download" ? "download-assets" : "call-upstream-tool", input, options);
 }
 
-function parseReadLeaf(command: Exclude<FigmaConcreteCommandName, "docs:list" | "docs:catalog" | "docs:read" | "docs:search" | "api:search" | "doctor" | "run" | "capture" | "assets:apply" | "assets:download" | "upstream:list" | "upstream:read" | "upstream:call">, argv: readonly string[]): ParsedPublicCommand {
+function parseReadLeaf(command: Exclude<FigmaConcreteCommandName, "docs:list" | "docs:catalog" | "docs:read" | "docs:search" | "api:read" | "api:search" | "doctor" | "run" | "capture" | "assets:apply" | "assets:download" | "upstream:list" | "upstream:read" | "upstream:call">, argv: readonly string[]): ParsedPublicCommand {
   if (command === "design-system") {
     const { positionals, options, flags, repeats } = parseTokens(argv, optionSet("file", "surface", "output-dir", "max-inline-bytes"), flagSet("components", "no-components", "variables", "no-variables", "styles", "no-styles", "no-code-connect", "refresh"), repeatSet("library"));
     requirePositionals(positionals, 1, "query");
@@ -210,7 +230,9 @@ function parseTokens(argv: readonly string[], optionNames: Set<string>, flagName
 function optionSet(...names:string[]):Set<string>{return new Set(names);} function flagSet(...names:string[]):Set<string>{return new Set(names);} function repeatSet(...names:string[]):Set<string>{return new Set(names);}
 function direct(internalCommand:InternalCommand,input:CommandInput,options:Record<string,string|undefined>):ParsedPublicCommand{return{internalCommand,input,inlineResultLimit:integer(options["max-inline-bytes"],"--max-inline-bytes")};}
 function noArgs(internalCommand:InternalCommand,input:CommandInput,argv:readonly string[]):ParsedPublicCommand{if(argv.length)throw new Error("This command accepts no arguments.");return{internalCommand,input};}
-function integer(value:string|undefined,label:string):number|undefined{if(value===undefined)return undefined;const parsed=Number(value);if(!Number.isInteger(parsed)||parsed<0)throw new Error(`${label} must be a non-negative integer.`);return parsed;}
+function integer(value:string|undefined,label:string):number|undefined{if(value===undefined)return undefined;const parsed=parseSafeIntegerToken(value,label);if(parsed<0)throw new Error(`${label} must be a non-negative safe integer.`);return parsed;}
+function clampableInteger(value:string|undefined,label:string):number|undefined{if(value===undefined)return undefined;return parseSafeIntegerToken(value,label,"must be a safe integer; out-of-range integers are clamped.");}
+function parseSafeIntegerToken(value:string,label:string,errorSuffix="must be a safe integer."):number{if(!/^-?\d+$/u.test(value))throw new Error(`${label} ${errorSuffix}`);const parsed=Number(value);if(!Number.isSafeInteger(parsed))throw new Error(`${label} ${errorSuffix}`);return parsed;}
 function requirePositionals(values:string[],count:number,label:string):void{if(values.length!==count)throw new Error(`Expected exactly one ${label}.`);} function assertNoPositionals(values:string[]):void{if(values.length)throw new Error(`Unexpected positional argument: ${values[0]}`);}
 function chooseBool(flags:Set<string>,yes:string,no:string):boolean|undefined{if(flags.has(yes)&&flags.has(no))throw new Error(`--${yes} and --${no} are mutually exclusive.`);return flags.has(yes)?true:flags.has(no)?false:undefined;}
 function clean(value:CommandInput):CommandInput{return Object.fromEntries(Object.entries(value).filter(([,item])=>item!==undefined));}
@@ -287,36 +309,37 @@ export async function assertSafeScriptFile(path: string): Promise<void> {
 }
 
 export function formatRootHelp(): string {
-  return ["# Figma Workspace stateless CLI", "", "Every remote leaf command receives a complete Figma URL/file key and node target in the same invocation.", "", "## Documentation", "", "  figma:docs:help  figma:docs:list  figma:docs:catalog  figma:docs:read  figma:docs:search  figma:api:help  figma:api:search  figma:doctor", "", "## Read and execute", "", "  figma:metadata  figma:inspect  figma:design-context  figma:motion-context  figma:variables  figma:design-system  figma:libraries  figma:run", "", "## Assets and fallback", "", "  figma:capture  figma:assets:apply  figma:assets:download  figma:upstream:help  figma:upstream:list  figma:upstream:read  figma:upstream:call", ""].join("\n");
+  return ["# Figma Workspace stateless CLI", "", "Every remote leaf command receives a complete Figma URL/file key and node target in the same invocation.", "", "## Documentation", "", "  figma:docs:help  figma:docs:list  figma:docs:catalog  figma:docs:read  figma:docs:search  figma:api:help  figma:api:read  figma:api:search  figma:doctor", "", "## Read and execute", "", "  figma:metadata  figma:inspect  figma:design-context  figma:motion-context  figma:variables  figma:design-system  figma:libraries  figma:run", "", "## Assets and fallback", "", "  figma:capture  figma:assets:apply  figma:assets:download  figma:upstream:help  figma:upstream:list  figma:upstream:read  figma:upstream:call", ""].join("\n");
 }
 export function formatFamilyHelp(family:FigmaCommandFamily):string{return[`# figma:${family}:help`,"",...FAMILY_COMMANDS[family].map((name)=>`  figma:${name}`),""].join("\n");}
 export function formatCommandHelp(command:string):string{
   if(!isPublicCommand(command))return `# figma:${command}\n\nUnknown public leaf. Use figma:help for the complete stateless command inventory.\n`;
-  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":"";
+  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":command==="docs:catalog"?"\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments.":command==="docs:search"||command==="api:search"?"\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":"";
   return `# figma:${command}\n\nUsage: ${PUBLIC_COMMAND_USAGE[command]}${details}\n`;
 }
 
 const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
   "docs:list":"figma:docs:list",
-  "docs:catalog":"figma:docs:catalog [--task-family <family>] [--surface design|figjam|slides] [--classification active|conditional|router|examples] [--limit <n>]",
+  "docs:catalog":`figma:docs:catalog [--task-family <family>] [--surface design|figjam|slides] [--classification active|conditional|router|examples] [--limit <${DOCS_CATALOG_LIMIT_MIN}..${DOCS_CATALOG_LIMIT_MAX}>]`,
   "docs:read":"figma:docs:read <doc-id>",
-  "docs:search":"figma:docs:search <query> [--scope auto|active|conditional|router|examples|all] [--surface design|figjam|slides] [--task-family <family>] [--limit <n>] [--snippet-lines <n>]",
-  "api:search":"figma:api:search <symbol> [--limit <n>] [--snippet-lines <n>]",
+  "docs:search":`figma:docs:search <query> [--scope auto|active|conditional|router|examples|all] [--surface design|figjam|slides] [--task-family <family>] [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
+  "api:read":"figma:api:read <api-id>",
+  "api:search":`figma:api:search <symbol> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
   doctor:"figma:doctor",
-  metadata:"figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  inspect:"figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <n>] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "design-context":"figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "motion-context":"figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  variables:"figma:variables (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "design-system":"figma:design-system <query> --file <url|key> [--surface design|figjam|slides] [--components|--no-components] [--variables|--no-variables] [--styles|--no-styles] [--no-code-connect] [--library <key>]... [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  libraries:"figma:libraries --file <url|key> [--surface design|figjam|slides] [--offset <n>] [--refresh] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  run:"figma:run --file <url|key> (--script <path.figma.ts> | --source -) [--surface design|figjam|slides] [--target-page <node-id>] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  capture:"figma:capture (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--image-file <path>] [--output-dir <path>] [--max-dimension <n>] [--contents-only] [--max-inline-bytes <0..10000>]",
-  "assets:apply":"figma:assets:apply --input <json-file|-> --file <url|key> [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "assets:download":"figma:assets:download --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
-  "upstream:list":"figma:upstream:list [--refresh] [--max-inline-bytes <0..10000>]",
-  "upstream:read":"figma:upstream:read <name> [--refresh] [--max-inline-bytes <0..10000>]",
-  "upstream:call":"figma:upstream:call --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <0..10000>]",
+  metadata:`figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  inspect:`figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <${INSPECT_DEPTH_MIN}..${INSPECT_DEPTH_MAX}>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "design-context":`figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "motion-context":`figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  variables:`figma:variables (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "design-system":`figma:design-system <query> --file <url|key> [--surface design|figjam|slides] [--components|--no-components] [--variables|--no-variables] [--styles|--no-styles] [--no-code-connect] [--library <key>]... [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  libraries:`figma:libraries --file <url|key> [--surface design|figjam|slides] [--offset <${LIBRARIES_OFFSET_MIN}..${LIBRARIES_OFFSET_MAX}>] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  run:`figma:run --file <url|key> (--script <path.figma.ts> | --source -) [--surface design|figjam|slides] [--target-page <node-id>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  capture:`figma:capture (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--image-file <path>] [--output-dir <path>] [--max-dimension <${CAPTURE_MAX_DIMENSION_MIN}..${CAPTURE_MAX_DIMENSION_MAX}>] [--contents-only] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "assets:apply":`figma:assets:apply --input <json-file|-> --file <url|key> [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "assets:download":`figma:assets:download --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "upstream:list":`figma:upstream:list [--refresh] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "upstream:read":`figma:upstream:read <name> [--refresh] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "upstream:call":`figma:upstream:call --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
 };
 
 function isPublicCommand(value:string):value is FigmaConcreteCommandName{return(PUBLIC_COMMANDS as readonly string[]).includes(value);} function isFamily(value:string):value is FigmaCommandFamily{return value==="docs"||value==="api"||value==="upstream";} function isHelp(value:string):boolean{return value==="--help"||value==="-h"||value==="help";}

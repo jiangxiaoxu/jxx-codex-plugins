@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "source": {
     "package": "@figma/plugin-typings",
     "version": "1.130.0",
@@ -15,9 +15,9 @@
     ]
   },
   "index": {
-    "file": "index-95cd5f5d4f0babc129b233833ef38fa3bd09ee72a8b331d5975e2f580672e5a6.jsonl",
+    "file": "index-88267821c1ebb706b7173614369aabb7da0bb20973519131e43296777aca4040.jsonl",
     "recordCount": 1643,
-    "sha256": "95cd5f5d4f0babc129b233833ef38fa3bd09ee72a8b331d5975e2f580672e5a6"
+    "sha256": "88267821c1ebb706b7173614369aabb7da0bb20973519131e43296777aca4040"
   },
   "integrity": {
     "algorithm": "sha256",

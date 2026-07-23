@@ -4,6 +4,21 @@ export class FigmaWorkspaceToolArgumentError extends Error {
   override readonly name = "FigmaWorkspaceToolArgumentError";
 }
 
+export const LOOKUP_RESULTS_MIN = 1;
+export const LOOKUP_RESULTS_MAX = 10;
+export const LOOKUP_SNIPPET_LINES_MIN = 1;
+export const LOOKUP_SNIPPET_LINES_MAX = 16;
+export const DOCS_CATALOG_LIMIT_MIN = 1;
+export const DOCS_CATALOG_LIMIT_MAX = 100;
+export const CAPTURE_MAX_DIMENSION_MIN = 1;
+export const CAPTURE_MAX_DIMENSION_MAX = 65_536;
+export const INSPECT_DEPTH_MIN = 1;
+export const INSPECT_DEPTH_MAX = Number.MAX_SAFE_INTEGER;
+export const LIBRARIES_OFFSET_MIN = 0;
+export const LIBRARIES_OFFSET_MAX = Number.MAX_SAFE_INTEGER;
+export const INLINE_RESULT_LIMIT_MIN = 0;
+export const INLINE_RESULT_LIMIT_MAX = 10_000;
+
 export interface FigmaWorkspaceExplicitNodeTarget {
   fileKey: string;
   nodeId: string;
@@ -131,6 +146,7 @@ export interface FigmaWorkspaceLookupArguments {
   taskFamily?: FigmaWorkspaceTaskFamily;
   query?: string;
   symbol?: string;
+  apiId?: string;
   maxResults?: number;
   maxSnippetLines?: number;
 }
@@ -158,7 +174,6 @@ export interface FigmaWorkspaceDoctorArguments { [key: string]: unknown }
 const SURFACES = ["design", "figjam", "slides"] as const;
 const DOC_SCOPES = ["auto", "active", "conditional", "router", "examples", "all"] as const;
 const TASK_FAMILIES = ["code-connect", "create-file", "design-to-code", "design-generation", "diagram", "library-generation", "motion-implementation", "swiftui", "figjam", "motion", "slides", "design-editing"] as const;
-const MAX_INLINE_RESULT_LIMIT = 10_000;
 const MAX_MANIFEST_ITEMS = 64;
 
 export function asRunArgs(value: unknown): FigmaWorkspaceRunArguments {
@@ -200,7 +215,7 @@ export function asCaptureNodeArgs(value: unknown): FigmaWorkspaceCaptureNodeArgu
   strings(args, ["title", "file", "outputDir", "nodeId", "imageFile"]);
   invocation(args);
   target(args.target, "target");
-  integer(args, "maxDimension", 1, 65536);
+  integer(args, "maxDimension", CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX);
   booleans(args, ["contentsOnly"]);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "imageFile", "maxDimension", "contentsOnly"]);
   normalizeNodeAlias(args);
@@ -214,7 +229,7 @@ export function asInspectArgs(value: unknown): FigmaWorkspaceInspectArguments {
   invocation(args);
   target(args.target, "target");
   enumeration(args, "mode", ["inspect", "style"]);
-  integer(args, "depth", 1, Number.MAX_SAFE_INTEGER);
+  integer(args, "depth", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "mode", "target", "nodeId", "depth"]);
   normalizeNodeAlias(args);
   requireStableNodeTarget(args, "figma:inspect");
@@ -286,7 +301,7 @@ export function asGetLibrariesArgs(value: unknown): FigmaWorkspaceGetLibrariesAr
   const args = parse<FigmaWorkspaceGetLibrariesArguments>(value);
   strings(args, ["title", "file", "outputDir"]);
   invocation(args);
-  integer(args, "offset", 0, Number.MAX_SAFE_INTEGER);
+  integer(args, "offset", LIBRARIES_OFFSET_MIN, LIBRARIES_OFFSET_MAX);
   booleans(args, ["refresh"]);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "offset", "refresh"]);
   requiredFile(args, "figma:libraries");
@@ -299,10 +314,25 @@ export function asLookupArgs(value: unknown): FigmaWorkspaceLookupArguments {
   enumeration(args, "scope", DOC_SCOPES);
   enumeration(args, "surface", SURFACES);
   enumeration(args, "taskFamily", TASK_FAMILIES);
-  strings(args, ["title", "query", "symbol"]);
-  integer(args, "maxResults", 1, 10);
-  integer(args, "maxSnippetLines", 1, 8);
-  allowed(args, ["title", "kind", "scope", "surface", "taskFamily", "query", "symbol", "maxResults", "maxSnippetLines"]);
+  strings(args, ["title", "query", "symbol", "apiId"]);
+  clampableInteger(args, "maxResults");
+  clampableInteger(args, "maxSnippetLines");
+  allowed(args, ["title", "kind", "scope", "surface", "taskFamily", "query", "symbol", "apiId", "maxResults", "maxSnippetLines"]);
+  if (args.apiId !== undefined) {
+    if (
+      args.kind !== "api"
+      || args.query !== undefined
+      || args.symbol !== undefined
+      || args.scope !== undefined
+      || args.surface !== undefined
+      || args.taskFamily !== undefined
+      || args.maxResults !== undefined
+      || args.maxSnippetLines !== undefined
+    ) {
+      throw new FigmaWorkspaceToolArgumentError('Tool argument "apiId" is exclusive to an exact API read.');
+    }
+    return args;
+  }
   if (args.kind === "docs") args.scope ??= "auto";
   return args;
 }
@@ -314,7 +344,7 @@ export function asDocsArgs(value: unknown): FigmaWorkspaceDocsArguments {
   if (args.mode === "list") return args as FigmaWorkspaceDocsArguments;
   if (args.mode === "catalog") {
     enumeration(args, "taskFamily", TASK_FAMILIES); enumeration(args, "surface", SURFACES);
-    enumeration(args, "classification", ["active", "conditional", "router", "examples"]); integer(args, "limit", 1, 100);
+    enumeration(args, "classification", ["active", "conditional", "router", "examples"]); clampableInteger(args, "limit");
     return args as FigmaWorkspaceDocsArguments;
   }
   if (args.mode === "read" && typeof args.id === "string" && args.id.trim()) return args as FigmaWorkspaceDocsArguments;
@@ -335,7 +365,7 @@ function commonRead<T extends InvocationArguments & { target?: FigmaWorkspaceNod
 }
 
 function invocation(args: InvocationArguments): void {
-  enumeration(args, "surface", SURFACES); integer(args, "inlineResultLimit", 0, MAX_INLINE_RESULT_LIMIT);
+  enumeration(args, "surface", SURFACES); integer(args, "inlineResultLimit", INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX);
 }
 
 function normalizeNodeAlias(args: { target?: FigmaWorkspaceNodeTarget; nodeId?: string }): void {
@@ -408,6 +438,7 @@ function parse<T extends Record<string, unknown>>(value: unknown): T {
 function strings(record: Record<string, unknown>, keys: readonly string[]): void { for (const key of keys) if (record[key] !== undefined && typeof record[key] !== "string") throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be a string.`); }
 function booleans(record: Record<string, unknown>, keys: readonly string[]): void { for (const key of keys) if (record[key] !== undefined && typeof record[key] !== "boolean") throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be a boolean.`); }
 function integer(record: Record<string, unknown>, key: string, min: number, max: number): void { const value=record[key]; if (value !== undefined && (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be an integer from ${min} to ${max}.`); }
+function clampableInteger(record: Record<string, unknown>, key: string): void { const value=record[key]; if (value !== undefined && (typeof value !== "number" || !Number.isSafeInteger(value))) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be a safe integer; out-of-range integers are clamped.`); }
 function enumeration(record: Record<string, unknown>, key: string, values: readonly string[]): void { const value=record[key]; if (value !== undefined && (typeof value !== "string" || !values.includes(value))) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be one of: ${values.join(", ")}.`); }
 function record(recordValue: Record<string, unknown>, key: string): void { const value=recordValue[key]; if (value !== undefined && !isRecord(value)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be an object.`); }
 function stringArray(recordValue: Record<string, unknown>, key: string): void { const value=recordValue[key]; if (value !== undefined && (!Array.isArray(value) || value.some((item) => typeof item !== "string"))) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be a string array.`); }

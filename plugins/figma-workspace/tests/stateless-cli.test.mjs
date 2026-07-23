@@ -17,6 +17,7 @@ const publicScripts = [
   "figma:docs:read",
   "figma:docs:search",
   "figma:api:help",
+  "figma:api:read",
   "figma:api:search",
   "figma:doctor",
   "figma:metadata",
@@ -117,7 +118,7 @@ test("fixed public leaf wrappers are complete, unique, and separate from mainten
 
   assert.equal(manifest.mcpServers, undefined);
   assert.deepEqual(actualPublicScripts, [...publicScripts].sort());
-  assert.equal(actualPublicScripts.length, 24);
+  assert.equal(actualPublicScripts.length, publicScripts.length);
   for (const scriptName of removedPublicScripts) {
     assert.equal(packageJson.scripts[scriptName], undefined, `${scriptName} must remain removed`);
   }
@@ -140,7 +141,7 @@ test("fixed public leaf wrappers are complete, unique, and separate from mainten
   }
 });
 
-test("release metadata keeps the 0.5.0 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
+test("release metadata keeps the 0.5.1 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
   const [manifest, packageJson, cliPackageJson, cliLockfile, authConstants] = await Promise.all([
     readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
@@ -150,7 +151,7 @@ test("release metadata keeps the 0.5.0 plugin, CLI package, lockfile, and OAuth 
   ]);
   const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
 
-  assert.equal(manifest.version, "0.5.0");
+  assert.equal(manifest.version, "0.5.1");
   assert.equal(packageJson.version, manifest.version);
   assert.equal(cliPackageJson.version, manifest.version);
   assert.equal(cliLockfile.version, manifest.version);
@@ -200,6 +201,79 @@ test("run and target help expose the stateless contract without session options"
     }
     assert.doesNotMatch(result.stdout, oldSessionTokens, scriptName);
   }
+});
+
+test("numeric help exposes exact ranges, clamp output is explicit, and API read closes the local id loop", () => {
+  for (const scriptName of ["figma:docs:search", "figma:api:search"]) {
+    const help = runNpm(["--silent", "run", scriptName, "--", "--help"], {
+      cwd: pluginRoot,
+      encoding: "utf8",
+    });
+    assert.equal(help.status, 0, `${scriptName}\n${commandOutput(help)}`);
+    assert.match(help.stdout, /--limit <1\.\.10>/u);
+    assert.match(help.stdout, /--snippet-lines <1\.\.16>/u);
+    assert.match(help.stdout, /parameterAdjustments/u);
+    assert.match(help.stdout, /12000-byte UTF-8 budget/u);
+  }
+
+  for (const [scriptName, expectedRange] of [
+    ["figma:docs:catalog", /--limit <1\.\.100>/u],
+    ["figma:inspect", /--depth <1\.\.9007199254740991>/u],
+    ["figma:libraries", /--offset <0\.\.9007199254740991>/u],
+    ["figma:capture", /--max-dimension <1\.\.65536>/u],
+  ]) {
+    const help = runNpm(["--silent", "run", scriptName, "--", "--help"], {
+      cwd: pluginRoot,
+      encoding: "utf8",
+    });
+    assert.equal(help.status, 0, `${scriptName}\n${commandOutput(help)}`);
+    assert.match(help.stdout, expectedRange, scriptName);
+  }
+
+  const catalogClamped = runNpm([
+    "--silent", "run", "figma:docs:catalog", "--", "--limit", "999",
+  ], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+  });
+  assert.equal(catalogClamped.status, 0, commandOutput(catalogClamped));
+  assert.match(catalogClamped.stdout, /^Status: succeeded$/mu);
+  assert.match(catalogClamped.stdout, /"option": "--limit"/u);
+  assert.match(catalogClamped.stdout, /"requested": 999/u);
+  assert.match(catalogClamped.stdout, /"applied": 100/u);
+  assert.match(catalogClamped.stdout, /"range": \[\s*1,\s*100\s*\]/u);
+  assert.doesNotMatch(catalogClamped.stdout, /"parameter"|"supportedRange"|"reason"|"message"/u);
+
+  const clamped = runNpm([
+    "--silent", "run", "figma:api:search", "--",
+    "figma.createFrame", "--limit", "0", "--snippet-lines", "99",
+  ], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+  });
+  assert.equal(clamped.status, 0, commandOutput(clamped));
+  assert.match(clamped.stdout, /^Status: succeeded$/mu);
+  assert.match(clamped.stdout, /"parameterAdjustments": \[/u);
+  assert.match(clamped.stdout, /"applied": 1/u);
+  assert.match(clamped.stdout, /"applied": 16/u);
+  assert.doesNotMatch(clamped.stdout, /^Status: observed unhealthy$/mu);
+
+  const search = runNpm(["--silent", "run", "figma:api:search", "--", "figma.createFrame"], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+  });
+  assert.equal(search.status, 0, commandOutput(search));
+  assert.doesNotMatch(search.stdout, /"parameterAdjustments"/u);
+  const apiId = /"apiId": "([^"]+)"/u.exec(search.stdout)?.[1];
+  assert.ok(apiId, search.stdout);
+  const read = runNpm(["--silent", "run", "figma:api:read", "--", apiId], {
+    cwd: pluginRoot,
+    encoding: "utf8",
+  });
+  assert.equal(read.status, 0, commandOutput(read));
+  assert.match(read.stdout, /"mode": "read"/u);
+  assert.match(read.stdout, /"content":/u);
+  assert.match(read.stdout, /createFrame/u);
 });
 
 test("removed state, session, dynamic-selector, and duplicate-source inputs fail before dispatch", () => {
@@ -272,7 +346,7 @@ test("Skill routes static discovery and documents explicit targets without retir
   const mapped = new Set([...commandMap.matchAll(/`(figma:[a-z][a-z:-]*)`/gu)].map((match) => match[1]));
   for (const command of [
     "figma:docs:catalog", "figma:docs:search", "figma:docs:read", "figma:api:search",
-    "figma:doctor", "figma:metadata", "figma:inspect", "figma:run", "figma:capture", "figma:upstream:call",
+    "figma:api:read", "figma:doctor", "figma:metadata", "figma:inspect", "figma:run", "figma:capture", "figma:upstream:call",
   ]) {
     assert.equal(mapped.has(command), true, command);
   }
@@ -334,6 +408,14 @@ test("packed plugin contains every fixed leaf wrapper and can run local stateles
     });
     assert.equal(api.status, 0, commandOutput(api));
     assert.match(api.stdout, /"normalizedSymbol": "createFrame"/u);
+    const apiId = /"apiId": "([^"]+)"/u.exec(api.stdout)?.[1];
+    assert.ok(apiId, api.stdout);
+    const apiRead = runNpm(["--silent", "run", "figma:api:read", "--", apiId], {
+      cwd: packedRoot,
+      encoding: "utf8",
+    });
+    assert.equal(apiRead.status, 0, commandOutput(apiRead));
+    assert.match(apiRead.stdout, /"mode": "read"/u);
     const runHelp = runNpm(["--silent", "run", "figma:run", "--", "--help"], {
       cwd: packedRoot,
       encoding: "utf8",
@@ -351,11 +433,44 @@ test("packed plugin contains every fixed leaf wrapper and can run local stateles
     const doctorJson = /```json\r?\n(?<json>[\s\S]+?)\r?\n```/u.exec(doctor.stdout)?.groups?.json;
     assert.notEqual(doctorJson, undefined, doctor.stdout);
     const doctorPayload = JSON.parse(doctorJson);
+    assert.equal(doctorPayload.runtime.projectDocs.ok, true);
+    assert.match(
+      doctorPayload.runtime.projectDocs.root.replaceAll("\\", "/"),
+      /cli-runtime\/dist\/skills\/figma-workspace\/references$/u,
+    );
+    assert.equal(doctorPayload.runtime.lookup.ok, true);
+    assert.ok(doctorPayload.runtime.lookup.api.recordCount > 1_000);
+    assert.match(
+      doctorPayload.runtime.lookup.api.root.replaceAll("\\", "/"),
+      /cli-runtime\/dist\/runtime\/figma-plugin-api-index$/u,
+    );
     assert.equal(doctorPayload.runtime.typescript.ok, true);
     assert.match(
       doctorPayload.runtime.typescript.helperDeclarationsPath.replaceAll("\\", "/"),
       /cli-runtime\/dist\/runtime\/figma-workspace-helpers\.d\.ts$/u,
     );
+    assert.match(
+      doctorPayload.runtime.typescript.figmaPluginTypingsPath.replaceAll("\\", "/"),
+      /cli-runtime\/dist\/runtime\/figma-plugin-typings\/index\.d\.ts$/u,
+    );
+    assert.match(
+      doctorPayload.runtime.typescript.typescriptLibDir.replaceAll("\\", "/"),
+      /cli-runtime\/dist\/runtime\/typescript-lib$/u,
+    );
+    assert.ok(doctorPayload.runtime.typescript.typescriptLibCount > 100);
+
+    const preflight = runNpm([
+      "--silent", "run", "figma:run", "--",
+      "--file", "ExampleKey", "--surface", "design", "--source", "-",
+    ], {
+      cwd: packedRoot,
+      encoding: "utf8",
+      input: "const broken: = 1;\n",
+    });
+    assert.equal(preflight.status, 1, commandOutput(preflight));
+    assert.match(preflight.stdout, /^Status: failed$/mu);
+    assert.match(preflight.stdout, /"executionOutcome": "not_started"/u);
+    assert.doesNotMatch(preflight.stdout, /Unable to load|Cannot find module|MODULE_NOT_FOUND/iu);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
     await rm(fixture.container, { recursive: true, force: true });
