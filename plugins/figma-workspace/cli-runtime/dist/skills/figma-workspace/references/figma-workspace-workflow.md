@@ -7,7 +7,7 @@ Use this reference for an end-to-end Figma task. Command-specific help and runti
 1. Start with a full Figma file or node URL. Use `figma:docs:catalog`, `figma:docs:search`, and `figma:docs:read` only when the workflow is not already clear.
 2. Run `figma:metadata -- --file <URL|fileKey>` for broad discovery before targeted `figma:inspect -- --file <URL|fileKey> --node <nodeId>` when the structure is unfamiliar.
 3. Create a local `.figma.ts` file in the shell. Do not expect the CLI to scaffold or remember a task directory.
-4. Use native Figma Plugin API for editing, traversal, layout, assets, cloning, and advanced work. `$` is frozen and non-callable, with only `$.text` and `$.capture`. Use `figma:api:search` for uncertain symbols.
+4. Use native Figma Plugin API for editing, traversal, layout, assets, cloning, and advanced work. `$` is frozen and non-callable, with only `$.text` and `$.capture`. Use `figma:api:search` for uncertain symbols and `figma:api:read` when the returned snippet does not contain the complete declaration.
 5. Run `figma:run -- --file <URL|fileKey> --surface <design|figjam|slides> --script <path/to/change.figma.ts>` after repairing fatal TypeScript or Plugin API diagnostics. For stdin source, replace `--script` with `--source -`. Return compact changed-node IDs and validation notes.
 6. Use first-class design, motion, library, variable, asset, and capture commands before the `figma:upstream:list` to `figma:upstream:read` to `figma:upstream:call` fallback.
 7. Capture visible changes and inspect the saved PNG with `view_image` before reporting visual success.

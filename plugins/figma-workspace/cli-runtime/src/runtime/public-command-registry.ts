@@ -1,4 +1,5 @@
 export const FIGMA_WORKSPACE_PUBLIC_COMMAND_IDS = [
+  "figma:api:read",
   "figma:api:search",
   "figma:assets:apply",
   "figma:assets:download",

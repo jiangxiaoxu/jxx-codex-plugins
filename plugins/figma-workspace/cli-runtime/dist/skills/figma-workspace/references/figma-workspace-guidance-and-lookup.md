@@ -37,4 +37,5 @@ Use this static reference to route task documentation and Plugin API questions. 
 ## Look Up Plugin API
 
 - Run `figma:api:search -- <symbol>` for generated Plugin API declarations. It accepts bare, qualified, and call-shaped queries such as `createFrame`, `figma.createFrame()`, and `ComponentNode.createInstance`.
-- Use returned lookup metadata and snippets; do not substitute a guessed typings file path or full internal index for the public lookup.
+- Search results return stable `apiId` values. Search has no per-snippet byte cap; one 12000-byte UTF-8 budget applies across returned snippets, with any truncation reported in `snippetBudget`. Run `figma:api:read -- <api-id>` when the full declaration record is needed.
+- Do not substitute a guessed typings file path or full internal index for the public search/read loop.

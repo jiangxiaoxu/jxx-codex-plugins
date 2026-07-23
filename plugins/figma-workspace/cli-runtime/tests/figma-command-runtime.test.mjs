@@ -41,6 +41,7 @@ test("root and family help expose only stateless fixed leaf commands", async () 
   assert.match(root.stdout.join(""), /^# Figma Workspace/um);
   assert.match(root.stdout.join(""), /figma:run/u);
   assert.match(root.stdout.join(""), /figma:doctor/u);
+  assert.match(root.stdout.join(""), /figma:api:read/u);
   assert.doesNotMatch(root.stdout.join(""), /state-file|session-file|figma:open|task:prepare|script:run|figma:eval|figma:guidance/u);
 
   for (const family of ["docs", "api", "upstream"]) {
@@ -49,6 +50,57 @@ test("root and family help expose only stateless fixed leaf commands", async () 
     assert.match(current.stdout.join(""), new RegExp(`^# figma:${family}:help`, "mu"));
   }
   assert.doesNotMatch(formatRootHelp(), /figma:sessions/u);
+});
+
+test("lookup and catalog help publish ranges and public parsing forwards clampable integers", async () => {
+  for (const command of ["docs:search", "api:search"]) {
+    const help = formatCommandHelp(command);
+    assert.match(help, /--limit <1\.\.10>/u, command);
+    assert.match(help, /--snippet-lines <1\.\.16>/u, command);
+    assert.match(help, /clamped.*parameterAdjustments/iu, command);
+    assert.match(help, /12000-byte UTF-8 budget/u, command);
+  }
+
+  const catalogHelp = formatCommandHelp("docs:catalog");
+  assert.match(catalogHelp, /--limit <1\.\.100>/u);
+  assert.match(catalogHelp, /clamped.*parameterAdjustments/iu);
+
+  const catalog = harness();
+  assert.equal(await runFigmaCommand("docs:catalog", ["--limit", "999"], catalog.dependencies), 0);
+  assert.deepEqual(catalog.calls[0].input, { mode: "catalog", limit: 999 });
+
+  const search = harness();
+  assert.equal(await runFigmaCommand("api:search", ["createFrame", "--limit", "-3", "--snippet-lines", "99"], search.dependencies), 0);
+  assert.deepEqual(search.calls[0].input, {
+    kind: "api",
+    symbol: "createFrame",
+    maxResults: -3,
+    maxSnippetLines: 99,
+  });
+
+  const read = harness();
+  const apiId = "api:@figma/plugin-typings/plugin-api.d.ts:431:getStyleByIdAsync";
+  assert.equal(await runFigmaCommand("api:read", [apiId], read.dependencies), 0);
+  assert.deepEqual(read.calls[0].input, { kind: "api", apiId });
+
+  const invalid = harness();
+  assert.equal(await runFigmaCommand("api:search", ["createFrame", "--snippet-lines", "3.5"], invalid.dependencies), 2);
+  assert.equal(invalid.calls.length, 0);
+
+  const boundary = harness();
+  assert.equal(await runFigmaCommand("api:search", ["createFrame", "--limit", "-9007199254740991"], boundary.dependencies), 0);
+  assert.equal(boundary.calls[0].input.maxResults, Number.MIN_SAFE_INTEGER);
+
+  for (const [command, argv] of [
+    ["api:search", ["createFrame", "--limit", "9007199254740991.1"]],
+    ["docs:catalog", ["--limit", "9007199254740992"]],
+    ["inspect", ["--file", "ExampleKey", "--node", "1:2", "--depth", "9007199254740991.1"]],
+    ["libraries", ["--file", "ExampleKey", "--offset", "1e2"]],
+  ]) {
+    const malformed = harness();
+    assert.equal(await runFigmaCommand(command, argv, malformed.dependencies), 2, command);
+    assert.equal(malformed.calls.length, 0, command);
+  }
 });
 
 test("run forwards one explicit file and safe TypeScript file", async () => {
@@ -127,6 +179,7 @@ test("local docs and API leaves reject remote inline-result limits", async () =>
     ["docs:catalog", ["--max-inline-bytes", "100"]],
     ["docs:read", ["project:README.md", "--max-inline-bytes", "100"]],
     ["docs:search", ["layout", "--max-inline-bytes", "100"]],
+    ["api:read", ["api:missing", "--max-inline-bytes", "100"]],
     ["api:search", ["createFrame", "--max-inline-bytes", "100"]],
   ]) {
     const current = harness();
@@ -145,7 +198,7 @@ test("removed umbrella and stateful commands fail as usage errors", async () => 
 
 test("every public leaf help publishes its real argv contract", () => {
   const leaves = [
-    "docs:list", "docs:catalog", "docs:read", "docs:search", "api:search", "doctor",
+    "docs:list", "docs:catalog", "docs:read", "docs:search", "api:read", "api:search", "doctor",
     "metadata", "inspect", "design-context", "motion-context", "variables", "design-system", "libraries",
     "run", "capture", "assets:apply", "assets:download", "upstream:list", "upstream:read", "upstream:call",
   ];
@@ -158,6 +211,23 @@ test("every public leaf help publishes its real argv contract", () => {
     assert.match(formatCommandHelp(leaf), /--node <node-id>/u, leaf);
   }
   assert.match(formatCommandHelp("metadata"), /--file <url\|key> \[--node <node-id>\]/u);
+  for (const [leaf, expectedRange] of [
+    ["docs:catalog", /--limit <1\.\.100>/u],
+    ["docs:search", /--limit <1\.\.10>.*--snippet-lines <1\.\.16>/u],
+    ["api:search", /--limit <1\.\.10>.*--snippet-lines <1\.\.16>/u],
+    ["inspect", /--depth <1\.\.9007199254740991>/u],
+    ["libraries", /--offset <0\.\.9007199254740991>/u],
+    ["capture", /--max-dimension <1\.\.65536>/u],
+  ]) {
+    assert.match(formatCommandHelp(leaf), expectedRange, leaf);
+  }
+  for (const leaf of leaves.filter((name) => !name.startsWith("docs:") && !name.startsWith("api:") && name !== "doctor")) {
+    assert.match(formatCommandHelp(leaf), /--max-inline-bytes <0\.\.10000>/u, leaf);
+  }
+  assert.doesNotMatch(
+    leaves.map((leaf) => formatCommandHelp(leaf)).join("\n"),
+    /--(?:limit|snippet-lines|depth|offset|max-dimension|max-inline-bytes) <(?:n|bytes|integer)>/u,
+  );
 });
 
 test("official read leaves accept raw file keys without surface while native leaves defer to their strict contract", async () => {

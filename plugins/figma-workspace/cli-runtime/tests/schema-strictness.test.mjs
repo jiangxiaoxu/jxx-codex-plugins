@@ -60,3 +60,25 @@ test("boolean, numeric, and nested arrays do not coerce", async () => {
     await assert.rejects(current.applyAssetManifest({ file: "Key", surface: "design", assets: Array.from({length:65},()=>({path:"x",target:"1:2"})) }), /at most 64/iu);
   } finally { await current.close(); }
 });
+
+test("non-display numeric boundaries remain strict", async () => {
+  const current = client();
+  try {
+    await assert.rejects(
+      current.captureNode({ file: "Key", surface: "design", target: "1:2", maxDimension: 65_537 }),
+      /maxDimension.*1 to 65536/iu,
+    );
+    await assert.rejects(
+      current.inspect({ file: "Key", surface: "design", target: "1:2", depth: 0 }),
+      /depth.*1 to 9007199254740991/iu,
+    );
+    await assert.rejects(
+      current.getLibraries({ file: "Key", surface: "design", offset: -1 }),
+      /offset.*0 to 9007199254740991/iu,
+    );
+    await assert.rejects(
+      current.getMetadata({ file: "Key", surface: "design", inlineResultLimit: 10_001 }),
+      /inlineResultLimit.*0 to 10000/iu,
+    );
+  } finally { await current.close(); }
+});

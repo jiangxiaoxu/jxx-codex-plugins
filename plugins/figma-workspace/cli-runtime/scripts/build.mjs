@@ -211,7 +211,7 @@ export async function stageFigmaPluginApiIndex(sourceDir, targetDir) {
   const indexSha256 = sha256(indexText);
   const indexFile = `index-${indexSha256}.jsonl`;
   const manifest = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     source: {
       package: "@figma/plugin-typings",
       version: packageData.version,
@@ -243,7 +243,7 @@ export function createPluginApiSymbolRecords(sourceInputs) {
     }
     const text = declaration.lines.slice(declaration.lineStart - 1, declaration.lineEnd).join("\n");
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       id: `@figma/plugin-typings/${declaration.sourceFile}:${declaration.declarationLine}:${declaration.symbol}`,
       symbol: declaration.symbol,
       ownerSymbol: declaration.ownerSymbol,
@@ -251,6 +251,8 @@ export function createPluginApiSymbolRecords(sourceInputs) {
       qualifiedAliases: [...qualifiedAliases].sort(),
       sourceFile: declaration.sourceFile,
       declarationLine: declaration.declarationLine,
+      declarationLineStart: declaration.declarationLineStart,
+      declarationLineEnd: declaration.declarationLineEnd,
       lineStart: declaration.lineStart,
       lineEnd: declaration.lineEnd,
       contentSha256: sha256(text),
@@ -270,9 +272,12 @@ function collectPluginApiDeclarations(sourceFile, sourceText) {
   const lines = sourceText.split("\n");
   const declarations = [];
 
-  const append = (nameNode, declarationKind, ownerSymbol = null, typeNode = undefined) => {
+  const append = (declarationNode, nameNode, declarationKind, ownerSymbol = null, typeNode = undefined) => {
     if (!nameNode || !ts.isIdentifier(nameNode)) return;
     const symbolIndex = source.getLineAndCharacterOfPosition(nameNode.getStart(source)).line;
+    const declarationStart = source.getLineAndCharacterOfPosition(declarationNode.getStart(source, true)).line;
+    const declarationEndPosition = Math.max(declarationNode.getStart(source), declarationNode.getEnd() - 1);
+    const declarationEnd = source.getLineAndCharacterOfPosition(declarationEndPosition).line;
     const start = pluginApiChunkStart(lines, symbolIndex);
     const end = pluginApiChunkEnd(lines, symbolIndex);
     declarations.push({
@@ -282,6 +287,8 @@ function collectPluginApiDeclarations(sourceFile, sourceText) {
       ownerSymbol,
       declarationKind,
       declarationLine: symbolIndex + 1,
+      declarationLineStart: declarationStart + 1,
+      declarationLineEnd: declarationEnd + 1,
       lineStart: start + 1,
       lineEnd: end,
       referencedType: directNamedTypeReference(typeNode),
@@ -291,13 +298,13 @@ function collectPluginApiDeclarations(sourceFile, sourceText) {
   const visitMembers = (ownerSymbol, members) => {
     for (const member of members) {
       if (ts.isMethodSignature(member) || ts.isMethodDeclaration(member)) {
-        append(member.name, "method", ownerSymbol);
+        append(member, member.name, "method", ownerSymbol);
       } else if (ts.isPropertySignature(member) || ts.isPropertyDeclaration(member)) {
-        append(member.name, "property", ownerSymbol, member.type);
+        append(member, member.name, "property", ownerSymbol, member.type);
       } else if (ts.isGetAccessorDeclaration(member)) {
-        append(member.name, "getter", ownerSymbol, member.type);
+        append(member, member.name, "getter", ownerSymbol, member.type);
       } else if (ts.isSetAccessorDeclaration(member)) {
-        append(member.name, "setter", ownerSymbol);
+        append(member, member.name, "setter", ownerSymbol);
       }
     }
   };
@@ -305,28 +312,28 @@ function collectPluginApiDeclarations(sourceFile, sourceText) {
   const visitStatements = (statements, namespaceOwner = null) => {
     for (const statement of statements) {
       if (ts.isInterfaceDeclaration(statement)) {
-        append(statement.name, "interface", namespaceOwner);
+        append(statement, statement.name, "interface", namespaceOwner);
         visitMembers(statement.name.text, statement.members);
       } else if (ts.isTypeAliasDeclaration(statement)) {
-        append(statement.name, "type-alias", namespaceOwner, statement.type);
+        append(statement, statement.name, "type-alias", namespaceOwner, statement.type);
       } else if (ts.isClassDeclaration(statement)) {
-        append(statement.name, "class", namespaceOwner);
+        append(statement, statement.name, "class", namespaceOwner);
         if (statement.name) visitMembers(statement.name.text, statement.members);
       } else if (ts.isEnumDeclaration(statement)) {
-        append(statement.name, "enum", namespaceOwner);
+        append(statement, statement.name, "enum", namespaceOwner);
         for (const member of statement.members) {
-          append(member.name, "enum-member", statement.name.text);
+          append(member, member.name, "enum-member", statement.name.text);
         }
       } else if (ts.isFunctionDeclaration(statement)) {
-        append(statement.name, "function", namespaceOwner);
+        append(statement, statement.name, "function", namespaceOwner);
       } else if (ts.isVariableStatement(statement)) {
         for (const declaration of statement.declarationList.declarations) {
-          append(declaration.name, "variable", namespaceOwner, declaration.type);
+          append(statement, declaration.name, "variable", namespaceOwner, declaration.type);
         }
       } else if (ts.isModuleDeclaration(statement)) {
         const isGlobalAugmentation = (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
         if (ts.isIdentifier(statement.name) && !isGlobalAugmentation) {
-          append(statement.name, "namespace", namespaceOwner);
+          append(statement, statement.name, "namespace", namespaceOwner);
         }
         let body = statement.body;
         while (body && ts.isModuleDeclaration(body)) body = body.body;

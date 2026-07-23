@@ -194,6 +194,123 @@ test("stateless validators reject retired session and workspace fields as unknow
   await client.close();
 });
 
+test("lookup clamps integer bounds and reports effective parameters without warning status", async () => {
+  const current = createFigmaWorkspaceClient({ client: fakeUpstream([]) });
+  try {
+    const result = await current.lookup({
+      kind: "api",
+      symbol: "figma.createFrame",
+      maxResults: 0,
+      maxSnippetLines: 99,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, "search");
+    assert.equal(result.results.length, 1);
+    assert.deepEqual(result.parameterAdjustments, [
+      {
+        option: "--limit",
+        requested: 0,
+        applied: 1,
+        range: [1, 10],
+      },
+      {
+        option: "--snippet-lines",
+        requested: 99,
+        applied: 16,
+        range: [1, 16],
+      },
+    ]);
+    assert.equal("warnings" in result, false);
+    const inRange = await current.lookup({
+      kind: "api",
+      symbol: "figma.createFrame",
+      maxResults: 5,
+      maxSnippetLines: 5,
+    });
+    assert.equal("parameterAdjustments" in inRange, false);
+    const docsResult = await current.lookup({
+      kind: "docs",
+      query: "text editing",
+      maxResults: 99,
+      maxSnippetLines: -4,
+    });
+    assert.deepEqual(
+      docsResult.parameterAdjustments,
+      [
+        { option: "--limit", requested: 99, applied: 10, range: [1, 10] },
+        { option: "--snippet-lines", requested: -4, applied: 1, range: [1, 16] },
+      ],
+    );
+    assert.ok(docsResult.results.every((entry) => entry.snippet.split("\n").length <= 1));
+    await assert.rejects(
+      current.lookup({ kind: "api", symbol: "createFrame", maxSnippetLines: 3.5 }),
+      /safe integer/iu,
+    );
+  } finally {
+    await current.close();
+  }
+});
+
+test("docs catalog clamps its display limit and reports the supported range", async () => {
+  const current = createFigmaWorkspaceClient({ client: fakeUpstream([]) });
+  try {
+    const lower = await current.docs({ mode: "catalog", limit: -9 });
+    assert.equal(lower.ok, true);
+    assert.equal(lower.mode, "catalog");
+    assert.equal(lower.taskFamilies.length, 1);
+    assert.deepEqual(lower.parameterAdjustments, [{
+      option: "--limit",
+      requested: -9,
+      applied: 1,
+      range: [1, 100],
+    }]);
+    assert.equal("warnings" in lower, false);
+
+    const upper = await current.docs({ mode: "catalog", limit: 999 });
+    assert.equal(upper.taskFamilies.length, 12);
+    assert.equal(upper.parameterAdjustments[0].applied, 100);
+    assert.deepEqual(upper.parameterAdjustments[0].range, [1, 100]);
+
+    const inRange = await current.docs({ mode: "catalog", limit: 12 });
+    assert.equal("parameterAdjustments" in inRange, false);
+
+    await assert.rejects(
+      current.docs({ mode: "catalog", limit: 2.5 }),
+      /safe integer/iu,
+    );
+  } finally {
+    await current.close();
+  }
+});
+
+test("API lookup closes the exact search and read loop through apiId", async () => {
+  const current = createFigmaWorkspaceClient({ client: fakeUpstream([]) });
+  try {
+    const search = await current.lookup({ kind: "api", symbol: "figma.createFrame" });
+    const apiId = search.results.find((result) => result.apiId)?.apiId;
+    assert.ok(apiId);
+    assert.equal(search.nextActions[0].commandId, "figma:api:read");
+    assert.equal(search.nextActions[0].args.id, apiId);
+
+    const read = await current.lookup({ kind: "api", apiId });
+    assert.equal(read.ok, true);
+    assert.equal(read.mode, "read");
+    assert.equal(read.declaration.apiId, apiId);
+    assert.equal(read.declaration.kind, "api");
+    assert.match(read.declaration.content, /createFrame/u);
+    assert.doesNotMatch(read.declaration.content, /createComponent/u);
+    assert.equal(read.declaration.source.package, "@figma/plugin-typings");
+    assert.equal("results" in read, false);
+
+    await assert.rejects(
+      current.lookup({ kind: "api", apiId: "api:missing" }),
+      /Unknown Figma Plugin API id/iu,
+    );
+  } finally {
+    await current.close();
+  }
+});
+
 test("doctor remains local-only and does not connect upstream", async () => {
   const calls = [];
   const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });

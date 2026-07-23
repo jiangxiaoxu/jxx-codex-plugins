@@ -1,6 +1,6 @@
 {
   "name": "@jxx-codex-plugins/figma-workspace",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Stateless fixed-leaf Node.js command entrypoints backed by one typed Figma workspace runtime.",
   "type": "module",
   "main": "./scripts/server.mjs",
@@ -26,6 +26,7 @@
     "figma:docs:read": "node scripts/commands/figma-docs-read.mjs",
     "figma:docs:search": "node scripts/commands/figma-docs-search.mjs",
     "figma:api:help": "node scripts/commands/figma-api-help.mjs",
+    "figma:api:read": "node scripts/commands/figma-api-read.mjs",
     "figma:api:search": "node scripts/commands/figma-api-search.mjs",
     "figma:doctor": "node scripts/commands/figma-doctor.mjs",
     "figma:upstream:help": "node scripts/commands/figma-upstream-help.mjs",

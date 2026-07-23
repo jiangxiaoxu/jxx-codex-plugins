@@ -11,7 +11,7 @@ import {
 
 const packageRoot = resolve(import.meta.dirname, "..");
 
-test("Plugin API index v2 records direct owners, declaration kinds, and runtime aliases", () => {
+test("Plugin API index v3 records exact ranges, direct owners, declaration kinds, and runtime aliases", () => {
   const records = createPluginApiSymbolRecords([
     {
       sourceFile: "index.d.ts",
@@ -36,6 +36,14 @@ test("Plugin API index v2 records direct owners, declaration kinds, and runtime 
         "interface ComponentNode {",
         "  createInstance(): InstanceNode",
         "}",
+        "interface ShapeWithTextNode {",
+        "  /** Shape kind. */",
+        "  shapeType:",
+        "    | 'SQUARE'",
+        "    | 'ELLIPSE'",
+        "    | 'INTERNAL_STORAGE'",
+        "  readonly text: TextSublayerNode",
+        "}",
         "type SceneNode = FrameNode | ComponentNode",
         "",
       ].join("\n"),
@@ -45,7 +53,7 @@ test("Plugin API index v2 records direct owners, declaration kinds, and runtime 
   const createFrame = records.find((record) =>
     record.symbol === "createFrame" && record.ownerSymbol === "PluginAPI");
   assert.deepEqual(createFrame.qualifiedAliases, ["PluginAPI.createFrame", "figma.createFrame"]);
-  assert.equal(createFrame.schemaVersion, 2);
+  assert.equal(createFrame.schemaVersion, 3);
   assert.equal(createFrame.declarationKind, "method");
 
   const createVariableCollection = records.find((record) =>
@@ -60,6 +68,16 @@ test("Plugin API index v2 records direct owners, declaration kinds, and runtime 
   assert.equal(createInstance.ownerSymbol, "ComponentNode");
   assert.deepEqual(createInstance.qualifiedAliases, ["ComponentNode.createInstance"]);
 
+  const shapeType = records.find((record) =>
+    record.symbol === "shapeType" && record.ownerSymbol === "ShapeWithTextNode");
+  const textProperty = records.find((record) =>
+    record.symbol === "text" && record.ownerSymbol === "ShapeWithTextNode");
+  assert.ok(shapeType);
+  assert.ok(textProperty);
+  assert.ok(shapeType.declarationLineStart < shapeType.declarationLine);
+  assert.ok(shapeType.declarationLineEnd > shapeType.declarationLine);
+  assert.ok(shapeType.declarationLineEnd < textProperty.declarationLine);
+
   const sceneNode = records.find((record) => record.symbol === "SceneNode");
   assert.equal(sceneNode.ownerSymbol, null);
   assert.equal(sceneNode.declarationKind, "type-alias");
@@ -67,7 +85,7 @@ test("Plugin API index v2 records direct owners, declaration kinds, and runtime 
   assert.match(sceneNode.id, /^@figma\/plugin-typings\/plugin-api\.d\.ts:\d+:SceneNode$/u);
 });
 
-test("Plugin API index v2 derives expected aliases from bundled Figma typings", async () => {
+test("Plugin API index v3 derives expected aliases from bundled Figma typings", async () => {
   const typingsRoot = resolve(packageRoot, "node_modules/@figma/plugin-typings");
   const sourceInputs = await Promise.all(["index.d.ts", "plugin-api.d.ts"].map(async (sourceFile) => ({
     sourceFile,
@@ -93,21 +111,21 @@ test("Plugin API index v2 derives expected aliases from bundled Figma typings", 
   assert.deepEqual(componentCreateInstance.qualifiedAliases, ["ComponentNode.createInstance"]);
 
   assert.ok(records.length > 1_000);
-  assert.ok(records.every((record) => record.schemaVersion === 2));
+  assert.ok(records.every((record) => record.schemaVersion === 3));
   assert.ok(records.every((record) => typeof record.ownerSymbol === "string" || record.ownerSymbol === null));
   assert.ok(records.every((record) => Array.isArray(record.qualifiedAliases)));
 });
 
-test("Plugin API index publisher writes a content-addressed schema v2 index", async () => {
+test("Plugin API index publisher writes a content-addressed schema v3 index", async () => {
   const typingsRoot = resolve(packageRoot, "node_modules/@figma/plugin-typings");
-  const target = await mkdtemp(join(tmpdir(), "figma-plugin-api-index-v2-"));
+  const target = await mkdtemp(join(tmpdir(), "figma-plugin-api-index-v3-"));
   try {
     await stageFigmaPluginApiIndex(typingsRoot, target);
     const manifest = JSON.parse(await readFile(resolve(target, "manifest.json"), "utf8"));
     const indexText = await readFile(resolve(target, manifest.index.file), "utf8");
     const records = indexText.trimEnd().split("\n").map((line) => JSON.parse(line));
 
-    assert.equal(manifest.schemaVersion, 2);
+    assert.equal(manifest.schemaVersion, 3);
     assert.match(manifest.index.file, /^index-[a-f0-9]{64}\.jsonl$/u);
     assert.equal(manifest.index.recordCount, records.length);
     assert.equal(manifest.index.sha256, sha256(indexText));
@@ -116,7 +134,7 @@ test("Plugin API index publisher writes a content-addressed schema v2 index", as
       Object.keys(manifest.integrity.contentHashes).sort(),
       records.map((record) => record.id).sort(),
     );
-    assert.ok(records.every((record) => record.schemaVersion === 2));
+    assert.ok(records.every((record) => record.schemaVersion === 3));
   } finally {
     await rm(target, { recursive: true, force: true });
   }

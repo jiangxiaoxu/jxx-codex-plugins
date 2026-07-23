@@ -103,6 +103,38 @@ test("canonical v2 catalog closes the exact id read loop", () => {
   }
 });
 
+test("Plugin API index closes the exact apiId read loop without path fallback", async () => {
+  const matches = await docs.searchReferenceFiles({
+    query: "ShapeWithTextNode.shapeType",
+    corpus: "api",
+    exactSymbol: true,
+    maxResults: 5,
+    maxSnippetLines: 5,
+  });
+  const apiId = matches.results.find((result) => result.apiId)?.apiId;
+  assert.ok(apiId);
+  const declaration = docs.readFigmaWorkspacePluginApiDeclaration(apiId);
+  assert.equal(declaration.apiId, apiId);
+  assert.equal(declaration.kind, "api");
+  assert.match(declaration.content, /shapeType:/u);
+  assert.match(declaration.content, /'INTERNAL_STORAGE'/u);
+  assert.doesNotMatch(declaration.content, /readonly text: TextSublayerNode/u);
+  assert.ok(declaration.source.lineEnd > declaration.source.declarationLine);
+  assert.equal(declaration.source.package, "@figma/plugin-typings");
+
+  for (const invalidId of [
+    "@figma/plugin-typings/plugin-api.d.ts:1:createFrame",
+    "api:../plugin-api.d.ts",
+    "api:C:/plugin-api.d.ts",
+    "api:missing",
+  ]) {
+    assert.throws(
+      () => docs.readFigmaWorkspacePluginApiDeclaration(invalidId),
+      /figma:api:search/u,
+    );
+  }
+});
+
 test("auto docs search hard-filters family and surface and emits compact unique records", async () => {
   const matches = await docs.searchReferenceFiles({
     query: "swiftui design to code",
@@ -115,8 +147,10 @@ test("auto docs search hard-filters family and surface and emits compact unique 
   });
   assert.ok(matches.results.length > 0);
   assert.equal(new Set(matches.results.map((result) => result.docId)).size, matches.results.length);
+  assert.ok(
+    matches.results.reduce((total, result) => total + Buffer.byteLength(result.snippet, "utf8"), 0) <= 12_000,
+  );
   for (const result of matches.results) {
-    assert.ok(Buffer.byteLength(result.snippet, "utf8") <= 1200);
     assert.equal(Object.hasOwn(result, "text"), false);
     assert.equal(Object.hasOwn(result, "contentSha256"), false);
     assert.equal(Object.hasOwn(result, "sourceContentSha256"), false);
@@ -276,7 +310,6 @@ test("Plugin API lookup supports qualified aliases without blind unknown-owner e
     const exact = matches.results.find((result) => result.matchType === "exact-symbol");
     assert.ok(exact, query);
     if (query.includes(".")) assert.equal(exact.ownerMatch, true, query);
-    assert.ok(Buffer.byteLength(exact.snippet, "utf8") <= 1200);
   }
 
   for (const [query, expectedTitle] of [
@@ -349,6 +382,46 @@ test("Plugin API lookup supports qualified aliases without blind unknown-owner e
   });
   assert.equal(missingDeclaration.normalizedSymbol, "screenshot");
   assert.equal(missingDeclaration.results.some((result) => result.matchType === "exact-symbol"), false);
+});
+
+test("search applies one 12 KB UTF-8 snippet budget without a per-result byte cap", async () => {
+  const safetyPath = resolve(referenceRoot, "figma-workspace-safety.md");
+  const artifactsPath = resolve(referenceRoot, "figma-workspace-artifacts.md");
+  const [originalSafety, originalArtifacts] = await Promise.all([
+    readFile(safetyPath, "utf8"),
+    readFile(artifactsPath, "utf8"),
+  ]);
+  try {
+    await Promise.all([
+      writeFile(safetyPath, `# Safety budget fixture\nbudgetneedle ${"仙".repeat(2_500)}\n`, "utf8"),
+      writeFile(artifactsPath, `# Artifacts budget fixture\nbudgetneedle ${"侠".repeat(2_500)}\n`, "utf8"),
+    ]);
+    const matches = await docs.searchReferenceFiles({
+      query: "budgetneedle",
+      files: ["figma-workspace-safety.md", "figma-workspace-artifacts.md"],
+      maxResults: 10,
+      maxSnippetLines: 16,
+    });
+    assert.equal(matches.results.length, 2);
+    const resultBytes = matches.results.map((result) => Buffer.byteLength(result.snippet, "utf8"));
+    const returnedBytes = resultBytes.reduce((total, bytes) => total + bytes, 0);
+    assert.ok(resultBytes[0] > 1_200);
+    assert.ok(resultBytes[1] > 1_200);
+    assert.ok(returnedBytes <= 12_000);
+    assert.equal(matches.results[0].snippetTruncated, undefined);
+    assert.equal(matches.results[1].snippetTruncated, true);
+    assert.equal(matches.snippetBudget.limitBytes, 12_000);
+    assert.ok(matches.snippetBudget.originalBytes > 12_000);
+    assert.equal(matches.snippetBudget.returnedBytes, returnedBytes);
+    assert.equal(matches.snippetBudget.selectedResultCount, 2);
+    assert.equal(matches.snippetBudget.returnedResultCount, 2);
+    assert.equal(matches.snippetBudget.truncated, true);
+  } finally {
+    await Promise.all([
+      writeFile(safetyPath, originalSafety, "utf8"),
+      writeFile(artifactsPath, originalArtifacts, "utf8"),
+    ]);
+  }
 });
 
 test("every guidance Plugin API lookup query resolves to a declaration", async () => {
