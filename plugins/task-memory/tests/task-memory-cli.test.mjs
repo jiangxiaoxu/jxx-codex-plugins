@@ -156,6 +156,26 @@ test("task ids normalize to lowercase hyphen-case", () => {
   }
 });
 
+test("status restores a missing artifacts directory after validating task state", () => {
+  const workspace = temporaryDirectory("task-memory-restore-artifacts-");
+  try {
+    const task = initTask(workspace);
+    const artifacts = join(task, "artifacts");
+    rmSync(artifacts, { recursive: true });
+
+    const status = runNpm(publicScripts.status, ["--workspace", workspace, "--task-id", "task-example"]);
+    assert.equal(status.stdout, [
+      "task_id=task-example",
+      `task_state=${join(task, "task_state.md")}`,
+      `artifacts=${artifacts}`,
+      "",
+    ].join("\n"));
+    assert.deepEqual(readdirSync(artifacts), []);
+  } finally {
+    rmSync(workspace, { force: true, recursive: true });
+  }
+});
+
 test("status rejects missing and wrong-type task entries", () => {
   const workspace = temporaryDirectory("task-memory-layout-");
   try {
@@ -172,11 +192,6 @@ test("status rejects missing and wrong-type task entries", () => {
         expected: /task_state\.md is not a regular file/u,
       },
       {
-        taskId: "task-missing-artifacts",
-        mutate(task) { rmSync(join(task, "artifacts"), { recursive: true }); },
-        expected: /missing artifacts directory/u,
-      },
-      {
         taskId: "task-file-artifacts",
         mutate(task) { rmSync(join(task, "artifacts"), { recursive: true }); writeFileSync(join(task, "artifacts"), "file\n", "utf8"); },
         expected: /artifacts directory is not a directory/u,
@@ -188,6 +203,22 @@ test("status rejects missing and wrong-type task entries", () => {
       const result = runNpm(publicScripts.status, ["--workspace", workspace, "--task-id", testCase.taskId], 1);
       assert.match(result.stderr, testCase.expected);
     }
+  } finally {
+    rmSync(workspace, { force: true, recursive: true });
+  }
+});
+
+test("status does not restore artifacts when task state is missing", () => {
+  const workspace = temporaryDirectory("task-memory-missing-state-");
+  try {
+    const task = initTask(workspace);
+    const artifacts = join(task, "artifacts");
+    unlinkSync(join(task, "task_state.md"));
+    rmSync(artifacts, { recursive: true });
+
+    const result = runNpm(publicScripts.status, ["--workspace", workspace, "--task-id", "task-example"], 1);
+    assert.match(result.stderr, /missing task_state\.md/u);
+    assert.equal(readdirSync(task).includes("artifacts"), false);
   } finally {
     rmSync(workspace, { force: true, recursive: true });
   }

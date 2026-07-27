@@ -17,14 +17,14 @@ Use a `task-id` beginning with `task-`; the CLI normalizes it to lowercase hyphe
 
 ## CLI
 
-Resolve `<plugin-root>` as `<skill-dir>/../..`, where `<skill-dir>` contains this `SKILL.md`, and use it as the working directory. Verify `package.json` before first use; never use a workspace-relative or hard-coded install/cache path. Use `npm --silent` so npm lifecycle banners do not contaminate stdout, put npm's `--` separator before CLI arguments, and always pass an absolute `--workspace`. Run the selected entrypoint with `--help` before first use.
+Resolve `<plugin-root>` as `<skill-dir>/../..`, where `<skill-dir>` contains this `SKILL.md`, and use it as the working directory. Never use a workspace-relative or hard-coded install/cache path. Use `npm --silent` so npm lifecycle banners do not contaminate stdout, put npm's `--` separator before CLI arguments, and always pass an absolute `--workspace`. Run the selected entrypoint with `--help` before first use.
 
 ```text
 npm --silent run task-memory:init -- --workspace <workspace> --task-id task-<name>
 npm --silent run task-memory:status -- --workspace <workspace> --task-id task-<name>
 ```
 
-For a new task, `/root` runs `init` and uses the printed `task_id`; `init` adds `-001`, `-002`, and so on when needed. Resume an existing task with its assigned id. Run `status` before resume to validate the layout and obtain the canonical state and artifacts paths.
+For a new task, `/root` runs `init` and uses the printed `task_id`; `init` adds `-001`, `-002`, and so on when needed. Resume an existing task with its assigned id. Run `status` before resume to validate the layout and obtain the canonical state and artifacts paths. After the task root, task directory, and `task_state.md` pass safety validation, `status` restores an absent `artifacts/` as an empty ordinary directory; files, links, reparse points, and other invalid entries still fail validation.
 
 ## Ownership
 

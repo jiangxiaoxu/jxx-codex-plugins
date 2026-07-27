@@ -1,6 +1,6 @@
 {
   "name": "task-memory",
-  "version": "0.1.42",
+  "version": "0.1.43",
   "description": "Durable workspace-local task state managed through independent npm CLI commands for Codex",
   "author": {
     "name": "jiangxiaoxu"

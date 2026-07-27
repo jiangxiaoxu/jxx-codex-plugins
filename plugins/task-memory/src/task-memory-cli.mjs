@@ -143,14 +143,23 @@ function artifactsDirectoryPath(taskDirectory) {
   return join(taskDirectory, "artifacts");
 }
 
-/** @param {string} workspace @param {string} taskDirectory */
-function validateTaskDirectory(workspace, taskDirectory) {
+/** @param {string} workspace @param {string} taskDirectory @param {boolean} [restoreMissingArtifacts] */
+function validateTaskDirectory(workspace, taskDirectory, restoreMissingArtifacts = false) {
   const taskRoot = taskMemoryRootPath(workspace);
   const taskState = taskStatePath(taskDirectory);
   const artifactsDirectory = artifactsDirectoryPath(taskDirectory);
   validateDirectory(workspace, taskRoot, "task memory root");
   validateDirectory(workspace, taskDirectory, "task directory");
   validateRegularFile(workspace, taskState, "task_state.md");
+  if (restoreMissingArtifacts && optionalMetadata(artifactsDirectory) === undefined) {
+    try {
+      mkdirSync(artifactsDirectory);
+    } catch (error) {
+      if (!hasErrorCode(error, "EEXIST")) {
+        throw error;
+      }
+    }
+  }
   validateDirectory(workspace, artifactsDirectory, "artifacts directory");
   return { taskState, artifactsDirectory };
 }
@@ -162,7 +171,7 @@ function resolveTaskDirectory(workspace, taskId) {
   if (optionalMetadata(taskDirectory) === undefined) {
     throw new Error(`task not found: ${normalizedTaskId}`);
   }
-  const { taskState, artifactsDirectory } = validateTaskDirectory(workspace, taskDirectory);
+  const { taskState, artifactsDirectory } = validateTaskDirectory(workspace, taskDirectory, true);
   return { normalizedTaskId, taskState, artifactsDirectory };
 }
 

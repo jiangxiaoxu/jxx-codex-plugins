@@ -1,6 +1,6 @@
 {
   "name": "@jxx-codex-plugins/task-memory",
-  "version": "0.1.42",
+  "version": "0.1.43",
   "private": true,
   "description": "Independent npm commands backed by one typed task-memory runtime.",
   "type": "module",
