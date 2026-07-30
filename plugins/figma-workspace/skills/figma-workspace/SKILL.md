@@ -11,7 +11,7 @@ Use the bundled Node CLI for Figma work. It has no agent-facing local MCP server
 
 1. Resolve `<plugin-root>` as `<skill-dir>/../..` and run commands there with `npm --silent`.
 2. Run `npm --silent run figma:help` for the public leaf-command inventory. Use the selected leaf command's `--help` before first use; generated help owns exact input schemas, limits, result fields, and exit behavior.
-3. Read stdout as Restricted Markdown. If it provides `outputFiles.cliResultFile`, read that complete JSON sidecar; never parse stdout as JSON.
+3. Read stdout as Restricted Markdown; never parse it as JSON. Keep the default inline-result threshold for normal agent calls. If stdout provides `outputFiles.cliResultFile`, treat that complete JSON sidecar as the machine-readable result: inspect its keys, paths, types, and structure, extract the necessary fields, then expand further only as needed. Do not raise the inline threshold merely to avoid sidecar handling; consider raising it only when the user needs the complete result rendered inline for direct reading or visual presentation.
 
 Use `figma:docs:help`, `figma:api:help`, or `figma:upstream:help` only to browse the corresponding fixed command family; they do not establish target context.
 
@@ -95,6 +95,7 @@ Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture
 ## Local Artifacts And Mutation Results
 
 - Pure inline reads do not create a persistent workspace record. When an invocation must write a sidecar, diagnostic, capture, or download and no explicit output path is supplied, the CLI returns an absolute path beneath its invocation-specific OS temp directory.
+- Treat `outputFiles.cliResultFile` as the machine-readable result. Discover its structure and extract only relevant content before expanding large values; do not treat the Restricted Markdown envelope as JSON.
 - Use explicit `--output-dir`, `--image-file`, or download output options when the caller needs a durable local location. Managed paths reject links and reparse points and publish atomically.
 - Same-machine mutations are serialized per fileKey through a temporary lock. This is coordination only, not distributed durability.
 - `figma:run` reports `executionOutcome`: `not_started`, `succeeded`, or `outcome_unknown`.
