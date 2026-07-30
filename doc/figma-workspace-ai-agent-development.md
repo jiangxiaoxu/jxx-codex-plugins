@@ -41,6 +41,7 @@ The workflow corpus has three intentionally separate layers:
 | Public CLI contract | `cli-runtime/src/cli/`, `cli-runtime/src/contract/`, generated help | Change schema and help before concise user-facing summaries. |
 | Runtime operations | `cli-runtime/src/mcp/`, `cli-runtime/src/runtime/` | Keep the CLI as the only agent-facing integration boundary. |
 | Upstream transport and OAuth | `cli-runtime/src/upstream/`, `cli-runtime/src/auth/`, `scripts/server.mjs` | Reuse the canonical credential implementation; do not create a second cache format or bridge behavior. |
+| Upstream contract adaptation | `cli-runtime/src/upstream/upstream-contract-candidate.ts`, maintenance scripts, and the accepted test fixture | Capture live state as an ignored candidate, review semantic drift, adapt the CLI, then promote the reviewed candidate. Never treat capture as acceptance. |
 | Managed files and local artifacts | `cli-runtime/src/runtime/managed-files.ts` and related runtime modules | Reuse containment, link rejection, atomic publication, temporary output, and lock primitives. |
 | Public and maintenance wrappers | `scripts/commands/` and plugin-root `package.json` | Keep public wrappers aligned with generated help; keep maintenance entrypoints outside the agent-facing inventory. |
 | Corpus archive | `dev/upstream-snapshot/`, `dev/upstream-changes/` | Preserve as upstream evidence; never edit it to make local guidance correct. |
@@ -59,6 +60,14 @@ The workflow corpus has three intentionally separate layers:
 5. For filesystem, sidecar, capture, download, or OAuth changes, reuse the shared primitives and retain known operation outcomes through local failures. Test retries, concurrent access, partial-output cleanup, and terminal versus transient authentication behavior at the owning layer.
 6. Rebuild checked-in `cli-runtime/dist/` only from source. Keep package allowlists, generated artifacts, wrappers, and source synchronized; never restore an importable typed facade.
 7. Keep user docs as routing and recovery summaries. Exact command syntax, limits, result shapes, and generated corpus internals stay in help, schemas, and tests.
+
+### Upstream contract adaptation
+
+The committed upstream contract fixture is the last reviewed baseline, not runtime truth. Runtime wrappers continue to discover the live official schema and fail or filter according to their typed contract.
+
+From `plugins/figma-workspace/cli-runtime`, use `upstream:contract:capture` to write an ignored candidate, then `upstream:contract:report` to review semantic drift by stable tool and resource identity. Adapt the owning CLI contracts, runtime behavior, help, generated output, and tests, and record an explicit disposition for every reported change before asking a maintainer to accept the exact candidate. Only `upstream:contract:promote` may replace the committed fixture, and only after its integrity, baseline, disposition, and wrapper-coverage gates pass. It does not attest repository test execution; validation evidence remains part of maintainer review. `upstream:contract:check` remains the live-versus-accepted drift gate.
+
+The repo-local maintainer workflow is defined by `plugins/figma-workspace/dev/skills/figma-upstream-contract-maintenance/`. Keep it outside the packaged public skill and plugin inventory. Do not hand-edit a candidate, promote merely to make drift checks pass, or expose a newly discovered official capability without an explicit public-contract decision.
 
 For Design live verification, use only the ignored plugin-local `live-test.json` configuration and normal OAuth cache resolution. It contains no secret, runs separately from deterministic tests, tags its own nodes, reconciles an unknown creation before cleanup, and removes only nodes proven to belong to that run.
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma Upstream Contract Maintenance"
+  short_description: "Review and adapt Figma upstream contract drift safely"
+  default_prompt: "Use $figma-upstream-contract-maintenance to capture, review, adapt, validate, and accept the latest upstream MCP contract."

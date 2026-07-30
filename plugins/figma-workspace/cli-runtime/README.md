@@ -46,4 +46,6 @@ The package payload contains runtime artifacts, this README, and npm package met
 
 Follow the [Figma Workspace AI Agent Development Guide](../../../doc/figma-workspace-ai-agent-development.md) for source ownership, canonical corpus publication, release validation, and generated-output rules.
 
+For official MCP contract drift, use the maintainer-only candidate workflow: `upstream:contract:capture`, `upstream:contract:report`, `upstream:contract:check`, and `upstream:contract:promote`. Capture and reporting do not accept a new baseline; promotion is a separate guarded action after CLI adaptation, validation, review, and explicit maintainer confirmation. Read each command's `--help` for its exact arguments.
+
 Live verification is a separate Design-only command at the plugin root: `npm run test:live`. It is excluded from this package's offline test suite and is not required for documentation-only changes.

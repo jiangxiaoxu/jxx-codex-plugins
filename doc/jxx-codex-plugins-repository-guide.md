@@ -21,6 +21,7 @@ For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, market
 | `task-memory` behavior | Plugin package scripts, shared CLI source, command entrypoints, and tests. |
 | Figma agent workflow or documentation | [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md), the fixed leaf-command help, and focused tests. |
 | Figma CLI/runtime, OAuth, bridge, or packaging | `plugins/figma-workspace/cli-runtime/src/`, owning tests, package scripts, and generated `dist/`. |
+| Figma upstream MCP contract drift | Capture an ignored candidate with the CLI-runtime maintenance commands, use its semantic report to adapt wrappers and tests, then explicitly promote the reviewed candidate. Do not edit the accepted fixture directly. |
 
 ### Figma corpus ownership
 
