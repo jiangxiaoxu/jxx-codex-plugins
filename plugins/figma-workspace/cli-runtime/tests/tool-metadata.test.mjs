@@ -62,3 +62,36 @@ test("numeric tool schemas match clamp and strict runtime boundaries", () => {
     assert.equal(schema.maximum, maximum);
   }
 });
+
+test("metadata schema excludes retired client hints", () => {
+  const descriptions = metadata.createReplToolDescriptions({});
+  const byName = new Map(descriptions.map((description) => [description.name, description]));
+  const metadataProperties = byName.get("figma_workspace_get_metadata").inputSchema.properties;
+  assert.equal("clientLanguages" in metadataProperties, false);
+  assert.equal("clientFrameworks" in metadataProperties, false);
+});
+
+test("target schemas publish the official file-key and node-id patterns", () => {
+  const descriptions = metadata.createReplToolDescriptions({});
+  const byName = new Map(descriptions.map((description) => [description.name, description]));
+  const schema = byName.get("figma_workspace_get_design_context").inputSchema;
+  assert.equal(schema.properties.file.oneOf[0].pattern, "^[0-9a-zA-Z]{22,128}$");
+  assert.equal(schema.properties.nodeId.pattern, "^(?:\\d+[:-]\\d+|[IT]\\d+[:-]\\d+(?:;\\d+[:-]\\d+)*)$");
+  assert.equal(schema.properties.target.oneOf[0].pattern, schema.properties.nodeId.pattern);
+  assert.equal(schema.properties.target.oneOf[2].properties.fileKey.pattern, schema.properties.file.oneOf[0].pattern);
+  assert.equal(schema.properties.target.oneOf[2].properties.nodeId.pattern, schema.properties.nodeId.pattern);
+  const metadataSchema = byName.get("figma_workspace_get_metadata").inputSchema;
+  assert.equal(metadataSchema.properties.nodeId.pattern, schema.properties.nodeId.pattern);
+  assert.equal(metadataSchema.properties.target.oneOf[2].properties.nodeId.pattern, schema.properties.nodeId.pattern);
+  const motionSchema = byName.get("figma_workspace_get_motion_context").inputSchema;
+  assert.equal(motionSchema.properties.nodeId.pattern, "^\\d+[:-]\\d+$");
+  assert.equal(motionSchema.properties.target.oneOf[0].pattern, motionSchema.properties.nodeId.pattern);
+  assert.equal(motionSchema.properties.target.oneOf[2].properties.nodeId.pattern, motionSchema.properties.nodeId.pattern);
+});
+
+test("asset descriptions preserve raster-fill upload and typed SVG download semantics", () => {
+  const descriptions = metadata.createReplToolDescriptions({});
+  const byName = new Map(descriptions.map((description) => [description.name, description]));
+  assert.match(byName.get("figma_workspace_apply_asset_manifest").description, /raster.*fills.*SVG input is not accepted/iu);
+  assert.match(byName.get("figma_workspace_download_assets").description, /original raster source images.*vector-layer SVG assets/iu);
+});

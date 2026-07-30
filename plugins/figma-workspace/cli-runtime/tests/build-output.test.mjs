@@ -30,8 +30,9 @@ test("internal CLI inventory is stateless and includes public doctor", () => {
     ["doctor", "--inline-result-limit", "100"],
     ["docs", "--inline-result-limit", "100"],
     ["lookup", "--inline-result-limit", "100"],
+    ["upstream-tools", "--inline-result-limit", "100"],
   ]) {
-    assert.throws(() => parseFigmaWorkspaceCliArguments(args), /Unknown option|available only/iu);
+    assert.throws(() => parseFigmaWorkspaceCliArguments(args), /Unknown option|not available/iu);
   }
   for (const value of ["10000.1", "1e3", "9007199254740991.1"]) {
     assert.throws(
@@ -48,6 +49,10 @@ test("internal CLI help publishes the strict inline-result range", async () => {
     assert.equal(exit, 0);
     assert.match(output.stdout.join(""), /--inline-result-limit <0\.\.10000>/u);
   }
+
+  const upstreamTools = createIo();
+  assert.equal(await runFigmaWorkspaceCli(["upstream-tools", "--help"], { io: upstreamTools.io }), 0);
+  assert.doesNotMatch(upstreamTools.stdout.join(""), /--inline-result-limit/u);
 });
 
 test("doctor runs without a target, state file, or remote connection", async () => {
@@ -82,6 +87,36 @@ test("large local doctor output stays inline and creates no result sidecar", asy
   const outputRoot = /"outputRoot": "([^"]+)"/u.exec(rendered)?.[1].replaceAll("\\\\", "\\");
   assert.ok(outputRoot);
   await assert.rejects(stat(outputRoot), /ENOENT/u);
+});
+
+test("upstream tool discovery dispatches without an inline result limit", async () => {
+  const output = createIo(JSON.stringify({ name: "get_metadata", refresh: true }));
+  let observedArgs;
+  const exit = await runFigmaWorkspaceCli(["upstream-tools", "--input", "-"], {
+    io: output.io,
+    createClient: () => ({
+      close: async () => {},
+      upstreamTools: async (args) => {
+        observedArgs = args;
+        return { ok: true, tool: { name: "get_metadata" } };
+      },
+    }),
+  });
+  assert.equal(exit, 0);
+  assert.deepEqual(observedArgs, { name: "get_metadata", refresh: true });
+  assert.doesNotMatch(output.stdout.join(""), /cliResultFile/u);
+});
+
+test("upstream tool discovery rejects inline limits before client creation", async () => {
+  const output = createIo(JSON.stringify({ inlineResultLimit: 100 }));
+  let createClientCalls = 0;
+  const exit = await runFigmaWorkspaceCli(["upstream-tools", "--input", "-"], {
+    io: output.io,
+    createClient: () => { createClientCalls += 1; return { close: async () => {}, upstreamTools: async () => ({ ok: true }) }; },
+  });
+  assert.equal(exit, 2);
+  assert.equal(createClientCalls, 0);
+  assert.match(output.stderr.join(""), /inlineResultLimit is not available/u);
 });
 
 test("CLI emits invocation identity and never writes persistent session state", async () => {
@@ -126,6 +161,40 @@ test("oversized results are written beneath explicit output root", async () => {
   }
 });
 
+test("remote results default to a 2048-byte inline boundary", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-default-inline-limit-"));
+  try {
+    for (const [payloadBytes, expectsSidecar] of [[512, false], [3_000, true]]) {
+      const input = JSON.stringify({ file: "https://www.figma.com/design/ExampleKey/UI", outputDir: directory });
+      const output = createIo(input, directory);
+      let observedLimit;
+      const exit = await runFigmaWorkspaceCli(["get-metadata", "--input", "-"], {
+        io: output.io,
+        createClient: () => ({
+          close: async () => {},
+          getMetadata: async (args) => {
+            observedLimit = args.inlineResultLimit;
+            return { ok: true, metadata: { payload: "x".repeat(payloadBytes) } };
+          },
+        }),
+      });
+      assert.equal(exit, 0);
+      assert.equal(observedLimit, 2_048);
+      const rendered = output.stdout.join("");
+      if (expectsSidecar) {
+        const match = /"path": "([^"]+get-metadata\.result\.json)"/u.exec(rendered);
+        assert.ok(match);
+        assert.match(await readFile(match[1], "utf8"), /"payload": "x{100}/u);
+      } else {
+        assert.match(rendered, /"payload": "x{100}/u);
+        assert.doesNotMatch(rendered, /cliResultFile/u);
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("remote inline limits are forwarded to the client and outer renderer without an inner default truncation", async () => {
   const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-inline-limit-"));
   const input = JSON.stringify({ file: "https://www.figma.com/design/ExampleKey/UI", outputDir: directory });
@@ -160,7 +229,7 @@ test("local commands reject inlineResultLimit supplied through internal JSON inp
   });
   assert.equal(exit, 2);
   assert.equal(createClientCalls, 0);
-  assert.match(output.stderr.join(""), /available only for commands that return remote Figma data/u);
+  assert.match(output.stderr.join(""), /inlineResultLimit is not available/u);
 });
 
 test("remote commands reject an invalid inlineResultLimit before client creation", async () => {

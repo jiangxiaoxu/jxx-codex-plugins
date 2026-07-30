@@ -1,4 +1,5 @@
 import { LOCAL_WORKSPACE_TOOL_NAMES, type LocalWorkspaceToolName } from "./tool-registry.js";
+import { COMPOSITE_CAPABLE_NODE_ID_PATTERN, FIGMA_FILE_KEY_PATTERN, SIMPLE_NODE_ID_PATTERN } from "./figma-target.js";
 import {
   CAPTURE_MAX_DIMENSION_MAX,
   CAPTURE_MAX_DIMENSION_MIN,
@@ -28,6 +29,8 @@ export interface ReplToolDescriptionOptions {
 type JsonSchema = Record<string, unknown>;
 
 const string = (description: string): JsonSchema => ({ type: "string", description });
+const fileKey = (description: string): JsonSchema => ({ type: "string", pattern: FIGMA_FILE_KEY_PATTERN, description });
+const nodeId = (description: string, allowComposite = false): JsonSchema => ({ type: "string", pattern: allowComposite ? COMPOSITE_CAPABLE_NODE_ID_PATTERN : SIMPLE_NODE_ID_PATTERN, description });
 const boolean = (description: string): JsonSchema => ({ type: "boolean", description });
 const integer = (description: string, minimum = 0, maximum?: number): JsonSchema => ({ type: "integer", minimum, ...(maximum === undefined ? {} : { maximum }), description });
 const clampedInteger = (description: string, minimum: number, maximum: number): JsonSchema => ({
@@ -37,16 +40,17 @@ const clampedInteger = (description: string, minimum: number, maximum: number): 
   description: `${description} Safe integers are accepted. Supported range ${minimum}..${maximum}; out-of-range safe integers are clamped and reported in parameterAdjustments.`,
 });
 const surface = (): JsonSchema => ({ type: "string", enum: ["design", "figjam", "slides"], description: "Explicit surface. Required with a raw file key for Plugin API execution." });
-const nodeTarget = (): JsonSchema => ({
+const nodeTarget = (allowComposite = false): JsonSchema => ({
   description: "Stable node target: raw node id (with file), Figma node URL, or exact { fileKey, nodeId }.",
   oneOf: [
-    { type: "string", minLength: 1, pattern: "^(?!\\$)(?=.*\\S)" },
-    { type: "object", properties: { fileKey: string("Figma file key."), nodeId: string("Figma node id.") }, required: ["fileKey", "nodeId"], additionalProperties: false },
+    nodeId("Raw Figma node id.", allowComposite),
+    { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file|figjam|board|slides)/" },
+    { type: "object", properties: { fileKey: fileKey("Figma file key."), nodeId: nodeId("Figma node id.", allowComposite) }, required: ["fileKey", "nodeId"], additionalProperties: false },
   ],
 });
 const invocation = (): Record<string, JsonSchema> => ({
   title: string("Optional display label."),
-  file: string("Figma file URL or raw file key."),
+  file: { oneOf: [fileKey("Raw Figma file key."), { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file|figjam|board|slides)/", description: "Figma file URL." }], description: "Figma file URL or raw file key." },
   surface: surface(),
   outputDir: string("Optional absolute local output root; omitted outputs use one invocation temp directory."),
   inlineResultLimit: integer(`Maximum inline result bytes from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`, INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX),
@@ -59,24 +63,24 @@ export function createReplToolDescriptions(_options: ReplToolDescriptionOptions)
     ["figma_workspace_run", {
       name: "figma_workspace_run",
       description: "Execute one strict .figma.ts file or stdin TypeScript source against an explicitly identified Figma file. This is the only Plugin API mutation entrypoint.",
-      inputSchema: objectSchema({ ...invocation(), scriptPath: string("Absolute or cwd-resolved regular non-symlink .figma.ts file."), source: string("TypeScript source read from --source -."), targetPageId: string("Optional PAGE node id.") }, ["file"], [{ required: ["scriptPath"] }, { required: ["source"] }]),
+      inputSchema: objectSchema({ ...invocation(), scriptPath: string("Absolute or cwd-resolved regular non-symlink .figma.ts file."), source: string("TypeScript source read from --source -."), targetPageId: nodeId("Optional PAGE node id.") }, ["file"], [{ required: ["scriptPath"] }, { required: ["source"] }]),
       outputSchema: resultSchema({ phase: string("preflight or execute."), executionOutcome: { type: "string", enum: ["not_started", "succeeded", "outcome_unknown"] }, captures: { type: "array" }, diagnostics: { type: "array" }, outputFiles: { type: "object" } }),
     }],
     ["figma_workspace_apply_asset_manifest", {
-      name: "figma_workspace_apply_asset_manifest", description: "Apply local image assets to explicit Figma node targets.",
+      name: "figma_workspace_apply_asset_manifest", description: "Apply local raster image assets as fills on explicit Figma node targets. SVG input is not accepted because SVG upload placement has different semantics.",
       inputSchema: objectSchema({ ...invocation(), assets: { type: "array", maxItems: 64 }, manifestPath: string("Asset manifest path."), validateTargets: boolean("Validate target fills after upload.") }, ["file"], [{ required: ["assets"] }, { required: ["manifestPath"] }]), outputSchema: resultSchema({ assets: { type: "array" }, failures: { type: "array" } }),
     }],
     ["figma_workspace_download_assets", {
-      name: "figma_workspace_download_assets", description: "Download official Figma assets to an explicit or invocation temp output directory.",
+      name: "figma_workspace_download_assets", description: "Download the official whole-node export, original raster source images, and vector-layer SVG assets to an explicit or invocation temp output directory.",
       inputSchema: objectSchema({ ...invocation(), targets: { type: "array", maxItems: 64 }, manifestPath: string("Download manifest path.") }, [], [{ required: ["targets"] }, { required: ["manifestPath"] }]), outputSchema: resultSchema({ targets: { type: "array" }, outputDir: string("Absolute download directory.") }),
     }],
     ["figma_workspace_capture_node", {
       name: "figma_workspace_capture_node", description: "Capture one stable Figma node target as PNG.",
-      inputSchema: objectSchema({ ...invocation(), target: nodeTarget(), nodeId: string("Raw node id alias used with file."), imageFile: string("Optional PNG output path."), maxDimension: integer("Maximum screenshot dimension.", CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX), contentsOnly: boolean("Capture node contents only.") }, [], [{ required: ["target"] }, { required: ["file", "nodeId"] }]), outputSchema: resultSchema({ imageFile: string("Absolute PNG path."), nodeId: string("Captured node id."), bytes: integer("PNG bytes.") }),
+      inputSchema: objectSchema({ ...invocation(), target: nodeTarget(), nodeId: nodeId("Raw node id alias used with file."), imageFile: string("Optional PNG output path."), maxDimension: integer("Maximum screenshot dimension.", CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX), contentsOnly: boolean("Capture node contents only.") }, [], [{ required: ["target"] }, { required: ["file", "nodeId"] }]), outputSchema: resultSchema({ imageFile: string("Absolute PNG path."), nodeId: string("Captured node id."), bytes: integer("PNG bytes.") }),
     }],
     ["figma_workspace_inspect", nodeReadDescription("figma_workspace_inspect", "Run a compact Plugin API inspection.", { mode: { type: "string", enum: ["inspect", "style"] }, depth: integer("Traversal depth.", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX) })],
-    ["figma_workspace_get_metadata", nodeReadDescription("figma_workspace_get_metadata", "Read broad official Figma metadata.", { clientLanguages: string("Client language hint."), clientFrameworks: string("Client framework hint.") }, false)],
-    ["figma_workspace_get_design_context", nodeReadDescription("figma_workspace_get_design_context", "Read official design implementation context.", { forceCode: boolean("Force code generation."), disableCodeConnect: boolean("Disable Code Connect."), excludeScreenshot: boolean("Exclude screenshot context.") })],
+    ["figma_workspace_get_metadata", nodeReadDescription("figma_workspace_get_metadata", "Read broad official Figma metadata.", {}, false, true)],
+    ["figma_workspace_get_design_context", nodeReadDescription("figma_workspace_get_design_context", "Read official design implementation context.", { forceCode: boolean("Force code generation."), disableCodeConnect: boolean("Disable Code Connect."), excludeScreenshot: boolean("Exclude screenshot context.") }, true, true)],
     ["figma_workspace_get_motion_context", nodeReadDescription("figma_workspace_get_motion_context", "Read official motion context.", { recursive: boolean("Read recursively.") })],
     ["figma_workspace_get_variable_defs", nodeReadDescription("figma_workspace_get_variable_defs", "Read official variable definitions.")],
     ["figma_workspace_search_design_system", {
@@ -106,10 +110,10 @@ export function createReplToolDescriptions(_options: ReplToolDescriptionOptions)
   return LOCAL_WORKSPACE_TOOL_NAMES.map((name) => descriptions.get(name)!);
 }
 
-function nodeReadDescription(name: LocalWorkspaceToolName, description: string, extra: Record<string, JsonSchema> = {}, requireNode = true): Record<string, unknown> {
+function nodeReadDescription(name: LocalWorkspaceToolName, description: string, extra: Record<string, JsonSchema> = {}, requireNode = true, allowComposite = false): Record<string, unknown> {
   return {
     name, description,
-    inputSchema: objectSchema({ ...invocation(), target: nodeTarget(), nodeId: string("Raw node id alias used with file."), refresh: boolean("Refresh upstream discovery."), ...extra }, [], requireNode ? [{ required: ["target"] }, { required: ["file", "nodeId"] }] : undefined),
+    inputSchema: objectSchema({ ...invocation(), target: nodeTarget(allowComposite), nodeId: nodeId("Raw node id alias used with file.", allowComposite), refresh: boolean("Refresh upstream discovery."), ...extra }, [], requireNode ? [{ required: ["target"] }, { required: ["file", "nodeId"] }] : undefined),
     outputSchema: resultSchema({ upstream: { type: "object" }, outputFiles: { type: "object" } }),
   };
 }

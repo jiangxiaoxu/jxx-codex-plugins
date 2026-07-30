@@ -1,4 +1,5 @@
 import type { FigmaWorkspaceSurface } from "../runtime/script-runner.js";
+import { isCompositeCapableFigmaNodeId, isFigmaFileKey, isSimpleFigmaNodeId } from "./figma-target.js";
 
 export class FigmaWorkspaceToolArgumentError extends Error {
   override readonly name = "FigmaWorkspaceToolArgumentError";
@@ -86,8 +87,6 @@ export interface FigmaWorkspaceGetMetadataArguments extends InvocationArguments 
   target?: FigmaWorkspaceNodeTarget;
   nodeId?: string;
   refresh?: boolean;
-  clientLanguages?: string;
-  clientFrameworks?: string;
 }
 
 export interface FigmaWorkspaceGetDesignContextArguments extends InvocationArguments {
@@ -215,6 +214,7 @@ export function asCaptureNodeArgs(value: unknown): FigmaWorkspaceCaptureNodeArgu
   strings(args, ["title", "file", "outputDir", "nodeId", "imageFile"]);
   invocation(args);
   target(args.target, "target");
+  target(args.nodeId, "nodeId");
   integer(args, "maxDimension", CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX);
   booleans(args, ["contentsOnly"]);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "imageFile", "maxDimension", "contentsOnly"]);
@@ -228,6 +228,7 @@ export function asInspectArgs(value: unknown): FigmaWorkspaceInspectArguments {
   strings(args, ["title", "file", "outputDir", "nodeId"]);
   invocation(args);
   target(args.target, "target");
+  target(args.nodeId, "nodeId");
   enumeration(args, "mode", ["inspect", "style"]);
   integer(args, "depth", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "mode", "target", "nodeId", "depth"]);
@@ -249,20 +250,20 @@ export function asCallUpstreamToolArgs(value: unknown): FigmaWorkspaceCallUpstre
 
 export function asGetMetadataArgs(value: unknown): FigmaWorkspaceGetMetadataArguments {
   const args = parse<FigmaWorkspaceGetMetadataArguments>(value);
-  commonRead(args, ["clientLanguages", "clientFrameworks"]);
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "refresh", "clientLanguages", "clientFrameworks"]);
+  commonRead(args, [], true);
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "refresh"]);
   normalizeNodeAlias(args);
-  requiredFileOrNodeUrl(args, "figma:metadata");
+  requiredFileOrNodeUrl(args, "figma:metadata", true);
   return args;
 }
 
 export function asGetDesignContextArgs(value: unknown): FigmaWorkspaceGetDesignContextArguments {
   const args = parse<FigmaWorkspaceGetDesignContextArguments>(value);
-  commonRead(args, ["clientLanguages", "clientFrameworks"]);
+  commonRead(args, ["clientLanguages", "clientFrameworks"], true);
   booleans(args, ["forceCode", "disableCodeConnect", "excludeScreenshot"]);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "refresh", "clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"]);
   normalizeNodeAlias(args);
-  requireStableNodeTarget(args, "figma:design-context");
+  requireStableNodeTarget(args, "figma:design-context", true);
   return args;
 }
 
@@ -360,12 +361,12 @@ export function asDoctorArgs(value: unknown): FigmaWorkspaceDoctorArguments {
   const args = parse<FigmaWorkspaceDoctorArguments>(value); allowed(args, []); return args;
 }
 
-function commonRead<T extends InvocationArguments & { target?: FigmaWorkspaceNodeTarget; nodeId?: string; refresh?: boolean }>(args: T, extraStrings: readonly string[]): void {
-  strings(args, ["title", "file", "outputDir", "nodeId", ...extraStrings]); invocation(args); target(args.target, "target"); booleans(args, ["refresh"]);
+function commonRead<T extends InvocationArguments & { target?: FigmaWorkspaceNodeTarget; nodeId?: string; refresh?: boolean }>(args: T, extraStrings: readonly string[], allowCompositeNodeId = false): void {
+  strings(args, ["title", "file", "outputDir", "nodeId", ...extraStrings]); invocation(args, allowCompositeNodeId); target(args.target, "target", allowCompositeNodeId); target(args.nodeId, "nodeId", allowCompositeNodeId); booleans(args, ["refresh"]);
 }
 
-function invocation(args: InvocationArguments): void {
-  enumeration(args, "surface", SURFACES); integer(args, "inlineResultLimit", INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX);
+function invocation(args: InvocationArguments, allowCompositeNodeId = false): void {
+  enumeration(args, "surface", SURFACES); integer(args, "inlineResultLimit", INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX); fileReference(args.file, "file", allowCompositeNodeId);
 }
 
 function normalizeNodeAlias(args: { target?: FigmaWorkspaceNodeTarget; nodeId?: string }): void {
@@ -380,25 +381,25 @@ function requiredFile(args: InvocationArguments, command: string): void {
   if (!args.file?.trim()) throw new FigmaWorkspaceToolArgumentError(`${command} requires "file".`);
 }
 
-function requiredFileOrNodeUrl(args: InvocationArguments & { target?: FigmaWorkspaceNodeTarget }, command: string): void {
+function requiredFileOrNodeUrl(args: InvocationArguments & { target?: FigmaWorkspaceNodeTarget }, command: string, allowCompositeNodeId = false): void {
   if (args.file?.trim()) return;
-  if (typeof args.target === "string" && isFigmaNodeUrl(args.target)) return;
+  if (typeof args.target === "string" && isFigmaNodeUrl(args.target, allowCompositeNodeId)) return;
   if (typeof args.target === "object") return;
   throw new FigmaWorkspaceToolArgumentError(`${command} requires "file" or a node URL/structured target.`);
 }
 
-function requireStableNodeTarget(args: InvocationArguments & { target?: FigmaWorkspaceNodeTarget }, command: string): void {
-  if (args.target === undefined && args.file && isFigmaNodeUrl(args.file)) args.target = args.file;
+function requireStableNodeTarget(args: InvocationArguments & { target?: FigmaWorkspaceNodeTarget }, command: string, allowCompositeNodeId = false): void {
+  if (args.target === undefined && args.file && isFigmaNodeUrl(args.file, allowCompositeNodeId)) args.target = args.file;
   if (args.target === undefined) throw new FigmaWorkspaceToolArgumentError(`${command} requires a node target.`);
-  if (typeof args.target === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(args.target) && !isFigmaNodeUrl(args.target)) {
+  if (typeof args.target === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(args.target) && !isFigmaNodeUrl(args.target, allowCompositeNodeId)) {
     throw new FigmaWorkspaceToolArgumentError(`${command} target must be a valid https://*.figma.com Design, FigJam, or Slides node URL.`);
   }
-  if (typeof args.target === "string" && !isFigmaNodeUrl(args.target) && !args.file?.trim()) {
+  if (typeof args.target === "string" && !isFigmaNodeUrl(args.target, allowCompositeNodeId) && !args.file?.trim()) {
     throw new FigmaWorkspaceToolArgumentError(`${command} requires "file" when the node target is a raw id.`);
   }
 }
 
-function isFigmaNodeUrl(value: string): boolean {
+function isFigmaNodeUrl(value: string, allowCompositeNodeId = false): boolean {
   try {
     const url = new URL(value);
     const parts = url.pathname.split("/").filter(Boolean);
@@ -406,9 +407,35 @@ function isFigmaNodeUrl(value: string): boolean {
       && (url.hostname === "figma.com" || url.hostname.endsWith(".figma.com"))
       && ["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "")
       && typeof parts[1] === "string"
-      && /^[A-Za-z0-9_-]+$/u.test(parts[1])
-      && Boolean(url.searchParams.get("node-id") ?? url.searchParams.get("node_id"));
+      && isFigmaFileKey(parts[1])
+      && nodeIdValidator(allowCompositeNodeId)(url.searchParams.get("node-id") ?? url.searchParams.get("node_id") ?? "");
   } catch { return false; }
+}
+
+function fileReference(value: string | undefined, name: string, allowCompositeNodeId = false): void {
+  if (value === undefined) return;
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (
+        url.protocol === "https:"
+        && (url.hostname === "figma.com" || url.hostname.endsWith(".figma.com"))
+        && ["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "")
+        && typeof parts[1] === "string"
+        && isFigmaFileKey(parts[1])
+      ) {
+        const nodeId = url.searchParams.get("node-id") ?? url.searchParams.get("node_id");
+        if (nodeId === null || nodeIdValidator(allowCompositeNodeId)(nodeId)) return;
+      }
+    } catch { /* handled below */ }
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be an https://*.figma.com Design, FigJam, or Slides URL with an official Figma file key.`);
+  }
+  if (!isFigmaFileKey(trimmed)) {
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be an official Figma file key containing 22 to 128 alphanumeric characters.`);
+  }
 }
 
 function validateAssets(value: unknown): void {
@@ -423,10 +450,23 @@ function validateDownloadTargets(value: unknown): void {
   value.forEach((item, index) => { const entry = parse<Record<string, unknown>>(item); strings(entry, ["name"]); target(entry.target, `targets[${index}].target`); enumeration(entry, "defaultFormat", ["png", "jpg", "svg", "pdf"]); const scale=entry.defaultScale; if (scale !== undefined && (typeof scale !== "number" || scale < 0.01 || scale > 4)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets[${index}].defaultScale" must be from 0.01 to 4.`); allowed(entry, ["target", "name", "defaultFormat", "defaultScale"], `targets[${index}]`); });
 }
 
-function target(value: unknown, name: string): void {
+function target(value: unknown, name: string, allowCompositeNodeId = false): void {
   if (value === undefined) return;
-  if (typeof value === "string") { if (!value.trim() || value.startsWith("$")) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a stable raw node id or Figma node URL.`); return; }
-  if (!isRecord(value) || Object.keys(value).length !== 2 || typeof value.fileKey !== "string" || !/^[A-Za-z0-9_-]+$/u.test(value.fileKey) || typeof value.nodeId !== "string" || !value.nodeId.trim() || value.nodeId.startsWith("$")) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a raw node id, Figma node URL, or exact { fileKey, nodeId }.`);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.startsWith("$")) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a stable raw node id or Figma node URL.`);
+    if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) {
+      if (!isFigmaNodeUrl(trimmed, allowCompositeNodeId)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a valid https://*.figma.com Design, FigJam, or Slides node URL.`);
+      return;
+    }
+    if (!nodeIdValidator(allowCompositeNodeId)(trimmed)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be an official Figma node id or Figma node URL.`);
+    return;
+  }
+  if (!isRecord(value) || Object.keys(value).length !== 2 || typeof value.fileKey !== "string" || !isFigmaFileKey(value.fileKey) || typeof value.nodeId !== "string" || !nodeIdValidator(allowCompositeNodeId)(value.nodeId)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a raw node id, Figma node URL, or exact { fileKey, nodeId }.`);
+}
+
+function nodeIdValidator(allowCompositeNodeId: boolean): (value: string) => boolean {
+  return allowCompositeNodeId ? isCompositeCapableFigmaNodeId : isSimpleFigmaNodeId;
 }
 
 function parse<T extends Record<string, unknown>>(value: unknown): T {

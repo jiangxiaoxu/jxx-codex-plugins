@@ -104,6 +104,25 @@ function createNodeReplDefaultUpstreamClient(): NodeReplUpstreamClient {
   };
 }
 export {
+  FIGMA_UPSTREAM_CONTRACT_CANDIDATE_SCHEMA_VERSION,
+  FIGMA_UPSTREAM_CONTRACT_REPORT_SCHEMA_VERSION,
+  captureFigmaUpstreamContractCandidate,
+  checkFigmaUpstreamContractCandidate,
+  createDefaultFigmaUpstreamContractCandidateId,
+  createFigmaUpstreamContractSemanticReport,
+  formatFigmaUpstreamContractSemanticReport,
+  inspectFigmaUpstreamWrapperCoverage,
+  promoteFigmaUpstreamContractCandidate,
+  reportFigmaUpstreamContractCandidate,
+  resolveFigmaUpstreamContractCandidatePaths,
+  serializeFigmaUpstreamContractSemanticReport,
+  type FigmaUpstreamContractCandidateManifest,
+  type FigmaUpstreamContractCandidatePaths,
+  type FigmaUpstreamContractEntityDrift,
+  type FigmaUpstreamContractSemanticReport,
+  type FigmaUpstreamWrapperCoverageIssue,
+} from "./upstream-contract-candidate.js";
+export {
   FIGMA_UPSTREAM_CONTRACT_SNAPSHOT_SCHEMA_VERSION,
   createFigmaUpstreamContractSnapshot,
   diffFigmaUpstreamContractSnapshots,
@@ -111,6 +130,7 @@ export {
   formatFigmaUpstreamContractDrift,
   normalizeFigmaUpstreamContractSnapshot,
   readFigmaUpstreamContractSnapshotFile,
+  serializeFigmaUpstreamContractSnapshot,
   writeFigmaUpstreamContractSnapshotFile,
   type FigmaUpstreamContractClient,
   type FigmaUpstreamContractDrift,
