@@ -14,7 +14,7 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.5.1");
+  assert.equal(packageJson.version, "0.5.2");
 });
 
 test("internal CLI inventory is stateless and includes public doctor", () => {
