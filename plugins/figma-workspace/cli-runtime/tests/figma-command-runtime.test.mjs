@@ -10,6 +10,9 @@ import {
   runFigmaCommandCli,
 } from "../dist/cli/figma-command-runtime.js";
 
+const FILE_KEY = "A".repeat(22);
+const OTHER_FILE_KEY = "B".repeat(22);
+
 function harness(options = {}) {
   const stdout = [];
   const stderr = [];
@@ -94,8 +97,8 @@ test("lookup and catalog help publish ranges and public parsing forwards clampab
   for (const [command, argv] of [
     ["api:search", ["createFrame", "--limit", "9007199254740991.1"]],
     ["docs:catalog", ["--limit", "9007199254740992"]],
-    ["inspect", ["--file", "ExampleKey", "--node", "1:2", "--depth", "9007199254740991.1"]],
-    ["libraries", ["--file", "ExampleKey", "--offset", "1e2"]],
+    ["inspect", ["--file", FILE_KEY, "--node", "1:2", "--depth", "9007199254740991.1"]],
+    ["libraries", ["--file", FILE_KEY, "--offset", "1e2"]],
   ]) {
     const malformed = harness();
     assert.equal(await runFigmaCommand(command, argv, malformed.dependencies), 2, command);
@@ -109,9 +112,9 @@ test("run forwards one explicit file and safe TypeScript file", async () => {
     const script = resolve(directory, "change.figma.ts");
     await writeFile(script, "return { ok: true };\n", "utf8");
     const current = harness({ cwd: directory });
-    assert.equal(await runFigmaCommand("run", ["--file", "https://www.figma.com/design/ExampleKey/UI", "--script", "change.figma.ts", "--output-dir", "results", "--max-inline-bytes", "2048"], current.dependencies), 0);
+    assert.equal(await runFigmaCommand("run", ["--file", `https://www.figma.com/design/${FILE_KEY}/UI`, "--script", "change.figma.ts", "--output-dir", "results", "--max-inline-bytes", "2048"], current.dependencies), 0);
     assert.deepEqual(current.calls[0].argv, ["run", "--input", "-", "--inline-result-limit", "2048"]);
-    assert.equal(current.calls[0].input.file, "https://www.figma.com/design/ExampleKey/UI");
+    assert.equal(current.calls[0].input.file, `https://www.figma.com/design/${FILE_KEY}/UI`);
     assert.equal(current.calls[0].input.scriptPath, script);
     assert.equal(current.calls[0].input.outputDir, resolve(directory, "results"));
     assert.equal("sessionId" in current.calls[0].input, false);
@@ -123,13 +126,13 @@ test("run forwards one explicit file and safe TypeScript file", async () => {
 test("run accepts TypeScript stdin and rejects ambiguous or unsafe input", async () => {
   const source = "return { ok: true };";
   const current = harness({ stdin: source });
-  assert.equal(await runFigmaCommand("run", ["--file", "ExampleKey", "--surface", "design", "--source", "-"], current.dependencies), 0);
+  assert.equal(await runFigmaCommand("run", ["--file", FILE_KEY, "--surface", "design", "--source", "-"], current.dependencies), 0);
   assert.equal(current.calls[0].input.source, source);
 
   for (const argv of [
-    ["--file", "ExampleKey", "--surface", "design"],
-    ["--file", "ExampleKey", "--surface", "design", "--source", "inline"],
-    ["--file", "ExampleKey", "--surface", "design", "--source", "-", "--state-file", "state.json"],
+    ["--file", FILE_KEY, "--surface", "design"],
+    ["--file", FILE_KEY, "--surface", "design", "--source", "inline"],
+    ["--file", FILE_KEY, "--surface", "design", "--source", "-", "--state-file", "state.json"],
   ]) {
     const invalid = harness({ stdin: source });
     assert.equal(await runFigmaCommand("run", argv, invalid.dependencies), 2);
@@ -145,7 +148,7 @@ test("run rejects symlink script targets", async (t) => {
     await writeFile(target, "return {};\n", "utf8");
     try { await symlink(target, link, "file"); } catch (error) { if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("symlinks unavailable"); throw error; }
     const current = harness();
-    assert.equal(await runFigmaCommand("run", ["--file", "ExampleKey", "--surface", "design", "--script", link], current.dependencies), 2);
+    assert.equal(await runFigmaCommand("run", ["--file", FILE_KEY, "--surface", "design", "--script", link], current.dependencies), 2);
     assert.match(current.stderr.join(""), /non-symlink|reparse/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -154,16 +157,16 @@ test("run rejects symlink script targets", async (t) => {
 
 test("capture supports file+node or one full node URL", async () => {
   const pair = harness();
-  assert.equal(await runFigmaCommand("capture", ["--file", "ExampleKey", "--node", "230:2", "--surface", "design", "--image-file", "capture.png", "--output-dir", "out"], pair.dependencies), 0);
-  assert.deepEqual(pair.calls[0].input, { file: "ExampleKey", target: "230:2", surface: "design", imageFile: resolve("capture.png"), outputDir: resolve("out") });
+  assert.equal(await runFigmaCommand("capture", ["--file", FILE_KEY, "--node", "230:2", "--surface", "design", "--image-file", "capture.png", "--output-dir", "out"], pair.dependencies), 0);
+  assert.deepEqual(pair.calls[0].input, { file: FILE_KEY, target: "230:2", surface: "design", imageFile: resolve("capture.png"), outputDir: resolve("out") });
 
-  const url = "https://www.figma.com/design/ExampleKey/UI?node-id=230-2";
+  const url = `https://www.figma.com/design/${FILE_KEY}/UI?node-id=230-2`;
   const direct = harness();
   assert.equal(await runFigmaCommand("capture", ["--target", url], direct.dependencies), 0);
   assert.equal(direct.calls[0].input.target, url);
 
   const conflict = harness();
-  assert.equal(await runFigmaCommand("capture", ["--target", url, "--file", "Other", "--node", "1:2"], conflict.dependencies), 2);
+  assert.equal(await runFigmaCommand("capture", ["--target", url, "--file", OTHER_FILE_KEY, "--node", "1:2"], conflict.dependencies), 2);
 });
 
 test("doctor is public, local-only, and argument-free", async () => {
@@ -185,6 +188,28 @@ test("local docs and API leaves reject remote inline-result limits", async () =>
     const current = harness();
     assert.equal(await runFigmaCommand(command, argv, current.dependencies), 2, command);
     assert.equal(current.calls.length, 0, command);
+  }
+});
+
+test("upstream discovery forwards only its strict transport arguments", async () => {
+  const list = harness();
+  assert.equal(await runFigmaCommand("upstream:list", ["--refresh"], list.dependencies), 0);
+  assert.deepEqual(list.calls[0], { argv: ["upstream-tools", "--input", "-"], input: { refresh: true } });
+
+  const read = harness();
+  assert.equal(await runFigmaCommand("upstream:read", ["get_metadata"], read.dependencies), 0);
+  assert.deepEqual(read.calls[0], { argv: ["upstream-tools", "--input", "-"], input: { name: "get_metadata" } });
+});
+
+test("upstream discovery rejects public inline sidecar options before dispatch", async () => {
+  for (const [command, argv] of [
+    ["upstream:list", ["--max-inline-bytes", "100"]],
+    ["upstream:read", ["get_metadata", "--max-inline-bytes", "100"]],
+  ]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand(command, argv, current.dependencies), 2, command);
+    assert.equal(current.calls.length, 0, command);
+    assert.match(current.stderr.join(""), /Unknown option/iu, command);
   }
 });
 
@@ -211,6 +236,11 @@ test("every public leaf help publishes its real argv contract", () => {
     assert.match(formatCommandHelp(leaf), /--node <node-id>/u, leaf);
   }
   assert.match(formatCommandHelp("metadata"), /--file <url\|key> \[--node <node-id>\]/u);
+  assert.match(formatCommandHelp("assets:apply"), /raster.*SVG input is rejected.*figma:run/isu);
+  assert.match(formatCommandHelp("assets:download"), /vector-layer SVG assets.*downloadedFiles\.kind is exported, raw, or svg/isu);
+  assert.doesNotMatch(formatCommandHelp("metadata"), /--client-(?:languages|frameworks)/u);
+  assert.match(formatCommandHelp("design-context"), /--client-languages <list>.*--client-frameworks <list>/u);
+  assert.match(formatCommandHelp("motion-context"), /--client-languages <list>.*--client-frameworks <list>/u);
   for (const [leaf, expectedRange] of [
     ["docs:catalog", /--limit <1\.\.100>/u],
     ["docs:search", /--limit <1\.\.10>.*--snippet-lines <1\.\.16>/u],
@@ -221,8 +251,11 @@ test("every public leaf help publishes its real argv contract", () => {
   ]) {
     assert.match(formatCommandHelp(leaf), expectedRange, leaf);
   }
-  for (const leaf of leaves.filter((name) => !name.startsWith("docs:") && !name.startsWith("api:") && name !== "doctor")) {
+  for (const leaf of leaves.filter((name) => !name.startsWith("docs:") && !name.startsWith("api:") && name !== "doctor" && name !== "upstream:list" && name !== "upstream:read")) {
     assert.match(formatCommandHelp(leaf), /--max-inline-bytes <0\.\.10000>/u, leaf);
+  }
+  for (const leaf of ["upstream:list", "upstream:read"]) {
+    assert.doesNotMatch(formatCommandHelp(leaf), /--max-inline-bytes/u, leaf);
   }
   assert.doesNotMatch(
     leaves.map((leaf) => formatCommandHelp(leaf)).join("\n"),
@@ -230,24 +263,76 @@ test("every public leaf help publishes its real argv contract", () => {
   );
 });
 
+test("metadata rejects retired client hints before dispatch", async () => {
+  for (const option of ["--client-languages", "--client-frameworks"]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand("metadata", ["--file", "ExampleKey", option, "typescript"], current.dependencies), 2);
+    assert.equal(current.calls.length, 0);
+    assert.match(current.stderr.join(""), /Unknown option/iu);
+  }
+});
+
 test("official read leaves accept raw file keys without surface while native leaves defer to their strict contract", async () => {
   for (const [command, argv] of [
-    ["metadata", ["--file", "ExampleKey"]],
-    ["design-context", ["--file", "ExampleKey", "--node", "1:2"]],
-    ["motion-context", ["--file", "ExampleKey", "--node", "1:2"]],
-    ["variables", ["--file", "ExampleKey", "--node", "1:2"]],
-    ["design-system", ["button", "--file", "ExampleKey"]],
-    ["libraries", ["--file", "ExampleKey"]],
+    ["metadata", ["--file", FILE_KEY]],
+    ["design-context", ["--file", FILE_KEY, "--node", "1:2"]],
+    ["motion-context", ["--file", FILE_KEY, "--node", "1:2"]],
+    ["variables", ["--file", FILE_KEY, "--node", "1:2"]],
+    ["design-system", ["button", "--file", FILE_KEY]],
+    ["libraries", ["--file", FILE_KEY]],
   ]) {
     const current = harness();
     assert.equal(await runFigmaCommand(command, argv, current.dependencies), 0, command);
   }
 });
 
+test("public target boundary enforces official file-key and node-id contracts", async () => {
+  for (const fileKey of ["A".repeat(22), "Z".repeat(128)]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand("metadata", ["--file", fileKey], current.dependencies), 0);
+    assert.equal(current.calls.length, 1);
+  }
+
+  for (const nodeId of ["1:2", "1-2", "I10:20;30-40", "T10-20;30:40"]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand("design-context", ["--file", FILE_KEY, "--node", nodeId], current.dependencies), 0, nodeId);
+    assert.equal(current.calls.length, 1, nodeId);
+  }
+
+  const compositeUrl = harness();
+  assert.equal(
+    await runFigmaCommand("design-context", ["--target", `https://www.figma.com/design/${FILE_KEY}/UI?node-id=I10-20;30-40`], compositeUrl.dependencies),
+    0,
+  );
+
+  for (const targetArgs of [
+    ["--file", FILE_KEY, "--node", "I10:20;30:40"],
+    ["--target", `https://www.figma.com/design/${FILE_KEY}/UI?node-id=I10-20;30-40`],
+  ]) {
+    const motion = harness();
+    assert.equal(await runFigmaCommand("motion-context", targetArgs, motion.dependencies), 2);
+    assert.equal(motion.calls.length, 0);
+  }
+
+  for (const [command, argv] of [
+    ["metadata", ["--file", "A".repeat(21)]],
+    ["metadata", ["--file", "A".repeat(129)]],
+    ["metadata", ["--file", `${"A".repeat(21)}_`]],
+    ["design-context", ["--file", FILE_KEY, "--node", "1"]],
+    ["design-context", ["--file", FILE_KEY, "--node", "1:2;3:4"]],
+    ["design-context", ["--file", FILE_KEY, "--node", "i1:2"]],
+    ["design-context", ["--target", `https://www.figma.com/design/${FILE_KEY}/UI?node-id=invalid`]],
+  ]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand(command, argv, current.dependencies), 2, `${command} ${argv.join(" ")}`);
+    assert.equal(current.calls.length, 0);
+  }
+});
+
 test("explicit public paths resolve from invocation cwd instead of outputDir", async () => {
   const cwd = resolve(tmpdir(), "figma-public-path-base");
   const manifest = JSON.stringify({
-    file: "ExampleKey",
+    file: FILE_KEY,
     surface: "design",
     outputDir: "artifacts",
     manifestPath: "manifests/assets.json",
@@ -284,9 +369,9 @@ test("public stdin, JSON files, and mapped input honor the 256 KiB boundary", as
 
 test("public leaves reject non-Figma and malformed Figma URLs before dispatch", async () => {
   for (const [command, argv] of [
-    ["run", ["--file", "https://evil.example/design/ExampleKey/UI", "--surface", "design", "--source", "-"]],
-    ["metadata", ["--file", "https://www.figma.com/community/ExampleKey"]],
-    ["capture", ["--target", "https://evil.example/design/ExampleKey/UI?node-id=1-2"]],
+    ["run", ["--file", `https://evil.example/design/${FILE_KEY}/UI`, "--surface", "design", "--source", "-"]],
+    ["metadata", ["--file", `https://www.figma.com/community/${FILE_KEY}`]],
+    ["capture", ["--target", `https://evil.example/design/${FILE_KEY}/UI?node-id=1-2`]],
   ]) {
     const current = harness({ stdin: "return {};" });
     assert.equal(await runFigmaCommand(command, argv, current.dependencies), 2, command);

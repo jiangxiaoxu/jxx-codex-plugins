@@ -8,6 +8,7 @@ import {
 } from "../dist/runtime/workspace-runtime.js";
 
 const FILE_KEY = "EctrdKKdR3c8JTPl55qn3r";
+const OTHER_FILE_KEY = "B".repeat(22);
 const FILE_URL = `https://www.figma.com/design/${FILE_KEY}/Untitled`;
 const NODE_URL = `${FILE_URL}?node-id=230-2&t=ignored`;
 
@@ -100,7 +101,7 @@ test("raw node ids require explicit file and dynamic selectors are rejected", as
   const client = createFigmaWorkspaceClient({ client: fakeUpstream([]) });
   await assert.rejects(client.getDesignContext({ target: "230:2" }), /requires "file"/iu);
   await assert.rejects(client.getDesignContext({ file: FILE_URL, target: "$selection" }), /stable|no longer accepts|dynamic/iu);
-  await assert.rejects(client.getDesignContext({ file: "OtherKey", target: NODE_URL, surface: "design" }), /conflicting file contexts/iu);
+  await assert.rejects(client.getDesignContext({ file: OTHER_FILE_KEY, target: NODE_URL, surface: "design" }), /conflicting file contexts/iu);
   await client.close();
 });
 
@@ -127,6 +128,149 @@ test("official read wrappers accept raw file keys without surface", async () => 
   assert.ok(calls.some((entry) => entry.name === "get_variable_defs"));
   assert.ok(calls.some((entry) => entry.name === "search_design_system"));
   assert.ok(calls.some((entry) => entry.name === "get_libraries"));
+  await client.close();
+});
+
+test("metadata defaults to a 2048-byte field limit and honors an explicit override", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-metadata-default-inline-limit-"));
+  const xml = `<frame name="${"x".repeat(3_000)}"/>`;
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    invocationId: "metadata-inline-limit-test",
+    client: fakeUpstream(calls, (name) => name === "get_metadata"
+      ? { content: [{ type: "text", text: xml }] }
+      : { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] }),
+  });
+  try {
+    const limited = await client.getMetadata({ file: FILE_KEY, outputDir: directory });
+    assert.equal(limited.metadata.json, undefined);
+    assert.equal(limited.inlineResultLimit.limitBytes, 2_048);
+    assert.deepEqual(limited.inlineResultLimit.omitted.map(({ field }) => field), ["metadata.json"]);
+    assert.match(await readFile(limited.outputFiles.metadataFile.path, "utf8"), /"name": "x{100}/u);
+
+    const expanded = await client.getMetadata({ file: FILE_KEY, outputDir: directory, inlineResultLimit: 10_000 });
+    assert.equal(expanded.metadata.json.root.name.length, 3_000);
+    assert.equal(expanded.inlineResultLimit, undefined);
+  } finally {
+    await client.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("live schema filtering skips unadvertised optional context hints and reports them", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+  const result = await client.getDesignContext({
+    file: FILE_KEY,
+    target: "230:2",
+    clientLanguages: "typescript",
+    clientFrameworks: "react",
+  });
+  const call = calls.find((entry) => entry.name === "get_design_context");
+  assert.deepEqual(call.args, { fileKey: FILE_KEY, nodeId: "230:2" });
+  assert.deepEqual(
+    result.diagnostics.map((entry) => [entry.code, entry.severity]),
+    [
+      ["FIGMA_WORKSPACE_UPSTREAM_OPTIONAL_SKIPPED", "warning"],
+      ["FIGMA_WORKSPACE_UPSTREAM_OPTIONAL_SKIPPED", "warning"],
+    ],
+  );
+  assert.match(result.diagnostics[0].message, /clientLanguages/u);
+  assert.match(result.diagnostics[1].message, /clientFrameworks/u);
+  await client.close();
+});
+
+test("metadata rejects retired client hints at the strict runtime boundary", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+  await assert.rejects(
+    client.getMetadata({ file: FILE_KEY, clientLanguages: "typescript" }),
+    /unknown fields: clientLanguages/iu,
+  );
+  assert.equal(calls.some((entry) => entry.kind === "call"), false);
+  await client.close();
+});
+
+test("design context keeps upstream skillNames hidden from the public wrapper", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+  await assert.rejects(
+    client.getDesignContext({ file: FILE_KEY, target: "1:2", skillNames: "figma-design-to-code" }),
+    /unknown fields: skillNames/iu,
+  );
+  assert.equal(calls.length, 0);
+  await client.close();
+});
+
+test("official target contracts reject invalid first-class targets before upstream connect", async () => {
+  for (const [method, args] of [
+    ["getMetadata", { file: "A".repeat(21) }],
+    ["getMetadata", { file: "A".repeat(129) }],
+    ["getMetadata", { file: `${"A".repeat(21)}_` }],
+    ["getDesignContext", { file: FILE_KEY, target: "1" }],
+    ["getDesignContext", { file: FILE_KEY, target: "1:2;3:4" }],
+    ["getDesignContext", { file: FILE_KEY, target: { fileKey: FILE_KEY, nodeId: "invalid" } }],
+    ["getDesignContext", { target: `${FILE_URL}?node-id=invalid` }],
+  ]) {
+    const calls = [];
+    const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+    await assert.rejects(client[method](args), /official Figma|node id|file key|node URL|exact/iu);
+    assert.equal(calls.length, 0, `${method} ${JSON.stringify(args)}`);
+    await client.close();
+  }
+});
+
+test("official target boundaries accept 22/128-character keys and I/T composite node ids", async () => {
+  for (const fileKey of ["A".repeat(22), "Z".repeat(128)]) {
+    const calls = [];
+    const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+    await client.getMetadata({ file: fileKey });
+    assert.equal(calls.find((entry) => entry.name === "get_metadata").args.fileKey, fileKey);
+    await client.close();
+  }
+
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+  const result = await client.getDesignContext({ target: `${FILE_URL}?node-id=I10-20;30-40` });
+  assert.equal(result.nodeId, "I10:20;30:40");
+  assert.deepEqual(calls.find((entry) => entry.name === "get_design_context").args, {
+    fileKey: FILE_KEY,
+    nodeId: "I10:20;30:40",
+  });
+  await client.close();
+
+  const metadataCalls = [];
+  const metadataClient = createFigmaWorkspaceClient({ client: fakeUpstream(metadataCalls) });
+  const metadata = await metadataClient.getMetadata({ file: FILE_KEY, target: "T10:20;30-40" });
+  assert.equal(metadata.nodeId, "T10:20;30-40");
+  assert.deepEqual(metadataCalls.find((entry) => entry.name === "get_metadata").args, {
+    fileKey: FILE_KEY,
+    nodeId: "T10:20;30-40",
+  });
+  await metadataClient.close();
+});
+
+test("motion context rejects composite node ids before upstream connect", async () => {
+  for (const args of [
+    { file: FILE_KEY, target: "I10:20;30:40" },
+    { target: `${FILE_URL}?node-id=T10-20;30-40` },
+    { file: FILE_KEY, target: { fileKey: FILE_KEY, nodeId: "I10:20;30:40" } },
+  ]) {
+    const calls = [];
+    const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+    await assert.rejects(client.getMotionContext(args), /official Figma node id|valid .* node URL|raw node id/iu);
+    assert.equal(calls.length, 0);
+    await client.close();
+  }
+});
+
+test("upstream tool directory classifies file component listing as code-connect", async () => {
+  const calls = [];
+  const upstream = fakeUpstream(calls);
+  upstream.listTools = async () => ({ tools: [{ name: "list_file_components_for_code_connect", inputSchema: { type: "object" } }] });
+  const client = createFigmaWorkspaceClient({ client: upstream });
+  const result = await client.upstreamTools();
+  assert.deepEqual(result.tools, [{ name: "list_file_components_for_code_connect", category: "code-connect" }]);
   await client.close();
 });
 

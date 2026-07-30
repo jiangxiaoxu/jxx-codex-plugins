@@ -76,7 +76,13 @@ export function normalizeFigmaUpstreamContractSnapshot(
 export async function readFigmaUpstreamContractSnapshotFile(
   snapshotPath: string,
 ): Promise<FigmaUpstreamContractSnapshot> {
-  const parsed = JSON.parse(await readFile(snapshotPath, "utf8")) as FigmaUpstreamContractSnapshot;
+  return parseFigmaUpstreamContractSnapshot(await readFile(snapshotPath, "utf8"));
+}
+
+export function parseFigmaUpstreamContractSnapshot(
+  source: string,
+): FigmaUpstreamContractSnapshot {
+  const parsed = JSON.parse(source) as FigmaUpstreamContractSnapshot;
   return normalizeFigmaUpstreamContractSnapshot(parsed);
 }
 
@@ -84,11 +90,13 @@ export async function writeFigmaUpstreamContractSnapshotFile(
   snapshotPath: string,
   snapshot: FigmaUpstreamContractSnapshot,
 ): Promise<void> {
-  await writeFile(
-    snapshotPath,
-    `${JSON.stringify(normalizeFigmaUpstreamContractSnapshot(snapshot), null, 2)}\n`,
-    "utf8",
-  );
+  await writeFile(snapshotPath, serializeFigmaUpstreamContractSnapshot(snapshot), "utf8");
+}
+
+export function serializeFigmaUpstreamContractSnapshot(
+  snapshot: FigmaUpstreamContractSnapshot,
+): string {
+  return `${JSON.stringify(normalizeFigmaUpstreamContractSnapshot(snapshot), null, 2)}\n`;
 }
 
 export function diffFigmaUpstreamContractSnapshots(

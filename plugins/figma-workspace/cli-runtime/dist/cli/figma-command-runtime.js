@@ -218445,6 +218445,23 @@ import { mkdir as mkdir3, open as open4, readFile as readFile3, rm as rm2, stat 
 import { tmpdir as tmpdir2 } from "node:os";
 import { isAbsolute as isAbsolute4, relative as relative4, resolve as resolve10 } from "node:path";
 
+// src/contract/figma-target.ts
+var FIGMA_FILE_KEY_PATTERN = "^[0-9a-zA-Z]{22,128}$";
+var SIMPLE_NODE_ID_PATTERN = "^\\d+[:-]\\d+$";
+var COMPOSITE_CAPABLE_NODE_ID_PATTERN = "^(?:\\d+[:-]\\d+|[IT]\\d+[:-]\\d+(?:;\\d+[:-]\\d+)*)$";
+var FIGMA_FILE_KEY_REGEXP = new RegExp(FIGMA_FILE_KEY_PATTERN, "u");
+var SIMPLE_NODE_ID_REGEXP = new RegExp(SIMPLE_NODE_ID_PATTERN, "u");
+var COMPOSITE_CAPABLE_NODE_ID_REGEXP = new RegExp(COMPOSITE_CAPABLE_NODE_ID_PATTERN, "u");
+function isFigmaFileKey(value) {
+  return FIGMA_FILE_KEY_REGEXP.test(value);
+}
+function isSimpleFigmaNodeId(value) {
+  return SIMPLE_NODE_ID_REGEXP.test(value);
+}
+function isCompositeCapableFigmaNodeId(value) {
+  return COMPOSITE_CAPABLE_NODE_ID_REGEXP.test(value);
+}
+
 // src/contract/tool-args.ts
 var FigmaWorkspaceToolArgumentError = class extends Error {
   name = "FigmaWorkspaceToolArgumentError";
@@ -218503,6 +218520,7 @@ function asCaptureNodeArgs(value) {
   strings(args, ["title", "file", "outputDir", "nodeId", "imageFile"]);
   invocation(args);
   target(args.target, "target");
+  target(args.nodeId, "nodeId");
   integer(args, "maxDimension", CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX);
   booleans(args, ["contentsOnly"]);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "imageFile", "maxDimension", "contentsOnly"]);
@@ -218515,6 +218533,7 @@ function asInspectArgs(value) {
   strings(args, ["title", "file", "outputDir", "nodeId"]);
   invocation(args);
   target(args.target, "target");
+  target(args.nodeId, "nodeId");
   enumeration(args, "mode", ["inspect", "style"]);
   integer(args, "depth", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "mode", "target", "nodeId", "depth"]);
@@ -218534,19 +218553,19 @@ function asCallUpstreamToolArgs(value) {
 }
 function asGetMetadataArgs(value) {
   const args = parse(value);
-  commonRead(args, ["clientLanguages", "clientFrameworks"]);
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "refresh", "clientLanguages", "clientFrameworks"]);
+  commonRead(args, [], true);
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "refresh"]);
   normalizeNodeAlias(args);
-  requiredFileOrNodeUrl(args, "figma:metadata");
+  requiredFileOrNodeUrl(args, "figma:metadata", true);
   return args;
 }
 function asGetDesignContextArgs(value) {
   const args = parse(value);
-  commonRead(args, ["clientLanguages", "clientFrameworks"]);
+  commonRead(args, ["clientLanguages", "clientFrameworks"], true);
   booleans(args, ["forceCode", "disableCodeConnect", "excludeScreenshot"]);
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "refresh", "clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"]);
   normalizeNodeAlias(args);
-  requireStableNodeTarget(args, "figma:design-context");
+  requireStableNodeTarget(args, "figma:design-context", true);
   return args;
 }
 function asGetMotionContextArgs(value) {
@@ -218633,15 +218652,17 @@ function asDoctorArgs(value) {
   allowed(args, []);
   return args;
 }
-function commonRead(args, extraStrings) {
+function commonRead(args, extraStrings, allowCompositeNodeId = false) {
   strings(args, ["title", "file", "outputDir", "nodeId", ...extraStrings]);
-  invocation(args);
-  target(args.target, "target");
+  invocation(args, allowCompositeNodeId);
+  target(args.target, "target", allowCompositeNodeId);
+  target(args.nodeId, "nodeId", allowCompositeNodeId);
   booleans(args, ["refresh"]);
 }
-function invocation(args) {
+function invocation(args, allowCompositeNodeId = false) {
   enumeration(args, "surface", SURFACES);
   integer(args, "inlineResultLimit", INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX);
+  fileReference(args.file, "file", allowCompositeNodeId);
 }
 function normalizeNodeAlias(args) {
   if (args.nodeId !== void 0) {
@@ -218653,29 +218674,49 @@ function normalizeNodeAlias(args) {
 function requiredFile(args, command) {
   if (!args.file?.trim()) throw new FigmaWorkspaceToolArgumentError(`${command} requires "file".`);
 }
-function requiredFileOrNodeUrl(args, command) {
+function requiredFileOrNodeUrl(args, command, allowCompositeNodeId = false) {
   if (args.file?.trim()) return;
-  if (typeof args.target === "string" && isFigmaNodeUrl(args.target)) return;
+  if (typeof args.target === "string" && isFigmaNodeUrl(args.target, allowCompositeNodeId)) return;
   if (typeof args.target === "object") return;
   throw new FigmaWorkspaceToolArgumentError(`${command} requires "file" or a node URL/structured target.`);
 }
-function requireStableNodeTarget(args, command) {
-  if (args.target === void 0 && args.file && isFigmaNodeUrl(args.file)) args.target = args.file;
+function requireStableNodeTarget(args, command, allowCompositeNodeId = false) {
+  if (args.target === void 0 && args.file && isFigmaNodeUrl(args.file, allowCompositeNodeId)) args.target = args.file;
   if (args.target === void 0) throw new FigmaWorkspaceToolArgumentError(`${command} requires a node target.`);
-  if (typeof args.target === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(args.target) && !isFigmaNodeUrl(args.target)) {
+  if (typeof args.target === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(args.target) && !isFigmaNodeUrl(args.target, allowCompositeNodeId)) {
     throw new FigmaWorkspaceToolArgumentError(`${command} target must be a valid https://*.figma.com Design, FigJam, or Slides node URL.`);
   }
-  if (typeof args.target === "string" && !isFigmaNodeUrl(args.target) && !args.file?.trim()) {
+  if (typeof args.target === "string" && !isFigmaNodeUrl(args.target, allowCompositeNodeId) && !args.file?.trim()) {
     throw new FigmaWorkspaceToolArgumentError(`${command} requires "file" when the node target is a raw id.`);
   }
 }
-function isFigmaNodeUrl(value) {
+function isFigmaNodeUrl(value, allowCompositeNodeId = false) {
   try {
     const url2 = new URL(value);
     const parts = url2.pathname.split("/").filter(Boolean);
-    return url2.protocol === "https:" && (url2.hostname === "figma.com" || url2.hostname.endsWith(".figma.com")) && ["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "") && typeof parts[1] === "string" && /^[A-Za-z0-9_-]+$/u.test(parts[1]) && Boolean(url2.searchParams.get("node-id") ?? url2.searchParams.get("node_id"));
+    return url2.protocol === "https:" && (url2.hostname === "figma.com" || url2.hostname.endsWith(".figma.com")) && ["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "") && typeof parts[1] === "string" && isFigmaFileKey(parts[1]) && nodeIdValidator(allowCompositeNodeId)(url2.searchParams.get("node-id") ?? url2.searchParams.get("node_id") ?? "");
   } catch {
     return false;
+  }
+}
+function fileReference(value, name, allowCompositeNodeId = false) {
+  if (value === void 0) return;
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) {
+    try {
+      const url2 = new URL(trimmed);
+      const parts = url2.pathname.split("/").filter(Boolean);
+      if (url2.protocol === "https:" && (url2.hostname === "figma.com" || url2.hostname.endsWith(".figma.com")) && ["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "") && typeof parts[1] === "string" && isFigmaFileKey(parts[1])) {
+        const nodeId = url2.searchParams.get("node-id") ?? url2.searchParams.get("node_id");
+        if (nodeId === null || nodeIdValidator(allowCompositeNodeId)(nodeId)) return;
+      }
+    } catch {
+    }
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be an https://*.figma.com Design, FigJam, or Slides URL with an official Figma file key.`);
+  }
+  if (!isFigmaFileKey(trimmed)) {
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be an official Figma file key containing 22 to 128 alphanumeric characters.`);
   }
 }
 function validateAssets(value) {
@@ -218702,13 +218743,22 @@ function validateDownloadTargets(value) {
     allowed(entry, ["target", "name", "defaultFormat", "defaultScale"], `targets[${index}]`);
   });
 }
-function target(value, name) {
+function target(value, name, allowCompositeNodeId = false) {
   if (value === void 0) return;
   if (typeof value === "string") {
-    if (!value.trim() || value.startsWith("$")) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a stable raw node id or Figma node URL.`);
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.startsWith("$")) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a stable raw node id or Figma node URL.`);
+    if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) {
+      if (!isFigmaNodeUrl(trimmed, allowCompositeNodeId)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a valid https://*.figma.com Design, FigJam, or Slides node URL.`);
+      return;
+    }
+    if (!nodeIdValidator(allowCompositeNodeId)(trimmed)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be an official Figma node id or Figma node URL.`);
     return;
   }
-  if (!isRecord(value) || Object.keys(value).length !== 2 || typeof value.fileKey !== "string" || !/^[A-Za-z0-9_-]+$/u.test(value.fileKey) || typeof value.nodeId !== "string" || !value.nodeId.trim() || value.nodeId.startsWith("$")) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a raw node id, Figma node URL, or exact { fileKey, nodeId }.`);
+  if (!isRecord(value) || Object.keys(value).length !== 2 || typeof value.fileKey !== "string" || !isFigmaFileKey(value.fileKey) || typeof value.nodeId !== "string" || !nodeIdValidator(allowCompositeNodeId)(value.nodeId)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a raw node id, Figma node URL, or exact { fileKey, nodeId }.`);
+}
+function nodeIdValidator(allowCompositeNodeId) {
+  return allowCompositeNodeId ? isCompositeCapableFigmaNodeId : isSimpleFigmaNodeId;
 }
 function parse(value) {
   if (value === void 0) return {};
@@ -232801,12 +232851,12 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "get_metadata",
     upstreamKind: "metadata read",
     requiredUpstreamProperties: ["fileKey"],
-    optionalUpstreamProperties: ["nodeId", "clientLanguages", "clientFrameworks"],
+    optionalUpstreamProperties: ["nodeId"],
     parameterMatrix: parameterMatrix({
       requiredUpstream: ["fileKey"],
-      publicPassthrough: ["nodeId", "clientLanguages", "clientFrameworks"],
+      publicPassthrough: ["nodeId"],
       derivedUpstream: ["fileKey"],
-      passthroughOptional: ["nodeId", "clientLanguages", "clientFrameworks"]
+      passthroughOptional: ["nodeId"]
     }),
     targetSupport: "node-scoped",
     outputPolicy: {
@@ -232824,12 +232874,13 @@ var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "get_design_context",
     upstreamKind: "design context read",
     requiredUpstreamProperties: ["fileKey", "nodeId"],
-    optionalUpstreamProperties: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+    optionalUpstreamProperties: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot", "skillNames"],
     parameterMatrix: parameterMatrix({
       requiredUpstream: ["fileKey", "nodeId"],
       publicPassthrough: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
       derivedUpstream: ["fileKey", "nodeId"],
-      passthroughOptional: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"]
+      passthroughOptional: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+      hiddenUpstreamOptional: ["skillNames"]
     }),
     targetSupport: "node-scoped",
     outputPolicy: {
@@ -233781,7 +233832,7 @@ var DEFAULT_EVAL_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspac
 var DEFAULT_EVAL_TOOL_NAME = requireWrapperUpstreamToolName(DEFAULT_EVAL_CONTRACT);
 var DEFAULT_EVAL_ARGUMENT_NAME = requireWrapperUpstreamProperty(DEFAULT_EVAL_CONTRACT, "code");
 var DEFAULT_EVAL_DESCRIPTION = "Figma Workspace Plugin API execution";
-var DEFAULT_INLINE_RESULT_LIMIT = 4096;
+var DEFAULT_INLINE_RESULT_LIMIT = 2048;
 var MAX_QUEUED_CAPTURE_REQUESTS = 8;
 var MAX_MANIFEST_ITEMS2 = 64;
 var MAX_MANIFEST_FILE_BYTES = 256 * 1024;
@@ -234018,6 +234069,7 @@ var FIGMA_METADATA_ENRICHMENT_BATCH_SIZE = 80;
 var FIGMA_INSPECT_STYLE_BATCH_SIZE = 80;
 var FIGMA_ASSET_APPLICATION_BATCH_SIZE = 80;
 var FIGMA_ASSET_VALIDATION_BATCH_SIZE = 80;
+var SVG_CONTENT_SNIFF_BYTES = 64 * 1024;
 var INVOCATION_CONTEXT = new AsyncLocalStorage();
 function currentInvocationContext() {
   const invocation2 = INVOCATION_CONTEXT.getStore();
@@ -234890,11 +234942,24 @@ async function executeDownloadAssets(args, runtime) {
       const upstream = await callUpstreamToolWithLimits(runtime.client, tool.name, upstreamArguments);
       const parsed = parseUpstreamToolResult(upstream);
       const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0;
-      const links = parsed.upstreamError ? [] : collectDownloadAssetLinks(parsed.json);
+      const collected = parsed.upstreamError ? { links: [], unsupportedSvgAssetCount: 0 } : collectDownloadAssetLinks(parsed.json);
+      const links = collected.links;
       const downloadedFiles = parsed.upstreamError ? [] : await downloadAssetLinks(links, targetOutputDir, resourceBudget);
       const downloadFailures = downloadedFiles.filter((file) => file.ok === false);
-      const ok2 = !parsed.upstreamError && links.length > 0 && downloadFailures.length === 0;
-      const downloadError = downloadFailures[0]?.error ? responseUpstreamError(normalizeCaughtUpstreamError(downloadFailures[0].error)) : links.length === 0 && !parsed.upstreamError ? { message: "Upstream download_assets returned no downloadable URLs." } : void 0;
+      const unsupportedSvgAssetError = collected.unsupportedSvgAssetCount > 0 ? {
+        message: `Upstream download_assets returned ${collected.unsupportedSvgAssetCount} svgAssets ${collected.unsupportedSvgAssetCount === 1 ? "entry" : "entries"} without a supported downloadable URL. The response shape was not guessed or silently ignored.`
+      } : void 0;
+      if (unsupportedSvgAssetError) {
+        diagnostics.push({
+          code: "FIGMA_WORKSPACE_DOWNLOAD_SVG_ASSET_SHAPE_UNSUPPORTED",
+          severity: "fatal",
+          message: unsupportedSvgAssetError.message,
+          suggestion: "Inspect outputFiles.debugFile and the live download_assets description before adapting the parser to a new response shape.",
+          docsHint: "Figma Workspace CLI: figma:upstream:read download_assets"
+        });
+      }
+      const ok2 = !parsed.upstreamError && links.length > 0 && downloadFailures.length === 0 && !unsupportedSvgAssetError;
+      const downloadError = downloadFailures[0]?.error ? responseUpstreamError(normalizeCaughtUpstreamError(downloadFailures[0].error)) : unsupportedSvgAssetError ? unsupportedSvgAssetError : links.length === 0 && !parsed.upstreamError ? { message: "Upstream download_assets returned no downloadable URLs." } : void 0;
       const entry = removeUndefined3({
         ok: ok2,
         targetNodeId: target2.targetNodeId,
@@ -235078,18 +235143,53 @@ function uniqueDownloadTargetSlug(target2, index, used) {
 }
 function collectDownloadAssetLinks(value) {
   const links = /* @__PURE__ */ new Map();
-  const visit = (item, path) => {
+  let unsupportedSvgAssetCount = 0;
+  const visit = (item, path, forcedKind) => {
     if (Array.isArray(item)) {
-      item.forEach((child, index) => visit(child, [...path, String(index)]));
-      return;
+      return item.reduce(
+        (found2, child, index) => visit(child, [...path, String(index)], forcedKind) || found2,
+        false
+      );
+    }
+    if (typeof item === "string" && looksLikeDownloadUrl(item, path)) {
+      const kind = forcedKind ?? inferDownloadAssetKind(path);
+      const mapKey = `${kind}:${item}`;
+      if (!links.has(mapKey)) {
+        links.set(mapKey, {
+          kind,
+          url: item,
+          format: kind === "svg" ? "svg" : extensionFromUrl(item)
+        });
+      }
+      return true;
     }
     if (!isRecord6(item)) {
-      return;
+      return false;
     }
+    let found = false;
     for (const [key, child] of Object.entries(item)) {
-      if (typeof child === "string" && looksLikeDownloadUrl(child)) {
-        const kind = inferDownloadAssetKind([...path, key]);
-        const format = inferDownloadAssetFormat(item, child);
+      const childPath = [...path, key];
+      if (key.toLowerCase() === "svgassets") {
+        if (Array.isArray(child)) {
+          for (const [index, svgAsset] of child.entries()) {
+            const entryFound = visit(svgAsset, [...childPath, String(index)], "svg");
+            found = entryFound || found;
+            if (!entryFound) {
+              unsupportedSvgAssetCount += 1;
+            }
+          }
+        } else {
+          const entryFound = visit(child, childPath, "svg");
+          found = entryFound || found;
+          if (!entryFound) {
+            unsupportedSvgAssetCount += 1;
+          }
+        }
+        continue;
+      }
+      if (typeof child === "string" && looksLikeDownloadUrl(child, childPath)) {
+        const kind = forcedKind ?? inferDownloadAssetKind(childPath);
+        const format = kind === "svg" ? "svg" : inferDownloadAssetFormat(item, child);
         const mapKey = `${kind}:${child}`;
         if (!links.has(mapKey)) {
           links.set(mapKey, {
@@ -235099,18 +235199,21 @@ function collectDownloadAssetLinks(value) {
             name: asOptionalString2(item.name) ?? asOptionalString2(item.fileName) ?? asOptionalString2(item.filename)
           });
         }
+        found = true;
       }
-      visit(child, [...path, key]);
+      found = visit(child, childPath, forcedKind) || found;
     }
+    return found;
   };
   visit(value, []);
-  return [...links.values()];
+  return { links: [...links.values()], unsupportedSvgAssetCount };
 }
-function looksLikeDownloadUrl(value) {
+function looksLikeDownloadUrl(value, path = []) {
   if (!/^https?:\/\//iu.test(value)) {
     return false;
   }
-  return /\.(?:png|jpe?g|webp|gif|svg|pdf)(?:[?#].*)?$/iu.test(value) || /(?:download|export|render|image|asset|file|url)/iu.test(value);
+  const field = path.at(-1) ?? "";
+  return /\.(?:png|jpe?g|webp|gif|svg|pdf)(?:[?#].*)?$/iu.test(value) || /(?:download|export|render|image|asset|file|url)/iu.test(value) || /(?:download|export|render|image|asset|file)?url$/iu.test(field);
 }
 function inferDownloadAssetKind(path) {
   const joined = path.join(".").toLowerCase();
@@ -235136,7 +235239,7 @@ async function downloadAssetLinks(links, outputDir, resourceBudget) {
       response = await fetch(link3.url, { signal: deadline.controller.signal });
       const mimeType = contentTypeWithoutParameters(response.headers.get("content-type")) ?? void 0;
       const format = sanitizeFileExtension(link3.format) ?? extensionFromContentType(mimeType) ?? extensionFromUrl(link3.url) ?? "bin";
-      const baseName = link3.kind === "exported" ? index === 1 ? "exported" : `exported-${index}` : `raw-${index}`;
+      const baseName = link3.kind === "exported" ? index === 1 ? "exported" : `exported-${index}` : `${link3.kind}-${index}`;
       const path = resolve9(outputDir, `${baseName}.${format}`);
       if (!response.ok) {
         await response.body?.cancel();
@@ -235276,6 +235379,7 @@ async function openAssetInputs(assets, session, resourceBudget) {
       const input = await openManagedAssetInput(asset, session);
       assertSingleItemLimit(input.stats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
       opened.push(input);
+      await assertRasterAssetContent(input);
     }
     const totalBytes = opened.reduce((sum, input) => sum + input.stats.size, 0);
     resourceBudget.assertCanConsume(totalBytes, "Asset upload inputs");
@@ -235284,6 +235388,115 @@ async function openAssetInputs(assets, session, resourceBudget) {
     await Promise.allSettled(opened.map(({ handle }) => handle.close()));
     throw error2;
   }
+}
+async function assertRasterAssetContent(input) {
+  const prefixLength = Math.min(input.stats.size, SVG_CONTENT_SNIFF_BYTES);
+  if (prefixLength === 0) {
+    return;
+  }
+  const prefix = Buffer.allocUnsafe(prefixLength);
+  const { bytesRead } = await input.handle.read(prefix, 0, prefixLength, 0);
+  const content = prefix.subarray(0, bytesRead);
+  if (hasKnownRasterSignature(content) || !hasSvgDocumentRoot(content)) {
+    return;
+  }
+  throw new Error(
+    `Asset manifest input contains an SVG document even though its path uses a raster extension. SVG is not supported by figma:assets:apply because official SVG uploads create editable vector node trees instead of filling the explicit target; use figma:run for that workflow: ${input.asset.path}`
+  );
+}
+function hasKnownRasterSignature(content) {
+  return content.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) || content.length >= 3 && content[0] === 255 && content[1] === 216 && content[2] === 255 || content.subarray(0, 6).equals(Buffer.from("GIF87a", "ascii")) || content.subarray(0, 6).equals(Buffer.from("GIF89a", "ascii")) || content.subarray(0, 4).equals(Buffer.from("RIFF", "ascii")) && content.subarray(8, 12).equals(Buffer.from("WEBP", "ascii"));
+}
+function hasSvgDocumentRoot(content) {
+  if (content.includes(0)) {
+    return false;
+  }
+  const source = content.toString("utf8");
+  let offset = source.charCodeAt(0) === 65279 ? 1 : 0;
+  const skipWhitespace = () => {
+    while (offset < source.length && /\s/u.test(source[offset])) {
+      offset += 1;
+    }
+  };
+  skipWhitespace();
+  if (source.slice(offset, offset + 5).toLowerCase() === "<?xml") {
+    const declarationEnd = source.indexOf("?>", offset + 5);
+    if (declarationEnd < 0) {
+      return false;
+    }
+    offset = declarationEnd + 2;
+    skipWhitespace();
+  }
+  let doctypeSeen = false;
+  while (true) {
+    if (source.startsWith("<!--", offset)) {
+      const commentEnd = source.indexOf("-->", offset + 4);
+      if (commentEnd < 0) {
+        return false;
+      }
+      offset = commentEnd + 3;
+      skipWhitespace();
+      continue;
+    }
+    if (!doctypeSeen && source.slice(offset, offset + 9).toLowerCase() === "<!doctype") {
+      const doctype = scanSvgDoctype(source, offset);
+      if (doctype.kind === "non-svg") {
+        return false;
+      }
+      if (doctype.kind === "incomplete-svg") {
+        return true;
+      }
+      offset = doctype.endOffset;
+      doctypeSeen = true;
+      skipWhitespace();
+      continue;
+    }
+    break;
+  }
+  return /^<svg(?:[\s/>])/u.test(source.slice(offset));
+}
+function scanSvgDoctype(source, startOffset) {
+  let offset = startOffset + 9;
+  if (!/\s/u.test(source[offset] ?? "")) {
+    return { kind: "non-svg" };
+  }
+  while (offset < source.length && /\s/u.test(source[offset])) {
+    offset += 1;
+  }
+  const nameStart = offset;
+  while (offset < source.length && /[^\s[>]/u.test(source[offset])) {
+    offset += 1;
+  }
+  if (source.slice(nameStart, offset) !== "svg") {
+    return { kind: "non-svg" };
+  }
+  let quote;
+  let internalSubsetDepth = 0;
+  for (; offset < source.length; offset += 1) {
+    const character = source[offset];
+    if (quote) {
+      if (character === quote) {
+        quote = void 0;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "[") {
+      internalSubsetDepth += 1;
+      continue;
+    }
+    if (character === "]" && internalSubsetDepth > 0) {
+      internalSubsetDepth -= 1;
+      continue;
+    }
+    if (character === ">" && internalSubsetDepth === 0) {
+      return { kind: "complete-svg", endOffset: offset + 1 };
+    }
+  }
+  return { kind: "incomplete-svg" };
 }
 async function openManagedAssetInput(asset, session) {
   const path = await assertInvocationManagedInputFile(asset.path, session);
@@ -236169,7 +236382,7 @@ async function resolveGetMetadataRequest(args, session, _runtime) {
     args,
     session,
     toolName: "figma:metadata",
-    targetFallback: args.nodeId ?? extractFigmaNodeId(args.file),
+    targetFallback: args.nodeId,
     fileKeyError: 'figma:metadata requires a Figma file key. Pass "file" explicitly.'
   });
   return { fileKey: requested.fileKey, nodeId: requested.nodeId, crossFile: requested.crossFile };
@@ -236275,8 +236488,8 @@ function prepareFileScopedInvocation(_args) {
   return currentInvocationContext();
 }
 function resolveRequiredFileKey(args, session, toolName) {
-  const fileReference = parseFigmaFileReference(args.file);
-  const fileKey = fileReference.fileKey ?? session.fileKey ?? extractFigmaFileKey(session.fileUrl);
+  const fileReference2 = parseFigmaFileReference(args.file);
+  const fileKey = fileReference2.fileKey ?? session.fileKey ?? extractFigmaFileKey(session.fileUrl);
   if (!fileKey) {
     throw new Error(`${toolName} requires a Figma file key. Pass "file" explicitly.`);
   }
@@ -236718,6 +236931,7 @@ var UPSTREAM_TOOL_DIRECTORY_CATEGORIES = {
   get_code_connect_suggestions: "code-connect",
   send_code_connect_mappings: "code-connect",
   get_context_for_code_connect: "code-connect",
+  list_file_components_for_code_connect: "code-connect",
   use_figma: "execution",
   get_libraries: "libraries",
   search_design_system: "libraries",
@@ -237045,6 +237259,7 @@ function normalizeManifestAsset(value, index, baseDir, session) {
   }
   return {
     path,
+    mimeType: mimeTypeForRasterAssetPath(path),
     targetNodeId: resolvedTargetNodeId,
     fileKey: targetResolution.fileKey,
     nodeUrl: asOptionalString2(record3.nodeUrl) ?? asOptionalString2(record3.url) ?? buildFigmaNodeUrlForFileKey(targetResolution.fileKey, resolvedTargetNodeId),
@@ -237660,7 +237875,7 @@ async function submitLocalAssetUploadIfAvailable(input, parsed, resourceBudget) 
   }
   assertSingleItemLimit(fileStats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
   resourceBudget.assertCanConsume(fileStats.size, `Asset upload ${asset.path}`);
-  const mimeType = mimeTypeForAssetPath(asset.path);
+  const mimeType = asset.mimeType;
   const deadline = new NetworkRequestDeadline(`Asset upload ${asset.path}`);
   const source = handle.createReadStream({ autoClose: false, start: 0 });
   let uploadedBytes = 0;
@@ -237745,7 +237960,7 @@ function extractAssetSubmitUrl(value) {
   }
   return void 0;
 }
-function mimeTypeForAssetPath(path) {
+function mimeTypeForRasterAssetPath(path) {
   const lower = path.toLowerCase();
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
     return "image/jpeg";
@@ -237756,7 +237971,12 @@ function mimeTypeForAssetPath(path) {
   if (lower.endsWith(".webp")) {
     return "image/webp";
   }
-  return "image/png";
+  if (lower.endsWith(".png")) {
+    return "image/png";
+  }
+  throw new Error(
+    `Asset manifest path must reference a raster PNG, JPG, JPEG, GIF, or WebP file. SVG is not supported by figma:assets:apply because official SVG uploads create editable vector node trees instead of filling the explicit target; use figma:run for that workflow: ${path}`
+  );
 }
 function normalizeImageScaleMode(value, name) {
   const normalized = String(value || "FILL").toUpperCase();
@@ -238658,12 +238878,14 @@ function addFailureSourceToUpstreamResult(result, source) {
   return result === void 0 ? { source } : { source, value: result };
 }
 function resolveWrapperNodeTarget(options) {
-  const targetInput = options.args.target ?? options.targetFallback ?? extractFigmaNodeId(options.args.file);
+  const allowCompositeNodeId = allowsCompositeNodeId(options.toolName);
+  const targetInput = options.args.target ?? options.targetFallback ?? extractFigmaNodeId(options.args.file, allowCompositeNodeId);
   const target2 = resolveRequestScopedTarget({
     target: targetInput,
     explicitFile: options.args.file,
     session: options.session,
-    toolName: options.toolName
+    toolName: options.toolName,
+    allowCompositeNodeId
   });
   if (!target2.fileKey) {
     throw new Error(options.fileKeyError ?? `${options.toolName} requires a Figma file key. Pass "file" explicitly.`);
@@ -238674,6 +238896,7 @@ function resolveWrapperNodeTarget(options) {
   return { ...target2, fileKey: target2.fileKey };
 }
 function resolveRequestScopedTarget(options) {
+  const nodeIdIsValid = options.allowCompositeNodeId ? isCompositeCapableFigmaNodeId : isSimpleFigmaNodeId;
   const sessionFileKey = options.session.fileKey ?? extractFigmaFileKey(options.session.fileUrl);
   const explicitFileKey = parseFigmaFileReference(options.explicitFile).fileKey;
   let kind = "none";
@@ -238687,8 +238910,8 @@ function resolveRequestScopedTarget(options) {
     }
     targetFileKey = asOptionalString2(options.target.fileKey);
     nodeId = asOptionalString2(options.target.nodeId);
-    if (!targetFileKey || !isSimpleFigmaFileKey(targetFileKey) || !nodeId || nodeId.startsWith("$")) {
-      throw new Error("Structured node targets require a simple Figma fileKey and non-empty raw nodeId string.");
+    if (!targetFileKey || !isFigmaFileKey(targetFileKey) || !nodeId || !nodeIdIsValid(nodeId)) {
+      throw new Error("Structured node targets require an official Figma fileKey and nodeId.");
     }
     kind = "structured";
     displayTarget = nodeId;
@@ -238708,7 +238931,7 @@ function resolveRequestScopedTarget(options) {
           if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "figma.com" && !parsedUrl.hostname.endsWith(".figma.com")) {
             throw new Error(`${options.toolName} target URL must use an https://*.figma.com Figma URL.`);
           }
-          const fromUrl = extractFigmaNodeId(value);
+          const fromUrl = extractFigmaNodeId(value, options.allowCompositeNodeId);
           if (!fromUrl) {
             throw new Error(`${options.toolName} node URL must include a node-id query parameter.`);
           }
@@ -238719,6 +238942,9 @@ function resolveRequestScopedTarget(options) {
             throw new Error(`${options.toolName} node URL must include a valid Figma file key.`);
           }
         } else {
+          if (!nodeIdIsValid(value)) {
+            throw new Error(`${options.toolName} target must be an official Figma node id or Figma node URL.`);
+          }
           kind = "raw-node-id";
           nodeId = value;
         }
@@ -238841,14 +239067,15 @@ function extractFigmaFileKey(fileUrl) {
     return void 0;
   }
 }
-function extractFigmaNodeId(value) {
+function extractFigmaNodeId(value, allowCompositeNodeId = false) {
   if (!value) {
     return void 0;
   }
   try {
     const url2 = new URL(value);
     const nodeId = url2.searchParams.get("node-id") ?? url2.searchParams.get("node_id");
-    return nodeId ? nodeId.replace(/-/gu, ":") : void 0;
+    const nodeIdIsValid = allowCompositeNodeId ? isCompositeCapableFigmaNodeId : isSimpleFigmaNodeId;
+    return nodeId && nodeIdIsValid(nodeId) ? nodeId.replace(/-/gu, ":") : void 0;
   } catch {
     return void 0;
   }
@@ -238864,6 +239091,10 @@ function parseStrictFigmaFileUrl(value) {
   if (!FIGMA_FILE_URL_KINDS.includes(kind) || !fileKey || !isSimpleFigmaFileKey(fileKey)) {
     throw new Error("Figma file URLs must include a valid Design, FigJam, or Slides path and file key.");
   }
+  const nodeId = url2.searchParams.get("node-id") ?? url2.searchParams.get("node_id");
+  if (nodeId !== null && !isCompositeCapableFigmaNodeId(nodeId)) {
+    throw new Error("Figma file URLs must include a valid official Figma node id when node-id is present.");
+  }
   const surface = kind === "design" || kind === "file" ? "design" : kind === "figjam" || kind === "board" ? "figjam" : "slides";
   const name = parts[2];
   return {
@@ -238873,7 +239104,10 @@ function parseStrictFigmaFileUrl(value) {
   };
 }
 function isSimpleFigmaFileKey(value) {
-  return /^[A-Za-z0-9_-]+$/u.test(value);
+  return isFigmaFileKey(value);
+}
+function allowsCompositeNodeId(toolName) {
+  return toolName === "figma:metadata" || toolName === "figma:design-context" || toolName === "figma_workspace_get_metadata" || toolName === "figma_workspace_get_design_context";
 }
 function normalizeSurface(value) {
   if (value === "design" || value === "figjam" || value === "slides") {
@@ -238930,7 +239164,7 @@ var FIGMA_WORKSPACE_CLI_EXIT_SUCCESS = 0;
 var FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR = 1;
 var FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR = 2;
 var FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT = 130;
-var DEFAULT_INLINE_RESULT_LIMIT2 = 4096;
+var DEFAULT_INLINE_RESULT_LIMIT2 = 2048;
 var MAX_INPUT_BYTES = 256 * 1024;
 var LOCK_TIMEOUT_MS = 3e4;
 var LOCK_RETRY_MS = 100;
@@ -238987,8 +239221,8 @@ function parseFigmaWorkspaceCliArguments(argv) {
       inlineResultLimit = parseInlineLimit(value);
     }
   }
-  if (inlineResultLimit !== void 0 && isLocalOnlyCommand(command)) {
-    throw new FigmaWorkspaceCliUsageError("Option --inline-result-limit is available only for commands that return remote Figma data.");
+  if (inlineResultLimit !== void 0 && !supportsInlineResultSidecar(command)) {
+    throw new FigmaWorkspaceCliUsageError("Option --inline-result-limit is not available for this command.");
   }
   return { kind: "command", command, inputFile, inlineResultLimit };
 }
@@ -239012,11 +239246,11 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
   let releaseLock;
   try {
     const input = await readCommandInput(parsed.inputFile, io);
-    const remoteResult = !isLocalOnlyCommand(parsed.command);
-    if (!remoteResult && input.inlineResultLimit !== void 0) {
-      throw new FigmaWorkspaceCliUsageError("Option inlineResultLimit is available only for commands that return remote Figma data.");
+    const inlineResultSidecar = supportsInlineResultSidecar(parsed.command);
+    if (!inlineResultSidecar && input.inlineResultLimit !== void 0) {
+      throw new FigmaWorkspaceCliUsageError("Option inlineResultLimit is not available for this command.");
     }
-    const requestedInlineResultLimit = remoteResult ? normalizeInlineLimit(parsed.inlineResultLimit ?? input.inlineResultLimit) : void 0;
+    const requestedInlineResultLimit = inlineResultSidecar ? normalizeInlineLimit(parsed.inlineResultLimit ?? input.inlineResultLimit) : void 0;
     if (requestedInlineResultLimit !== void 0) input.inlineResultLimit = requestedInlineResultLimit;
     const outputRoot = resolveInvocationOutputRoot(input.outputDir, invocationId, io.cwd());
     if (needsLocalOutput(parsed.command, input)) input.outputDir = outputRoot;
@@ -239034,7 +239268,7 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
     const originalPresentation = classifyFigmaWorkspaceCliResult(parsed.command, normalized);
     let rendered = normalized;
     let presentation = originalPresentation;
-    if (remoteResult) {
+    if (inlineResultSidecar) {
       try {
         rendered = await persistOversizedResult(normalized, parsed.command, outputRoot, requestedInlineResultLimit);
       } catch (error2) {
@@ -239136,14 +239370,14 @@ var FIGMA_WORKSPACE_CLI_HELP = [
   ""
 ].join("\n");
 function createFigmaWorkspaceCommandHelp(command) {
-  const inlineLimit = isLocalOnlyCommand(command) ? "" : ` [--inline-result-limit <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`;
+  const inlineLimit = supportsInlineResultSidecar(command) ? ` [--inline-result-limit <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]` : "";
   return `${publicCommandName(command)}
 
 Usage: figma-workspace ${command} [--input <json-file|->]${inlineLimit}
 `;
 }
-function isLocalOnlyCommand(command) {
-  return command === "docs" || command === "lookup" || command === "doctor";
+function supportsInlineResultSidecar(command) {
+  return command !== "docs" && command !== "lookup" && command !== "doctor" && command !== "upstream-tools";
 }
 async function acquireFigmaWorkspaceFileLock(fileKey, options = {}) {
   const lockRoot = resolve10(tmpdir2(), "figma-workspace", "locks");
@@ -239520,7 +239754,7 @@ ${formatRootHelp()}`);
   try {
     const parsed = await parsePublicArguments(commandName, argv, dependencies);
     normalizeExplicitPaths(commandName, parsed.input, dependencies.cwd?.() ?? process.cwd());
-    assertStrictFigmaReferences(parsed.input);
+    assertStrictFigmaReferences(commandName, parsed.input);
     return await invoke(parsed.internalCommand, parsed.input, dependencies, parsed.inlineResultLimit);
   } catch (error2) {
     stderr(`${formatError3(error2)}
@@ -239557,14 +239791,14 @@ async function parsePublicArguments(command, argv, dependencies) {
   if (command === "capture") return parseCapture(argv);
   if (command === "assets:apply" || command === "assets:download" || command === "upstream:call") return parseJsonLeaf(command, argv, dependencies);
   if (command === "upstream:list") {
-    const { positionals, options, flags } = parseTokens(argv, optionSet("max-inline-bytes"), flagSet("refresh"));
+    const { positionals, flags } = parseTokens(argv, optionSet(), flagSet("refresh"));
     assertNoPositionals(positionals);
-    return direct("upstream-tools", clean({ refresh: flags.has("refresh") ? true : void 0 }), options);
+    return { internalCommand: "upstream-tools", input: clean({ refresh: flags.has("refresh") ? true : void 0 }) };
   }
   if (command === "upstream:read") {
-    const { positionals, options, flags } = parseTokens(argv, optionSet("max-inline-bytes"), flagSet("refresh"));
+    const { positionals, flags } = parseTokens(argv, optionSet(), flagSet("refresh"));
     requirePositionals(positionals, 1, "name");
-    return direct("upstream-tools", clean({ name: positionals[0], refresh: flags.has("refresh") ? true : void 0 }), options);
+    return { internalCommand: "upstream-tools", input: clean({ name: positionals[0], refresh: flags.has("refresh") ? true : void 0 }) };
   }
   return parseReadLeaf(command, argv);
 }
@@ -239630,7 +239864,8 @@ function parseReadLeaf(command, argv) {
     assertNoPositionals(positionals2);
     return direct("get-libraries", clean({ file: options2.file, surface: options2.surface, outputDir: options2["output-dir"], offset: integer3(options2.offset, "--offset"), refresh: flags2.has("refresh") ? true : void 0 }), options2);
   }
-  const { positionals, options, flags } = parseTokens(argv, optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "client-languages", "client-frameworks", "max-inline-bytes"), flagSet("refresh", "force-code", "no-code-connect", "exclude-screenshot", "recursive"));
+  const readOptions = command === "metadata" ? optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "max-inline-bytes") : optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "client-languages", "client-frameworks", "max-inline-bytes");
+  const { positionals, options, flags } = parseTokens(argv, readOptions, flagSet("refresh", "force-code", "no-code-connect", "exclude-screenshot", "recursive"));
   assertNoPositionals(positionals);
   if (options.target && options.node) throw new Error("Use either --target or --node, not both.");
   const input = clean({ file: options.file, target: options.target ?? options.node, surface: options.surface, outputDir: options["output-dir"], mode: options.mode, depth: integer3(options.depth, "--depth"), clientLanguages: options["client-languages"], clientFrameworks: options["client-frameworks"], refresh: flags.has("refresh") ? true : void 0, forceCode: flags.has("force-code") ? true : void 0, disableCodeConnect: flags.has("no-code-connect") ? true : void 0, excludeScreenshot: flags.has("exclude-screenshot") ? true : void 0, recursive: flags.has("recursive") ? true : void 0 });
@@ -239763,9 +239998,10 @@ function normalizeExplicitPaths(command, input, cwd) {
     return { ...value, path: resolve11(cwd, value.path) };
   });
 }
-function assertStrictFigmaReferences(input) {
-  assertFileReference(input.file, 'Tool argument "file"');
-  assertNodeTargetReference(input.target, 'Tool argument "target"');
+function assertStrictFigmaReferences(command, input) {
+  const allowCompositeNodeId = command === "metadata" || command === "design-context";
+  assertFileReference(input.file, 'Tool argument "file"', allowCompositeNodeId);
+  assertNodeTargetReference(input.target, 'Tool argument "target"', allowCompositeNodeId);
   for (const [collection, label] of [[input.assets, "assets"], [input.targets, "targets"]]) {
     if (!Array.isArray(collection)) continue;
     collection.forEach((entry, index) => {
@@ -239774,24 +240010,28 @@ function assertStrictFigmaReferences(input) {
   }
   if (isRecord8(input.arguments)) assertFileReference(input.arguments.fileKey, 'Tool argument "arguments.fileKey"');
 }
-function assertFileReference(value, label) {
+function assertFileReference(value, label, allowCompositeNodeId = false) {
   if (typeof value !== "string" || !value.trim()) return;
   const trimmed = value.trim();
   if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) {
-    parseStrictFigmaUrl(trimmed, label, false);
+    parseStrictFigmaUrl(trimmed, label, false, allowCompositeNodeId);
     return;
   }
-  if (trimmed.includes("/") || trimmed.includes("\\") || trimmed.includes("..")) {
-    throw new Error(`${label} must be a valid Figma URL or a simple Figma file key.`);
+  if (!isFigmaFileKey(trimmed)) throw new Error(`${label} must be a valid Figma URL or an official Figma file key containing 22 to 128 alphanumeric characters.`);
+}
+function assertNodeTargetReference(value, label, allowCompositeNodeId = false) {
+  const nodeIdIsValid = allowCompositeNodeId ? isCompositeCapableFigmaNodeId : isSimpleFigmaNodeId;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) parseStrictFigmaUrl(trimmed, label, true, allowCompositeNodeId);
+    else if (trimmed && !nodeIdIsValid(trimmed)) throw new Error(`${label} must be an official Figma node id or node URL.`);
+  }
+  if (isRecord8(value)) {
+    assertFileReference(value.fileKey, `${label}.fileKey`, allowCompositeNodeId);
+    if (typeof value.nodeId === "string" && !nodeIdIsValid(value.nodeId)) throw new Error(`${label}.nodeId must be an official Figma node id.`);
   }
 }
-function assertNodeTargetReference(value, label) {
-  if (typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(value.trim())) {
-    parseStrictFigmaUrl(value.trim(), label, true);
-  }
-  if (isRecord8(value)) assertFileReference(value.fileKey, `${label}.fileKey`);
-}
-function parseStrictFigmaUrl(value, label, requireNode) {
+function parseStrictFigmaUrl(value, label, requireNode, allowCompositeNodeId = false) {
   let url2;
   try {
     url2 = new URL(value);
@@ -239802,10 +240042,12 @@ function parseStrictFigmaUrl(value, label, requireNode) {
     throw new Error(`${label} must use an https://*.figma.com Figma URL.`);
   }
   const parts = url2.pathname.split("/").filter(Boolean);
-  if (!["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "") || !parts[1]) {
+  if (!["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "") || !parts[1] || !isFigmaFileKey(parts[1])) {
     throw new Error(`${label} must include a valid Design, FigJam, or Slides file path and file key.`);
   }
-  if (requireNode && !(url2.searchParams.get("node-id") ?? url2.searchParams.get("node_id"))) {
+  const nodeId = url2.searchParams.get("node-id") ?? url2.searchParams.get("node_id");
+  const nodeIdIsValid = allowCompositeNodeId ? isCompositeCapableFigmaNodeId : isSimpleFigmaNodeId;
+  if ((requireNode || nodeId !== null) && !nodeIdIsValid(nodeId ?? "")) {
     throw new Error(`${label} must include a node-id query parameter.`);
   }
   return url2;
@@ -239828,7 +240070,7 @@ function formatCommandHelp(command) {
 
 Unknown public leaf. Use figma:help for the complete stateless command inventory.
 `;
-  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : command === "docs:catalog" ? "\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments." : command === "docs:search" || command === "api:search" ? "\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : "";
+  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : command === "docs:catalog" ? "\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments." : command === "docs:search" || command === "api:search" ? "\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "assets:apply" ? "\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow." : command === "assets:download" ? "\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg." : "";
   return `# figma:${command}
 
 Usage: ${PUBLIC_COMMAND_USAGE[command]}${details}
@@ -239842,7 +240084,7 @@ var PUBLIC_COMMAND_USAGE = {
   "api:read": "figma:api:read <api-id>",
   "api:search": `figma:api:search <symbol> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
   doctor: "figma:doctor",
-  metadata: `figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  metadata: `figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   inspect: `figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <${INSPECT_DEPTH_MIN}..${INSPECT_DEPTH_MAX}>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "design-context": `figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "motion-context": `figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
@@ -239853,8 +240095,8 @@ var PUBLIC_COMMAND_USAGE = {
   capture: `figma:capture (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--image-file <path>] [--output-dir <path>] [--max-dimension <${CAPTURE_MAX_DIMENSION_MIN}..${CAPTURE_MAX_DIMENSION_MAX}>] [--contents-only] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "assets:apply": `figma:assets:apply --input <json-file|-> --file <url|key> [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "assets:download": `figma:assets:download --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
-  "upstream:list": `figma:upstream:list [--refresh] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
-  "upstream:read": `figma:upstream:read <name> [--refresh] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "upstream:list": "figma:upstream:list [--refresh]",
+  "upstream:read": "figma:upstream:read <name> [--refresh]",
   "upstream:call": `figma:upstream:call --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`
 };
 function isPublicCommand(value) {

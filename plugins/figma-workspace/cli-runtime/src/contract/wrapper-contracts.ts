@@ -133,12 +133,12 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "get_metadata",
     upstreamKind: "metadata read",
     requiredUpstreamProperties: ["fileKey"],
-    optionalUpstreamProperties: ["nodeId", "clientLanguages", "clientFrameworks"],
+    optionalUpstreamProperties: ["nodeId"],
     parameterMatrix: parameterMatrix({
       requiredUpstream: ["fileKey"],
-      publicPassthrough: ["nodeId", "clientLanguages", "clientFrameworks"],
+      publicPassthrough: ["nodeId"],
       derivedUpstream: ["fileKey"],
-      passthroughOptional: ["nodeId", "clientLanguages", "clientFrameworks"],
+      passthroughOptional: ["nodeId"],
     }),
     targetSupport: "node-scoped",
     outputPolicy: {
@@ -156,12 +156,13 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     upstreamToolName: "get_design_context",
     upstreamKind: "design context read",
     requiredUpstreamProperties: ["fileKey", "nodeId"],
-    optionalUpstreamProperties: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+    optionalUpstreamProperties: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot", "skillNames"],
     parameterMatrix: parameterMatrix({
       requiredUpstream: ["fileKey", "nodeId"],
       publicPassthrough: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
       derivedUpstream: ["fileKey", "nodeId"],
       passthroughOptional: ["clientLanguages", "clientFrameworks", "forceCode", "disableCodeConnect", "excludeScreenshot"],
+      hiddenUpstreamOptional: ["skillNames"],
     }),
     targetSupport: "node-scoped",
     outputPolicy: {

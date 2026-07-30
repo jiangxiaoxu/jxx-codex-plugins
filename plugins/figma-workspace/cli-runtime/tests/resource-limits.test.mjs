@@ -8,6 +8,179 @@ import { createFigmaWorkspaceClient } from "../dist/runtime/workspace-runtime.js
 
 const MIB = 1024 * 1024;
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lP2PAAAAAElFTkSuQmCC", "base64");
+const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1H0z"/></svg>');
+
+test("download preserves upstream svgAssets as typed, bounded files", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-download-svg-"));
+  const outputDir = resolve(tempDir, "downloads");
+  const server = createServer((request, response) => {
+    if (request.url?.startsWith("/vector")) {
+      response.writeHead(200, { "content-type": "image/svg+xml" });
+      response.end(SVG);
+      return;
+    }
+    response.writeHead(200, { "content-type": "image/png" });
+    response.end(PNG);
+  });
+  const baseUrl = await listen(server);
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(downloadTools(), () => textResult({
+      ok: true,
+      result: {
+        export: { url: `${baseUrl}/export.png`, format: "png" },
+        rawImages: [{ url: `${baseUrl}/source.png`, format: "png" }],
+        svgAssets: [{ url: `${baseUrl}/vector?id=icon`, format: "svg", name: "Icon" }],
+      },
+    })),
+  });
+  try {
+    const result = await client.downloadAssets({
+      targets: [{ target: { fileKey: "DownloadSvgFileKey1234", nodeId: "7:7" } }],
+      outputDir,
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.deepEqual(
+      result.targets[0].downloadedFiles.map(({ kind, format, path }) => [kind, format, path]),
+      [
+        ["exported", "png", resolve(outputDir, "7-7", "exported.png")],
+        ["raw", "png", resolve(outputDir, "7-7", "raw-1.png")],
+        ["svg", "svg", resolve(outputDir, "7-7", "svg-1.svg")],
+      ],
+    );
+    assert.deepEqual(await readFile(resolve(outputDir, "7-7", "svg-1.svg")), SVG);
+  } finally {
+    await client.close();
+    server.closeAllConnections?.();
+    await new Promise((done) => server.close(done));
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("download fails visibly when an svgAssets entry has no supported URL", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-download-svg-shape-"));
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(downloadTools(), () => textResult({
+      ok: true,
+      result: { svgAssets: [{ format: "svg", content: "<svg/>" }] },
+    })),
+  });
+  try {
+    const result = await client.downloadAssets({
+      targets: [{ target: { fileKey: "DownloadSvgShapeKey123", nodeId: "8:8" } }],
+      outputDir: resolve(tempDir, "downloads"),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.targets[0].downloadedFiles.length, 0);
+    assert.match(result.targets[0].downloadError.message, /svgAssets.*without a supported downloadable URL/iu);
+    assert.ok(result.diagnostics.some((diagnostic) =>
+      diagnostic.code === "FIGMA_WORKSPACE_DOWNLOAD_SVG_ASSET_SHAPE_UNSUPPORTED"
+      && diagnostic.severity === "fatal"));
+    assert.ok(result.outputFiles?.debugFile?.path);
+    assert.match(await readFile(result.outputFiles.debugFile.path, "utf8"), /<svg\/>/u);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("asset apply rejects SVG before requesting an upstream upload", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-upload-svg-"));
+  const assetPath = resolve(tempDir, "asset.svg");
+  await writeFile(assetPath, SVG);
+  let upstreamCalls = 0;
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(uploadTools(), () => {
+      upstreamCalls += 1;
+      throw new Error("unexpected upstream call");
+    }),
+  });
+  try {
+    await assert.rejects(
+      client.applyAssetManifest({
+        file: "UploadSvgFileKey123456",
+        surface: "design",
+        assets: [{ path: assetPath, target: { fileKey: "UploadSvgFileKey123456", nodeId: "9:9" } }],
+        validateTargets: false,
+      }),
+      /SVG is not supported by figma:assets:apply.*figma:run/iu,
+    );
+    assert.equal(upstreamCalls, 0);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("asset apply rejects SVG content disguised with a raster extension before upstream discovery", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-upload-disguised-svg-"));
+  const assetPath = resolve(tempDir, "asset.png");
+  await writeFile(
+    assetPath,
+    Buffer.from('\ufeff  \r\n<?xml version="1.0" encoding="UTF-8"?>\n<!-- exported vector -->\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [<!ENTITY label "icon">]>\n<svg xmlns="http://www.w3.org/2000/svg"><title>&label;</title><path d="M0 0h1v1H0z"/></svg>'),
+  );
+  let listed = 0;
+  let upstreamCalls = 0;
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(uploadTools(), () => {
+      upstreamCalls += 1;
+      throw new Error("unexpected upstream call");
+    }, {
+      beforeListTools() { listed += 1; },
+    }),
+  });
+  try {
+    await assert.rejects(
+      client.applyAssetManifest({
+        file: "UploadSvgFileKey123456",
+        surface: "design",
+        assets: [{ path: assetPath, target: { fileKey: "UploadSvgFileKey123456", nodeId: "9:10" } }],
+        validateTargets: false,
+      }),
+      /contains an SVG document.*SVG is not supported by figma:assets:apply.*figma:run/iu,
+    );
+    assert.equal(listed, 0);
+    assert.equal(upstreamCalls, 0);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("SVG sniff does not reject a non-SVG DOCTYPE or known raster signature", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-upload-svg-negative-"));
+  const htmlPath = resolve(tempDir, "document.png");
+  const rasterPath = resolve(tempDir, "raster.png");
+  await writeFile(htmlPath, Buffer.from('<?xml version="1.0"?><!DOCTYPE html><svg></svg>'));
+  await writeFile(rasterPath, Buffer.concat([PNG, Buffer.from('<!DOCTYPE svg><svg></svg>')]));
+  let listed = 0;
+  let upstreamCalls = 0;
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(uploadTools(), () => {
+      upstreamCalls += 1;
+      return textResult({ ok: false, error: { code: "EXPECTED", message: "Sniff accepted input." } });
+    }, {
+      beforeListTools() { listed += 1; },
+    }),
+  });
+  try {
+    const result = await client.applyAssetManifest({
+      file: "UploadSvgFileKey123456",
+      surface: "design",
+      assets: [
+        { path: htmlPath, target: { fileKey: "UploadSvgFileKey123456", nodeId: "9:11" } },
+        { path: rasterPath, target: { fileKey: "UploadSvgFileKey123456", nodeId: "9:12" } },
+      ],
+      validateTargets: false,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(listed, 1);
+    assert.equal(upstreamCalls, 2);
+    assert.doesNotMatch(JSON.stringify(result), /contains an SVG document/iu);
+  } finally {
+    await client.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
 
 test("asset and download manifests reject more than 64 items", async () => {
   const client = createFigmaWorkspaceClient({ client: fakeUpstream([]) });
@@ -209,12 +382,12 @@ test("asset upload keeps the safely opened file handle across a path-to-symlink 
   }
 });
 
-test("download rejects oversized Content-Length before writing a partial target", async () => {
+test("SVG download rejects oversized Content-Length before writing a partial target", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-download-limit-"));
   const outputDir = resolve(tempDir, "downloads");
   const server = createServer((_request, response) => {
     response.writeHead(200, {
-      "content-type": "image/png",
+      "content-type": "image/svg+xml",
       "content-length": String(16 * MIB + 1),
     });
     response.flushHeaders();
@@ -224,7 +397,7 @@ test("download rejects oversized Content-Length before writing a partial target"
   const client = createFigmaWorkspaceClient({
     client: fakeUpstream(downloadTools(), () => textResult({
       ok: true,
-      result: { exports: [{ url: `${baseUrl}/oversized.png`, format: "png" }] },
+      result: { svgAssets: [{ url: `${baseUrl}/oversized.svg`, format: "svg" }] },
     })),
   });
   try {
@@ -234,7 +407,7 @@ test("download rejects oversized Content-Length before writing a partial target"
     });
     assert.equal(result.ok, false);
     assert.match(JSON.stringify(result), /16 MiB per-item limit/iu);
-    await assert.rejects(readFile(resolve(outputDir, "2-2", "exported.png")), { code: "ENOENT" });
+    await assert.rejects(readFile(resolve(outputDir, "2-2", "svg-1.svg")), { code: "ENOENT" });
     const files = await listFilesIfPresent(outputDir);
     assert.deepEqual(files.filter((name) => !name.endsWith(".downloads.result.json")), []);
     assert.equal(files.some((name) => name.endsWith(".downloads.result.json")), true);
@@ -279,20 +452,20 @@ test("interrupted chunked downloads do not leave partial target files", async ()
   }
 });
 
-test("download cancels the response body when the local managed writer fails", async () => {
+test("SVG download cancels the response body when the local managed writer fails", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-download-cancel-"));
   const outputDir = resolve(tempDir, "downloads");
-  await mkdir(resolve(outputDir, "6-6", "exported.png"), { recursive: true });
+  await mkdir(resolve(outputDir, "6-6", "svg-1.svg"), { recursive: true });
   const originalFetch = globalThis.fetch;
   let cancelled = false;
   globalThis.fetch = async () => new Response(new ReadableStream({
     pull(controller) { controller.enqueue(PNG); },
     cancel() { cancelled = true; },
-  }), { status: 200, headers: { "content-type": "image/png" } });
+  }), { status: 200, headers: { "content-type": "image/svg+xml" } });
   const client = createFigmaWorkspaceClient({
     client: fakeUpstream(downloadTools(), () => textResult({
       ok: true,
-      result: { exports: [{ url: "https://example.invalid/exported.png", format: "png" }] },
+      result: { svgAssets: [{ url: "https://example.invalid/vector.svg", format: "svg" }] },
     })),
   });
   try {

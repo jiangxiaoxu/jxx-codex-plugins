@@ -35,7 +35,7 @@ export const FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR = 1;
 export const FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR = 2;
 export const FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT = 130;
 
-const DEFAULT_INLINE_RESULT_LIMIT = 4_096;
+const DEFAULT_INLINE_RESULT_LIMIT = 2_048;
 const MAX_INPUT_BYTES = 256 * 1024;
 const LOCK_TIMEOUT_MS = 30_000;
 const LOCK_RETRY_MS = 100;
@@ -127,8 +127,8 @@ export function parseFigmaWorkspaceCliArguments(argv: readonly string[]): FigmaW
       inlineResultLimit = parseInlineLimit(value);
     }
   }
-  if (inlineResultLimit !== undefined && isLocalOnlyCommand(command)) {
-    throw new FigmaWorkspaceCliUsageError("Option --inline-result-limit is available only for commands that return remote Figma data.");
+  if (inlineResultLimit !== undefined && !supportsInlineResultSidecar(command)) {
+    throw new FigmaWorkspaceCliUsageError("Option --inline-result-limit is not available for this command.");
   }
   return { kind: "command", command, inputFile, inlineResultLimit };
 }
@@ -155,11 +155,11 @@ export async function runFigmaWorkspaceCli(
   let releaseLock: (() => Promise<void>) | undefined;
   try {
     const input = await readCommandInput(parsed.inputFile, io);
-    const remoteResult = !isLocalOnlyCommand(parsed.command);
-    if (!remoteResult && input.inlineResultLimit !== undefined) {
-      throw new FigmaWorkspaceCliUsageError("Option inlineResultLimit is available only for commands that return remote Figma data.");
+    const inlineResultSidecar = supportsInlineResultSidecar(parsed.command);
+    if (!inlineResultSidecar && input.inlineResultLimit !== undefined) {
+      throw new FigmaWorkspaceCliUsageError("Option inlineResultLimit is not available for this command.");
     }
-    const requestedInlineResultLimit = remoteResult
+    const requestedInlineResultLimit = inlineResultSidecar
       ? normalizeInlineLimit(parsed.inlineResultLimit ?? input.inlineResultLimit)
       : undefined;
     if (requestedInlineResultLimit !== undefined) input.inlineResultLimit = requestedInlineResultLimit;
@@ -181,7 +181,7 @@ export async function runFigmaWorkspaceCli(
     const originalPresentation = classifyFigmaWorkspaceCliResult(parsed.command, normalized);
     let rendered = normalized;
     let presentation = originalPresentation;
-    if (remoteResult) {
+    if (inlineResultSidecar) {
       try {
         rendered = await persistOversizedResult(normalized, parsed.command, outputRoot, requestedInlineResultLimit!);
       } catch (error) {
@@ -285,12 +285,12 @@ export const FIGMA_WORKSPACE_CLI_HELP = [
 ].join("\n");
 
 export function createFigmaWorkspaceCommandHelp(command: FigmaWorkspaceCliCommand): string {
-  const inlineLimit = isLocalOnlyCommand(command) ? "" : ` [--inline-result-limit <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`;
+  const inlineLimit = supportsInlineResultSidecar(command) ? ` [--inline-result-limit <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]` : "";
   return `${publicCommandName(command)}\n\nUsage: figma-workspace ${command} [--input <json-file|->]${inlineLimit}\n`;
 }
 
-function isLocalOnlyCommand(command: FigmaWorkspaceCliCommand): boolean {
-  return command === "docs" || command === "lookup" || command === "doctor";
+function supportsInlineResultSidecar(command: FigmaWorkspaceCliCommand): boolean {
+  return command !== "docs" && command !== "lookup" && command !== "doctor" && command !== "upstream-tools";
 }
 
 export function getFigmaWorkspaceCommandInputSchema(_command: FigmaWorkspaceCliCommand): Record<string, unknown> {

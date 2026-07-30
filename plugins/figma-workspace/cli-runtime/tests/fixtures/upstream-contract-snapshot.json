@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "source": "Official Figma remote MCP live contract.",
-  "generatedAt": "2026-07-05T10:44:09.896Z",
+  "generatedAt": "2026-07-30T03:59:01.235Z",
   "tools": {
     "add_code_connect_map": {
       "_meta": {
@@ -34,6 +34,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "label": {
@@ -162,7 +163,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Download assets from a Figma file for a single node. Returns both an exported render and the original source images. The response contains: (1) an exported image of the node, and (2) a list of original uploaded source images (JPEG, PNG, GIF, WebP) found as fills anywhere in the node subtree (capped at 20). Each raw image carries a `format` field with its actual image format (e.g. \"png\", \"jpeg\", \"gif\", \"webp\") so you can save it with the correct file extension; if the format cannot be determined it is reported as \"original\". Export precedence: when you pass defaultFormat and/or defaultScale, those override the export settings configured on the node in Figma. When you omit them, the node-configured export settings are used if present, otherwise png at scale 1. Pass defaultFormat or defaultScale only when the user explicitly asks for a specific format, size, or resolution. For cross-file image transfer, use the raw image URLs with upload_assets. URLs are temporary — download promptly. Works on Figma design files (URL path `/design/`), Figma Slides (`/slides/`), and FigJam boards (`/board/`). Does NOT work on Figma Make files (`/make/`).",
+      "description": "Download assets from a Figma file for a single node: an exported render, the original source images, and SVGs of the vector layers. The response contains: (1) `export` — an exported image of the whole node; (2) `rawImages` — original uploaded source images (JPEG, PNG, GIF, WebP) found as fills anywhere in the node subtree (capped at 20); and (3) `svgAssets` — SVGs for the vector layers in the subtree that are best represented as SVG (icons, logos, simple illustrations), the same set get_design_context surfaces (capped at 20). Each raw image carries a `format` field with its actual image format (e.g. \"png\", \"jpeg\", \"gif\", \"webp\") so you can save it with the correct file extension; if the format cannot be determined it is reported as \"original\". Each `svgAssets` entry has format \"svg\". Export precedence: when you pass defaultFormat and/or defaultScale, those override the export settings configured on the node in Figma. When you omit them, the node-configured export settings are used if present, otherwise png at scale 1. Pass defaultFormat or defaultScale only when the user explicitly asks for a specific format, size, or resolution. For cross-file image transfer, use the raw image URLs with upload_assets. URLs are temporary — download promptly. Works on Figma design files (URL path `/design/`), Figma Slides (`/slides/`), and FigJam boards (`/board/`). Does NOT work on Figma Make files (`/make/`).",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -189,6 +190,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "nodeId": {
@@ -256,7 +258,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
-            "pattern": "^[A-Za-z0-9]+$",
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "fps": {
@@ -381,7 +383,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Capture, import, or convert a web page (by URL) or HTML into an *existing* Figma design file. Use this tool when the user wants to send, import, capture, screenshot, or push a webpage into Figma. REQUIRES an existing `fileKey` — if the user does not already have a Figma file, first call `create_new_file` (load the `figma-create-new-file` skill for the plan-resolution contract) and reuse the returned file_key here. Works with both local dev servers (localhost) and external websites. For LOCAL projects: explore the user's codebase to identify the page, dev server command, and URL before calling. For EXTERNAL URLs (not localhost): use Playwright MCP to capture — do NOT use 'open' with hash fragments on external sites. Call this tool with a fileKey (no captureId) to get the capture script + a captureId, then poll with the captureId every 5 seconds (up to 10 times) until status is 'completed'. Each capture ID is single-use. \n\nUSING generate_figma_design WITH use_figma:\n- For web apps, use BOTH tools in parallel: run this tool (generate_figma_design) to capture a pixel-perfect layout, and use use_figma with search_design_system to build the screen from design system components.\n- Once both complete, refine the use_figma output to match the pixel-perfect layout from this tool's capture, then delete this tool's output (it was used as a layout reference only).\n- For non-web apps (e.g. iOS), use use_figma only.\n- For updating/syncing a page already in Figma, use use_figma only.",
+      "description": "Capture a live web page by URL into an *existing* Figma design file. Use this tool when the user wants to capture, screenshot, or push a running webpage (localhost or external URL) into Figma. REQUIRES an existing `fileKey` — if the user does not already have a Figma file, first call `create_new_file` (load the `figma-create-new-file` skill for the plan-resolution contract) and reuse the returned file_key here. Works with both local dev servers (localhost) and external websites. For LOCAL projects: explore the user's codebase to identify the page, dev server command, and URL before calling. For EXTERNAL URLs (not localhost): use Playwright MCP to capture — do NOT use 'open' with hash fragments on external sites. Call this tool with a fileKey (no captureId) to get the capture script + a captureId, then poll with the captureId every 5 seconds (up to 10 times) until status is 'completed'. Each capture ID is single-use. The maximum capture size, including serialized images, is 50MB. \n\nUSING generate_figma_design WITH use_figma:\n- For web apps, use BOTH tools in parallel: run this tool (generate_figma_design) to capture a pixel-perfect layout, and use use_figma with search_design_system to build the screen from design system components.\n- Once both complete, refine the use_figma output to match the pixel-perfect layout from this tool's capture, then delete this tool's output (it was used as a layout reference only).\n- For non-web apps (e.g. iOS), use use_figma only.\n- For updating/syncing a page already in Figma, use use_figma only.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -396,6 +398,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "nodeId": {
@@ -443,6 +446,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "nodeId": {
@@ -492,6 +496,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "nodeId": {
@@ -537,6 +542,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "nodeId": {
@@ -571,7 +577,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Get design context for a Figma node — the primary tool for design-to-code workflows. Returns reference code, a screenshot, and contextual metadata that should be adapted to the target project. See the server instructions for how to interpret and adapt the response. \n\nUse the nodeId parameter to specify a node id. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id and file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId. If the URL is of the format https://figma.com/design/:fileKey/branch/:branchKey/:fileName then use the branchKey as the fileKey. If the URL is of the format https://figma.com/make/:makeFileKey/:makeFileName then use the makeFileKey to identify the Figma Make file. Only for Figma Make files (URLs containing `/make/`), and only when calling get_design_context, assume the nodeId is `0:1`. The response will contain a code string and a JSON of download URLs for the assets referenced in the code. It will also include a screenshot of the node for context by default.",
+      "description": "Get design context for a Figma node — the primary tool for design-to-code workflows. Returns reference code, a screenshot, and contextual metadata that must be adapted to the target project. \n\nIMPORTANT: You MUST load figma-design-to-code guidance BEFORE calling this tool. Prefer the /figma-design-to-code skill if available; otherwise read the skill://figma/figma-design-to-code/SKILL.md MCP resource. \n\nNEVER call this tool without loading that guidance first — skipping it produces code that ignores the target project's existing components, design tokens, and conventions.\n\nUse the nodeId parameter to specify a node id. Use the fileKey parameter to specify the file key. If a URL is provided, extract the node id and file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2` and the fileKey would be `:fileKey`. If the URL does not include `node-id`, ask the user for a node-specific URL. Do not pass an empty or guessed nodeId. If the URL is of the format https://figma.com/design/:fileKey/branch/:branchKey/:fileName then use the branchKey as the fileKey. If the URL is of the format https://figma.com/make/:makeFileKey/:makeFileName then use the makeFileKey to identify the Figma Make file. Only for Figma Make files (URLs containing `/make/`), and only when calling get_design_context, assume the nodeId is `0:1`. The response will contain a code string and a JSON of download URLs for the assets referenced in the code. It will also include a screenshot of the node for context by default.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -598,6 +604,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "forceCode": {
@@ -607,7 +614,11 @@
           "nodeId": {
             "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
             "minLength": 1,
-            "pattern": "^\\d+[:-]\\d+$",
+            "pattern": "^(?:\\d+[:-]\\d+|[IT]\\d+[:-]\\d+(?:;\\d+[:-]\\d+)*)$",
+            "type": "string"
+          },
+          "skillNames": {
+            "description": "A comma-separated list of Figma skill names being followed, if any (e.g. \"figma-design-to-code\", \"figma-design-to-code,figma-code-connect\"). Only pass this when explicitly instructed to by skill documentation. Used for logging purposes. If the skill was loaded via a skill-content MCP resource, prefix the skill name with \"resource:\". (e.g. \"resource:figma-design-to-code\", \"resource:figma-design-to-code,resource:figma-code-connect\")",
             "type": "string"
           }
         },
@@ -647,6 +658,7 @@
           "fileKey": {
             "description": "The key of the FigJam (board) file to use. If a URL is provided, extract the file key from the FigJam board URL. The given URL must be in the format https://figma.com/board/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. A `/design/...` URL is NOT a FigJam file — do not call this tool with a design fileKey.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "includeImagesOfNodes": {
@@ -728,7 +740,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "IMPORTANT: Always prefer to use get_design_context tool. Get metadata for a node or page in the Figma desktop app in XML format. Useful only for getting an overview of the structure, it only includes node IDs, layer types, names, positions and sizes. You can call get_design_context on the node IDs contained in this response. Use the nodeId parameter to specify a node id, it can also be the page id (e.g. 0:1). IMPORTANT: This tool only works for Figma design files (URL path `/design/`). It is NOT supported for FigJam (`/board/`) or Slides (`/slides/`) files. This tool is not supported for Figma Make Files (URLs containing `/make/`). The nodeId parameter is optional: when omitted, the tool returns a list of the top-level pages (guid + name) in the document instead of an XML dump — use this when you don't yet know which page or node to drill into. If the URL includes `node-id`, extract it and pass it as nodeId; for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2`. If the URL does not include `node-id`, do not set nodeId; omit the field so the tool lists top-level pages. Do not pass an empty or guessed nodeId. If the URL is of the format https://figma.com/design/:fileKey/branch/:branchKey/:fileName then use the branchKey as the fileKey.",
+      "description": "IMPORTANT: Always prefer to use get_design_context tool. Get metadata for a node or page in the Figma desktop app in XML format. Useful only for getting an overview of the structure, it only includes node IDs, layer types, names, positions and sizes. You can call get_design_context on the node IDs contained in this response. Use the nodeId parameter to specify a node id, it can also be the page id (e.g. 0:1). IMPORTANT: This tool only works for Figma design files (URL path `/design/`). It is NOT supported for FigJam (`/board/`) or Slides (`/slides/`) files. This tool is not supported for Figma Make Files (URLs containing `/make/`). The nodeId parameter is optional: when omitted, the tool returns a list of the top-level pages (guid + name) in the document instead of an XML dump — use this when you don't yet know which page or node to drill into. When the user has a current selection relevant to the request, the response is prepended with a \"Currently selected nodes:\" block listing the selection by guid and name, so you can tell whether it matches the queried nodeId. If the URL includes `node-id`, extract it and pass it as nodeId; for example, if given the URL https://figma.com/design/:fileKey/:fileName?node-id=1-2, the extracted nodeId would be `1:2`. If the URL does not include `node-id`, do not set nodeId; omit the field so the tool lists top-level pages. Do not pass an empty or guessed nodeId. If the URL is of the format https://figma.com/design/:fileKey/branch/:branchKey/:fileName then use the branchKey as the fileKey.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -736,23 +748,16 @@
         "$schema": "http://json-schema.org/draft-07/schema#",
         "additionalProperties": false,
         "properties": {
-          "clientFrameworks": {
-            "description": "A comma separated list of frameworks used by the client in the current context, e.g. `react`, `vue`, `django` etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which frameworks are being used. If you are unsure, it is better to list `unknown` than to make a guess",
-            "type": "string"
-          },
-          "clientLanguages": {
-            "description": "A comma separated list of programming languages used by the client in the current context in string form, e.g. `javascript`, `html,css,typescript`, etc. If you do not know, please list `unknown`. This is used for logging purposes to understand which languages are being used. If you are unsure, it is better to list `unknown` than to make a guess.",
-            "type": "string"
-          },
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "nodeId": {
             "description": "The ID of the node in the Figma document, eg. \"123:456\" or \"123-456\". This should be a valid node ID in the Figma document. Do not pass an empty string for node_id.",
             "minLength": 1,
-            "pattern": "^\\d+[:-]\\d+$",
+            "pattern": "^(?:\\d+[:-]\\d+|[IT]\\d+[:-]\\d+(?:;\\d+[:-]\\d+)*)$",
             "type": "string"
           }
         },
@@ -799,6 +804,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "nodeId": {
@@ -857,6 +863,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "maxDimension": {
@@ -992,6 +999,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`. Only design files are supported: the URL must be a /design/ URL. /slides/, /board/, and /make/ URLs are not allowed.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "nodeId": {
@@ -1009,6 +1017,45 @@
       },
       "name": "get_variable_defs",
       "title": "Get Variable Definitions"
+    },
+    "list_file_components_for_code_connect": {
+      "_meta": {
+        "securitySchemes": [
+          {
+            "scopes": [
+              "mcp:connect"
+            ],
+            "type": "oauth2"
+          }
+        ]
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "List every component and component set PUBLISHED to a Figma file's library, with the cross-component dependency graph needed to plan Code Connect in bulk. Only published components are returned (unpublished/local-only components are omitted). Returns one entry per component with its properties (exhaustive variant options, defaults, instance-swap preferred values), page and asset/library membership, child instance tags, instance count, and direct dependencies (each flagged internal vs. external library). Unlike get_context_for_code_connect — which returns the deep descendant tree for one known component — this returns the flat whole-file graph for dependency-ordered, batched template generation. Takes only a file key (no node id). Use the fileKey parameter to specify the file key. If a URL is provided, extract the file key from the URL, for example, if given the URL https://figma.com/design/:fileKey/:fileName, the extracted fileKey would be `:fileKey`. If the URL is of the format https://figma.com/design/:fileKey/branch/:branchKey/:fileName then use the branchKey as the fileKey.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "fileKey": {
+            "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
+            "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileKey"
+        ],
+        "type": "object"
+      },
+      "name": "list_file_components_for_code_connect",
+      "title": "List File Components for Code Connect"
     },
     "list_shader_effects": {
       "_meta": {
@@ -1094,7 +1141,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Search for design system assets (components, variables, and styles) based on a text query. Returns matching assets from all design libraries. Use this when you need to find specific components, variables (e.g. colors, spacing tokens), or styles from design libraries.\nResults are stable within a turn — do not re-issue the same arguments, including when the result is empty.",
+      "description": "Search for design system assets (components, variables, and styles) based on a text query. Returns matching assets from all design libraries. Use this when you need to find specific components, variables (e.g. colors, spacing tokens), or styles from design libraries.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -1181,6 +1228,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "mappings": {
@@ -1273,7 +1321,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Upload assets (images, etc.) into a Figma file. Call with a \"count\" to get that many single-use upload URLs. POST raw asset bytes to each URL with the correct Content-Type header (e.g. image/png, image/jpeg). Each upload URL handles storage, BlobStore commit, and canvas placement automatically. For a single image with nodeId, sets it as a fill on that existing node. Without nodeId, creates new frames with image fills on the current page. Supports PNG, JPG, GIF, and WebP formats. Max 10MB per asset. SVGs are NOT supported here — to add an SVG, use the `use_figma` tool and call `figma.createNodeFromSvg()` instead. Works on Figma design files (URL path `/design/`), FigJam boards (`/board/`), and Figma Slides (`/slides/`).",
+      "description": "Upload assets (images and SVGs) into a Figma file. Call with a \"count\" to get that many single-use upload URLs. POST raw asset bytes to each URL with the correct Content-Type header (e.g. image/png, image/jpeg, image/svg+xml). Each upload URL handles storage, BlobStore commit, and canvas placement automatically. For a single raster image with nodeId, sets it as a fill on that existing node. Without nodeId, creates new frames with image fills on the current page. SVGs (image/svg+xml) are imported as editable vector node trees on the current page; nodeId and scaleMode do not apply to SVGs. Supports PNG, JPG, GIF, WebP, and SVG. Max 10MB per asset. Works on Figma design files (URL path `/design/`), FigJam boards (`/board/`), and Figma Slides (`/slides/`).",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -1295,16 +1343,17 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "nodeId": {
-            "description": "Optional. If provided, sets the uploaded asset as a fill on this existing node. Can only be used when count is 1.",
+            "description": "Optional. If provided, sets the uploaded raster image as a fill on this existing node. Can only be used when count is 1. Ignored for SVGs, which are imported as vector node trees.",
             "pattern": "^\\d+[:-]\\d+$",
             "type": "string"
           },
           "scaleMode": {
             "default": "FILL",
-            "description": "How the image fills the node. Default: FILL.",
+            "description": "How a raster image fills the node. Default: FILL. Ignored for SVGs.",
             "enum": [
               "FILL",
               "FIT",
@@ -1337,7 +1386,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Create, edit, generate, or sync any design in Figma — UIs, screens, mockups, components, frames, variables, styles, text, images, layouts, and design systems. This is the general-purpose tool for writing to Figma; it works by running JavaScript via the Figma Plugin API. Works on Figma design files (URL path `/design/`), FigJam boards (`/board/`), and Figma Slides (`/slides/`).\n\nIMPORTANT: Before calling this tool, load figma-use guidance — prefer the /figma-use skill if available, otherwise read the skill://figma/figma-use/SKILL.md MCP resource if available. Skipping this causes common, hard-to-debug failures.\n\nUse this tool when the user wants to:\n- Create or generate a design, screen, UI, or mockup in Figma — from scratch, from intent, or from code\n- Update, edit, or sync an existing Figma design\n- Generate or sync Figma designs from source code\n- Set up or modify design tokens, variables, or styles\n- Build or extend a design system or component/variant library\n- Fix layout, spacing, auto-layout, or fill/hug issues\n- Add component descriptions, annotations and Code Connect metadata to nodes\n- Review or fix accessibility, contrast, typography, or visual polish\n- Inspect or query node properties programmatically\n\nCHOOSING BETWEEN use_figma AND generate_figma_design:\n- Default to this tool (use_figma) for all Figma write operations.\n- generate_figma_design is the exception: use it ONLY when capturing a web app page or view into Figma for the first time. For web apps, run both tools in parallel — generate_figma_design captures a pixel-perfect screenshot, use_figma builds the screen from imported design system components, then refine use_figma against the screenshot.\n- For non-web targets (iOS, Android, generic UI) and from-scratch designs, use this tool only.\n- For updating or syncing a Figma page already captured into Figma, use this tool — even if the source code has changed.\nGOTCHAS:\n- For the font \"Inter\", the style is \"Semi Bold\", not \"SemiBold\" and \"Extra Bold\" not \"ExtraBold\".\n",
+      "description": "Create, edit, generate, or sync any design in Figma — UIs, screens, mockups, components, frames, variables, styles, text, images, layouts, and design systems. This general-purpose tool writes to Figma with JavaScript via the Figma Plugin API. Works on Figma design files (URL path `/design/`), FigJam boards (`/board/`), and Figma Slides (`/slides/`).\n\nIMPORTANT: Before calling this tool, load figma-use guidance — prefer the /figma-use skill if available, otherwise read the skill://figma/figma-use/SKILL.md MCP resource if available. Skipping this causes common, hard-to-debug failures.\n\nUse this tool when the user wants to:\n- Create or generate a Figma design, screen, UI, or mockup from scratch, intent, or code\n- Update, edit, or sync an existing Figma design\n- Generate or sync Figma designs from source code\n- Set up or modify design tokens, variables, or styles\n- Build or extend a design system or component/variant library\n- Fix layout, spacing, auto-layout, or fill/hug issues\n- Add component descriptions, annotations and Code Connect metadata to nodes\n- Review or fix accessibility, contrast, typography, or visual polish\n- Inspect or query node properties programmatically\nCHOOSING BETWEEN use_figma AND generate_figma_design:\n- Default to use_figma for all write operations\n- Exception: generate_figma_design ONLY to capture a web app page/view for the first time. For web apps, run both in parallel — generate_figma_design captures a pixel-perfect screenshot, use_figma builds from imported design system components and refines against the screenshot\n- Non-web (iOS, Android, generic UI) and from-scratch designs: use_figma only\n- Updating/syncing a Figma page already captured: use_figma — even if source code changed\nGOTCHAS\n- For the font \"Inter\", the style is \"Semi Bold\", not \"SemiBold\" and \"Extra Bold\" not \"ExtraBold\"\n- MUST use `await figma.setCurrentPageAsync(page)` to change pages. Setting figma.currentPage is not supported\n- MUST NEVER use loadAllPagesAsync,setPluginData,createImageAsync. They are not supported API",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -1358,6 +1407,7 @@
           "fileKey": {
             "description": "The key of the Figma file to use. If the URL is provided, extract the file key from the URL. The given URL must be in the format https://figma.com/design/:fileKey/:fileName?node-id=:int1-:int2. The extracted fileKey would be `:fileKey`.",
             "minLength": 1,
+            "pattern": "^[0-9a-zA-Z]{22,128}$",
             "type": "string"
           },
           "skillNames": {
@@ -1391,7 +1441,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Returns information about the authenticated user. If you are experiencing permission issues with other tools, you can use this tool to get information about who is authenticated and validate the right user is logged in.",
+      "description": "Returns the authenticated user's handle, email, all the plans the user belongs to (and the ID for each plan) and their seats on those plans. You MUST use this tool if you are experiencing file access/permission issues or are being rate limited by the Figma MCP to help debug the issue.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -1594,12 +1644,12 @@
     },
     {
       "_meta": {
-        "size": 25658
+        "size": 26669
       },
       "description": "Creates and maintains Figma Code Connect template files that map Figma components to code snippets. Use when the user mentions Code Connect, Figma component mapping, design-to-code translation, or asks to create/update .figma.ts or .figma.js files.",
       "mimeType": "text/markdown",
       "name": "figma-code-connect",
-      "size": 25658,
+      "size": 26669,
       "title": "Skill: figma-code-connect",
       "uri": "skill://figma/figma-code-connect/SKILL.md"
     },
@@ -1613,6 +1663,17 @@
       "size": 3946,
       "title": "Skill: figma-create-new-file",
       "uri": "skill://figma/figma-create-new-file/SKILL.md"
+    },
+    {
+      "_meta": {
+        "size": 6554
+      },
+      "description": "**MANDATORY prerequisite** — you MUST invoke this skill BEFORE calling the `get_design_context` Figma MCP tool. You MUST trigger this skill whenever the user wants to implement, build, port, or code up a Figma design as code. Example prompts (not exhaustive) are 'implement this Figma design', 'build this screen from Figma', 'turn this Figma into code', 'design to code'. This skill provides critical instructions and steps to the agent on how to correctly implement Figma designs in code and must NOT be skipped.",
+      "mimeType": "text/markdown",
+      "name": "figma-design-to-code",
+      "size": 6554,
+      "title": "Skill: figma-design-to-code",
+      "uri": "skill://figma/figma-design-to-code/SKILL.md"
     },
     {
       "_meta": {
@@ -1748,23 +1809,23 @@
     },
     {
       "_meta": {
-        "size": 40574
+        "size": 37632
       },
       "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
       "mimeType": "text/markdown",
       "name": "figma-generate-library/references/component-creation.md",
-      "size": 40574,
+      "size": 37632,
       "title": "figma-generate-library reference: references/component-creation.md",
       "uri": "skill://figma/figma-generate-library/references/component-creation.md"
     },
     {
       "_meta": {
-        "size": 21440
+        "size": 21372
       },
       "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
       "mimeType": "text/markdown",
       "name": "figma-generate-library/references/discovery-phase.md",
-      "size": 21440,
+      "size": 21372,
       "title": "figma-generate-library reference: references/discovery-phase.md",
       "uri": "skill://figma/figma-generate-library/references/discovery-phase.md"
     },
@@ -1781,12 +1842,12 @@
     },
     {
       "_meta": {
-        "size": 23032
+        "size": 18416
       },
       "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
       "mimeType": "text/markdown",
       "name": "figma-generate-library/references/error-recovery.md",
-      "size": 23032,
+      "size": 18416,
       "title": "figma-generate-library reference: references/error-recovery.md",
       "uri": "skill://figma/figma-generate-library/references/error-recovery.md"
     },
@@ -1803,23 +1864,23 @@
     },
     {
       "_meta": {
-        "size": 35140
+        "size": 32603
       },
       "description": "Reference for figma-generate-library. You must read skill://figma/figma-generate-library/SKILL.md first before using this reference.",
       "mimeType": "text/markdown",
       "name": "figma-generate-library/references/token-creation.md",
-      "size": 35140,
+      "size": 32603,
       "title": "figma-generate-library reference: references/token-creation.md",
       "uri": "skill://figma/figma-generate-library/references/token-creation.md"
     },
     {
       "_meta": {
-        "size": 22877
+        "size": 22652
       },
       "description": "Build or update a professional-grade design system in Figma from a codebase. Use when the user wants to create variables/tokens, build component libraries, create individual components with proper variant sets and variable bindings, set up theming (light/dark modes), document foundations, or reconcile gaps between code and Figma. Also use when the user asks to create or generate any component in Figma — even a single one — since components require proper variable foundations, variant states, and design token bindings to be production-quality. This skill teaches WHAT to build and in WHAT ORDER — it complements the `figma-use` skill which teaches HOW to call the Plugin API. Both skills should be loaded together.",
       "mimeType": "text/markdown",
       "name": "figma-generate-library",
-      "size": 22877,
+      "size": 22652,
       "title": "Skill: figma-generate-library",
       "uri": "skill://figma/figma-generate-library/SKILL.md"
     },
@@ -2243,12 +2304,12 @@
     },
     {
       "_meta": {
-        "size": 54182
+        "size": 53829
       },
       "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
       "mimeType": "text/markdown",
       "name": "figma-use/references/gotchas.md",
-      "size": 54182,
+      "size": 53829,
       "title": "figma-use reference: references/gotchas.md",
       "uri": "skill://figma/figma-use/references/gotchas.md"
     },
@@ -2265,12 +2326,12 @@
     },
     {
       "_meta": {
-        "size": 29972
+        "size": 29953
       },
       "description": "Reference for figma-use. You must read skill://figma/figma-use/SKILL.md first before using this reference.",
       "mimeType": "text/markdown",
       "name": "figma-use/references/plugin-api-standalone.index.md",
-      "size": 29972,
+      "size": 29953,
       "title": "figma-use reference: references/plugin-api-standalone.index.md",
       "uri": "skill://figma/figma-use/references/plugin-api-standalone.index.md"
     },
@@ -2408,12 +2469,12 @@
     },
     {
       "_meta": {
-        "size": 34721
+        "size": 34377
       },
       "description": "**MANDATORY prerequisite** — you MUST invoke this skill BEFORE every `use_figma` tool call. NEVER call `use_figma` directly without loading this skill first. Skipping it causes common, hard-to-debug failures. Trigger whenever the user wants to perform a write action or a unique read action that requires JavaScript execution in the Figma file context — e.g. create/edit/delete nodes, set up variables or tokens, build components and variants, modify auto-layout or fills, bind variables to properties, or inspect file structure programmatically.",
       "mimeType": "text/markdown",
       "name": "figma-use",
-      "size": 34721,
+      "size": 34377,
       "title": "Skill: figma-use",
       "uri": "skill://figma/figma-use/SKILL.md"
     },

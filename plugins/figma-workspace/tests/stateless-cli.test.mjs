@@ -461,7 +461,7 @@ test("packed plugin contains every fixed leaf wrapper and can run local stateles
 
     const preflight = runNpm([
       "--silent", "run", "figma:run", "--",
-      "--file", "ExampleKey", "--surface", "design", "--source", "-",
+      "--file", "ABCDEFGHIJKLMNOPQRSTUV", "--surface", "design", "--source", "-",
     ], {
       cwd: packedRoot,
       encoding: "utf8",

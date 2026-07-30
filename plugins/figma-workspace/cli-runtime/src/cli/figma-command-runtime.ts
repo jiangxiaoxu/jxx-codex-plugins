@@ -21,6 +21,7 @@ import {
   LOOKUP_SNIPPET_LINES_MAX,
   LOOKUP_SNIPPET_LINES_MIN,
 } from "../contract/tool-args.js";
+import { isCompositeCapableFigmaNodeId, isFigmaFileKey, isSimpleFigmaNodeId } from "../contract/figma-target.js";
 
 const EXIT_SUCCESS = 0;
 const EXIT_USAGE = 2;
@@ -85,7 +86,7 @@ export async function runFigmaCommand(
   try {
     const parsed = await parsePublicArguments(commandName, argv, dependencies);
     normalizeExplicitPaths(commandName, parsed.input, dependencies.cwd?.() ?? process.cwd());
-    assertStrictFigmaReferences(parsed.input);
+    assertStrictFigmaReferences(commandName, parsed.input);
     return await invoke(parsed.internalCommand, parsed.input, dependencies, parsed.inlineResultLimit);
   } catch (error) {
     stderr(`${formatError(error)}\n\n${formatCommandHelp(commandName)}`);
@@ -128,12 +129,12 @@ async function parsePublicArguments(
   if (command === "capture") return parseCapture(argv);
   if (command === "assets:apply" || command === "assets:download" || command === "upstream:call") return parseJsonLeaf(command, argv, dependencies);
   if (command === "upstream:list") {
-    const { positionals, options, flags } = parseTokens(argv, optionSet("max-inline-bytes"), flagSet("refresh")); assertNoPositionals(positionals);
-    return direct("upstream-tools", clean({ refresh: flags.has("refresh") ? true : undefined }), options);
+    const { positionals, flags } = parseTokens(argv, optionSet(), flagSet("refresh")); assertNoPositionals(positionals);
+    return { internalCommand: "upstream-tools", input: clean({ refresh: flags.has("refresh") ? true : undefined }) };
   }
   if (command === "upstream:read") {
-    const { positionals, options, flags } = parseTokens(argv, optionSet("max-inline-bytes"), flagSet("refresh")); requirePositionals(positionals, 1, "name");
-    return direct("upstream-tools", clean({ name: positionals[0], refresh: flags.has("refresh") ? true : undefined }), options);
+    const { positionals, flags } = parseTokens(argv, optionSet(), flagSet("refresh")); requirePositionals(positionals, 1, "name");
+    return { internalCommand: "upstream-tools", input: clean({ name: positionals[0], refresh: flags.has("refresh") ? true : undefined }) };
   }
   return parseReadLeaf(command, argv);
 }
@@ -195,7 +196,10 @@ function parseReadLeaf(command: Exclude<FigmaConcreteCommandName, "docs:list" | 
     const { positionals, options, flags } = parseTokens(argv, optionSet("file", "surface", "output-dir", "offset", "max-inline-bytes"), flagSet("refresh")); assertNoPositionals(positionals);
     return direct("get-libraries", clean({ file: options.file, surface: options.surface, outputDir: options["output-dir"], offset: integer(options.offset, "--offset"), refresh: flags.has("refresh") ? true : undefined }), options);
   }
-  const { positionals, options, flags } = parseTokens(argv, optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "client-languages", "client-frameworks", "max-inline-bytes"), flagSet("refresh", "force-code", "no-code-connect", "exclude-screenshot", "recursive"));
+  const readOptions = command === "metadata"
+    ? optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "max-inline-bytes")
+    : optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "client-languages", "client-frameworks", "max-inline-bytes");
+  const { positionals, options, flags } = parseTokens(argv, readOptions, flagSet("refresh", "force-code", "no-code-connect", "exclude-screenshot", "recursive"));
   assertNoPositionals(positionals);
   if (options.target && options.node) throw new Error("Use either --target or --node, not both.");
   const input = clean({ file: options.file, target: options.target ?? options.node, surface: options.surface, outputDir: options["output-dir"], mode: options.mode, depth: integer(options.depth, "--depth"), clientLanguages: options["client-languages"], clientFrameworks: options["client-frameworks"], refresh: flags.has("refresh") ? true : undefined, forceCode: flags.has("force-code") ? true : undefined, disableCodeConnect: flags.has("no-code-connect") ? true : undefined, excludeScreenshot: flags.has("exclude-screenshot") ? true : undefined, recursive: flags.has("recursive") ? true : undefined });
@@ -253,9 +257,10 @@ function normalizeExplicitPaths(command: FigmaConcreteCommandName, input: Comman
   });
 }
 
-function assertStrictFigmaReferences(input: CommandInput): void {
-  assertFileReference(input.file, 'Tool argument "file"');
-  assertNodeTargetReference(input.target, 'Tool argument "target"');
+function assertStrictFigmaReferences(command: FigmaConcreteCommandName, input: CommandInput): void {
+  const allowCompositeNodeId = command === "metadata" || command === "design-context";
+  assertFileReference(input.file, 'Tool argument "file"', allowCompositeNodeId);
+  assertNodeTargetReference(input.target, 'Tool argument "target"', allowCompositeNodeId);
   for (const [collection, label] of [[input.assets, "assets"], [input.targets, "targets"]] as const) {
     if (!Array.isArray(collection)) continue;
     collection.forEach((entry, index) => {
@@ -265,36 +270,42 @@ function assertStrictFigmaReferences(input: CommandInput): void {
   if (isRecord(input.arguments)) assertFileReference(input.arguments.fileKey, 'Tool argument "arguments.fileKey"');
 }
 
-function assertFileReference(value: unknown, label: string): void {
+function assertFileReference(value: unknown, label: string, allowCompositeNodeId = false): void {
   if (typeof value !== "string" || !value.trim()) return;
   const trimmed = value.trim();
   if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) {
-    parseStrictFigmaUrl(trimmed, label, false);
+    parseStrictFigmaUrl(trimmed, label, false, allowCompositeNodeId);
     return;
   }
-  if (trimmed.includes("/") || trimmed.includes("\\") || trimmed.includes("..")) {
-    throw new Error(`${label} must be a valid Figma URL or a simple Figma file key.`);
+  if (!isFigmaFileKey(trimmed)) throw new Error(`${label} must be a valid Figma URL or an official Figma file key containing 22 to 128 alphanumeric characters.`);
+}
+
+function assertNodeTargetReference(value: unknown, label: string, allowCompositeNodeId = false): void {
+  const nodeIdIsValid = allowCompositeNodeId ? isCompositeCapableFigmaNodeId : isSimpleFigmaNodeId;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed)) parseStrictFigmaUrl(trimmed, label, true, allowCompositeNodeId);
+    else if (trimmed && !nodeIdIsValid(trimmed)) throw new Error(`${label} must be an official Figma node id or node URL.`);
+  }
+  if (isRecord(value)) {
+    assertFileReference(value.fileKey, `${label}.fileKey`, allowCompositeNodeId);
+    if (typeof value.nodeId === "string" && !nodeIdIsValid(value.nodeId)) throw new Error(`${label}.nodeId must be an official Figma node id.`);
   }
 }
 
-function assertNodeTargetReference(value: unknown, label: string): void {
-  if (typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(value.trim())) {
-    parseStrictFigmaUrl(value.trim(), label, true);
-  }
-  if (isRecord(value)) assertFileReference(value.fileKey, `${label}.fileKey`);
-}
-
-function parseStrictFigmaUrl(value: string, label: string, requireNode: boolean): URL {
+function parseStrictFigmaUrl(value: string, label: string, requireNode: boolean, allowCompositeNodeId = false): URL {
   let url: URL;
   try { url = new URL(value); } catch { throw new Error(`${label} must be a valid Figma URL.`); }
   if (url.protocol !== "https:" || (url.hostname !== "figma.com" && !url.hostname.endsWith(".figma.com"))) {
     throw new Error(`${label} must use an https://*.figma.com Figma URL.`);
   }
   const parts = url.pathname.split("/").filter(Boolean);
-  if (!["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "") || !parts[1]) {
+  if (!["design", "file", "figjam", "board", "slides"].includes(parts[0] ?? "") || !parts[1] || !isFigmaFileKey(parts[1])) {
     throw new Error(`${label} must include a valid Design, FigJam, or Slides file path and file key.`);
   }
-  if (requireNode && !(url.searchParams.get("node-id") ?? url.searchParams.get("node_id"))) {
+  const nodeId = url.searchParams.get("node-id") ?? url.searchParams.get("node_id");
+  const nodeIdIsValid = allowCompositeNodeId ? isCompositeCapableFigmaNodeId : isSimpleFigmaNodeId;
+  if ((requireNode || nodeId !== null) && !nodeIdIsValid(nodeId ?? "")) {
     throw new Error(`${label} must include a node-id query parameter.`);
   }
   return url;
@@ -314,7 +325,7 @@ export function formatRootHelp(): string {
 export function formatFamilyHelp(family:FigmaCommandFamily):string{return[`# figma:${family}:help`,"",...FAMILY_COMMANDS[family].map((name)=>`  figma:${name}`),""].join("\n");}
 export function formatCommandHelp(command:string):string{
   if(!isPublicCommand(command))return `# figma:${command}\n\nUnknown public leaf. Use figma:help for the complete stateless command inventory.\n`;
-  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":command==="docs:catalog"?"\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments.":command==="docs:search"||command==="api:search"?"\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":"";
+  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":command==="docs:catalog"?"\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments.":command==="docs:search"||command==="api:search"?"\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="assets:apply"?"\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow.":command==="assets:download"?"\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg.":"";
   return `# figma:${command}\n\nUsage: ${PUBLIC_COMMAND_USAGE[command]}${details}\n`;
 }
 
@@ -326,7 +337,7 @@ const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
   "api:read":"figma:api:read <api-id>",
   "api:search":`figma:api:search <symbol> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
   doctor:"figma:doctor",
-  metadata:`figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  metadata:`figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   inspect:`figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <${INSPECT_DEPTH_MIN}..${INSPECT_DEPTH_MAX}>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "design-context":`figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "motion-context":`figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
@@ -337,8 +348,8 @@ const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
   capture:`figma:capture (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--image-file <path>] [--output-dir <path>] [--max-dimension <${CAPTURE_MAX_DIMENSION_MIN}..${CAPTURE_MAX_DIMENSION_MAX}>] [--contents-only] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "assets:apply":`figma:assets:apply --input <json-file|-> --file <url|key> [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "assets:download":`figma:assets:download --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
-  "upstream:list":`figma:upstream:list [--refresh] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
-  "upstream:read":`figma:upstream:read <name> [--refresh] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "upstream:list":"figma:upstream:list [--refresh]",
+  "upstream:read":"figma:upstream:read <name> [--refresh]",
   "upstream:call":`figma:upstream:call --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
 };
 
