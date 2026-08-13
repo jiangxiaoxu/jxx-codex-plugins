@@ -21,7 +21,7 @@ npm --silent run figma:variables -- --file <file-url-or-key> --node <target>
 npm --silent run figma:api:search -- componentPropertyReferences
 ```
 
-`componentPropertyDefinitions` 描述组件或 Component Set 对外提供的属性。验证属性是否真的生效还要遍历 descendants: 文本看 `characters`, 可见性看 `visible`, 嵌套实例替换看 `mainComponent`。名称可读即可; 映射到代码 prop 的责任应放在明确的交付约定中, 不能靠猜测命名规则。
+`componentPropertyDefinitions` 的 owner 是 Component Set, 或不属于 Component Set 的 Component. variant Component 必须经其父 Component Set 读取定义. 验证属性是否真的生效还要遍历 descendants: 文本看 `characters`, 可见性看 `visible`, 嵌套实例替换看 `mainComponent`. 名称可读即可; 映射到代码 prop 的责任应放在明确的交付约定中, 不能靠猜测命名规则.
 
 ## 审计示例
 
@@ -29,9 +29,13 @@ npm --silent run figma:api:search -- componentPropertyReferences
 
 ```ts
 const component = figma.getNodeById("123:456");
-if (!component || component.type !== "COMPONENT") {
-  throw new Error("Expected a COMPONENT at 123:456.");
+if (!component || (component.type !== "COMPONENT" && component.type !== "COMPONENT_SET")) {
+  throw new Error("Expected a COMPONENT or COMPONENT_SET at 123:456.");
 }
+
+const propertyOwner = component.type === "COMPONENT" && component.parent?.type === "COMPONENT_SET"
+  ? component.parent
+  : component;
 
 const references = component.findAll((node) => "componentPropertyReferences" in node)
   .map((node) => ({
@@ -45,8 +49,10 @@ const references = component.findAll((node) => "componentPropertyReferences" in 
 return {
   id: component.id,
   name: component.name,
+  // `description` is valid only because the type guard above narrowed to
+  // COMPONENT or COMPONENT_SET; INSTANCE and FRAME do not expose it.
   description: component.description,
-  properties: component.componentPropertyDefinitions,
+  properties: propertyOwner.componentPropertyDefinitions,
   references,
 };
 ```
@@ -59,7 +65,7 @@ npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --
 
 ## 描述与使用规则
 
-为准备被他人使用的 Component、Component Set 和 Instance 写 `description`。描述应解释意图、何时选择它、何时不要选择它, 以及非直观 property 的限制。把共享说明放在 Component Set; 仅给某一个 variant 写说明通常不能帮助实例使用者。
+只为 Component 和 Component Set 写 `description`. 描述应解释意图, 何时选择它, 何时不要选择它, 以及非直观 property 的限制. 把共享说明放在 Component Set; 仅给某一个 variant 写说明通常不能帮助实例使用者. Instance 和普通 Frame 不暴露 `description`.
 
 组件不等于任意可复用图层。页面局部、一次性排版和尚未稳定的视觉探索不应过早组件化。反过来, 多处复制且需要同步的结构, 或需要由 token 和属性表达的选择, 才是 Component 的候选。
 

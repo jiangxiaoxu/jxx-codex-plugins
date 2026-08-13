@@ -8,22 +8,19 @@ Create a local `.figma.ts` file, make the change, and execute it with `figma:run
 
 ```ts
 // discovery-section.figma.ts
-// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
-const runId = 'figjam-<fresh-uuid>'
 const existing = [...figma.currentPage.children]
 const rightEdge = existing.length === 0
   ? 0
   : Math.max(...existing.map((node) => node.x + node.width))
 
 const section = figma.createSection()
-section.setSharedPluginData('figma_workspace', 'run_id', runId)
 section.name = 'Discovery'
 section.resizeWithoutConstraints(900, 620)
 section.x = rightEdge + 160
 section.y = 120
 
 const sticky = figma.createSticky()
-sticky.setSharedPluginData('figma_workspace', 'run_id', runId)
+sticky.name = 'Discovery note'
 const stickyFont = sticky.text.fontName
 if (stickyFont === figma.mixed) throw new Error('Sticky text has mixed fonts')
 await figma.loadFontAsync(stickyFont)
@@ -33,7 +30,6 @@ sticky.x = 48
 sticky.y = 88
 
 return {
-  runId,
   createdNodeIds: [section.id, sticky.id],
   section: { id: section.id, name: section.name, x: section.x, y: section.y, width: section.width, height: section.height },
 }
@@ -52,4 +48,4 @@ Run `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface fig
 
 Return the section ID and each child ID. A read-only follow-up script should confirm the node type, name, dimensions, child parent IDs, and that child bounds lie within the intended section. Capture the section when it is part of a finished board and inspect the output locally.
 
-If content lands in an unexpected location, it was positioned before `appendChild` or its coordinates were calculated in page space. Reparent first, then position locally. If the section is too small after adding material, enlarge the existing section rather than recreate it. Generate and retain a unique `runId` before dispatch; immediately tag both the section and every created child with shared PluginData namespace `figma_workspace` and key `run_id`, before any await or later setter, then return the same `runId` and IDs. A fatal TypeScript preflight diagnostic reports `executionOutcome: "not_started"`; correct the local source before rerunning. For `outcome_unknown`, follow `retryGuidance`, query the exact retained run tag, and reconcile the section and child before any write.
+If content lands in an unexpected location, it was positioned before `appendChild` or its coordinates were calculated in page space. Reparent first, then position locally. If the section is too small after adding material, enlarge the existing section rather than recreate it. Return the section and child IDs and give every created node a deterministic name. A fatal TypeScript preflight diagnostic reports `executionOutcome: "not_started"`; correct the local source before rerunning. For `failed_atomic`, retain the direct host/script diagnostics, repair the script, and retry safely because Figma confirmed no file changes. For any `outcome_unknown`, follow `retryGuidance`, inspect returned IDs first, then narrowly read back the expected section and child names, parent, and bounds before any write. Shared PluginData is only an optional, host-verified supplement.

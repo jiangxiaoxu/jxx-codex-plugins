@@ -59,14 +59,14 @@ Use standalone `figma:capture` when the node id is already known. If a script cr
 
 Classify every result by its required `executionOutcome` before taking another write action:
 
-- `not_started`: validation, preflight, connection, or auth stopped the request before dispatch. Repair the cause, then resubmit the corrected script.
+- `not_started`: local input or target validation, TypeScript preflight, auth, or connection stopped the request before dispatch. Repair the cause, then resubmit the corrected script.
 - `succeeded`: Figma confirmed the script completed. If capture or local persistence failed afterward, keep the confirmed result and do not rerun the mutation.
-- `outcome_unknown`: dispatch occurred but completion cannot be confirmed. Partial or complete effects are possible. Follow `retryGuidance`, inspect or read back the intended targets, and reconcile them before deciding whether any mutation remains.
+- `outcome_unknown`: dispatch occurred but completion cannot be confirmed. Follow the runtime's documented failure presentation and `retryGuidance`, inspect or read back the intended targets, and reconcile them before deciding whether any mutation remains.
 
 **Recovery steps when `.figma.ts` script returns an error:**
-1. **STOP — do not immediately rerun the mutation.** Read `executionOutcome`, diagnostics, and `retryGuidance` first.
-2. **Understand the error.** Most pre-dispatch errors are caused by wrong API usage, missing font loads, invalid property values, or references to nodes that do not exist.
-3. For `outcome_unknown`, use `figma:metadata`, `figma:inspect`, or a read-only tagged-node query to reconcile structural state. Use `figma:capture` followed by `view_image` when visual evidence is needed.
+1. **STOP — do not immediately rerun the mutation.** Read `executionOutcome`, diagnostics, `retryGuidance`, and the runtime's documented failure presentation first.
+2. **Understand the error.** `not_started` applies only to local validation, TypeScript preflight, auth, or connection failures before dispatch. Font loading, invalid runtime property values, and missing runtime node references occur inside the host script after dispatch; use the returned outcome and failure presentation for recovery, never label them `not_started`.
+3. For `outcome_unknown`, use `figma:metadata`, `figma:inspect`, or a narrow read-only query by returned ID or stable name to reconcile structural state. Use `figma:capture` followed by `view_image` when visual evidence is needed.
 4. **Fix the script** based on the error and reconciled state.
 5. Retry only work confirmed not to have run. Direct retry is valid for a corrected `not_started` request, not for an un-reconciled `outcome_unknown` mutation.
 
@@ -81,7 +81,7 @@ Classify every result by its required `executionOutcome` before taking another w
 6. figma:capture   →  Visual check after each major milestone
 
 ON ERROR at any step:
-   a. Read executionOutcome, retryGuidance, and diagnostics
+   a. Read executionOutcome, retryGuidance, diagnostics, and the runtime's documented failure presentation
    b. For outcome_unknown, inspect/read back and reconcile the intended targets
    c. Fix the script based on the error and current state
    d. Retry only work confirmed not to have run

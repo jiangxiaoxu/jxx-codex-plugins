@@ -41,6 +41,7 @@ const LOCK_TIMEOUT_MS = 30_000;
 const LOCK_RETRY_MS = 100;
 const LOCK_STALE_MS = 30_000;
 const LOCK_HEARTBEAT_MS = 5_000;
+const MAX_EXECUTION_ERROR_SUMMARY_CHARS = 600;
 
 export const FIGMA_WORKSPACE_CLI_COMMANDS = [
   "run",
@@ -233,7 +234,7 @@ export async function invokeFigmaWorkspaceCommand(
 }
 
 export interface FigmaWorkspaceCliResultPresentation {
-  status: "succeeded" | "observed-unhealthy" | "failed" | "failed-after-execution";
+  status: "succeeded" | "observed-unhealthy" | "failed" | "failed-atomically" | "failed-during-execution" | "failed-after-execution";
   exitCode: 0 | 1;
   error?: { message: string; code?: string | number; details?: unknown };
   warnings: readonly unknown[];
@@ -248,7 +249,13 @@ export function classifyFigmaWorkspaceCliResult(
   const executionOutcome = result.executionOutcome;
   const ok = result.ok !== false;
   if (command === "doctor" && !ok) return { status: "observed-unhealthy", exitCode: 0, warnings, error: normalizeError(result.upstreamError ?? result.error) };
-  if ((executionOutcome === "succeeded" || executionOutcome === "outcome_unknown") && !ok) {
+  if (executionOutcome === "failed_atomic" && !ok) {
+    return { status: "failed-atomically", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+  }
+  if (executionOutcome === "outcome_unknown" && !ok) {
+    return { status: "failed-during-execution", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+  }
+  if (executionOutcome === "succeeded" && !ok) {
     return { status: "failed-after-execution", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
   }
   if (!ok) return { status: "failed", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
@@ -266,10 +273,33 @@ export function formatFigmaWorkspaceCommandMarkdown(
     "",
     `Status: ${presentation.status.replaceAll("-", " ")}`,
     "",
+    ...formatExecutionFailureSummary(result, presentation),
     "```json",
     JSON.stringify(result, null, 2),
     "```",
   ].join("\n");
+}
+
+function formatExecutionFailureSummary(
+  result: unknown,
+  presentation: FigmaWorkspaceCliResultPresentation,
+): string[] {
+  if (!isRecord(result) || result.executionOutcome !== "failed_atomic") {
+    return [];
+  }
+  const error = presentation.error ?? compactPresentationError(result.upstreamError);
+  const message = compactExecutionErrorSummary(error?.message ?? "Figma host returned an explicit execution error.");
+  const code = error?.code === undefined ? undefined : String(error.code);
+  return [
+    "## Remote execution error",
+    "",
+    "```text",
+    code ? `${code}: ${message}` : message,
+    "```",
+    "",
+    "Figma host confirmed this use_figma script failed atomically. No file changes were applied; repair the script and retry safely.",
+    "",
+  ];
 }
 
 export const FIGMA_WORKSPACE_CLI_HELP = [
@@ -280,7 +310,7 @@ export const FIGMA_WORKSPACE_CLI_HELP = [
   "",
   `Commands: ${FIGMA_WORKSPACE_CLI_COMMANDS.join(", ")}`,
   "",
-  "Every remote command receives its complete Figma file/node target in this invocation. Persistent state and session files are not supported.",
+  "Each command or live upstream schema that requires a Figma file or node receives that target in this invocation. Persistent state and session files are not supported.",
   "",
 ].join("\n");
 
@@ -443,11 +473,12 @@ async function persistOversizedResult(result: unknown, command: FigmaWorkspaceCl
 function createResultPersistenceFailure(result: unknown, error: unknown): Record<string, unknown> {
   return {
     ...selectRecoveryFacts(result),
+    upstreamError: isRecord(result) ? compactPresentationError(result.upstreamError) : undefined,
     ok: false,
     invocation: isRecord(result) ? result.invocation : undefined,
     error: {
       code: "FIGMA_WORKSPACE_RESULT_PERSISTENCE_FAILED",
-      message: `Remote execution completed, but the oversized CLI result could not be persisted: ${formatError(error)}`,
+      message: `The oversized CLI result could not be persisted after the remote command returned: ${formatError(error)}`,
     },
   };
 }
@@ -462,6 +493,21 @@ function selectRecoveryFacts(result: unknown): Record<string, unknown> {
     "captureProcessingSucceeded",
     "outputFiles",
   ].flatMap((key) => result[key] === undefined ? [] : [[key, result[key]]]));
+}
+
+function compactPresentationError(value: unknown): { message: string; code?: string | number } | undefined {
+  const error = normalizeError(value);
+  if (!error) return undefined;
+  return {
+    message: compactExecutionErrorSummary(error.message),
+    ...(error.code === undefined ? {} : { code: error.code }),
+  };
+}
+
+function compactExecutionErrorSummary(value: string): string {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (normalized.length <= MAX_EXECUTION_ERROR_SUMMARY_CHARS) return normalized;
+  return `${normalized.slice(0, MAX_EXECUTION_ERROR_SUMMARY_CHARS - 3)}...`;
 }
 
 function normalizeInvocationResult(result: unknown, invocationId: string, fileKey: string | undefined, surface: unknown, outputRoot: string): unknown {

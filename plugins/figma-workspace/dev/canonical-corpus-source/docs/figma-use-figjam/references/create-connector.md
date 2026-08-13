@@ -6,10 +6,10 @@ Use a connector to express a relationship or flow between existing FigJam nodes.
 
 Create or update connectors in a local `.figma.ts` file, then execute it using `figma:run` with an explicit FigJam file target, `--surface figjam`, and the script path. TypeScript preflight is always enabled. Keep the returned IDs for inspection and later edits.
 
+Keep a mutating script to one board page and one narrow transaction. For cross-page work, fan out separate read-only calls after explicit page discovery, then run separate per-page mutations; the runtime serializes applicable same-machine calls by `fileKey`.
+
 ```ts
 // flow-connector.figma.ts
-// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
-const runId = 'figjam-<fresh-uuid>'
 const startId = '<source-node-id>'
 const endId = '<target-node-id>'
 const start = await figma.getNodeByIdAsync(startId)
@@ -20,7 +20,7 @@ const font: FontName = { family: 'Inter', style: 'Medium' }
 await figma.loadFontAsync(font)
 
 const connector = figma.createConnector()
-connector.setSharedPluginData('figma_workspace', 'run_id', runId)
+connector.name = 'Approves connector'
 connector.connectorStart = { endpointNodeId: start.id, magnet: 'RIGHT' }
 connector.connectorEnd = { endpointNodeId: end.id, magnet: 'LEFT' }
 connector.connectorLineType = 'ELBOWED'
@@ -30,7 +30,7 @@ connector.strokes = [{ type: 'SOLID', color: { r: 0x3d / 255, g: 0xad / 255, b: 
 connector.text.fontName = font
 connector.text.characters = 'approves'
 
-return { runId, createdNodeIds: [connector.id], connector: { id: connector.id, start: start.id, end: end.id } }
+return { createdNodeIds: [connector.id], connector: { id: connector.id, start: start.id, end: end.id } }
 ```
 
 Run it with `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>` after saving the reviewed script.
@@ -47,4 +47,4 @@ Run it with `npm --silent run figma:run -- --file <figjam-file-url-or-key> --sur
 
 Return the connector and endpoint IDs. A read-only follow-up script can check `type`, `connectorStart`, `connectorEnd`, caps, and `text.characters`; use `attachedConnectors` on either endpoint when auditing an existing flow. Capture the affected region when route direction or label placement matters, then inspect that image locally.
 
-Generate and retain a unique `runId` before dispatch; immediately after `createConnector()` tag it with shared PluginData namespace `figma_workspace` and key `run_id`, before endpoint or text setters can throw, and return the same `runId`, connector ID, and endpoint IDs. An unloaded-font error occurs during dispatched runtime execution and therefore reports `outcome_unknown`; do not load `connector.text.fontName` from a new connector, because it is not usable until assigned. Follow `retryGuidance`, query the exact retained run tag, and reconcile the connector and endpoints; set a known font or `magnet: 'AUTO'` only when readback confirms that work is missing. A fatal TypeScript preflight diagnostic reports `not_started`; fix that file and rerun rather than issuing a cleanup mutation.
+Return the connector and endpoint IDs and give the connector its deterministic operation-specific name immediately after creation. Missing runtime endpoint references, unloaded fonts, and invalid runtime property values occur inside the host script after dispatch; use the returned outcome and documented failure presentation, never label them `not_started`. Do not load `connector.text.fontName` from a new connector, because it is not usable until assigned. For an `outcome_unknown` result, follow `retryGuidance`, inspect returned IDs first, then narrowly read back the named connector, endpoint IDs, and expected relationship; set a known font or `magnet: 'AUTO'` only when readback confirms that work is missing. Shared PluginData is only an optional, host-verified supplement. A fatal TypeScript preflight diagnostic reports `not_started`; fix that file and rerun rather than issuing a cleanup mutation.

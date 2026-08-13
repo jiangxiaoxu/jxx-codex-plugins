@@ -38,19 +38,22 @@ test("canonical agent docs publish only current runtime capabilities", async () 
   const manifest = JSON.parse(await readFile(join(canonicalRoot, "manifest.json"), "utf8"));
   const corpus = await readFile(join(canonicalRoot, manifest.corpus.file), "utf8");
   assert.doesNotMatch(corpus, /\$\.screenshot|(?:node|frame)\.screenshot|SceneNode\.screenshot/u);
-  assert.doesNotMatch(corpus, /getPluginData[^\n]{0,160}not supported|setPluginData[^\n]{0,160}not supported/iu);
+  assert.doesNotMatch(corpus, /Both APIs are available in `\.figma\.ts`/u);
+  assert.doesNotMatch(corpus, /`getPluginData\(\)`\s*\/\s*`setPluginData\(\)`[^\n]{0,160}store values private to the executing plugin/iu);
   assert.doesNotMatch(corpus, /(?:do not|never) use[^\n]{0,120}(?:figma\.)?createImage/iu);
   assert.doesNotMatch(corpus, /never (?:scan|search)[^\n]{0,120}figma\.root/iu);
   assert.doesNotMatch(corpus, /(?:do not|never)[^\n]{0,120}switch[^\n]{0,80}page[^\n]{0,80}(?:more than once|multiple times)/iu);
-  assert.doesNotMatch(corpus, /(?:do not|don't)[^\n]{0,120}loop pages inside one script|at most \d+ logical operations per/iu);
+  assert.doesNotMatch(corpus, /at most \d+ logical operations per/iu);
   assert.doesNotMatch(corpus, /id\/handle|\$handle|handle alias/iu);
   assert.match(corpus, /figma:capture/u);
   assert.match(corpus, /exportAsync/u);
-  assert.match(corpus, /Both APIs are available in `\.figma\.ts`/u);
-  assert.match(corpus, /Multi-page scripts are valid Plugin API workflows/u);
+  assert.match(corpus, /live host contract explicitly prohibits `setPluginData`; a direct host run separately rejected `getPluginData`/u);
+  assert.match(corpus, /do not depend on shared PluginData as a required or assumed-supported recovery mechanism/u);
+  assert.match(corpus, /one narrow transaction per selected page/u);
+  assert.match(corpus, /Read-only transactions may fan out/u);
   assert.match(corpus, /runtime does not impose an operation-count policy/u);
   assert.match(corpus, /figma\.root\.findAll[^\n]{0,160}valid document-wide operations/u);
-  assert.match(corpus, /native Plugin API supports `figma\.createImage\(data\)`/u);
+  assert.match(corpus, /`figma\.createImage\(data\)` remains the native byte-input API/u);
 });
 
 test("canonical runnable workflow snippets pass the production strict TypeScript preflight", async () => {
@@ -118,13 +121,13 @@ test("examples scope returns only canonical Markdown templates", async () => {
     const lookup = runLookup(fixture.root, {
       kind: "docs",
       scope: "examples",
-      query: "explicitly owned orphans reviewed state ledger",
+      query: "external ledger exact ids",
       maxResults: 1,
       maxSnippetLines: 3,
     });
     assert.equal(lookup.status, 0, lookup.stderr);
     assert.match(lookup.stdout, /^Status: succeeded$/mu);
-    assert.match(lookup.stdout, /figma-generate-library\/examples\/cleanup-orphans/u);
+    assert.match(lookup.stdout, /figma-generate-library\/examples\/rehydrate-state/u);
     assert.doesNotMatch(lookup.stdout, /internal:figma-generate-library\/scripts\/cleanupOrphans\.js/u);
   });
 });

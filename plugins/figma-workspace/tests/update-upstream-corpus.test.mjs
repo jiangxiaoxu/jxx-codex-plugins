@@ -17,6 +17,8 @@ import test from "node:test";
 import {
   inspectCommittedUpstreamDrift,
   parseCliInvocation,
+  refreshUpstreamChanges,
+  runCli,
   updateUpstreamSnapshot,
 } from "../scripts/update-upstream-corpus.mjs";
 
@@ -34,12 +36,142 @@ test("CLI exposes separate snapshot update and canonical build commands", () => 
   assert.deepEqual(parseCliInvocation(["build-canonical-corpus"]), {
     command: "build-canonical-corpus",
   });
+  assert.deepEqual(parseCliInvocation(["refresh-upstream-changes"]), {
+    command: "refresh-upstream-changes",
+  });
+  assert.deepEqual(
+    parseCliInvocation([
+      "refresh-upstream-changes",
+      "--from-report",
+      "report-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.json",
+    ]),
+    {
+      command: "refresh-upstream-changes",
+      fromReportFile: "report-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.json",
+    },
+  );
   assert.throws(() => parseCliInvocation([]), /Expected command/u);
   assert.throws(
     () => parseCliInvocation(["update-upstream-snapshot", "--ref", "main", "--ref", "next"]),
     /Duplicate option/u,
   );
   assert.throws(() => parseCliInvocation(["build-canonical-corpus", "--ref", "main"]), /Unknown/u);
+  assert.throws(() => parseCliInvocation(["refresh-upstream-changes", "--ref", "main"]), /Unknown/u);
+  assert.throws(
+    () => parseCliInvocation(["refresh-upstream-changes", "--from-report", "../report.json"]),
+    /content-addressed/u,
+  );
+});
+
+test("refreshing upstream changes reuses the archived snapshot and current policy", async () => {
+  const fixture = await createRepositoryFixture();
+  const snapshotRoot = join(fixture.root, "dev/upstream-snapshot");
+  const changesRoot = join(fixture.root, "dev/upstream-changes");
+  try {
+    await updateUpstreamSnapshot({
+      repository: fixture.repository,
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt,
+    });
+    await writeFile(join(fixture.worktree, "skills/alpha/SKILL.md"), "# Alpha revised\n", "utf8");
+    commitFixture(fixture, "upstream drift");
+    const drifted = await updateUpstreamSnapshot({
+      repository: fixture.repository,
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt: "2026-07-15T04:05:06.000Z",
+    });
+    await updateUpstreamSnapshot({
+      repository: fixture.repository,
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt: "2026-07-15T05:05:06.000Z",
+    });
+    const snapshotManifestBefore = await readFile(join(snapshotRoot, "manifest.json"), "utf8");
+    const snapshotFilesBefore = (await readdir(snapshotRoot)).sort();
+
+    await writeAcceptedPolicies(fixture.policyRoot, {
+      "alpha/SKILL.md": ["# Alpha revised\n", "router"],
+      "alpha/references/guide.md": ["# Guide\n", "active"],
+      "alpha/scripts/example.js": ["export const value = 1;\n", "examples"],
+      "alpha/scripts/example.ts": ["export const value: number = 1;\n", "api"],
+      "zeta/SKILL.md": ["# Zeta\nsecond line\n", "router"],
+    });
+
+    const refreshed = await refreshUpstreamChanges({
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+      generatedAt: "2026-07-16T04:05:06.000Z",
+      fromReportFile: drifted.changeManifest.report.file,
+    });
+    assert.deepEqual(refreshed.report.summary, drifted.report.summary);
+    assert.deepEqual(refreshed.report.changes, drifted.report.changes);
+    assert.deepEqual(refreshed.report.from, drifted.report.from);
+    assert.deepEqual(refreshed.report.adaptation, {
+      readyCount: 5,
+      pendingCount: 0,
+      retiredCount: 0,
+      pendingRecords: [],
+      retiredRecords: [],
+    });
+    assert.equal(await readFile(join(snapshotRoot, "manifest.json"), "utf8"), snapshotManifestBefore);
+    assert.deepEqual((await readdir(snapshotRoot)).sort(), snapshotFilesBefore);
+    await inspectCommittedUpstreamDrift({
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+    });
+    const corruptReportFile = `report-${"0".repeat(64)}.json`;
+    await writeFile(join(changesRoot, corruptReportFile), "{}\n", "utf8");
+    await assert.rejects(
+      refreshUpstreamChanges({
+        snapshotRoot,
+        changesRoot,
+        policyRoot: fixture.policyRoot,
+        expectedPolicyFragmentCount: 2,
+        fromReportFile: corruptReportFile,
+      }),
+      /failed whole-file integrity/u,
+    );
+
+    const sourceStdout = { text: "", write(value) { this.text += value; } };
+    await runCli([
+      "refresh-upstream-changes",
+      "--from-report",
+      drifted.changeManifest.report.file,
+    ], {
+      refreshChangesOptions: {
+        snapshotRoot,
+        changesRoot,
+        policyRoot: fixture.policyRoot,
+        expectedPolicyFragmentCount: 2,
+        generatedAt: "2026-07-17T04:05:06.000Z",
+      },
+      stdout: sourceStdout,
+      stderr: { write() {} },
+    });
+    assert.match(sourceStdout.text, /refreshed upstream change report for 5 archived snapshot records/u);
+    const restored = await inspectCommittedUpstreamDrift({
+      snapshotRoot,
+      changesRoot,
+      policyRoot: fixture.policyRoot,
+      expectedPolicyFragmentCount: 2,
+    });
+    assert.deepEqual(restored.report.summary, drifted.report.summary);
+    assert.equal(await readFile(join(snapshotRoot, "manifest.json"), "utf8"), snapshotManifestBefore);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
 });
 
 test("updater publishes a complete dev snapshot and a content-addressed change report", async () => {

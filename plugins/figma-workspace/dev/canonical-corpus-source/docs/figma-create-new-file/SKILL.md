@@ -4,29 +4,24 @@ Use the live upstream schema to create a new blank Figma file in the user's draf
 
 ## Inputs
 
-- **editorType**: `design` (default), `figjam`, or `slides`
-- **fileName**: Name for the new file (defaults to "Untitled")
+The currently observed live schema requires all three inputs. Never invent client-side defaults: read the live schema again before dispatch.
 
-Examples:
-- Omitted values create a design file named "Untitled"
-- `figjam`, "My Whiteboard" creates a FigJam file named "My Whiteboard"
-- `design`, "My New Design" creates a design file named "My New Design"
-- `slides`, "Q3 Review" creates a Slides presentation named "Q3 Review"
-
-If editorType is not provided, default to `"design"`. If fileName is not provided, default to `"Untitled"`.
+- **planKey**: Destination plan selected in Step 1.
+- **editorType**: One of the values accepted by the live schema, currently `design`, `figjam`, or `slides`.
+- **fileName**: Non-empty name for the new file.
 
 ## Workflow
 
 ### Step 1: Confirm the live schema and resolve the planKey
 
-Before an upstream call, run `figma:upstream:list` or `figma:upstream:read` to confirm the live schema for file creation. Use the schema's current tool name and required input fields. The current capability normally requires a `planKey`; follow this decision tree:
+Before an upstream call, run `figma:upstream:list` or `figma:upstream:read` to confirm the live schema for file creation. Use the schema's current tool name and required input fields. Resolve `planKey` from the live identity capability (normally `whoami`) rather than guessing a destination:
 
 1. **User already provided a planKey** (for example, from a previous identity lookup or in their prompt) → use it directly, skip to Step 2.
 
-2. **No planKey available** → use `figma:upstream:call` for the identity capability confirmed by the live schema. The response contains a `plans` array. Each plan has a `key`, `name`, `seat`, and `tier`.
+2. **No planKey available** → read and call the current `whoami` schema through `figma:upstream:call`, then extract the available plan candidates from its actual response.
 
-   - **Single plan**: use its `key` field automatically.
-   - **Multiple plans**: ask the user which team or organization they want to create the file in, then use the corresponding plan's `key`.
+   - **Single candidate**: use its returned plan key.
+   - **Multiple candidates**: ask the user which team or organization they want to create the file in, then use the corresponding returned key.
 
 ### Step 2: Call the confirmed upstream capability
 
@@ -41,7 +36,7 @@ Call `figma:upstream:call` with the live-schema tool name and its required input
 Example:
 ```json
 {
-  "planKey": "team:123456",
+  "planKey": "team::123456",
   "fileName": "My New Design",
   "editorType": "design"
 }
@@ -49,11 +44,7 @@ Example:
 
 ### Step 3: Use the result
 
-The tool returns:
-- `file_key` — the key of the newly created file
-- `file_url` — a direct URL to open the file in Figma
-
-Use the returned `file_key` as the explicit `--file` value when running a `.figma.ts` script with `figma:run`.
+Read the actual response shape. Extract the returned file key and openable URL from that response; their field names are not a stable local contract. Use the returned key as the explicit `--file` value when running a `.figma.ts` script with `figma:run`.
 
 ## Important Notes
 

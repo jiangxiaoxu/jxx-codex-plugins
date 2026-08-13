@@ -10,3 +10,9 @@
 - 处理 `plugins/figma-workspace` 的开发,重构或维护任务前,先阅读 `doc/figma-workspace-ai-agent-development.md`.
 - 新增,重命名或移除 `plugins/*` 下的 plugin 时,同步维护 `.agents/plugins/marketplace.json`,`README.md` 和 repository guide 的 plugin inventory.
 - 将 plugin 数字版本号 +1 时,同步修改对应 `plugins/<plugin>/.codex-plugin/plugin.json` 的 `version`.
+
+## Plugin 发布与客户端更新
+
+- 不得为了测试或开发迭代使用 cachebuster,`codex plugin add`,reinstall,修改 marketplace 配置或要求 Codex 立即加载本地 plugin.
+- Plugin 更新只能通过递增正式版本,同步更新发布元数据,发布并推送后由客户端的正常自动更新行为取得.
+- 未发布版本的验证仅限仓库内构建,测试,打包和其他不要求客户端加载 plugin 的检查.

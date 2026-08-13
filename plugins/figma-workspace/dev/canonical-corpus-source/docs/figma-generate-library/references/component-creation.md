@@ -103,10 +103,6 @@ desc.fontSize = 14;
 desc.characters = 'Buttons allow users to take actions and make choices with a single tap.';
 docFrame.appendChild(desc);
 
-// Tag docFrame with sharedPluginData for idempotency
-docFrame.setSharedPluginData('dsb', 'run_id', RUN_ID);
-docFrame.setSharedPluginData('dsb', 'key', 'doc/button');
-
 return { docFrameId: docFrame.id, pageId: page.id };
 ```
 
@@ -122,12 +118,12 @@ The base component is the template from which all variants are cloned. It must h
 ### Complete Button Base Component Example
 
 ```javascript
-const RUN_ID = 'ds-build-2024-001'; // replace with your actual run ID
-await figma.setCurrentPageAsync(
-  figma.root.children.find(p => p.name === 'Button')
-);
+const PAGE_ID = 'PAGE_ID_FROM_LEDGER';
+const page = await figma.getNodeByIdAsync(PAGE_ID);
+if (!page || page.type !== 'PAGE') throw new Error('Expected recorded Button page.');
+await figma.setCurrentPageAsync(page);
 
-// Rehydrate variables from IDs stored in state ledger
+// Resolve variables from exact external-ledger IDs.
 const bgVar     = await figma.variables.getVariableByIdAsync('VAR_ID_color_bg_primary');
 const textVar   = await figma.variables.getVariableByIdAsync('VAR_ID_color_text_on_primary');
 const paddingVar = await figma.variables.getVariableByIdAsync('VAR_ID_spacing_md');
@@ -192,11 +188,6 @@ iconBox.layoutSizingHorizontal = 'FIXED';
 iconBox.layoutSizingVertical = 'FIXED';
 comp.appendChild(iconBox);
 
-// Tag for idempotency
-comp.setSharedPluginData('dsb', 'run_id', RUN_ID);
-comp.setSharedPluginData('dsb', 'phase', 'phase3');
-comp.setSharedPluginData('dsb', 'key', 'component/button/base');
-
 return { baseCompId: comp.id };
 ```
 
@@ -243,12 +234,11 @@ For Button with Size × State = 15 combinations, add Style as a variant axis onl
 Build each variant by cloning the base component and adjusting the variable bindings that differ per variant. Pass in the base component ID from the previous call's state.
 
 ```javascript
-const RUN_ID = 'ds-build-2024-001';
-const BASE_COMP_ID = 'BASE_ID_FROM_STATE'; // from state ledger
-
-await figma.setCurrentPageAsync(
-  figma.root.children.find(p => p.name === 'Button')
-);
+const BASE_COMP_ID = 'BASE_ID_FROM_LEDGER';
+const PAGE_ID = 'PAGE_ID_FROM_LEDGER';
+const page = await figma.getNodeByIdAsync(PAGE_ID);
+if (!page || page.type !== 'PAGE') throw new Error('Expected recorded Button page.');
+await figma.setCurrentPageAsync(page);
 
 const base = await figma.getNodeByIdAsync(BASE_COMP_ID);
 
@@ -306,9 +296,6 @@ for (const size of axes.Size) {
         { type: 'SOLID', color: { r: 1, g: 1, b: 1 } }, 'color', txtVar
       );
       labelNode.fills = [textPaint];
-
-      clone.setSharedPluginData('dsb', 'run_id', RUN_ID);
-      clone.setSharedPluginData('dsb', 'key', `component/button/variant/${size}/${style}/${state}`);
 
       components.push(clone);
     }
@@ -447,9 +434,6 @@ cs.cornerRadius = 8;
 cs.x = 680;
 cs.y = 40;
 
-cs.setSharedPluginData('dsb', 'run_id', 'ds-build-2024-001');
-cs.setSharedPluginData('dsb', 'key', 'componentset/button');
-
 return { componentSetId: cs.id };
 ```
 
@@ -552,9 +536,6 @@ iconComp.findAllWithCriteria({ types: ['VECTOR'] }).forEach(vec => {
   }
 });
 
-iconComp.setSharedPluginData('dsb', 'run_id', RUN_ID);
-iconComp.setSharedPluginData('dsb', 'key', 'icon/chevron-right');
-
 return { iconCompId: iconComp.id };
 ```
 
@@ -594,22 +575,11 @@ The `componentPropertyReferences` object maps a node's own property to a compone
 
 ---
 
-## 7. `sharedPluginData` Tagging for Idempotency
+## 7. External Ledger and Idempotency
 
-Tag EVERY created node immediately after creation. This enables safe cleanup, resumability, and idempotency checks.
+After each creation, return the exact node ID and write it to the caller-owned ledger only after read-back. The ledger record also carries the expected page ID, exact name, and type. Do not store workflow state on a Figma object.
 
-```javascript
-// After creating any node:
-node.setSharedPluginData('dsb', 'run_id', RUN_ID);   // identifies the build run
-node.setSharedPluginData('dsb', 'phase', 'phase3');  // which phase created it
-node.setSharedPluginData('dsb', 'key', KEY);         // unique logical key for this entity
-
-// Reading back:
-const runId = node.getSharedPluginData('dsb', 'run_id'); // '' if not set
-const key   = node.getSharedPluginData('dsb', 'key');
-```
-
-**Key naming convention:** use `/`-separated logical paths that mirror the entity hierarchy:
+**Ledger keys:** use `/`-separated logical paths that mirror the entity hierarchy:
 ```
 'component/button/base'
 'component/button/variant/Medium/Primary/Default'
@@ -618,18 +588,18 @@ const key   = node.getSharedPluginData('dsb', 'key');
 'page/button'
 ```
 
-**Idempotency check before creating:** before creating a node, scan the current page for an existing node with the same `key`:
+**Idempotency check before creating:** resolve the exact ledger ID first. If it is unavailable, a deterministic name may be checked only inside the expected page and type. It must produce exactly one match; zero or multiple matches require review.
 
 ```javascript
-// Indexed sharedPluginData lookup — the engine only visits nodes that
-// actually carry the dsb namespace key, not every node on the page.
-const existing = figma.currentPage
-  .findAllWithCriteria({ sharedPluginData: { namespace: 'dsb', keys: ['key'] } })
-  .filter(n => n.getSharedPluginData('dsb', 'key') === 'componentset/button');
-if (existing.length > 0) {
-  // Skip creation — already done. Return existing node's ID.
-  return { componentSetId: existing[0].id };
-}
+const pageId = 'PAGE_ID_FROM_LEDGER';
+const expectedName = 'Button';
+const page = await figma.getNodeByIdAsync(pageId);
+if (!page || page.type !== 'PAGE') throw new Error('Expected recorded Button page.');
+
+const matches = page.findAllWithCriteria({ types: ['COMPONENT_SET'] })
+  .filter((node) => node.name === expectedName);
+if (matches.length > 1) throw new Error('Button component set is ambiguous on the recorded page.');
+return { existingComponentSetId: matches[0]?.id ?? null };
 ```
 
 ---
@@ -762,7 +732,7 @@ This gives you positions (grid working?), dimensions (size differentiation?), an
 
 ## 10. Complete Worked Example: Button Component
 
-This shows a sequence of `.figma.ts` runs for a Button component, including state passing between runs. Replace `RUN_ID` and variable IDs with actual values from the state ledger.
+This shows a sequence of `.figma.ts` runs for a Button component, including exact IDs passed between runs. Replace every placeholder with values from the caller-owned ledger.
 
 ### Call 1: Create the component page
 
@@ -771,10 +741,10 @@ This shows a sequence of `.figma.ts` runs for a Button component, including stat
 **State output:** `{ pageId }`
 
 ```javascript
-let page = figma.root.children.find(p => p.name === 'Button');
-if (!page) { page = figma.createPage(); page.name = 'Button'; }
-page.setSharedPluginData('dsb', 'run_id', 'ds-build-2024-001');
-page.setSharedPluginData('dsb', 'key', 'page/button');
+const pageMatches = figma.root.children.filter((page) => page.name === 'Button');
+if (pageMatches.length > 1) throw new Error('Button page is ambiguous; reconcile the ledger first.');
+const page = pageMatches[0] ?? figma.createPage();
+if (!pageMatches[0]) page.name = 'Button';
 return { pageId: page.id };
 ```
 
@@ -789,14 +759,10 @@ const PAGE_ID = 'PAGE_ID_FROM_STATE';
 const page = await figma.getNodeByIdAsync(PAGE_ID);
 await figma.setCurrentPageAsync(page);
 
-// Idempotency check — use the sharedPluginData index instead of a per-node
-// findAll callback.
-const existing = page
-  .findAllWithCriteria({ sharedPluginData: { namespace: 'dsb', keys: ['key'] } })
-  .filter(n => n.getSharedPluginData('dsb', 'key') === 'doc/button');
-if (existing.length > 0) {
-  return { docFrameId: existing[0].id };
-}
+const existing = page.findAllWithCriteria({ types: ['FRAME'] })
+  .filter((node) => node.name === 'Button / Documentation');
+if (existing.length > 1) throw new Error('Documentation frame is ambiguous on the recorded page.');
+if (existing.length === 1) return { docFrameId: existing[0].id };
 
 await figma.loadFontAsync({ family: 'Inter', style: 'Bold' });
 await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
@@ -826,9 +792,6 @@ desc.characters = 'Buttons allow users to take actions with a single tap. Use Pr
 desc.layoutSizingHorizontal = 'FILL';
 docFrame.appendChild(desc);
 
-docFrame.setSharedPluginData('dsb', 'run_id', 'ds-build-2024-001');
-docFrame.setSharedPluginData('dsb', 'key', 'doc/button');
-
 return { docFrameId: docFrame.id };
 ```
 
@@ -847,7 +810,6 @@ return { docFrameId: docFrame.id };
 **State output:** `{ variantIds: ['id1', 'id2', ..., 'id18'] }`
 
 ```javascript
-const RUN_ID = 'ds-build-2024-001';
 const BASE_ID = 'BASE_COMP_ID_FROM_STATE';
 const PAGE_ID = 'PAGE_ID_FROM_STATE';
 // Variable IDs from state ledger:
@@ -909,8 +871,6 @@ for (const size of axes.Size) {
         { type: 'SOLID', color: { r: 1, g: 1, b: 1 } }, 'color', txV
       )];
 
-      clone.setSharedPluginData('dsb', 'run_id', RUN_ID);
-      clone.setSharedPluginData('dsb', 'key', `component/button/variant/${size}/${style}/${state}`);
       components.push(clone);
     }
   }

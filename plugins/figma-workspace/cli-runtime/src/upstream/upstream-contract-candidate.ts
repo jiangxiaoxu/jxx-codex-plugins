@@ -201,11 +201,7 @@ export async function reportFigmaUpstreamContractCandidate(options: {
   const validated = await validateCandidateCore(options, {
     replaceStoredDispositions: options.dispositions !== undefined,
   });
-  const dispositionFile = options.dispositions ?? {
-    schemaVersion: 1 as const,
-    candidateId: options.candidateId,
-    dispositions: [],
-  };
+  const dispositionFile = options.dispositions ?? validated.dispositions;
   assertDispositionFile(dispositionFile, options.candidateId);
   const report = createFigmaUpstreamContractSemanticReport({
     candidateId: options.candidateId,

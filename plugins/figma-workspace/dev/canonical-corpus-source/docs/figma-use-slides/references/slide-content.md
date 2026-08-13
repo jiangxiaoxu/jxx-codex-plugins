@@ -73,7 +73,7 @@ return { createdNodeIds: [rect.id] };
 
 ## Adding images to a slide
 
-Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for downloads. Native scripts may also create an `Image` with `figma.createImage(data)` or `figma.createImageAsync(src)` and use its hash in an `IMAGE` paint. Validate the resulting slide with `figma:capture`.
+Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for downloads. Do not call `figma.createImageAsync(src)`: this host rejects it. A native `figma.createImage(data)` path is permitted only after the current host has verified it for already-local bytes; otherwise use the asset workflow. Validate the resulting slide with `figma:capture`.
 
 ## Using auto-layout within slides
 
@@ -90,13 +90,15 @@ const container = figma.createAutoLayout("VERTICAL", {
 });
 
 slide.appendChild(container);
-container.layoutSizingHorizontal = "FILL";
+container.resize(slide.width - 80, container.height);
 container.layoutSizingVertical = "HUG";
+container.x = 40;
+container.y = 40;
 
 return { createdNodeIds: [container.id] };
 ```
 
-Remember: `layoutSizingHorizontal/Vertical = 'FILL'` must be set **after** `appendChild`.
+Slides are not auto-layout parents. Their direct children cannot use `FILL`; set a concrete width after `appendChild` instead. Use `FILL` only for a child already appended to a real auto-layout container.
 
 ## Working with components
 

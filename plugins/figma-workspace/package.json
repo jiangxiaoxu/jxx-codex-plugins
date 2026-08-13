@@ -1,6 +1,6 @@
 {
   "name": "@jxx-codex-plugins/figma-workspace",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Stateless fixed-leaf Node.js command entrypoints backed by one typed Figma workspace runtime.",
   "type": "module",
   "main": "./scripts/server.mjs",
@@ -49,6 +49,7 @@
     "login:figma-http": "node cli-runtime/scripts/login-figma-http.mjs",
     "oauth-cache:path": "python scripts/resolve-oauth-cache-path.py",
     "update:upstream-snapshot": "node scripts/update-upstream-corpus.mjs update-upstream-snapshot",
+    "refresh:upstream-changes": "node scripts/update-upstream-corpus.mjs refresh-upstream-changes",
     "build:canonical-corpus": "node scripts/update-upstream-corpus.mjs build-canonical-corpus",
     "test": "node --test --test-concurrency=1 tests/*.test.mjs",
     "test:live": "node scripts/test-live.mjs"

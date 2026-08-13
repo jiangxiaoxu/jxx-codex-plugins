@@ -165,6 +165,36 @@ test("all 87 canonical mirrors are adapted, CLI-compatible Markdown", async () =
   }
 });
 
+test("figma-use guidance preserves PluginData and compatibility-safe instance handling", async () => {
+  const figmaUseRoot = join(sourceRoot, "docs", "figma-use");
+  const [skill, gotchas, componentPatterns] = await Promise.all([
+    readFile(join(figmaUseRoot, "SKILL.md"), "utf8"),
+    readFile(join(figmaUseRoot, "references", "gotchas.md"), "utf8"),
+    readFile(join(figmaUseRoot, "references", "component-patterns.md"), "utf8"),
+  ]);
+  const privatePluginDataCall = /\.\s*(?:get|set)PluginData\s*\(/u;
+
+  for (const [name, text] of [
+    ["figma-use/SKILL.md", skill],
+    ["figma-use/references/gotchas.md", gotchas],
+    ["figma-use/references/component-patterns.md", componentPatterns],
+  ]) {
+    assert.doesNotMatch(text, privatePluginDataCall, `${name} emits unsupported private PluginData`);
+  }
+  assert.doesNotMatch(gotchas, /\bpluginData\s*:/u, "gotchas publishes private PluginData criteria");
+  assert.match(skill, /live host contract explicitly prohibits `setPluginData`/u);
+  assert.match(skill, /direct host run separately rejected `getPluginData`/u);
+  assert.match(skill, /Use a compatibility-safe default for non-SLOT geometry below an `INSTANCE`/u);
+  assert.match(skill, /may reject `relative-transform`/u);
+  assert.match(skill, /SLOT` with `appendChild\(\)` and use `resetSlot\(\)`/u);
+  assert.match(gotchas, /## Instance-descendant geometry: confirm the host behavior/u);
+  assert.match(componentPatterns, /geometry-specific host condition/u);
+  for (const text of [skill, gotchas, componentPatterns]) {
+    assert.doesNotMatch(text, /(?:upstream|Figma Plugin API)[^\n]{0,120}(?:hard ban|immutable|forbids)/iu);
+    assert.doesNotMatch(text, /every descendant inside an `INSTANCE`[^\n]{0,120}(?:immutable|do not modify)/iu);
+  }
+});
+
 test("plugin skills tree exposes only the Figma Workspace router skill", async () => {
   const skillFiles = (await readdir(skillsRoot, { recursive: true }))
     .map((path) => path.replaceAll("\\", "/"))

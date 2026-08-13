@@ -7,7 +7,7 @@ Check that specific nodes from a completed creation step still exist and meet ex
 ## Prerequisites and inputs
 
 - An explicit Design file URL or fileKey.
-- The node IDs must come from a previous command result or inspected state ledger; never guess them.
+- The node IDs must come from a previous command result or caller-owned external ledger; never guess them.
 - Replace the sample values in `checks` with the expected nodes and properties for the reviewed creation step.
 
 ## Safety boundary

@@ -5,7 +5,7 @@ Use this reference for non-bypassable runtime boundaries. Runtime schemas and pu
 ## Hard Boundaries
 
 - Read the selected command's help before execution. Do not infer raw transport options or approximate strict JSON input.
-- Every remote action must receive an explicit stable Figma file or node target. The runtime rejects bare node IDs and conflicts between explicit target sources.
+- A remote action that requires a Figma file or node target must receive it explicitly. `figma:upstream:list` and `figma:upstream:read` are targetless; `figma:upstream:call` follows the selected live schema. The runtime rejects bare node IDs and conflicts between explicit target sources.
 - TypeScript parse/type errors and bundled Figma Plugin API typing errors block `.figma.ts` execution. Repair their source locations before dispatch.
 - Validate output and capture paths through the CLI. Managed roots, existing ancestors, and final targets reject symbolic links, Windows junctions, and other reparse points even when they resolve inside the root.
 - Wrapped script payloads are capped at 50,000 UTF-8 bytes. Public JSON files, stdin, and asset manifests are capped at 256 KiB; manifests have at most 64 items; each upload, download, or capture is capped at 16 MiB; and cumulative command I/O is capped at 64 MiB.
@@ -16,5 +16,6 @@ Use this reference for non-bypassable runtime boundaries. Runtime schemas and pu
 ## Execution Guardrails
 
 - `executionOutcome: "outcome_unknown"` is not permission to retry. Inspect or read back the intended Figma state and reconcile it before another mutation.
+- `executionOutcome: "failed_atomic"` means Figma directly returned a `use_figma` script error and confirmed no file changes. Repair and retry safely.
 - A queued capture failure after `executionOutcome: "succeeded"` requires a standalone capture retry, not a mutation replay. A `Status: failed after execution` result requires repair of the reported local stage while preserving the confirmed remote result.
-- Valid native Figma Plugin API operations are not subject to semantic AST policy. Keep mutations intentional, use the API appropriate to the surface, and verify visible changes with capture.
+- `.figma.ts` preflight rejects private `getPluginData` and `setPluginData` calls for Figma host compatibility. Apart from parse/type checks and that narrow exception, it has no generic semantic AST policy, including no general `INSTANCE` geometry or layout preflight. Keep mutations intentional, use the API appropriate to the surface, and verify visible changes with capture.

@@ -4,9 +4,9 @@ Create a small component set by generating the Cartesian product of variant axes
 
 ## Preconditions and inputs
 
-- Use a Figma Design file and replace the component name, axes, dimensions, page ID, and optional colors with project-approved values.
+- Use a Figma Design file and replace the component name, axes, dimensions, page ID, and optional colors with project-approved values from the external ledger.
 - Keep the generated matrix deliberately small. If axes produce more than about 30 combinations, split the component or redesign its property model before generating it.
-- Inspect the destination page and existing component names first to avoid duplicates. This example fails if the target page or a same-named component set already exists.
+- The external ledger is the primary identity source. This script verifies the target page ID and uses the exact component-set name only for a narrow duplicate check inside that page.
 - The generated variants have fixed visual values. Bind approved variables in a separate reviewed step when your design system requires token bindings.
 
 ## Script
@@ -30,8 +30,10 @@ const page = await figma.getNodeByIdAsync(pageId);
 if (!page || page.type !== "PAGE") throw new Error(`Expected a PAGE at ${pageId}.`);
 await figma.setCurrentPageAsync(page);
 
-if (page.findOne((node) => node.type === "COMPONENT_SET" && node.name === componentName)) {
-  throw new Error(`A component set named ${componentName} already exists on this page.`);
+const existingSets = page.findAllWithCriteria({ types: ["COMPONENT_SET"] })
+  .filter((node) => node.name === componentName);
+if (existingSets.length !== 0) {
+  throw new Error(`Component set ${componentName} already exists or is ambiguous on the recorded page; reconcile its ledger entry first.`);
 }
 
 const axisNames = Object.keys(variantAxes);
@@ -78,6 +80,7 @@ componentSet.x = 480;
 componentSet.y = 80;
 
 return {
+  pageId: page.id,
   componentSetId: componentSet.id,
   componentSetName: componentSet.name,
   variantCount: componentSet.children.length,
@@ -93,4 +96,4 @@ Run `npm --silent run figma:run -- --help` first. Save the reviewed local TypeSc
 npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
-This is not automatically executable. Replace every placeholder and review the proposed variant count, page, name, layout, and colors before running it. After execution, inspect the returned IDs and visually verify that the variants form the expected grid rather than overlapping.
+This is not automatically executable. Replace every placeholder and review the proposed variant count, page, name, layout, and colors before running it. After execution, read back the returned IDs, record them in the external ledger, and visually verify that the variants form the expected grid rather than overlapping. For `outcome_unknown`, reconcile the exact page/set/variant IDs before creating anything else. For `failed_atomic`, retain the direct host/script diagnostics, repair the script, and retry safely because Figma confirmed no file changes.

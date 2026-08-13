@@ -86,6 +86,108 @@ test("run returns not_started for TypeScript diagnostics and does not dispatch",
   await client.close();
 });
 
+test("run blocks private plugin data calls before dispatch", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+  const result = await client.run({
+    file: FILE_URL,
+    source: "const node = figma.currentPage; node.setPluginData('key', 'value'); return {};",
+  });
+  const diagnostic = result.diagnostics.find((entry) => entry.code === "FIGMA_WORKSPACE_PRIVATE_PLUGIN_DATA_UNSUPPORTED");
+
+  assert.equal(result.ok, false);
+  assert.equal(result.phase, "preflight");
+  assert.equal(result.executionOutcome, "not_started");
+  assert.equal(diagnostic.severity, "fatal");
+  assert.match(diagnostic.suggestion, /stable node IDs or names.*narrow read-back/iu);
+  assert.equal(calls.some((entry) => entry.kind === "call"), false);
+  await client.close();
+});
+
+test("run marks direct returned use_figma script errors as atomic failures", async () => {
+  for (const [description, response, expectedError] of [
+    [
+      "structured ok:false error",
+      { content: [{ type: "text", text: JSON.stringify({ ok: false, error: { message: "Plugin host rejected the mutation.", code: "FIGMA_HOST_MUTATION_REJECTED" } }) }] },
+      { message: "Plugin host rejected the mutation.", code: "FIGMA_HOST_MUTATION_REJECTED" },
+    ],
+    [
+      "bare Error text",
+      { content: [{ type: "text", text: "Error: Plugin host rejected the mutation." }] },
+      { message: "Error: Plugin host rejected the mutation.", code: "FIGMA_UPSTREAM_TEXT_ERROR" },
+    ],
+  ]) {
+    const calls = [];
+    const client = createFigmaWorkspaceClient({
+      client: fakeUpstream(calls, () => response),
+    });
+    try {
+      const result = await client.run({ file: FILE_URL, source: "return {};" });
+      assert.equal(result.ok, false, description);
+      assert.equal(result.executionOutcome, "failed_atomic", description);
+      assert.equal(result.upstreamError.message, expectedError.message, description);
+      assert.equal(result.upstreamError.code, expectedError.code, description);
+      assert.match(result.retryGuidance, /made no file changes.*retry safely/iu, description);
+      assert.equal(calls.some((entry) => entry.kind === "call" && entry.name === "use_figma"), true, description);
+    } finally {
+      await client.close();
+    }
+  }
+});
+
+test("run keeps a truncated use_figma response outcome unknown", async () => {
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream([], () => ({
+      content: [{ type: "text", text: "truncated to 8KB" }],
+    })),
+  });
+  try {
+    const result = await client.run({ file: FILE_URL, source: "return {};" });
+    assert.equal(result.ok, false);
+    assert.equal(result.executionOutcome, "outcome_unknown");
+    assert.equal(result.upstreamError.code, "FIGMA_UPSTREAM_TRUNCATED");
+    assert.match(result.retryGuidance, /Do not rerun the mutation blindly/u);
+  } finally {
+    await client.close();
+  }
+});
+
+test("run keeps oversized host-error diagnostics in the sidecar", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-host-error-sidecar-"));
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream([], () => ({
+      content: [{ type: "text", text: JSON.stringify({
+        ok: false,
+        error: {
+          code: "FIGMA_HOST_REJECTED",
+          message: "Figma host rejected the mutation.",
+          details: { diagnosticPayload: "x".repeat(2_048) },
+        },
+      }) }],
+    })),
+  });
+  try {
+    const result = await client.run({
+      file: FILE_URL,
+      source: "return {};",
+      outputDir: directory,
+      inlineResultLimit: 64,
+    });
+    assert.equal(result.executionOutcome, "failed_atomic");
+    assert.equal(result.upstreamError.code, "FIGMA_HOST_REJECTED");
+    assert.equal(result.upstreamError.message, "Figma host rejected the mutation.");
+    assert.equal(result.upstreamError.details, undefined);
+    assert.deepEqual(
+      result.inlineResultLimit.omitted.map(({ field }) => field).sort(),
+      ["upstream.result", "upstreamError.details"],
+    );
+    assert.match(await readFile(result.outputFiles.debugFile.path, "utf8"), /diagnosticPayload/u);
+  } finally {
+    await client.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("stable target URL normalizes URL node-id and ignores slug/t parameter", async () => {
   const calls = [];
   const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });

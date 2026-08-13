@@ -270,6 +270,113 @@ test("candidate report and check preserve accepted snapshot until guarded promot
   }
 });
 
+test("candidate re-report preserves stored dispositions and rejects invalid replacements", async () => {
+  const root = await mkdtemp(resolve(tmpdir(), "figma-contract-dispositions-"));
+  const acceptedSnapshotPath = resolve(root, "accepted.json");
+  const candidateRoot = resolve(root, "candidates");
+  const candidateId = "preserve-dispositions";
+  try {
+    const accepted = wrapperCompatibleSnapshot();
+    const candidate = structuredClone(accepted);
+    candidate.tools.get_metadata.description = "Candidate metadata description.";
+    await writeFile(acceptedSnapshotPath, serializeFigmaUpstreamContractSnapshot(accepted), "utf8");
+    await captureFigmaUpstreamContractCandidate({
+      candidateRoot,
+      candidateId,
+      acceptedSnapshotPath,
+      snapshot: candidate,
+    });
+    const initialReport = await reportFigmaUpstreamContractCandidate({
+      candidateRoot,
+      candidateId,
+      acceptedSnapshotPath,
+    });
+    const disposition = initialReport.entities[0].changes[0];
+    const storedDispositions = {
+      schemaVersion: 1,
+      candidateId,
+      dispositions: [{
+        changeId: disposition.changeId,
+        decision: "adapted-wrapper",
+        rationale: "Reviewed and adapted in the wrapper contract.",
+      }],
+    };
+    await reportFigmaUpstreamContractCandidate({
+      candidateRoot,
+      candidateId,
+      acceptedSnapshotPath,
+      dispositions: storedDispositions,
+    });
+    const preservedReport = await reportFigmaUpstreamContractCandidate({
+      candidateRoot,
+      candidateId,
+      acceptedSnapshotPath,
+    });
+    assert.equal(preservedReport.summary.unresolvedChanges, 0);
+    assert.equal(
+      preservedReport.entities[0].changes[0].disposition.decision,
+      "adapted-wrapper",
+    );
+
+    const replacementDispositions = {
+      ...storedDispositions,
+      dispositions: [{
+        ...storedDispositions.dispositions[0],
+        decision: "accepted-upstream",
+      }],
+    };
+    await reportFigmaUpstreamContractCandidate({
+      candidateRoot,
+      candidateId,
+      acceptedSnapshotPath,
+      dispositions: replacementDispositions,
+    });
+    assert.equal(
+      (await reportFigmaUpstreamContractCandidate({
+        candidateRoot,
+        candidateId,
+        acceptedSnapshotPath,
+      })).entities[0].changes[0].disposition.decision,
+      "accepted-upstream",
+    );
+
+    await assert.rejects(
+      reportFigmaUpstreamContractCandidate({
+        candidateRoot,
+        candidateId,
+        acceptedSnapshotPath,
+        dispositions: { ...replacementDispositions, schemaVersion: 2 },
+      }),
+      /Disposition file .* invalid/iu,
+    );
+    await assert.rejects(
+      reportFigmaUpstreamContractCandidate({
+        candidateRoot,
+        candidateId,
+        acceptedSnapshotPath,
+        dispositions: {
+          ...replacementDispositions,
+          dispositions: [{
+            ...replacementDispositions.dispositions[0],
+            changeId: "a".repeat(24),
+          }],
+        },
+      }),
+      /unknown or stale semantic change/iu,
+    );
+    assert.equal(
+      (await reportFigmaUpstreamContractCandidate({
+        candidateRoot,
+        candidateId,
+        acceptedSnapshotPath,
+      })).entities[0].changes[0].disposition.decision,
+      "accepted-upstream",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("promotion lock serializes final baseline check and atomic rename", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "figma-contract-race-"));
   const acceptedSnapshotPath = resolve(root, "accepted.json");

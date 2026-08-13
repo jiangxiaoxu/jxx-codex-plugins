@@ -4,7 +4,7 @@ Use this reference when an invocation writes local outputs or needs same-machine
 
 ## Invocation-Local Outputs
 
-- The CLI has no persistent task context, workspace record, history, or file-selection store. Pass the Figma target with every remote invocation.
+- The CLI has no persistent task context, workspace record, history, or file-selection store. Pass a Figma target with every invocation that requires one; targetless upstream lookup never inherits one.
 - Small results remain readable in Restricted Markdown stdout under the default inline threshold. Keep that default for normal agent calls; do not increase it merely to avoid a sidecar. Consider a larger threshold only when the user needs the complete result rendered inline for direct reading or visual presentation.
 - When stdout names `outputFiles.cliResultFile`, treat that complete JSON file as the machine-readable result. Inspect its keys, paths, types, and structure, use targeted extraction to read only the fields needed for the task, then expand further only when necessary. Never parse the Restricted Markdown stdout envelope as JSON.
 - Provide explicit `--output-dir`, `--image-file`, or download output options when another shell step needs a predictable local location. Do not derive paths from a prior invocation.
@@ -12,7 +12,8 @@ Use this reference when an invocation writes local outputs or needs same-machine
 
 ## Mutation Coordination And Recovery
 
-- Mutating calls are serialized per Figma fileKey through a temporary same-machine lock. Read-only calls, captures, and asset downloads do not take that lock.
+- The temporary same-machine fileKey lock covers `figma:run`, `figma:assets:apply`, and `figma:upstream:call` only when that call resolves a fileKey. It does not cover every mutation; read-only calls, captures, and asset downloads do not take it.
 - The lock coordinates local processes only. It does not provide distributed, network-share, shared-volume, or power-loss durability.
+- When Figma directly returns a `use_figma` script error, `executionOutcome: "failed_atomic"` and `Status: failed atomically` confirm no file changes. Stdout has a compact error summary; the sidecar keeps complete diagnostics. Repair and retry the script safely. Read back and reconcile only for `outcome_unknown`.
 - If local artifact or lock post-processing fails after a confirmed remote mutation, stdout reports `Status: failed after execution`. Preserve the result and repair the named local stage instead of rerunning the mutation.
 - Artifacts can contain sensitive Figma data. Retain them only for the caller's recovery needs, then remove them through the owning shell workflow.

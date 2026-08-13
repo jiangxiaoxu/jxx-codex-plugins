@@ -5,7 +5,7 @@ Bind existing color and number variables to a component's visual properties. Thi
 ## Preconditions and inputs
 
 - Use a Figma Design file and an existing component node.
-- Replace `COMPONENT_ID` and every `VariableID:...` placeholder with IDs returned by your own inspection or state ledger. Never guess IDs.
+- Replace `COMPONENT_ID` and every `VariableID:...` placeholder with IDs returned by your own inspection or caller-owned external ledger. Never guess IDs.
 - Ensure each variable has a scope compatible with the property it will control: fills/strokes need color variables; padding, gap, and radius need number variables.
 - Review whether replacing the first fill or stroke is intended. This example preserves later paints, but it is still a mutation.
 
@@ -86,4 +86,4 @@ Execute it with the explicit Design file target:
 npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
-This is not automatically executable: replace all placeholders, review the resolved component and variables, then inspect the returned IDs and bindings before continuing. For a component set, apply the script to each intended variant ID; do not assume a binding on the set changes every child.
+This is not automatically executable: replace all placeholders, review the resolved component and variables, then inspect the returned IDs and bindings before recording them in the external ledger. For `outcome_unknown`, reconcile exact IDs before continuing. For `failed_atomic`, retain the direct host/script diagnostics, repair the script, and retry safely because Figma confirmed no file changes. For a component set, apply the script to each intended variant ID; do not assume a binding on the set changes every child.

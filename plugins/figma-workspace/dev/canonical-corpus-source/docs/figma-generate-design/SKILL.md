@@ -53,14 +53,7 @@ You need three things from the design system: **components** (buttons, cards, et
 #### 2a: Discover components
 
 
-**2a-i — REQUIRED: Check Code Connect for needed components.** Starting from the component list you built in Step 1, check whether each component has a Code Connect file in the codebase. Code Connect files live next to the component source and are named by platform:
-
-- **TypeScript/JS**: `*.figma.ts`, `*.figma.js`
-- **React (parser-based)**: `*.figma.tsx`
-- **Kotlin/Compose**: `.kt` files containing `@FigmaConnect`
-- **Swift**: `.swift` files containing `FigmaConnect`
-
-For each component you need (e.g., Button, Card, Input), search for its Code Connect file — glob or grep by component name (e.g., `**/Button.figma.tsx`, `**/Card.figma.ts`). Only read files that match components you actually need.
+**2a-i — REQUIRED: Check Code Connect for needed components.** Starting from the component list you built in Step 1, check whether each component has a parserless Code Connect template in the codebase. This workflow supports only `*.figma.ts` files that use `figma.code`; do not create or use `.figma.tsx` / `figma.connect()` artifacts. For each component you need (e.g., Button, Card, Input), search by component name (for example, `**/Button.figma.ts`, `**/Card.figma.ts`). Only read files that match components you actually need.
 
 From each matching Code Connect file, extract the Figma component URL. Parse `fileKey` and `nodeId` from the URL (convert hyphens to colons: `123-456` → `123:456`). Then resolve component keys via a local `.figma.ts` script executed with `figma:run`:
 
@@ -111,7 +104,7 @@ When the libraries result reports a next offset, call `figma:libraries` again wi
 
 This is especially useful when the file has many libraries and you want targeted results (e.g. searching only within "iOS 26" or "Material 3" instead of getting matches from every library).
 
-**Search broadly** — try multiple terms and synonyms (e.g., "button", "input", "nav", "card", "accordion", "header", "footer", "tag", "avatar", "toggle", "icon", etc.). Use `--components` to include components and `--no-variables --no-styles` when only component results are needed.
+**Search broadly through separate calls** — each `figma:design-system` query must express exactly one intent. Search synonyms or alternatives in separate calls (which may run in parallel), for example one call each for `button`, `input`, and `nav`; do not combine them into one query. Use `--components` to include components and `--no-variables --no-styles` when only component results are needed.
 
 **Include component properties** in your map — you need to know which TEXT properties each component exposes for text overrides. Create a temporary instance, read its `componentProperties` (and those of nested instances), then remove the temp instance.
 
@@ -138,7 +131,7 @@ Component Map:
 >
 > **Never conclude "no variables exist" based solely on `getLocalVariableCollectionsAsync()` returning empty.** Always also run `figma:design-system` with `includeVariables: true` to check for library variables before deciding to create your own.
 
-**Query strategy:** `figma:design-system` matches against **variable names** (e.g., "Gray/gray-9", "core/gray/100", "space/400"), not categories. Run multiple short, simple queries in parallel rather than one compound query:
+**Query strategy:** `figma:design-system` matches against **variable names** (e.g., "Gray/gray-9", "core/gray/100", "space/400"), not categories. Run multiple short, single-intent queries in parallel rather than one compound query:
 
 - **Primitive colors:** "gray", "red", "blue", "green", "white", "brand"
 - **Semantic colors:** "background", "foreground", "border", "surface", "text"
@@ -423,7 +416,7 @@ Follow the outcome-aware error recovery process from [figma-use](canonical:figma
 1. **STOP** on error and read `executionOutcome`, diagnostics, and `retryGuidance`.
 2. For `not_started`, repair the validation, preflight, connection, or auth cause before retrying.
 3. For `succeeded`, preserve the confirmed result and do not rerun a mutation to recover capture or local persistence.
-4. For `outcome_unknown`, inspect or read back the intended section using returned IDs, stable names, or dedicated PluginData tags, then reconcile any partial or complete effect.
+4. For `failed_atomic`, retain the direct host/script diagnostics, repair the script, and retry safely: Figma confirmed the file is unchanged. For `outcome_unknown`, inspect returned IDs first, then use deterministic names and a narrow parent/bounds readback to reconcile any partial or complete effect. Shared PluginData is only an optional, host-verified supplement and never a prerequisite.
 5. Run only work confirmed to be missing; never blindly rerun an `outcome_unknown` mutation.
 
 Because this skill works incrementally (one section per call), errors are naturally scoped to a single section. Previous sections from successful calls remain intact.
@@ -431,7 +424,7 @@ Because this skill works incrementally (one section per call), errors are natura
 ## Best Practices
 
 - **Always search before building.** The design system likely has the component, variable, or style you need. Manual construction and hardcoded values should be the exception, not the rule.
-- **Search broadly.** Try synonyms and partial terms. A "NavigationPill" might be found under "pill", "nav", "tab", or "chip". For variables, search "color", "spacing", "radius", etc.
+- **Search broadly through separate calls.** Try synonyms and partial terms one query at a time. A "NavigationPill" might be found by separate `pill`, `nav`, `tab`, and `chip` searches. For variables, separately search `color`, `spacing`, and `radius`.
 - **Prefer design system tokens over hardcoded values.** Use variable bindings for colors, spacing, and radii. Use text styles for typography. Use effect styles for shadows. This keeps the screen linked to the design system.
 - **Prefer component instances over manual builds.** Instances stay linked to the source component and update automatically when the design system evolves.
 - **Componentize by default.** Build repeated or reusable elements as a component once, then place instances. Do not ship a flat tree of one-off frames that needs a second "make it componentized" pass.

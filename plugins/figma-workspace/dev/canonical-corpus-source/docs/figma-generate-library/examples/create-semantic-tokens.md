@@ -6,6 +6,7 @@ Create a small, reviewed batch of semantic Figma variables that aliases existing
 
 - Create the target collection and its modes first, and create the primitive variables to be referenced.
 - Inspect local variables and replace every `TODO` placeholder with actual collection names, primitive names, CSS syntax, and approved token definitions.
+- Provide the primitive collection ID from the external ledger for every alias. A primitive name alone is not a sufficient recovery identity.
 - Primitive targets must be local to the same Figma file and have the same resolved type as the semantic variable.
 - Save this file as `C:/work/project/figma-scripts/create-semantic-tokens.figma.ts`.
 
@@ -23,8 +24,8 @@ const tokens = [
     name: "TODO: color/bg/primary",
     type: "COLOR",
     aliases: {
-      "TODO: Light": "TODO: blue/500",
-      "TODO: Dark": "TODO: blue/400",
+      "TODO: Light": { collectionId: "VariableCollectionId:PRIMITIVES", name: "TODO: blue/500" },
+      "TODO: Dark": { collectionId: "VariableCollectionId:PRIMITIVES", name: "TODO: blue/400" },
     },
     scopes: ["FRAME_FILL", "SHAPE_FILL"],
     webCodeSyntax: "TODO: var(--color-bg-primary)",
@@ -32,13 +33,13 @@ const tokens = [
 ] as const;
 
 const collections = await figma.variables.getLocalVariableCollectionsAsync();
-const collection = collections.find((candidate) => candidate.name === collectionName);
-if (!collection) {
-  throw new Error(`Local variable collection \"${collectionName}\" was not found.`);
+const collectionMatches = collections.filter((candidate) => candidate.name === collectionName);
+if (collectionMatches.length !== 1) {
+  throw new Error(`Expected exactly one local variable collection named \"${collectionName}\", found ${collectionMatches.length}.`);
 }
+const collection = collectionMatches[0];
 
 const localVariables = await figma.variables.getLocalVariablesAsync();
-const variableByName = new Map(localVariables.map((variable) => [variable.name, variable]));
 const modeIdByName = new Map(collection.modes.map((mode) => [mode.name, mode.modeId]));
 
 for (const token of tokens) {
@@ -48,16 +49,20 @@ for (const token of tokens) {
     throw new Error(`Variable \"${token.name}\" already exists in \"${collectionName}\".`);
   }
 
-  for (const [modeName, primitiveName] of Object.entries(token.aliases)) {
-    const primitive = variableByName.get(primitiveName);
+  for (const [modeName, primitiveIdentity] of Object.entries(token.aliases)) {
+    const primitiveMatches = localVariables.filter((variable) =>
+      variable.variableCollectionId === primitiveIdentity.collectionId
+      && variable.name === primitiveIdentity.name,
+    );
     if (!modeIdByName.has(modeName)) {
       throw new Error(`Mode \"${modeName}\" is not present in \"${collectionName}\".`);
     }
-    if (!primitive) {
-      throw new Error(`Primitive variable \"${primitiveName}\" was not found.`);
+    if (primitiveMatches.length !== 1) {
+      throw new Error(`Expected one primitive named \"${primitiveIdentity.name}\" in its recorded collection, found ${primitiveMatches.length}.`);
     }
+    const primitive = primitiveMatches[0];
     if (primitive.resolvedType !== token.type) {
-      throw new Error(`Primitive \"${primitiveName}\" has type ${primitive.resolvedType}, expected ${token.type}.`);
+      throw new Error(`Primitive \"${primitiveIdentity.name}\" has type ${primitive.resolvedType}, expected ${token.type}.`);
     }
   }
 }
@@ -68,13 +73,16 @@ for (const token of tokens) {
   semantic.scopes = [...token.scopes];
   semantic.setVariableCodeSyntax("WEB", token.webCodeSyntax);
 
-  for (const [modeName, primitiveName] of Object.entries(token.aliases)) {
+  for (const [modeName, primitiveIdentity] of Object.entries(token.aliases)) {
     const modeId = modeIdByName.get(modeName);
-    const primitive = variableByName.get(primitiveName);
-    if (!modeId || !primitive) {
-      throw new Error("Token validation unexpectedly lost a required mode or primitive.");
+    const primitiveMatches = localVariables.filter((variable) =>
+      variable.variableCollectionId === primitiveIdentity.collectionId
+      && variable.name === primitiveIdentity.name,
+    );
+    if (!modeId || primitiveMatches.length !== 1) {
+      throw new Error("Token validation unexpectedly lost a required mode or exact primitive identity.");
     }
-    semantic.setValueForMode(modeId, figma.variables.createVariableAlias(primitive));
+    semantic.setValueForMode(modeId, figma.variables.createVariableAlias(primitiveMatches[0]));
   }
 
   created.push({ name: semantic.name, id: semantic.id });

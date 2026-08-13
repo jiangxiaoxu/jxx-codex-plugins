@@ -21,6 +21,7 @@ Use this reference for an end-to-end Figma task. Command-specific help and runti
 ## Recover The Result
 
 - `not_started` means validation, preflight, connection, or auth stopped execution before dispatch. Repair that cause, then rerun.
+- `failed_atomic` means Figma directly returned a `use_figma` script error. Figma confirmed the script made no file changes, so repair it and retry safely.
 - `succeeded` confirms remote script execution. If queued capture processing failed, use standalone `figma:capture`; do not rerun the mutation script.
-- `outcome_unknown` means dispatch occurred but completion cannot be confirmed. Inspect, read back, or reconcile the intended effect before deciding whether a retry is safe.
+- `outcome_unknown` means dispatch occurred but completion cannot be confirmed, for example after a timeout, response loss, or truncation. Inspect, read back, or reconcile before deciding whether a retry is safe.
 - `Status: failed after execution` means a local artifact or lock stage failed after a confirmed remote operation. Repair the reported local stage and preserve the remote result.

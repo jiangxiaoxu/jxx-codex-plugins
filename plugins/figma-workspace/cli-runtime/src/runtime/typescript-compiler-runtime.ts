@@ -150,6 +150,12 @@ export function compileFigmaWorkspaceTypescriptSource(
       sourceFile,
       syntacticDiagnosticKeys.has(typescriptDiagnosticIdentity(diagnostic)),
     ));
+  diagnostics.push(...privatePluginDataMemberCallDiagnostics(
+    scriptPath,
+    sourceFile,
+    program.getTypeChecker(),
+    figmaTypingsPath,
+  ));
   const transpiled = ts.transpileModule(wrappedSource, {
     fileName: scriptPath,
     compilerOptions,
@@ -170,6 +176,100 @@ export function compileFigmaWorkspaceTypescriptSource(
     source: transpiledBody ?? source,
     diagnostics,
   };
+}
+
+function privatePluginDataMemberCallDiagnostics(
+  scriptPath: string,
+  sourceFile: ts.SourceFile | undefined,
+  checker: ts.TypeChecker,
+  figmaPluginTypingsPath: string,
+): FigmaWorkspaceTypescriptFileDiagnostic[] {
+  if (!sourceFile) {
+    return [];
+  }
+  const diagnostics: FigmaWorkspaceTypescriptFileDiagnostic[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const call = privatePluginDataMemberCall(node.expression);
+      if (call && isFigmaPrivatePluginDataMemberCall(checker, call, figmaPluginTypingsPath)) {
+        const location = sourceFile.getLineAndCharacterOfPosition(node.expression.getStart(sourceFile));
+        const sourceLine = location.line + 1 - TYPESCRIPT_SOURCE_LINE_OFFSET;
+        diagnostics.push({
+          code: "FIGMA_WORKSPACE_PRIVATE_PLUGIN_DATA_UNSUPPORTED",
+          severity: "fatal",
+          message: `Figma's use_figma host rejects private plugin data calls such as ${call.method}().`,
+          suggestion: "Do not use private plugin data. Return stable node IDs or names from the script and perform a narrow read-back after the mutation; use shared plugin data only when its visibility semantics are appropriate.",
+          docsHint: "Figma Workspace CLI: figma:run --help",
+          source: {
+            scriptPath,
+            ...(sourceLine >= 1 ? { line: sourceLine, column: location.character + 1 } : {}),
+          },
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return diagnostics;
+}
+
+interface PrivatePluginDataMemberCall {
+  method: "getPluginData" | "setPluginData";
+  receiver: ts.Expression;
+}
+
+function privatePluginDataMemberCall(expression: ts.Expression): PrivatePluginDataMemberCall | undefined {
+  if (ts.isPropertyAccessExpression(expression)) {
+    const method = privatePluginDataMethodNameFromText(expression.name.text);
+    return method === undefined ? undefined : { method, receiver: expression.expression };
+  }
+  if (ts.isElementAccessExpression(expression) && expression.argumentExpression && ts.isStringLiteralLike(expression.argumentExpression)) {
+    const method = privatePluginDataMethodNameFromText(expression.argumentExpression.text);
+    return method === undefined ? undefined : { method, receiver: expression.expression };
+  }
+  return undefined;
+}
+
+function isFigmaPrivatePluginDataMemberCall(
+  checker: ts.TypeChecker,
+  call: PrivatePluginDataMemberCall,
+  figmaPluginTypingsPath: string,
+): boolean {
+  const property = checker.getPropertyOfType(checker.getTypeAtLocation(call.receiver), call.method);
+  const declarations = property?.getDeclarations();
+  return declarations !== undefined && declarations.length > 0 && declarations.every((declaration) =>
+    isFigmaPrivatePluginDataMemberDeclaration(declaration, call.method, figmaPluginTypingsPath));
+}
+
+function isFigmaPrivatePluginDataMemberDeclaration(
+  declaration: ts.Declaration,
+  method: PrivatePluginDataMemberCall["method"],
+  figmaPluginTypingsPath: string,
+): boolean {
+  return ts.isMethodSignature(declaration) &&
+    privatePluginDataMethodNameFromDeclaration(declaration.name) === method &&
+    ts.isInterfaceDeclaration(declaration.parent) &&
+    declaration.parent.name.text === "PluginDataMixin" &&
+    normalizeTypescriptFileName(declaration.getSourceFile().fileName) === figmaPluginDataMixinDeclarationPath(figmaPluginTypingsPath);
+}
+
+function privatePluginDataMethodNameFromDeclaration(
+  name: ts.PropertyName,
+): "getPluginData" | "setPluginData" | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) {
+    return privatePluginDataMethodNameFromText(name.text);
+  }
+  return undefined;
+}
+
+function figmaPluginDataMixinDeclarationPath(figmaPluginTypingsPath: string): string {
+  return normalizeTypescriptFileName(resolve(dirname(figmaPluginTypingsPath), "plugin-api.d.ts"));
+}
+
+function privatePluginDataMethodNameFromText(
+  name: string,
+): "getPluginData" | "setPluginData" | undefined {
+  return name === "getPluginData" || name === "setPluginData" ? name : undefined;
 }
 
 function createFigmaWorkspaceTypescriptCompilerOptions(): ts.CompilerOptions {

@@ -124,41 +124,38 @@ For EACH component (in dependency order: atoms before molecules), run the checkl
 7. **Alias semantics to primitives** — `{ type: 'VARIABLE_ALIAS', id: primitiveVar.id }`. Never duplicate raw values in semantic layer.
 8. **Position variants after combineAsVariants** — they stack at (0,0). Manually grid-layout + resize.
 9. **INSTANCE_SWAP for icons** — never create a variant per icon. Cap variant matrices: if Size × Style × State > 30 combinations, split into sub-component.
-10. **Deterministic naming** — use consistent, unique node names for idempotent cleanup and resumability. Track created node IDs via return values and the state ledger.
-11. **No destructive cleanup** — cleanup scripts identify nodes by name convention or returned IDs, not by guessing.
+10. **Deterministic names + exact IDs** — give each planned entity a stable, approved name and immediately record its returned ID in an external ledger. Names support narrow read-back only; they never authorize deletion.
+11. **No destructive discovery cleanup** — cleanup scripts accept only exact, reviewed ledger IDs. Never derive a removal set from names, prefixes, scans, or stale conversation state.
 12. **Validate before proceeding** — never build on unvalidated work. Use `figma:metadata` after every create and `figma:capture` plus `view_image` after each component.
 13. **Keep mutations sequential** — do not execute concurrent Figma write runs.
-14. **Never hallucinate Node IDs** — always read IDs from the state ledger returned by previous calls. Never reconstruct or guess an ID from memory.
+14. **Never hallucinate Node IDs** — use IDs returned by previous calls or recovered by a narrow read-back that verifies the expected parent, type, and exact deterministic name. Never reconstruct or guess an ID from memory.
 15. **Use local `.figma.ts` scripts** — keep reusable Plugin API logic in a checked script rather than a large inline transaction. The bundled `scripts/` files are non-executable examples only.
 
 ---
 
-## 4. State Management (Required for Long Workflows)
+## 4. External State Ledger (Required for Long Workflows)
 
-> Use `getSharedPluginData()` / `setSharedPluginData()` or name-based lookups and the state ledger (returned IDs) for durable node markers.
+> Do not store workflow markers, run IDs, or recovery state on Figma objects. Keep a caller-owned external ledger keyed by the explicit file target and build run. It is the only authority for a destructive cleanup.
 
-| Entity type | Idempotency key | How to check existence |
-|-------------|----------------|----------------------|
-| Scene nodes (pages, frames, components) | `setSharedPluginData('dsb', 'key', value)` or unique name | `node.getSharedPluginData('dsb', 'key')` or `page.findOne(n => n.name === 'Button')` |
-| Variables | Name within collection | `(await figma.variables.getLocalVariablesAsync()).find(v => v.name === name && v.variableCollectionId === collId)` |
-| Styles | Name | `getLocalTextStyles().find(s => s.name === name)` |
+| Entity type | Ledger identity | Narrow read-back when the ID is missing |
+|-------------|-----------------|------------------------------------------|
+| Pages and frames | Exact returned ID + approved deterministic name + expected parent | Check the known parent only, then require one exact type/name match. |
+| Components and component sets | Exact returned ID + exact set/variant name + page ID | Check the known page only, then require one exact type/name match. |
+| Variables | Exact returned ID + collection ID + exact variable name | Read local variables, restrict to the known collection ID, then require one exact name/type match. |
+| Styles | Exact returned ID + exact style name/type | Read the local style family, then require one exact name/type match. |
 
-Tag every created **scene node** immediately after creation:
-```javascript
-node.setSharedPluginData('dsb', 'run_id', RUN_ID);        // identifies this build run
-node.setSharedPluginData('dsb', 'phase', 'phase3');        // which phase created it
-node.setSharedPluginData('dsb', 'key', 'component/button');// unique logical key
+**State persistence**: do not rely on conversation context. Write the ledger to a caller-owned durable path, for example:
+
+```text
+<project>/.figma-ledger/<file-key>/<run-id>.json
 ```
 
-**State persistence**: Do NOT rely solely on conversation context for the state ledger. Write it to disk:
-```
-/tmp/dsb-state-{RUN_ID}.json
-```
-Re-read this file at the start of every turn. In long workflows, conversation context will be truncated — the file is the source of truth.
+Update it only after a read-back confirms the returned object. The ledger is an audit record, not a substitute for validating live Figma state.
 
 Maintain a state ledger tracking:
 ```json
 {
+  "fileKey": "explicit-file-key",
   "runId": "ds-build-2024-001",
   "phase": "phase3",
   "step": "component-button",
@@ -173,12 +170,12 @@ Maintain a state ledger tracking:
 }
 ```
 
-**Idempotency check** before every create: query by name + state ledger ID. If exists, skip or update — never duplicate.
+**Idempotency check** before every create: resolve the exact ledger ID and verify it. If it is unavailable, use a deterministic name only inside the expected page or collection, require exactly one exact type/name match, and write the recovered ID back to the ledger. If the result is zero or ambiguous, stop for review; never guess or update broadly.
 
-**Resume protocol**: after context truncation, use `figma:metadata`, `figma:variables`, and `figma:design-system` with the explicit file target to reconstruct the `{key → id}` map, then consult caller-owned notes or returned artifacts if needed.
+**Resume protocol**: after context truncation, reopen the caller-owned ledger, validate its file target, and read back only the recorded entities. Use `figma:metadata`, `figma:variables`, and `figma:design-system` for the explicit target only as needed to reconcile a missing record. A narrow deterministic-name lookup can recover one missing record after parent/type validation; it cannot authorize cleanup.
 
 **Continuation note** (give this to the user when resuming in a new chat):
-> "I'm continuing a design system build. Run ID: {RUN_ID}. Resume from the last completed step using the saved ledger, explicit Figma target, and returned artifacts."
+> "I'm continuing a design system build. Run ID: {RUN_ID}. Resume from the caller-owned ledger for the explicit Figma target, validate recorded IDs by read-back, and continue from the first unverified step."
 
 ---
 
@@ -309,7 +306,7 @@ Collection: "Spacing"       modes: ["Value"]
 - ❌ Using name-prefix matching for cleanup (deletes user-owned nodes)
 - ❌ Building on unvalidated work from the previous step
 - ❌ Running concurrent Figma write operations
-- ❌ Guessing/hallucinating node IDs from memory (always read from state ledger)
+- ❌ Guessing/hallucinating node IDs from memory (use the external ledger, then narrow read-back)
 - ❌ Writing massive inline scripts instead of using the provided helper scripts
 - ❌ Starting Phase 3 because the user said "build the button" without completing Phases 0-2
 
@@ -333,6 +330,6 @@ Use your file reading tool to read these docs when needed. Do not assume their c
 
 ---
 
-## 11. JavaScript Examples
+## 11. Adapted Examples
 
-The source batch's nine JavaScript files have no Markdown mirror and are not executable instructions. Do not modify or execute them. Use first-class read commands and local `.figma.ts` scripts instead.
+Archived upstream JavaScript is reference evidence, not a runnable host instruction. Use the adapted Markdown examples in this corpus as a starting point, move the reviewed TypeScript into a caller-owned local `.figma.ts` file, and execute it through `figma:run`. Record and validate returned IDs in the external ledger; never rely on object metadata for recovery or cleanup.

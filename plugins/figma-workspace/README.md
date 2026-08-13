@@ -1,6 +1,6 @@
 # Figma Workspace
 
-Figma Workspace 0.5.2 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
+Figma Workspace 0.5.3 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
 
 ## Quick Start
 
@@ -20,25 +20,26 @@ npm --silent run figma:run -- --file "https://www.figma.com/design/FILE_KEY/File
 
 Use generated `--help` for each exact input schema, option, limit, and JSON stdin/file contract. Typed results are Restricted Markdown, not JSON; if a result names `outputFiles.cliResultFile`, read that complete JSON sidecar instead of parsing stdout.
 
-Every remote call supplies its Figma target in that invocation. Use a full file or node URL whenever possible. A node URL's `node-id=230-2` converts to Plugin API ID `230:2`; a bare node ID is invalid without an explicit file. URLs infer Design, FigJam, or Slides; a raw fileKey needs `--surface` when the selected command needs a surface.
+Every command that requires a Figma file or node target supplies it in that invocation. `figma:upstream:list` and `figma:upstream:read` are targetless; `figma:upstream:call` follows the selected live schema instead of inheriting a target. Use a full file or node URL whenever possible. A node URL's `node-id=230-2` converts to Plugin API ID `230:2`; a bare node ID is invalid without an explicit file. URLs infer Design, FigJam, or Slides; a raw fileKey needs `--surface` when the selected command needs a surface.
 
-For a normal edit, use docs/API lookup to choose the flow, create a local `.figma.ts` script in the shell, run `figma:run`, then capture and inspect visible output with `view_image`. Use `figma:metadata` before targeted `figma:inspect` when broad structure discovery is needed. Prefer first-class context, asset, and capture commands before `figma:upstream:call`.
+For a normal edit, use docs/API lookup to choose the flow, create a local `.figma.ts` script in the shell, run `figma:run`, then capture and inspect visible output with `view_image`. Use `figma:metadata` before targeted `figma:inspect` when broad structure discovery is needed. Prefer first-class context, asset, and capture commands before `figma:upstream:call`. Before an upstream fallback call, read its live description and schema; obtain explicit user confirmation when they mark the action as destructive, external, credit/cost-bearing, or an asset upload.
 
 ## Mutation Recovery
 
 `figma:run` reports `executionOutcome`:
 
 - `not_started`: validation, preflight, connection, or auth stopped the request before dispatch. Repair that cause, then rerun.
+- `failed_atomic`: Figma returned a `use_figma` script error and confirmed the script made no file changes. Repair the script, then retry safely.
 - `succeeded`: Figma confirmed script execution.
-- `outcome_unknown`: the request was dispatched but completion cannot be confirmed.
+- `outcome_unknown`: the request was dispatched but completion cannot be confirmed, such as a timeout, response loss, or truncated response.
 
-For `outcome_unknown`, follow `retryGuidance`, inspect or read back the intended Figma state, and reconcile before deciding whether a retry is safe. Never blindly replay a mutation. A queued capture failure preserves `executionOutcome: "succeeded"` with `captureProcessingSucceeded: false`; capture the affected node separately. If stdout reports `Status: failed after execution`, repair the reported local artifact or lock stage and do not rerun the confirmed mutation.
+For `failed_atomic`, stdout directly shows a compact remote error code/message and reports `Status: failed atomically`; the sidecar retains complete upstream diagnostics. Repair and retry the script safely. Never blindly replay an `outcome_unknown` mutation: read back and reconcile the intended Figma state first. A queued capture failure preserves `executionOutcome: "succeeded"` with `captureProcessingSucceeded: false`; capture the affected node separately. `Status: failed after execution` is reserved for a local artifact or lock failure after confirmed `succeeded`; repair that local stage and do not rerun the confirmed mutation.
 
 ## Local Artifacts And Login
 
-The CLI does not create a persistent workspace record. Shells own `.figma.ts` creation and repeat the Figma target for each operation. Pure inline reads do not create local files. When a command needs to write an oversized result, diagnostic, capture, or download and no explicit path is supplied, it returns an absolute path under an invocation-specific OS temp directory. Use `--output-dir`, `--image-file`, or a download output option when a later shell step needs a durable location.
+The CLI does not create a persistent workspace record. Shells own `.figma.ts` creation and repeat a Figma target only for operations that require one. Pure inline reads do not create local files. When a command needs to write an oversized result, diagnostic, capture, or download and no explicit path is supplied, it returns an absolute path under an invocation-specific OS temp directory. Use `--output-dir`, `--image-file`, or a download output option when a later shell step needs a durable location.
 
-Mutating operations are coordinated on the same machine per fileKey through an OS-temp lock. Managed outputs reject links and reparse points and are written atomically. The lock is not distributed durability.
+The OS-temp fileKey lock covers `figma:run`, `figma:assets:apply`, and `figma:upstream:call` only when that call resolves a fileKey; it does not serialize every mutation. Managed outputs reject links and reparse points and are written atomically. The lock is not distributed durability.
 
 When a result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or `FIGMA_UPSTREAM_OAUTH_*`, ask the user before browser authorization. After approval, run:
 
@@ -52,7 +53,7 @@ Upstream and bridge network requests have a 5-minute total deadline. The 60-seco
 
 ## Documentation And API Lookup
 
-Documentation search supports concise English keywords only. For a non-trivial or ambiguous request, select a query from the skill's Search Query Recipes and use the known surface. If routing is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected task family and surface, and use `figma:docs:read` for returned `project:` or `canonical:` IDs. Use `figma:api:search` for bare, qualified, or call-shaped Plugin API symbols, then use `figma:api:read` with a returned `apiId` when the complete declaration is needed. Catalog and search display limits are clamped to the ranges shown by command help and reported in `parameterAdjustments`; traversal, pagination, capture sizing, and remote inline-result boundaries remain strict. Search has no per-snippet byte cap; one 12000-byte UTF-8 budget applies across returned snippets, with any truncation reported in `snippetBudget`. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references provide the complete static intent-to-command and topic-to-query maps without duplicating generated CLI schemas.
+Prefer concise English terms as documentation-search seeds; this is a relevance recommendation, not an input-language restriction. For a non-trivial or ambiguous request, select a query from the skill's Search Query Recipes and use the known surface. If routing is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected task family and surface, and use `figma:docs:read` for returned `project:` or `canonical:` IDs. Use `figma:api:search` for bare, qualified, or call-shaped Plugin API symbols, then use `figma:api:read` with a returned `apiId` when the complete declaration is needed. Catalog and search display limits are clamped to the ranges shown by command help and reported in `parameterAdjustments`; traversal, pagination, capture sizing, and remote inline-result boundaries remain strict. Search has no per-snippet byte cap; one 12000-byte UTF-8 budget applies across returned snippets, with any truncation reported in `snippetBudget`. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references provide the complete static intent-to-command and topic-to-query maps without duplicating generated CLI schemas.
 
 Use `figma:doctor` for local packaged-doc, corpus, TypeScript, or Plugin API index diagnosis. It is a public local-only leaf command and never needs a Figma target.
 

@@ -4,7 +4,7 @@ Create one local Figma variable collection, rename its required default mode, an
 
 ## Prerequisites and inputs
 
-- Inspect local collections first. Replace each `TODO` placeholder with the approved collection name and ordered mode names.
+- Inspect local collections first. Replace each `TODO` placeholder with the approved collection name and ordered mode names from the external ledger plan.
 - A collection always begins with one mode. This example renames that mode instead of adding a duplicate first mode.
 - Save the script locally as `C:/work/project/figma-scripts/create-variable-collection.figma.ts`.
 
@@ -22,9 +22,10 @@ if (modeNames.length === 0) {
   throw new Error("At least one mode name is required.");
 }
 
-const existingCollections = await figma.variables.getLocalVariableCollectionsAsync();
-if (existingCollections.some((collection) => collection.name === collectionName)) {
-  throw new Error(`A local variable collection named \"${collectionName}\" already exists.`);
+const existingCollections = (await figma.variables.getLocalVariableCollectionsAsync())
+  .filter((collection) => collection.name === collectionName);
+if (existingCollections.length !== 0) {
+  throw new Error(`Collection \"${collectionName}\" already exists or is ambiguous; reconcile its exact ledger ID before creating another.`);
 }
 
 const collection = figma.variables.createVariableCollection(collectionName);
@@ -54,4 +55,4 @@ Replace placeholders, review the result, save it as the `.figma.ts` file above, 
 npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
-Record the returned `collectionId` and `modeIds`, then inspect variables before creating primitives or semantics.
+Read back and record the returned `collectionId` and `modeIds` in the external ledger, then inspect variables before creating primitives or semantics. For `outcome_unknown`, reconcile the exact collection name and modes before another write. For `failed_atomic`, retain the direct host/script diagnostics, repair the script, and retry safely because Figma confirmed no file changes.

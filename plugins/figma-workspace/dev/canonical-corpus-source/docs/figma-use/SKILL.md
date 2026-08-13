@@ -11,7 +11,7 @@ Use `figma:api:search` for exact Plugin API symbols and signatures. The curated 
 1.  **Use `return` to send data back.** The return value is JSON-serialized automatically (objects, arrays, strings, numbers). Do NOT call `figma.closePlugin()` or wrap code in an async IIFE — this is handled for you.
 2.  **Write a TypeScript script body with top-level `await` and `return`.** Save it in a local `.figma.ts` file and execute it explicitly with `figma:run`; JavaScript snippets in references are input material to adapt, not files to run directly.
 3.  `figma.notify()` **throws "not implemented"** — never use it
-3a. `getPluginData()` / `setPluginData()` store data private to the executing plugin. `getSharedPluginData()` / `setSharedPluginData()` use an explicit namespace when data must be shared across plugins. Choose the storage model that matches the ownership requirement.
+3a. **Never emit private `getPluginData` / `setPluginData`.** The live host contract explicitly prohibits `setPluginData`; a direct host run separately rejected `getPluginData`. Do not represent either observation as a general upstream declaration change. Recover with returned node IDs, stable names, and narrow read-back/reconcile queries; do not depend on shared PluginData as a required or assumed-supported recovery mechanism.
 4.  `console.log()` is NOT returned — use `return` for output
 5.  **Work incrementally in small steps.** Break large operations into multiple `.figma.ts` script run. Validate after each step. This is the single most important practice for avoiding bugs.
 6.  Colors are **0–1 range** (not 0–255): `{r: 1, g: 0, b: 0}` = red
@@ -20,11 +20,12 @@ Use `figma:api:search` for exact Plugin API symbols and signatures. The curated 
 9.  **Pages load incrementally** — use `await figma.setCurrentPageAsync(page)` to switch pages and load their content. The sync setter `figma.currentPage = page` does **NOT** work and will throw (see Page Rules below)
 10. `setBoundVariableForPaint` returns a **NEW** paint — must capture and reassign
 11. `createVariable` accepts collection **object or ID string** (object preferred)
-12. **`layoutSizingHorizontal/Vertical` is value-restricted by structural context — `FIXED` always works, `HUG` and `FILL` do not.** `'HUG'` is valid only on an auto-layout frame itself OR on a **TEXT** child of one. `'FILL'` is valid only on a child of an auto-layout frame that is also not absolute-positioned, not inside an immutable frame, and not a canvas-grid child. Practical consequence: append to an auto-layout parent FIRST, then set `HUG`/`FILL` — a newly-created or unparented node can't satisfy the rule yet. The property itself exists on every `SceneNode`; the error is value-rejection, not "no such property". See [Gotchas](canonical:figma-use/references/gotchas.md).
+12. **`layoutSizingHorizontal/Vertical` is value-restricted by structural context — `FIXED` always works, `HUG` and `FILL` do not.** `'HUG'` is valid only on an auto-layout frame itself OR on a **TEXT** child of one. `'FILL'` is valid only on a child of an auto-layout frame that is also not absolute-positioned, not inside an immutable frame, and not a canvas-grid child. Practical consequence: append to an auto-layout parent FIRST, then set child `HUG`/`FILL` or `layoutPositioning = 'ABSOLUTE'` — an unparented node cannot satisfy those child-context rules. The property itself exists on every `SceneNode`; the error is value-rejection, not "no such property". See [Gotchas](canonical:figma-use/references/gotchas.md).
 12a. **Use auto-layout for containers that hold related children.** When children have a structural relationship — stacked, side-by-side, aligned, gapped, hugged — wrap them in `figma.createAutoLayout()`, not `figma.createFrame()` with absolute `x`/`y`. Absolute coordinates govern where a container sits on the canvas; auto-layout governs how its children relate inside it. Skipping the container leaves no protection against text reflow, content changes, or overlap.
 12b. **`layoutSizing*` and `*AxisSizingMode` are different enums — don't cross them.** `layoutSizingHorizontal`/`layoutSizingVertical` (set on a **child**) take `'FIXED'|'HUG'|'FILL'`; `primaryAxisSizingMode`/`counterAxisSizingMode` (set on the **frame** itself) take `'FIXED'|'AUTO'`. So `layoutSizingVertical = 'AUTO'` is invalid (use `'HUG'`), and `counterAxisSizingMode = 'FILL'` throws `Expected 'FIXED' | 'AUTO', received 'FILL'` (use `'FIXED'`/`'AUTO'`). Two more errors from the same setter — `Error: in set_layoutSizingHorizontal: node must be an auto-layout frame or a child of an auto-layout frame` and `Error: in set_layoutSizingHorizontal: FILL can only be set on children of auto-layout frames` — mean the node isn't in an auto-layout context yet; **recommendation: make the parent auto-layout (`figma.createAutoLayout()`) and `appendChild` the node before setting** (see Rule 12). See [Gotchas](canonical:figma-use/references/gotchas.md).
+12c. **Use a compatibility-safe default for non-SLOT geometry below an `INSTANCE`.** The generic Plugin API surface does not guarantee that the live host accepts every descendant geometry override: the current `figma:run` host may reject `relative-transform`. Prefer exposed component properties (`TEXT`, `BOOLEAN`, `INSTANCE_SWAP`) for supported instance customization. This is not a ban on documented `SLOT` APIs: populate a discovered `SLOT` with `appendChild()` and use `resetSlot()` when needed. For a non-SLOT geometry change, edit the main component when that is the intended source; otherwise explicitly `detachInstance()` and re-discover the detached nodes from a stable non-instance ancestor, or use the smallest controlled script and immediate read-back. Decide non-SLOT structural changes by their intended ownership rather than generalizing the observed geometry rejection.
 13. **Position new top-level nodes away from (0,0).** Nodes appended directly to the page default to (0,0). Scan `figma.currentPage.children` to find a clear position (e.g., to the right of the rightmost node). This only applies to page-level nodes — nodes nested inside other frames or auto-layout containers are positioned by their parent. See [Gotchas](canonical:figma-use/references/gotchas.md).
-14. **On `.figma.ts` failure, STOP and classify `executionOutcome`.** `not_started` means validation, preflight, connection, or auth failed before dispatch, so repair the cause before retrying. `succeeded` means Figma confirmed execution; do not rerun a mutation to recover a later capture or persistence failure. `outcome_unknown` means the request was dispatched but completion is unconfirmed; inspect or read back the tagged targets and reconcile them before deciding whether any mutation remains to run. See [Error Recovery](#7-error-recovery--self-correction).
+14. **On `.figma.ts` failure, STOP and classify `executionOutcome`.** `not_started` means validation, preflight, connection, or auth failed before dispatch, so repair the cause before retrying. `failed_atomic` means `figma:run` directly returned a host or script error and Figma confirmed that the file is unchanged; retain the diagnostics, repair the script, and retry safely. `succeeded` means Figma confirmed execution; `Status: failed after execution` then identifies only a local post-processing failure, so preserve the mutation result. Only `outcome_unknown` means completion was not confirmed, so inspect or read back the intended targets and reconcile before deciding whether any mutation remains to run. See [Error Recovery](#7-error-recovery--self-correction).
 15. **MUST `return` ALL created/mutated node IDs.** Whenever a script creates new nodes or mutates existing ones on the canvas, collect every affected node ID and return them in a structured object (e.g. `return { createdNodeIds: [...], mutatedNodeIds: [...] }`). This is essential for subsequent calls to reference, validate, or clean up those nodes.
 16. **Always set `variable.scopes` explicitly when creating variables.** The default `ALL_SCOPES` pollutes every property picker — almost never what you want. Use specific scopes like `["FRAME_FILL", "SHAPE_FILL"]` for backgrounds, `["TEXT_FILL"]` for text colors, `["GAP"]` for spacing, etc. See [variable-patterns.md](canonical:figma-use/references/variable-patterns.md) for the full list.
 17. **`await` every Promise.** Never leave a Promise unawaited — unawaited async calls (e.g. `figma.loadFontAsync(...)` without `await`, or `figma.setCurrentPageAsync(page)` without `await`) will fire-and-forget, causing silent failures or race conditions. The script may return before the async operation completes, leading to missing data or half-applied changes.
@@ -42,23 +43,21 @@ Use `await figma.setCurrentPageAsync(page)` to switch pages and load their conte
 ```js
 // Switch to a specific page (loads its content)
 const targetPage = figma.root.children.find((p) => p.name === "My Page");
+if (!targetPage) throw new Error("Expected a page named My Page");
 await figma.setCurrentPageAsync(targetPage);
 // targetPage.children is now populated
 ```
 
 ### Multiple page switches
 
-`setCurrentPageAsync` changes global page context and returns a Promise, so page switches and the work that depends on each page must stay ordered. A single script may traverse multiple pages when that matches the task.
+`setCurrentPageAsync` changes global page context. Do not loop pages in one `.figma.ts` script. Return page IDs first, then run one narrow transaction per selected page; this gives each read or mutation an explicit recovery boundary.
 
 ```js
-// Traverse pages in order because each operation depends on the active page.
-for (const page of figma.root.children) {
-  await figma.setCurrentPageAsync(page);
-  // ... touch this page ...
-}
+// Step 1 — no page switch: enumerate page IDs for later fan-out.
+return figma.root.children.map(page => ({ id: page.id, name: page.name }));
 ```
 
-For large documents, smaller page-specific scripts can still be easier to retry and inspect. See [gotchas.md](canonical:figma-use/references/gotchas.md) for traversal performance guidance.
+Then issue a separate `.figma.ts` transaction with one `PAGE_ID`, guard it as `PAGE`, and call `await figma.setCurrentPageAsync(page)` once before its page-local work. Read-only transactions may fan out. Keep writes page-scoped, reconcile `outcome_unknown` before retrying, and remember that the same-machine `fileKey` lock is coordination only. See [gotchas.md](canonical:figma-use/references/gotchas.md) for traversal performance guidance.
 
 ### Across script runs
 
@@ -295,16 +294,17 @@ Step 5: Final verification
 The result's required `executionOutcome` identifies the retry boundary:
 
 - `not_started`: the request was not dispatched. Repair validation, preflight, connection, or auth, then resubmit the corrected script.
+- `failed_atomic`: `figma:run` directly returned a host or script error, and Figma confirmed no file changes. Repair the named cause; a new run after repair does not require reconciliation.
 - `succeeded`: Figma confirmed the script completed. Preserve returned IDs and do not rerun the mutation because capture, state, sidecar, or lock post-processing failed.
-- `outcome_unknown`: the request was dispatched but completion cannot be confirmed. Assume partial or complete effects are possible. Follow `retryGuidance`, inspect or read back the intended targets, and reconcile by returned IDs, stable names, or dedicated PluginData tags before deciding whether any missing work should run.
+- `outcome_unknown`: completion cannot be confirmed, for example after timeout, response loss, or truncated execution state. Assume partial or complete effects are possible. Follow `retryGuidance`, inspect or read back the intended targets, and reconcile by returned IDs, stable names, and narrow read-back queries.
 
 ### When `.figma.ts` script returns an error
 
-1. **STOP.** Do not immediately rerun the mutation.
-2. **Read `executionOutcome`, diagnostics, and `retryGuidance`.** Determine whether dispatch occurred and whether completion was confirmed.
+1. **Read `executionOutcome`, diagnostics, and `retryGuidance`.**
+2. For `failed_atomic`, retain the direct host/script diagnostics and fix the script; the file was confirmed unchanged, so reconciliation is unnecessary before the next run.
 3. For `outcome_unknown`, call `figma:metadata`, `figma:inspect`, or a read-only tagged-node query to reconcile the current file state. Use `figma:capture` only when visual evidence is needed.
 4. **Fix the script** based on the diagnostics and reconciled state.
-5. Retry only work confirmed not to have run. A corrected `not_started` request can be retried directly; an `outcome_unknown` mutation cannot.
+5. A corrected `not_started` or `failed_atomic` request does not require reconciliation. An `outcome_unknown` mutation requires reconciliation that confirms the work is missing.
 
 ### Common self-correction patterns
 
@@ -315,8 +315,9 @@ The result's required `executionOutcome` identifies the retry boundary:
 | `"Setting figma.currentPage is not supported"` | Used sync page setter (`figma.currentPage = page`) which does NOT work | Use `await figma.setCurrentPageAsync(page)` — the only way to switch pages |
 | Property value out of range | Color channel > 1 (used 0–255 instead of 0–1) | Divide by 255 |
 | `"Cannot read properties of null"` | Node doesn't exist (wrong ID, wrong page) | Check page context, verify ID |
+| Instance-descendant override is rejected | Host rejected an override such as `relative-transform` below an `INSTANCE` | Use an exposed component property; otherwise edit the main component, or explicitly detach and re-discover from a stable non-instance ancestor. For an attempted supported override, keep the script minimal and read back immediately |
 | Script hangs / no response | Infinite loop or unresolved promise | Check for `while(true)` or missing `await`; ensure code terminates |
-| `"The node with id X does not exist"` | Parent instance was implicitly detached by a child `detachInstance()`, changing IDs | Re-discover nodes by traversal from a stable (non-instance) parent frame |
+| `"The node with id X does not exist"` after `detachInstance()` | A cached handle or ID became stale after host-specific structural replacement | Re-discover from a stable non-instance parent and verify the returned structure before the next dependent edit |
 
 ### When the script succeeds but the result looks wrong
 
@@ -336,11 +337,13 @@ Before submitting ANY `.figma.ts` script run, verify:
 - [ ] `return` value includes structured data with actionable info (IDs, counts)
 - [ ] NO usage of `figma.notify()` anywhere
 - [ ] NO usage of `console.log()` as output (use `return` instead)
+- [ ] NO private `getPluginData` / `setPluginData` calls; recovery is based on returned IDs, stable names, and narrow read-back rather than private storage
+- [ ] NO `figma.createImageAsync()` call; use `figma:assets:apply` for prepared external assets
 - [ ] All colors use 0–1 range (not 0–255)
 - [ ] Paint `color` objects use `{r, g, b}` only — no `a` field (opacity goes at the paint level: `{ type: 'SOLID', color: {...}, opacity: 0.5 }`)
 - [ ] Fills/strokes are reassigned as new arrays (not mutated in place)
 - [ ] Page switches use `await figma.setCurrentPageAsync(page)` (sync setter `figma.currentPage = page` does NOT work)
-- [ ] `layoutSizingVertical/Horizontal = 'FILL'` is set AFTER `parent.appendChild(child)`
+- [ ] Child `layoutSizingVertical/Horizontal = 'FILL'|'HUG'` and `layoutPositioning = 'ABSOLUTE'` are set AFTER `parent.appendChild(child)` when they depend on auto-layout context
 - [ ] Wrapping TEXT blocks set `textAutoResize = 'HEIGHT'` and an explicit width (`'FIXED'` + `resize()`) — NOT `FILL` alone, which the default `WIDTH_AND_HEIGHT` mode ignores, collapsing the node to a near-zero-width thread. Verify `node.width > 0`
 - [ ] Every text mutation follows the [canonical recipe](canonical:figma-use/references/gotchas.md): `loadFontAsync` → `await` → mutate `characters`/font/size/etc. → return affected node IDs. Works for ANY font family/style, not just Inter (which only happens to be preloaded).
 - [ ] Style names have already been verified via `listAvailableFontsAsync()` — NOT guessed from memory (`"SemiBold"` vs `"Semi Bold"` is a common footgun)
@@ -350,6 +353,7 @@ Before submitting ANY `.figma.ts` script run, verify:
 - [ ] For multi-step workflows: IDs from previous calls are passed as string literals (not variables)
 - [ ] New top-level nodes are positioned away from (0,0) to avoid overlapping existing content
 - [ ] Containers with structurally-related children use `figma.createAutoLayout()`, not absolute x/y (see Rule 12a)
+- [ ] For an `INSTANCE` descendant, keep documented `SLOT.appendChild()` / `resetSlot()` available. For non-SLOT geometry, prefer component properties or the main component; before a necessary local override, explicitly detach and re-discover, or use a smallest controlled script with immediate read-back
 - [ ] ALL created/mutated node IDs are collected and included in the `return` value
 - [ ] Every async call (`loadFontAsync`, `setCurrentPageAsync`, `importComponentByKeyAsync`, etc.) is `await`ed — no fire-and-forget Promises
 
@@ -363,21 +367,21 @@ When in doubt about any convention (naming, scoping, structure), check the Figma
 
 **List all pages and top-level nodes:**
 ```js
-const pages = figma.root.children.map(p => `${p.name} id=${p.id} children=${p.children.length}`);
-return pages.join('\n');
+return figma.root.children.map(page => ({ id: page.id, name: page.name }));
 ```
 
 **List existing components across all pages:**
 
-`figma:design-system` is an option for published components. For on-canvas components, a document-wide indexed query directly returns cross-page results:
+`figma:design-system` is an option for published components. For on-canvas components, first return page IDs, then run one read-only transaction per page:
 ```js
-// findAllWithCriteria uses an indexed type lookup — hundreds of times faster
-// than the findAll(n => n.type === '…') side-effect-in-predicate antipattern.
-const matches = figma.root.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] });
-return matches.map(n => ({ page: n.parent?.name, name: n.name, type: n.type, id: n.id }));
+const page = await figma.getNodeByIdAsync(PAGE_ID);
+if (!page || page.type !== 'PAGE') throw new Error('Expected a PAGE');
+await figma.setCurrentPageAsync(page);
+const matches = page.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] });
+return matches.map(n => ({ page: page.name, name: n.name, type: n.type, id: n.id }));
 ```
 
-Multi-page scripts are valid. If an operation depends on `figma.currentPage`, await each `setCurrentPageAsync()` call and keep dependent work ordered.
+For mutations, use the same one-page pattern and do not replay an unknown result before read-back.
 
 **List existing variable collections and their conventions:**
 ```js

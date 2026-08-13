@@ -8,13 +8,10 @@ Place the operation in a local `.figma.ts` file and execute it with `figma:run`,
 
 ```ts
 // callout-label.figma.ts
-// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
-const runId = 'figjam-<fresh-uuid>'
 const labelText = '1'
 if (labelText.length === 0 || labelText.length > 2) throw new Error('A label holds one or two characters')
 
 const label = figma.createShapeWithText()
-label.setSharedPluginData('figma_workspace', 'run_id', runId)
 label.shapeType = 'ELLIPSE'
 const labelFont = label.text.fontName
 if (labelFont === figma.mixed) throw new Error('Label text has mixed fonts')
@@ -31,7 +28,7 @@ label.x = 120
 label.y = 120
 label.name = `Callout ${labelText}`
 
-return { runId, createdNodeIds: [label.id], label: { id: label.id, text: label.text.characters, size } }
+return { createdNodeIds: [label.id], label: { id: label.id, text: label.text.characters, size } }
 ```
 
 Execute `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>` after saving the reviewed script.
@@ -47,4 +44,4 @@ Execute `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface
 
 Return the ID, text, dimensions, and position. In a read-only script, verify `type === 'SHAPE_WITH_TEXT'`, `shapeType === 'ELLIPSE'`, the text, and `width === height`; capture the diagram area when alignment with its target matters and inspect the image locally.
 
-Generate and retain a unique `runId` before dispatch. Immediately after `createShapeWithText()`, tag the label with shared PluginData namespace `figma_workspace` and key `run_id`, before reading fonts, awaiting, or applying later properties, and return the same `runId` and ID. A fatal TypeScript preflight diagnostic reports `not_started` and can be repaired before rerunning. A text-write or unloaded-font failure occurs after dispatch and reports `outcome_unknown`; follow `retryGuidance`, query the exact retained run tag, and reconcile the label before any write. If the result is oval, one dimension was changed independently; call `resize(size, size)`. If the content exceeds two characters, use a standard shape-with-text rather than shrinking unreadable label text.
+Return created IDs and assign a deterministic name such as `Callout ${labelText}`. A fatal TypeScript preflight diagnostic reports `not_started` and can be repaired before rerunning. For `failed_atomic`, retain the direct host/script diagnostics, repair the script, and retry safely because Figma confirmed no file changes. For any `outcome_unknown`, follow `retryGuidance`, inspect returned IDs first, then narrowly read back the exact label name, text, parent, and expected bounds before any write. Shared PluginData is only an optional, host-verified supplement. If the result is oval, one dimension was changed independently; call `resize(size, size)`. If the content exceeds two characters, use a standard shape-with-text rather than shrinking unreadable label text.

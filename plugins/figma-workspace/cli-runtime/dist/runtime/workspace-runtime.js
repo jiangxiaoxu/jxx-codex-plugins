@@ -50,7 +50,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.5.2";
+    DEFAULT_CLIENT_VERSION = "0.5.3";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -23090,8 +23090,8 @@ function handleDoctor(_args) {
     ok,
     runtime: { projectDocs, lookup, typescript },
     guidance: ok ? ["Project docs, canonical docs corpus, generated Plugin API index, and TypeScript runtime assets are available."] : [
-      "Compare attemptedPaths with the installed plugin cache, then rebuild or reinstall the Figma Workspace plugin if assets are missing.",
-      "Reload the Codex app or CLI process after updating the plugin because runtime assets are loaded at process startup."
+      "Use attemptedPaths to identify the missing packaged asset. For repository development, repair it and validate with the repository build and test commands; do not load a local plugin artifact into Codex.",
+      "For an installed client, compare its Figma Workspace version with the formally published version. After a corrected release is pushed, allow the client's normal automatic update to install it."
     ]
   };
 }
@@ -23445,12 +23445,12 @@ async function executeRun(args, runtime) {
     );
   }
   if (attempt.postResponseError) {
-    const upstreamFailed = parsed.upstreamError !== void 0;
+    const atomicScriptFailure = isConfirmedAtomicUseFigmaScriptFailure(evalSettings, parsed);
     const resultPayload2 = removeUndefined3({
       ok: false,
       phase: "execute",
-      executionOutcome: upstreamFailed ? "outcome_unknown" : "succeeded",
-      retryGuidance: upstreamFailed ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : void 0,
+      executionOutcome: atomicScriptFailure ? "failed_atomic" : "succeeded",
+      retryGuidance: atomicScriptFailure ? ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE : void 0,
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
@@ -23468,11 +23468,12 @@ async function executeRun(args, runtime) {
   }
   if (parsed.upstreamError) {
     const upstreamResult2 = upstreamEnvelope(parsed);
+    const atomicScriptFailure = isConfirmedAtomicUseFigmaScriptFailure(evalSettings, parsed);
     const resultPayload2 = removeUndefined3({
       ok: false,
       phase: "execute",
-      executionOutcome: "outcome_unknown",
-      retryGuidance: UNKNOWN_EXECUTION_RETRY_GUIDANCE,
+      executionOutcome: atomicScriptFailure ? "failed_atomic" : "outcome_unknown",
+      retryGuidance: atomicScriptFailure ? ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE : UNKNOWN_EXECUTION_RETRY_GUIDANCE,
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
@@ -23502,7 +23503,7 @@ async function executeRun(args, runtime) {
       ...limitInlineScriptResult(
         payloadWithOutputFiles,
         inlineResultLimit,
-        ["upstream.result", "upstream.text"]
+        ["upstream.result", "upstream.text", "upstreamError.details"]
       )
     };
     return payload;
@@ -25741,6 +25742,9 @@ async function attemptUpstreamEval(client, evalSettings, script) {
     };
   }
 }
+function isConfirmedAtomicUseFigmaScriptFailure(evalSettings, parsed) {
+  return evalSettings.toolName === DEFAULT_EVAL_TOOL_NAME && parsed.upstreamError !== void 0 && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED";
+}
 function createUpstreamToolCache(client) {
   let cached2;
   return {
@@ -27524,7 +27528,7 @@ async function shapeUpstreamBackedResponse(options) {
 function localPostprocessingFailure(resultPayload, stage, error2, outputFiles) {
   const executionOutcome = asOptionalString2(resultPayload.executionOutcome);
   const existingGuidance = asOptionalString2(resultPayload.retryGuidance);
-  const localGuidance = executionOutcome === "succeeded" ? "The remote operation succeeded and may have mutated Figma. Do not rerun it; repair only the failed local post-processing step." : executionOutcome === "outcome_unknown" ? "The remote outcome is unknown and local recovery output also failed. Inspect or read back Figma and reconcile state before any retry." : "Inspect the returned business result and repair the failed local post-processing step before retrying.";
+  const localGuidance = executionOutcome === "succeeded" ? "The remote operation succeeded and may have mutated Figma. Do not rerun it; repair only the failed local post-processing step." : executionOutcome === "failed_atomic" ? "Figma confirmed the script made no changes. Repair the failed local post-processing step, then retry the corrected script safely." : executionOutcome === "outcome_unknown" ? "The remote outcome is unknown and local recovery output also failed. Inspect or read back Figma and reconcile state before any retry." : "Inspect the returned business result and repair the failed local post-processing step before retrying.";
   return removeUndefined3({
     ...resultPayload,
     ok: false,
@@ -27965,7 +27969,7 @@ function clampIntegerParameter(options) {
 function literal3(value) {
   return JSON.stringify(value);
 }
-var FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_INLINE_RESULT_LIMIT, MAX_QUEUED_CAPTURE_REQUESTS, MAX_MANIFEST_ITEMS2, MAX_MANIFEST_FILE_BYTES, MAX_SINGLE_ASSET_BYTES, MAX_COMMAND_DATA_PLANE_BYTES, NETWORK_REQUEST_TOTAL_TIMEOUT_MS, NETWORK_REQUEST_IDLE_TIMEOUT_MS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, UNKNOWN_EXECUTION_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, DataPlaneResourceBudget, COMMAND_RESOURCE_CONTEXT, NetworkRequestDeadline, PostResponseResourceError, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, SVG_CONTENT_SNIFF_BYTES, INVOCATION_CONTEXT, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
+var FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_INLINE_RESULT_LIMIT, MAX_QUEUED_CAPTURE_REQUESTS, MAX_MANIFEST_ITEMS2, MAX_MANIFEST_FILE_BYTES, MAX_SINGLE_ASSET_BYTES, MAX_COMMAND_DATA_PLANE_BYTES, NETWORK_REQUEST_TOTAL_TIMEOUT_MS, NETWORK_REQUEST_IDLE_TIMEOUT_MS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, UNKNOWN_EXECUTION_RETRY_GUIDANCE, ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, DataPlaneResourceBudget, COMMAND_RESOURCE_CONTEXT, NetworkRequestDeadline, PostResponseResourceError, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, SVG_CONTENT_SNIFF_BYTES, INVOCATION_CONTEXT, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
 var init_workspace_client = __esm({
   "src/runtime/workspace-client.ts"() {
     "use strict";
@@ -27998,6 +28002,7 @@ var init_workspace_client = __esm({
     QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES = 300;
     QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE = "Script execution succeeded and may have mutated Figma. Do not rerun it just because capture post-processing failed; retry the affected node with figma:capture.";
     UNKNOWN_EXECUTION_RETRY_GUIDANCE = "The execution request was dispatched, but Figma completion could not be confirmed. Do not rerun the mutation blindly. Inspect or read back the target and reconcile the observed state before deciding whether any retry is safe.";
+    ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE = "Figma host confirmed that the script failed atomically, so it made no file changes. Repair the script and retry safely.";
     APPLY_ASSET_MANIFEST_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_apply_asset_manifest");
     DOWNLOAD_ASSETS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_download_assets");
     CAPTURE_NODE_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_capture_node");
@@ -28198,6 +28203,7 @@ var LOCK_TIMEOUT_MS = 3e4;
 var LOCK_RETRY_MS = 100;
 var LOCK_STALE_MS = 3e4;
 var LOCK_HEARTBEAT_MS = 5e3;
+var MAX_EXECUTION_ERROR_SUMMARY_CHARS = 600;
 var FIGMA_WORKSPACE_CLI_COMMANDS = [
   "run",
   "apply-asset-manifest",
@@ -28369,7 +28375,13 @@ function classifyFigmaWorkspaceCliResult(command, result) {
   const executionOutcome = result.executionOutcome;
   const ok = result.ok !== false;
   if (command === "doctor" && !ok) return { status: "observed-unhealthy", exitCode: 0, warnings, error: normalizeError(result.upstreamError ?? result.error) };
-  if ((executionOutcome === "succeeded" || executionOutcome === "outcome_unknown") && !ok) {
+  if (executionOutcome === "failed_atomic" && !ok) {
+    return { status: "failed-atomically", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+  }
+  if (executionOutcome === "outcome_unknown" && !ok) {
+    return { status: "failed-during-execution", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+  }
+  if (executionOutcome === "succeeded" && !ok) {
     return { status: "failed-after-execution", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
   }
   if (!ok) return { status: "failed", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
@@ -28381,10 +28393,29 @@ function formatFigmaWorkspaceCommandMarkdown(command, result, _input, presentati
     "",
     `Status: ${presentation.status.replaceAll("-", " ")}`,
     "",
+    ...formatExecutionFailureSummary(result, presentation),
     "```json",
     JSON.stringify(result, null, 2),
     "```"
   ].join("\n");
+}
+function formatExecutionFailureSummary(result, presentation) {
+  if (!isRecord6(result) || result.executionOutcome !== "failed_atomic") {
+    return [];
+  }
+  const error2 = presentation.error ?? compactPresentationError(result.upstreamError);
+  const message = compactExecutionErrorSummary(error2?.message ?? "Figma host returned an explicit execution error.");
+  const code = error2?.code === void 0 ? void 0 : String(error2.code);
+  return [
+    "## Remote execution error",
+    "",
+    "```text",
+    code ? `${code}: ${message}` : message,
+    "```",
+    "",
+    "Figma host confirmed this use_figma script failed atomically. No file changes were applied; repair the script and retry safely.",
+    ""
+  ];
 }
 var FIGMA_WORKSPACE_CLI_HELP = [
   "Stateless Figma Workspace internal runtime.",
@@ -28394,7 +28425,7 @@ var FIGMA_WORKSPACE_CLI_HELP = [
   "",
   `Commands: ${FIGMA_WORKSPACE_CLI_COMMANDS.join(", ")}`,
   "",
-  "Every remote command receives its complete Figma file/node target in this invocation. Persistent state and session files are not supported.",
+  "Each command or live upstream schema that requires a Figma file or node receives that target in this invocation. Persistent state and session files are not supported.",
   ""
 ].join("\n");
 function createFigmaWorkspaceCommandHelp(command) {
@@ -28543,11 +28574,12 @@ async function persistOversizedResult(result, command, outputRoot, limit) {
 function createResultPersistenceFailure(result, error2) {
   return {
     ...selectRecoveryFacts(result),
+    upstreamError: isRecord6(result) ? compactPresentationError(result.upstreamError) : void 0,
     ok: false,
     invocation: isRecord6(result) ? result.invocation : void 0,
     error: {
       code: "FIGMA_WORKSPACE_RESULT_PERSISTENCE_FAILED",
-      message: `Remote execution completed, but the oversized CLI result could not be persisted: ${formatError2(error2)}`
+      message: `The oversized CLI result could not be persisted after the remote command returned: ${formatError2(error2)}`
     }
   };
 }
@@ -28561,6 +28593,19 @@ function selectRecoveryFacts(result) {
     "captureProcessingSucceeded",
     "outputFiles"
   ].flatMap((key) => result[key] === void 0 ? [] : [[key, result[key]]]));
+}
+function compactPresentationError(value) {
+  const error2 = normalizeError(value);
+  if (!error2) return void 0;
+  return {
+    message: compactExecutionErrorSummary(error2.message),
+    ...error2.code === void 0 ? {} : { code: error2.code }
+  };
+}
+function compactExecutionErrorSummary(value) {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (normalized.length <= MAX_EXECUTION_ERROR_SUMMARY_CHARS) return normalized;
+  return `${normalized.slice(0, MAX_EXECUTION_ERROR_SUMMARY_CHARS - 3)}...`;
 }
 function normalizeInvocationResult(result, invocationId, fileKey2, surface2, outputRoot) {
   if (!isRecord6(result)) return result;
@@ -28771,9 +28816,9 @@ function createReplToolDescriptions(_options) {
   const descriptions = /* @__PURE__ */ new Map([
     ["figma_workspace_run", {
       name: "figma_workspace_run",
-      description: "Execute one strict .figma.ts file or stdin TypeScript source against an explicitly identified Figma file. This is the only Plugin API mutation entrypoint.",
+      description: "Execute one strict .figma.ts file or stdin TypeScript source against an explicitly identified Figma file. This is the only Plugin API mutation entrypoint. A direct returned use_figma script error reports executionOutcome=failed_atomic, so repair and retry safely; response loss remains outcome_unknown.",
       inputSchema: objectSchema({ ...invocation2(), scriptPath: string4("Absolute or cwd-resolved regular non-symlink .figma.ts file."), source: string4("TypeScript source read from --source -."), targetPageId: nodeId("Optional PAGE node id.") }, ["file"], [{ required: ["scriptPath"] }, { required: ["source"] }]),
-      outputSchema: resultSchema({ phase: string4("preflight or execute."), executionOutcome: { type: "string", enum: ["not_started", "succeeded", "outcome_unknown"] }, captures: { type: "array" }, diagnostics: { type: "array" }, outputFiles: { type: "object" } })
+      outputSchema: resultSchema({ phase: string4("preflight or execute."), executionOutcome: { type: "string", enum: ["not_started", "failed_atomic", "succeeded", "outcome_unknown"], description: "failed_atomic confirms a returned use_figma script error made no changes and can be retried after repair; succeeded confirms remote execution; outcome_unknown requires read-back and reconciliation before retry." }, upstreamError: { type: "object", description: "Compact upstream error details for failure diagnosis." }, retryGuidance: string4("Safe recovery direction for the reported execution outcome."), captures: { type: "array" }, diagnostics: { type: "array" }, outputFiles: { type: "object" } })
     }],
     ["figma_workspace_apply_asset_manifest", {
       name: "figma_workspace_apply_asset_manifest",
@@ -28800,8 +28845,8 @@ function createReplToolDescriptions(_options) {
     ["figma_workspace_get_variable_defs", nodeReadDescription("figma_workspace_get_variable_defs", "Read official variable definitions.")],
     ["figma_workspace_search_design_system", {
       name: "figma_workspace_search_design_system",
-      description: "Search components, variables, and styles in one explicit Figma file.",
-      inputSchema: objectSchema({ ...invocation2(), query: string4("Search query."), disableCodeConnect: boolean4("Disable Code Connect."), includeComponents: boolean4("Include components."), includeVariables: boolean4("Include variables."), includeStyles: boolean4("Include styles."), includeLibraryKeys: { type: "array", items: { type: "string" } }, refresh: boolean4("Refresh upstream discovery.") }, ["file", "query"]),
+      description: "Search components, variables, and styles in one explicit Figma file. Each query must express one search intent; do not combine alternatives or synonyms.",
+      inputSchema: objectSchema({ ...invocation2(), query: string4("One search intent. Do not combine alternatives or synonyms."), disableCodeConnect: boolean4("Disable Code Connect."), includeComponents: boolean4("Include components."), includeVariables: boolean4("Include variables."), includeStyles: boolean4("Include styles."), includeLibraryKeys: { type: "array", items: { type: "string" } }, refresh: boolean4("Refresh upstream discovery.") }, ["file", "query"]),
       outputSchema: resultSchema({ upstream: { type: "object" } })
     }],
     ["figma_workspace_get_libraries", {
@@ -29064,11 +29109,7 @@ async function reportFigmaUpstreamContractCandidate(options) {
   const validated = await validateCandidateCore(options, {
     replaceStoredDispositions: options.dispositions !== void 0
   });
-  const dispositionFile = options.dispositions ?? {
-    schemaVersion: 1,
-    candidateId: options.candidateId,
-    dispositions: []
-  };
+  const dispositionFile = options.dispositions ?? validated.dispositions;
   assertDispositionFile(dispositionFile, options.candidateId);
   const report = createFigmaUpstreamContractSemanticReport({
     candidateId: options.candidateId,

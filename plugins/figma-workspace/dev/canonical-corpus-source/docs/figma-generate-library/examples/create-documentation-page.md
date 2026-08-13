@@ -5,13 +5,13 @@ Create one Figma Design page with a consistent documentation layout: a title, an
 ## Prerequisites and inputs
 
 - Run this only in a Figma Design file. `figma.createPage()` is unavailable in FigJam and Slides.
-- Inspect existing pages first and replace every `TODO` placeholder with the approved page name and content.
+- Use the external ledger for the target file. Replace every `TODO` placeholder with an approved deterministic page name and content.
 - The example uses Inter `Bold` and `Regular`. Confirm those exact font styles are available before editing text.
 - Save the script locally as `C:/work/project/figma-scripts/create-documentation-page.figma.ts` (or another caller-owned path).
 
 ## Safety boundary
 
-This creates a new page and does not delete or rename existing content. It deliberately does not deduplicate pages: review the page name and content before execution to avoid duplicate documentation. Keep this run focused on one page, validate its returned IDs, then inspect its structure and capture it visually before adding more content.
+This creates one page and does not delete or rename existing content. It refuses to create a duplicate deterministic page name, so an unknown or interrupted result must be reconciled against the ledger before another create. Keep this run focused on one page, validate its returned IDs, then inspect its structure and capture it visually before adding more content.
 
 ## Script
 
@@ -29,6 +29,11 @@ const sections = [
     body: "TODO: Add reviewed type-scale guidance or specimens in a later, focused run.",
   },
 ] as const;
+
+const existingPages = figma.root.children.filter((page) => page.name === pageName);
+if (existingPages.length !== 0) {
+  throw new Error(`Page ${pageName} already exists or is ambiguous; reconcile its ledger entry before creating another.`);
+}
 
 await Promise.all([
   figma.loadFontAsync({ family: "Inter", style: "Bold" }),
@@ -113,7 +118,14 @@ for (const section of sections) {
   sectionIds.push(sectionFrame.id);
 }
 
-return { pageId: page.id, rootId: root.id, titleId: title.id, sectionIds };
+return {
+  pageId: page.id,
+  pageName: page.name,
+  rootId: root.id,
+  rootName: root.name,
+  titleId: title.id,
+  sectionIds,
+};
 ```
 
 ## Run explicitly
@@ -124,4 +136,4 @@ After replacing the placeholders and reviewing the script, run it explicitly. It
 npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
 ```
 
-Review the returned IDs, then use `figma:metadata` and `figma:capture` to validate the new page before extending it.
+Review the returned IDs, read back the page and root before recording them in the external ledger, then use `figma:metadata` and `figma:capture` to validate the new page before extending it. For `outcome_unknown`, first check the exact page name and returned IDs in the explicit file before any retry. For `failed_atomic`, retain the direct host/script diagnostics, repair the script, and retry safely because Figma confirmed no file changes.

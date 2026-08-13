@@ -44,7 +44,7 @@ Load these as needed based on what the task involves:
 
 ## Verifying the animation
 
-`figma:capture` shows only the timeline's **resting state**, never motion. For motion validation, use the first-class `figma:upstream:call` escape hatch for `export_video` only after reading its schema with `figma:upstream:read`, then sample frames locally. Video rendering is slow and expensive (~10s to minutes), so make each render count.
+`figma:capture` shows only the timeline's **resting state**, never motion. `export_video` is an uncovered official capability, so use it only as the `figma:upstream:call` escape hatch after reading its live schema with `figma:upstream:read`; it is not a first-class command or required sign-off. Video rendering is slow and expensive (~10s to minutes), so make each render count.
 
 **Plan before rendering — cost scales with pixels × frames, so keep both no larger than the frames need:**
 
@@ -52,7 +52,7 @@ Load these as needed based on what the task involves:
 2. **Size to what you must read.** Start small — `constraint: { type: 'WIDTH', value: 320 }`, `quality: "low"` — but text and small elements blur there, so raise `WIDTH` (768+) when you need to judge fine detail. Omitting `constraint` = full size (1x; server clamps to 10x / 4096px).
 3. **Set fps just high enough to land those frames:** `fps: 5` covers a handful; 10 is an upper bound. Higher just bloats the render.
 
-**Mechanics:** `export_video` works only on a **top-level frame** whose children carry the animation (pass that frame, not the descendant you keyframed). It returns a `jobId` with `status: "processing"` — re-invoke with `{ fileKey, jobId }` to poll. Then extract frames locally with `ffmpeg -ss <t> -i anim.mp4 -frames:v 1 frame_<t>.png` — extraction is free, so once you've paid for the render, mine it for every frame that tells you something rather than re-exporting. Without a frame extractor like `ffmpeg`, skip the export and reason about the keyframes instead.
+**Mechanics:** `export_video` works only on a **top-level frame** whose children carry the animation (pass that frame, not the descendant you keyframed). Read each live response before deciding what to do: when it returns a job identifier and an unfinished status, use only the schema-confirmed polling input; when it returns a playable or downloadable URL directly, consume that URL without polling. Do not assume either response shape. Then extract frames locally with `ffmpeg -ss <t> -i anim.mp4 -frames:v 1 frame_<t>.png` — extraction is free, so once you've paid for the render, mine it for every frame that tells you something rather than re-exporting. Without a frame extractor like `ffmpeg`, skip the export and reason about the keyframes instead.
 
 **Iterate until it's right.** The export is a diagnostic, not a sign-off: if the frames are wrong (bad order, off timing, a missing element, a mask blanking the composite), fix the keyframes/styles and re-export. Read *all* the frames and batch every fix into one pass before re-rendering — every render carries real overhead, so make each one count instead of re-exporting after each small change.
 

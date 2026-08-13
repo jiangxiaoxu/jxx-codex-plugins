@@ -2,6 +2,7 @@
 
 > Public lookup: use `figma:api:search` for exact symbols and signatures. This record is a curated orientation index, not a declaration-file entrypoint.
 > The retained `L#` values are orientation metadata from the archived upstream declaration snapshot and may drift. Never use them for exact lookup; query the symbol with `figma:api:search` instead.
+> `PluginDataMixin` remains in the current official standalone index for namespaced shared PluginData members. The current `figma:run` restriction on private `getPluginData()` and `setPluginData()` is a separate host-runtime condition; it neither removes the declaration nor establishes support for shared data in every host.
 
 ---
 
@@ -57,6 +58,8 @@
 | `importComponentByKeyAsync(key)`    | `Promise<ComponentNode>`    |
 | `importComponentSetByKeyAsync(key)` | `Promise<ComponentSetNode>` |
 | `importStyleByKeyAsync(key)`        | `Promise<BaseStyle>`        |
+
+`figma.createImageAsync()` is not listed as a runnable `.figma.ts` path because the current `figma:run` host rejects it. Use `figma:assets:apply` for prepared external assets.
 
 ### Styles (Local)
 
@@ -150,9 +153,9 @@ setBoundVariableForLayoutGrid(grid, field, variable)
 | `PageNode`             | L9119  | `children`, local styles, `backgrounds`            |
 | `FrameNode`            | L9311  | `DefaultFrameMixin` — auto-layout, clips, children |
 | `GroupNode`            | L9321  | Children only, no auto-layout                      |
-| `ComponentNode`        | L9678  | Like Frame + publishable                           |
-| `ComponentSetNode`     | L9653  | Variant set container                              |
-| `InstanceNode`         | L9719  | Like Frame; `mainComponent`, `detach()`            |
+| `ComponentNode`        | L9678  | Like Frame + publishable; owns definitions only when not a variant child |
+| `ComponentSetNode`     | L9653  | Variant set container; owns variant property definitions |
+| `InstanceNode`         | L9719  | Like Frame; `mainComponent`, `detachInstance(): FrameNode` |
 | `RectangleNode`        | L9378  | `DefaultShapeMixin` + corners                      |
 | `EllipseNode`          | L9410  | + `arcData`                                        |
 | `LineNode`             | L9396  |                                                    |
@@ -204,7 +207,7 @@ type BaseNode   (L10913) = DocumentNode | PageNode | SceneNode
 | `PublishableMixin`           | L7875 | `description`, `key`, `getPublishStatusAsync()`                                                 |
 | `VariantMixin`               | L8182 | `variantProperties`                                                                             |
 | `ComponentPropertiesMixin`   | L8229 | `componentProperties`, `addComponentProperty()`                                                 |
-| `PluginDataMixin`            | L5443 | Private `getPluginData()` / `setPluginData()` and namespaced `getSharedPluginData()` / `setSharedPluginData()` |
+| `PluginDataMixin`            | L5443 | Namespaced `getSharedPluginData()`, `setSharedPluginData()`, `getSharedPluginDataKeys()`       |
 | `FramePrototypingMixin`      | L7651 | `overflowDirection`, `numberOfFixedChildren`                                                    |
 | `BaseFrameMixin`             | L7939 | ChildrenMixin + LayoutMixin + AutoLayoutMixin + GeometryMixin + …                               |
 | `DefaultFrameMixin`          | L7997 | BaseFrameMixin + FramePrototypingMixin + ReactionMixin                                          |

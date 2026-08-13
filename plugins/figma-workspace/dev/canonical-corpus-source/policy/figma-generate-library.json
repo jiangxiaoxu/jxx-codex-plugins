@@ -4,7 +4,7 @@
   "records": [
     {
       "id": "figma-generate-library/SKILL.md",
-      "sourceContentSha256": "38d9381d4fb089233eec0a9af829a6444fbe7c8413cfcfbb89d1992a5f08b7fc",
+      "sourceContentSha256": "4c61bfb0a9cc069ce1d05a89a16f71af01c13fbf7f6853db4884447739db5c69",
       "classification": "router",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/SKILL.md",
@@ -30,7 +30,7 @@
     },
     {
       "id": "figma-generate-library/references/component-creation.md",
-      "sourceContentSha256": "c16fc09041470ae7b4a04a268c457039738e834c2ea845bd239ada3a859de420",
+      "sourceContentSha256": "926f3ff53d0921f6c453f2a434c3eddee5ff601a953cf590e4627dc7bf055816",
       "classification": "conditional",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/references/component-creation.md",
@@ -43,7 +43,7 @@
     },
     {
       "id": "figma-generate-library/references/discovery-phase.md",
-      "sourceContentSha256": "fb60b63283f9cc9956eb57d19cf7c696f38d4b0e5c5a68f5e451ad3815ef8666",
+      "sourceContentSha256": "c92aa153e44d05bc301ae89f19a8921a5c2347ba8a4ae2f20b3a7b7b673a50d7",
       "classification": "conditional",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/references/discovery-phase.md",
@@ -56,7 +56,7 @@
     },
     {
       "id": "figma-generate-library/references/documentation-creation.md",
-      "sourceContentSha256": "269e706d9f1414c6a44df1886ccacc17c10b9c2cd3cde6025c065ac838a835e4",
+      "sourceContentSha256": "16559b87b5922d249611087e3063f0e64c7b593e34d353f63979630f0bb5c932",
       "classification": "conditional",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/references/documentation-creation.md",
@@ -69,7 +69,7 @@
     },
     {
       "id": "figma-generate-library/references/error-recovery.md",
-      "sourceContentSha256": "6efebd43841b882c43aa9ced7e182a4478062fcba7b164fa9ab3eedb3014ef92",
+      "sourceContentSha256": "960504d5267657d35e0babb4a21d8f672269b26a51f087b1f4d7169aced9c70f",
       "classification": "conditional",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/references/error-recovery.md",
@@ -95,7 +95,7 @@
     },
     {
       "id": "figma-generate-library/references/token-creation.md",
-      "sourceContentSha256": "05a476c0c7e85aab8e576c45c263299ac66c77b7d4dff553a6f671b46898c87e",
+      "sourceContentSha256": "123f2a95d6dffc6356eba036f188cf9034932e67a0ce7000abbf1d6ddb1bbb84",
       "classification": "conditional",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/references/token-creation.md",
@@ -121,7 +121,7 @@
     },
     {
       "id": "figma-generate-library/scripts/cleanupOrphans.js",
-      "sourceContentSha256": "7cb841968d821597fe308b0feece3637a693c49c9f9ff137a846e5543716c878",
+      "sourceContentSha256": "525583dc4a560cfd7f725685140210e649dd1c73c7fd076a5ce03fe9e17fddaa",
       "classification": "examples",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/examples/cleanup-orphans.md",
@@ -134,7 +134,7 @@
     },
     {
       "id": "figma-generate-library/scripts/createComponentWithVariants.js",
-      "sourceContentSha256": "bb49ab8921f239e4c0a188c83bf382f00dcfa877afb340a8d0ff473fed764777",
+      "sourceContentSha256": "3a97251335e4bb5dd833acdd86c1a158d1e4ad2b6780587f1bc453d88aa53d31",
       "classification": "examples",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/examples/create-component-with-variants.md",
@@ -147,7 +147,7 @@
     },
     {
       "id": "figma-generate-library/scripts/createDocumentationPage.js",
-      "sourceContentSha256": "c0aaab85fbd914cba961dc4036033ccce16ba19752c3664a82843f2479f71119",
+      "sourceContentSha256": "28cb9b86c2c26ed91b3fdb688d18e07928c7abc073e1b72dd6c0f0995225381d",
       "classification": "examples",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/examples/create-documentation-page.md",
@@ -160,7 +160,7 @@
     },
     {
       "id": "figma-generate-library/scripts/createSemanticTokens.js",
-      "sourceContentSha256": "15682762708cbfcca1b2734c72fce8b981528c4b1131c8f1645b411edbc94b46",
+      "sourceContentSha256": "11d1e3c4b28e0408c9e7602719a8ec4675a6c24bd3033614855d90ad70e75ce2",
       "classification": "examples",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/examples/create-semantic-tokens.md",
@@ -173,7 +173,7 @@
     },
     {
       "id": "figma-generate-library/scripts/createVariableCollection.js",
-      "sourceContentSha256": "27de8086b7e9cc2ed475d7ba5014d91e62527982a5216a8cfcda1c8bef14f117",
+      "sourceContentSha256": "7fed413cd2d09acdb80e9a92e20a9afd581aeba4d4754d605862926df8b146d0",
       "classification": "examples",
       "state": "ready",
       "mirrorPath": "docs/figma-generate-library/examples/create-variable-collection.md",
