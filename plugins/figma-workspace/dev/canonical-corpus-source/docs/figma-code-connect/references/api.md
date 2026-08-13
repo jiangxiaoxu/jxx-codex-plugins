@@ -184,16 +184,11 @@ Use these to wrap your code snippets for proper syntax highlighting:
 
 | Template | Use For |
 |----------|---------|
-| `figma.code` | Generic code (fallback) |
-| `figma.tsx` | React/TypeScript JSX |
-| `figma.jsx` | React JavaScript |
-| `figma.html` | HTML markup |
-| `figma.swift` | Swift code |
-| `figma.kotlin` | Kotlin code |
+| `figma.code` | Required parserless Code Connect snippet |
 
 **Example:**
 ```javascript
-const example = figma.tsx`<MyComponent prop="${value}" />`
+const example = figma.code`<MyComponent prop="${value}" />`
 ```
 
 **Important:** Never use string concatenation on template results. Always wrap in `figma.code`:
@@ -749,12 +744,12 @@ const hasIcon = instance.getBoolean('Has Icon')
 const icon = hasIcon ? instance.getInstanceSwap('Icon') : null
 
 export default {
-  example: figma.tsx`
+  example: figma.code`
     <Button
       variant="${variant}"
       size="${size}"
       ${disabled ? 'disabled' : ''}
-      ${icon ? figma.tsx`icon={${icon.executeTemplate().example}}` : ''}
+      ${icon ? figma.code`icon={${icon.executeTemplate().example}}` : ''}
     >
       ${label}
     </Button>
@@ -787,7 +782,7 @@ const variant = instance.getEnum('Variant', {
 })
 
 export default {
-  example: figma.tsx`
+  example: figma.code`
     <Card variant="${variant}">
       <Card.Header>
         ${heading.textContent}
@@ -829,7 +824,7 @@ const required = instance.getBoolean('Required')
 const disabled = instance.getBoolean('Disabled')
 
 export default {
-  example: figma.tsx`
+  example: figma.code`
     <TextField
       label="${label}"
       placeholder="${placeholder}"
@@ -864,7 +859,7 @@ const direction = instance.getEnum('Direction', {
 })
 
 export default {
-  example: figma.tsx`
+  example: figma.code`
     <Navigation direction="${direction}">
       ${items.map(item => item.executeTemplate().example).join('\n')}
     </Navigation>
@@ -910,13 +905,9 @@ const iconCode = icon && icon.type === 'INSTANCE' && icon.hasCodeConnect()
 const iconCode = instance.findInstance('Icon').executeTemplate().example
 ```
 
-### 3. Use Appropriate Tagged Templates
+### 3. Use the required tagged template
 
 ```javascript
-// Good - use specific template for language
-const example = figma.tsx`<Button />`
-
-// Avoid - generic when specific is available
 const example = figma.code`<Button />`
 ```
 
@@ -925,13 +916,13 @@ const example = figma.code`<Button />`
 ```javascript
 // Good - one component per file
 export default {
-  example: figma.tsx`<Button {...props} />`,
+  example: figma.code`<Button {...props} />`,
   id: 'button'
 }
 
 // Avoid - multiple components in one template
 export default {
-  example: figma.tsx`
+  example: figma.code`
     <Button />
     <Input />
     <Select />

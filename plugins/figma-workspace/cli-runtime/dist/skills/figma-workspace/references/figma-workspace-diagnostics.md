@@ -13,6 +13,7 @@ Use this reference only to choose the narrowest repair. Command results and diag
 ## Preserve Mutation Evidence
 
 - Repair and rerun `not_started` only after the failure occurred before dispatch.
-- For `outcome_unknown`, inspect, read back, or tag-reconcile the intended Figma effect before any retry.
-- For `succeeded` with capture processing failure, capture the affected node separately. For `Status: failed after execution`, repair the named local stage and do not rerun the confirmed mutation.
+- For `failed_atomic`, use stdout's compact remote error summary, repair the script, then retry safely; the returned `use_figma` host error confirms no file changes. Read the sidecar for complete diagnostics when needed.
+- For `outcome_unknown`, inspect, read back, or tag-reconcile the intended Figma effect before any retry; partial side effects may exist.
+- For `succeeded` with capture processing failure, capture the affected node separately. `Status: failed after execution` is only a local stage failure after confirmed execution; repair it and do not rerun the confirmed mutation.
 - For OAuth rate limiting, 5xx responses, or network refresh faults, retain the existing credential and retry the narrow auth step later. Ask the user before starting browser authorization for terminal auth failure.

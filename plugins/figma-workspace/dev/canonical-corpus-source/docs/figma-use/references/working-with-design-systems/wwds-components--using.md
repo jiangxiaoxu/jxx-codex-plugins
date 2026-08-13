@@ -6,7 +6,7 @@ For the source, you need to know what component is being referenced. This could 
 
 For Figma, you need to know whether the component is local or in a library. Local components can be accessed directly by node ID. Published library components must be imported first — `importComponentByKeyAsync` or `importComponentSetByKeyAsync` — before an instance can be created.
 
-Before setting properties on an instance, read `componentPropertyDefinitions` from the main component first. Property names are not simple strings — TEXT, BOOLEAN, and INSTANCE_SWAP properties have a `#uid` suffix (e.g. `"Label#1234"`). Only VARIANT properties are plain names (e.g. `"Size"`). Using the wrong key in `setProperties` will silently do nothing.
+Before setting properties on an instance, resolve the property owner from its main component. A non-variant `COMPONENT` owns its own `componentPropertyDefinitions`; a variant's parent `COMPONENT_SET` owns the shared definitions. Property names are not simple strings — TEXT, BOOLEAN, and INSTANCE_SWAP properties have a `#uid` suffix (e.g. `"Label#1234"`). Only VARIANT properties are plain names (e.g. `"Size"`). Using the wrong key in `setProperties` will silently do nothing.
 
 A component might have multiple text properties, which are not possible to derive from text node layer names. Look to the properties to help you understand what values to set, rather than thinking of setting text node characters directly.
 
@@ -14,4 +14,22 @@ When you need to set a nested instance swap (e.g. an icon property), you need th
 
 Be aware that instances inside other instances are nested and changes made to a nested instance may be treated as overrides. If the intent is to change the default appearance, you need to modify the main component, not the instance.
 
-When selecting which variant to use, read the `componentProperties` on the instance to see the current state, and `componentPropertyDefinitions` on the main component to see all available options.
+When selecting which variant to use, read the `componentProperties` on the instance to see the current state, and `componentPropertyDefinitions` on its guarded property owner to see all available options:
+
+```ts
+function getComponentPropertyOwner(node: ComponentNode | ComponentSetNode): ComponentNode | ComponentSetNode {
+  if (node.type === "COMPONENT_SET") return node;
+  if (node.parent?.type === "COMPONENT_SET") return node.parent;
+  return node;
+}
+
+function inspectInstanceProperties(instance: InstanceNode) {
+  const main = instance.mainComponent;
+  if (!main) throw new Error("Instance has no available main component");
+  const owner = getComponentPropertyOwner(main);
+  return {
+    current: instance.componentProperties,
+    definitions: owner.componentPropertyDefinitions,
+  };
+}
+```

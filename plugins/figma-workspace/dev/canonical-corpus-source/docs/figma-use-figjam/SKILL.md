@@ -27,7 +27,7 @@ Every FigJam text mutation (sticky/shape/label/table cell/connector text, standa
 
 ## Adding Images to a FigJam Board
 
-Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for downloads. Native scripts may also create an `Image` with `figma.createImage(data)` or `figma.createImageAsync(src)` and use its hash in an `IMAGE` paint. Validate the result with `figma:capture`.
+Use `figma:assets:apply` for prepared local image assets and `figma:assets:download` for downloads. Do not call `figma.createImageAsync(src)`: this host rejects it. A native `figma.createImage(data)` path is permitted only after the current host has verified it for already-local bytes; otherwise use the asset workflow. Validate the result with `figma:capture`.
 
 ## Reference Docs
 

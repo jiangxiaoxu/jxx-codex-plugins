@@ -1,102 +1,70 @@
-# Rehydrate Design-System State
+# Reconcile an External Ledger
 
-## Purpose
+This replaces the retired object-metadata rehydration pattern. It verifies only exact IDs from a caller-owned external ledger and supports one constrained recovery lookup when a recorded ID is missing. It does not scan the document, query object PluginData, or infer a cleanup set.
 
-Rebuild a conservative state map after an interrupted library build. The script finds scene nodes tagged with a run-specific shared-plugin-data namespace, then inventories local variable collections, variables, and styles. Treat the result as a recovery aid: verify each returned ID and do not resume a creation phase merely because an item has a similar name.
+## Preconditions and inputs
 
-## Prerequisites and inputs
+- Use a ledger for the explicit Figma file target. Each entry has an exact ID, expected type, exact name, and expected parent or collection ID.
+- Run this as a read-only reconciliation step after `outcome_unknown` and before another mutation. A direct returned host/script error is `failed_atomic`: repair the script and retry safely instead of reconciling a file Figma confirmed unchanged.
+- If an exact-ID record is missing, recovery is allowed only inside its known page or variable collection. Ambiguous matches are a blocker.
 
-- An explicit Design file URL or fileKey.
-- Replace `<run-id>` with the exact run identifier used when tagging nodes. Use an empty string only when deliberately reviewing every node in the namespace.
-- Replace `<namespace>` with the stable namespace used by the build, and replace all file-target and path placeholders before review.
+## Script
 
-## Safety boundary
-
-This is a read-only scan. It neither creates nor edits Figma objects, does not alter the current page, and intentionally returns only nodes carrying the chosen shared-plugin-data key. It cannot prove that a recovered object is correct for a future mutation; inspect its structure before proceeding.
-
-## Save and run
-
-Save this body as `<path/to/rehydrate-state.figma.ts>`, then execute that file directly:
-
-```text
-npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
-```
-
-The command runs only the saved `.figma.ts` file. It is not automatic; review the returned state map and reconcile it with the build ledger before making changes.
+Save as `reconcile-ledger.figma.ts`, replace all placeholder records from the reviewed external ledger, and return the result to the caller before changing the ledger.
 
 ```typescript
-const RUN_ID: string = "<run-id>";
-const NAMESPACE = "<namespace>";
-const KEY_NAME = "key";
-const KEY_RUN_ID = "run_id";
-const KEY_PHASE = "phase";
+const componentRecord = {
+  id: "COMPONENT_SET_ID_FROM_LEDGER",
+  pageId: "PAGE_ID_FROM_LEDGER",
+  name: "Button",
+  type: "COMPONENT_SET",
+} as const;
 
-type TaggedNode = {
-  nodeId: string;
-  type: SceneNode["type"] | PageNode["type"];
-  name: string;
-  phase: string;
-};
+const variableRecord = {
+  id: "VariableID:COLOR_BG_PRIMARY",
+  collectionId: "VariableCollectionId:COLOR",
+  name: "color/bg/primary",
+  resolvedType: "COLOR",
+} as const;
 
-const taggedNodes: Record<string, TaggedNode> = {};
-const belongsToRun = (node: BaseNode): boolean =>
-  RUN_ID === "" || node.getSharedPluginData(NAMESPACE, KEY_RUN_ID) === RUN_ID;
+const component = await figma.getNodeByIdAsync(componentRecord.id);
+const componentStatus = !component
+  ? { status: "missing", id: componentRecord.id }
+  : component.type !== componentRecord.type
+    || component.name !== componentRecord.name
+    || component.parent?.id !== componentRecord.pageId
+    ? { status: "mismatched", id: component.id, type: component.type, name: component.name }
+    : { status: "confirmed", id: component.id, type: component.type, name: component.name };
 
-for (const page of figma.root.children) {
-  const pageKey = page.getSharedPluginData(NAMESPACE, KEY_NAME);
-  if (pageKey && belongsToRun(page)) {
-    taggedNodes[pageKey] = {
-      nodeId: page.id,
-      type: page.type,
-      name: page.name,
-      phase: page.getSharedPluginData(NAMESPACE, KEY_PHASE) || "unknown",
-    };
-  }
+const variable = await figma.variables.getVariableByIdAsync(variableRecord.id);
+const variableStatus = !variable
+  ? { status: "missing", id: variableRecord.id }
+  : variable.variableCollectionId !== variableRecord.collectionId
+    || variable.name !== variableRecord.name
+    || variable.resolvedType !== variableRecord.resolvedType
+    ? { status: "mismatched", id: variable.id, name: variable.name, resolvedType: variable.resolvedType }
+    : { status: "confirmed", id: variable.id, name: variable.name, resolvedType: variable.resolvedType };
 
-  const candidates = page.findAllWithCriteria({
-    sharedPluginData: { namespace: NAMESPACE, keys: [KEY_NAME, KEY_RUN_ID] },
-  });
-  for (const node of candidates) {
-    const key = node.getSharedPluginData(NAMESPACE, KEY_NAME);
-    if (key && belongsToRun(node)) {
-      taggedNodes[key] = {
-        nodeId: node.id,
-        type: node.type,
-        name: node.name,
-        phase: node.getSharedPluginData(NAMESPACE, KEY_PHASE) || "unknown",
-      };
-    }
-  }
+return { component: componentStatus, variable: variableStatus };
+```
+
+## Narrow recovery
+
+Only run this section when a single ledger record is missing and the expected parent is already confirmed. It never removes a result.
+
+```typescript
+const pageId = "PAGE_ID_FROM_LEDGER";
+const expectedName = "Button";
+const page = await figma.getNodeByIdAsync(pageId);
+if (!page || page.type !== "PAGE") throw new Error("Expected ledger page for recovery.");
+
+const matches = page.findAllWithCriteria({ types: ["COMPONENT_SET"] })
+  .filter((node) => node.name === expectedName);
+if (matches.length !== 1) {
+  throw new Error(`Expected one ${expectedName} component set on the ledger page; found ${matches.length}.`);
 }
 
-const variableCollections = (await figma.variables.getLocalVariableCollectionsAsync()).map((collection) => ({
-  id: collection.id,
-  name: collection.name,
-  modes: collection.modes.map(({ modeId, name }) => ({ modeId, name })),
-  variableCount: collection.variableIds.length,
-}));
-
-const variables = (await figma.variables.getLocalVariablesAsync()).map((variable) => ({
-  id: variable.id,
-  name: variable.name,
-  collectionId: variable.variableCollectionId,
-  resolvedType: variable.resolvedType,
-}));
-
-const styles = [
-  ...figma.getLocalTextStyles().map((style) => ({ id: style.id, name: style.name, type: "TEXT" })),
-  ...figma.getLocalEffectStyles().map((style) => ({ id: style.id, name: style.name, type: "EFFECT" })),
-  ...figma.getLocalPaintStyles().map((style) => ({ id: style.id, name: style.name, type: "PAINT" })),
-];
-
-return {
-  runId: RUN_ID || "all",
-  taggedNodes,
-  taggedNodeCount: Object.keys(taggedNodes).length,
-  variableCollections,
-  variableCount: variables.length,
-  variables,
-  styleCount: styles.length,
-  styles,
-};
+return { status: "recovered", id: matches[0].id, name: matches[0].name, type: matches[0].type };
 ```
+
+After a confirmed recovery, update only that ledger record and re-read it before continuing. Do not use this example to rebuild all workflow state, identify orphaned objects, or authorize cleanup. For removal, use [explicit-ID cleanup](canonical:figma-generate-library/examples/cleanup-orphans.md) with dry-run review.

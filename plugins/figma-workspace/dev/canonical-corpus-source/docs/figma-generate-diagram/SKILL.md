@@ -2,7 +2,7 @@
 
 ## Active mirror execution contract
 
-Diagram generation has no typed CLI command. Before every diagram operation, use `figma:upstream:list` or `figma:upstream:read` to confirm the live upstream schema, then invoke the discovered capability with `figma:upstream:call`. Do not assume a tool name, parameter name, or return shape from this mirror. For follow-up canvas work, write a local `.figma.ts` script and execute it with `figma:run` using the explicit FigJam target. Use `figma:metadata`, `figma:design-context`, or `figma:capture` where their typed operation fits the required read or visual check.
+Diagram generation has no typed CLI command. Before every diagram operation, use `figma:upstream:list` or `figma:upstream:read` to confirm the live upstream schema, then invoke the discovered capability with `figma:upstream:call`. Do not assume a tool name, parameter name, or return shape from this mirror. When the authenticated live schema requires `planKey`, read and call the live `whoami` capability, use its one returned plan candidate, or ask the user to choose when several candidates are available. For follow-up canvas work, write a local `.figma.ts` script and execute it with `figma:run` using the explicit FigJam target. Use `figma:metadata`, `figma:design-context`, or `figma:capture` where their typed operation fits the required read or visual check.
 
 The upstream capability accepts Mermaid syntax and produces an editable FigJam diagram. This guide routes you to the right per-type guidance and sets universal constraints.
 
@@ -77,7 +77,9 @@ It's a judgment call, not a default. Deploy it when the user's ask clearly benef
 
 ## Step 6: Calling the tool
 
-Required:
+Read the live schema immediately before dispatch. The following inputs are common source-era names, not a substitute for that schema. If it requires `planKey`, resolve it through the authenticated `whoami` result as described above; never guess or default a plan.
+
+Common inputs:
 - `name`: a descriptive title (shown to the user)
 - `mermaidSyntax`: the Mermaid source
 
@@ -90,7 +92,7 @@ Do **not** call `schema-confirmed upstream file creation` before the upstream di
 
 ## Step 7: After generation
 
-- The tool returns a link (or widget) the user can click to open the diagram in FigJam. Show it as a markdown link unless the client renders an inline widget.
+- Read the actual tool result and expose its returned FigJam link or widget when present. Do not assume a stable response field name.
 - If extensions are warranted (see Step 5), compose with a local `.figma.ts` script executed with `figma:run` now — the pattern and recipes are in [references/workflow.md](canonical:figma-generate-diagram/references/workflow.md).
 - If the user is dissatisfied after 2 attempts at the same diagram, stop regenerating. Ask what specifically is wrong, or suggest they open it in Figma and edit manually rather than burning more tool calls.
 

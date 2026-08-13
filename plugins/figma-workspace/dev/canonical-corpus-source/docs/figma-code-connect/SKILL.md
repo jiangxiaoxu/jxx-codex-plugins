@@ -8,7 +8,7 @@ Code Connect template files are mapping artifacts, not Figma Workspace Plugin AP
 
 Create Code Connect template files (`.figma.ts`) that map Figma components to code snippets. Given a Figma URL, follow the steps below to create a template.
 
-> **Note:** This project may also contain parser-based `.figma.tsx` files using `figma.connect()`. The `.figma.ts` files described here use the Code Connect template dialect (`import figma from 'figma'` and `figma.selectedInstance`); their extension does not make them valid `figma:run` inputs.
+> **Required format:** This workflow authors parserless `.figma.ts` templates with `figma.code`. Do not author `.figma.tsx` or call `figma.connect()` here. If legacy parser-based artifacts already exist, leave them untouched; they are not inputs to this workflow and no Code Connect template is a valid `figma:run` script.
 
 ## Prerequisites
 
@@ -97,7 +97,7 @@ Read the code component's source to understand its props interface — this info
 
 ### File location
 
-Place the file alongside existing Code Connect templates (`.figma.tsx` or `.figma.ts` files). Check `figma.config.json` `include` patterns for the correct directory. Name it `ComponentName.figma.ts`.
+Place the file in the Code Connect directory selected by `figma.config.json` `include` patterns. Name it `ComponentName.figma.ts`; this workflow creates no `.figma.tsx` file.
 
 ### Template structure
 

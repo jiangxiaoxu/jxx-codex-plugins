@@ -1,29 +1,37 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-14T07:41:18.793Z",
+  "generatedAt": "2026-08-13T04:34:01.441Z",
   "upstream": {
     "repository": "https://github.com/figma/mcp-server-guide.git",
-    "requestedRef": "07316dd2920d61303ca0e52812b31f5f341e7b15",
-    "resolvedCommit": "07316dd2920d61303ca0e52812b31f5f341e7b15"
+    "requestedRef": "main",
+    "resolvedCommit": "22b2c566d98880ebdb5a8e48eb2c66c596a6d990"
   },
   "snapshot": {
-    "file": "corpus-de51eaaab4b4452ad521f3c9e7ad5182d383a2024c21948fbc95ac7c18bdbb45.jsonl",
-    "sha256": "de51eaaab4b4452ad521f3c9e7ad5182d383a2024c21948fbc95ac7c18bdbb45",
-    "recordCount": 88
+    "file": "corpus-9b2efcfd30580c54c617204bbf2949a3fcc5b832b6b392824cfb3d684692c758.jsonl",
+    "sha256": "9b2efcfd30580c54c617204bbf2949a3fcc5b832b6b392824cfb3d684692c758",
+    "recordCount": 87
   },
   "report": {
-    "file": "report-3a5d875ff6568aab89f646d115c571511d1cfe3ad6fc5a4727a711151ea0209d.json",
-    "sha256": "3a5d875ff6568aab89f646d115c571511d1cfe3ad6fc5a4727a711151ea0209d",
+    "file": "report-c5ef7b1b5dbf835a46b5ea45af28ffd3ed50a9a5b64969e74b8a63450a92b8b9.json",
+    "sha256": "c5ef7b1b5dbf835a46b5ea45af28ffd3ed50a9a5b64969e74b8a63450a92b8b9",
     "newCount": 0,
-    "changedCount": 0,
-    "deletedCount": 0,
-    "unchangedCount": 88
+    "changedCount": 22,
+    "deletedCount": 1,
+    "unchangedCount": 65
   },
   "adaptation": {
-    "readyCount": 88,
+    "readyCount": 87,
     "pendingCount": 0,
-    "retiredCount": 0,
+    "retiredCount": 1,
     "pendingRecords": [],
-    "retiredRecords": []
+    "retiredRecords": [
+      {
+        "id": "figma-generate-library/scripts/rehydrateState.js",
+        "skill": "figma-generate-library",
+        "classification": "examples",
+        "state": "retired",
+        "policySourceContentSha256": "0ef4d0e01eed173a26d72f3ad88093c81088a68d54e252f373030c0fe5b1d4cf"
+      }
+    ]
   }
 }

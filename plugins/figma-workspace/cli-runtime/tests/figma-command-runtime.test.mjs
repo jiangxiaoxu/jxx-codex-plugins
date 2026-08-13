@@ -3,12 +3,33 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
-import {
+import { pathToFileURL } from "node:url";
+import { build } from "esbuild";
+
+const packageRoot = resolve(import.meta.dirname, "..");
+const temporaryRoot = await mkdtemp(resolve(tmpdir(), "figma-command-runtime-"));
+const compiledFile = resolve(temporaryRoot, "figma-command-runtime.mjs");
+
+await build({
+  entryPoints: [resolve(packageRoot, "src/cli/figma-command-runtime.ts")],
+  outfile: compiledFile,
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  target: "node20",
+  banner: { js: 'import { createRequire as __figmaWorkspaceCreateRequire } from "node:module"; import { fileURLToPath as __figmaWorkspaceFileURLToPath } from "node:url"; import { dirname as __figmaWorkspacePathDirname } from "node:path"; const require = __figmaWorkspaceCreateRequire(import.meta.url); const __filename = __figmaWorkspaceFileURLToPath(import.meta.url); const __dirname = __figmaWorkspacePathDirname(__filename);' },
+});
+
+const {
   formatCommandHelp,
   formatRootHelp,
   runFigmaCommand,
   runFigmaCommandCli,
-} from "../dist/cli/figma-command-runtime.js";
+} = await import(pathToFileURL(compiledFile).href);
+
+test.after(async () => {
+  await rm(temporaryRoot, { recursive: true, force: true });
+});
 
 const FILE_KEY = "A".repeat(22);
 const OTHER_FILE_KEY = "B".repeat(22);
@@ -45,6 +66,10 @@ test("root and family help expose only stateless fixed leaf commands", async () 
   assert.match(root.stdout.join(""), /figma:run/u);
   assert.match(root.stdout.join(""), /figma:doctor/u);
   assert.match(root.stdout.join(""), /figma:api:read/u);
+  assert.match(root.stdout.join(""), /Each invocation is independent\./u);
+  assert.match(root.stdout.join(""), /Commands, or live upstream schemas, that require a Figma file or node must receive that target explicitly/u);
+  assert.match(root.stdout.join(""), /no command inherits a selection, history, or local state\./u);
+  assert.doesNotMatch(root.stdout.join(""), /Every remote leaf command receives a complete Figma URL\/file key and node target/u);
   assert.doesNotMatch(root.stdout.join(""), /state-file|session-file|figma:open|task:prepare|script:run|figma:eval|figma:guidance/u);
 
   for (const family of ["docs", "api", "upstream"]) {
@@ -238,6 +263,7 @@ test("every public leaf help publishes its real argv contract", () => {
   assert.match(formatCommandHelp("metadata"), /--file <url\|key> \[--node <node-id>\]/u);
   assert.match(formatCommandHelp("assets:apply"), /raster.*SVG input is rejected.*figma:run/isu);
   assert.match(formatCommandHelp("assets:download"), /vector-layer SVG assets.*downloadedFiles\.kind is exported, raw, or svg/isu);
+  assert.match(formatCommandHelp("design-system"), /Each <query> must express one search intent; do not combine alternatives or synonyms\./u);
   assert.doesNotMatch(formatCommandHelp("metadata"), /--client-(?:languages|frameworks)/u);
   assert.match(formatCommandHelp("design-context"), /--client-languages <list>.*--client-frameworks <list>/u);
   assert.match(formatCommandHelp("motion-context"), /--client-languages <list>.*--client-frameworks <list>/u);
@@ -261,6 +287,10 @@ test("every public leaf help publishes its real argv contract", () => {
     leaves.map((leaf) => formatCommandHelp(leaf)).join("\n"),
     /--(?:limit|snippet-lines|depth|offset|max-dimension|max-inline-bytes) <(?:n|bytes|integer)>/u,
   );
+  const runHelp = formatCommandHelp("run");
+  assert.match(runHelp, /executionOutcome: failed_atomic/u);
+  assert.match(runHelp, /Status: failed during execution is reserved for an outcome_unknown response loss/u);
+  assert.match(runHelp, /Status: failed after execution/u);
 });
 
 test("metadata rejects retired client hints before dispatch", async () => {

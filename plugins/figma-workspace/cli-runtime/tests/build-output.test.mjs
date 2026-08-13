@@ -14,7 +14,7 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.5.2");
+  assert.equal(packageJson.version, "0.5.3");
 });
 
 test("internal CLI inventory is stateless and includes public doctor", () => {
@@ -69,6 +69,30 @@ test("doctor runs without a target, state file, or remote connection", async () 
   assert.equal(closed, true);
   assert.match(output.stdout.join(""), /^# figma:doctor/mu);
   assert.doesNotMatch(output.stdout.join(""), /sessionId|state-file/u);
+});
+
+test("unhealthy doctor guidance separates repository validation from released client updates", async () => {
+  const output = createIo();
+  const exit = await runFigmaWorkspaceCli(["doctor"], {
+    io: output.io,
+    createClient: () => ({
+      close: async () => {},
+      doctor: async () => ({
+        ok: false,
+        runtime: { projectDocs: { ok: false }, lookup: { ok: true }, typescript: { ok: true } },
+        guidance: [
+          "Use attemptedPaths to identify the missing packaged asset. For repository development, repair it and validate with the repository build and test commands; do not load a local plugin artifact into Codex.",
+          "For an installed client, compare its Figma Workspace version with the formally published version. After a corrected release is pushed, allow the client's normal automatic update to install it.",
+        ],
+      }),
+    }),
+  });
+  const rendered = output.stdout.join("");
+  assert.equal(exit, 0);
+  assert.match(rendered, /validate with the repository build and test commands/u);
+  assert.match(rendered, /formally published version/u);
+  assert.match(rendered, /normal automatic update/u);
+  assert.doesNotMatch(rendered, /reinstall|reload|cachebuster|codex plugin add/u);
 });
 
 test("large local doctor output stays inline and creates no result sidecar", async () => {
@@ -246,7 +270,7 @@ test("remote commands reject an invalid inlineResultLimit before client creation
   }
 });
 
-test("oversized replacement preserves mutation recovery facts", async () => {
+test("atomic script failure replacement preserves recovery facts and reports an atomic failure", async () => {
   const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-recovery-facts-"));
   const input = JSON.stringify({ file: "https://www.figma.com/design/ExampleKey/UI", source: "return {};", outputDir: directory });
   const output = createIo(input, directory);
@@ -257,8 +281,13 @@ test("oversized replacement preserves mutation recovery facts", async () => {
         close: async () => {},
         run: async () => ({
           ok: false,
-          executionOutcome: "outcome_unknown",
-          retryGuidance: "Inspect before retrying.",
+          executionOutcome: "failed_atomic",
+          upstreamError: {
+            code: "FIGMA_HOST_REJECTED",
+            message: "Figma host rejected the mutation.",
+            details: { diagnosticPayload: "x".repeat(2_048) },
+          },
+          retryGuidance: "Repair before retrying.",
           captureProcessingSucceeded: false,
           postProcessing: { capture: { status: "failed" } },
           outputFiles: { compiledFile: { path: resolve(directory, "compiled.js") } },
@@ -268,13 +297,21 @@ test("oversized replacement preserves mutation recovery facts", async () => {
     });
     const rendered = output.stdout.join("");
     assert.equal(exit, 1);
-    assert.match(rendered, /^Status: failed after execution$/mu);
-    assert.match(rendered, /"executionOutcome": "outcome_unknown"/u);
-    assert.match(rendered, /"retryGuidance": "Inspect before retrying\."/u);
+    assert.match(rendered, /^Status: failed atomically$/mu);
+    assert.match(rendered, /^## Remote execution error$/mu);
+    assert.match(rendered, /FIGMA_HOST_REJECTED: Figma host rejected the mutation\./u);
+    assert.match(rendered, /failed atomically.*No file changes were applied; repair the script and retry safely/isu);
+    assert.doesNotMatch(rendered, /diagnosticPayload/u);
+    assert.match(rendered, /"executionOutcome": "failed_atomic"/u);
+    assert.doesNotMatch(rendered, /"executionFailure"/u);
+    assert.match(rendered, /"retryGuidance": "Repair before retrying\."/u);
     assert.match(rendered, /"captureProcessingSucceeded": false/u);
     assert.match(rendered, /"postProcessing"/u);
     assert.match(rendered, /"compiledFile"/u);
     assert.match(rendered, /cliResultFile/u);
+    const resultFile = /"cliResultFile":\s*\{\s*"path": "([^"]+)"/u.exec(rendered)?.[1];
+    assert.ok(resultFile);
+    assert.match(await readFile(resultFile, "utf8"), /diagnosticPayload/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -4,13 +4,13 @@ Use this reference to choose a public command family. Generated help and typed r
 
 ## Select A Workflow
 
-- Run `figma:help` to discover the fixed public leaf-command catalog. Each remote action is independent and must receive its target in the same invocation.
+- Run `figma:help` to discover the fixed public leaf-command catalog. Each invocation is independent: commands that require a Figma file or node target receive it in that invocation, while targetless upstream lookup does not inherit one.
 - For non-trivial, generated, or ambiguous Design, FigJam, or Slides work, use `figma:docs:catalog`, narrow with `figma:docs:search`, and read exact IDs with `figma:docs:read`. Use `figma:api:search` for exact Plugin API symbols and `figma:api:read` for a returned declaration ID.
 - Use `figma:doctor` only to diagnose packaged docs, corpus, TypeScript, or Plugin API index faults. It is local-only and does not take a Figma target.
 - Use `figma:metadata` for broad discovery and `figma:inspect` for targeted validation. Use `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries` for their named first-class reads.
 - Use `figma:run` for every native Plugin API script, whether it is a small inspection or a repairable mutation. The shell owns local `.figma.ts` creation.
 - Use `figma:assets:apply` for prepared local assets, `figma:assets:download` for official downloads, and `figma:capture` or queued `$.capture` for visual QA.
-- Use `figma:upstream:list` and `figma:upstream:read` before `figma:upstream:call` only when no first-class command covers an official capability.
+- Use `figma:upstream:list` and `figma:upstream:read` before `figma:upstream:call` only when no first-class command covers an official capability. Follow the selected live schema; obtain explicit user confirmation for any action its description marks destructive, external, credit/cost-bearing, or an asset upload.
 
 ## Shared Rules
 

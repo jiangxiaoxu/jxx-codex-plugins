@@ -62,9 +62,9 @@ export function createReplToolDescriptions(_options: ReplToolDescriptionOptions)
   const descriptions = new Map<LocalWorkspaceToolName, Record<string, unknown>>([
     ["figma_workspace_run", {
       name: "figma_workspace_run",
-      description: "Execute one strict .figma.ts file or stdin TypeScript source against an explicitly identified Figma file. This is the only Plugin API mutation entrypoint.",
+      description: "Execute one strict .figma.ts file or stdin TypeScript source against an explicitly identified Figma file. This is the only Plugin API mutation entrypoint. A direct returned use_figma script error reports executionOutcome=failed_atomic, so repair and retry safely; response loss remains outcome_unknown.",
       inputSchema: objectSchema({ ...invocation(), scriptPath: string("Absolute or cwd-resolved regular non-symlink .figma.ts file."), source: string("TypeScript source read from --source -."), targetPageId: nodeId("Optional PAGE node id.") }, ["file"], [{ required: ["scriptPath"] }, { required: ["source"] }]),
-      outputSchema: resultSchema({ phase: string("preflight or execute."), executionOutcome: { type: "string", enum: ["not_started", "succeeded", "outcome_unknown"] }, captures: { type: "array" }, diagnostics: { type: "array" }, outputFiles: { type: "object" } }),
+      outputSchema: resultSchema({ phase: string("preflight or execute."), executionOutcome: { type: "string", enum: ["not_started", "failed_atomic", "succeeded", "outcome_unknown"], description: "failed_atomic confirms a returned use_figma script error made no changes and can be retried after repair; succeeded confirms remote execution; outcome_unknown requires read-back and reconciliation before retry." }, upstreamError: { type: "object", description: "Compact upstream error details for failure diagnosis." }, retryGuidance: string("Safe recovery direction for the reported execution outcome."), captures: { type: "array" }, diagnostics: { type: "array" }, outputFiles: { type: "object" } }),
     }],
     ["figma_workspace_apply_asset_manifest", {
       name: "figma_workspace_apply_asset_manifest", description: "Apply local raster image assets as fills on explicit Figma node targets. SVG input is not accepted because SVG upload placement has different semantics.",
@@ -84,8 +84,8 @@ export function createReplToolDescriptions(_options: ReplToolDescriptionOptions)
     ["figma_workspace_get_motion_context", nodeReadDescription("figma_workspace_get_motion_context", "Read official motion context.", { recursive: boolean("Read recursively.") })],
     ["figma_workspace_get_variable_defs", nodeReadDescription("figma_workspace_get_variable_defs", "Read official variable definitions.")],
     ["figma_workspace_search_design_system", {
-      name: "figma_workspace_search_design_system", description: "Search components, variables, and styles in one explicit Figma file.",
-      inputSchema: objectSchema({ ...invocation(), query: string("Search query."), disableCodeConnect: boolean("Disable Code Connect."), includeComponents: boolean("Include components."), includeVariables: boolean("Include variables."), includeStyles: boolean("Include styles."), includeLibraryKeys: { type: "array", items: { type: "string" } }, refresh: boolean("Refresh upstream discovery.") }, ["file", "query"]), outputSchema: resultSchema({ upstream: { type: "object" } }),
+      name: "figma_workspace_search_design_system", description: "Search components, variables, and styles in one explicit Figma file. Each query must express one search intent; do not combine alternatives or synonyms.",
+      inputSchema: objectSchema({ ...invocation(), query: string("One search intent. Do not combine alternatives or synonyms."), disableCodeConnect: boolean("Disable Code Connect."), includeComponents: boolean("Include components."), includeVariables: boolean("Include variables."), includeStyles: boolean("Include styles."), includeLibraryKeys: { type: "array", items: { type: "string" } }, refresh: boolean("Refresh upstream discovery.") }, ["file", "query"]), outputSchema: resultSchema({ upstream: { type: "object" } }),
     }],
     ["figma_workspace_get_libraries", {
       name: "figma_workspace_get_libraries", description: "List libraries for one explicit Figma file.", inputSchema: objectSchema({ ...invocation(), offset: integer("Pagination offset.", LIBRARIES_OFFSET_MIN, LIBRARIES_OFFSET_MAX), refresh: boolean("Refresh upstream discovery.") }, ["file"]), outputSchema: resultSchema({ upstream: { type: "object" } }),

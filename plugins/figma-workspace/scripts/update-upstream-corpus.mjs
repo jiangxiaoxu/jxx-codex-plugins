@@ -38,8 +38,22 @@ export function parseCliInvocation(args) {
     }
     return { command };
   }
+  if (command === "refresh-upstream-changes") {
+    if (args.length === 1) {
+      return { command };
+    }
+    if (args.length !== 3 || args[1] !== "--from-report") {
+      throw new Error(`Unknown argument: ${args[1]}`);
+    }
+    return {
+      command,
+      fromReportFile: validateContentAddressedReportFile(args[2]),
+    };
+  }
   if (command !== "update-upstream-snapshot") {
-    throw new Error("Expected command: update-upstream-snapshot or build-canonical-corpus");
+    throw new Error(
+      "Expected command: update-upstream-snapshot, refresh-upstream-changes, or build-canonical-corpus",
+    );
   }
   let requestedRef = DEFAULT_UPSTREAM_REF;
   let sawRef = false;
@@ -97,26 +111,13 @@ export async function updateUpstreamSnapshot(options = {}) {
     const reportJson = `${JSON.stringify(report, null, 2)}\n`;
     const reportSha256 = sha256(reportJson);
     const reportFile = `report-${reportSha256}.json`;
-    const changesManifest = {
-      schemaVersion: 1,
+    const changesManifest = createChangesManifest({
+      snapshot,
+      report,
+      reportFile,
+      reportSha256,
       generatedAt,
-      upstream: {
-        repository,
-        requestedRef,
-        resolvedCommit: acquired.resolvedCommit,
-      },
-      snapshot: {
-        file: snapshot.manifest.corpus.file,
-        sha256: snapshot.manifest.corpus.sha256,
-        recordCount: snapshot.records.length,
-      },
-      report: {
-        file: reportFile,
-        sha256: reportSha256,
-        ...report.summary,
-      },
-      adaptation: report.adaptation,
-    };
+    });
     const changesManifestJson = `${JSON.stringify(changesManifest, null, 2)}\n`;
 
     let snapshotManifestSwitched = false;
@@ -191,6 +192,78 @@ export async function updateUpstreamSnapshot(options = {}) {
   }
 }
 
+export async function refreshUpstreamChanges(options = {}) {
+  const snapshotRoot = resolve(options.snapshotRoot ?? defaultSnapshotRoot);
+  const changesRoot = resolve(options.changesRoot ?? defaultChangesRoot);
+  const policyRoot = resolve(options.policyRoot ?? defaultPolicyRoot);
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const expectedPolicyFragmentCount = options.expectedPolicyFragmentCount ?? 12;
+  validateGenerationOptions({ repository: OFFICIAL_UPSTREAM_REPOSITORY, generatedAt });
+  if (!Number.isSafeInteger(expectedPolicyFragmentCount) || expectedPolicyFragmentCount < 1) {
+    throw new Error("expectedPolicyFragmentCount must be a positive integer");
+  }
+
+  const snapshotManifestText = await readRequiredUtf8(
+    join(snapshotRoot, "manifest.json"),
+    "Committed upstream snapshot manifest",
+  );
+  const snapshot = await readSnapshot(snapshotRoot, snapshotManifestText);
+  const sourceReport = options.fromReportFile === undefined
+    ? (await readCommittedUpstreamChangeEvidence({
+      snapshotRoot,
+      changesRoot,
+      snapshot,
+    })).report
+    : await readArchivedUpstreamChangeReport({
+      snapshotRoot,
+      changesRoot,
+      snapshot,
+      reportFile: options.fromReportFile,
+    });
+  const acceptedPolicies = await readAcceptedPolicies(policyRoot, expectedPolicyFragmentCount);
+  const previous = sourceReport.from === null
+    ? undefined
+    : {
+      manifest: {
+        upstream: { resolvedCommit: sourceReport.from.resolvedCommit },
+        corpus: {
+          sha256: sourceReport.from.corpusSha256,
+          recordCount: sourceReport.from.recordCount,
+        },
+      },
+      records: await readRetainedSnapshotCorpus(snapshotRoot, sourceReport.from),
+    };
+  const report = createChangeReport(previous, snapshot, generatedAt, acceptedPolicies);
+  const reportJson = `${JSON.stringify(report, null, 2)}\n`;
+  const reportSha256 = sha256(reportJson);
+  const reportFile = `report-${reportSha256}.json`;
+  const changesManifest = createChangesManifest({
+    snapshot,
+    report,
+    reportFile,
+    reportSha256,
+    generatedAt,
+  });
+  await publishContentAddressed({
+    root: changesRoot,
+    contentFile: reportFile,
+    content: reportJson,
+    contentSha256: reportSha256,
+    manifest: `${JSON.stringify(changesManifest, null, 2)}\n`,
+    renameFile: options.changesRenameFile,
+    syncDirectoryFn: options.changesSyncDirectoryFn,
+  });
+  return {
+    snapshotRoot,
+    changesRoot,
+    policyRoot,
+    manifest: snapshot.manifest,
+    records: snapshot.records,
+    changeManifest: changesManifest,
+    report,
+  };
+}
+
 export async function inspectCommittedUpstreamDrift(options = {}) {
   const snapshotRoot = resolve(options.snapshotRoot ?? defaultSnapshotRoot);
   const changesRoot = resolve(options.changesRoot ?? defaultChangesRoot);
@@ -205,7 +278,55 @@ export async function inspectCommittedUpstreamDrift(options = {}) {
     "Committed upstream snapshot manifest",
   );
   const snapshot = await readSnapshot(snapshotRoot, snapshotManifestText);
+  const { changesManifest, report } = await readCommittedUpstreamChangeEvidence({
+    snapshotRoot,
+    changesRoot,
+    snapshot,
+  });
 
+  const acceptedPolicies = await readAcceptedPolicies(policyRoot, expectedPolicyFragmentCount);
+  const expectedAdaptation = createAdaptationStatus(snapshot.records, acceptedPolicies);
+  if (!isDeepStrictEqual(report.adaptation, expectedAdaptation)) {
+    throw new Error("Committed upstream adaptation report does not match snapshot and policy");
+  }
+  if (!isDeepStrictEqual(changesManifest.adaptation, report.adaptation)) {
+    throw new Error("Committed upstream changes manifest adaptation does not match its report");
+  }
+
+  return {
+    snapshotManifest: snapshot.manifest,
+    snapshotRecords: snapshot.records,
+    changesManifest,
+    report,
+    acceptedPolicies,
+    warnings: formatUpstreamDriftWarnings(report.adaptation),
+  };
+}
+
+function createChangesManifest({ snapshot, report, reportFile, reportSha256, generatedAt }) {
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    upstream: {
+      repository: snapshot.manifest.upstream.repository,
+      requestedRef: snapshot.manifest.upstream.requestedRef,
+      resolvedCommit: snapshot.manifest.upstream.resolvedCommit,
+    },
+    snapshot: {
+      file: snapshot.manifest.corpus.file,
+      sha256: snapshot.manifest.corpus.sha256,
+      recordCount: snapshot.records.length,
+    },
+    report: {
+      file: reportFile,
+      sha256: reportSha256,
+      ...report.summary,
+    },
+    adaptation: report.adaptation,
+  };
+}
+
+async function readCommittedUpstreamChangeEvidence({ snapshotRoot, changesRoot, snapshot }) {
   const changesManifest = parseJson(
     await readRequiredUtf8(
       join(changesRoot, "manifest.json"),
@@ -229,24 +350,28 @@ export async function inspectCommittedUpstreamDrift(options = {}) {
     changesManifest,
     snapshotRoot,
   );
+  return { changesManifest, report };
+}
 
-  const acceptedPolicies = await readAcceptedPolicies(policyRoot, expectedPolicyFragmentCount);
-  const expectedAdaptation = createAdaptationStatus(snapshot.records, acceptedPolicies);
-  if (!isDeepStrictEqual(report.adaptation, expectedAdaptation)) {
-    throw new Error("Committed upstream adaptation report does not match snapshot and policy");
+async function readArchivedUpstreamChangeReport({ snapshotRoot, changesRoot, snapshot, reportFile }) {
+  validateContentAddressedReportFile(reportFile);
+  const expectedSha256 = reportFile.slice("report-".length, -".json".length);
+  const reportText = await readRequiredUtf8(
+    join(changesRoot, reportFile),
+    "Archived upstream change report",
+  );
+  if (sha256(reportText) !== expectedSha256) {
+    throw new Error("Archived upstream change report failed whole-file integrity");
   }
-  if (!isDeepStrictEqual(changesManifest.adaptation, report.adaptation)) {
-    throw new Error("Committed upstream changes manifest adaptation does not match its report");
-  }
-
-  return {
-    snapshotManifest: snapshot.manifest,
-    snapshotRecords: snapshot.records,
-    changesManifest,
+  const report = parseJson(reportText, "Archived upstream change report");
+  await validateChangeReport(
     report,
-    acceptedPolicies,
-    warnings: formatUpstreamDriftWarnings(report.adaptation),
-  };
+    snapshot.manifest,
+    snapshot.records,
+    { report: report.summary },
+    snapshotRoot,
+  );
+  return report;
 }
 
 export function formatUpstreamDriftWarnings(adaptation) {
@@ -916,6 +1041,14 @@ function validateChangeRecord(record, drift) {
   validateSafePosixPath(record.id, `committed upstream ${drift} record`);
 }
 
+function validateContentAddressedReportFile(value) {
+  const match = /^report-([0-9a-f]{64})\.json$/u.exec(value ?? "");
+  if (match === null) {
+    throw new Error("--from-report must be a content-addressed report filename");
+  }
+  return value;
+}
+
 function validateSnapshotPointer(pointer, label) {
   assertExactObject(pointer, ["resolvedCommit", "corpusSha256", "recordCount"], `Committed upstream ${label}`);
   if (
@@ -1261,6 +1394,19 @@ export async function runCli(args, options = {}) {
       stderr.write(
         `warning: ${result.manifest.reviewWarnings.length} canonical mirrors are byte-identical to their accepted upstream sources and require review\n`,
       );
+    }
+    return result;
+  }
+  if (invocation.command === "refresh-upstream-changes") {
+    const result = await refreshUpstreamChanges({
+      ...options.refreshChangesOptions,
+      fromReportFile: invocation.fromReportFile,
+    });
+    stdout.write(
+      `refreshed upstream change report for ${result.records.length} archived snapshot records at ${result.changesRoot}\n`,
+    );
+    for (const warning of formatUpstreamDriftWarnings(result.report.adaptation)) {
+      stderr.write(`${warning}\n`);
     }
     return result;
   }

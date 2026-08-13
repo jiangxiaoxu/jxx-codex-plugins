@@ -71,6 +71,25 @@ test("metadata schema excludes retired client hints", () => {
   assert.equal("clientFrameworks" in metadataProperties, false);
 });
 
+test("run schema distinguishes atomic script failure from unknown completion", () => {
+  const descriptions = metadata.createReplToolDescriptions({});
+  const byName = new Map(descriptions.map((description) => [description.name, description]));
+  const schema = byName.get("figma_workspace_run");
+  assert.match(schema.description, /executionOutcome=failed_atomic/u);
+  assert.deepEqual(schema.outputSchema.properties.executionOutcome.enum, ["not_started", "failed_atomic", "succeeded", "outcome_unknown"]);
+  assert.equal("executionFailure" in schema.outputSchema.properties, false);
+  assert.match(schema.outputSchema.properties.executionOutcome.description, /made no changes.*outcome_unknown requires read-back and reconciliation/isu);
+});
+
+test("design system search metadata keeps each query to one intent", () => {
+  const descriptions = metadata.createReplToolDescriptions({});
+  const byName = new Map(descriptions.map((description) => [description.name, description]));
+  const schema = byName.get("figma_workspace_search_design_system");
+  assert.match(schema.description, /one search intent/u);
+  assert.match(schema.description, /alternatives or synonyms/u);
+  assert.match(schema.inputSchema.properties.query.description, /One search intent\. Do not combine alternatives or synonyms\./u);
+});
+
 test("target schemas publish the official file-key and node-id patterns", () => {
   const descriptions = metadata.createReplToolDescriptions({});
   const byName = new Map(descriptions.map((description) => [description.name, description]));

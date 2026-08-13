@@ -101,7 +101,12 @@ const showIconKey = comp.addComponentProperty('Show Icon', 'BOOLEAN', true);
 const iconSlotKey = comp.addComponentProperty('Icon', 'INSTANCE_SWAP', iconComponentId);
 ```
 
-**Timing**: Add component properties to each variant component **before** calling `combineAsVariants`. After combining, the component set inherits all properties from its children. Do not add properties to the `ComponentSetNode` directly.
+**Property owner**: a non-variant `COMPONENT` owns its own definitions. Once components are variants, their parent `COMPONENT_SET` owns the shared definitions. Add or inspect variant properties through that `COMPONENT_SET`, never through a variant child. Capture each generated key rather than inferring it from the property name.
+
+```javascript
+const componentSet = figma.combineAsVariants([comp1, comp2], figma.currentPage);
+const disabledKey = componentSet.addComponentProperty('Disabled', 'BOOLEAN', false);
+```
 
 ## Linking Properties to Child Nodes (Required)
 
@@ -191,7 +196,7 @@ slotFrame.componentPropertyReferences = { slotContentId: slotPropKey };
 
 ### Populating slots in instances
 
-In a component instance, slot nodes are accessible by `findOne()`. Build content and append it to the slot like any other node. In narrow cases the original node handle can be invalidated by the append, so if a post-append edit throws `"Internal Figma Error: Parent not found"`, re-find the sublayer through the slot's `children` and edit through the fresh handle.
+Slots are the documented structural customization point for an instance. Find the `SLOT`, append content, and read the result back. This is distinct from a descendant geometry override: one observed host rejection of `relative-transform` must not be generalized to slot `appendChild()` or `resetSlot()`.
 
 ```javascript
 const instance = card.createInstance();
@@ -201,15 +206,17 @@ const btn = figma.createFrame();
 btn.layoutMode = "HORIZONTAL";
 btn.cornerRadius = 8;
 
-// Use the type-indexed criteria for the type filter, then narrow by name.
 const contentSlot = instance
   .findAllWithCriteria({ types: ["SLOT"] })
-  .find(n => n.name === "Content");
+  .find(node => node.name === "Content");
+if (!contentSlot) throw new Error("Expected a Content slot");
 contentSlot.appendChild(btn);
 
-// If a post-append edit throws "Parent not found", re-find via the slot:
-// const appended = contentSlot.children[contentSlot.children.length - 1];
-// appended.someProperty = ...;
+// Current-host recovery only: an append can invalidate a pre-append child
+// handle. If a dependent edit reports "Parent not found", read the child back
+// from the slot before continuing.
+const appended = contentSlot.children.at(-1);
+if (!appended) throw new Error("Expected appended slot content");
 ```
 
 ### Slot restrictions
@@ -247,19 +254,31 @@ This works for icons, avatars, badges, or any swappable nested element.
 
 ### List all existing components across all pages
 
-`figma:design-system` (CLI command) is an option for published components. For on-canvas components, use a document-wide indexed query when the task needs every page:
+`figma:design-system` (CLI command) is an option for published components. For on-canvas components, first discover page IDs without changing page context:
 
 ```javascript
-const matches = figma.root.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] });
-return matches.map(n => ({ pageName: n.parent?.name, name: n.name, type: n.type, id: n.id }));
+return figma.root.children.map(page => ({ id: page.id, name: page.name }));
 ```
 
-For page-dependent operations, a script may switch across multiple pages with awaited `setCurrentPageAsync()` calls. Keep the sequence explicit and account for document size when choosing between one document-wide script and multiple smaller transactions. See [gotchas.md](canonical:figma-use/references/gotchas.md) for page-scoping performance tradeoffs.
+Then run one read-only `.figma.ts` transaction for each returned `PAGE_ID` (these reads may fan out):
+
+```javascript
+const page = await figma.getNodeByIdAsync(PAGE_ID);
+if (!page || page.type !== 'PAGE') throw new Error('Expected a PAGE');
+await figma.setCurrentPageAsync(page);
+const matches = page.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] });
+return matches.map(n => ({ pageName: page.name, name: n.name, type: n.type, id: n.id }));
+```
+
+For page-dependent work, run one narrow transaction per page. Do not loop pages or call `setCurrentPageAsync()` repeatedly in one script. Mutations must stay page-scoped and be reconciled before a retry. Same-machine mutating calls for a resolved file are serialized by the local `fileKey` lock, but it is neither a distributed lock nor confirmation that an unknown execution had no side effects. See [gotchas.md](canonical:figma-use/references/gotchas.md) for page-scoping and recovery rules.
 
 ### Inspect an existing component set's variant naming pattern
 
 ```javascript
 const cs = await figma.getNodeByIdAsync('COMPONENT_SET_ID');
+if (!cs || cs.type !== 'COMPONENT_SET') {
+  throw new Error('Expected a COMPONENT_SET');
+}
 const variantNames = cs.children.map(c => c.name);
 const propDefs = cs.componentPropertyDefinitions;
 return { variantNames, propDefs };
@@ -267,11 +286,14 @@ return { variantNames, propDefs };
 
 ### Find existing components in the file
 
-`figma:design-system` is an option for published components. For on-canvas components, query the document root when cross-page coverage is intended:
+`figma:design-system` is an option for published components. For on-canvas components, reuse the page-ID fan-out above rather than looping pages or scanning all page content in one transaction:
 
 ```javascript
-const components = figma.root.findAllWithCriteria({ types: ['COMPONENT'] });
-return components.map(n => ({ name: n.name, id: n.id, page: n.parent?.name, w: n.width, h: n.height }));
+const page = await figma.getNodeByIdAsync(PAGE_ID);
+if (!page || page.type !== 'PAGE') throw new Error('Expected a PAGE');
+await figma.setCurrentPageAsync(page);
+const components = page.findAllWithCriteria({ types: ['COMPONENT'] });
+return components.map(n => ({ name: n.name, id: n.id, page: page.name, w: n.width, h: n.height }));
 ```
 
 ## Importing Components by Key (Team Libraries)
@@ -295,6 +317,10 @@ const variantInstance = variant.createInstance();
 ```
 
 ## Working with Instances
+
+### Geometry overrides require host confirmation
+
+`InstanceNode` exposes layout APIs, but the current `figma:run` host has rejected a descendant `relative-transform` override. Treat that as a geometry-specific host condition, not a ban on every descendant structure operation: documented slot population remains valid. Prefer exposed component properties (`TEXT`, `BOOLEAN`, `INSTANCE_SWAP`) or the main component when they express the intent. For a necessary local geometry override, make the smallest controlled script and immediately read it back; detach only when breaking the component relationship is intentional.
 
 ### Finding the right variant in a component set
 
@@ -389,24 +415,29 @@ for (const t of textNodes) {
 }
 ```
 
-### detachInstance() invalidates ancestor node IDs
+### `detachInstance()` returns the local frame
 
-**Warning:** When `detachInstance()` is called on a nested instance inside a library component instance, the parent instance may also get implicitly detached (converted from INSTANCE to FRAME with a **new ID**). Subsequent `getNodeByIdAsync(oldParentId)` returns null.
+`detachInstance(): FrameNode` replaces the target instance with a local editable frame. When the target is nested, Figma also detaches its ancestor instances; that is API behavior. Capture the returned frame and its new ID rather than looking up a node by name. The current host can invalidate pre-detach handles or cached IDs during that tree change, so re-read the returned ID and validate its typed ancestor before any dependent edit.
 
 ```javascript
-// WRONG — cached parent ID becomes invalid after child detach
-const parentId = parentInstance.id;
-nestedChild.detachInstance();
-const parent = await figma.getNodeByIdAsync(parentId); // null!
+const detached = nestedChild.detachInstance();
+const detachedId = detached.id;
 
-// CORRECT — re-discover nodes by traversal from a stable (non-instance) parent
-const stableFrame = await figma.getNodeByIdAsync(manualFrameId); // a frame YOU created
-nestedChild.detachInstance();
-// Re-find the parent by traversing from the stable frame
-const parent = stableFrame.findOne(n => n.name === "ParentName");
+const readBack = await figma.getNodeByIdAsync(detachedId);
+if (!readBack || readBack.type !== "FRAME") {
+  throw new Error("Expected the returned detached FRAME");
+}
+
+const ancestor = readBack.parent;
+if (!ancestor || (ancestor.type !== "FRAME" && ancestor.type !== "PAGE")) {
+  throw new Error("Expected a typed local ancestor for the detached frame");
+}
+
+// Use `readBack`, not `nestedChild` or a name-only re-discovery result.
+readBack.layoutMode = "VERTICAL";
 ```
 
-If you must detach multiple nested instances across sibling components, do it in a **single** `.figma.ts` script run — discover all targets by traversal at the start before any detachment mutates the tree.
+For multiple independent detachments, capture and validate each returned frame before the next dependent edit. Do not continue from pre-detach handles or IDs.
 
 ## Inspecting Component Metadata (Deep Traversal)
 
@@ -433,17 +464,21 @@ async function importComponentByKey(componentKey) {
 }
 
 /**
- * Given a main component node, returns the component set parent if one exists,
- * otherwise returns the component itself. Used to get the top-level node that
- * holds `componentPropertyDefinitions`.
+ * Resolves the only node allowed to own `componentPropertyDefinitions`:
+ * a COMPONENT_SET, or a COMPONENT that is not a variant child.
  *
- * @param {ComponentNode} mainComponent
+ * @param {ComponentNode|ComponentSetNode} node
  * @returns {ComponentNode|ComponentSetNode}
  */
-function getRelevantComponentNode(mainComponent) {
-  return mainComponent.parent.type === "COMPONENT_SET"
-    ? mainComponent.parent
-    : mainComponent;
+function getComponentPropertyOwner(node) {
+  if (node.type === "COMPONENT_SET") return node;
+  if (node.type === "COMPONENT" && node.parent?.type !== "COMPONENT_SET") {
+    return node;
+  }
+  if (node.type === "COMPONENT" && node.parent?.type === "COMPONENT_SET") {
+    return node.parent;
+  }
+  throw new Error("Expected a COMPONENT_SET or a non-variant COMPONENT");
 }
 
 /**
@@ -454,15 +489,16 @@ function getRelevantComponentNode(mainComponent) {
  * @returns {Record<string, {name: string, type: string, key: string, variantOptions?: string[]}>}
  */
 function getComponentProps(node) {
+  const owner = getComponentPropertyOwner(node);
   const result = {};
-  for (let key in node.componentPropertyDefinitions) {
+  for (const key in owner.componentPropertyDefinitions) {
     const prop = {
       name: key.replace(/#[^#]+$/, ""),
-      type: node.componentPropertyDefinitions[key].type,
+      type: owner.componentPropertyDefinitions[key].type,
       key: key
     };
     if (prop.type === "VARIANT") {
-      prop.variantOptions = node.componentPropertyDefinitions[key].variantOptions;
+      prop.variantOptions = owner.componentPropertyDefinitions[key].variantOptions;
     }
     result[key] = prop;
   }
@@ -491,7 +527,10 @@ function collectDescendants(node, namespace, result) {
     }
 
     if (node.type === "INSTANCE") {
-      const mainComponent = getRelevantComponentNode(node.mainComponent);
+      if (!node.mainComponent) {
+        throw new Error("Instance has no available main component");
+      }
+      const mainComponent = getComponentPropertyOwner(node.mainComponent);
       object.properties = getComponentProps(mainComponent);
       object.descendants = {};
       object.mainComponentName = mainComponent.name;
@@ -515,7 +554,7 @@ function collectDescendants(node, namespace, result) {
  */
 async function getLocalComponentMetadata(componentId) {
   const node = await figma.getNodeByIdAsync(componentId);
-  if (node.type === "COMPONENT_SET" || node.type === "COMPONENT") {
+  if (node && (node.type === "COMPONENT_SET" || node.type === "COMPONENT")) {
     const result = {
       name: node.name,
       nodeId: node.id,

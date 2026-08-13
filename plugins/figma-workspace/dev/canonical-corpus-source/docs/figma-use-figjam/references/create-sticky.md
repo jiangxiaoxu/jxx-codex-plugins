@@ -6,12 +6,12 @@ Use a sticky for a single idea, response, observation, or piece of workshop inpu
 
 Put the operation in a local `.figma.ts` file, then invoke `figma:run` with an explicit FigJam file target, `--surface figjam`, and the script path. TypeScript preflight is always enabled. Return the sticky IDs and the dimensions observed after writing text.
 
+Keep a mutating script to one board page and one narrow transaction. For cross-page work, fan out separate read-only calls after explicit page discovery, then run separate per-page mutations; the runtime serializes applicable same-machine calls by `fileKey`.
+
 ```ts
 // research-note.figma.ts
-// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
-const runId = 'figjam-<fresh-uuid>'
 const sticky = figma.createSticky()
-sticky.setSharedPluginData('figma_workspace', 'run_id', runId)
+sticky.name = 'Research insight'
 const stickyFont = sticky.text.fontName
 if (stickyFont === figma.mixed) throw new Error('Sticky text has mixed fonts')
 await figma.loadFontAsync(stickyFont)
@@ -19,10 +19,7 @@ sticky.text.characters = 'Interview participants want a visible progress indicat
 sticky.fills = [{ type: 'SOLID', color: { r: 0xff / 255, g: 0xe2 / 255, b: 0x99 / 255 } }]
 sticky.x = 160
 sticky.y = 140
-sticky.name = 'Research insight'
-
 return {
-  runId,
   createdNodeIds: [sticky.id],
   sticky: { id: sticky.id, text: sticky.text.characters, width: sticky.width, height: sticky.height, wide: sticky.isWideWidth },
 }
@@ -42,13 +39,11 @@ Run `npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface fig
 For multiple notes, create and populate all stickies first, then position them from their actual dimensions. This prevents overlap when one note grows taller.
 
 ```ts
-// Replace this literal with a fresh UUID before dispatch and retain it for reconciliation.
-const runId = 'figjam-<fresh-uuid>'
 const ideas = ['Clarify onboarding', 'Test progress cue', 'Measure drop-off']
 const notes: StickyNode[] = []
-for (const idea of ideas) {
+for (const [index, idea] of ideas.entries()) {
   const note = figma.createSticky()
-  note.setSharedPluginData('figma_workspace', 'run_id', runId)
+  note.name = `Research idea ${index + 1}`
   const noteFont = note.text.fontName
   if (noteFont === figma.mixed) throw new Error('Sticky text has mixed fonts')
   await figma.loadFontAsync(noteFont)
@@ -61,11 +56,11 @@ for (const note of notes) {
   note.y = 420
   x += note.width + 64
 }
-return { runId, createdNodeIds: notes.map((note) => note.id), heights: notes.map((note) => note.height) }
+return { createdNodeIds: notes.map((note) => note.id), heights: notes.map((note) => note.height) }
 ```
 
 ## Verify and common failures
 
 Use a read-only script to verify `type === 'STICKY'`, text, fill, `isWideWidth`, and final dimensions. Capture a completed cluster or section and inspect the local image when spacing and visual hierarchy matter.
 
-Generate and retain a unique `runId` before dispatch. Every created sticky must immediately call `setSharedPluginData('figma_workspace', 'run_id', runId)` before reading fonts, awaiting, or applying other properties, and the result must return the same `runId` and IDs. A fatal TypeScript diagnostic is preflight and reports `not_started`. An unloaded-font error occurs during dispatched runtime execution and therefore reports `outcome_unknown`; follow `retryGuidance`, query shared PluginData namespace `figma_workspace` and key `run_id` for the exact retained value, and reconcile partial or complete board edits before deciding whether work remains. If batch notes overlap, their positions were based on assumed 240px heights or set before every note was populated; perform the two passes. If the content is instructional rather than an idea, replace the sticky with board text or a shape.
+Give each sticky its deterministic operation-specific name immediately after creation and return its ID. A fatal TypeScript diagnostic is preflight and reports `not_started`. An unloaded-font or invalid runtime property error occurs inside the host script after dispatch; use the returned outcome and documented failure presentation, never label it `not_started`. For an `outcome_unknown` result, follow `retryGuidance`, inspect returned IDs first, then narrowly read back the expected sticky names, text, parent, and bounds before deciding whether work remains. Shared PluginData is only an optional, host-verified supplement. If batch notes overlap, their positions were based on assumed 240px heights or set before every note was populated; perform the two passes. If the content is instructional rather than an idea, replace the sticky with board text or a shape.

@@ -5,7 +5,7 @@ description: Route Figma, FigJam, Slides, design-system, token, component, Plugi
 
 # Figma Workspace
 
-Use the bundled Node CLI for Figma work. It has no agent-facing local MCP server; the official remote MCP is internal transport only. Each invocation is independent: provide the Figma target again for every remote operation.
+Use the bundled Node CLI for Figma work. It has no agent-facing local MCP server; the official remote MCP is internal transport only. Each invocation is independent: provide a Figma target again when the selected command or live upstream schema requires one. Targetless lookup commands do not inherit a prior target.
 
 ## Start And Discover
 
@@ -17,18 +17,19 @@ Use `figma:docs:help`, `figma:api:help`, or `figma:upstream:help` only to browse
 
 Use only the public commands below. Do not expose transport names, internal identifiers, MCP tools, resource URIs, or corpus files.
 
-## Address Figma Explicitly
+## Address Figma When Required
 
 - File-scoped work takes `--file <Figma-file-URL|fileKey>`.
 - Node-scoped work takes a full node URL through `--target <URL>`, or the explicit pair `--file <URL|fileKey> --node <nodeId>`.
 - A URL `node-id=230-2` normalizes to Plugin API node ID `230:2`; the slug and `t` query parameter are not identity. A bare node ID is never sufficient.
 - A Figma URL determines the Design, FigJam, or Slides surface. With a raw fileKey, provide `--surface` whenever the selected command requires a surface.
 - Do not derive a target from a local selection, page shortcut, prior invocation, or persisted context. Conflicting explicit file and node URL values fail before dispatch.
+- `figma:upstream:list` and `figma:upstream:read` take no Figma target. For `figma:upstream:call`, read the selected live schema and provide only the target fields it requires.
 
 ## Route The Intent
 
 - For an obvious read-only request, select its direct command below.
-- For non-trivial, generated, or unclear work, use `figma:docs:catalog`, then narrow with `figma:docs:search` using concise English task terms and the known surface. Read exact returned `project:` or `canonical:` IDs through `figma:docs:read`.
+- For non-trivial, generated, or unclear work, use `figma:docs:catalog`, then narrow with `figma:docs:search` using concise English task terms as recommended search seeds and the known surface. Read exact returned `project:` or `canonical:` IDs through `figma:docs:read`.
 - Use `figma:api:search` for native Plugin API declarations. It accepts bare, qualified, and call-shaped queries such as `createFrame`, `figma.createFrame()`, and `ComponentNode.createInstance`. When a compact result is insufficient, read its exact returned `apiId` through `figma:api:read`.
 - Use `figma:doctor` only to diagnose packaged docs, corpus, TypeScript, or Plugin API index faults. It is local-only and requires no Figma target.
 - Read the selected leaf help for numeric ranges. Catalog/search display limits clamp safe out-of-range integers and report `parameterAdjustments`; traversal depth, pagination offset, capture dimensions, and remote inline-result bytes are strict usage boundaries.
@@ -38,7 +39,7 @@ Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) fo
 
 ## Search Query Recipes
 
-Use these English keyword patterns as search seeds. Add the known surface and task family as hard filters when available.
+Prefer these English keyword patterns as search seeds. Add the known surface and task family as hard filters when available; English is recommended for relevance, not required by the input layer.
 
 | Intent | English keywords |
 | --- | --- |
@@ -74,7 +75,7 @@ Use these English keyword patterns as search seeds. Add the known surface and ta
 | Execute Plugin API | `figma:run` | Explicit file plus a local `.figma.ts` script or stdin source. |
 | Move assets | `figma:assets:apply`, `figma:assets:download` | Every manifest or operation target is explicit. |
 | Verify visually | `figma:capture` | Explicit node target; inspect the saved PNG with `view_image`. |
-| Use an uncovered official capability | `figma:upstream:help`, `figma:upstream:list`, `figma:upstream:read`, `figma:upstream:call` | Read live schema first; provide an explicit target whenever that schema needs one. |
+| Use an uncovered official capability | `figma:upstream:help`, `figma:upstream:list`, `figma:upstream:read`, `figma:upstream:call` | `list`/`read` are targetless. Read the selected live schema before `call`; provide only required target fields and obtain explicit confirmation for marked destructive, external, credit/cost, or asset-upload actions. |
 
 ## Implement And Verify
 
@@ -88,7 +89,7 @@ Use these English keyword patterns as search seeds. Add the known surface and ta
    To provide source on stdin, use `--source -` instead of `--script`. The two source modes are mutually exclusive.
 3. Use native Figma Plugin API for edits, `figma:api:search` for uncertain symbols, and `figma:api:read` for the complete declaration behind a returned `apiId`. Keep scripts repairable, return compact changed-node IDs and validation notes, and repair fatal preflight diagnostics before dispatch.
 4. Capture visible results through queued `$.capture` or standalone `figma:capture`, then inspect every generated or edited PNG with `view_image` before reporting visual success.
-5. Prefer first-class commands. Use `figma:upstream:list`, `figma:upstream:read`, and `figma:upstream:call` only for an uncovered official capability.
+5. Prefer first-class commands. Use `figma:upstream:list`, `figma:upstream:read`, and `figma:upstream:call` only for an uncovered official capability. Before calling, follow the selected live description and schema, including its confirmation requirements.
 
 Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture, local artifacts, and mutation recovery details.
 
@@ -97,11 +98,11 @@ Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture
 - Pure inline reads do not create a persistent workspace record. When an invocation must write a sidecar, diagnostic, capture, or download and no explicit output path is supplied, the CLI returns an absolute path beneath its invocation-specific OS temp directory.
 - Treat `outputFiles.cliResultFile` as the machine-readable result. Discover its structure and extract only relevant content before expanding large values; do not treat the Restricted Markdown envelope as JSON.
 - Use explicit `--output-dir`, `--image-file`, or download output options when the caller needs a durable local location. Managed paths reject links and reparse points and publish atomically.
-- Same-machine mutations are serialized per fileKey through a temporary lock. This is coordination only, not distributed durability.
-- `figma:run` reports `executionOutcome`: `not_started`, `succeeded`, or `outcome_unknown`.
+- The temporary fileKey lock covers `figma:run`, `figma:assets:apply`, and `figma:upstream:call` only when that call resolves a fileKey. This is coordination only, not distributed durability.
+- `figma:run` reports `executionOutcome`: `not_started`, `failed_atomic`, `succeeded`, or `outcome_unknown`. `failed_atomic` is a direct returned `use_figma` script error: Figma confirmed no file changes, so repair and retry safely.
 - Repair and rerun `not_started` only because dispatch did not occur. Treat `succeeded` as confirmed remote execution even if later local output processing fails.
-- For `outcome_unknown`, follow `retryGuidance` and inspect, read back, or tag-reconcile the intended effect before deciding whether a retry is safe. Never blindly replay a mutation.
-- If capture processing fails after `succeeded`, use standalone `figma:capture`. If stdout reports `Status: failed after execution`, repair the named local stage and preserve the confirmed mutation result.
+- For `failed_atomic`, stdout directly provides a compact remote error code/message and `Status: failed atomically`; repair the script and retry safely. `outcome_unknown` means completion was not confirmed, including response loss or truncation: follow `retryGuidance`, inspect, read back, or tag-reconcile before deciding whether any retry is safe. Never blindly replay a mutation when its outcome is unknown.
+- If capture processing fails after `succeeded`, use standalone `figma:capture`. `Status: failed after execution` is only for a named local stage that failed after confirmed execution; repair it and preserve the confirmed mutation result.
 
 ## OAuth
 

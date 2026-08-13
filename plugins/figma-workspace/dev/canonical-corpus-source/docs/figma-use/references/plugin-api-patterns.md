@@ -218,7 +218,7 @@ node.fills = [
 
 ### Setting Up Auto Layout
 
-**Prefer `figma.createAutoLayout()`** — it returns a frame with `layoutMode` already set and both axes hugging content, so children can immediately use `layoutSizingHorizontal/Vertical = "FILL"`.
+**Prefer `figma.createAutoLayout()`** — it returns a frame with `layoutMode` already set and both axes hugging content. Append a child to that frame before setting its child-only `layoutSizingHorizontal` / `layoutSizingVertical` values or `layoutPositioning`.
 
 ```javascript
 const frame = figma.createAutoLayout(); // HORIZONTAL by default
@@ -263,7 +263,8 @@ frame.counterAxisAlignItems = "MAX";     // End
 ### Child Sizing
 
 ```javascript
-// IMPORTANT: FILL can only be set AFTER the child is appended to an auto-layout parent
+// IMPORTANT: append first. FILL, child HUG, and ABSOLUTE positioning depend
+// on the auto-layout-parent context.
 parent.appendChild(child)
 child.layoutSizingHorizontal = "FILL";   // Stretch to parent
 child.layoutSizingHorizontal = "HUG";    // Shrink to content
@@ -286,9 +287,11 @@ frame.counterAxisSpacing = 24;   // Vertical gap (between rows)
 ### Absolute Positioning Within Auto Layout
 
 ```javascript
+// The child must already belong to this auto-layout parent.
+parent.appendChild(child);
 child.layoutPositioning = "ABSOLUTE";
 child.constraints = { horizontal: "MAX", vertical: "MIN" };  // Top-right
-child.x = parentWidth - childWidth - 8;
+child.x = parent.width - child.width - 8;
 child.y = 8;
 ```
 

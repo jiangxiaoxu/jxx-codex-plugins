@@ -190,36 +190,24 @@ const page = figma.currentPage  // works
 
 ## Order work that depends on page context
 
-`setCurrentPageAsync` changes global page context. Await each switch before accessing that page, and keep dependent page operations ordered. Multi-page scripts are valid Plugin API workflows.
+`setCurrentPageAsync` changes global page context. In `figma:run`, do not loop across pages in one script. Return page IDs first, then use one narrow transaction per page; this keeps result scope and mutation recovery explicit.
 
 ```js
-// VALID — traverse pages sequentially when the task genuinely spans them.
-const componentsByPage = {}
-for (const page of figma.root.children) {
-  await figma.setCurrentPageAsync(page)
-  componentsByPage[page.name] = page.findAllWithCriteria({ types: ['COMPONENT'] }).map(n => n.id)
-}
-return componentsByPage
+// Step 1 — no page switch: enumerate page IDs for later fan-out.
+return figma.root.children.map(page => ({ id: page.id, name: page.name }))
 ```
 
-For a large document, returning page IDs first and running smaller page-specific scripts can improve retry granularity:
+Then run one page-specific script for each selected `PAGE_ID`:
 
 ```js
-// Optional discovery step: return page IDs for later focused work.
-return figma.root.children.map(p => ({ id: p.id, name: p.name }))
-```
-
-Then use a page-specific script where that decomposition is useful:
-
-```js
-// Optional focused step for one selected page.
 const page = await figma.getNodeByIdAsync(PAGE_ID)  // PAGE_ID supplied by caller
+if (!page || page.type !== 'PAGE') throw new Error('Expected a PAGE')
 await figma.setCurrentPageAsync(page)
 // ... read or mutate this page ...
 return { pageId: page.id, components: page.findAllWithCriteria({ types: ['COMPONENT'] }).map(n => n.id) }
 ```
 
-Choose a single multi-page script or multiple focused scripts based on mutation coupling, result size, and recovery needs. The same performance consideration applies to traversal scope; see [Scope traversal to the smallest known ancestor](#scope-traversal-to-the-smallest-known-ancestor).
+Read-only page transactions may fan out. Keep mutations page-scoped; the same-machine `fileKey` lock serializes mutating calls that resolve a file, but it is neither a distributed lock nor confirmation that an unknown execution had no side effects. Reconcile the page before any retry. The same performance consideration applies to traversal scope; see [Scope traversal to the smallest known ancestor](#scope-traversal-to-the-smallest-known-ancestor).
 
 ## `figma:metadata` operates on one subtree — discover pages explicitly
 
@@ -229,8 +217,7 @@ A Figma file can have multiple pages (canvas nodes). `figma:metadata` only retur
 - For more detail per page (e.g. child counts, top-level node types), fall back to `.figma.ts` script:
 
 ```js
-const pages = figma.root.children.map(p => `${p.name} id=${p.id} children=${p.children.length}`);
-return pages.join('\n');
+return figma.root.children.map(page => ({ id: page.id, name: page.name }));
 ```
 
 Icons, variables, and components may live on pages other than the first. Always enumerate all pages before concluding that the file has no existing assets.
@@ -245,23 +232,21 @@ figma.notify("Done!")
 return "Done!"
 ```
 
-## Choose private or shared plugin data deliberately
+## Private PluginData is unavailable in the current `figma:run` environment
 
-`getPluginData()` / `setPluginData()` store values private to the executing plugin. `getSharedPluginData()` / `setSharedPluginData()` use an explicit namespace and are readable by other plugins. Both APIs are available in `.figma.ts`; choose based on the intended ownership and visibility.
+Do not use private `getPluginData` or `setPluginData` in `.figma.ts`. The live host contract explicitly bans `setPluginData`; a direct host attempt separately rejected `getPluginData`. Those are different evidence sources, not a claim that both APIs were removed from the upstream type declarations. Return created or changed node IDs, give recoverable targets stable names, and reconcile with a narrow read-back query. Do not assume shared PluginData is available or use it as the recovery/indexing mechanism.
 
 ```js
-// Private to the executing plugin.
-node.setPluginData('my_key', 'my_value')
-const val = node.getPluginData('my_key')
-
-// Shared plugin data requires a namespace.
-node.setSharedPluginData('my_namespace', 'my_key', 'my_value')
-const val = node.getSharedPluginData('my_namespace', 'my_key')
-
-// Raw node IDs can also connect explicit follow-up calls.
 const rect = figma.createRectangle()
-return { nodeId: rect.id }
-// Then pass nodeId as a string literal in the next `.figma.ts` script call
+rect.name = "Codex run 2026-08-13 - summary card"
+figma.currentPage.appendChild(rect)
+
+return {
+  createdNodeIds: [rect.id],
+  createdNodes: [{ id: rect.id, name: rect.name }],
+}
+// A later script can use the returned ID, then narrow a read-back to the
+// known parent and stable name if an outcome must be reconciled.
 ```
 
 ## Script must always return a value
@@ -416,27 +401,20 @@ await Promise.all(uniqueFonts.map(f => figma.loadFontAsync(f)))
 
 **Rule: use `findAllWithCriteria({ types: [...] })` for type-based searches. Reserve `findOne` / `findAll(predicate)` for cases the criteria API can't express** — name patterns, regex, capability checks (`'fills' in n`), or any predicate that touches properties the engine doesn't index.
 
-`findAll` and `findOne` walk the entire subtree node-by-node and run a JS predicate on each one. For anything the Figma engine already indexes (type, pluginData, sharedPluginData), there is a much faster API. Use this table:
+`findAll` and `findOne` walk the entire subtree node-by-node and run a JS predicate on each one. For node types, the Figma engine has an indexed alternative. Use this table:
 
 | You want… | DON'T | DO |
 |---|---|---|
 | One specific node, you have its ID | `page.findOne(n => n.id === id)` | `await figma.getNodeByIdAsync(id)` |
 | All nodes of a given type | `page.findAll(n => n.type === 'TEXT')` | `page.findAllWithCriteria({ types: ['TEXT'] })` |
 | Type + a few cheap attributes (`name`, `visible`, etc.) | `page.findAll(n => n.type === 'TEXT' && n.name === 'Title')` | `page.query('TEXT[name=Title]')` (see [SKILL.md → node.query](canonical:figma-use/SKILL.md)) |
-| Nodes with plugin data | `page.findAll(n => n.getPluginData('key'))` | `page.findAllWithCriteria({ pluginData: { keys: ['key'] } })` |
-| Nodes with shared plugin data | `page.findAll(n => n.getSharedPluginData('ns', 'key'))` | `page.findAllWithCriteria({ sharedPluginData: { namespace: 'ns', keys: ['key'] } })` |
 
-**`types` and `pluginData.keys` are arrays — pass multiple values in a single call instead of issuing N separate ones.** A union over `types` is OR'd; multiple `pluginData.keys` match nodes that carry *any* of the given keys.
+**`types` is an array — pass multiple types in one call instead of issuing N separate ones.** A union over `types` is OR'd.
 
 ```js
 // Multiple types in one call — returns COMPONENT ∪ COMPONENT_SET in one indexed pass
 page.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] })
 
-// Multiple pluginData keys in one call — matches nodes that have any of them
-page.findAllWithCriteria({ pluginData: { keys: ['dsb_key', 'dsb_run_id'] } })
-
-// Multiple sharedPluginData keys (under the same namespace)
-page.findAllWithCriteria({ sharedPluginData: { namespace: 'dsb', keys: ['key', 'run_id'] } })
 ```
 
 One more rule applies to any traversal — see also the dedicated [Scope traversal to the smallest known ancestor](#scope-traversal-to-the-smallest-known-ancestor) gotcha below:
@@ -727,6 +705,8 @@ content.layoutGrow = 1  // NOW it correctly fills remaining space
 
 Note: `x` and `y` are **not** read-only and can be set directly.
 
+For a descendant of an `INSTANCE`, this declaration is not a guarantee that the live `figma:run` host accepts every geometry override: it has rejected an override such as `relative-transform`. This is a geometry-specific host condition, not a blanket restriction on instance descendants or documented slot operations. Prefer a component property or the main component when it expresses the intent; otherwise make the smallest controlled geometry override and read it back immediately.
+
 ```js
 // WRONG — throws "no setter for property"
 node.width = 300
@@ -779,6 +759,8 @@ frame.primaryAxisSizingMode = 'AUTO'   // NOW set height to hug — this sticks!
 
 ## Node positions don't auto-reset after reparenting
 
+This applies directly to regular nodes outside an `INSTANCE` subtree. A non-slot reparenting override inside an instance needs a controlled host check and immediate read-back; it does not change the documented ability to append content to a `SLOT` in an instance.
+
 ```js
 // WRONG — assuming positions reset when moving a node into a new parent
 const node = figma.createRectangle()
@@ -786,7 +768,7 @@ node.x = 500; node.y = 500;
 figma.currentPage.appendChild(node)
 section.appendChild(node)  // node still at (500, 500) relative to section!
 
-// CORRECT — explicitly set x/y after ANY reparenting operation
+// CORRECT — explicitly set x/y after reparenting a regular, non-instance node
 section.appendChild(node)
 node.x = 80; node.y = 80;  // reset to desired position within section
 ```
@@ -956,6 +938,8 @@ Common shapes the bug takes — what you tried vs. where the member actually liv
 
 Verify any member you're unsure about with `figma:api:search` before using it. Names that "sound plausible" but aren't in the bundled Plugin API typings will fail preflight or throw; the lookup result is the public source of truth.
 
+The declaration surface is not a host-runtime permission grant. Although `LayoutMixin` declares geometry and Auto Layout members on several node types, the current `figma:run` host may reject an instance-descendant geometry override such as `relative-transform`. Do not infer a general ban on child traversal, slot population, or `slotNode.resetSlot()` from that result.
+
 **Optional chaining (`?.`) does NOT defend against this.** The property access happens before `?.` is evaluated, so `node.children?.length` still throws on a `TEXT` node. The same applies to `try { node.fills }` — the access throws inside the try, which works for catching, but you should narrow up front instead.
 
 **How to avoid:**
@@ -982,23 +966,51 @@ node.customColor = '#ff0000'  // Error — not a real API property
 
 **How to avoid this**: Before setting any property, query its bare, qualified, or call-shaped symbol with `figma:api:search` and verify that it exists on the node type. Property names that sound plausible but aren't in the bundled typings will fail preflight or throw.
 
-## `detachInstance()` invalidates ancestor node IDs
+## Instance-descendant geometry: confirm the host behavior
 
-When `detachInstance()` is called on a nested instance inside a library component instance, the parent instance may also get implicitly detached (converted from INSTANCE to FRAME with a **new ID**). Any previously cached ID for the parent becomes invalid.
+The generic Plugin API surface declares instance descendants as normal scene nodes, but the live `figma:run` host has rejected a `relative-transform` geometry override. Keep this condition narrow: it is not evidence that all instance structure mutations are forbidden. In particular, use the documented `SLOT` workflow for per-instance content, and use `slotNode.resetSlot()` to restore its default. For geometry, first prefer an exposed component property or edit the main component when the change is shared; otherwise make the smallest controlled override and inspect it before any follow-up write.
 
 ```js
-// WRONG — using cached parent ID after child detach
-const parentId = parentInstance.id;
-nestedChild.detachInstance();
-const parent = await figma.getNodeByIdAsync(parentId); // null! ID changed.
+// Do not assume this descendant geometry override is accepted by the host.
+// The current host may reject it as a relative-transform override.
+const title = instance.findOne(n => n.type === "TEXT" && n.name === "Title")
+title.x = 24
 
-// CORRECT — re-discover by traversal from a stable (non-instance) frame
-const stableFrame = await figma.getNodeByIdAsync(manualFrameId);
-nestedChild.detachInstance();
-const parent = stableFrame.findOne(n => n.name === "ParentName");
+// CORRECT — discover and change an exposed component property when one exists
+const labelProperty = Object.entries(instance.componentProperties)
+  .find(([key, definition]) => key.startsWith("Label#") && definition.type === "TEXT")
+if (!labelProperty) throw new Error("Expected an exposed Label TEXT property")
+instance.setProperties({ [labelProperty[0]]: "Updated title" })
+
+// A supported instance-local structural operation: populate a SLOT.
+const contentSlot = instance
+  .findAllWithCriteria({ types: ["SLOT"] })
+  .find(node => node.name === "Content")
+if (!contentSlot) throw new Error("Expected a Content slot")
+contentSlot.appendChild(figma.createFrame())
 ```
 
-If detaching multiple nested instances across siblings, do it in a **single** `.figma.ts` script run — discover all targets by traversal before any detachment mutates the tree.
+## `detachInstance()` returns a frame and detaches ancestors
+
+`detachInstance(): FrameNode` replaces the target instance with a local editable frame. For a nested instance, Figma detaches all ancestor instances as part of that operation. This API behavior is separate from current-host recovery: cached pre-detach handles and IDs can be invalidated by the mutation. Capture the returned frame and new ID, then read it back and validate its typed ancestor; do not use a name-only `findOne()` result.
+
+```js
+const detached = nestedChild.detachInstance();
+const detachedId = detached.id;
+const readBack = await figma.getNodeByIdAsync(detachedId);
+if (!readBack || readBack.type !== "FRAME") {
+  throw new Error("Expected the returned detached FRAME");
+}
+
+const ancestor = readBack.parent;
+if (!ancestor || (ancestor.type !== "FRAME" && ancestor.type !== "PAGE")) {
+  throw new Error("Expected a typed local ancestor");
+}
+
+readBack.resize(240, readBack.height);
+```
+
+For multiple detaches, capture and validate each returned frame before every dependent edit; never continue from pre-detach handles or IDs.
 
 ## Icons: import the SVG — never reconstruct from rotated line primitives
 

@@ -4,7 +4,7 @@
   "records": [
     {
       "id": "figma-use/SKILL.md",
-      "sourceContentSha256": "6c0715d4947137d05318c7a862d159ce5011735842ad3b4f84dd98e12749d024",
+      "sourceContentSha256": "26d88b3a0c1b752c48ec57120cfa04d7faae306cd6015e6ab8addc19a4de1a9f",
       "classification": "router",
       "state": "ready",
       "mirrorPath": "docs/figma-use/SKILL.md",
@@ -17,7 +17,7 @@
     },
     {
       "id": "figma-use/references/api-reference.md",
-      "sourceContentSha256": "5998bc885a6845f2962508190bb46e9d3b2887fe86ba1202e8e736e29802def0",
+      "sourceContentSha256": "04dcdf745a91963d19b66d6839f26d51ccafa04478e9f1ea8ed0d0b2dc08e97b",
       "classification": "active",
       "state": "ready",
       "mirrorPath": "docs/figma-use/references/api-reference.md",
@@ -43,7 +43,7 @@
     },
     {
       "id": "figma-use/references/component-patterns.md",
-      "sourceContentSha256": "8b517a881984c636348aa52dd9415bd95da739154c683c48c92a3c41cff7c10d",
+      "sourceContentSha256": "72c31525956cf5863cd2f7a151b3313be016fa7edfa252adedc90889410d8899",
       "classification": "active",
       "state": "ready",
       "mirrorPath": "docs/figma-use/references/component-patterns.md",
@@ -69,7 +69,7 @@
     },
     {
       "id": "figma-use/references/gotchas.md",
-      "sourceContentSha256": "d71f95d2443a8027adea6e7b24fb67d30c08e6629cc3301588c4b1303eee1abb",
+      "sourceContentSha256": "e493933b2a8e814fffb1b777977c634463e1eab015fbb583fb8b6d89674f9678",
       "classification": "active",
       "state": "ready",
       "mirrorPath": "docs/figma-use/references/gotchas.md",
@@ -82,7 +82,7 @@
     },
     {
       "id": "figma-use/references/plugin-api-patterns.md",
-      "sourceContentSha256": "be40b1b3b39b66aa4e743421f0c6774bea1eedc19c36427ffdbabd32455fad0d",
+      "sourceContentSha256": "654026ebf2935958a7464a0d6c4ae4bd42668e1ddb43b4f29b7cb2652070768e",
       "classification": "active",
       "state": "ready",
       "mirrorPath": "docs/figma-use/references/plugin-api-patterns.md",
@@ -95,7 +95,7 @@
     },
     {
       "id": "figma-use/references/plugin-api-standalone.d.ts",
-      "sourceContentSha256": "06eaedbf743a3c0d6eaccdacaaef1bc870d5eef384dba9b208fc31cb7aeadc05",
+      "sourceContentSha256": "c1daccb23452281f75a02ac7f80e25348c8a80bbfd047a3d42e5cd4458134e0e",
       "classification": "api",
       "state": "ready",
       "sourceContract": "figma-mcp",
@@ -107,7 +107,7 @@
     },
     {
       "id": "figma-use/references/plugin-api-standalone.index.md",
-      "sourceContentSha256": "6d5009a482440197ccf926fd798b87e60be6e6b1be5fb78077d81a83171a9bdf",
+      "sourceContentSha256": "cb01a403ff1acb5d7bb825135be6a3e427b782ccb4d2fe3baaa031790217742e",
       "classification": "active",
       "state": "ready",
       "mirrorPath": "docs/figma-use/references/plugin-api-standalone.index.md",
@@ -172,7 +172,7 @@
     },
     {
       "id": "figma-use/references/working-with-design-systems/wwds-components--using.md",
-      "sourceContentSha256": "e4e82a8492ec830f18a3120cae9755f389da92aabb2693ef87c396fd281af576",
+      "sourceContentSha256": "97293f116bcde859ad61050adeb0f1dd93ac2dc8ff8ab28a177e7455f107a5d8",
       "classification": "active",
       "state": "ready",
       "mirrorPath": "docs/figma-use/references/working-with-design-systems/wwds-components--using.md",
@@ -185,7 +185,7 @@
     },
     {
       "id": "figma-use/references/working-with-design-systems/wwds-components.md",
-      "sourceContentSha256": "9d7b785468b3b7f2e47026e024f43b63551e5c5c2687ab8e885da20f1dbb8e9b",
+      "sourceContentSha256": "a8f996f4cf0c3520d8c11639866dbc740bcad802a4f42453520c32412b53f825",
       "classification": "active",
       "state": "ready",
       "mirrorPath": "docs/figma-use/references/working-with-design-systems/wwds-components.md",

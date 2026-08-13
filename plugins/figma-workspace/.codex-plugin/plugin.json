@@ -1,6 +1,6 @@
 {
   "name": "figma-workspace",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Stateless fixed-leaf npm command entrypoints and a shared typed Node.js runtime for explicit-target Figma workspace automation.",
   "author": {
     "name": "Local developer"

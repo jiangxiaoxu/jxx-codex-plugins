@@ -178,6 +178,7 @@ const QUEUED_CAPTURE_ERROR_MESSAGE_BYTES = 600;
 const QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES = 300;
 const QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE = "Script execution succeeded and may have mutated Figma. Do not rerun it just because capture post-processing failed; retry the affected node with figma:capture.";
 const UNKNOWN_EXECUTION_RETRY_GUIDANCE = "The execution request was dispatched, but Figma completion could not be confirmed. Do not rerun the mutation blindly. Inspect or read back the target and reconcile the observed state before deciding whether any retry is safe.";
+const ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE = "Figma host confirmed that the script failed atomically, so it made no file changes. Repair the script and retry safely.";
 const APPLY_ASSET_MANIFEST_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_apply_asset_manifest");
 const DOWNLOAD_ASSETS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_download_assets");
 const CAPTURE_NODE_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_capture_node");
@@ -502,7 +503,7 @@ export interface FigmaWorkspaceUpstreamBackedResult extends FigmaWorkspaceToolRe
   upstreamError?: FigmaWorkspacePublicUpstreamError;
 }
 
-export type FigmaWorkspaceExecutionOutcome = "not_started" | "succeeded" | "outcome_unknown";
+export type FigmaWorkspaceExecutionOutcome = "not_started" | "failed_atomic" | "succeeded" | "outcome_unknown";
 
 export interface FigmaWorkspaceCompactScriptMetadata {
   [key: string]: unknown;
@@ -1165,8 +1166,8 @@ function handleDoctor(_args: FigmaWorkspaceDoctorArguments): FigmaWorkspaceDocto
     guidance: ok
       ? ["Project docs, canonical docs corpus, generated Plugin API index, and TypeScript runtime assets are available."]
       : [
-          "Compare attemptedPaths with the installed plugin cache, then rebuild or reinstall the Figma Workspace plugin if assets are missing.",
-          "Reload the Codex app or CLI process after updating the plugin because runtime assets are loaded at process startup.",
+          "Use attemptedPaths to identify the missing packaged asset. For repository development, repair it and validate with the repository build and test commands; do not load a local plugin artifact into Codex.",
+          "For an installed client, compare its Figma Workspace version with the formally published version. After a corrected release is pushed, allow the client's normal automatic update to install it.",
         ],
   };
 }
@@ -1580,12 +1581,12 @@ async function executeRun(
     );
   }
   if (attempt.postResponseError) {
-    const upstreamFailed = parsed.upstreamError !== undefined;
+    const atomicScriptFailure = isConfirmedAtomicUseFigmaScriptFailure(evalSettings, parsed);
     const resultPayload = removeUndefined({
       ok: false,
       phase: "execute",
-      executionOutcome: upstreamFailed ? "outcome_unknown" : "succeeded",
-      retryGuidance: upstreamFailed ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : undefined,
+      executionOutcome: atomicScriptFailure ? "failed_atomic" : "succeeded",
+      retryGuidance: atomicScriptFailure ? ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE : undefined,
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
@@ -1603,11 +1604,14 @@ async function executeRun(
   }
   if (parsed.upstreamError) {
     const upstreamResult = upstreamEnvelope(parsed);
+    const atomicScriptFailure = isConfirmedAtomicUseFigmaScriptFailure(evalSettings, parsed);
     const resultPayload = removeUndefined({
       ok: false,
       phase: "execute",
-      executionOutcome: "outcome_unknown",
-      retryGuidance: UNKNOWN_EXECUTION_RETRY_GUIDANCE,
+      executionOutcome: atomicScriptFailure ? "failed_atomic" : "outcome_unknown",
+      retryGuidance: atomicScriptFailure
+        ? ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE
+        : UNKNOWN_EXECUTION_RETRY_GUIDANCE,
       diagnostics: diagnosticsForResponse(diagnostics),
       repairPlan: repairPlanForResponse(diagnostics),
       script: responseScript,
@@ -1637,7 +1641,7 @@ async function executeRun(
       ...limitInlineScriptResult(
         payloadWithOutputFiles,
         inlineResultLimit,
-        ["upstream.result", "upstream.text"],
+        ["upstream.result", "upstream.text", "upstreamError.details"],
       ),
     };
     return payload;
@@ -4350,6 +4354,15 @@ async function attemptUpstreamEval(
   }
 }
 
+function isConfirmedAtomicUseFigmaScriptFailure(
+  evalSettings: EvalSettings,
+  parsed: ParsedUpstreamToolResult,
+): boolean {
+  return evalSettings.toolName === DEFAULT_EVAL_TOOL_NAME
+    && parsed.upstreamError !== undefined
+    && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED";
+}
+
 function createUpstreamToolCache(client: FigmaUpstreamMcpProxyClient) {
   let cached: UpstreamToolInfo[] | undefined;
   return {
@@ -6595,6 +6608,8 @@ function localPostprocessingFailure(
   const existingGuidance = asOptionalString(resultPayload.retryGuidance);
   const localGuidance = executionOutcome === "succeeded"
     ? "The remote operation succeeded and may have mutated Figma. Do not rerun it; repair only the failed local post-processing step."
+    : executionOutcome === "failed_atomic"
+      ? "Figma confirmed the script made no changes. Repair the failed local post-processing step, then retry the corrected script safely."
     : executionOutcome === "outcome_unknown"
       ? "The remote outcome is unknown and local recovery output also failed. Inspect or read back Figma and reconcile state before any retry."
       : "Inspect the returned business result and repair the failed local post-processing step before retrying.";

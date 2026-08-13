@@ -7,6 +7,7 @@
 - Keep candidates in the CLI-owned ignored candidate directory. Do not hand-edit candidate snapshots or reports.
 - Use the command `--help` as the source of truth for current flags and result fields.
 - Keep the public CLI contract in typed source, metadata, generated help, runtime behavior, and tests. Do not derive runtime behavior from a committed snapshot.
+- Promotion replaces only the local accepted contract fixture after adaptation. It records a reviewed live-schema baseline; it does not generate agent-facing help, add a public command, or modify the remote MCP or GitHub upstream guide archive.
 - Do not modify `plugins/figma-workspace/skills/figma-workspace` for maintainer-only mechanics.
 - Do not promote when the baseline changed after capture, validation failed, blocking drift remains unresolved, or the maintainer has not explicitly confirmed the exact candidate.
 
@@ -74,7 +75,7 @@ Regenerate the report with `npm run upstream:contract:report -- --candidate <can
 
 ## 4. Adapt the CLI
 
-Edit only the canonical owners identified by `doc/figma-workspace-ai-agent-development.md`. Update typed schemas and metadata before concise summaries. Keep first-class wrappers intentional: a new upstream capability is not automatically a new public command, while removed or changed upstream fields must not remain falsely advertised.
+Edit only the canonical owners identified by `doc/figma-workspace-ai-agent-development.md`. Update typed schemas and metadata before concise summaries. Keep first-class wrappers intentional: an unknown or newly discovered upstream capability defaults to the schema-first public `figma:upstream:list` -> `figma:upstream:read` -> `figma:upstream:call` escape hatch and is not automatically a new public command. Promote it to a typed wrapper only after a separate public-contract decision; removed or changed upstream fields must not remain falsely advertised.
 
 Add focused coverage for each resolved drift category, including negative cases for removed fields and fail-closed behavior for incompatible required or type changes. Rebuild checked-in generated output only through the owning build command.
 
@@ -105,7 +106,7 @@ Before requesting promotion, report:
 
 Ask the maintainer to confirm promotion of the exact candidate identifier. A general request to investigate or adapt upstream drift is not promotion authorization.
 
-After confirmation, run `npm run upstream:contract:promote` with that candidate. Promotion must fail closed if the current committed baseline hash differs from the hash recorded at capture, candidate or report integrity fails, any drift lacks a valid disposition, or wrapper coverage remains inconsistent.
+After confirmation, run `npm run upstream:contract:promote` with that candidate. Promotion must fail closed if the current committed baseline hash differs from the hash recorded at capture, candidate or report integrity fails, any drift lacks a valid disposition, or wrapper coverage remains inconsistent. The accepted fixture's SHA-256 is expected to change; that is not an upstream documentation update.
 
 Promotion verifies contract evidence and publication safety; it does not attest that repository tests were run. Validation evidence remains a maintainer review requirement and must be reported before requesting promotion.
 

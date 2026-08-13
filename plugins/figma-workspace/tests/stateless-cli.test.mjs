@@ -141,7 +141,7 @@ test("fixed public leaf wrappers are complete, unique, and separate from mainten
   }
 });
 
-test("release metadata keeps the 0.5.2 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
+test("release metadata keeps the 0.5.3 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
   const [manifest, packageJson, cliPackageJson, cliLockfile, authConstants] = await Promise.all([
     readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
@@ -151,7 +151,7 @@ test("release metadata keeps the 0.5.2 plugin, CLI package, lockfile, and OAuth 
   ]);
   const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
 
-  assert.equal(manifest.version, "0.5.2");
+  assert.equal(manifest.version, "0.5.3");
   assert.equal(packageJson.version, manifest.version);
   assert.equal(cliPackageJson.version, manifest.version);
   assert.equal(cliLockfile.version, manifest.version);

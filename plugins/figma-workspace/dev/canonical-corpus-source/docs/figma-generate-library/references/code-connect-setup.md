@@ -96,9 +96,9 @@ Retrieves the current Code Connect mapping for a node. Confirm the capability na
 
 ---
 
-### 2c. send_code_connect_mappings — bulk application
+### 2c. Bulk application when live discovery exposes it
 
-Applies multiple Code Connect mappings in one call when the live upstream schema offers this capability. Use after an upstream discovery operation identifies a batch of unmapped components, or when doing a final-pass bulk mapping at the end of Phase 4.
+Some upstream versions may expose a bulk Code Connect operation. It is not a local command or a guaranteed capability. Discover the exact operation name and schema through `figma:upstream:list` or `figma:upstream:read`, then use `figma:upstream:call` only if the live schema confirms it.
 
 **Parameters:**
 
@@ -230,11 +230,11 @@ Map Code Connect immediately after creating a component, while the context is fr
 
 ### Final pass (for bulk mapping at Phase 4)
 
-Collect all unmapped components and map them in one `send_code_connect_mappings` call:
+After live schema discovery confirms a supported bulk operation, collect all unmapped components and submit the reviewed batch through `figma:upstream:call`:
 
 **Advantages:**
 - One bulk call instead of N individual calls.
-- Can use `get_code_connect_suggestions` to discover unmapped components automatically.
+- If live discovery exposes a suggestion operation, it can inform the candidate list; it does not replace reviewing each mapping.
 - Better for importing existing Figma files where you didn't control creation.
 
 **When to use:** Retrofitting Code Connect onto an existing file, or when the codebase mapping requires research that is better done after all components are created.

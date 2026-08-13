@@ -1,83 +1,101 @@
-# Clean Up Explicitly Owned Orphans
+# Clean Up Explicit Ledger Objects
 
-Remove scene nodes and local variables that belong to an abandoned build only when their exact IDs have been recorded in a reviewed state ledger. This intentionally does not infer ownership from names, prefixes, or a broad document scan.
+Remove orphaned scene nodes, variables, and collections only when each exact object is present in a reviewed external ledger. This script never scans by name, prefix, run marker, or document-wide inventory.
 
 ## Preconditions and inputs
 
-- Build the allowlists from IDs returned by the interrupted run or an audited ledger. Do not reconstruct or guess IDs.
-- Review each listed object in Figma before removal, especially parent nodes: removing a parent also removes its descendants.
-- Leave at least one page in the document. The script refuses to remove the final page.
-- The `dryRun` switch belongs to this example and is not a Figma Workspace preflight requirement.
+- Copy each record from the ledger for the explicit Figma file. Every record includes an exact ID plus its expected live identity.
+- Review the targets in Figma before removal. A mismatched or missing target stops the entire operation.
+- Keep `dryRun` enabled until the returned plan exactly matches the reviewed ledger.
+- This example refuses to remove pages and the document root because those operations have broad descendant effects. Use a separately approved, page-specific procedure when that is truly intended.
 
 ## Script
 
-Save the script as `cleanup-orphans.figma.ts`, then replace the placeholder IDs with the reviewed IDs. Run it first with `dryRun: true`; change that one value only after validating the returned removal plan.
+Save as `cleanup-orphans.figma.ts`, replace the placeholder records, run the dry run, then change only `dryRun` after review.
 
 ```typescript
 const dryRun = true;
 
-const sceneNodeIds = [
-  "NODE_ID_1",
-  "NODE_ID_2",
+const sceneTargets = [
+  {
+    id: "NODE_ID_1",
+    type: "FRAME",
+    name: "Button / Documentation",
+    parentId: "PAGE_ID_FROM_LEDGER",
+  },
 ] as const;
 
-const variableIds = [
-  "VariableID:VARIABLE_1",
+const variableTargets = [
+  {
+    id: "VariableID:VARIABLE_1",
+    name: "color/bg/temporary",
+    collectionId: "VariableCollectionId:COLLECTION_1",
+    resolvedType: "COLOR",
+  },
 ] as const;
 
-const collectionIds = [
-  "VariableCollectionId:COLLECTION_1",
+const collectionTargets = [
+  {
+    id: "VariableCollectionId:COLLECTION_2",
+    name: "Temporary experiment",
+  },
 ] as const;
 
-const planned: Array<{ id: string; name: string; type: string }> = [];
+const seen = new Set<string>();
+for (const target of [...sceneTargets, ...variableTargets, ...collectionTargets]) {
+  if (seen.has(target.id)) throw new Error(`Ledger repeats cleanup target ${target.id}.`);
+  seen.add(target.id);
+}
 
-for (const id of sceneNodeIds) {
-  const node = await figma.getNodeByIdAsync(id);
-  if (!node) throw new Error(`Scene node ${id} no longer exists.`);
-  if (node.type === "DOCUMENT" || node.type === "PAGE") {
-    if (node.type === "PAGE" && figma.root.children.length <= 1) {
-      throw new Error("Refusing to remove the final page in the document.");
-    }
+const planned: Array<{ id: string; type: string; name: string; parentId?: string }> = [];
+const sceneNodes: SceneNode[] = [];
+
+for (const target of sceneTargets) {
+  const node = await figma.getNodeByIdAsync(target.id);
+  if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+    throw new Error(`Expected removable scene node ${target.id}.`);
   }
-  planned.push({ id: node.id, name: node.name, type: node.type });
+  if (node.type !== target.type || node.name !== target.name || node.parent?.id !== target.parentId) {
+    throw new Error(`Scene target ${target.id} no longer matches its reviewed ledger identity.`);
+  }
+  sceneNodes.push(node);
+  planned.push({ id: node.id, type: node.type, name: node.name, parentId: node.parent.id });
 }
 
-const variables = await Promise.all(variableIds.map((id) => figma.variables.getVariableByIdAsync(id)));
-const collections = await Promise.all(collectionIds.map((id) => figma.variables.getVariableCollectionByIdAsync(id)));
+const variables = await Promise.all(variableTargets.map(async (target) => {
+  const variable = await figma.variables.getVariableByIdAsync(target.id);
+  if (!variable
+    || variable.name !== target.name
+    || variable.variableCollectionId !== target.collectionId
+    || variable.resolvedType !== target.resolvedType) {
+    throw new Error(`Variable target ${target.id} no longer matches its reviewed ledger identity.`);
+  }
+  planned.push({ id: variable.id, type: "VARIABLE", name: variable.name });
+  return variable;
+}));
 
-if (variables.some((variable) => !variable) || collections.some((collection) => !collection)) {
-  throw new Error("A reviewed variable or collection ID could not be resolved.");
-}
+const collections = await Promise.all(collectionTargets.map(async (target) => {
+  const collection = await figma.variables.getVariableCollectionByIdAsync(target.id);
+  if (!collection || collection.name !== target.name) {
+    throw new Error(`Collection target ${target.id} no longer matches its reviewed ledger identity.`);
+  }
+  planned.push({ id: collection.id, type: "VARIABLE_COLLECTION", name: collection.name });
+  return collection;
+}));
 
-for (const variable of variables) planned.push({ id: variable!.id, name: variable!.name, type: "VARIABLE" });
-for (const collection of collections) planned.push({ id: collection!.id, name: collection!.name, type: "VARIABLE_COLLECTION" });
+if (dryRun) return { dryRun: true, plannedRemoval: planned };
 
-if (dryRun) {
-  return { dryRun: true, plannedRemoval: planned };
-}
-
-for (const id of sceneNodeIds) {
-  const node = await figma.getNodeByIdAsync(id);
-  if (node && node.type !== "DOCUMENT") node.remove();
-}
-for (const variable of variables) variable!.remove();
-for (const collection of collections) collection!.remove();
+for (const node of sceneNodes) node.remove();
+for (const variable of variables) variable.remove();
+for (const collection of collections) collection.remove();
 
 return { dryRun: false, removed: planned };
 ```
 
 ## Run and review
 
-Run `npm --silent run figma:run -- --help` first. Keep `dryRun` set to `true` in the reviewed script for the first execution:
-
 ```text
-npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
+npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/cleanup-orphans.figma.ts>
 ```
 
-Then execute it with the explicit Design file target:
-
-```text
-npm --silent run figma:run -- --file <figma-file-url-or-key> --surface design --script <path/to/script.figma.ts>
-```
-
-This example is not automatically executable: replace every placeholder, keep `dryRun` enabled until the returned plan exactly matches your review, and only then change it to `false`. Execute the same reviewed script once, require `executionOutcome: "succeeded"`, and verify the returned IDs before proceeding. For `outcome_unknown`, follow `retryGuidance` and read back the exact tags before any further cleanup.
+Run the exact reviewed script once with `dryRun: true`. Only when every planned item matches the ledger should you set `dryRun: false` and run it once. Require `executionOutcome: "succeeded"` and then read back every removed ID. If the result is `outcome_unknown`, treat the removal set as partially applied until exact IDs have been reconciled; never rerun the cleanup blindly. For `failed_atomic`, retain the direct host/script diagnostics, repair the reviewed script, and retry safely because Figma confirmed no file changes.

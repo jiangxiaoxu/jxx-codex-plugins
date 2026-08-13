@@ -206,17 +206,25 @@ node.strokeAlign = 'INSIDE'             // 'INSIDE' | 'CENTER' | 'OUTSIDE'
 // Effects
 node.effects = [{ type: 'DROP_SHADOW', color: {r:0,g:0,b:0,a:0.25}, offset:{x:0,y:4}, radius:4, visible:true }]
 
-// Layout
-node.layoutMode = 'HORIZONTAL'          // 'NONE' | 'HORIZONTAL' | 'VERTICAL'
-node.primaryAxisAlignItems = 'CENTER'    // 'MIN' | 'CENTER' | 'MAX' | 'SPACE_BETWEEN'
-node.counterAxisAlignItems = 'CENTER'    // 'MIN' | 'CENTER' | 'MAX' | 'BASELINE'
-node.paddingLeft = 8
-node.paddingRight = 8
-node.paddingTop = 4
-node.paddingBottom = 4
-node.itemSpacing = 4
-node.layoutSizingHorizontal = 'HUG'     // 'FIXED' | 'HUG' | 'FILL' — see Gotchas: HUG needs auto-layout frame or TEXT child; FILL needs an auto-layout-child that isn't absolute/immutable/grid
-node.layoutSizingVertical = 'HUG'       // 'FIXED' | 'HUG' | 'FILL' — same value rules as horizontal
+// Layout container
+const parent = figma.createAutoLayout('HORIZONTAL')
+parent.primaryAxisAlignItems = 'CENTER'   // 'MIN' | 'CENTER' | 'MAX' | 'SPACE_BETWEEN'
+parent.counterAxisAlignItems = 'CENTER'   // 'MIN' | 'CENTER' | 'MAX' | 'BASELINE'
+parent.paddingLeft = 8
+parent.paddingRight = 8
+parent.paddingTop = 4
+parent.paddingBottom = 4
+parent.itemSpacing = 4
+
+// Append a child before applying child-only sizing or absolute positioning.
+const child = figma.createFrame()
+parent.appendChild(child)
+child.layoutSizingHorizontal = 'HUG'      // 'FIXED' | 'HUG' | 'FILL'
+child.layoutSizingVertical = 'HUG'
+child.layoutPositioning = 'ABSOLUTE'      // only meaningful under auto layout
+// FILL requires an auto-layout child that is not absolute, immutable, or grid.
+child.layoutPositioning = 'AUTO'
+child.layoutSizingHorizontal = 'FILL'
 
 // Sizing
 node.resize(width, height)                     // ⚠️ Resets sizing modes to FIXED
@@ -239,8 +247,9 @@ node.remove()
 ## Descriptions & Documentation Links
 
 ```js
-// Description — plain text, shown in Figma's component panel
-node.description = "A short summary of this component's purpose and usage."
+// Description is available only on COMPONENT and COMPONENT_SET nodes.
+const component = figma.createComponent()
+component.description = "A short summary of this component's purpose and usage."
 
 // Documentation links — array of {uri, label} shown as clickable links
 componentSet.documentationLinks = [
@@ -257,7 +266,7 @@ const svgNode = figma.createNodeFromSvg('<svg>...</svg>')
 
 ## Images
 
-The native Plugin API supports `figma.createImage(data)` for PNG, JPEG, or GIF bytes and `figma.createImageAsync(src)` for a supported image URL. Both return an `Image` whose hash can be used in an `IMAGE` paint. `figma:assets:apply` is the host-managed path for prepared local assets and manifest-driven placement.
+The current `figma:run` host does not support `figma.createImageAsync(src)`. Do not emit it in `.figma.ts`. Use `figma:assets:apply` for prepared local assets and manifest-driven placement. `figma.createImage(data)` remains the native byte-input API when the script already has valid image bytes; its returned hash can be used in an `IMAGE` paint.
 
 When using `figma:assets:apply`, provide a prepared asset manifest as JSON input. Read its help before preparing the manifest because the JSON contract, upload instructions, and placement fields are authoritative there.
 
@@ -344,6 +353,7 @@ function walk(node) {
 | `figma.showUI()` | No-op (silently ignored) |
 | `figma.openExternal()` | No-op (silently ignored) |
 | `figma.loadAllPagesAsync()` | Not implemented |
+| `figma.createImageAsync()` | Not supported by the current `figma:run` host; use `figma:assets:apply` for prepared assets |
 | `figma.variables.extendLibraryCollectionByKeyAsync()` | Not implemented |
 | `figma.teamLibrary.*` | Not implemented (requires the team-library backend) |
 | `figma.getLocalComponents*()` | **Does not exist** — unlike styles, there is no `getLocalComponents()` or `getLocalComponentSetsAsync()` (or any `getLocalComponent*` variant). Use `page.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] })` to locate components in the current file (avoid the slower `findAll(n => n.type === '…')` predicate scan). |

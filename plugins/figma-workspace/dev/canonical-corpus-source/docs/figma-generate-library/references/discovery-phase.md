@@ -183,19 +183,13 @@ interface ButtonProps {
 
 Use `figma:metadata`, `figma:variables`, `figma:libraries`, and `figma:design-system` at the start of every build. These first-class reads are safe before a user checkpoint.
 
-### List All Pages
+### Inventory Pages
 
-```javascript
-const pages = figma.root.children.map((p, i) => ({
-  index: i,
-  name: p.name,
-  id: p.id,
-  childCount: p.children.length
-}));
-return { pages };
-```
+Use `figma:metadata` for the file-wide page inventory. Record each page's ID, name, and purpose before querying its contents. Do not enumerate `figma.root.children` or switch among pages in one `.figma.ts` script.
 
-Interpret: note page names for naming convention (are they PascalCase? sentence case?), count separator pages (`---`), identify existing component pages vs foundations pages.
+For cross-page discovery, issue independent, read-only calls for the known pages; those calls can fan out. For changes, use one narrow mutating transaction per page. The runtime serializes applicable same-machine calls by `fileKey`; that lock coordinates local callers only.
+
+Interpret the inventory: note page names for naming convention (are they PascalCase? sentence case?), count separator pages (`---`), and identify existing component pages versus foundations pages.
 
 ### List Variable Collections With Modes
 
@@ -239,11 +233,16 @@ return { collection: coll.name, variableCount: result.length, variables: result 
 
 Interpret: check if variables use `ALL_SCOPES` (bad), check naming convention (slash-separated hierarchy?), check if code syntax is set, identify alias chains.
 
-### List Component Sets with Properties
+### Inspect Component Sets on One Known Page
 
 ```javascript
-// To inspect a specific page, switch to it first:
-// await figma.setCurrentPageAsync(targetPage);
+const targetPageId = '<page-id-from-metadata>';
+const targetPage = await figma.getNodeByIdAsync(targetPageId);
+if (!targetPage || targetPage.type !== 'PAGE') {
+  throw new Error(`Page ${targetPageId} was not found`);
+}
+await figma.setCurrentPageAsync(targetPage);
+
 const componentSets = figma.currentPage.findAllWithCriteria({ types: ['COMPONENT_SET'] });
 const result = componentSets.map(cs => ({
   id: cs.id,
@@ -259,7 +258,7 @@ const result = componentSets.map(cs => ({
 return { componentSets: result, count: result.length };
 ```
 
-For cross-page work, iterate `figma.root.children` in order and await each `setCurrentPageAsync` call before touching that page. `figma:metadata` remains useful for a lightweight inventory before deciding whether one multi-page script or several focused scripts better fit the task.
+This is a dedicated read-only call for one selected page. For cross-page discovery, fan out separate per-page calls after the metadata inventory; never iterate or switch among pages in one `.figma.ts` script. Any later mutation remains one narrow transaction per page.
 
 ### List All Styles
 
@@ -300,8 +299,7 @@ if ('fills' in node && Array.isArray(node.fills)) {
 return {
   name: node.name,
   type: node.type,
-  fills: fillInfo,
-  sharedPluginData: node.getSharedPluginData('dsb', 'key') || null
+  fills: fillInfo
 };
 ```
 

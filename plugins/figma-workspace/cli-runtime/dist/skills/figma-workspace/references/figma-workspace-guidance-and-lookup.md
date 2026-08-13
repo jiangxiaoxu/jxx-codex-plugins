@@ -4,7 +4,7 @@ Use this static reference to route task documentation and Plugin API questions. 
 
 ## Route Intent
 
-- Documentation search accepts concise English keywords. Use the main skill's Search Query Recipes and the topic map below instead of guessing from a generic request.
+- Prefer concise English keywords as documentation-search seeds. This improves relevance but does not restrict the input language; use the main skill's Search Query Recipes and the topic map below instead of guessing from a generic request.
 - Pass a known `--surface design|figjam|slides` to docs search. Surface and `--task-family` are hard filters; do not use a Design fallback for a known FigJam or Slides task.
 - For non-trivial edits, generation, or uncertain routing, run `figma:docs:catalog`, select the compatible family, then narrow `figma:docs:search` with the family and known surface.
 - If the topic is still ambiguous, read the most specific returned record with `figma:docs:read` before selecting a remote command.
