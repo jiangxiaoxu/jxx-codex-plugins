@@ -17,7 +17,11 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
 var __commonJS = (cb, mod) => function __require2() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -36,9 +40,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// node_modules/@typescript/typescript6/node_modules/typescript/lib/typescript.js
+// node_modules/@typescript/old/lib/typescript.js
 var require_typescript = __commonJS({
-  "node_modules/@typescript/typescript6/node_modules/typescript/lib/typescript.js"(exports, module) {
+  "node_modules/@typescript/old/lib/typescript.js"(exports, module) {
     var ts2 = {};
     ((module2) => {
       "use strict";
@@ -211972,7 +211976,7 @@ export {
 };
 /*! Bundled license information:
 
-typescript/lib/typescript.js:
+@typescript/old/lib/typescript.js:
   (*! *****************************************************************************
   Copyright (c) Microsoft Corporation. All rights reserved.
   Licensed under the Apache License, Version 2.0 (the "License"); you may not use

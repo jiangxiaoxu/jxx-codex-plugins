@@ -1,6 +1,6 @@
 # Figma Workspace
 
-Figma Workspace 0.5.3 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
+Figma Workspace 0.5.4 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
 
 ## Quick Start
 
@@ -22,22 +22,22 @@ Use generated `--help` for each exact input schema, option, limit, and JSON stdi
 
 Every command that requires a Figma file or node target supplies it in that invocation. `figma:upstream:list` and `figma:upstream:read` are targetless; `figma:upstream:call` follows the selected live schema instead of inheriting a target. Use a full file or node URL whenever possible. A node URL's `node-id=230-2` converts to Plugin API ID `230:2`; a bare node ID is invalid without an explicit file. URLs infer Design, FigJam, or Slides; a raw fileKey needs `--surface` when the selected command needs a surface.
 
-For a normal edit, use docs/API lookup to choose the flow, create a local `.figma.ts` script in the shell, run `figma:run`, then capture and inspect visible output with `view_image`. Use `figma:metadata` before targeted `figma:inspect` when broad structure discovery is needed. Prefer first-class context, asset, and capture commands before `figma:upstream:call`. Before an upstream fallback call, read its live description and schema; obtain explicit user confirmation when they mark the action as destructive, external, credit/cost-bearing, or an asset upload.
+For a normal edit, use docs/API lookup to choose the flow, create a local `.figma.ts` script in the shell, run `figma:run`, then capture and inspect visible output with `view_image`. Use `figma:metadata` before targeted `figma:inspect` when broad structure discovery is needed. Prefer first-class context, asset, and capture commands for typed safeguards. `figma:upstream:list` and `figma:upstream:read` show the live schema and local `coverage`; that hint never blocks `figma:upstream:call` of a covered official tool. Before any direct call, read its selected description and schema; obtain explicit user confirmation when it marks an action as destructive, external, credit/cost-bearing, or an asset upload.
 
 ## Mutation Recovery
 
-`figma:run` reports `executionOutcome`:
+`figma:run` and direct `figma:upstream:call` report `executionOutcome` for mutations:
 
 - `not_started`: validation, preflight, connection, or auth stopped the request before dispatch. Repair that cause, then rerun.
 - `failed_atomic`: Figma returned a `use_figma` script error and confirmed the script made no file changes. Repair the script, then retry safely.
 - `succeeded`: Figma confirmed script execution.
-- `outcome_unknown`: the request was dispatched but completion cannot be confirmed, such as a timeout, response loss, or truncated response.
+- `outcome_unknown`: the request was dispatched but completion cannot be confirmed, such as a timeout, response loss, truncated response, or a post-dispatch error from a direct official tool other than `use_figma`.
 
-For `failed_atomic`, stdout directly shows a compact remote error code/message and reports `Status: failed atomically`; the sidecar retains complete upstream diagnostics. Repair and retry the script safely. Never blindly replay an `outcome_unknown` mutation: read back and reconcile the intended Figma state first. A queued capture failure preserves `executionOutcome: "succeeded"` with `captureProcessingSucceeded: false`; capture the affected node separately. `Status: failed after execution` is reserved for a local artifact or lock failure after confirmed `succeeded`; repair that local stage and do not rerun the confirmed mutation.
+For `failed_atomic`, stdout directly shows a compact remote error code/message and reports `Status: failed atomically`; the same confirmation applies to a direct `use_figma` call. Repair and retry safely. Never blindly replay an `outcome_unknown` mutation: read back and reconcile the intended Figma state first. A queued capture failure preserves `executionOutcome: "succeeded"` with `captureProcessingSucceeded: false`; capture the affected node separately. `Status: failed after execution` is reserved for a local artifact or lock failure after confirmed `succeeded`; repair that local stage and do not rerun the confirmed mutation.
 
 ## Local Artifacts And Login
 
-The CLI does not create a persistent workspace record. Shells own `.figma.ts` creation and repeat a Figma target only for operations that require one. Pure inline reads do not create local files. When a command needs to write an oversized result, diagnostic, capture, or download and no explicit path is supplied, it returns an absolute path under an invocation-specific OS temp directory. Use `--output-dir`, `--image-file`, or a download output option when a later shell step needs a durable location.
+The CLI does not create a persistent workspace record. Shells own `.figma.ts` creation and repeat a Figma target only for operations that require one. Pure inline reads do not create local files. Every `figma:upstream:call` writes a sanitized visible-protocol sidecar; typed commands write their upstream-response sidecar only for a remote error, inline truncation, or unrendered non-text content. Sidecars retain `content`, `structuredContent`, `isError`, and standard ContentBlock `annotations`; they strip protocol `_meta`, never expose tool-definition annotations, and leave business `_meta` inside `structuredContent` unchanged. When a command needs to write an oversized result, diagnostic, capture, or download and no explicit path is supplied, it returns an absolute path under an invocation-specific OS temp directory. Use `--output-dir`, `--image-file`, or a download output option when a later shell step needs a durable location.
 
 The OS-temp fileKey lock covers `figma:run`, `figma:assets:apply`, and `figma:upstream:call` only when that call resolves a fileKey; it does not serialize every mutation. Managed outputs reject links and reparse points and are written atomically. The lock is not distributed durability.
 

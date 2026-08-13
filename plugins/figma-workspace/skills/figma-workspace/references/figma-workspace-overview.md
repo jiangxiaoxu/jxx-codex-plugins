@@ -10,7 +10,7 @@ Use this reference to choose a public command family. Generated help and typed r
 - Use `figma:metadata` for broad discovery and `figma:inspect` for targeted validation. Use `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, and `figma:libraries` for their named first-class reads.
 - Use `figma:run` for every native Plugin API script, whether it is a small inspection or a repairable mutation. The shell owns local `.figma.ts` creation.
 - Use `figma:assets:apply` for prepared local assets, `figma:assets:download` for official downloads, and `figma:capture` or queued `$.capture` for visual QA.
-- Use `figma:upstream:list` and `figma:upstream:read` before `figma:upstream:call` only when no first-class command covers an official capability. Follow the selected live schema; obtain explicit user confirmation for any action its description marks destructive, external, credit/cost-bearing, or an asset upload.
+- Prefer a first-class command when its typed safeguards apply. Use `figma:upstream:list` and `figma:upstream:read` before `figma:upstream:call` whenever the live official schema is required; local `coverage` indicates a first-class alternative but never blocks the direct call. Obtain explicit user confirmation for any action whose selected description marks destructive, external, credit/cost-bearing, or an asset upload.
 
 ## Shared Rules
 

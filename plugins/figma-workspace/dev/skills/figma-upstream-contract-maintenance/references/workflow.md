@@ -8,6 +8,7 @@
 - Use the command `--help` as the source of truth for current flags and result fields.
 - Keep the public CLI contract in typed source, metadata, generated help, runtime behavior, and tests. Do not derive runtime behavior from a committed snapshot.
 - Promotion replaces only the local accepted contract fixture after adaptation. It records a reviewed live-schema baseline; it does not generate agent-facing help, add a public command, or modify the remote MCP or GitHub upstream guide archive.
+- Contract evidence can retain upstream annotations and protocol `_meta` for drift review. Agent-facing discovery, results, and sanitized sidecars must omit both; do not remove an ordinary business `_meta` nested inside `structuredContent`.
 - Do not modify `plugins/figma-workspace/skills/figma-workspace` for maintainer-only mechanics.
 - Do not promote when the baseline changed after capture, validation failed, blocking drift remains unresolved, or the maintainer has not explicitly confirmed the exact candidate.
 
@@ -30,7 +31,7 @@ Use the command-defined candidate identifier and paths. If a command is missing 
 
 Run `npm run upstream:contract:capture` with the required live upstream configuration. Capture must:
 
-- read the official live MCP contract;
+- read the official live MCP contract through all cursor pages under one five-minute deadline, with a 100-page maximum and no partial capture;
 - normalize ordering deterministically;
 - record the committed baseline hash and capture metadata;
 - write only candidate artifacts;
@@ -75,7 +76,7 @@ Regenerate the report with `npm run upstream:contract:report -- --candidate <can
 
 ## 4. Adapt the CLI
 
-Edit only the canonical owners identified by `doc/figma-workspace-ai-agent-development.md`. Update typed schemas and metadata before concise summaries. Keep first-class wrappers intentional: an unknown or newly discovered upstream capability defaults to the schema-first public `figma:upstream:list` -> `figma:upstream:read` -> `figma:upstream:call` escape hatch and is not automatically a new public command. Promote it to a typed wrapper only after a separate public-contract decision; removed or changed upstream fields must not remain falsely advertised.
+Edit only the canonical owners identified by `doc/figma-workspace-ai-agent-development.md`. Update typed schemas and metadata before concise summaries. Keep first-class wrappers intentional: an unknown or newly discovered upstream capability defaults to the schema-first public `figma:upstream:list` -> `figma:upstream:read` -> `figma:upstream:call` escape hatch and is not automatically a new public command. `coverage` can identify a typed alternative but must not block a covered direct call. Promote a capability to a typed wrapper only after a separate public-contract decision; removed or changed upstream fields must not remain falsely advertised.
 
 Add focused coverage for each resolved drift category, including negative cases for removed fields and fail-closed behavior for incompatible required or type changes. Rebuild checked-in generated output only through the owning build command.
 

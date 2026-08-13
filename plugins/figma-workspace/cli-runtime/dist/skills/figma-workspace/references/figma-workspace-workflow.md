@@ -9,7 +9,7 @@ Use this reference for an end-to-end Figma task. Command-specific help and runti
 3. Create a local `.figma.ts` file in the shell. Do not expect the CLI to scaffold or remember a task directory.
 4. Use native Figma Plugin API for editing, traversal, layout, assets, cloning, and advanced work. `$` is frozen and non-callable, with only `$.text` and `$.capture`. Use `figma:api:search` for uncertain symbols and `figma:api:read` when the returned snippet does not contain the complete declaration.
 5. Run `figma:run -- --file <URL|fileKey> --surface <design|figjam|slides> --script <path/to/change.figma.ts>` after repairing fatal TypeScript or Plugin API diagnostics. For stdin source, replace `--script` with `--source -`. Return compact changed-node IDs and validation notes.
-6. Use first-class design, motion, library, variable, asset, and capture commands before the `figma:upstream:list` to `figma:upstream:read` to `figma:upstream:call` fallback.
+6. Prefer first-class design, motion, library, variable, asset, and capture commands for typed safeguards. Use `figma:upstream:list` to `figma:upstream:read` to `figma:upstream:call` when the live official schema is required; local `coverage` guidance does not block the direct path.
 7. Capture visible changes and inspect the saved PNG with `view_image` before reporting visual success.
 
 ## Script Helpers
@@ -21,7 +21,7 @@ Use this reference for an end-to-end Figma task. Command-specific help and runti
 ## Recover The Result
 
 - `not_started` means validation, preflight, connection, or auth stopped execution before dispatch. Repair that cause, then rerun.
-- `failed_atomic` means Figma directly returned a `use_figma` script error. Figma confirmed the script made no file changes, so repair it and retry safely.
+- `failed_atomic` means Figma directly returned a `use_figma` script error. Figma confirmed the script made no file changes, so repair it and retry safely. This applies to the direct `figma:upstream:call` path as well as `figma:run`.
 - `succeeded` confirms remote script execution. If queued capture processing failed, use standalone `figma:capture`; do not rerun the mutation script.
-- `outcome_unknown` means dispatch occurred but completion cannot be confirmed, for example after a timeout, response loss, or truncation. Inspect, read back, or reconcile before deciding whether a retry is safe.
+- `outcome_unknown` means dispatch occurred but completion cannot be confirmed, for example after a timeout, response loss, or truncation. A post-dispatch error from a direct official tool other than `use_figma` is also `outcome_unknown`. Inspect, read back, or reconcile before deciding whether a retry is safe.
 - `Status: failed after execution` means a local artifact or lock stage failed after a confirmed remote operation. Repair the reported local stage and preserve the remote result.

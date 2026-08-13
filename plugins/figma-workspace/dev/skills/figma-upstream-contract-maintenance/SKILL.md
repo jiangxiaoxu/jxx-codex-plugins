@@ -5,7 +5,7 @@ description: Maintain the repo-local Figma CLI against official upstream MCP con
 
 # Figma Upstream Contract Maintenance
 
-Treat the committed upstream snapshot as the accepted baseline. Capture live state into an ignored candidate first; promote it only after local adaptation, validation, review, and explicit maintainer confirmation. Promotion replaces the local accepted fixture, including its SHA-256, as reviewed drift evidence; it does not modify the remote MCP, GitHub upstream guide archive, or agent-facing documentation.
+Treat the committed upstream snapshot as the accepted baseline. Capture live state into an ignored candidate first; promote it only after local adaptation, validation, review, and explicit maintainer confirmation. Promotion replaces the local accepted fixture, including its SHA-256, as reviewed drift evidence; it does not modify the remote MCP, GitHub upstream guide archive, or agent-facing documentation. Snapshot evidence can retain upstream annotations and protocol `_meta`; runtime outputs and sanitized sidecars must not expose them to agents.
 
 ## Workflow
 
@@ -19,4 +19,4 @@ Treat the committed upstream snapshot as the accepted baseline. Capture live sta
 8. Present the candidate identity, drift summary, dispositions, adaptations, validation evidence, and unresolved risks. Request explicit maintainer confirmation before promotion.
 9. Promote that exact candidate only after confirmation. Re-run the contract check and inspect the final diff.
 
-Never auto-promote, silently accept unknown drift, modify the public `figma-workspace` skill as part of this workflow, or use the snapshot as runtime truth. An unknown or newly discovered official capability defaults to the schema-first public `figma:upstream:list` -> `figma:upstream:read` -> `figma:upstream:call` escape hatch until a separate public-contract decision creates a typed wrapper. Keep maintenance commands out of the public `figma:*` surface.
+Never auto-promote, silently accept unknown drift, modify the public `figma-workspace` skill solely for maintainer mechanics, or use the snapshot as runtime truth. An unknown or newly discovered official capability defaults to the schema-first public `figma:upstream:list` -> `figma:upstream:read` -> `figma:upstream:call` escape hatch until a separate public-contract decision creates a typed wrapper. `coverage` is advisory only: direct calls to covered official tools remain supported. Keep maintenance commands out of the public `figma:*` surface.

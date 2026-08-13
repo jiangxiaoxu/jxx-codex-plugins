@@ -195,7 +195,7 @@ async function stageProjectDocs() {
 async function stageHelperDeclarations() {
   const source = resolve(root, "src/runtime/figma-workspace-helpers.d.ts");
   const figmaTypings = resolve(root, "node_modules/@figma/plugin-typings");
-  const typescriptLib = resolve(root, "node_modules/@typescript/typescript6/node_modules/typescript/lib");
+  const typescriptLib = resolve(root, "node_modules/@typescript/old/lib");
   await cp(source, resolve(dist, "runtime/figma-workspace-helpers.d.ts"));
   const stagedFigmaTypings = resolve(dist, "runtime/figma-plugin-typings");
   await stageFigmaPluginTypings(figmaTypings, stagedFigmaTypings);

@@ -291,6 +291,9 @@ test("every public leaf help publishes its real argv contract", () => {
   assert.match(runHelp, /executionOutcome: failed_atomic/u);
   assert.match(runHelp, /Status: failed during execution is reserved for an outcome_unknown response loss/u);
   assert.match(runHelp, /Status: failed after execution/u);
+  const upstreamCallHelp = formatCommandHelp("upstream:call");
+  assert.match(upstreamCallHelp, /Covered official tools remain callable here/u);
+  assert.match(upstreamCallHelp, /sanitized \.upstream\.json sidecar/u);
 });
 
 test("metadata rejects retired client hints before dispatch", async () => {

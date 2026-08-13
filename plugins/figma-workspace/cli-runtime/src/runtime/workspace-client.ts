@@ -7,6 +7,11 @@ import type { Stats } from "node:fs";
 import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import { Transform } from "node:stream";
 import {
+  CallToolResultSchema,
+  type CallToolResult,
+  type ContentBlock,
+} from "@modelcontextprotocol/sdk/types.js";
+import {
   createRemoteMcpClient,
   isRemoteMcpOAuthError,
   type RemoteMcpOAuthError,
@@ -102,7 +107,6 @@ import {
   FIGMA_WORKSPACE_NODE_SCOPED_TARGET_DESCRIPTION,
   FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
   FIGMA_WORKSPACE_WRAPPER_CONTRACTS,
-  getFigmaWorkspaceCoveredUpstreamToolNames,
   requireFigmaWorkspaceWrapperContract,
   type FigmaWorkspaceWrapperContract,
 } from "../contract/wrapper-contracts.js";
@@ -198,7 +202,6 @@ const GET_MOTION_CONTEXT_TOOL_NAME = requireWrapperUpstreamToolName(GET_MOTION_C
 const SEARCH_DESIGN_SYSTEM_TOOL_NAME = requireWrapperUpstreamToolName(SEARCH_DESIGN_SYSTEM_CONTRACT);
 const GET_LIBRARIES_TOOL_NAME = requireWrapperUpstreamToolName(GET_LIBRARIES_CONTRACT);
 const GET_VARIABLE_DEFS_TOOL_NAME = requireWrapperUpstreamToolName(GET_VARIABLE_DEFS_CONTRACT);
-const COVERED_UPSTREAM_TOOL_NAMES_TEXT = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
 
 class DataPlaneResourceBudget {
   #usedBytes = 0;
@@ -438,7 +441,7 @@ function createSkippedOptionalUpstreamDiagnostic(options: {
     severity: "warning",
     message: `The command skipped optional upstream argument "${options.property}" because the live official ${options.upstreamKind} capability does not advertise inputSchema.properties.${options.property}.`,
     suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/cli-runtime to audit official schema drift.",
-    docsHint: "Prefer first-class figma:* commands for covered workflows; use figma:upstream:call for uncovered official capabilities.",
+    docsHint: "Use the listed first-class figma:* command for its additional local validation and result handling, or call the live official schema directly through figma:upstream:call when that is intentional.",
   };
 }
 
@@ -465,7 +468,7 @@ export interface FigmaWorkspaceClientOptions extends RemoteMcpClientOptions {
 
 export interface FigmaWorkspaceUpstreamEnvelope {
   [key: string]: unknown;
-  kind: "json" | "text";
+  kind: "json" | "text" | "content";
   ok: boolean;
   result?: unknown;
   text?: string;
@@ -617,6 +620,9 @@ export interface FigmaWorkspaceInspectResult extends FigmaWorkspaceToolResultBas
 
 export interface FigmaWorkspaceCallUpstreamToolResult extends FigmaWorkspaceUpstreamBackedResult {
   toolName: string;
+  phase: "preflight" | "execute";
+  executionOutcome: FigmaWorkspaceExecutionOutcome;
+  retryGuidance?: string;
   outputFiles?: FigmaWorkspaceOutputFiles;
   inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
@@ -831,8 +837,11 @@ export interface FigmaWorkspaceDoctorResult extends FigmaWorkspaceToolResultBase
 export interface FigmaWorkspaceUpstreamToolsResult extends FigmaWorkspaceToolResultBase {
   tools?: Array<Record<string, unknown>>;
   name?: string;
+  title?: string;
   description?: string;
   inputSchema?: unknown;
+  outputSchema?: unknown;
+  coverage?: FigmaWorkspaceUpstreamToolCoverage;
   categories?: string[];
   upstreamError?: Record<string, unknown>;
   primaryFix?: string;
@@ -863,8 +872,15 @@ export interface FigmaWorkspaceClient {
 
 interface UpstreamToolInfo {
   name: string;
+  title?: string;
   description?: string;
   inputSchema?: unknown;
+  outputSchema?: unknown;
+}
+
+export interface FigmaWorkspaceUpstreamToolCoverage {
+  covered: boolean;
+  publicCommands: FigmaWorkspacePublicCommandId[];
 }
 
 interface EvalSettings {
@@ -876,6 +892,8 @@ interface EvalSettings {
 interface ParsedUpstreamToolResult {
   text: string;
   json?: unknown;
+  callResult?: CallToolResult;
+  nonTextContent: Array<Record<string, unknown>>;
   upstreamError?: FigmaWorkspaceUpstreamError;
   primaryFix?: string;
 }
@@ -1197,16 +1215,19 @@ async function handleUpstreamTools(
     return {
       ok: true,
       name: tool.name,
+      title: tool.title,
       description: tool.description,
       inputSchema: tool.inputSchema,
-      guidance: "Prefer a first-class figma:* command when available; use figma:upstream:call for uncovered official behavior.",
+      outputSchema: tool.outputSchema,
+      coverage: upstreamToolCoverage(tool.name),
+      guidance: FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE,
     };
   }
   return {
     ok: true,
     tools: tools.map(upstreamToolDirectoryEntry),
     categories: [...UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER],
-    guidance: "Use a first-class figma:* command when available; read the schema with figma:upstream:read before figma:upstream:call.",
+    guidance: "Read the live schema with figma:upstream:read before figma:upstream:call. Coverage is advisory: a first-class command adds local validation and result handling, while direct calls remain available.",
   };
 }
 async function writeCallUpstreamResultFiles(options: {
@@ -1215,6 +1236,7 @@ async function writeCallUpstreamResultFiles(options: {
   session: FigmaWorkspaceInvocationContext;
   resultPayload: Record<string, unknown>;
   upstream: Record<string, unknown>;
+  upstreamCallResult: Record<string, unknown>;
 }): Promise<FigmaWorkspaceOutputFiles> {
   const outputFile = resolveCallUpstreamOutputFile(options.toolName, options.session);
   const outputFiles: FigmaWorkspaceOutputFiles = {
@@ -1231,7 +1253,7 @@ async function writeCallUpstreamResultFiles(options: {
       }),
     )),
   };
-  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstream));
+  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstreamCallResult));
   return outputFiles;
 }
 
@@ -3424,6 +3446,7 @@ async function readInspectStyleWithAdaptiveBatches(options: {
     if (chunkResult.upstreamError) {
       return {
         text: chunkResult.text ?? "",
+        nonTextContent: [],
         upstreamError: chunkResult.upstreamError,
         primaryFix: chunkResult.primaryFix,
       };
@@ -3444,6 +3467,7 @@ async function readInspectStyleWithAdaptiveBatches(options: {
   return {
     text: JSON.stringify({ ok: true, result }),
     json,
+    nonTextContent: [],
   };
 }
 
@@ -3965,12 +3989,13 @@ async function executeDedicatedUpstreamTool(options: {
     parsed,
     resultPayload,
     inlineResultLimit: options.args.inlineResultLimit,
-    writeOutputFiles: (upstreamEnvelopePayload) => writeCallUpstreamResultFiles({
+    writeOutputFiles: (upstreamCallResult) => writeCallUpstreamResultFiles({
       toolName: upstreamToolName,
       wrapperToolName: options.contract.toolName,
       session: options.session,
       resultPayload,
-      upstream: upstreamEnvelopePayload,
+      upstream: upstreamEnvelope(parsed),
+      upstreamCallResult,
     }),
   });
 }
@@ -4070,37 +4095,95 @@ async function executeCallUpstreamTool(
     );
   }
   const upstreamArgs = isRecord(args.arguments) ? args.arguments : {};
-  const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
+  const session = currentInvocationContext();
+  let tools: UpstreamToolInfo[];
+  try {
+    tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
+  } catch (error) {
+    return shapeDirectUpstreamCallResponse({
+      args,
+      session,
+      parsed: parsedUpstreamTransportFailure(normalizeCaughtUpstreamError(error)),
+      phase: "preflight",
+      executionOutcome: "not_started",
+    });
+  }
   const tool = tools.find((item) => item.name === args.toolName);
   if (!tool) {
-    throw new Error(
-      `Upstream Figma MCP tool "${args.toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`,
-    );
+    return shapeDirectUpstreamCallResponse({
+      args,
+      session,
+      parsed: parsedUpstreamTransportFailure({
+        code: "FIGMA_UPSTREAM_TOOL_NOT_FOUND",
+        message: `Upstream Figma MCP tool "${args.toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`,
+      }),
+      phase: "preflight",
+      executionOutcome: "not_started",
+    });
   }
-  await connectUpstream(runtime.client, "Call upstream Figma MCP tool");
-  const upstream = await callUpstreamToolWithLimits(runtime.client, args.toolName, upstreamArgs);
-  const parsed = parseUpstreamToolResult(upstream);
-  const session = currentInvocationContext();
-  const resultPayload = {
-    ok: !parsed.upstreamError,
-    toolName: args.toolName,
-    ...upstreamResultFields({
-      parsed,
-      upstream,
-    }),
-    ...upstreamFailureFields(parsed),
-  };
+  const attempt = await attemptUpstreamToolCall(runtime.client, args.toolName, upstreamArgs);
+  if (attempt.error) {
+    return shapeDirectUpstreamCallResponse({
+      args,
+      session,
+      parsed: parsedUpstreamTransportFailure(attempt.error),
+      phase: attempt.requestDispatched ? "execute" : "preflight",
+      executionOutcome: attempt.requestDispatched ? "outcome_unknown" : "not_started",
+    });
+  }
+  const parsed = parseUpstreamToolResult(attempt.upstream);
+  const executionOutcome = parsed.upstreamError
+    ? isConfirmedAtomicDirectUseFigmaFailure(args.toolName, parsed)
+      ? "failed_atomic"
+      : "outcome_unknown"
+    : "succeeded";
+  const response = await shapeDirectUpstreamCallResponse({
+    args,
+    session,
+    parsed,
+    phase: "execute",
+    executionOutcome,
+  });
+  if (!attempt.postResponseError) {
+    return response;
+  }
+  return localPostprocessingFailure(response, "upstreamResponseBudget", attempt.postResponseError);
+}
+
+async function shapeDirectUpstreamCallResponse(options: {
+  args: FigmaWorkspaceCallUpstreamToolArguments;
+  session: FigmaWorkspaceInvocationContext;
+  parsed: ParsedUpstreamToolResult;
+  phase: "preflight" | "execute";
+  executionOutcome: FigmaWorkspaceExecutionOutcome;
+}): Promise<Record<string, unknown>> {
+  const retryGuidance = options.executionOutcome === "failed_atomic"
+    ? ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE
+    : options.executionOutcome === "outcome_unknown"
+      ? UNKNOWN_EXECUTION_RETRY_GUIDANCE
+      : undefined;
+  const resultPayload = removeUndefined({
+    ok: !options.parsed.upstreamError,
+    toolName: options.args.toolName,
+    phase: options.phase,
+    executionOutcome: options.executionOutcome,
+    retryGuidance,
+    ...upstreamResultFields({ parsed: options.parsed }),
+    ...upstreamFailureFields(options.parsed),
+  }) as Record<string, unknown>;
   return shapeUpstreamBackedResponse({
     contract: CALL_UPSTREAM_TOOL_CONTRACT,
-    parsed,
+    parsed: options.parsed,
     resultPayload,
-    inlineResultLimit: args.inlineResultLimit,
-    writeOutputFiles: (upstreamEnvelopePayload) => writeCallUpstreamResultFiles({
-      toolName: args.toolName,
+    inlineResultLimit: options.args.inlineResultLimit,
+    forceOutputFile: true,
+    writeOutputFiles: (upstreamCallResult) => writeCallUpstreamResultFiles({
+      toolName: options.args.toolName,
       wrapperToolName: "figma:upstream:call",
-      session,
+      session: options.session,
       resultPayload,
-      upstream: upstreamEnvelopePayload,
+      upstream: upstreamEnvelope(options.parsed),
+      upstreamCallResult,
     }),
   });
 }
@@ -4308,6 +4391,19 @@ type UpstreamEvalAttempt =
       postResponseError?: PostResponseResourceError;
     };
 
+type UpstreamToolCallAttempt =
+  | {
+      requestDispatched: boolean;
+      error: FigmaWorkspaceUpstreamError;
+      upstream?: never;
+    }
+  | {
+      requestDispatched: true;
+      error?: never;
+      upstream: unknown;
+      postResponseError?: PostResponseResourceError;
+    };
+
 async function attemptUpstreamEval(
   client: FigmaUpstreamMcpProxyClient,
   evalSettings: EvalSettings,
@@ -4354,13 +4450,78 @@ async function attemptUpstreamEval(
   }
 }
 
+async function attemptUpstreamToolCall(
+  client: FigmaUpstreamMcpProxyClient,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<UpstreamToolCallAttempt> {
+  try {
+    await connectUpstream(client, "Call upstream Figma MCP tool");
+  } catch (error) {
+    return {
+      requestDispatched: false,
+      error: normalizeCaughtUpstreamError(error),
+    };
+  }
+
+  let requestDispatched = false;
+  try {
+    return {
+      requestDispatched: true,
+      upstream: await awaitUpstreamOperation(
+        `Upstream tool ${toolName}`,
+        (signal) => {
+          const request = client.callTool(toolName, args, signal);
+          requestDispatched = true;
+          return request;
+        },
+        { countResponse: true },
+      ),
+    };
+  } catch (error) {
+    if (error instanceof PostResponseResourceError) {
+      return {
+        requestDispatched: true,
+        upstream: error.response,
+        postResponseError: error,
+      };
+    }
+    return {
+      requestDispatched,
+      error: normalizeCaughtUpstreamError(error),
+    };
+  }
+}
+
 function isConfirmedAtomicUseFigmaScriptFailure(
   evalSettings: EvalSettings,
   parsed: ParsedUpstreamToolResult,
 ): boolean {
   return evalSettings.toolName === DEFAULT_EVAL_TOOL_NAME
     && parsed.upstreamError !== undefined
-    && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED";
+    && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED"
+    && parsed.upstreamError.code !== "FIGMA_UPSTREAM_INVALID_RESULT";
+}
+
+function isConfirmedAtomicDirectUseFigmaFailure(
+  toolName: string,
+  parsed: ParsedUpstreamToolResult,
+): boolean {
+  return toolName === DEFAULT_EVAL_TOOL_NAME
+    && parsed.upstreamError !== undefined
+    && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED"
+    && parsed.upstreamError.code !== "FIGMA_UPSTREAM_INVALID_RESULT"
+    && hasDirectUseFigmaScriptErrorEvidence(parsed);
+}
+
+function hasDirectUseFigmaScriptErrorEvidence(parsed: ParsedUpstreamToolResult): boolean {
+  const structured = parsed.callResult?.structuredContent;
+  const structuredError = asRecord(structured).error;
+  if (typeof structuredError === "string" || isRecord(structuredError)) {
+    return true;
+  }
+  const text = parsed.text.trim();
+  return /^Error:/u.test(text) || /Figma Debug UUID:/u.test(text);
 }
 
 function createUpstreamToolCache(client: FigmaUpstreamMcpProxyClient) {
@@ -4375,8 +4536,10 @@ function createUpstreamToolCache(client: FigmaUpstreamMcpProxyClient) {
       const tools = Array.isArray(result.tools) ? result.tools : [];
       cached = tools.filter(isRecord).map((tool) => ({
         name: String(tool.name ?? ""),
+        title: asOptionalString(tool.title),
         description: asOptionalString(tool.description),
         inputSchema: tool.inputSchema,
+        outputSchema: tool.outputSchema,
       })).filter((tool) => tool.name.length > 0);
       return cached;
     },
@@ -4442,7 +4605,19 @@ function upstreamToolDirectoryEntry(tool: UpstreamToolInfo): Record<string, unkn
       : normalizedDescription.length <= 96
         ? normalizedDescription
         : `${normalizedDescription.slice(0, 93)}...`,
+    coverage: upstreamToolCoverage(tool.name),
   }) as Record<string, unknown>;
+}
+
+function upstreamToolCoverage(toolName: string): FigmaWorkspaceUpstreamToolCoverage {
+  const publicCommands = sortedUnique(
+    FIGMA_WORKSPACE_WRAPPER_CONTRACTS.flatMap((contract) =>
+      "upstreamToolName" in contract && contract.upstreamToolName === toolName
+        ? [PUBLIC_HISTORY_COMMAND_IDS[contract.toolName]]
+        : [],
+    ).filter((command): command is FigmaWorkspacePublicCommandId => command !== undefined),
+  );
+  return { covered: publicCommands.length > 0, publicCommands };
 }
 
 const PUBLIC_HISTORY_COMMAND_IDS: Readonly<Record<string, FigmaWorkspacePublicCommandId>> = {
@@ -6207,21 +6382,153 @@ function isPathInside(root: string, path: string): boolean {
 }
 
 function parseUpstreamToolResult(value: unknown): ParsedUpstreamToolResult {
-  const record = asRecord(value);
-  const structured = record.structuredContent;
-  if (structured !== undefined) {
-    return annotateParsedUpstreamToolResult(JSON.stringify(structured), structured);
+  const validated = CallToolResultSchema.safeParse(value);
+  if (!validated.success) {
+    const text = stringifyUpstreamValue(value);
+    return parsedUpstreamTransportFailure({
+      code: "FIGMA_UPSTREAM_INVALID_RESULT",
+      message: "Figma MCP returned a response that does not match CallToolResult.",
+      details: { issueCount: validated.error.issues.length },
+      text,
+      parsed: parseJsonLenient(text),
+    });
   }
-  const text = Array.isArray(record.content)
-    ? record.content
-        .map((item) => asRecord(item).text)
-        .filter((item): item is string => typeof item === "string")
-        .join("\n")
-    : JSON.stringify(value);
-  if (isTruncatedUpstreamText(text)) {
-    return annotateParsedUpstreamToolResult(text, undefined);
+  const callResult = validated.data;
+  const text = callResult.content
+    .flatMap((item) => item.type === "text" ? [item.text] : [])
+    .join("\n");
+  const json = callResult.structuredContent ?? (isTruncatedUpstreamText(text) ? undefined : parseJsonLenient(text));
+  const nonTextContent = callResult.content
+    .filter((item) => item.type !== "text")
+    .map(summarizeMcpContentBlock);
+  if (callResult.isError === true) {
+    const extracted = extractParsedUpstreamError(text, json);
+    const message = extracted?.message
+      || text.trim()
+      || safeJsonStringify(callResult.structuredContent)
+      || "Figma MCP reported a tool-call error.";
+    return {
+      text,
+      json,
+      callResult,
+      nonTextContent,
+      upstreamError: {
+        message,
+        code: "FIGMA_UPSTREAM_TOOL_ERROR",
+        details: extracted?.details,
+        text,
+        parsed: json,
+      },
+      primaryFix: primaryFixForUpstreamError({ message, code: "FIGMA_UPSTREAM_TOOL_ERROR" }),
+    };
   }
-  return annotateParsedUpstreamToolResult(text, parseJsonLenient(text));
+  const parsed = annotateParsedUpstreamToolResult(text, json);
+  return { ...parsed, callResult, nonTextContent };
+}
+
+function parsedUpstreamTransportFailure(error: FigmaWorkspaceUpstreamError): ParsedUpstreamToolResult {
+  return {
+    text: error.text ?? error.message,
+    json: error.parsed,
+    nonTextContent: [],
+    upstreamError: error,
+    primaryFix: primaryFixForUpstreamError(error),
+  };
+}
+
+function stringifyUpstreamValue(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function safeJsonStringify(value: unknown): string | undefined {
+  try {
+    return value === undefined ? undefined : JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function summarizeMcpContentBlock(block: ContentBlock): Record<string, unknown> {
+  const record = asRecord(block);
+  if (block.type === "image" || block.type === "audio") {
+    return removeUndefined({
+      type: block.type,
+      mimeType: asOptionalString(record.mimeType),
+      bytes: encodedContentByteLength(asOptionalString(record.data)),
+      annotations: record.annotations,
+    }) as Record<string, unknown>;
+  }
+  if (block.type === "resource") {
+    const resource = asRecord(record.resource);
+    return removeUndefined({
+      type: "resource",
+      uri: asOptionalString(resource.uri),
+      mimeType: asOptionalString(resource.mimeType),
+      bytes: typeof resource.text === "string"
+        ? Buffer.byteLength(resource.text, "utf8")
+        : encodedContentByteLength(asOptionalString(resource.blob)),
+      annotations: record.annotations,
+    }) as Record<string, unknown>;
+  }
+  if (block.type === "resource_link") {
+    return removeUndefined({
+      type: "resource_link",
+      uri: asOptionalString(record.uri),
+      name: asOptionalString(record.name),
+      title: asOptionalString(record.title),
+      description: asOptionalString(record.description),
+      mimeType: asOptionalString(record.mimeType),
+      size: typeof record.size === "number" ? record.size : undefined,
+      annotations: record.annotations,
+    }) as Record<string, unknown>;
+  }
+  return removeUndefined({
+    type: asOptionalString(record.type) ?? "unknown",
+    annotations: record.annotations,
+  }) as Record<string, unknown>;
+}
+
+function encodedContentByteLength(data: string | undefined): number | undefined {
+  if (!data) {
+    return undefined;
+  }
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
+}
+
+function sanitizedCallToolResult(parsed: ParsedUpstreamToolResult): Record<string, unknown> {
+  if (!parsed.callResult) {
+    return removeUndefined({
+      content: parsed.text ? [{ type: "text", text: parsed.text }] : [],
+      structuredContent: parsed.json,
+      isError: parsed.upstreamError !== undefined,
+    }) as Record<string, unknown>;
+  }
+  return {
+    content: parsed.callResult.content.map(sanitizeMcpContentBlock),
+    structuredContent: parsed.callResult.structuredContent,
+    isError: parsed.callResult.isError === true,
+  };
+}
+
+function sanitizeMcpContentBlock(block: ContentBlock): Record<string, unknown> {
+  const record = asRecord(block);
+  if (block.type === "resource") {
+    return {
+      ...omitProtocolMetadata(record),
+      resource: omitProtocolMetadata(asRecord(record.resource)),
+    };
+  }
+  return omitProtocolMetadata(record);
+}
+
+function omitProtocolMetadata(record: Record<string, unknown>): Record<string, unknown> {
+  const { _meta: _ignoredMeta, ...visible } = record;
+  return visible;
 }
 
 function annotateParsedUpstreamToolResult(
@@ -6232,6 +6539,7 @@ function annotateParsedUpstreamToolResult(
   return {
     text,
     json,
+    nonTextContent: [],
     upstreamError,
     primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : undefined,
   };
@@ -6574,7 +6882,7 @@ async function shapeUpstreamBackedResponse(options: {
   resultPayload: Record<string, unknown>;
   inlineResultLimit: unknown;
   forceOutputFile?: boolean;
-  writeOutputFiles: (upstream: Record<string, unknown>) => Promise<FigmaWorkspaceOutputFiles>;
+  writeOutputFiles: (upstreamCallResult: Record<string, unknown>) => Promise<FigmaWorkspaceOutputFiles>;
 }): Promise<Record<string, unknown>> {
   const inlineResultLimit = normalizeInlineResultLimit(options.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(
@@ -6584,6 +6892,7 @@ async function shapeUpstreamBackedResponse(options: {
   );
   const needsOutputFile = options.forceOutputFile === true
     || options.parsed.upstreamError
+    || options.parsed.nonTextContent.length > 0
     || isRecord(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
@@ -6591,7 +6900,7 @@ async function shapeUpstreamBackedResponse(options: {
   try {
     return {
       ...limitedPayload,
-      outputFiles: await options.writeOutputFiles(upstreamEnvelope(options.parsed)),
+      outputFiles: await options.writeOutputFiles(sanitizedCallToolResult(options.parsed)),
     };
   } catch (error) {
     return localPostprocessingFailure(limitedPayload, "backendSidecars", error);
@@ -6743,22 +7052,25 @@ function upstreamEnvelope(
       shaped.result ?? (parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined),
       failureSource,
     );
+    const kind = parsed.nonTextContent.length > 0 ? "content" : "json";
     return includePayload
-      ? { kind: "json", ok, result }
-      : { kind: "json", ok };
+      ? removeUndefined({ kind, ok, result, content: parsed.nonTextContent.length > 0 ? parsed.nonTextContent : undefined }) as Record<string, unknown>
+      : { kind, ok };
   }
   const ok = callOk;
+  const kind = parsed.nonTextContent.length > 0 ? "content" : "text";
   return includePayload
-    ? {
-        kind: "text",
+    ? removeUndefined({
+        kind,
         ok,
         text: parsed.text || undefined,
         result: ok ? undefined : addFailureSourceToUpstreamResult(
           parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined,
           "call",
         ),
-      }
-    : { kind: "text", ok };
+        content: parsed.nonTextContent.length > 0 ? parsed.nonTextContent : undefined,
+      }) as Record<string, unknown>
+    : { kind, ok };
 }
 
 function shapePublicUpstreamResult(value: unknown): { result: unknown; consumedOk?: boolean } {
@@ -6805,7 +7117,9 @@ function addFailureSourceToUpstreamResult(
   return result === undefined
     ? { source }
     : { source, value: result };
-}function sortedUnique(values: string[]): string[] {
+}
+
+function sortedUnique<T extends string>(values: T[]): T[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 

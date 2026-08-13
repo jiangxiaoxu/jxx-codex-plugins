@@ -29,6 +29,23 @@ interface RemoteMcpConnection {
 const OAUTH_CACHE_FILE_NAME = ".figma-workspace-oauth.json";
 const LOGIN_COMMAND = "npm run login:figma-http";
 const REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
+const REMOTE_MCP_DISCOVERY_MAX_PAGES = 100;
+
+export const REMOTE_MCP_DISCOVERY_PAGINATION_ERROR_CODE =
+  "FIGMA_UPSTREAM_DISCOVERY_PAGINATION_FAILED";
+
+export class RemoteMcpDiscoveryPaginationError extends Error {
+  readonly code = REMOTE_MCP_DISCOVERY_PAGINATION_ERROR_CODE;
+
+  constructor(
+    readonly discoveryKind: "tools" | "resources" | "resource templates",
+    message: string,
+    options: { cause?: unknown } = {},
+  ) {
+    super(message, options);
+    this.name = "RemoteMcpDiscoveryPaginationError";
+  }
+}
 
 export const REMOTE_MCP_OAUTH_ERROR_CODES = [
   "FIGMA_UPSTREAM_AUTH_REQUIRED",
@@ -287,7 +304,18 @@ export class RemoteMcpClient {
   }
 
   async listTools(signal?: AbortSignal): Promise<ListToolsResult> {
-    return this.requireClient().listTools({}, remoteRequestOptions(signal));
+    const client = this.requireClient();
+    const tools = await this.listAllDiscoveryPages(
+      "tools",
+      "name",
+      (cursor, pageSignal) => client.listTools(
+        cursor === undefined ? {} : { cursor },
+        remoteRequestOptions(pageSignal),
+      ),
+      (result) => result.tools,
+      signal,
+    );
+    return { tools };
   }
 
   async callTool(
@@ -303,15 +331,119 @@ export class RemoteMcpClient {
   }
 
   async listResources(signal?: AbortSignal): Promise<ListResourcesResult> {
-    return this.requireClient().listResources({}, remoteRequestOptions(signal));
+    const client = this.requireClient();
+    const resources = await this.listAllDiscoveryPages(
+      "resources",
+      "uri",
+      (cursor, pageSignal) => client.listResources(
+        cursor === undefined ? {} : { cursor },
+        remoteRequestOptions(pageSignal),
+      ),
+      (result) => result.resources,
+      signal,
+    );
+    return { resources };
   }
 
   async listResourceTemplates(signal?: AbortSignal): Promise<ListResourceTemplatesResult> {
-    return this.requireClient().listResourceTemplates({}, remoteRequestOptions(signal));
+    const client = this.requireClient();
+    const resourceTemplates = await this.listAllDiscoveryPages(
+      "resource templates",
+      "uriTemplate",
+      (cursor, pageSignal) => client.listResourceTemplates(
+        cursor === undefined ? {} : { cursor },
+        remoteRequestOptions(pageSignal),
+      ),
+      (result) => result.resourceTemplates,
+      signal,
+    );
+    return { resourceTemplates };
   }
 
   async readResource(uri: string, signal?: AbortSignal): Promise<ReadResourceResult> {
     return this.requireClient().readResource({ uri }, remoteRequestOptions(signal));
+  }
+
+  private async listAllDiscoveryPages<Entry extends object, Result extends { nextCursor?: string }>(
+    discoveryKind: "tools" | "resources" | "resource templates",
+    identityKey: string,
+    requestPage: (cursor: string | undefined, signal: AbortSignal) => Promise<Result>,
+    getEntries: (result: Result) => readonly Entry[] | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<Entry[]> {
+    return withRemoteMcpDiscoveryDeadline(signal, discoveryKind, async (pageSignal) => {
+      const entriesByIdentity = new Map<string, { entry: Entry; canonical: string }>();
+      const seenCursors = new Set<string>();
+      let cursor: string | undefined;
+
+      for (let page = 1; page <= REMOTE_MCP_DISCOVERY_MAX_PAGES; page += 1) {
+        let result: Result;
+        try {
+          if (pageSignal.aborted) {
+            throw pageSignal.reason;
+          }
+          result = await requestPage(cursor, pageSignal);
+          if (pageSignal.aborted) {
+            throw pageSignal.reason;
+          }
+        } catch (error) {
+          if (isRemoteMcpOAuthError(error)) {
+            throw error;
+          }
+          throw new RemoteMcpDiscoveryPaginationError(
+            discoveryKind,
+            `Figma MCP ${discoveryKind} discovery failed on page ${page}.`,
+            { cause: error },
+          );
+        }
+
+        for (const entry of getEntries(result) ?? []) {
+          const identity = discoveryIdentity(entry, identityKey, discoveryKind, page);
+          const canonical = canonicalJson(entry, discoveryKind, page);
+          const existing = entriesByIdentity.get(identity);
+          if (!existing) {
+            entriesByIdentity.set(identity, { entry, canonical });
+            continue;
+          }
+          if (existing.canonical !== canonical) {
+            throw new RemoteMcpDiscoveryPaginationError(
+              discoveryKind,
+              `Figma MCP ${discoveryKind} discovery returned conflicting entries for ${identityKey} ${JSON.stringify(identity)}.`,
+            );
+          }
+        }
+
+        const nextCursor = result.nextCursor;
+        if (nextCursor === undefined) {
+          return [...entriesByIdentity.values()].map(({ entry }) => entry);
+        }
+        if (typeof nextCursor !== "string") {
+          throw new RemoteMcpDiscoveryPaginationError(
+            discoveryKind,
+            `Figma MCP ${discoveryKind} discovery returned an invalid nextCursor on page ${page}.`,
+          );
+        }
+        if (page === REMOTE_MCP_DISCOVERY_MAX_PAGES) {
+          throw new RemoteMcpDiscoveryPaginationError(
+            discoveryKind,
+            `Figma MCP ${discoveryKind} discovery exceeded the ${REMOTE_MCP_DISCOVERY_MAX_PAGES}-page limit.`,
+          );
+        }
+        if (seenCursors.has(nextCursor)) {
+          throw new RemoteMcpDiscoveryPaginationError(
+            discoveryKind,
+            `Figma MCP ${discoveryKind} discovery detected a nextCursor loop.`,
+          );
+        }
+        seenCursors.add(nextCursor);
+        cursor = nextCursor;
+      }
+
+      throw new RemoteMcpDiscoveryPaginationError(
+        discoveryKind,
+        `Figma MCP ${discoveryKind} discovery exceeded the ${REMOTE_MCP_DISCOVERY_MAX_PAGES}-page limit.`,
+      );
+    });
   }
 
   private async setConnectedIfCurrent(
@@ -422,6 +554,123 @@ function remoteRequestOptions(signal: AbortSignal | undefined): {
     timeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS,
     maxTotalTimeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS,
   };
+}
+
+async function withRemoteMcpDiscoveryDeadline<T>(
+  signal: AbortSignal | undefined,
+  discoveryKind: "tools" | "resources" | "resource templates",
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const deadlineController = new AbortController();
+  const timeout = setTimeout(() => {
+    deadlineController.abort(new RemoteMcpDiscoveryPaginationError(
+      discoveryKind,
+      "Figma MCP discovery exceeded the 5-minute total timeout.",
+    ));
+  }, REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS);
+  timeout.unref?.();
+  const combinedSignal = combineAbortSignals([signal, deadlineController.signal]);
+  try {
+    return await operation(combinedSignal.signal);
+  } finally {
+    clearTimeout(timeout);
+    combinedSignal.dispose();
+  }
+}
+
+interface CombinedAbortSignal {
+  signal: AbortSignal;
+  dispose(): void;
+}
+
+function combineAbortSignals(
+  signals: readonly (AbortSignal | undefined)[],
+): CombinedAbortSignal {
+  const controller = new AbortController();
+  const listeners = new Map<AbortSignal, () => void>();
+
+  const abortFrom = (source: AbortSignal): void => {
+    if (!controller.signal.aborted) {
+      controller.abort(source.reason);
+    }
+  };
+
+  for (const source of signals) {
+    if (!source) {
+      continue;
+    }
+    if (source.aborted) {
+      abortFrom(source);
+      break;
+    }
+    const listener = () => abortFrom(source);
+    source.addEventListener("abort", listener, { once: true });
+    listeners.set(source, listener);
+  }
+
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      for (const [source, listener] of listeners) {
+        source.removeEventListener("abort", listener);
+      }
+      listeners.clear();
+    },
+  };
+}
+
+function discoveryIdentity(
+  entry: object,
+  identityKey: string,
+  discoveryKind: "tools" | "resources" | "resource templates",
+  page: number,
+): string {
+  const identity = isRecord(entry) ? entry[identityKey] : undefined;
+  if (typeof identity === "string") {
+    return identity;
+  }
+  throw new RemoteMcpDiscoveryPaginationError(
+    discoveryKind,
+    `Figma MCP ${discoveryKind} discovery returned an entry without string ${identityKey} on page ${page}.`,
+  );
+}
+
+function canonicalJson(
+  value: unknown,
+  discoveryKind: "tools" | "resources" | "resource templates",
+  page: number,
+): string {
+  try {
+    const serialized = JSON.stringify(stableJsonValue(value));
+    if (serialized !== undefined) {
+      return serialized;
+    }
+  } catch (error) {
+    throw new RemoteMcpDiscoveryPaginationError(
+      discoveryKind,
+      `Figma MCP ${discoveryKind} discovery returned a non-serializable entry on page ${page}.`,
+      { cause: error },
+    );
+  }
+  throw new RemoteMcpDiscoveryPaginationError(
+    discoveryKind,
+    `Figma MCP ${discoveryKind} discovery returned a non-serializable entry on page ${page}.`,
+  );
+}
+
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stableJsonValue(entry));
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entryValue]) => entryValue !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entryValue]) => [key, stableJsonValue(entryValue)]),
+    );
+  }
+  return value;
 }
 
 export function createRemoteMcpClient(

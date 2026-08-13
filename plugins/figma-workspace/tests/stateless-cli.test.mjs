@@ -141,7 +141,7 @@ test("fixed public leaf wrappers are complete, unique, and separate from mainten
   }
 });
 
-test("release metadata keeps the 0.5.3 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
+test("release metadata keeps the 0.5.4 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
   const [manifest, packageJson, cliPackageJson, cliLockfile, authConstants] = await Promise.all([
     readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
@@ -151,7 +151,7 @@ test("release metadata keeps the 0.5.3 plugin, CLI package, lockfile, and OAuth 
   ]);
   const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
 
-  assert.equal(manifest.version, "0.5.3");
+  assert.equal(manifest.version, "0.5.4");
   assert.equal(packageJson.version, manifest.version);
   assert.equal(cliPackageJson.version, manifest.version);
   assert.equal(cliLockfile.version, manifest.version);
@@ -335,11 +335,13 @@ test("local docs and API lookup stay inline without a state file or remote resul
 });
 
 test("Skill routes static discovery and documents explicit targets without retired public commands", async () => {
-  const [skill, agentMetadata, lookupReference, artifactsReference] = await Promise.all([
+  const [skill, agentMetadata, lookupReference, artifactsReference, upstreamReference, safetyReference] = await Promise.all([
     readFile(new URL("../skills/figma-workspace/SKILL.md", import.meta.url), "utf8"),
     readFile(new URL("../skills/figma-workspace/agents/openai.yaml", import.meta.url), "utf8"),
     readFile(new URL("../skills/figma-workspace/references/figma-workspace-guidance-and-lookup.md", import.meta.url), "utf8"),
     readFile(new URL("../skills/figma-workspace/references/figma-workspace-artifacts.md", import.meta.url), "utf8"),
+    readFile(new URL("../skills/figma-workspace/references/figma-workspace-upstream-tools.md", import.meta.url), "utf8"),
+    readFile(new URL("../skills/figma-workspace/references/figma-workspace-safety.md", import.meta.url), "utf8"),
   ]);
   const commandMap = skill.match(/## Public Command Map\n(?<body>[\s\S]*?)\n## /u)?.groups?.body;
   assert.notEqual(commandMap, undefined, "SKILL must own one parseable public command map");
@@ -369,6 +371,11 @@ test("Skill routes static discovery and documents explicit targets without retir
   }
   assert.match(artifactsReference, /Local Artifacts/u);
   assert.doesNotMatch(artifactsReference, /--state-file|--session-file|figma:open|figma:sessions/u);
+  assert.match(upstreamReference, /coverage.*never blocks/iu);
+  assert.match(upstreamReference, /sanitized visible-protocol sidecar/u);
+  assert.match(artifactsReference, /ordinary `_meta`.*`structuredContent` business data/u);
+  assert.match(safetyReference, /100 pages/u);
+  assert.doesNotMatch(agentMetadata, /English-only/u);
   assert.doesNotMatch(skill, /maintenance:raw|figma:raw|transport schema escape hatch/iu);
   assert.doesNotMatch(agentMetadata, /maintenance:raw|figma:raw|transport schema escape hatch/iu);
 });

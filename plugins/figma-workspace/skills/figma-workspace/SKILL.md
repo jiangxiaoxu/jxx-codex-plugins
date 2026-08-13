@@ -75,7 +75,7 @@ Prefer these English keyword patterns as search seeds. Add the known surface and
 | Execute Plugin API | `figma:run` | Explicit file plus a local `.figma.ts` script or stdin source. |
 | Move assets | `figma:assets:apply`, `figma:assets:download` | Every manifest or operation target is explicit. |
 | Verify visually | `figma:capture` | Explicit node target; inspect the saved PNG with `view_image`. |
-| Use an uncovered official capability | `figma:upstream:help`, `figma:upstream:list`, `figma:upstream:read`, `figma:upstream:call` | `list`/`read` are targetless. Read the selected live schema before `call`; provide only required target fields and obtain explicit confirmation for marked destructive, external, credit/cost, or asset-upload actions. |
+| Use an official capability through its live schema | `figma:upstream:help`, `figma:upstream:list`, `figma:upstream:read`, `figma:upstream:call` | `list`/`read` are targetless. `coverage` can point to a first-class command but never blocks `call`. Read the selected live schema; provide only required target fields and obtain explicit confirmation for marked destructive, external, credit/cost, or asset-upload actions. |
 
 ## Implement And Verify
 
@@ -89,7 +89,7 @@ Prefer these English keyword patterns as search seeds. Add the known surface and
    To provide source on stdin, use `--source -` instead of `--script`. The two source modes are mutually exclusive.
 3. Use native Figma Plugin API for edits, `figma:api:search` for uncertain symbols, and `figma:api:read` for the complete declaration behind a returned `apiId`. Keep scripts repairable, return compact changed-node IDs and validation notes, and repair fatal preflight diagnostics before dispatch.
 4. Capture visible results through queued `$.capture` or standalone `figma:capture`, then inspect every generated or edited PNG with `view_image` before reporting visual success.
-5. Prefer first-class commands. Use `figma:upstream:list`, `figma:upstream:read`, and `figma:upstream:call` only for an uncovered official capability. Before calling, follow the selected live description and schema, including its confirmation requirements.
+5. Prefer first-class commands for their typed safeguards. `figma:upstream:list` and `figma:upstream:read` show live schema plus local `coverage`; `figma:upstream:call` remains available for every official tool when the live schema is the required contract. Before calling, follow the selected description and schema, including its confirmation requirements.
 
 Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture, local artifacts, and mutation recovery details.
 
@@ -97,9 +97,10 @@ Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture
 
 - Pure inline reads do not create a persistent workspace record. When an invocation must write a sidecar, diagnostic, capture, or download and no explicit output path is supplied, the CLI returns an absolute path beneath its invocation-specific OS temp directory.
 - Treat `outputFiles.cliResultFile` as the machine-readable result. Discover its structure and extract only relevant content before expanding large values; do not treat the Restricted Markdown envelope as JSON.
+- Every `figma:upstream:call` writes a sanitized visible-protocol result sidecar. Typed commands write an upstream-response sidecar only for a remote error, inline truncation, or unrendered non-text content. These sidecars omit protocol `_meta` and tool annotations, while preserving an ordinary `_meta` field inside `structuredContent` business data.
 - Use explicit `--output-dir`, `--image-file`, or download output options when the caller needs a durable local location. Managed paths reject links and reparse points and publish atomically.
 - The temporary fileKey lock covers `figma:run`, `figma:assets:apply`, and `figma:upstream:call` only when that call resolves a fileKey. This is coordination only, not distributed durability.
-- `figma:run` reports `executionOutcome`: `not_started`, `failed_atomic`, `succeeded`, or `outcome_unknown`. `failed_atomic` is a direct returned `use_figma` script error: Figma confirmed no file changes, so repair and retry safely.
+- `figma:run` and `figma:upstream:call` report `executionOutcome`: `not_started`, `failed_atomic`, `succeeded`, or `outcome_unknown` when they dispatch a mutation. A direct returned `use_figma` script error is `failed_atomic`: Figma confirmed no file changes, so repair and retry safely. A post-dispatch error from another direct official tool remains `outcome_unknown` unless completion is independently confirmed.
 - Repair and rerun `not_started` only because dispatch did not occur. Treat `succeeded` as confirmed remote execution even if later local output processing fails.
 - For `failed_atomic`, stdout directly provides a compact remote error code/message and `Status: failed atomically`; repair the script and retry safely. `outcome_unknown` means completion was not confirmed, including response loss or truncation: follow `retryGuidance`, inspect, read back, or tag-reconcile before deciding whether any retry is safe. Never blindly replay a mutation when its outcome is unknown.
 - If capture processing fails after `succeeded`, use standalone `figma:capture`. `Status: failed after execution` is only for a named local stage that failed after confirmed execution; repair it and preserve the confirmed mutation result.
