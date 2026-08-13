@@ -1,6 +1,6 @@
 {
   "name": "@jxx-codex-plugins/figma-workspace-cli",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
   "description": "Stateless Figma Workspace CLI backed by the official Figma remote MCP.",
   "type": "module",
@@ -23,14 +23,14 @@
     "test": "npm run build && node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "@figma/plugin-typings": "^1.130.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "@typescript/typescript6": "6.0.1",
+    "@figma/plugin-typings": "^1.133.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@typescript/typescript6": "6.0.2",
     "typescript": "7.0.2"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "esbuild": "^0.27.0"
+    "esbuild": "^0.28.2"
   },
   "engines": {
     "node": ">=20.0.0"

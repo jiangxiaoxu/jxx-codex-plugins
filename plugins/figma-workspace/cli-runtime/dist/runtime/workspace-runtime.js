@@ -10,11 +10,20 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
 };
 var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __export = (target2, all) => {
   for (var name in all)
@@ -50,7 +59,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.5.3";
+    DEFAULT_CLIENT_VERSION = "0.5.4";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -16745,16 +16754,7 @@ var init_client2 = __esm({
         if (!methodSchema) {
           throw new Error("Schema is missing a method literal");
         }
-        let methodValue;
-        if (isZ4Schema(methodSchema)) {
-          const v4Schema = methodSchema;
-          const v4Def = v4Schema._zod?.def;
-          methodValue = v4Def?.value ?? v4Schema.value;
-        } else {
-          const v3Schema = methodSchema;
-          const legacyDef = v3Schema._def;
-          methodValue = legacyDef?.value ?? v3Schema.value;
-        }
+        const methodValue = getLiteralValue(methodSchema);
         if (typeof methodValue !== "string") {
           throw new Error("Schema method literal must be a string");
         }
@@ -18020,6 +18020,132 @@ var init_auth2 = __esm({
   }
 });
 
+// node_modules/content-type/index.js
+var require_content_type = __commonJS({
+  "node_modules/content-type/index.js"(exports) {
+    "use strict";
+    var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
+    var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
+    var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
+    var QUOTE_REGEXP = /([\\"])/g;
+    var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    exports.format = format;
+    exports.parse = parse4;
+    function format(obj) {
+      if (!obj || typeof obj !== "object") {
+        throw new TypeError("argument obj is required");
+      }
+      var parameters = obj.parameters;
+      var type = obj.type;
+      if (!type || !TYPE_REGEXP.test(type)) {
+        throw new TypeError("invalid type");
+      }
+      var string5 = type;
+      if (parameters && typeof parameters === "object") {
+        var param;
+        var params = Object.keys(parameters).sort();
+        for (var i = 0; i < params.length; i++) {
+          param = params[i];
+          if (!TOKEN_REGEXP.test(param)) {
+            throw new TypeError("invalid parameter name");
+          }
+          string5 += "; " + param + "=" + qstring(parameters[param]);
+        }
+      }
+      return string5;
+    }
+    function parse4(string5) {
+      if (!string5) {
+        throw new TypeError("argument string is required");
+      }
+      var header = typeof string5 === "object" ? getcontenttype(string5) : string5;
+      if (typeof header !== "string") {
+        throw new TypeError("argument string is required to be a string");
+      }
+      var index = header.indexOf(";");
+      var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
+      if (!TYPE_REGEXP.test(type)) {
+        throw new TypeError("invalid media type");
+      }
+      var obj = new ContentType(type.toLowerCase());
+      if (index !== -1) {
+        var key;
+        var match;
+        var value;
+        PARAM_REGEXP.lastIndex = index;
+        while (match = PARAM_REGEXP.exec(header)) {
+          if (match.index !== index) {
+            throw new TypeError("invalid parameter format");
+          }
+          index += match[0].length;
+          key = match[1].toLowerCase();
+          value = match[2];
+          if (value.charCodeAt(0) === 34) {
+            value = value.slice(1, -1);
+            if (value.indexOf("\\") !== -1) {
+              value = value.replace(QESC_REGEXP, "$1");
+            }
+          }
+          obj.parameters[key] = value;
+        }
+        if (index !== header.length) {
+          throw new TypeError("invalid parameter format");
+        }
+      }
+      return obj;
+    }
+    function getcontenttype(obj) {
+      var header;
+      if (typeof obj.getHeader === "function") {
+        header = obj.getHeader("content-type");
+      } else if (typeof obj.headers === "object") {
+        header = obj.headers && obj.headers["content-type"];
+      }
+      if (typeof header !== "string") {
+        throw new TypeError("content-type header is missing from object");
+      }
+      return header;
+    }
+    function qstring(val) {
+      var str = String(val);
+      if (TOKEN_REGEXP.test(str)) {
+        return str;
+      }
+      if (str.length > 0 && !TEXT_REGEXP.test(str)) {
+        throw new TypeError("invalid parameter value");
+      }
+      return '"' + str.replace(QUOTE_REGEXP, "\\$1") + '"';
+    }
+    function ContentType(type) {
+      this.parameters = /* @__PURE__ */ Object.create(null);
+      this.type = type;
+    }
+  }
+});
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/mediaType.js
+function mediaTypeEssence(header) {
+  if (!header) {
+    return void 0;
+  }
+  try {
+    return import_content_type.default.parse(header).type;
+  } catch {
+    const essence = (header.split(";", 1)[0] ?? "").trim().toLowerCase();
+    if (essence === "" || header.slice(essence.length).includes(",")) {
+      return void 0;
+    }
+    return essence;
+  }
+}
+var import_content_type;
+var init_mediaType = __esm({
+  "node_modules/@modelcontextprotocol/sdk/dist/esm/shared/mediaType.js"() {
+    import_content_type = __toESM(require_content_type(), 1);
+  }
+});
+
 // node_modules/@modelcontextprotocol/sdk/dist/esm/shared/transport.js
 function normalizeHeaders(headers) {
   if (!headers)
@@ -18267,6 +18393,7 @@ var init_stream = __esm({
 var DEFAULT_STREAMABLE_HTTP_RECONNECTION_OPTIONS, StreamableHTTPError, StreamableHTTPClientTransport;
 var init_streamableHttp = __esm({
   "node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js"() {
+    init_mediaType();
     init_transport();
     init_types();
     init_auth2();
@@ -18586,11 +18713,12 @@ var init_streamableHttp = __esm({
           }
           const messages = Array.isArray(message) ? message : [message];
           const hasRequests = messages.filter((msg) => "method" in msg && "id" in msg && msg.id !== void 0).length > 0;
-          const contentType = response.headers.get("content-type");
+          const contentType2 = response.headers.get("content-type");
+          const responseMediaType = mediaTypeEssence(contentType2);
           if (hasRequests) {
-            if (contentType?.includes("text/event-stream")) {
+            if (responseMediaType === "text/event-stream") {
               this._handleSseStream(response.body, { onresumptiontoken }, false);
-            } else if (contentType?.includes("application/json")) {
+            } else if (responseMediaType === "application/json") {
               const data = await response.json();
               const responseMessages = Array.isArray(data) ? data.map((msg) => JSONRPCMessageSchema.parse(msg)) : [JSONRPCMessageSchema.parse(data)];
               for (const msg of responseMessages) {
@@ -18598,7 +18726,7 @@ var init_streamableHttp = __esm({
               }
             } else {
               await response.body?.cancel();
-              throw new StreamableHTTPError(-1, `Unexpected content type: ${contentType}`);
+              throw new StreamableHTTPError(-1, `Unexpected content type: ${contentType2}`);
             }
           } else {
             await response.body?.cancel();
@@ -18698,8 +18826,10 @@ var init_browser = __esm({
 // src/upstream/remote-mcp-client.ts
 var remote_mcp_client_exports = {};
 __export(remote_mcp_client_exports, {
+  REMOTE_MCP_DISCOVERY_PAGINATION_ERROR_CODE: () => REMOTE_MCP_DISCOVERY_PAGINATION_ERROR_CODE,
   REMOTE_MCP_OAUTH_ERROR_CODES: () => REMOTE_MCP_OAUTH_ERROR_CODES,
   RemoteMcpClient: () => RemoteMcpClient,
+  RemoteMcpDiscoveryPaginationError: () => RemoteMcpDiscoveryPaginationError,
   RemoteMcpOAuthError: () => RemoteMcpOAuthError,
   createRemoteMcpClient: () => createRemoteMcpClient,
   isRemoteMcpOAuthError: () => isRemoteMcpOAuthError
@@ -18719,6 +18849,92 @@ function remoteRequestOptions(signal) {
     timeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS,
     maxTotalTimeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS
   };
+}
+async function withRemoteMcpDiscoveryDeadline(signal, discoveryKind, operation) {
+  const deadlineController = new AbortController();
+  const timeout = setTimeout(() => {
+    deadlineController.abort(new RemoteMcpDiscoveryPaginationError(
+      discoveryKind,
+      "Figma MCP discovery exceeded the 5-minute total timeout."
+    ));
+  }, REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS);
+  timeout.unref?.();
+  const combinedSignal = combineAbortSignals([signal, deadlineController.signal]);
+  try {
+    return await operation(combinedSignal.signal);
+  } finally {
+    clearTimeout(timeout);
+    combinedSignal.dispose();
+  }
+}
+function combineAbortSignals(signals) {
+  const controller = new AbortController();
+  const listeners = /* @__PURE__ */ new Map();
+  const abortFrom = (source) => {
+    if (!controller.signal.aborted) {
+      controller.abort(source.reason);
+    }
+  };
+  for (const source of signals) {
+    if (!source) {
+      continue;
+    }
+    if (source.aborted) {
+      abortFrom(source);
+      break;
+    }
+    const listener = () => abortFrom(source);
+    source.addEventListener("abort", listener, { once: true });
+    listeners.set(source, listener);
+  }
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      for (const [source, listener] of listeners) {
+        source.removeEventListener("abort", listener);
+      }
+      listeners.clear();
+    }
+  };
+}
+function discoveryIdentity(entry, identityKey, discoveryKind, page) {
+  const identity = isRecord2(entry) ? entry[identityKey] : void 0;
+  if (typeof identity === "string") {
+    return identity;
+  }
+  throw new RemoteMcpDiscoveryPaginationError(
+    discoveryKind,
+    `Figma MCP ${discoveryKind} discovery returned an entry without string ${identityKey} on page ${page}.`
+  );
+}
+function canonicalJson(value, discoveryKind, page) {
+  try {
+    const serialized = JSON.stringify(stableJsonValue(value));
+    if (serialized !== void 0) {
+      return serialized;
+    }
+  } catch (error2) {
+    throw new RemoteMcpDiscoveryPaginationError(
+      discoveryKind,
+      `Figma MCP ${discoveryKind} discovery returned a non-serializable entry on page ${page}.`,
+      { cause: error2 }
+    );
+  }
+  throw new RemoteMcpDiscoveryPaginationError(
+    discoveryKind,
+    `Figma MCP ${discoveryKind} discovery returned a non-serializable entry on page ${page}.`
+  );
+}
+function stableJsonValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stableJsonValue(entry));
+  }
+  if (isRecord2(value)) {
+    return Object.fromEntries(
+      Object.entries(value).filter(([, entryValue]) => entryValue !== void 0).sort(([left], [right]) => left.localeCompare(right)).map(([key, entryValue]) => [key, stableJsonValue(entryValue)])
+    );
+  }
+  return value;
 }
 function createRemoteMcpClient(options = {}) {
   return new RemoteMcpClient(options);
@@ -18902,7 +19118,7 @@ function isForbiddenStatusCode(value) {
 function isRecord2(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-var OAUTH_CACHE_FILE_NAME, LOGIN_COMMAND, REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS, REMOTE_MCP_OAUTH_ERROR_CODES, RemoteMcpOAuthError, RemoteMcpClient, StaleConnectionError;
+var OAUTH_CACHE_FILE_NAME, LOGIN_COMMAND, REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS, REMOTE_MCP_DISCOVERY_MAX_PAGES, REMOTE_MCP_DISCOVERY_PAGINATION_ERROR_CODE, RemoteMcpDiscoveryPaginationError, REMOTE_MCP_OAUTH_ERROR_CODES, RemoteMcpOAuthError, RemoteMcpClient, StaleConnectionError;
 var init_remote_mcp_client = __esm({
   "src/upstream/remote-mcp-client.ts"() {
     "use strict";
@@ -18916,6 +19132,17 @@ var init_remote_mcp_client = __esm({
     OAUTH_CACHE_FILE_NAME = ".figma-workspace-oauth.json";
     LOGIN_COMMAND = "npm run login:figma-http";
     REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS = 5 * 60 * 1e3;
+    REMOTE_MCP_DISCOVERY_MAX_PAGES = 100;
+    REMOTE_MCP_DISCOVERY_PAGINATION_ERROR_CODE = "FIGMA_UPSTREAM_DISCOVERY_PAGINATION_FAILED";
+    RemoteMcpDiscoveryPaginationError = class extends Error {
+      constructor(discoveryKind, message, options = {}) {
+        super(message, options);
+        this.discoveryKind = discoveryKind;
+        this.name = "RemoteMcpDiscoveryPaginationError";
+      }
+      discoveryKind;
+      code = REMOTE_MCP_DISCOVERY_PAGINATION_ERROR_CODE;
+    };
     REMOTE_MCP_OAUTH_ERROR_CODES = [
       "FIGMA_UPSTREAM_AUTH_REQUIRED",
       "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
@@ -19117,7 +19344,18 @@ ${authorizationUrl.toString()}`
         return this.client;
       }
       async listTools(signal) {
-        return this.requireClient().listTools({}, remoteRequestOptions(signal));
+        const client = this.requireClient();
+        const tools = await this.listAllDiscoveryPages(
+          "tools",
+          "name",
+          (cursor, pageSignal) => client.listTools(
+            cursor === void 0 ? {} : { cursor },
+            remoteRequestOptions(pageSignal)
+          ),
+          (result) => result.tools,
+          signal
+        );
+        return { tools };
       }
       async callTool(name, args = {}, signal) {
         return this.requireClient().callTool(
@@ -19127,13 +19365,106 @@ ${authorizationUrl.toString()}`
         );
       }
       async listResources(signal) {
-        return this.requireClient().listResources({}, remoteRequestOptions(signal));
+        const client = this.requireClient();
+        const resources = await this.listAllDiscoveryPages(
+          "resources",
+          "uri",
+          (cursor, pageSignal) => client.listResources(
+            cursor === void 0 ? {} : { cursor },
+            remoteRequestOptions(pageSignal)
+          ),
+          (result) => result.resources,
+          signal
+        );
+        return { resources };
       }
       async listResourceTemplates(signal) {
-        return this.requireClient().listResourceTemplates({}, remoteRequestOptions(signal));
+        const client = this.requireClient();
+        const resourceTemplates = await this.listAllDiscoveryPages(
+          "resource templates",
+          "uriTemplate",
+          (cursor, pageSignal) => client.listResourceTemplates(
+            cursor === void 0 ? {} : { cursor },
+            remoteRequestOptions(pageSignal)
+          ),
+          (result) => result.resourceTemplates,
+          signal
+        );
+        return { resourceTemplates };
       }
       async readResource(uri, signal) {
         return this.requireClient().readResource({ uri }, remoteRequestOptions(signal));
+      }
+      async listAllDiscoveryPages(discoveryKind, identityKey, requestPage, getEntries, signal) {
+        return withRemoteMcpDiscoveryDeadline(signal, discoveryKind, async (pageSignal) => {
+          const entriesByIdentity = /* @__PURE__ */ new Map();
+          const seenCursors = /* @__PURE__ */ new Set();
+          let cursor;
+          for (let page = 1; page <= REMOTE_MCP_DISCOVERY_MAX_PAGES; page += 1) {
+            let result;
+            try {
+              if (pageSignal.aborted) {
+                throw pageSignal.reason;
+              }
+              result = await requestPage(cursor, pageSignal);
+              if (pageSignal.aborted) {
+                throw pageSignal.reason;
+              }
+            } catch (error2) {
+              if (isRemoteMcpOAuthError(error2)) {
+                throw error2;
+              }
+              throw new RemoteMcpDiscoveryPaginationError(
+                discoveryKind,
+                `Figma MCP ${discoveryKind} discovery failed on page ${page}.`,
+                { cause: error2 }
+              );
+            }
+            for (const entry of getEntries(result) ?? []) {
+              const identity = discoveryIdentity(entry, identityKey, discoveryKind, page);
+              const canonical = canonicalJson(entry, discoveryKind, page);
+              const existing = entriesByIdentity.get(identity);
+              if (!existing) {
+                entriesByIdentity.set(identity, { entry, canonical });
+                continue;
+              }
+              if (existing.canonical !== canonical) {
+                throw new RemoteMcpDiscoveryPaginationError(
+                  discoveryKind,
+                  `Figma MCP ${discoveryKind} discovery returned conflicting entries for ${identityKey} ${JSON.stringify(identity)}.`
+                );
+              }
+            }
+            const nextCursor = result.nextCursor;
+            if (nextCursor === void 0) {
+              return [...entriesByIdentity.values()].map(({ entry }) => entry);
+            }
+            if (typeof nextCursor !== "string") {
+              throw new RemoteMcpDiscoveryPaginationError(
+                discoveryKind,
+                `Figma MCP ${discoveryKind} discovery returned an invalid nextCursor on page ${page}.`
+              );
+            }
+            if (page === REMOTE_MCP_DISCOVERY_MAX_PAGES) {
+              throw new RemoteMcpDiscoveryPaginationError(
+                discoveryKind,
+                `Figma MCP ${discoveryKind} discovery exceeded the ${REMOTE_MCP_DISCOVERY_MAX_PAGES}-page limit.`
+              );
+            }
+            if (seenCursors.has(nextCursor)) {
+              throw new RemoteMcpDiscoveryPaginationError(
+                discoveryKind,
+                `Figma MCP ${discoveryKind} discovery detected a nextCursor loop.`
+              );
+            }
+            seenCursors.add(nextCursor);
+            cursor = nextCursor;
+          }
+          throw new RemoteMcpDiscoveryPaginationError(
+            discoveryKind,
+            `Figma MCP ${discoveryKind} discovery exceeded the ${REMOTE_MCP_DISCOVERY_MAX_PAGES}-page limit.`
+          );
+        });
       }
       async setConnectedIfCurrent(connection, connectionGeneration) {
         if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
@@ -21738,10 +22069,7 @@ function requireFigmaWorkspaceWrapperContract(toolName) {
   }
   return contract;
 }
-function getFigmaWorkspaceCoveredUpstreamToolNames() {
-  return [...FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES];
-}
-var UPSTREAM_INLINE_FIELDS, EMPTY_PARAMETER_MATRIX, FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES, FIGMA_WORKSPACE_WRAPPER_CONTRACTS, WRAPPER_CONTRACTS_BY_TOOL;
+var UPSTREAM_INLINE_FIELDS, EMPTY_PARAMETER_MATRIX, FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES, FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE, FIGMA_WORKSPACE_WRAPPER_CONTRACTS, WRAPPER_CONTRACTS_BY_TOOL;
 var init_wrapper_contracts = __esm({
   "src/contract/wrapper-contracts.ts"() {
     "use strict";
@@ -21766,6 +22094,7 @@ var init_wrapper_contracts = __esm({
       "get_libraries",
       "get_variable_defs"
     ];
+    FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE = "Read the live schema before direct calls. A covered first-class command adds local validation and result handling, but figma:upstream:call remains available for every official tool.";
     FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       {
         toolName: "figma_workspace_run",
@@ -22927,7 +23256,7 @@ function createSkippedOptionalUpstreamDiagnostic(options) {
     severity: "warning",
     message: `The command skipped optional upstream argument "${options.property}" because the live official ${options.upstreamKind} capability does not advertise inputSchema.properties.${options.property}.`,
     suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/cli-runtime to audit official schema drift.",
-    docsHint: "Prefer first-class figma:* commands for covered workflows; use figma:upstream:call for uncovered official capabilities."
+    docsHint: "Use the listed first-class figma:* command for its additional local validation and result handling, or call the live official schema directly through figma:upstream:call when that is intentional."
   };
 }
 function currentInvocationContext() {
@@ -23117,16 +23446,19 @@ async function handleUpstreamTools(args, upstreamToolCache) {
     return {
       ok: true,
       name: tool.name,
+      title: tool.title,
       description: tool.description,
       inputSchema: tool.inputSchema,
-      guidance: "Prefer a first-class figma:* command when available; use figma:upstream:call for uncovered official behavior."
+      outputSchema: tool.outputSchema,
+      coverage: upstreamToolCoverage(tool.name),
+      guidance: FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE
     };
   }
   return {
     ok: true,
     tools: tools.map(upstreamToolDirectoryEntry),
     categories: [...UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER],
-    guidance: "Use a first-class figma:* command when available; read the schema with figma:upstream:read before figma:upstream:call."
+    guidance: "Read the live schema with figma:upstream:read before figma:upstream:call. Coverage is advisory: a first-class command adds local validation and result handling, while direct calls remain available."
   };
 }
 async function writeCallUpstreamResultFiles(options) {
@@ -23145,7 +23477,7 @@ async function writeCallUpstreamResultFiles(options) {
       })
     ))
   };
-  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstream));
+  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstreamCallResult));
   return outputFiles;
 }
 async function writeMetadataFile(options) {
@@ -25016,6 +25348,7 @@ async function readInspectStyleWithAdaptiveBatches(options) {
     if (chunkResult.upstreamError) {
       return {
         text: chunkResult.text ?? "",
+        nonTextContent: [],
         upstreamError: chunkResult.upstreamError,
         primaryFix: chunkResult.primaryFix
       };
@@ -25034,7 +25367,8 @@ async function readInspectStyleWithAdaptiveBatches(options) {
   const json = { result };
   return {
     text: JSON.stringify({ ok: true, result }),
-    json
+    json,
+    nonTextContent: []
   };
 }
 async function readInspectStyleChunk(options) {
@@ -25428,12 +25762,13 @@ async function executeDedicatedUpstreamTool(options) {
     parsed,
     resultPayload,
     inlineResultLimit: options.args.inlineResultLimit,
-    writeOutputFiles: (upstreamEnvelopePayload) => writeCallUpstreamResultFiles({
+    writeOutputFiles: (upstreamCallResult) => writeCallUpstreamResultFiles({
       toolName: upstreamToolName,
       wrapperToolName: options.contract.toolName,
       session: options.session,
       resultPayload,
-      upstream: upstreamEnvelopePayload
+      upstream: upstreamEnvelope(parsed),
+      upstreamCallResult
     })
   });
 }
@@ -25508,37 +25843,80 @@ async function executeCallUpstreamTool(args, runtime) {
     );
   }
   const upstreamArgs = isRecord5(args.arguments) ? args.arguments : {};
-  const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
+  const session = currentInvocationContext();
+  let tools;
+  try {
+    tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
+  } catch (error2) {
+    return shapeDirectUpstreamCallResponse({
+      args,
+      session,
+      parsed: parsedUpstreamTransportFailure(normalizeCaughtUpstreamError(error2)),
+      phase: "preflight",
+      executionOutcome: "not_started"
+    });
+  }
   const tool = tools.find((item) => item.name === args.toolName);
   if (!tool) {
-    throw new Error(
-      `Upstream Figma MCP tool "${args.toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
-    );
+    return shapeDirectUpstreamCallResponse({
+      args,
+      session,
+      parsed: parsedUpstreamTransportFailure({
+        code: "FIGMA_UPSTREAM_TOOL_NOT_FOUND",
+        message: `Upstream Figma MCP tool "${args.toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
+      }),
+      phase: "preflight",
+      executionOutcome: "not_started"
+    });
   }
-  await connectUpstream(runtime.client, "Call upstream Figma MCP tool");
-  const upstream = await callUpstreamToolWithLimits(runtime.client, args.toolName, upstreamArgs);
-  const parsed = parseUpstreamToolResult(upstream);
-  const session = currentInvocationContext();
-  const resultPayload = {
-    ok: !parsed.upstreamError,
-    toolName: args.toolName,
-    ...upstreamResultFields({
-      parsed,
-      upstream
-    }),
-    ...upstreamFailureFields(parsed)
-  };
+  const attempt = await attemptUpstreamToolCall(runtime.client, args.toolName, upstreamArgs);
+  if (attempt.error) {
+    return shapeDirectUpstreamCallResponse({
+      args,
+      session,
+      parsed: parsedUpstreamTransportFailure(attempt.error),
+      phase: attempt.requestDispatched ? "execute" : "preflight",
+      executionOutcome: attempt.requestDispatched ? "outcome_unknown" : "not_started"
+    });
+  }
+  const parsed = parseUpstreamToolResult(attempt.upstream);
+  const executionOutcome = parsed.upstreamError ? isConfirmedAtomicDirectUseFigmaFailure(args.toolName, parsed) ? "failed_atomic" : "outcome_unknown" : "succeeded";
+  const response = await shapeDirectUpstreamCallResponse({
+    args,
+    session,
+    parsed,
+    phase: "execute",
+    executionOutcome
+  });
+  if (!attempt.postResponseError) {
+    return response;
+  }
+  return localPostprocessingFailure(response, "upstreamResponseBudget", attempt.postResponseError);
+}
+async function shapeDirectUpstreamCallResponse(options) {
+  const retryGuidance = options.executionOutcome === "failed_atomic" ? ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE : options.executionOutcome === "outcome_unknown" ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : void 0;
+  const resultPayload = removeUndefined3({
+    ok: !options.parsed.upstreamError,
+    toolName: options.args.toolName,
+    phase: options.phase,
+    executionOutcome: options.executionOutcome,
+    retryGuidance,
+    ...upstreamResultFields({ parsed: options.parsed }),
+    ...upstreamFailureFields(options.parsed)
+  });
   return shapeUpstreamBackedResponse({
     contract: CALL_UPSTREAM_TOOL_CONTRACT,
-    parsed,
+    parsed: options.parsed,
     resultPayload,
-    inlineResultLimit: args.inlineResultLimit,
-    writeOutputFiles: (upstreamEnvelopePayload) => writeCallUpstreamResultFiles({
-      toolName: args.toolName,
+    inlineResultLimit: options.args.inlineResultLimit,
+    forceOutputFile: true,
+    writeOutputFiles: (upstreamCallResult) => writeCallUpstreamResultFiles({
+      toolName: options.args.toolName,
       wrapperToolName: "figma:upstream:call",
-      session,
+      session: options.session,
       resultPayload,
-      upstream: upstreamEnvelopePayload
+      upstream: upstreamEnvelope(options.parsed),
+      upstreamCallResult
     })
   });
 }
@@ -25742,8 +26120,57 @@ async function attemptUpstreamEval(client, evalSettings, script) {
     };
   }
 }
+async function attemptUpstreamToolCall(client, toolName, args) {
+  try {
+    await connectUpstream(client, "Call upstream Figma MCP tool");
+  } catch (error2) {
+    return {
+      requestDispatched: false,
+      error: normalizeCaughtUpstreamError(error2)
+    };
+  }
+  let requestDispatched = false;
+  try {
+    return {
+      requestDispatched: true,
+      upstream: await awaitUpstreamOperation(
+        `Upstream tool ${toolName}`,
+        (signal) => {
+          const request = client.callTool(toolName, args, signal);
+          requestDispatched = true;
+          return request;
+        },
+        { countResponse: true }
+      )
+    };
+  } catch (error2) {
+    if (error2 instanceof PostResponseResourceError) {
+      return {
+        requestDispatched: true,
+        upstream: error2.response,
+        postResponseError: error2
+      };
+    }
+    return {
+      requestDispatched,
+      error: normalizeCaughtUpstreamError(error2)
+    };
+  }
+}
 function isConfirmedAtomicUseFigmaScriptFailure(evalSettings, parsed) {
-  return evalSettings.toolName === DEFAULT_EVAL_TOOL_NAME && parsed.upstreamError !== void 0 && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED";
+  return evalSettings.toolName === DEFAULT_EVAL_TOOL_NAME && parsed.upstreamError !== void 0 && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED" && parsed.upstreamError.code !== "FIGMA_UPSTREAM_INVALID_RESULT";
+}
+function isConfirmedAtomicDirectUseFigmaFailure(toolName, parsed) {
+  return toolName === DEFAULT_EVAL_TOOL_NAME && parsed.upstreamError !== void 0 && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED" && parsed.upstreamError.code !== "FIGMA_UPSTREAM_INVALID_RESULT" && hasDirectUseFigmaScriptErrorEvidence(parsed);
+}
+function hasDirectUseFigmaScriptErrorEvidence(parsed) {
+  const structured = parsed.callResult?.structuredContent;
+  const structuredError = asRecord2(structured).error;
+  if (typeof structuredError === "string" || isRecord5(structuredError)) {
+    return true;
+  }
+  const text = parsed.text.trim();
+  return /^Error:/u.test(text) || /Figma Debug UUID:/u.test(text);
 }
 function createUpstreamToolCache(client) {
   let cached2;
@@ -25757,8 +26184,10 @@ function createUpstreamToolCache(client) {
       const tools = Array.isArray(result.tools) ? result.tools : [];
       cached2 = tools.filter(isRecord5).map((tool) => ({
         name: String(tool.name ?? ""),
+        title: asOptionalString2(tool.title),
         description: asOptionalString2(tool.description),
-        inputSchema: tool.inputSchema
+        inputSchema: tool.inputSchema,
+        outputSchema: tool.outputSchema
       })).filter((tool) => tool.name.length > 0);
       return cached2;
     }
@@ -25769,8 +26198,17 @@ function upstreamToolDirectoryEntry(tool) {
   return removeUndefined3({
     name: tool.name,
     category: UPSTREAM_TOOL_DIRECTORY_CATEGORIES[tool.name] ?? "other",
-    description: !normalizedDescription ? void 0 : normalizedDescription.length <= 96 ? normalizedDescription : `${normalizedDescription.slice(0, 93)}...`
+    description: !normalizedDescription ? void 0 : normalizedDescription.length <= 96 ? normalizedDescription : `${normalizedDescription.slice(0, 93)}...`,
+    coverage: upstreamToolCoverage(tool.name)
   });
+}
+function upstreamToolCoverage(toolName) {
+  const publicCommands = sortedUnique(
+    FIGMA_WORKSPACE_WRAPPER_CONTRACTS.flatMap(
+      (contract) => "upstreamToolName" in contract && contract.upstreamToolName === toolName ? [PUBLIC_HISTORY_COMMAND_IDS[contract.toolName]] : []
+    ).filter((command) => command !== void 0)
+  );
+  return { covered: publicCommands.length > 0, publicCommands };
 }
 async function resolveEvalSettings(session, args, runtime, requestFileKey) {
   const toolName = DEFAULT_EVAL_TOOL_NAME;
@@ -27204,22 +27642,143 @@ function slugifyTaskName(value) {
   return slug || "figma-task";
 }
 function parseUpstreamToolResult(value) {
-  const record3 = asRecord2(value);
-  const structured = record3.structuredContent;
-  if (structured !== void 0) {
-    return annotateParsedUpstreamToolResult(JSON.stringify(structured), structured);
+  const validated = CallToolResultSchema.safeParse(value);
+  if (!validated.success) {
+    const text2 = stringifyUpstreamValue(value);
+    return parsedUpstreamTransportFailure({
+      code: "FIGMA_UPSTREAM_INVALID_RESULT",
+      message: "Figma MCP returned a response that does not match CallToolResult.",
+      details: { issueCount: validated.error.issues.length },
+      text: text2,
+      parsed: parseJsonLenient2(text2)
+    });
   }
-  const text = Array.isArray(record3.content) ? record3.content.map((item) => asRecord2(item).text).filter((item) => typeof item === "string").join("\n") : JSON.stringify(value);
-  if (isTruncatedUpstreamText(text)) {
-    return annotateParsedUpstreamToolResult(text, void 0);
+  const callResult = validated.data;
+  const text = callResult.content.flatMap((item) => item.type === "text" ? [item.text] : []).join("\n");
+  const json = callResult.structuredContent ?? (isTruncatedUpstreamText(text) ? void 0 : parseJsonLenient2(text));
+  const nonTextContent = callResult.content.filter((item) => item.type !== "text").map(summarizeMcpContentBlock);
+  if (callResult.isError === true) {
+    const extracted = extractParsedUpstreamError(text, json);
+    const message = extracted?.message || text.trim() || safeJsonStringify(callResult.structuredContent) || "Figma MCP reported a tool-call error.";
+    return {
+      text,
+      json,
+      callResult,
+      nonTextContent,
+      upstreamError: {
+        message,
+        code: "FIGMA_UPSTREAM_TOOL_ERROR",
+        details: extracted?.details,
+        text,
+        parsed: json
+      },
+      primaryFix: primaryFixForUpstreamError({ message, code: "FIGMA_UPSTREAM_TOOL_ERROR" })
+    };
   }
-  return annotateParsedUpstreamToolResult(text, parseJsonLenient2(text));
+  const parsed = annotateParsedUpstreamToolResult(text, json);
+  return { ...parsed, callResult, nonTextContent };
+}
+function parsedUpstreamTransportFailure(error2) {
+  return {
+    text: error2.text ?? error2.message,
+    json: error2.parsed,
+    nonTextContent: [],
+    upstreamError: error2,
+    primaryFix: primaryFixForUpstreamError(error2)
+  };
+}
+function stringifyUpstreamValue(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+function safeJsonStringify(value) {
+  try {
+    return value === void 0 ? void 0 : JSON.stringify(value);
+  } catch {
+    return void 0;
+  }
+}
+function summarizeMcpContentBlock(block) {
+  const record3 = asRecord2(block);
+  if (block.type === "image" || block.type === "audio") {
+    return removeUndefined3({
+      type: block.type,
+      mimeType: asOptionalString2(record3.mimeType),
+      bytes: encodedContentByteLength(asOptionalString2(record3.data)),
+      annotations: record3.annotations
+    });
+  }
+  if (block.type === "resource") {
+    const resource = asRecord2(record3.resource);
+    return removeUndefined3({
+      type: "resource",
+      uri: asOptionalString2(resource.uri),
+      mimeType: asOptionalString2(resource.mimeType),
+      bytes: typeof resource.text === "string" ? Buffer.byteLength(resource.text, "utf8") : encodedContentByteLength(asOptionalString2(resource.blob)),
+      annotations: record3.annotations
+    });
+  }
+  if (block.type === "resource_link") {
+    return removeUndefined3({
+      type: "resource_link",
+      uri: asOptionalString2(record3.uri),
+      name: asOptionalString2(record3.name),
+      title: asOptionalString2(record3.title),
+      description: asOptionalString2(record3.description),
+      mimeType: asOptionalString2(record3.mimeType),
+      size: typeof record3.size === "number" ? record3.size : void 0,
+      annotations: record3.annotations
+    });
+  }
+  return removeUndefined3({
+    type: asOptionalString2(record3.type) ?? "unknown",
+    annotations: record3.annotations
+  });
+}
+function encodedContentByteLength(data) {
+  if (!data) {
+    return void 0;
+  }
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor(data.length * 3 / 4) - padding);
+}
+function sanitizedCallToolResult(parsed) {
+  if (!parsed.callResult) {
+    return removeUndefined3({
+      content: parsed.text ? [{ type: "text", text: parsed.text }] : [],
+      structuredContent: parsed.json,
+      isError: parsed.upstreamError !== void 0
+    });
+  }
+  return {
+    content: parsed.callResult.content.map(sanitizeMcpContentBlock),
+    structuredContent: parsed.callResult.structuredContent,
+    isError: parsed.callResult.isError === true
+  };
+}
+function sanitizeMcpContentBlock(block) {
+  const record3 = asRecord2(block);
+  if (block.type === "resource") {
+    return {
+      ...omitProtocolMetadata(record3),
+      resource: omitProtocolMetadata(asRecord2(record3.resource))
+    };
+  }
+  return omitProtocolMetadata(record3);
+}
+function omitProtocolMetadata(record3) {
+  const { _meta: _ignoredMeta, ...visible } = record3;
+  return visible;
 }
 function annotateParsedUpstreamToolResult(text, json) {
   const upstreamError = extractParsedUpstreamError(text, json);
   return {
     text,
     json,
+    nonTextContent: [],
     upstreamError,
     primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : void 0
   };
@@ -27512,14 +28071,14 @@ async function shapeUpstreamBackedResponse(options) {
     inlineResultLimit,
     [...options.contract.outputPolicy.inlineLimitFields]
   );
-  const needsOutputFile = options.forceOutputFile === true || options.parsed.upstreamError || isRecord5(limitedPayload.inlineResultLimit);
+  const needsOutputFile = options.forceOutputFile === true || options.parsed.upstreamError || options.parsed.nonTextContent.length > 0 || isRecord5(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
   }
   try {
     return {
       ...limitedPayload,
-      outputFiles: await options.writeOutputFiles(upstreamEnvelope(options.parsed))
+      outputFiles: await options.writeOutputFiles(sanitizedCallToolResult(options.parsed))
     };
   } catch (error2) {
     return localPostprocessingFailure(limitedPayload, "backendSidecars", error2);
@@ -27638,18 +28197,21 @@ function upstreamEnvelope(parsed, options = {}) {
       shaped.result ?? (parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0),
       failureSource
     );
-    return includePayload ? { kind: "json", ok: ok2, result } : { kind: "json", ok: ok2 };
+    const kind2 = parsed.nonTextContent.length > 0 ? "content" : "json";
+    return includePayload ? removeUndefined3({ kind: kind2, ok: ok2, result, content: parsed.nonTextContent.length > 0 ? parsed.nonTextContent : void 0 }) : { kind: kind2, ok: ok2 };
   }
   const ok = callOk;
-  return includePayload ? {
-    kind: "text",
+  const kind = parsed.nonTextContent.length > 0 ? "content" : "text";
+  return includePayload ? removeUndefined3({
+    kind,
     ok,
     text: parsed.text || void 0,
     result: ok ? void 0 : addFailureSourceToUpstreamResult(
       parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0,
       "call"
-    )
-  } : { kind: "text", ok };
+    ),
+    content: parsed.nonTextContent.length > 0 ? parsed.nonTextContent : void 0
+  }) : { kind, ok };
 }
 function shapePublicUpstreamResult(value) {
   const record3 = asRecord2(value);
@@ -27688,6 +28250,9 @@ function addFailureSourceToUpstreamResult(result, source) {
     };
   }
   return result === void 0 ? { source } : { source, value: result };
+}
+function sortedUnique(values) {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 function resolveWrapperNodeTarget(options) {
   const allowCompositeNodeId = allowsCompositeNodeId(options.toolName);
@@ -27969,10 +28534,11 @@ function clampIntegerParameter(options) {
 function literal3(value) {
   return JSON.stringify(value);
 }
-var FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_INLINE_RESULT_LIMIT, MAX_QUEUED_CAPTURE_REQUESTS, MAX_MANIFEST_ITEMS2, MAX_MANIFEST_FILE_BYTES, MAX_SINGLE_ASSET_BYTES, MAX_COMMAND_DATA_PLANE_BYTES, NETWORK_REQUEST_TOTAL_TIMEOUT_MS, NETWORK_REQUEST_IDLE_TIMEOUT_MS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, UNKNOWN_EXECUTION_RETRY_GUIDANCE, ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, COVERED_UPSTREAM_TOOL_NAMES_TEXT, DataPlaneResourceBudget, COMMAND_RESOURCE_CONTEXT, NetworkRequestDeadline, PostResponseResourceError, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, SVG_CONTENT_SNIFF_BYTES, INVOCATION_CONTEXT, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
+var FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_INLINE_RESULT_LIMIT, MAX_QUEUED_CAPTURE_REQUESTS, MAX_MANIFEST_ITEMS2, MAX_MANIFEST_FILE_BYTES, MAX_SINGLE_ASSET_BYTES, MAX_COMMAND_DATA_PLANE_BYTES, NETWORK_REQUEST_TOTAL_TIMEOUT_MS, NETWORK_REQUEST_IDLE_TIMEOUT_MS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, UNKNOWN_EXECUTION_RETRY_GUIDANCE, ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, DataPlaneResourceBudget, COMMAND_RESOURCE_CONTEXT, NetworkRequestDeadline, PostResponseResourceError, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, SVG_CONTENT_SNIFF_BYTES, INVOCATION_CONTEXT, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, PUBLIC_HISTORY_COMMAND_IDS, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
 var init_workspace_client = __esm({
   "src/runtime/workspace-client.ts"() {
     "use strict";
+    init_types();
     init_remote_mcp_client();
     init_doc_search();
     init_guidance_catalog();
@@ -28022,7 +28588,6 @@ var init_workspace_client = __esm({
     SEARCH_DESIGN_SYSTEM_TOOL_NAME = requireWrapperUpstreamToolName(SEARCH_DESIGN_SYSTEM_CONTRACT);
     GET_LIBRARIES_TOOL_NAME = requireWrapperUpstreamToolName(GET_LIBRARIES_CONTRACT);
     GET_VARIABLE_DEFS_TOOL_NAME = requireWrapperUpstreamToolName(GET_VARIABLE_DEFS_CONTRACT);
-    COVERED_UPSTREAM_TOOL_NAMES_TEXT = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
     DataPlaneResourceBudget = class {
       #usedBytes = 0;
       get remainingBytes() {
@@ -28145,6 +28710,21 @@ var init_workspace_client = __esm({
       get_shader_effect: "shader",
       list_shader_fills: "shader",
       get_shader_fill: "shader"
+    };
+    PUBLIC_HISTORY_COMMAND_IDS = {
+      figma_workspace_eval: "figma:run",
+      figma_workspace_run_script_file: "figma:run",
+      figma_workspace_apply_asset_manifest: "figma:assets:apply",
+      figma_workspace_download_assets: "figma:assets:download",
+      figma_workspace_capture_node: "figma:capture",
+      figma_workspace_inspect: "figma:inspect",
+      figma_workspace_get_metadata: "figma:metadata",
+      figma_workspace_get_design_context: "figma:design-context",
+      figma_workspace_get_motion_context: "figma:motion-context",
+      figma_workspace_search_design_system: "figma:design-system",
+      figma_workspace_get_libraries: "figma:libraries",
+      figma_workspace_get_variable_defs: "figma:variables",
+      figma_workspace_call_upstream_tool: "figma:upstream:call"
     };
     AssetManifestLoadError = class extends Error {
       manifestPath;
@@ -28857,9 +29437,9 @@ function createReplToolDescriptions(_options) {
     }],
     ["figma_workspace_call_upstream_tool", {
       name: "figma_workspace_call_upstream_tool",
-      description: "Call an uncovered official Figma MCP capability.",
+      description: "Call any official Figma MCP capability through its live schema. Covered first-class commands add local validation and result handling but do not block direct calls.",
       inputSchema: objectSchema({ ...invocation2(), toolName: string4("Exact official tool name."), arguments: { type: "object" }, refresh: boolean4("Refresh upstream discovery.") }, ["toolName"]),
-      outputSchema: resultSchema({ toolName: string4("Called official tool name."), upstream: { type: "object" } })
+      outputSchema: resultSchema({ toolName: string4("Called official tool name."), phase: { type: "string", enum: ["preflight", "execute"] }, executionOutcome: { type: "string", enum: ["not_started", "failed_atomic", "succeeded", "outcome_unknown"] }, retryGuidance: string4("Safe recovery direction when execution completion is not confirmed."), upstream: { type: "object" }, outputFiles: { type: "object" } })
     }],
     ["figma_workspace_lookup", {
       name: "figma_workspace_lookup",
@@ -28881,9 +29461,9 @@ function createReplToolDescriptions(_options) {
     }],
     ["figma_workspace_upstream_tools", {
       name: "figma_workspace_upstream_tools",
-      description: "List official upstream tools or read one exact schema.",
+      description: "List official upstream tools or read one exact live schema. Coverage is advisory: a first-class command adds local validation and result handling, while direct calls remain available.",
       inputSchema: objectSchema({ name: string4("Exact upstream tool name."), refresh: boolean4("Refresh discovery.") }),
-      outputSchema: resultSchema({ tools: { type: "array" }, inputSchema: {} })
+      outputSchema: resultSchema({ tools: { type: "array" }, title: string4("Official tool title."), description: string4("Official tool description."), inputSchema: {}, outputSchema: {}, coverage: { type: "object" } })
     }]
   ]);
   for (const name of LOCAL_WORKSPACE_TOOL_NAMES) if (!descriptions.has(name)) throw new Error(`Missing Figma Workspace tool description: ${name}`);
@@ -29954,3 +30534,12 @@ export {
   startOAuthCallbackServer,
   writeFigmaUpstreamContractSnapshotFile
 };
+/*! Bundled license information:
+
+content-type/index.js:
+  (*!
+   * content-type
+   * Copyright(c) 2015 Douglas Christopher Wilson
+   * MIT Licensed
+   *)
+*/

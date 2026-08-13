@@ -84,7 +84,7 @@ export const FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES = [
 ] as const;
 
 export const FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE =
-  "Prefer first-class Figma Workspace CLI commands when available; use figma:upstream:call for uncovered official capabilities.";
+  "Read the live schema before direct calls. A covered first-class command adds local validation and result handling, but figma:upstream:call remains available for every official tool.";
 
 export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
   {

@@ -17,7 +17,11 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
 var __commonJS = (cb, mod) => function __require2() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __export = (target2, all) => {
   for (var name in all)
@@ -6896,9 +6900,113 @@ var require_dist = __commonJS({
   }
 });
 
-// node_modules/@typescript/typescript6/node_modules/typescript/lib/typescript.js
+// node_modules/content-type/index.js
+var require_content_type = __commonJS({
+  "node_modules/content-type/index.js"(exports) {
+    "use strict";
+    var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
+    var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
+    var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
+    var QUOTE_REGEXP = /([\\"])/g;
+    var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    exports.format = format;
+    exports.parse = parse4;
+    function format(obj) {
+      if (!obj || typeof obj !== "object") {
+        throw new TypeError("argument obj is required");
+      }
+      var parameters = obj.parameters;
+      var type = obj.type;
+      if (!type || !TYPE_REGEXP.test(type)) {
+        throw new TypeError("invalid type");
+      }
+      var string4 = type;
+      if (parameters && typeof parameters === "object") {
+        var param;
+        var params = Object.keys(parameters).sort();
+        for (var i = 0; i < params.length; i++) {
+          param = params[i];
+          if (!TOKEN_REGEXP.test(param)) {
+            throw new TypeError("invalid parameter name");
+          }
+          string4 += "; " + param + "=" + qstring(parameters[param]);
+        }
+      }
+      return string4;
+    }
+    function parse4(string4) {
+      if (!string4) {
+        throw new TypeError("argument string is required");
+      }
+      var header = typeof string4 === "object" ? getcontenttype(string4) : string4;
+      if (typeof header !== "string") {
+        throw new TypeError("argument string is required to be a string");
+      }
+      var index = header.indexOf(";");
+      var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
+      if (!TYPE_REGEXP.test(type)) {
+        throw new TypeError("invalid media type");
+      }
+      var obj = new ContentType(type.toLowerCase());
+      if (index !== -1) {
+        var key;
+        var match;
+        var value;
+        PARAM_REGEXP.lastIndex = index;
+        while (match = PARAM_REGEXP.exec(header)) {
+          if (match.index !== index) {
+            throw new TypeError("invalid parameter format");
+          }
+          index += match[0].length;
+          key = match[1].toLowerCase();
+          value = match[2];
+          if (value.charCodeAt(0) === 34) {
+            value = value.slice(1, -1);
+            if (value.indexOf("\\") !== -1) {
+              value = value.replace(QESC_REGEXP, "$1");
+            }
+          }
+          obj.parameters[key] = value;
+        }
+        if (index !== header.length) {
+          throw new TypeError("invalid parameter format");
+        }
+      }
+      return obj;
+    }
+    function getcontenttype(obj) {
+      var header;
+      if (typeof obj.getHeader === "function") {
+        header = obj.getHeader("content-type");
+      } else if (typeof obj.headers === "object") {
+        header = obj.headers && obj.headers["content-type"];
+      }
+      if (typeof header !== "string") {
+        throw new TypeError("content-type header is missing from object");
+      }
+      return header;
+    }
+    function qstring(val) {
+      var str = String(val);
+      if (TOKEN_REGEXP.test(str)) {
+        return str;
+      }
+      if (str.length > 0 && !TEXT_REGEXP.test(str)) {
+        throw new TypeError("invalid parameter value");
+      }
+      return '"' + str.replace(QUOTE_REGEXP, "\\$1") + '"';
+    }
+    function ContentType(type) {
+      this.parameters = /* @__PURE__ */ Object.create(null);
+      this.type = type;
+    }
+  }
+});
+
+// node_modules/@typescript/old/lib/typescript.js
 var require_typescript = __commonJS({
-  "node_modules/@typescript/typescript6/node_modules/typescript/lib/typescript.js"(exports, module) {
+  "node_modules/@typescript/old/lib/typescript.js"(exports, module) {
     var ts2 = {};
     ((module2) => {
       "use strict";
@@ -223193,69 +223301,6 @@ var optionalProcessor = (schema, ctx, _json, params) => {
   seen.ref = def.innerType;
 };
 
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
-function isZ4Schema(s) {
-  const schema = s;
-  return !!schema._zod;
-}
-function safeParse2(schema, data) {
-  if (isZ4Schema(schema)) {
-    const result2 = safeParse(schema, data);
-    return result2;
-  }
-  const v3Schema = schema;
-  const result = v3Schema.safeParse(data);
-  return result;
-}
-function getObjectShape(schema) {
-  if (!schema)
-    return void 0;
-  let rawShape;
-  if (isZ4Schema(schema)) {
-    const v4Schema = schema;
-    rawShape = v4Schema._zod?.def?.shape;
-  } else {
-    const v3Schema = schema;
-    rawShape = v3Schema.shape;
-  }
-  if (!rawShape)
-    return void 0;
-  if (typeof rawShape === "function") {
-    try {
-      return rawShape();
-    } catch {
-      return void 0;
-    }
-  }
-  return rawShape;
-}
-function getLiteralValue(schema) {
-  if (isZ4Schema(schema)) {
-    const v4Schema = schema;
-    const def2 = v4Schema._zod?.def;
-    if (def2) {
-      if (def2.value !== void 0)
-        return def2.value;
-      if (Array.isArray(def2.values) && def2.values.length > 0) {
-        return def2.values[0];
-      }
-    }
-  }
-  const v3Schema = schema;
-  const def = v3Schema._def;
-  if (def) {
-    if (def.value !== void 0)
-      return def.value;
-    if (Array.isArray(def.values) && def.values.length > 0) {
-      return def.values[0];
-    }
-  }
-  const directValue = schema.value;
-  if (directValue !== void 0)
-    return directValue;
-  return void 0;
-}
-
 // node_modules/zod/v4/classic/iso.js
 var iso_exports = {};
 __export(iso_exports, {
@@ -223339,16 +223384,16 @@ var ZodRealError = /* @__PURE__ */ $constructor("ZodError", initializer2, {
 // node_modules/zod/v4/classic/parse.js
 var parse3 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
-var safeParse3 = /* @__PURE__ */ _safeParse(ZodRealError);
+var safeParse2 = /* @__PURE__ */ _safeParse(ZodRealError);
 var safeParseAsync2 = /* @__PURE__ */ _safeParseAsync(ZodRealError);
-var encode2 = /* @__PURE__ */ _encode(ZodRealError);
-var decode2 = /* @__PURE__ */ _decode(ZodRealError);
-var encodeAsync2 = /* @__PURE__ */ _encodeAsync(ZodRealError);
-var decodeAsync2 = /* @__PURE__ */ _decodeAsync(ZodRealError);
-var safeEncode2 = /* @__PURE__ */ _safeEncode(ZodRealError);
-var safeDecode2 = /* @__PURE__ */ _safeDecode(ZodRealError);
-var safeEncodeAsync2 = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
-var safeDecodeAsync2 = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
+var encode = /* @__PURE__ */ _encode(ZodRealError);
+var decode = /* @__PURE__ */ _decode(ZodRealError);
+var encodeAsync = /* @__PURE__ */ _encodeAsync(ZodRealError);
+var decodeAsync = /* @__PURE__ */ _decodeAsync(ZodRealError);
+var safeEncode = /* @__PURE__ */ _safeEncode(ZodRealError);
+var safeDecode = /* @__PURE__ */ _safeDecode(ZodRealError);
+var safeEncodeAsync = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
+var safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
 
 // node_modules/zod/v4/classic/schemas.js
 var _installedGroups = /* @__PURE__ */ new WeakMap();
@@ -223401,18 +223446,18 @@ var ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
   inst.type = def.type;
   Object.defineProperty(inst, "_def", { value: def });
   inst.parse = (data, params) => parse3(inst, data, params, { callee: inst.parse });
-  inst.safeParse = (data, params) => safeParse3(inst, data, params);
+  inst.safeParse = (data, params) => safeParse2(inst, data, params);
   inst.parseAsync = async (data, params) => parseAsync2(inst, data, params, { callee: inst.parseAsync });
   inst.safeParseAsync = async (data, params) => safeParseAsync2(inst, data, params);
   inst.spa = inst.safeParseAsync;
-  inst.encode = (data, params) => encode2(inst, data, params);
-  inst.decode = (data, params) => decode2(inst, data, params);
-  inst.encodeAsync = async (data, params) => encodeAsync2(inst, data, params);
-  inst.decodeAsync = async (data, params) => decodeAsync2(inst, data, params);
-  inst.safeEncode = (data, params) => safeEncode2(inst, data, params);
-  inst.safeDecode = (data, params) => safeDecode2(inst, data, params);
-  inst.safeEncodeAsync = async (data, params) => safeEncodeAsync2(inst, data, params);
-  inst.safeDecodeAsync = async (data, params) => safeDecodeAsync2(inst, data, params);
+  inst.encode = (data, params) => encode(inst, data, params);
+  inst.decode = (data, params) => decode(inst, data, params);
+  inst.encodeAsync = async (data, params) => encodeAsync(inst, data, params);
+  inst.decodeAsync = async (data, params) => decodeAsync(inst, data, params);
+  inst.safeEncode = (data, params) => safeEncode(inst, data, params);
+  inst.safeDecode = (data, params) => safeDecode(inst, data, params);
+  inst.safeEncodeAsync = async (data, params) => safeEncodeAsync(inst, data, params);
+  inst.safeDecodeAsync = async (data, params) => safeDecodeAsync(inst, data, params);
   _installLazyMethods(inst, "ZodType", {
     check(...chks) {
       const def2 = this.def;
@@ -223905,7 +223950,7 @@ var ZodObject = /* @__PURE__ */ $constructor("ZodObject", (inst, def) => {
     }
   });
 });
-function object2(shape, params) {
+function object(shape, params) {
   const def = {
     type: "object",
     shape: shape ?? {},
@@ -224299,10 +224344,10 @@ var TaskCreationParamsSchema = looseObject({
    */
   pollInterval: number2().optional()
 });
-var TaskMetadataSchema = object2({
+var TaskMetadataSchema = object({
   ttl: number2().optional()
 });
-var RelatedTaskMetadataSchema = object2({
+var RelatedTaskMetadataSchema = object({
   taskId: string2()
 });
 var RequestMetaSchema = looseObject({
@@ -224315,7 +224360,7 @@ var RequestMetaSchema = looseObject({
    */
   [RELATED_TASK_META_KEY]: RelatedTaskMetadataSchema.optional()
 });
-var BaseRequestParamsSchema = object2({
+var BaseRequestParamsSchema = object({
   /**
    * See [General fields: `_meta`](/specification/draft/basic/index#meta) for notes on `_meta` usage.
    */
@@ -224333,18 +224378,18 @@ var TaskAugmentedRequestParamsSchema = BaseRequestParamsSchema.extend({
   task: TaskMetadataSchema.optional()
 });
 var isTaskAugmentedRequestParams = (value) => TaskAugmentedRequestParamsSchema.safeParse(value).success;
-var RequestSchema = object2({
+var RequestSchema = object({
   method: string2(),
   params: BaseRequestParamsSchema.loose().optional()
 });
-var NotificationsParamsSchema = object2({
+var NotificationsParamsSchema = object({
   /**
    * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
    * for notes on _meta usage.
    */
   _meta: RequestMetaSchema.optional()
 });
-var NotificationSchema = object2({
+var NotificationSchema = object({
   method: string2(),
   params: NotificationsParamsSchema.loose().optional()
 });
@@ -224356,18 +224401,18 @@ var ResultSchema = looseObject({
   _meta: RequestMetaSchema.optional()
 });
 var RequestIdSchema = union([string2(), number2().int()]);
-var JSONRPCRequestSchema = object2({
+var JSONRPCRequestSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   id: RequestIdSchema,
   ...RequestSchema.shape
 }).strict();
 var isJSONRPCRequest = (value) => JSONRPCRequestSchema.safeParse(value).success;
-var JSONRPCNotificationSchema = object2({
+var JSONRPCNotificationSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   ...NotificationSchema.shape
 }).strict();
 var isJSONRPCNotification = (value) => JSONRPCNotificationSchema.safeParse(value).success;
-var JSONRPCResultResponseSchema = object2({
+var JSONRPCResultResponseSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   id: RequestIdSchema,
   result: ResultSchema
@@ -224384,10 +224429,10 @@ var ErrorCode;
   ErrorCode2[ErrorCode2["InternalError"] = -32603] = "InternalError";
   ErrorCode2[ErrorCode2["UrlElicitationRequired"] = -32042] = "UrlElicitationRequired";
 })(ErrorCode || (ErrorCode = {}));
-var JSONRPCErrorResponseSchema = object2({
+var JSONRPCErrorResponseSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   id: RequestIdSchema.optional(),
-  error: object2({
+  error: object({
     /**
      * The error type that occurred.
      */
@@ -224427,7 +224472,7 @@ var CancelledNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/cancelled"),
   params: CancelledNotificationParamsSchema
 });
-var IconSchema = object2({
+var IconSchema = object({
   /**
    * URL or data URI for the icon.
    */
@@ -224452,7 +224497,7 @@ var IconSchema = object2({
    */
   theme: _enum(["light", "dark"]).optional()
 });
-var IconsSchema = object2({
+var IconsSchema = object({
   /**
    * Optional set of sized icons that the client can display in a user interface.
    *
@@ -224466,7 +224511,7 @@ var IconsSchema = object2({
    */
   icons: array(IconSchema).optional()
 });
-var BaseMetadataSchema = object2({
+var BaseMetadataSchema = object({
   /** Intended for programmatic or logical use, but used as a display name in past specs or fallback */
   name: string2(),
   /**
@@ -224496,7 +224541,7 @@ var ImplementationSchema = BaseMetadataSchema.extend({
    */
   description: string2().optional()
 });
-var FormElicitationCapabilitySchema = intersection(object2({
+var FormElicitationCapabilitySchema = intersection(object({
   applyDefaults: boolean2().optional()
 }), record2(string2(), unknown()));
 var ElicitationCapabilitySchema = preprocess((value) => {
@@ -224506,7 +224551,7 @@ var ElicitationCapabilitySchema = preprocess((value) => {
     }
   }
   return value;
-}, intersection(object2({
+}, intersection(object({
   form: FormElicitationCapabilitySchema.optional(),
   url: AssertObjectSchema.optional()
 }), record2(string2(), unknown()).optional()));
@@ -224558,7 +224603,7 @@ var ServerTasksCapabilitySchema = looseObject({
     }).optional()
   }).optional()
 });
-var ClientCapabilitiesSchema = object2({
+var ClientCapabilitiesSchema = object({
   /**
    * Experimental, non-standard capabilities that the client supports.
    */
@@ -224566,7 +224611,7 @@ var ClientCapabilitiesSchema = object2({
   /**
    * Present if the client supports sampling from an LLM.
    */
-  sampling: object2({
+  sampling: object({
     /**
      * Present if the client supports context inclusion via includeContext parameter.
      * If not declared, servers SHOULD only use `includeContext: "none"` (or omit it).
@@ -224584,7 +224629,7 @@ var ClientCapabilitiesSchema = object2({
   /**
    * Present if the client supports listing roots.
    */
-  roots: object2({
+  roots: object({
     /**
      * Whether the client supports issuing notifications for changes to the roots list.
      */
@@ -224611,7 +224656,7 @@ var InitializeRequestSchema = RequestSchema.extend({
   method: literal("initialize"),
   params: InitializeRequestParamsSchema
 });
-var ServerCapabilitiesSchema = object2({
+var ServerCapabilitiesSchema = object({
   /**
    * Experimental, non-standard capabilities that the server supports.
    */
@@ -224627,7 +224672,7 @@ var ServerCapabilitiesSchema = object2({
   /**
    * Present if the server offers any prompt templates.
    */
-  prompts: object2({
+  prompts: object({
     /**
      * Whether this server supports issuing notifications for changes to the prompt list.
      */
@@ -224636,7 +224681,7 @@ var ServerCapabilitiesSchema = object2({
   /**
    * Present if the server offers any resources to read.
    */
-  resources: object2({
+  resources: object({
     /**
      * Whether this server supports clients subscribing to resource updates.
      */
@@ -224649,7 +224694,7 @@ var ServerCapabilitiesSchema = object2({
   /**
    * Present if the server offers any tools to call.
    */
-  tools: object2({
+  tools: object({
     /**
      * Whether this server supports issuing notifications for changes to the tool list.
      */
@@ -224687,7 +224732,7 @@ var PingRequestSchema = RequestSchema.extend({
   method: literal("ping"),
   params: BaseRequestParamsSchema.optional()
 });
-var ProgressSchema = object2({
+var ProgressSchema = object({
   /**
    * The progress thus far. This should increase every time progress is made, even if the total is unknown.
    */
@@ -224701,7 +224746,7 @@ var ProgressSchema = object2({
    */
   message: optional(string2())
 });
-var ProgressNotificationParamsSchema = object2({
+var ProgressNotificationParamsSchema = object({
   ...NotificationsParamsSchema.shape,
   ...ProgressSchema.shape,
   /**
@@ -224731,7 +224776,7 @@ var PaginatedResultSchema = ResultSchema.extend({
   nextCursor: CursorSchema.optional()
 });
 var TaskStatusSchema = _enum(["working", "input_required", "completed", "failed", "cancelled"]);
-var TaskSchema = object2({
+var TaskSchema = object({
   taskId: string2(),
   status: TaskStatusSchema,
   /**
@@ -224788,7 +224833,7 @@ var CancelTaskRequestSchema = RequestSchema.extend({
   })
 });
 var CancelTaskResultSchema = ResultSchema.merge(TaskSchema);
-var ResourceContentsSchema = object2({
+var ResourceContentsSchema = object({
   /**
    * The URI of this resource.
    */
@@ -224824,7 +224869,7 @@ var BlobResourceContentsSchema = ResourceContentsSchema.extend({
   blob: Base64Schema
 });
 var RoleSchema = _enum(["user", "assistant"]);
-var AnnotationsSchema = object2({
+var AnnotationsSchema = object({
   /**
    * Intended audience(s) for the resource.
    */
@@ -224838,7 +224883,7 @@ var AnnotationsSchema = object2({
    */
   lastModified: iso_exports.datetime({ offset: true }).optional()
 });
-var ResourceSchema = object2({
+var ResourceSchema = object({
   ...BaseMetadataSchema.shape,
   ...IconsSchema.shape,
   /**
@@ -224871,7 +224916,7 @@ var ResourceSchema = object2({
    */
   _meta: optional(looseObject({}))
 });
-var ResourceTemplateSchema = object2({
+var ResourceTemplateSchema = object({
   ...BaseMetadataSchema.shape,
   ...IconsSchema.shape,
   /**
@@ -224950,7 +224995,7 @@ var ResourceUpdatedNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/resources/updated"),
   params: ResourceUpdatedNotificationParamsSchema
 });
-var PromptArgumentSchema = object2({
+var PromptArgumentSchema = object({
   /**
    * The name of the argument.
    */
@@ -224964,7 +225009,7 @@ var PromptArgumentSchema = object2({
    */
   required: optional(boolean2())
 });
-var PromptSchema = object2({
+var PromptSchema = object({
   ...BaseMetadataSchema.shape,
   ...IconsSchema.shape,
   /**
@@ -225001,7 +225046,7 @@ var GetPromptRequestSchema = RequestSchema.extend({
   method: literal("prompts/get"),
   params: GetPromptRequestParamsSchema
 });
-var TextContentSchema = object2({
+var TextContentSchema = object({
   type: literal("text"),
   /**
    * The text content of the message.
@@ -225017,7 +225062,7 @@ var TextContentSchema = object2({
    */
   _meta: record2(string2(), unknown()).optional()
 });
-var ImageContentSchema = object2({
+var ImageContentSchema = object({
   type: literal("image"),
   /**
    * The base64-encoded image data.
@@ -225037,7 +225082,7 @@ var ImageContentSchema = object2({
    */
   _meta: record2(string2(), unknown()).optional()
 });
-var AudioContentSchema = object2({
+var AudioContentSchema = object({
   type: literal("audio"),
   /**
    * The base64-encoded audio data.
@@ -225057,7 +225102,7 @@ var AudioContentSchema = object2({
    */
   _meta: record2(string2(), unknown()).optional()
 });
-var ToolUseContentSchema = object2({
+var ToolUseContentSchema = object({
   type: literal("tool_use"),
   /**
    * The name of the tool to invoke.
@@ -225080,7 +225125,7 @@ var ToolUseContentSchema = object2({
    */
   _meta: record2(string2(), unknown()).optional()
 });
-var EmbeddedResourceSchema = object2({
+var EmbeddedResourceSchema = object({
   type: literal("resource"),
   resource: union([TextResourceContentsSchema, BlobResourceContentsSchema]),
   /**
@@ -225103,7 +225148,7 @@ var ContentBlockSchema = union([
   ResourceLinkSchema,
   EmbeddedResourceSchema
 ]);
-var PromptMessageSchema = object2({
+var PromptMessageSchema = object({
   role: RoleSchema,
   content: ContentBlockSchema
 });
@@ -225118,7 +225163,7 @@ var PromptListChangedNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/prompts/list_changed"),
   params: NotificationsParamsSchema.optional()
 });
-var ToolAnnotationsSchema = object2({
+var ToolAnnotationsSchema = object({
   /**
    * A human-readable title for the tool.
    */
@@ -225157,7 +225202,7 @@ var ToolAnnotationsSchema = object2({
    */
   openWorldHint: boolean2().optional()
 });
-var ToolExecutionSchema = object2({
+var ToolExecutionSchema = object({
   /**
    * Indicates the tool's preference for task-augmented execution.
    * - "required": Clients MUST invoke the tool as a task
@@ -225168,7 +225213,7 @@ var ToolExecutionSchema = object2({
    */
   taskSupport: _enum(["required", "optional", "forbidden"]).optional()
 });
-var ToolSchema = object2({
+var ToolSchema = object({
   ...BaseMetadataSchema.shape,
   ...IconsSchema.shape,
   /**
@@ -225179,7 +225224,7 @@ var ToolSchema = object2({
    * A JSON Schema 2020-12 object defining the expected parameters for the tool.
    * Must have type: 'object' at the root level per MCP spec.
    */
-  inputSchema: object2({
+  inputSchema: object({
     type: literal("object"),
     properties: record2(string2(), AssertObjectSchema).optional(),
     required: array(string2()).optional()
@@ -225189,7 +225234,7 @@ var ToolSchema = object2({
    * returned in the structuredContent field of a CallToolResult.
    * Must have type: 'object' at the root level per MCP spec.
    */
-  outputSchema: object2({
+  outputSchema: object({
     type: literal("object"),
     properties: record2(string2(), AssertObjectSchema).optional(),
     required: array(string2()).optional()
@@ -225265,7 +225310,7 @@ var ToolListChangedNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/tools/list_changed"),
   params: NotificationsParamsSchema.optional()
 });
-var ListChangedOptionsBaseSchema = object2({
+var ListChangedOptionsBaseSchema = object({
   /**
    * If true, the list will be refreshed automatically when a list changed notification is received.
    * The callback will be called with the updated list.
@@ -225314,13 +225359,13 @@ var LoggingMessageNotificationSchema = NotificationSchema.extend({
   method: literal("notifications/message"),
   params: LoggingMessageNotificationParamsSchema
 });
-var ModelHintSchema = object2({
+var ModelHintSchema = object({
   /**
    * A hint for a model name.
    */
   name: string2().optional()
 });
-var ModelPreferencesSchema = object2({
+var ModelPreferencesSchema = object({
   /**
    * Optional hints to use for model selection.
    */
@@ -225338,7 +225383,7 @@ var ModelPreferencesSchema = object2({
    */
   intelligencePriority: number2().min(0).max(1).optional()
 });
-var ToolChoiceSchema = object2({
+var ToolChoiceSchema = object({
   /**
    * Controls when tools are used:
    * - "auto": Model decides whether to use tools (default)
@@ -225347,11 +225392,11 @@ var ToolChoiceSchema = object2({
    */
   mode: _enum(["auto", "required", "none"]).optional()
 });
-var ToolResultContentSchema = object2({
+var ToolResultContentSchema = object({
   type: literal("tool_result"),
   toolUseId: string2().describe("The unique identifier for the corresponding tool call."),
   content: array(ContentBlockSchema).default([]),
-  structuredContent: object2({}).loose().optional(),
+  structuredContent: object({}).loose().optional(),
   isError: boolean2().optional(),
   /**
    * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
@@ -225367,7 +225412,7 @@ var SamplingMessageContentBlockSchema = discriminatedUnion("type", [
   ToolUseContentSchema,
   ToolResultContentSchema
 ]);
-var SamplingMessageSchema = object2({
+var SamplingMessageSchema = object({
   role: RoleSchema,
   content: union([SamplingMessageContentBlockSchema, array(SamplingMessageContentBlockSchema)]),
   /**
@@ -225467,13 +225512,13 @@ var CreateMessageResultWithToolsSchema = ResultSchema.extend({
    */
   content: union([SamplingMessageContentBlockSchema, array(SamplingMessageContentBlockSchema)])
 });
-var BooleanSchemaSchema = object2({
+var BooleanSchemaSchema = object({
   type: literal("boolean"),
   title: string2().optional(),
   description: string2().optional(),
   default: boolean2().optional()
 });
-var StringSchemaSchema = object2({
+var StringSchemaSchema = object({
   type: literal("string"),
   title: string2().optional(),
   description: string2().optional(),
@@ -225482,7 +225527,7 @@ var StringSchemaSchema = object2({
   format: _enum(["email", "uri", "date", "date-time"]).optional(),
   default: string2().optional()
 });
-var NumberSchemaSchema = object2({
+var NumberSchemaSchema = object({
   type: _enum(["number", "integer"]),
   title: string2().optional(),
   description: string2().optional(),
@@ -225490,24 +225535,24 @@ var NumberSchemaSchema = object2({
   maximum: number2().optional(),
   default: number2().optional()
 });
-var UntitledSingleSelectEnumSchemaSchema = object2({
+var UntitledSingleSelectEnumSchemaSchema = object({
   type: literal("string"),
   title: string2().optional(),
   description: string2().optional(),
   enum: array(string2()),
   default: string2().optional()
 });
-var TitledSingleSelectEnumSchemaSchema = object2({
+var TitledSingleSelectEnumSchemaSchema = object({
   type: literal("string"),
   title: string2().optional(),
   description: string2().optional(),
-  oneOf: array(object2({
+  oneOf: array(object({
     const: string2(),
     title: string2()
   })),
   default: string2().optional()
 });
-var LegacyTitledEnumSchemaSchema = object2({
+var LegacyTitledEnumSchemaSchema = object({
   type: literal("string"),
   title: string2().optional(),
   description: string2().optional(),
@@ -225516,26 +225561,26 @@ var LegacyTitledEnumSchemaSchema = object2({
   default: string2().optional()
 });
 var SingleSelectEnumSchemaSchema = union([UntitledSingleSelectEnumSchemaSchema, TitledSingleSelectEnumSchemaSchema]);
-var UntitledMultiSelectEnumSchemaSchema = object2({
+var UntitledMultiSelectEnumSchemaSchema = object({
   type: literal("array"),
   title: string2().optional(),
   description: string2().optional(),
   minItems: number2().optional(),
   maxItems: number2().optional(),
-  items: object2({
+  items: object({
     type: literal("string"),
     enum: array(string2())
   }),
   default: array(string2()).optional()
 });
-var TitledMultiSelectEnumSchemaSchema = object2({
+var TitledMultiSelectEnumSchemaSchema = object({
   type: literal("array"),
   title: string2().optional(),
   description: string2().optional(),
   minItems: number2().optional(),
   maxItems: number2().optional(),
-  items: object2({
-    anyOf: array(object2({
+  items: object({
+    anyOf: array(object({
       const: string2(),
       title: string2()
     }))
@@ -225560,7 +225605,7 @@ var ElicitRequestFormParamsSchema = TaskAugmentedRequestParamsSchema.extend({
    * A restricted subset of JSON Schema.
    * Only top-level properties are allowed, without nesting.
    */
-  requestedSchema: object2({
+  requestedSchema: object({
     type: literal("object"),
     properties: record2(string2(), PrimitiveSchemaDefinitionSchema),
     required: array(string2()).optional()
@@ -225616,14 +225661,14 @@ var ElicitResultSchema = ResultSchema.extend({
    */
   content: preprocess((val) => val === null ? void 0 : val, record2(string2(), union([string2(), number2(), boolean2(), array(string2())])).optional())
 });
-var ResourceTemplateReferenceSchema = object2({
+var ResourceTemplateReferenceSchema = object({
   type: literal("ref/resource"),
   /**
    * The URI or URI template of the resource.
    */
   uri: string2()
 });
-var PromptReferenceSchema = object2({
+var PromptReferenceSchema = object({
   type: literal("ref/prompt"),
   /**
    * The name of the prompt or prompt template
@@ -225635,7 +225680,7 @@ var CompleteRequestParamsSchema = BaseRequestParamsSchema.extend({
   /**
    * The argument's information
    */
-  argument: object2({
+  argument: object({
     /**
      * The name of the argument
      */
@@ -225645,7 +225690,7 @@ var CompleteRequestParamsSchema = BaseRequestParamsSchema.extend({
      */
     value: string2()
   }),
-  context: object2({
+  context: object({
     /**
      * Previously-resolved variables in a URI template or prompt.
      */
@@ -225672,7 +225717,7 @@ var CompleteResultSchema = ResultSchema.extend({
     hasMore: optional(boolean2())
   })
 });
-var RootSchema = object2({
+var RootSchema = object({
   /**
    * The URI identifying the root. This *must* start with file:// for now.
    */
@@ -225801,6 +225846,69 @@ var UrlElicitationRequiredError = class extends McpError {
   }
 };
 
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
+function isZ4Schema(s) {
+  const schema = s;
+  return !!schema._zod;
+}
+function safeParse3(schema, data) {
+  if (isZ4Schema(schema)) {
+    const result2 = safeParse(schema, data);
+    return result2;
+  }
+  const v3Schema = schema;
+  const result = v3Schema.safeParse(data);
+  return result;
+}
+function getObjectShape(schema) {
+  if (!schema)
+    return void 0;
+  let rawShape;
+  if (isZ4Schema(schema)) {
+    const v4Schema = schema;
+    rawShape = v4Schema._zod?.def?.shape;
+  } else {
+    const v3Schema = schema;
+    rawShape = v3Schema.shape;
+  }
+  if (!rawShape)
+    return void 0;
+  if (typeof rawShape === "function") {
+    try {
+      return rawShape();
+    } catch {
+      return void 0;
+    }
+  }
+  return rawShape;
+}
+function getLiteralValue(schema) {
+  if (isZ4Schema(schema)) {
+    const v4Schema = schema;
+    const def2 = v4Schema._zod?.def;
+    if (def2) {
+      if (def2.value !== void 0)
+        return def2.value;
+      if (Array.isArray(def2.values) && def2.values.length > 0) {
+        return def2.values[0];
+      }
+    }
+  }
+  const v3Schema = schema;
+  const def = v3Schema._def;
+  if (def) {
+    if (def.value !== void 0)
+      return def.value;
+    if (Array.isArray(def.values) && def.values.length > 0) {
+      return def.values[0];
+    }
+  }
+  const directValue = schema.value;
+  if (directValue !== void 0)
+    return directValue;
+  return void 0;
+}
+
 // node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
 function isTerminal(status) {
   return status === "completed" || status === "failed" || status === "cancelled";
@@ -225823,7 +225931,7 @@ function getMethodLiteral(schema) {
   return value;
 }
 function parseWithCompat(schema, data) {
-  const result = safeParse2(schema, data);
+  const result = safeParse3(schema, data);
   if (!result.success) {
     throw result.error;
   }
@@ -226421,7 +226529,7 @@ var Protocol = class {
           return reject(response);
         }
         try {
-          const parseResult = safeParse2(resultSchema, response.result);
+          const parseResult = safeParse3(resultSchema, response.result);
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
@@ -227161,23 +227269,14 @@ var Client = class extends Protocol {
     if (!methodSchema) {
       throw new Error("Schema is missing a method literal");
     }
-    let methodValue;
-    if (isZ4Schema(methodSchema)) {
-      const v4Schema = methodSchema;
-      const v4Def = v4Schema._zod?.def;
-      methodValue = v4Def?.value ?? v4Schema.value;
-    } else {
-      const v3Schema = methodSchema;
-      const legacyDef = v3Schema._def;
-      methodValue = legacyDef?.value ?? v3Schema.value;
-    }
+    const methodValue = getLiteralValue(methodSchema);
     if (typeof methodValue !== "string") {
       throw new Error("Schema method literal must be a string");
     }
     const method = methodValue;
     if (method === "elicitation/create") {
       const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(ElicitRequestSchema, request);
+        const validatedRequest = safeParse3(ElicitRequestSchema, request);
         if (!validatedRequest.success) {
           const errorMessage4 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation request: ${errorMessage4}`);
@@ -227193,14 +227292,14 @@ var Client = class extends Protocol {
         }
         const result = await Promise.resolve(handler(request, extra));
         if (params.task) {
-          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
+          const taskValidationResult = safeParse3(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
             const errorMessage4 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
             throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage4}`);
           }
           return taskValidationResult.data;
         }
-        const validationResult = safeParse2(ElicitResultSchema, result);
+        const validationResult = safeParse3(ElicitResultSchema, result);
         if (!validationResult.success) {
           const errorMessage4 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation result: ${errorMessage4}`);
@@ -227221,7 +227320,7 @@ var Client = class extends Protocol {
     }
     if (method === "sampling/createMessage") {
       const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(CreateMessageRequestSchema, request);
+        const validatedRequest = safeParse3(CreateMessageRequestSchema, request);
         if (!validatedRequest.success) {
           const errorMessage4 = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid sampling request: ${errorMessage4}`);
@@ -227229,7 +227328,7 @@ var Client = class extends Protocol {
         const { params } = validatedRequest.data;
         const result = await Promise.resolve(handler(request, extra));
         if (params.task) {
-          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
+          const taskValidationResult = safeParse3(CreateTaskResultSchema, result);
           if (!taskValidationResult.success) {
             const errorMessage4 = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
             throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage4}`);
@@ -227238,7 +227337,7 @@ var Client = class extends Protocol {
         }
         const hasTools = params.tools || params.toolChoice;
         const resultSchema = hasTools ? CreateMessageResultWithToolsSchema : CreateMessageResultSchema;
-        const validationResult = safeParse2(resultSchema, result);
+        const validationResult = safeParse3(resultSchema, result);
         if (!validationResult.success) {
           const errorMessage4 = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
           throw new McpError(ErrorCode.InvalidParams, `Invalid sampling result: ${errorMessage4}`);
@@ -227693,13 +227792,13 @@ var OpenIdProviderMetadataSchema = looseObject({
   op_tos_uri: SafeUrlSchema.optional(),
   client_id_metadata_document_supported: boolean2().optional()
 });
-var OpenIdProviderDiscoveryMetadataSchema = object2({
+var OpenIdProviderDiscoveryMetadataSchema = object({
   ...OpenIdProviderMetadataSchema.shape,
   ...OAuthMetadataSchema.pick({
     code_challenge_methods_supported: true
   }).shape
 });
-var OAuthTokensSchema = object2({
+var OAuthTokensSchema = object({
   access_token: string2(),
   id_token: string2().optional(),
   // Optional for OAuth 2.1, but necessary in OpenID Connect
@@ -227708,13 +227807,13 @@ var OAuthTokensSchema = object2({
   scope: string2().optional(),
   refresh_token: string2().optional()
 }).strip();
-var OAuthErrorResponseSchema = object2({
+var OAuthErrorResponseSchema = object({
   error: string2(),
   error_description: string2().optional(),
   error_uri: string2().optional()
 });
 var OptionalSafeUrlSchema = SafeUrlSchema.optional().or(literal("").transform(() => void 0));
-var OAuthClientMetadataSchema = object2({
+var OAuthClientMetadataSchema = object({
   redirect_uris: array(SafeUrlSchema),
   token_endpoint_auth_method: string2().optional(),
   grant_types: array(string2()).optional(),
@@ -227732,18 +227831,18 @@ var OAuthClientMetadataSchema = object2({
   software_version: string2().optional(),
   software_statement: string2().optional()
 }).strip();
-var OAuthClientInformationSchema = object2({
+var OAuthClientInformationSchema = object({
   client_id: string2(),
   client_secret: string2().optional(),
   client_id_issued_at: number2().optional(),
   client_secret_expires_at: number2().optional()
 }).strip();
 var OAuthClientInformationFullSchema = OAuthClientMetadataSchema.merge(OAuthClientInformationSchema);
-var OAuthClientRegistrationErrorSchema = object2({
+var OAuthClientRegistrationErrorSchema = object({
   error: string2(),
   error_description: string2().optional()
 }).strip();
-var OAuthTokenRevocationRequestSchema = object2({
+var OAuthTokenRevocationRequestSchema = object({
   token: string2(),
   token_type_hint: string2().optional()
 }).strip();
@@ -228404,6 +228503,23 @@ async function registerClient(authorizationServerUrl, { metadata, clientMetadata
   return OAuthClientInformationFullSchema.parse(await response.json());
 }
 
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/mediaType.js
+var import_content_type = __toESM(require_content_type(), 1);
+function mediaTypeEssence(header) {
+  if (!header) {
+    return void 0;
+  }
+  try {
+    return import_content_type.default.parse(header).type;
+  } catch {
+    const essence = (header.split(";", 1)[0] ?? "").trim().toLowerCase();
+    if (essence === "" || header.slice(essence.length).includes(",")) {
+      return void 0;
+    }
+    return essence;
+  }
+}
+
 // node_modules/@modelcontextprotocol/sdk/dist/esm/shared/transport.js
 function normalizeHeaders(headers) {
   if (!headers)
@@ -228948,11 +229064,12 @@ var StreamableHTTPClientTransport = class {
       }
       const messages = Array.isArray(message) ? message : [message];
       const hasRequests = messages.filter((msg) => "method" in msg && "id" in msg && msg.id !== void 0).length > 0;
-      const contentType = response.headers.get("content-type");
+      const contentType2 = response.headers.get("content-type");
+      const responseMediaType = mediaTypeEssence(contentType2);
       if (hasRequests) {
-        if (contentType?.includes("text/event-stream")) {
+        if (responseMediaType === "text/event-stream") {
           this._handleSseStream(response.body, { onresumptiontoken }, false);
-        } else if (contentType?.includes("application/json")) {
+        } else if (responseMediaType === "application/json") {
           const data = await response.json();
           const responseMessages = Array.isArray(data) ? data.map((msg) => JSONRPCMessageSchema.parse(msg)) : [JSONRPCMessageSchema.parse(data)];
           for (const msg of responseMessages) {
@@ -228960,7 +229077,7 @@ var StreamableHTTPClientTransport = class {
           }
         } else {
           await response.body?.cancel();
-          throw new StreamableHTTPError(-1, `Unexpected content type: ${contentType}`);
+          throw new StreamableHTTPError(-1, `Unexpected content type: ${contentType2}`);
         }
       } else {
         await response.body?.cancel();
@@ -229062,7 +229179,7 @@ var DEFAULT_CALLBACK_PORT = 18765;
 var DEFAULT_CALLBACK_PATH = "/oauth/callback";
 var DEFAULT_AUTH_TIMEOUT_MS = 18e4;
 var DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-var DEFAULT_CLIENT_VERSION = "0.5.3";
+var DEFAULT_CLIENT_VERSION = "0.5.4";
 var BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
 var distDir = dirname(fileURLToPath(import.meta.url));
 var PLUGIN_ROOT = resolve(distDir, "..");
@@ -229863,6 +229980,17 @@ function errorCodeFromUnknown(error2) {
 var OAUTH_CACHE_FILE_NAME = ".figma-workspace-oauth.json";
 var LOGIN_COMMAND = "npm run login:figma-http";
 var REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS = 5 * 60 * 1e3;
+var REMOTE_MCP_DISCOVERY_MAX_PAGES = 100;
+var REMOTE_MCP_DISCOVERY_PAGINATION_ERROR_CODE = "FIGMA_UPSTREAM_DISCOVERY_PAGINATION_FAILED";
+var RemoteMcpDiscoveryPaginationError = class extends Error {
+  constructor(discoveryKind, message, options = {}) {
+    super(message, options);
+    this.discoveryKind = discoveryKind;
+    this.name = "RemoteMcpDiscoveryPaginationError";
+  }
+  discoveryKind;
+  code = REMOTE_MCP_DISCOVERY_PAGINATION_ERROR_CODE;
+};
 var REMOTE_MCP_OAUTH_ERROR_CODES = [
   "FIGMA_UPSTREAM_AUTH_REQUIRED",
   "FIGMA_UPSTREAM_OAUTH_REGISTRATION_REJECTED",
@@ -230073,7 +230201,18 @@ ${authorizationUrl.toString()}`
     return this.client;
   }
   async listTools(signal) {
-    return this.requireClient().listTools({}, remoteRequestOptions(signal));
+    const client = this.requireClient();
+    const tools = await this.listAllDiscoveryPages(
+      "tools",
+      "name",
+      (cursor, pageSignal) => client.listTools(
+        cursor === void 0 ? {} : { cursor },
+        remoteRequestOptions(pageSignal)
+      ),
+      (result) => result.tools,
+      signal
+    );
+    return { tools };
   }
   async callTool(name, args = {}, signal) {
     return this.requireClient().callTool(
@@ -230083,13 +230222,106 @@ ${authorizationUrl.toString()}`
     );
   }
   async listResources(signal) {
-    return this.requireClient().listResources({}, remoteRequestOptions(signal));
+    const client = this.requireClient();
+    const resources = await this.listAllDiscoveryPages(
+      "resources",
+      "uri",
+      (cursor, pageSignal) => client.listResources(
+        cursor === void 0 ? {} : { cursor },
+        remoteRequestOptions(pageSignal)
+      ),
+      (result) => result.resources,
+      signal
+    );
+    return { resources };
   }
   async listResourceTemplates(signal) {
-    return this.requireClient().listResourceTemplates({}, remoteRequestOptions(signal));
+    const client = this.requireClient();
+    const resourceTemplates = await this.listAllDiscoveryPages(
+      "resource templates",
+      "uriTemplate",
+      (cursor, pageSignal) => client.listResourceTemplates(
+        cursor === void 0 ? {} : { cursor },
+        remoteRequestOptions(pageSignal)
+      ),
+      (result) => result.resourceTemplates,
+      signal
+    );
+    return { resourceTemplates };
   }
   async readResource(uri, signal) {
     return this.requireClient().readResource({ uri }, remoteRequestOptions(signal));
+  }
+  async listAllDiscoveryPages(discoveryKind, identityKey, requestPage, getEntries, signal) {
+    return withRemoteMcpDiscoveryDeadline(signal, discoveryKind, async (pageSignal) => {
+      const entriesByIdentity = /* @__PURE__ */ new Map();
+      const seenCursors = /* @__PURE__ */ new Set();
+      let cursor;
+      for (let page = 1; page <= REMOTE_MCP_DISCOVERY_MAX_PAGES; page += 1) {
+        let result;
+        try {
+          if (pageSignal.aborted) {
+            throw pageSignal.reason;
+          }
+          result = await requestPage(cursor, pageSignal);
+          if (pageSignal.aborted) {
+            throw pageSignal.reason;
+          }
+        } catch (error2) {
+          if (isRemoteMcpOAuthError(error2)) {
+            throw error2;
+          }
+          throw new RemoteMcpDiscoveryPaginationError(
+            discoveryKind,
+            `Figma MCP ${discoveryKind} discovery failed on page ${page}.`,
+            { cause: error2 }
+          );
+        }
+        for (const entry of getEntries(result) ?? []) {
+          const identity = discoveryIdentity(entry, identityKey, discoveryKind, page);
+          const canonical = canonicalJson(entry, discoveryKind, page);
+          const existing = entriesByIdentity.get(identity);
+          if (!existing) {
+            entriesByIdentity.set(identity, { entry, canonical });
+            continue;
+          }
+          if (existing.canonical !== canonical) {
+            throw new RemoteMcpDiscoveryPaginationError(
+              discoveryKind,
+              `Figma MCP ${discoveryKind} discovery returned conflicting entries for ${identityKey} ${JSON.stringify(identity)}.`
+            );
+          }
+        }
+        const nextCursor = result.nextCursor;
+        if (nextCursor === void 0) {
+          return [...entriesByIdentity.values()].map(({ entry }) => entry);
+        }
+        if (typeof nextCursor !== "string") {
+          throw new RemoteMcpDiscoveryPaginationError(
+            discoveryKind,
+            `Figma MCP ${discoveryKind} discovery returned an invalid nextCursor on page ${page}.`
+          );
+        }
+        if (page === REMOTE_MCP_DISCOVERY_MAX_PAGES) {
+          throw new RemoteMcpDiscoveryPaginationError(
+            discoveryKind,
+            `Figma MCP ${discoveryKind} discovery exceeded the ${REMOTE_MCP_DISCOVERY_MAX_PAGES}-page limit.`
+          );
+        }
+        if (seenCursors.has(nextCursor)) {
+          throw new RemoteMcpDiscoveryPaginationError(
+            discoveryKind,
+            `Figma MCP ${discoveryKind} discovery detected a nextCursor loop.`
+          );
+        }
+        seenCursors.add(nextCursor);
+        cursor = nextCursor;
+      }
+      throw new RemoteMcpDiscoveryPaginationError(
+        discoveryKind,
+        `Figma MCP ${discoveryKind} discovery exceeded the ${REMOTE_MCP_DISCOVERY_MAX_PAGES}-page limit.`
+      );
+    });
   }
   async setConnectedIfCurrent(connection, connectionGeneration) {
     if (!this.isCurrentConnectionAttempt(connectionGeneration)) {
@@ -230170,6 +230402,92 @@ function remoteRequestOptions(signal) {
     timeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS,
     maxTotalTimeout: REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS
   };
+}
+async function withRemoteMcpDiscoveryDeadline(signal, discoveryKind, operation) {
+  const deadlineController = new AbortController();
+  const timeout = setTimeout(() => {
+    deadlineController.abort(new RemoteMcpDiscoveryPaginationError(
+      discoveryKind,
+      "Figma MCP discovery exceeded the 5-minute total timeout."
+    ));
+  }, REMOTE_MCP_REQUEST_TOTAL_TIMEOUT_MS);
+  timeout.unref?.();
+  const combinedSignal = combineAbortSignals([signal, deadlineController.signal]);
+  try {
+    return await operation(combinedSignal.signal);
+  } finally {
+    clearTimeout(timeout);
+    combinedSignal.dispose();
+  }
+}
+function combineAbortSignals(signals) {
+  const controller = new AbortController();
+  const listeners = /* @__PURE__ */ new Map();
+  const abortFrom = (source) => {
+    if (!controller.signal.aborted) {
+      controller.abort(source.reason);
+    }
+  };
+  for (const source of signals) {
+    if (!source) {
+      continue;
+    }
+    if (source.aborted) {
+      abortFrom(source);
+      break;
+    }
+    const listener = () => abortFrom(source);
+    source.addEventListener("abort", listener, { once: true });
+    listeners.set(source, listener);
+  }
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      for (const [source, listener] of listeners) {
+        source.removeEventListener("abort", listener);
+      }
+      listeners.clear();
+    }
+  };
+}
+function discoveryIdentity(entry, identityKey, discoveryKind, page) {
+  const identity = isRecord3(entry) ? entry[identityKey] : void 0;
+  if (typeof identity === "string") {
+    return identity;
+  }
+  throw new RemoteMcpDiscoveryPaginationError(
+    discoveryKind,
+    `Figma MCP ${discoveryKind} discovery returned an entry without string ${identityKey} on page ${page}.`
+  );
+}
+function canonicalJson(value, discoveryKind, page) {
+  try {
+    const serialized = JSON.stringify(stableJsonValue(value));
+    if (serialized !== void 0) {
+      return serialized;
+    }
+  } catch (error2) {
+    throw new RemoteMcpDiscoveryPaginationError(
+      discoveryKind,
+      `Figma MCP ${discoveryKind} discovery returned a non-serializable entry on page ${page}.`,
+      { cause: error2 }
+    );
+  }
+  throw new RemoteMcpDiscoveryPaginationError(
+    discoveryKind,
+    `Figma MCP ${discoveryKind} discovery returned a non-serializable entry on page ${page}.`
+  );
+}
+function stableJsonValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stableJsonValue(entry));
+  }
+  if (isRecord3(value)) {
+    return Object.fromEntries(
+      Object.entries(value).filter(([, entryValue]) => entryValue !== void 0).sort(([left], [right]) => left.localeCompare(right)).map(([key, entryValue]) => [key, stableJsonValue(entryValue)])
+    );
+  }
+  return value;
 }
 function createRemoteMcpClient(options = {}) {
   return new RemoteMcpClient(options);
@@ -232858,18 +233176,7 @@ function parameterMatrix(matrix) {
     hiddenUpstreamOptional: matrix.hiddenUpstreamOptional ?? EMPTY_PARAMETER_MATRIX.hiddenUpstreamOptional
   };
 }
-var FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES = [
-  "use_figma",
-  "get_metadata",
-  "get_screenshot",
-  "upload_assets",
-  "download_assets",
-  "get_design_context",
-  "get_motion_context",
-  "search_design_system",
-  "get_libraries",
-  "get_variable_defs"
-];
+var FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE = "Read the live schema before direct calls. A covered first-class command adds local validation and result handling, but figma:upstream:call remains available for every official tool.";
 var FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
   {
     toolName: "figma_workspace_run",
@@ -233138,9 +233445,6 @@ function requireFigmaWorkspaceWrapperContract(toolName) {
     throw new Error(`Missing internal Figma Workspace wrapper contract for ${toolName}.`);
   }
   return contract;
-}
-function getFigmaWorkspaceCoveredUpstreamToolNames() {
-  return [...FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES];
 }
 
 // src/runtime/workspace-files.ts
@@ -233930,7 +234234,6 @@ var GET_MOTION_CONTEXT_TOOL_NAME = requireWrapperUpstreamToolName(GET_MOTION_CON
 var SEARCH_DESIGN_SYSTEM_TOOL_NAME = requireWrapperUpstreamToolName(SEARCH_DESIGN_SYSTEM_CONTRACT);
 var GET_LIBRARIES_TOOL_NAME = requireWrapperUpstreamToolName(GET_LIBRARIES_CONTRACT);
 var GET_VARIABLE_DEFS_TOOL_NAME = requireWrapperUpstreamToolName(GET_VARIABLE_DEFS_CONTRACT);
-var COVERED_UPSTREAM_TOOL_NAMES_TEXT = getFigmaWorkspaceCoveredUpstreamToolNames().join(", ");
 var DataPlaneResourceBudget = class {
   #usedBytes = 0;
   get remainingBytes() {
@@ -234112,7 +234415,7 @@ function createSkippedOptionalUpstreamDiagnostic(options) {
     severity: "warning",
     message: `The command skipped optional upstream argument "${options.property}" because the live official ${options.upstreamKind} capability does not advertise inputSchema.properties.${options.property}.`,
     suggestion: "No local repair is required unless the upstream call needed this optional behavior; run npm run upstream:contract:check from plugins/figma-workspace/cli-runtime to audit official schema drift.",
-    docsHint: "Prefer first-class figma:* commands for covered workflows; use figma:upstream:call for uncovered official capabilities."
+    docsHint: "Use the listed first-class figma:* command for its additional local validation and result handling, or call the live official schema directly through figma:upstream:call when that is intentional."
   };
 }
 var FIGMA_METADATA_ENRICHMENT_FIELDS = [
@@ -234325,16 +234628,19 @@ async function handleUpstreamTools(args, upstreamToolCache) {
     return {
       ok: true,
       name: tool.name,
+      title: tool.title,
       description: tool.description,
       inputSchema: tool.inputSchema,
-      guidance: "Prefer a first-class figma:* command when available; use figma:upstream:call for uncovered official behavior."
+      outputSchema: tool.outputSchema,
+      coverage: upstreamToolCoverage(tool.name),
+      guidance: FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE
     };
   }
   return {
     ok: true,
     tools: tools.map(upstreamToolDirectoryEntry),
     categories: [...UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER],
-    guidance: "Use a first-class figma:* command when available; read the schema with figma:upstream:read before figma:upstream:call."
+    guidance: "Read the live schema with figma:upstream:read before figma:upstream:call. Coverage is advisory: a first-class command adds local validation and result handling, while direct calls remain available."
   };
 }
 async function writeCallUpstreamResultFiles(options) {
@@ -234353,7 +234659,7 @@ async function writeCallUpstreamResultFiles(options) {
       })
     ))
   };
-  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstream));
+  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstreamCallResult));
   return outputFiles;
 }
 async function writeMetadataFile(options) {
@@ -236224,6 +236530,7 @@ async function readInspectStyleWithAdaptiveBatches(options) {
     if (chunkResult.upstreamError) {
       return {
         text: chunkResult.text ?? "",
+        nonTextContent: [],
         upstreamError: chunkResult.upstreamError,
         primaryFix: chunkResult.primaryFix
       };
@@ -236242,7 +236549,8 @@ async function readInspectStyleWithAdaptiveBatches(options) {
   const json = { result };
   return {
     text: JSON.stringify({ ok: true, result }),
-    json
+    json,
+    nonTextContent: []
   };
 }
 async function readInspectStyleChunk(options) {
@@ -236636,12 +236944,13 @@ async function executeDedicatedUpstreamTool(options) {
     parsed,
     resultPayload,
     inlineResultLimit: options.args.inlineResultLimit,
-    writeOutputFiles: (upstreamEnvelopePayload) => writeCallUpstreamResultFiles({
+    writeOutputFiles: (upstreamCallResult) => writeCallUpstreamResultFiles({
       toolName: upstreamToolName,
       wrapperToolName: options.contract.toolName,
       session: options.session,
       resultPayload,
-      upstream: upstreamEnvelopePayload
+      upstream: upstreamEnvelope(parsed),
+      upstreamCallResult
     })
   });
 }
@@ -236716,37 +237025,80 @@ async function executeCallUpstreamTool(args, runtime) {
     );
   }
   const upstreamArgs = isRecord6(args.arguments) ? args.arguments : {};
-  const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
+  const session = currentInvocationContext();
+  let tools;
+  try {
+    tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
+  } catch (error2) {
+    return shapeDirectUpstreamCallResponse({
+      args,
+      session,
+      parsed: parsedUpstreamTransportFailure(normalizeCaughtUpstreamError(error2)),
+      phase: "preflight",
+      executionOutcome: "not_started"
+    });
+  }
   const tool = tools.find((item) => item.name === args.toolName);
   if (!tool) {
-    throw new Error(
-      `Upstream Figma MCP tool "${args.toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
-    );
+    return shapeDirectUpstreamCallResponse({
+      args,
+      session,
+      parsed: parsedUpstreamTransportFailure({
+        code: "FIGMA_UPSTREAM_TOOL_NOT_FOUND",
+        message: `Upstream Figma MCP tool "${args.toolName}" was not found. Available tools: ${tools.map((item) => item.name).join(", ")}`
+      }),
+      phase: "preflight",
+      executionOutcome: "not_started"
+    });
   }
-  await connectUpstream(runtime.client, "Call upstream Figma MCP tool");
-  const upstream = await callUpstreamToolWithLimits(runtime.client, args.toolName, upstreamArgs);
-  const parsed = parseUpstreamToolResult(upstream);
-  const session = currentInvocationContext();
-  const resultPayload = {
-    ok: !parsed.upstreamError,
-    toolName: args.toolName,
-    ...upstreamResultFields({
-      parsed,
-      upstream
-    }),
-    ...upstreamFailureFields(parsed)
-  };
+  const attempt = await attemptUpstreamToolCall(runtime.client, args.toolName, upstreamArgs);
+  if (attempt.error) {
+    return shapeDirectUpstreamCallResponse({
+      args,
+      session,
+      parsed: parsedUpstreamTransportFailure(attempt.error),
+      phase: attempt.requestDispatched ? "execute" : "preflight",
+      executionOutcome: attempt.requestDispatched ? "outcome_unknown" : "not_started"
+    });
+  }
+  const parsed = parseUpstreamToolResult(attempt.upstream);
+  const executionOutcome = parsed.upstreamError ? isConfirmedAtomicDirectUseFigmaFailure(args.toolName, parsed) ? "failed_atomic" : "outcome_unknown" : "succeeded";
+  const response = await shapeDirectUpstreamCallResponse({
+    args,
+    session,
+    parsed,
+    phase: "execute",
+    executionOutcome
+  });
+  if (!attempt.postResponseError) {
+    return response;
+  }
+  return localPostprocessingFailure(response, "upstreamResponseBudget", attempt.postResponseError);
+}
+async function shapeDirectUpstreamCallResponse(options) {
+  const retryGuidance = options.executionOutcome === "failed_atomic" ? ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE : options.executionOutcome === "outcome_unknown" ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : void 0;
+  const resultPayload = removeUndefined3({
+    ok: !options.parsed.upstreamError,
+    toolName: options.args.toolName,
+    phase: options.phase,
+    executionOutcome: options.executionOutcome,
+    retryGuidance,
+    ...upstreamResultFields({ parsed: options.parsed }),
+    ...upstreamFailureFields(options.parsed)
+  });
   return shapeUpstreamBackedResponse({
     contract: CALL_UPSTREAM_TOOL_CONTRACT,
-    parsed,
+    parsed: options.parsed,
     resultPayload,
-    inlineResultLimit: args.inlineResultLimit,
-    writeOutputFiles: (upstreamEnvelopePayload) => writeCallUpstreamResultFiles({
-      toolName: args.toolName,
+    inlineResultLimit: options.args.inlineResultLimit,
+    forceOutputFile: true,
+    writeOutputFiles: (upstreamCallResult) => writeCallUpstreamResultFiles({
+      toolName: options.args.toolName,
       wrapperToolName: "figma:upstream:call",
-      session,
+      session: options.session,
       resultPayload,
-      upstream: upstreamEnvelopePayload
+      upstream: upstreamEnvelope(options.parsed),
+      upstreamCallResult
     })
   });
 }
@@ -236950,8 +237302,57 @@ async function attemptUpstreamEval(client, evalSettings, script) {
     };
   }
 }
+async function attemptUpstreamToolCall(client, toolName, args) {
+  try {
+    await connectUpstream(client, "Call upstream Figma MCP tool");
+  } catch (error2) {
+    return {
+      requestDispatched: false,
+      error: normalizeCaughtUpstreamError(error2)
+    };
+  }
+  let requestDispatched = false;
+  try {
+    return {
+      requestDispatched: true,
+      upstream: await awaitUpstreamOperation(
+        `Upstream tool ${toolName}`,
+        (signal) => {
+          const request = client.callTool(toolName, args, signal);
+          requestDispatched = true;
+          return request;
+        },
+        { countResponse: true }
+      )
+    };
+  } catch (error2) {
+    if (error2 instanceof PostResponseResourceError) {
+      return {
+        requestDispatched: true,
+        upstream: error2.response,
+        postResponseError: error2
+      };
+    }
+    return {
+      requestDispatched,
+      error: normalizeCaughtUpstreamError(error2)
+    };
+  }
+}
 function isConfirmedAtomicUseFigmaScriptFailure(evalSettings, parsed) {
-  return evalSettings.toolName === DEFAULT_EVAL_TOOL_NAME && parsed.upstreamError !== void 0 && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED";
+  return evalSettings.toolName === DEFAULT_EVAL_TOOL_NAME && parsed.upstreamError !== void 0 && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED" && parsed.upstreamError.code !== "FIGMA_UPSTREAM_INVALID_RESULT";
+}
+function isConfirmedAtomicDirectUseFigmaFailure(toolName, parsed) {
+  return toolName === DEFAULT_EVAL_TOOL_NAME && parsed.upstreamError !== void 0 && parsed.upstreamError.code !== "FIGMA_UPSTREAM_TRUNCATED" && parsed.upstreamError.code !== "FIGMA_UPSTREAM_INVALID_RESULT" && hasDirectUseFigmaScriptErrorEvidence(parsed);
+}
+function hasDirectUseFigmaScriptErrorEvidence(parsed) {
+  const structured = parsed.callResult?.structuredContent;
+  const structuredError = asRecord2(structured).error;
+  if (typeof structuredError === "string" || isRecord6(structuredError)) {
+    return true;
+  }
+  const text = parsed.text.trim();
+  return /^Error:/u.test(text) || /Figma Debug UUID:/u.test(text);
 }
 function createUpstreamToolCache(client) {
   let cached2;
@@ -236965,8 +237366,10 @@ function createUpstreamToolCache(client) {
       const tools = Array.isArray(result.tools) ? result.tools : [];
       cached2 = tools.filter(isRecord6).map((tool) => ({
         name: String(tool.name ?? ""),
+        title: asOptionalString2(tool.title),
         description: asOptionalString2(tool.description),
-        inputSchema: tool.inputSchema
+        inputSchema: tool.inputSchema,
+        outputSchema: tool.outputSchema
       })).filter((tool) => tool.name.length > 0);
       return cached2;
     }
@@ -237020,9 +237423,33 @@ function upstreamToolDirectoryEntry(tool) {
   return removeUndefined3({
     name: tool.name,
     category: UPSTREAM_TOOL_DIRECTORY_CATEGORIES[tool.name] ?? "other",
-    description: !normalizedDescription ? void 0 : normalizedDescription.length <= 96 ? normalizedDescription : `${normalizedDescription.slice(0, 93)}...`
+    description: !normalizedDescription ? void 0 : normalizedDescription.length <= 96 ? normalizedDescription : `${normalizedDescription.slice(0, 93)}...`,
+    coverage: upstreamToolCoverage(tool.name)
   });
 }
+function upstreamToolCoverage(toolName) {
+  const publicCommands = sortedUnique(
+    FIGMA_WORKSPACE_WRAPPER_CONTRACTS.flatMap(
+      (contract) => "upstreamToolName" in contract && contract.upstreamToolName === toolName ? [PUBLIC_HISTORY_COMMAND_IDS[contract.toolName]] : []
+    ).filter((command) => command !== void 0)
+  );
+  return { covered: publicCommands.length > 0, publicCommands };
+}
+var PUBLIC_HISTORY_COMMAND_IDS = {
+  figma_workspace_eval: "figma:run",
+  figma_workspace_run_script_file: "figma:run",
+  figma_workspace_apply_asset_manifest: "figma:assets:apply",
+  figma_workspace_download_assets: "figma:assets:download",
+  figma_workspace_capture_node: "figma:capture",
+  figma_workspace_inspect: "figma:inspect",
+  figma_workspace_get_metadata: "figma:metadata",
+  figma_workspace_get_design_context: "figma:design-context",
+  figma_workspace_get_motion_context: "figma:motion-context",
+  figma_workspace_search_design_system: "figma:design-system",
+  figma_workspace_get_libraries: "figma:libraries",
+  figma_workspace_get_variable_defs: "figma:variables",
+  figma_workspace_call_upstream_tool: "figma:upstream:call"
+};
 async function resolveEvalSettings(session, args, runtime, requestFileKey) {
   const toolName = DEFAULT_EVAL_TOOL_NAME;
   const tools = await runtime.upstreamToolCache.list(false);
@@ -238463,22 +238890,143 @@ function slugifyTaskName(value) {
   return slug || "figma-task";
 }
 function parseUpstreamToolResult(value) {
-  const record3 = asRecord2(value);
-  const structured = record3.structuredContent;
-  if (structured !== void 0) {
-    return annotateParsedUpstreamToolResult(JSON.stringify(structured), structured);
+  const validated = CallToolResultSchema.safeParse(value);
+  if (!validated.success) {
+    const text2 = stringifyUpstreamValue(value);
+    return parsedUpstreamTransportFailure({
+      code: "FIGMA_UPSTREAM_INVALID_RESULT",
+      message: "Figma MCP returned a response that does not match CallToolResult.",
+      details: { issueCount: validated.error.issues.length },
+      text: text2,
+      parsed: parseJsonLenient2(text2)
+    });
   }
-  const text = Array.isArray(record3.content) ? record3.content.map((item) => asRecord2(item).text).filter((item) => typeof item === "string").join("\n") : JSON.stringify(value);
-  if (isTruncatedUpstreamText(text)) {
-    return annotateParsedUpstreamToolResult(text, void 0);
+  const callResult = validated.data;
+  const text = callResult.content.flatMap((item) => item.type === "text" ? [item.text] : []).join("\n");
+  const json = callResult.structuredContent ?? (isTruncatedUpstreamText(text) ? void 0 : parseJsonLenient2(text));
+  const nonTextContent = callResult.content.filter((item) => item.type !== "text").map(summarizeMcpContentBlock);
+  if (callResult.isError === true) {
+    const extracted = extractParsedUpstreamError(text, json);
+    const message = extracted?.message || text.trim() || safeJsonStringify(callResult.structuredContent) || "Figma MCP reported a tool-call error.";
+    return {
+      text,
+      json,
+      callResult,
+      nonTextContent,
+      upstreamError: {
+        message,
+        code: "FIGMA_UPSTREAM_TOOL_ERROR",
+        details: extracted?.details,
+        text,
+        parsed: json
+      },
+      primaryFix: primaryFixForUpstreamError({ message, code: "FIGMA_UPSTREAM_TOOL_ERROR" })
+    };
   }
-  return annotateParsedUpstreamToolResult(text, parseJsonLenient2(text));
+  const parsed = annotateParsedUpstreamToolResult(text, json);
+  return { ...parsed, callResult, nonTextContent };
+}
+function parsedUpstreamTransportFailure(error2) {
+  return {
+    text: error2.text ?? error2.message,
+    json: error2.parsed,
+    nonTextContent: [],
+    upstreamError: error2,
+    primaryFix: primaryFixForUpstreamError(error2)
+  };
+}
+function stringifyUpstreamValue(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+function safeJsonStringify(value) {
+  try {
+    return value === void 0 ? void 0 : JSON.stringify(value);
+  } catch {
+    return void 0;
+  }
+}
+function summarizeMcpContentBlock(block) {
+  const record3 = asRecord2(block);
+  if (block.type === "image" || block.type === "audio") {
+    return removeUndefined3({
+      type: block.type,
+      mimeType: asOptionalString2(record3.mimeType),
+      bytes: encodedContentByteLength(asOptionalString2(record3.data)),
+      annotations: record3.annotations
+    });
+  }
+  if (block.type === "resource") {
+    const resource = asRecord2(record3.resource);
+    return removeUndefined3({
+      type: "resource",
+      uri: asOptionalString2(resource.uri),
+      mimeType: asOptionalString2(resource.mimeType),
+      bytes: typeof resource.text === "string" ? Buffer.byteLength(resource.text, "utf8") : encodedContentByteLength(asOptionalString2(resource.blob)),
+      annotations: record3.annotations
+    });
+  }
+  if (block.type === "resource_link") {
+    return removeUndefined3({
+      type: "resource_link",
+      uri: asOptionalString2(record3.uri),
+      name: asOptionalString2(record3.name),
+      title: asOptionalString2(record3.title),
+      description: asOptionalString2(record3.description),
+      mimeType: asOptionalString2(record3.mimeType),
+      size: typeof record3.size === "number" ? record3.size : void 0,
+      annotations: record3.annotations
+    });
+  }
+  return removeUndefined3({
+    type: asOptionalString2(record3.type) ?? "unknown",
+    annotations: record3.annotations
+  });
+}
+function encodedContentByteLength(data) {
+  if (!data) {
+    return void 0;
+  }
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor(data.length * 3 / 4) - padding);
+}
+function sanitizedCallToolResult(parsed) {
+  if (!parsed.callResult) {
+    return removeUndefined3({
+      content: parsed.text ? [{ type: "text", text: parsed.text }] : [],
+      structuredContent: parsed.json,
+      isError: parsed.upstreamError !== void 0
+    });
+  }
+  return {
+    content: parsed.callResult.content.map(sanitizeMcpContentBlock),
+    structuredContent: parsed.callResult.structuredContent,
+    isError: parsed.callResult.isError === true
+  };
+}
+function sanitizeMcpContentBlock(block) {
+  const record3 = asRecord2(block);
+  if (block.type === "resource") {
+    return {
+      ...omitProtocolMetadata(record3),
+      resource: omitProtocolMetadata(asRecord2(record3.resource))
+    };
+  }
+  return omitProtocolMetadata(record3);
+}
+function omitProtocolMetadata(record3) {
+  const { _meta: _ignoredMeta, ...visible } = record3;
+  return visible;
 }
 function annotateParsedUpstreamToolResult(text, json) {
   const upstreamError = extractParsedUpstreamError(text, json);
   return {
     text,
     json,
+    nonTextContent: [],
     upstreamError,
     primaryFix: upstreamError ? primaryFixForUpstreamError(upstreamError) : void 0
   };
@@ -238771,14 +239319,14 @@ async function shapeUpstreamBackedResponse(options) {
     inlineResultLimit,
     [...options.contract.outputPolicy.inlineLimitFields]
   );
-  const needsOutputFile = options.forceOutputFile === true || options.parsed.upstreamError || isRecord6(limitedPayload.inlineResultLimit);
+  const needsOutputFile = options.forceOutputFile === true || options.parsed.upstreamError || options.parsed.nonTextContent.length > 0 || isRecord6(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
   }
   try {
     return {
       ...limitedPayload,
-      outputFiles: await options.writeOutputFiles(upstreamEnvelope(options.parsed))
+      outputFiles: await options.writeOutputFiles(sanitizedCallToolResult(options.parsed))
     };
   } catch (error2) {
     return localPostprocessingFailure(limitedPayload, "backendSidecars", error2);
@@ -238897,18 +239445,21 @@ function upstreamEnvelope(parsed, options = {}) {
       shaped.result ?? (parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0),
       failureSource
     );
-    return includePayload ? { kind: "json", ok: ok2, result } : { kind: "json", ok: ok2 };
+    const kind2 = parsed.nonTextContent.length > 0 ? "content" : "json";
+    return includePayload ? removeUndefined3({ kind: kind2, ok: ok2, result, content: parsed.nonTextContent.length > 0 ? parsed.nonTextContent : void 0 }) : { kind: kind2, ok: ok2 };
   }
   const ok = callOk;
-  return includePayload ? {
-    kind: "text",
+  const kind = parsed.nonTextContent.length > 0 ? "content" : "text";
+  return includePayload ? removeUndefined3({
+    kind,
     ok,
     text: parsed.text || void 0,
     result: ok ? void 0 : addFailureSourceToUpstreamResult(
       parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0,
       "call"
-    )
-  } : { kind: "text", ok };
+    ),
+    content: parsed.nonTextContent.length > 0 ? parsed.nonTextContent : void 0
+  }) : { kind, ok };
 }
 function shapePublicUpstreamResult(value) {
   const record3 = asRecord2(value);
@@ -238947,6 +239498,9 @@ function addFailureSourceToUpstreamResult(result, source) {
     };
   }
   return result === void 0 ? { source } : { source, value: result };
+}
+function sortedUnique(values) {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 function resolveWrapperNodeTarget(options) {
   const allowCompositeNodeId = allowsCompositeNodeId(options.toolName);
@@ -240181,7 +240735,7 @@ function formatCommandHelp(command) {
 
 Unknown public leaf. Use figma:help for the complete stateless command inventory.
 `;
-  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : command === "docs:catalog" ? "\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments." : command === "docs:search" || command === "api:search" ? "\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "design-system" ? "\nEach <query> must express one search intent; do not combine alternatives or synonyms." : command === "assets:apply" ? "\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow." : command === "assets:download" ? "\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg." : "";
+  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded." : command === "upstream:call" ? "\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. Every call writes a sanitized .upstream.json sidecar. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : command === "docs:catalog" ? "\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments." : command === "docs:search" || command === "api:search" ? "\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "design-system" ? "\nEach <query> must express one search intent; do not combine alternatives or synonyms." : command === "assets:apply" ? "\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow." : command === "assets:download" ? "\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg." : "";
   return `# figma:${command}
 
 Usage: ${PUBLIC_COMMAND_USAGE[command]}${details}
@@ -240247,7 +240801,14 @@ export {
 };
 /*! Bundled license information:
 
-typescript/lib/typescript.js:
+content-type/index.js:
+  (*!
+   * content-type
+   * Copyright(c) 2015 Douglas Christopher Wilson
+   * MIT Licensed
+   *)
+
+@typescript/old/lib/typescript.js:
   (*! *****************************************************************************
   Copyright (c) Microsoft Corporation. All rights reserved.
   Licensed under the Apache License, Version 2.0 (the "License"); you may not use

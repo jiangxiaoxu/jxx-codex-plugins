@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 import packageJson from "../package.json" with { type: "json" };
+import { getFigmaWorkspaceTypescriptRuntimeInfo } from "../dist/runtime/typescript-compiler-runtime.js";
 import {
   FIGMA_WORKSPACE_CLI_COMMANDS,
   acquireFigmaWorkspaceFileLock,
@@ -14,7 +15,14 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.5.3");
+  assert.equal(packageJson.version, "0.5.4");
+});
+
+test("distribution stages TypeScript declaration libs for strict preflight", () => {
+  const runtime = getFigmaWorkspaceTypescriptRuntimeInfo();
+  assert.equal(runtime.ok, true, runtime.ok ? undefined : runtime.message);
+  if (!runtime.ok) return;
+  assert.ok(runtime.typescriptLibCount > 0);
 });
 
 test("internal CLI inventory is stateless and includes public doctor", () => {

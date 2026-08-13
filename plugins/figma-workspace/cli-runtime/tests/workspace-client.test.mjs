@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -115,6 +115,15 @@ test("run marks direct returned use_figma script errors as atomic failures", asy
       "bare Error text",
       { content: [{ type: "text", text: "Error: Plugin host rejected the mutation." }] },
       { message: "Error: Plugin host rejected the mutation.", code: "FIGMA_UPSTREAM_TEXT_ERROR" },
+    ],
+    [
+      "MCP isError with structured content",
+      {
+        isError: true,
+        content: [{ type: "text", text: "Plugin host rejected the mutation." }],
+        structuredContent: { error: { message: "Plugin host rejected the mutation." } },
+      },
+      { message: "Plugin host rejected the mutation.", code: "FIGMA_UPSTREAM_TOOL_ERROR" },
     ],
   ]) {
     const calls = [];
@@ -372,8 +381,243 @@ test("upstream tool directory classifies file component listing as code-connect"
   upstream.listTools = async () => ({ tools: [{ name: "list_file_components_for_code_connect", inputSchema: { type: "object" } }] });
   const client = createFigmaWorkspaceClient({ client: upstream });
   const result = await client.upstreamTools();
-  assert.deepEqual(result.tools, [{ name: "list_file_components_for_code_connect", category: "code-connect" }]);
+  assert.deepEqual(result.tools, [{
+    name: "list_file_components_for_code_connect",
+    category: "code-connect",
+    coverage: { covered: false, publicCommands: [] },
+  }]);
   await client.close();
+});
+
+test("upstream tool read exposes schemas and coverage without protocol metadata", async () => {
+  const calls = [];
+  const upstream = fakeUpstream(calls);
+  upstream.listTools = async () => ({
+    tools: [{
+      name: "get_metadata",
+      title: "Metadata",
+      description: "Read metadata.",
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+      annotations: { readOnlyHint: true },
+      _meta: { hidden: true },
+    }],
+  });
+  const client = createFigmaWorkspaceClient({ client: upstream });
+  try {
+    const result = await client.upstreamTools({ name: "get_metadata" });
+    assert.equal(result.title, "Metadata");
+    assert.deepEqual(result.inputSchema, { type: "object" });
+    assert.deepEqual(result.outputSchema, { type: "object" });
+    assert.deepEqual(result.coverage, { covered: true, publicCommands: ["figma:metadata"] });
+    assert.equal("annotations" in result, false);
+    assert.equal("_meta" in result, false);
+  } finally {
+    await client.close();
+  }
+});
+
+test("direct calls preserve recovery facts and write sanitized visible MCP results", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-upstream-call-sidecar-"));
+  const calls = [];
+  const upstream = fakeUpstream(calls, (name) => ({
+    isError: true,
+    _meta: { callMeta: true },
+    structuredContent: { result: { _meta: "business value" } },
+    content: [
+      { type: "text", text: `Error: ${name} rejected`, annotations: { audience: ["assistant"] }, _meta: { blockMeta: true } },
+      { type: "image", mimeType: "image/png", data: "aGVsbG8=", annotations: { priority: 1 }, _meta: { imageMeta: true } },
+      { type: "resource", resource: { uri: "file:///result.txt", mimeType: "text/plain", text: "result", _meta: { resourceMeta: true } }, annotations: { audience: ["user"] }, _meta: { embeddedMeta: true } },
+    ],
+  }));
+  try {
+    const atomicClient = createFigmaWorkspaceClient({ client: upstream });
+    const atomic = await atomicClient.callUpstreamTool({
+      toolName: "use_figma",
+      arguments: { code: "return {};", description: "direct", fileKey: FILE_KEY },
+      outputDir: directory,
+    });
+    assert.equal(atomic.ok, false);
+    assert.equal(atomic.phase, "execute");
+    assert.equal(atomic.executionOutcome, "failed_atomic");
+    assert.equal(atomic.upstreamError.code, "FIGMA_UPSTREAM_TOOL_ERROR");
+    assert.equal(atomic.upstream.content[0].type, "image");
+    assert.equal("data" in atomic.upstream.content[0], false);
+    assert.deepEqual(atomic.upstream.content[0].annotations, { priority: 1 });
+    const sidecar = JSON.parse(await readFile(atomic.outputFiles.upstreamFile.path, "utf8"));
+    assert.equal(sidecar.isError, true);
+    assert.equal(sidecar.content[1].data, "aGVsbG8=");
+    assert.equal(sidecar.content[2].resource.text, "result");
+    assert.equal("_meta" in sidecar, false);
+    assert.equal("_meta" in sidecar.content[0], false);
+    assert.deepEqual(sidecar.content[0].annotations, { audience: ["assistant"] });
+    assert.deepEqual(sidecar.content[1].annotations, { priority: 1 });
+    assert.deepEqual(sidecar.content[2].annotations, { audience: ["user"] });
+    assert.equal("_meta" in sidecar.content[2].resource, false);
+    assert.equal(sidecar.structuredContent.result._meta, "business value");
+    await atomicClient.close();
+
+    const genericClient = createFigmaWorkspaceClient({ client: upstream });
+    const generic = await genericClient.callUpstreamTool({
+      toolName: "get_metadata",
+      arguments: { fileKey: FILE_KEY },
+      outputDir: directory,
+    });
+    assert.equal(generic.ok, false);
+    assert.equal(generic.executionOutcome, "outcome_unknown");
+    assert.match(generic.retryGuidance, /Do not rerun the mutation blindly/u);
+    await genericClient.close();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("direct use_figma keeps non-text-only MCP errors outcome unknown with a non-empty fallback message", async () => {
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream([], () => ({
+      isError: true,
+      content: [{ type: "image", mimeType: "image/png", data: "aGVsbG8=" }],
+    })),
+  });
+  try {
+    const result = await client.callUpstreamTool({
+      toolName: "use_figma",
+      arguments: { code: "return {};", description: "direct", fileKey: FILE_KEY },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.executionOutcome, "outcome_unknown");
+    assert.equal(result.upstreamError.code, "FIGMA_UPSTREAM_TOOL_ERROR");
+    assert.equal(result.upstreamError.message, "Figma MCP reported a tool-call error.");
+    assert.match(result.retryGuidance, /Do not rerun the mutation blindly/u);
+  } finally {
+    await client.close();
+  }
+});
+
+test("direct use_figma preserves structured script errors as atomic failures", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-upstream-structured-script-error-"));
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream([], () => ({
+      isError: true,
+      structuredContent: {
+        ok: false,
+        error: { code: "FIGMA_HOST_MUTATION_REJECTED", message: "Plugin host rejected the mutation." },
+      },
+      content: [],
+    })),
+  });
+  try {
+    const result = await client.callUpstreamTool({
+      toolName: "use_figma",
+      arguments: { code: "return {};", description: "direct", fileKey: FILE_KEY },
+      outputDir: directory,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.executionOutcome, "failed_atomic");
+    assert.equal(result.upstreamError.code, "FIGMA_UPSTREAM_TOOL_ERROR");
+    assert.equal(result.upstreamError.message, "Plugin host rejected the mutation.");
+    assert.match(result.retryGuidance, /made no file changes.*retry safely/iu);
+  } finally {
+    await client.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("direct call preserves confirmed success when its sidecar cannot be persisted", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-upstream-sidecar-failure-"));
+  const RealDate = globalThis.Date;
+  const timestamp = "2026-08-13T09:37:00.000Z";
+  const fixedDate = new RealDate(timestamp);
+  const formattedTimestamp = fixedDate.toISOString().replace(/[^\dTZ]/gu, "");
+  const sidecarPath = resolve(directory, `upstream-get_metadata-${formattedTimestamp}.upstream.json`);
+  const FixedDate = class extends RealDate {
+    constructor(...args) {
+      super(...(args.length === 0 ? [timestamp] : args));
+    }
+
+    static now() {
+      return fixedDate.valueOf();
+    }
+  };
+  await mkdir(sidecarPath);
+  globalThis.Date = FixedDate;
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream([], () => ({
+      content: [{ type: "text", text: JSON.stringify({ ok: true, result: { found: true } }) }],
+    })),
+  });
+  try {
+    const result = await client.callUpstreamTool({
+      toolName: "get_metadata",
+      arguments: { fileKey: FILE_KEY },
+      outputDir: directory,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.executionOutcome, "succeeded");
+    assert.equal(result.postProcessing.backendSidecars.status, "failed");
+    assert.match(result.retryGuidance, /remote operation succeeded.*Do not rerun/iu);
+  } finally {
+    globalThis.Date = RealDate;
+    await client.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("typed upstream wrappers create a sanitized sidecar for unconsumed non-text MCP content", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-wrapper-nontext-sidecar-"));
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream([], (name) => name === "search_design_system"
+      ? {
+          content: [{
+            type: "resource_link",
+            uri: "https://example.test/metadata.json",
+            name: "metadata",
+            mimeType: "application/json",
+            _meta: { hidden: true },
+          }],
+        }
+      : { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] }),
+  });
+  try {
+    const result = await client.searchDesignSystem({ file: FILE_URL, query: "button", outputDir: directory });
+    assert.equal(result.ok, true);
+    assert.equal(result.upstream.kind, "content");
+    assert.equal(result.outputFiles.upstreamFile !== undefined, true);
+    const sidecar = JSON.parse(await readFile(result.outputFiles.upstreamFile.path, "utf8"));
+    assert.equal(sidecar.content[0].uri, "https://example.test/metadata.json");
+    assert.equal("_meta" in sidecar.content[0], false);
+  } finally {
+    await client.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("direct calls distinguish pre-dispatch failure from confirmed success", async () => {
+  const unavailable = fakeUpstream([]);
+  unavailable.listTools = async () => {
+    throw Object.assign(new Error("discovery unavailable"), { code: "FIGMA_UPSTREAM_UNAVAILABLE" });
+  };
+  const unavailableClient = createFigmaWorkspaceClient({ client: unavailable });
+  try {
+    const result = await unavailableClient.callUpstreamTool({ toolName: "get_metadata" });
+    assert.equal(result.ok, false);
+    assert.equal(result.phase, "preflight");
+    assert.equal(result.executionOutcome, "not_started");
+  } finally {
+    await unavailableClient.close();
+  }
+
+  const availableClient = createFigmaWorkspaceClient({ client: fakeUpstream([], () => ({
+    content: [{ type: "text", text: JSON.stringify({ ok: true, result: { found: true } }) }],
+  })) });
+  try {
+    const result = await availableClient.callUpstreamTool({ toolName: "get_metadata" });
+    assert.equal(result.ok, true);
+    assert.equal(result.phase, "execute");
+    assert.equal(result.executionOutcome, "succeeded");
+  } finally {
+    await availableClient.close();
+  }
 });
 
 test("file and target URLs reject non-Figma hosts and invalid surfaces before dispatch", async () => {

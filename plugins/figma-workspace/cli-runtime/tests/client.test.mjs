@@ -124,9 +124,226 @@ test("RemoteMcpClient forwards AbortSignal and the five-minute total deadline to
 
     for (const call of calls) {
       const options = call.at(-1);
-      assert.equal(options.signal, controller.signal, call[0]);
       assert.equal(options.timeout, 5 * 60 * 1000, call[0]);
       assert.equal(options.maxTotalTimeout, 5 * 60 * 1000, call[0]);
+      if (["listTools", "listResources", "listResourceTemplates"].includes(call[0])) {
+        assert.notEqual(options.signal, controller.signal, call[0]);
+        assert.equal(options.signal.aborted, false, call[0]);
+      } else {
+        assert.equal(options.signal, controller.signal, call[0]);
+      }
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("RemoteMcpClient aggregates paginated discovery with one shared signal", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-discovery-pagination-"));
+  const calls = [];
+  try {
+    class PagedRemoteMcpClient extends RemoteMcpClient {
+      async connectOnce() {
+        return {
+          client: {
+            async listTools(params, options) {
+              calls.push(["tools", params, options]);
+              return params.cursor === "tools-2"
+                ? {
+                    tools: [
+                      { name: "alpha", description: "first", inputSchema: { type: "object" } },
+                      { name: "beta", inputSchema: { type: "object" } },
+                    ],
+                  }
+                : {
+                    tools: [{ description: "first", inputSchema: { type: "object" }, name: "alpha" }],
+                    nextCursor: "tools-2",
+                  };
+            },
+            async listResources(params, options) {
+              calls.push(["resources", params, options]);
+              return params.cursor === "resources-2"
+                ? { resources: [{ uri: "figma://beta", name: "Beta" }] }
+                : { resources: [{ uri: "figma://alpha", name: "Alpha" }], nextCursor: "resources-2" };
+            },
+            async listResourceTemplates(params, options) {
+              calls.push(["resourceTemplates", params, options]);
+              return params.cursor === "templates-2"
+                ? { resourceTemplates: [{ uriTemplate: "figma://beta/{id}", name: "Beta" }] }
+                : {
+                    resourceTemplates: [{ uriTemplate: "figma://alpha/{id}", name: "Alpha" }],
+                    nextCursor: "templates-2",
+                  };
+            },
+          },
+          transport: { close: async () => undefined },
+        };
+      }
+    }
+
+    const client = new PagedRemoteMcpClient({ statePath: join(dir, "state.json") });
+    const controller = new AbortController();
+    await client.connect();
+
+    assert.deepEqual(await client.listTools(controller.signal), {
+      tools: [
+        { description: "first", inputSchema: { type: "object" }, name: "alpha" },
+        { name: "beta", inputSchema: { type: "object" } },
+      ],
+    });
+    assert.deepEqual(await client.listResources(controller.signal), {
+      resources: [
+        { uri: "figma://alpha", name: "Alpha" },
+        { uri: "figma://beta", name: "Beta" },
+      ],
+    });
+    assert.deepEqual(await client.listResourceTemplates(controller.signal), {
+      resourceTemplates: [
+        { uriTemplate: "figma://alpha/{id}", name: "Alpha" },
+        { uriTemplate: "figma://beta/{id}", name: "Beta" },
+      ],
+    });
+
+    assert.deepEqual(calls.map(([kind, params]) => [kind, params]), [
+      ["tools", {}],
+      ["tools", { cursor: "tools-2" }],
+      ["resources", {}],
+      ["resources", { cursor: "resources-2" }],
+      ["resourceTemplates", {}],
+      ["resourceTemplates", { cursor: "templates-2" }],
+    ]);
+    for (const [, , options] of calls) {
+      assert.equal(options.timeout, 5 * 60 * 1000);
+      assert.equal(options.maxTotalTimeout, 5 * 60 * 1000);
+    }
+    assert.notEqual(calls[0][2].signal, controller.signal);
+    assert.equal(calls[0][2].signal, calls[1][2].signal);
+    assert.equal(calls[2][2].signal, calls[3][2].signal);
+    assert.equal(calls[4][2].signal, calls[5][2].signal);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("RemoteMcpClient combines caller cancellation with one total discovery deadline", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-discovery-deadline-"));
+  const caller = new AbortController();
+  const callerReason = new Error("caller cancelled discovery");
+  const signals = [];
+  const scheduledDelays = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  try {
+    class DelayedPagedRemoteMcpClient extends RemoteMcpClient {
+      async connectOnce() {
+        return {
+          client: {
+            async listTools(params, options) {
+              signals.push(options.signal);
+              if (!params.cursor) {
+                return {
+                  tools: [{ name: "first", inputSchema: { type: "object" } }],
+                  nextCursor: "next",
+                };
+              }
+              return new Promise((resolve, reject) => {
+                if (options.signal.aborted) {
+                  reject(options.signal.reason);
+                  return;
+                }
+                options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+                  once: true,
+                });
+              });
+            },
+          },
+          transport: { close: async () => undefined },
+        };
+      }
+    }
+
+    globalThis.setTimeout = (callback, delay, ...args) => {
+      scheduledDelays.push(delay);
+      return originalSetTimeout(callback, delay, ...args);
+    };
+    const client = new DelayedPagedRemoteMcpClient({ statePath: join(dir, "state.json") });
+    await client.connect();
+    const pending = client.listTools(caller.signal);
+    while (signals.length < 2) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    caller.abort(callerReason);
+
+    await assert.rejects(pending, (error) => {
+      assert.equal(error.code, "FIGMA_UPSTREAM_DISCOVERY_PAGINATION_FAILED");
+      assert.equal(error.cause, callerReason);
+      return true;
+    });
+    assert.deepEqual(scheduledDelays, [5 * 60 * 1000]);
+    assert.notEqual(signals[0], caller.signal);
+    assert.equal(signals[0], signals[1]);
+    assert.equal(signals[0].aborted, true);
+    assert.equal(signals[0].reason, callerReason);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("RemoteMcpClient fails closed on discovery pagination corruption or a later page error", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "figma-workspace-mcp-discovery-failure-"));
+  try {
+    class InvalidPagedRemoteMcpClient extends RemoteMcpClient {
+      mode = "conflict";
+
+      async connectOnce() {
+        const owner = this;
+        return {
+          client: {
+            async listTools(params) {
+              if (owner.mode === "later-error" && params.cursor === "next") {
+                throw new Error("network interruption");
+              }
+              if (owner.mode === "page-limit") {
+                const page = Number(params.cursor ?? "0");
+                return {
+                  tools: [{ name: `tool-${page}`, inputSchema: { type: "object" } }],
+                  nextCursor: String(page + 1),
+                };
+              }
+              if (owner.mode === "cursor-loop") {
+                return {
+                  tools: [{ name: params.cursor ?? "first", inputSchema: { type: "object" } }],
+                  nextCursor: "loop",
+                };
+              }
+              if (params.cursor === "next") {
+                return { tools: [{ name: "shared", description: "second", inputSchema: { type: "object" } }] };
+              }
+              return {
+                tools: [{ name: "shared", description: "first", inputSchema: { type: "object" } }],
+                nextCursor: "next",
+              };
+            },
+          },
+          transport: { close: async () => undefined },
+        };
+      }
+    }
+
+    const client = new InvalidPagedRemoteMcpClient({ statePath: join(dir, "state.json") });
+    await client.connect();
+    for (const [mode, pattern] of [
+      ["conflict", /conflicting entries/u],
+      ["cursor-loop", /nextCursor loop/u],
+      ["page-limit", /100-page limit/u],
+      ["later-error", /failed on page 2/u],
+    ]) {
+      client.mode = mode;
+      await assert.rejects(client.listTools(), (error) => {
+        assert.equal(error.code, "FIGMA_UPSTREAM_DISCOVERY_PAGINATION_FAILED");
+        assert.match(error.message, pattern);
+        return true;
+      });
     }
   } finally {
     await rm(dir, { recursive: true, force: true });
