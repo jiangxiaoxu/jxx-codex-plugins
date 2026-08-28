@@ -6,7 +6,6 @@ This repository is a local Codex plugin marketplace. It has no root-level packag
 
 | Plugin | Primary source | Primary validation |
 | --- | --- | --- |
-| `chatgpt-research-prompt` | `plugins/chatgpt-research-prompt/skills/chatgpt-research-prompt/` | Validate the skill and plugin manifest. |
 | `task-memory` | `plugins/task-memory/skills/`, `src/`, and `scripts/commands/` | Run the plugin test suite and packed-artifact check. |
 | `figma-workspace` | `plugins/figma-workspace/skills/`, `cli-runtime/src/`, `scripts/`, and focused tests | Run plugin-root and CLI-package validation. |
 
