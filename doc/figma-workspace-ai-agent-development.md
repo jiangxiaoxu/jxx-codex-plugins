@@ -100,6 +100,6 @@ Focused coverage must match the changed boundary. In particular, contract change
 ## Release
 
 - Review source, generated output, package metadata, wrappers, tests, skill, and concise documentation together.
-- When incrementing a plugin version, update the plugin manifest and every package/version lockfile owner required by the release. The Code Connect workflow is part of the 0.6.0 public contract. Do not change `agents/openai.yaml` or SKILL frontmatter solely for a numeric package release.
+- When incrementing a plugin version, update the plugin manifest and every package/version lockfile owner required by the release. The Code Connect workflow is part of the 0.6.1 public contract. Do not change `agents/openai.yaml` or SKILL frontmatter solely for a numeric package release.
 - Run `npm run test:live` only when the user intentionally provides the ignored local Design configuration and usable OAuth cache. It is a release verification gate, not a substitute for deterministic tests.
 - Do not stage, commit, publish, install, or register anything unless the user explicitly requests that action.

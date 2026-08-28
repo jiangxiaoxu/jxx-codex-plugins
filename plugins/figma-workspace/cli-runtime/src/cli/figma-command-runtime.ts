@@ -281,6 +281,7 @@ function parseReadLeaf(command: Exclude<FigmaConcreteCommandName, "docs:list" | 
   assertNoPositionals(positionals);
   if (options.target && options.node) throw new Error("Use either --target or --node, not both.");
   const input = clean({ file: options.file, target: options.target ?? options.node, surface: options.surface, outputDir: options["output-dir"], mode: options.mode, depth: integer(options.depth, "--depth"), clientLanguages: options["client-languages"], clientFrameworks: options["client-frameworks"], refresh: flags.has("refresh") ? true : undefined, forceCode: flags.has("force-code") ? true : undefined, disableCodeConnect: flags.has("no-code-connect") ? true : undefined, excludeScreenshot: flags.has("exclude-screenshot") ? true : undefined, recursive: flags.has("recursive") ? true : undefined });
+  if (command === "metadata") assertMetadataDesignSurface(input);
   const internal = { metadata: "get-metadata", inspect: "inspect", "design-context": "get-design-context", "motion-context": "get-motion-context", variables: "get-variable-defs" } as const;
   return direct(internal[command], input, options);
 }
@@ -374,6 +375,16 @@ function assertNodeTargetReference(value: unknown, label: string, allowComposite
   }
 }
 
+function assertMetadataDesignSurface(input: CommandInput): void {
+  if (input.surface !== undefined && input.surface !== "design") throw new Error("figma:metadata supports only --surface design.");
+  const urls = [input.file, input.target].filter((value): value is string => typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(value));
+  for (const value of urls) {
+    const kind = new URL(value).pathname.split("/").filter(Boolean)[0];
+    if (kind !== "design" && kind !== "file") throw new Error("figma:metadata requires a Design URL.");
+  }
+  if (input.surface === undefined && urls.length === 0) throw new Error("figma:metadata with a raw file key or node id requires --surface design.");
+}
+
 function parseStrictFigmaUrl(value: string, label: string, requireNode: boolean, allowCompositeNodeId = false): URL {
   let url: URL;
   try { url = new URL(value); } catch { throw new Error(`${label} must be a valid Figma URL.`); }
@@ -418,7 +429,7 @@ const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
   "api:read":"figma:api:read <api-id>",
   "api:search":`figma:api:search <symbol> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
   doctor:"figma:doctor",
-  metadata:`figma:metadata (--target <node-url> | --file <url|key> [--node <node-id>]) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  metadata:`figma:metadata (--target <Design-node-url> | --file <Design-url|key> [--node <node-id>]) [--surface design] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   inspect:`figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <${INSPECT_DEPTH_MIN}..${INSPECT_DEPTH_MAX}>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "design-context":`figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "motion-context":`figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,

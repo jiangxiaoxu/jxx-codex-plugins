@@ -4,7 +4,7 @@
 
 ## 先准备脚本
 
-先用 `figma:metadata` 了解文件结构, 并用 `figma:inspect` 确认目标 section、table 或节点的 raw node ID. 在调用者选择的本地目录创建 `.figma.ts` 文件. 每次执行显式传入 FigJam file target、`--surface figjam` 和脚本路径; TypeScript 预检始终启用:
+先用只读 `figma:run` 了解文件结构, 并用 `figma:inspect` 确认目标 section、table 或节点的 raw node ID. `figma:metadata` 是 Design-only. 在调用者选择的本地目录创建 `.figma.ts` 文件. 每次执行显式传入 FigJam file target、`--surface figjam` 和脚本路径; TypeScript 预检始终启用:
 
 ```text
 npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>

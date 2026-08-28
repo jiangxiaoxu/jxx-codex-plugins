@@ -445,7 +445,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["figjam", "board", "sticky", "connector", "shape with text", "brainstorm"],
     surface: "figjam",
     helpers: [],
-    publicCommandIds: ["figma:metadata", "figma:api:search"],
+    publicCommandIds: ["figma:api:search", "figma:run", "figma:capture"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.createSticky()", lookupQuery: "PluginAPI.createSticky", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -456,7 +456,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     ],
     queryHints: ["create sticky notes", "connect FigJam nodes", "surface figjam"],
     avoid: ["Running Design-only frame/component APIs in FigJam sessions", "Opening a FigJam board with surface design"],
-    pitfalls: ["Open with surface='figjam'.", "FigJam creation APIs are surface-specific."],
+    pitfalls: ["Open with surface='figjam'.", "Inspect broad FigJam structure with a read-only figma:run script; figma:metadata is Design-only.", "FigJam creation APIs are surface-specific."],
   },
   {
     id: "surface.slides",
@@ -464,7 +464,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["slides", "slide", "deck", "presentation", "speaker notes", "slide row"],
     surface: "slides",
     helpers: [],
-    publicCommandIds: ["figma:metadata", "figma:api:search", "figma:capture"],
+    publicCommandIds: ["figma:api:search", "figma:run", "figma:capture"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.createSlide()", lookupQuery: "PluginAPI.createSlide", ownerHint: "PluginAPI", symbolKind: "plugin-api" },
@@ -476,7 +476,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     ],
     queryHints: ["create slide", "organize slide grid", "surface slides"],
     avoid: ["Calling figma.createPage in Slides"],
-    pitfalls: ["Slides use slide grid APIs instead of createPage.", "Use upload/capture tooling for images and visual review."],
+    pitfalls: ["Slides use slide grid APIs instead of createPage.", "Inspect broad Slides structure with a read-only figma:run script; figma:metadata is Design-only.", "Use upload/capture tooling for images and visual review."],
   },
   {
     id: "pages",
@@ -484,7 +484,7 @@ export const FIGMA_WORKSPACE_API_CARDS: FigmaWorkspaceApiCard[] = [
     intents: ["page", "surface", "current page", "navigation"],
     surface: "any",
     helpers: [],
-    publicCommandIds: ["figma:metadata", "figma:api:search"],
+    publicCommandIds: ["figma:run", "figma:api:search"],
     upstreamTools: [],
     apiReferences: [
       { displayExpression: "figma.setCurrentPageAsync()", lookupQuery: "PluginAPI.setCurrentPageAsync", ownerHint: "PluginAPI", symbolKind: "plugin-api" },

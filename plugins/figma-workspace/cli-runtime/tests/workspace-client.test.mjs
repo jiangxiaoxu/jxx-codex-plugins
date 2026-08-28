@@ -224,10 +224,28 @@ test("raw file keys require explicit surface for Plugin API execution", async ()
   await client.close();
 });
 
-test("official read wrappers accept raw file keys without surface", async () => {
+test("metadata rejects non-Design files before upstream connection", async () => {
+  for (const args of [
+    { file: `https://www.figma.com/board/${FILE_KEY}/Board` },
+    { file: `https://www.figma.com/slides/${FILE_KEY}/Deck` },
+    { file: FILE_KEY, surface: "figjam" },
+    { file: FILE_KEY, surface: "slides" },
+  ]) {
+    const calls = [];
+    const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+    try {
+      await assert.rejects(client.getMetadata(args), /metadata.*Design|surface.*design/iu);
+      assert.equal(calls.length, 0);
+    } finally {
+      await client.close();
+    }
+  }
+});
+
+test("official read wrappers accept raw file keys without surface except Design-only metadata", async () => {
   const calls = [];
   const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
-  await client.getMetadata({ file: FILE_KEY });
+  await client.getMetadata({ file: FILE_KEY, surface: "design" });
   await client.getDesignContext({ file: FILE_KEY, target: "230:2" });
   await client.getMotionContext({ file: FILE_KEY, target: "230:2" });
   await client.getVariableDefs({ file: FILE_KEY, target: "230:2" });
@@ -253,13 +271,13 @@ test("metadata defaults to a 2048-byte field limit and honors an explicit overri
       : { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] }),
   });
   try {
-    const limited = await client.getMetadata({ file: FILE_KEY, outputDir: directory });
+    const limited = await client.getMetadata({ file: FILE_KEY, surface: "design", outputDir: directory });
     assert.equal(limited.metadata.json, undefined);
     assert.equal(limited.inlineResultLimit.limitBytes, 2_048);
     assert.deepEqual(limited.inlineResultLimit.omitted.map(({ field }) => field), ["metadata.json"]);
     assert.match(await readFile(limited.outputFiles.metadataFile.path, "utf8"), /"name": "x{100}/u);
 
-    const expanded = await client.getMetadata({ file: FILE_KEY, outputDir: directory, inlineResultLimit: 10_000 });
+    const expanded = await client.getMetadata({ file: FILE_KEY, surface: "design", outputDir: directory, inlineResultLimit: 10_000 });
     assert.equal(expanded.metadata.json.root.name.length, 3_000);
     assert.equal(expanded.inlineResultLimit, undefined);
   } finally {
@@ -335,7 +353,7 @@ test("official target boundaries accept 22/128-character keys and I/T composite 
   for (const fileKey of ["A".repeat(22), "Z".repeat(128)]) {
     const calls = [];
     const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
-    await client.getMetadata({ file: fileKey });
+    await client.getMetadata({ file: fileKey, surface: "design" });
     assert.equal(calls.find((entry) => entry.name === "get_metadata").args.fileKey, fileKey);
     await client.close();
   }
@@ -352,7 +370,7 @@ test("official target boundaries accept 22/128-character keys and I/T composite 
 
   const metadataCalls = [];
   const metadataClient = createFigmaWorkspaceClient({ client: fakeUpstream(metadataCalls) });
-  const metadata = await metadataClient.getMetadata({ file: FILE_KEY, target: "T10:20;30-40" });
+  const metadata = await metadataClient.getMetadata({ file: FILE_KEY, surface: "design", target: "T10:20;30-40" });
   assert.equal(metadata.nodeId, "T10:20;30-40");
   assert.deepEqual(metadataCalls.find((entry) => entry.name === "get_metadata").args, {
     fileKey: FILE_KEY,

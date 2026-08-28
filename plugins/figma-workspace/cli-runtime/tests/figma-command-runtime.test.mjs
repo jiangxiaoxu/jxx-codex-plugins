@@ -315,7 +315,7 @@ test("every public leaf help publishes its real argv contract", () => {
   for (const leaf of ["design-context", "motion-context", "variables"]) {
     assert.match(formatCommandHelp(leaf), /--node <node-id>/u, leaf);
   }
-  assert.match(formatCommandHelp("metadata"), /--file <url\|key> \[--node <node-id>\]/u);
+  assert.match(formatCommandHelp("metadata"), /--file <Design-url\|key> \[--node <node-id>\].*--surface design/u);
   assert.match(formatCommandHelp("assets:apply"), /raster.*SVG input is rejected.*figma:run/isu);
   assert.match(formatCommandHelp("assets:download"), /vector-layer SVG assets.*downloadedFiles\.kind is exported, raw, or svg/isu);
   assert.match(formatCommandHelp("design-system"), /Each <query> must express one search intent; do not combine alternatives or synonyms\./u);
@@ -360,9 +360,23 @@ test("metadata rejects retired client hints before dispatch", async () => {
   }
 });
 
-test("official read leaves accept raw file keys without surface while native leaves defer to their strict contract", async () => {
+test("metadata rejects FigJam and Slides before CLI dispatch", async () => {
+  for (const argv of [
+    ["--file", `https://www.figma.com/board/${FILE_KEY}/Board`],
+    ["--file", `https://www.figma.com/slides/${FILE_KEY}/Deck`],
+    ["--file", FILE_KEY, "--surface", "figjam"],
+    ["--file", FILE_KEY, "--surface", "slides"],
+  ]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand("metadata", argv, current.dependencies), 2, argv.join(" "));
+    assert.equal(current.calls.length, 0);
+    assert.match(current.stderr.join(""), /metadata.*Design|surface design/iu);
+  }
+  assert.match(formatCommandHelp("metadata"), /Design-node-url.*surface design/iu);
+});
+
+test("official read leaves accept raw file keys without surface while Design-only metadata requires it", async () => {
   for (const [command, argv] of [
-    ["metadata", ["--file", FILE_KEY]],
     ["design-context", ["--file", FILE_KEY, "--node", "1:2"]],
     ["motion-context", ["--file", FILE_KEY, "--node", "1:2"]],
     ["variables", ["--file", FILE_KEY, "--node", "1:2"]],
@@ -372,12 +386,18 @@ test("official read leaves accept raw file keys without surface while native lea
     const current = harness();
     assert.equal(await runFigmaCommand(command, argv, current.dependencies), 0, command);
   }
+  const metadata = harness();
+  assert.equal(await runFigmaCommand("metadata", ["--file", FILE_KEY, "--surface", "design"], metadata.dependencies), 0);
+  assert.equal(metadata.calls.length, 1);
+  const missingMetadataSurface = harness();
+  assert.equal(await runFigmaCommand("metadata", ["--file", FILE_KEY], missingMetadataSurface.dependencies), 2);
+  assert.equal(missingMetadataSurface.calls.length, 0);
 });
 
 test("public target boundary enforces official file-key and node-id contracts", async () => {
   for (const fileKey of ["A".repeat(22), "Z".repeat(128)]) {
     const current = harness();
-    assert.equal(await runFigmaCommand("metadata", ["--file", fileKey], current.dependencies), 0);
+    assert.equal(await runFigmaCommand("metadata", ["--file", fileKey, "--surface", "design"], current.dependencies), 0);
     assert.equal(current.calls.length, 1);
   }
 

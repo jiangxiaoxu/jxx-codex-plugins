@@ -7,7 +7,7 @@ export const DEFAULT_CALLBACK_PORT = 18765;
 export const DEFAULT_CALLBACK_PATH = "/oauth/callback";
 export const DEFAULT_AUTH_TIMEOUT_MS = 180_000;
 export const DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-export const DEFAULT_CLIENT_VERSION = "0.6.0";
+export const DEFAULT_CLIENT_VERSION = "0.6.1";
 export const BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
 
 const distDir = dirname(fileURLToPath(import.meta.url));
