@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { tmpdir } from "node:os";
 import { createReadStream } from "node:fs";
@@ -55,6 +55,10 @@ import {
 import {
   asApplyAssetManifestArgs,
   asCallUpstreamToolArgs,
+  asCodeConnectApplyArgs,
+  asCodeConnectInspectArgs,
+  asCodeConnectPlanArgs,
+  asCodeConnectVerifyArgs,
   asCaptureNodeArgs,
   asDownloadAssetsArgs,
   asDocsArgs,
@@ -81,6 +85,12 @@ import { isCompositeCapableFigmaNodeId, isFigmaFileKey, isSimpleFigmaNodeId } fr
 import type {
   FigmaWorkspaceApplyAssetManifestArguments,
   FigmaWorkspaceCallUpstreamToolArguments,
+  FigmaWorkspaceCodeConnectApplyArguments,
+  FigmaWorkspaceCodeConnectInspectArguments,
+  FigmaWorkspaceCodeConnectManifest,
+  FigmaWorkspaceCodeConnectMapping,
+  FigmaWorkspaceCodeConnectPlanArguments,
+  FigmaWorkspaceCodeConnectVerifyArguments,
   FigmaWorkspaceCaptureNodeArguments,
   FigmaWorkspaceDownloadAssetsArguments,
   FigmaWorkspaceDownloadAssetsTarget,
@@ -128,6 +138,7 @@ import {
 import {
   atomicWriteManagedBinaryFile,
   atomicWriteManagedStreamFile,
+  atomicWriteManagedTextFile,
 } from "./managed-files.js";
 
 /**
@@ -152,6 +163,12 @@ export type {
   FigmaWorkspaceApplyAssetManifestArguments,
   FigmaWorkspaceAssetManifestAsset,
   FigmaWorkspaceCallUpstreamToolArguments,
+  FigmaWorkspaceCodeConnectApplyArguments,
+  FigmaWorkspaceCodeConnectInspectArguments,
+  FigmaWorkspaceCodeConnectManifest,
+  FigmaWorkspaceCodeConnectMapping,
+  FigmaWorkspaceCodeConnectPlanArguments,
+  FigmaWorkspaceCodeConnectVerifyArguments,
   FigmaWorkspaceCaptureNodeArguments,
   FigmaWorkspaceDownloadAssetsArguments,
   FigmaWorkspaceDownloadAssetsTarget,
@@ -193,6 +210,13 @@ const SEARCH_DESIGN_SYSTEM_CONTRACT = requireFigmaWorkspaceWrapperContract("figm
 const GET_LIBRARIES_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_libraries");
 const GET_VARIABLE_DEFS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_get_variable_defs");
 const CALL_UPSTREAM_TOOL_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_call_upstream_tool");
+const CODE_CONNECT_INSPECT_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_code_connect_inspect");
+const CODE_CONNECT_PLAN_CONTEXT_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_code_connect_plan_context");
+const CODE_CONNECT_PLAN_SUGGESTIONS_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_code_connect_plan_suggestions");
+const CODE_CONNECT_PLAN_MAPPING_READ_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_code_connect_plan_mapping_read");
+const CODE_CONNECT_APPLY_MAPPING_READ_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_code_connect_apply_mapping_read");
+const CODE_CONNECT_APPLY_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_code_connect_apply");
+const CODE_CONNECT_VERIFY_MAPPING_READ_CONTRACT = requireFigmaWorkspaceWrapperContract("figma_workspace_code_connect_verify_mapping_read");
 const UPLOAD_ASSETS_TOOL_NAME = requireWrapperUpstreamToolName(APPLY_ASSET_MANIFEST_CONTRACT);
 const DOWNLOAD_ASSETS_TOOL_NAME = requireWrapperUpstreamToolName(DOWNLOAD_ASSETS_CONTRACT);
 const SCREENSHOT_TOOL_NAME = requireWrapperUpstreamToolName(CAPTURE_NODE_CONTRACT);
@@ -202,6 +226,11 @@ const GET_MOTION_CONTEXT_TOOL_NAME = requireWrapperUpstreamToolName(GET_MOTION_C
 const SEARCH_DESIGN_SYSTEM_TOOL_NAME = requireWrapperUpstreamToolName(SEARCH_DESIGN_SYSTEM_CONTRACT);
 const GET_LIBRARIES_TOOL_NAME = requireWrapperUpstreamToolName(GET_LIBRARIES_CONTRACT);
 const GET_VARIABLE_DEFS_TOOL_NAME = requireWrapperUpstreamToolName(GET_VARIABLE_DEFS_CONTRACT);
+const CODE_CONNECT_INSPECT_TOOL_NAME = requireWrapperUpstreamToolName(CODE_CONNECT_INSPECT_CONTRACT);
+const CODE_CONNECT_CONTEXT_TOOL_NAME = requireWrapperUpstreamToolName(CODE_CONNECT_PLAN_CONTEXT_CONTRACT);
+const CODE_CONNECT_SUGGESTIONS_TOOL_NAME = requireWrapperUpstreamToolName(CODE_CONNECT_PLAN_SUGGESTIONS_CONTRACT);
+const CODE_CONNECT_MAP_TOOL_NAME = requireWrapperUpstreamToolName(CODE_CONNECT_PLAN_MAPPING_READ_CONTRACT);
+const CODE_CONNECT_SEND_TOOL_NAME = requireWrapperUpstreamToolName(CODE_CONNECT_APPLY_CONTRACT);
 
 class DataPlaneResourceBudget {
   #usedBytes = 0;
@@ -308,6 +337,34 @@ async function awaitUpstreamOperation<T>(
   } finally {
     deadline.controller.signal.removeEventListener("abort", handleAbort);
     deadline.dispose();
+  }
+}
+
+class CodeConnectWorkflowDeadline {
+  readonly #deadline = new NetworkRequestDeadline("Code Connect workflow", { idleTimeout: false });
+
+  async run<T>(label: string, operation: (signal: AbortSignal) => Promise<T>, countResponse: boolean): Promise<T> {
+    let rejectOnAbort: ((reason: unknown) => void) | undefined;
+    const aborted = new Promise<never>((_resolve, reject) => { rejectOnAbort = reject; });
+    const handleAbort = (): void => {
+      rejectOnAbort?.(this.#deadline.controller.signal.reason ?? networkTimeoutError(`Code Connect workflow ${label} timed out.`));
+    };
+    this.#deadline.controller.signal.addEventListener("abort", handleAbort, { once: true });
+    try {
+      const result = await Promise.race([operation(this.#deadline.controller.signal), aborted]);
+      if (countResponse) {
+        const serialized = JSON.stringify(result);
+        if (serialized === undefined) throw new PostResponseResourceError(resourceLimitError(`Code Connect workflow ${label} returned a non-JSON-serializable response.`), result);
+        try { commandResourceBudget().consume(Buffer.byteLength(serialized, "utf8"), `Code Connect ${label} response`); } catch (error) { throw new PostResponseResourceError(error, result); }
+      }
+      return result;
+    } finally {
+      this.#deadline.controller.signal.removeEventListener("abort", handleAbort);
+    }
+  }
+
+  dispose(): void {
+    this.#deadline.dispose();
   }
 }
 
@@ -431,7 +488,7 @@ function filterAdvertisedUpstreamArguments(options: {
 }
 
 function createSkippedOptionalUpstreamDiagnostic(options: {
-  toolName: LocalWorkspaceToolName;
+  toolName: FigmaWorkspaceWrapperContract["toolName"];
   upstreamToolName: string;
   upstreamKind: string;
   property: string;
@@ -848,6 +905,52 @@ export interface FigmaWorkspaceUpstreamToolsResult extends FigmaWorkspaceToolRes
   guidance: string;
 }
 
+export interface FigmaWorkspaceCodeConnectMappingStatus {
+  nodeId: string;
+  componentName: string;
+  source: string;
+  label: string;
+  status: "create" | "noop" | "replace" | "conflict" | "matched" | "missing" | "mismatch" | "unavailable";
+  conflictPolicy?: "fail" | "replace";
+  currentMappingFingerprint?: string;
+  message?: string;
+}
+
+export interface FigmaWorkspaceCodeConnectInspectResult extends FigmaWorkspaceToolResultBase {
+  fileKey: string;
+  components?: unknown;
+  upstream?: FigmaWorkspaceUpstreamEnvelope;
+  upstreamError?: FigmaWorkspacePublicUpstreamError;
+  outputFiles?: FigmaWorkspaceOutputFiles;
+}
+
+export interface FigmaWorkspaceCodeConnectPlanResult extends FigmaWorkspaceToolResultBase {
+  fileKey: string;
+  planDigest?: string;
+  planFile?: FigmaWorkspaceFilePointer;
+  mappings: FigmaWorkspaceCodeConnectMappingStatus[];
+  upstreamError?: FigmaWorkspacePublicUpstreamError;
+  outputFiles?: FigmaWorkspaceOutputFiles;
+}
+
+export interface FigmaWorkspaceCodeConnectApplyResult extends FigmaWorkspaceToolResultBase {
+  fileKey: string;
+  planDigest?: string;
+  executionOutcome: FigmaWorkspaceExecutionOutcome;
+  retryGuidance?: string;
+  mappings: FigmaWorkspaceCodeConnectMappingStatus[];
+  verification?: { ok: boolean; statuses: FigmaWorkspaceCodeConnectMappingStatus[] };
+  upstreamError?: FigmaWorkspacePublicUpstreamError;
+  outputFiles?: FigmaWorkspaceOutputFiles;
+}
+
+export interface FigmaWorkspaceCodeConnectVerifyResult extends FigmaWorkspaceToolResultBase {
+  fileKey: string;
+  planDigest: string;
+  mappings: FigmaWorkspaceCodeConnectMappingStatus[];
+  outputFiles?: FigmaWorkspaceOutputFiles;
+}
+
 export interface FigmaWorkspaceClient {
   readonly client: FigmaWorkspaceUpstreamClient;
   connect(): Promise<void>;
@@ -864,6 +967,10 @@ export interface FigmaWorkspaceClient {
   getLibraries(args?: FigmaWorkspaceGetLibrariesArguments): Promise<FigmaWorkspaceGetLibrariesResult>;
   getVariableDefs(args: FigmaWorkspaceGetVariableDefsArguments): Promise<FigmaWorkspaceGetVariableDefsResult>;
   callUpstreamTool(args: FigmaWorkspaceCallUpstreamToolArguments): Promise<FigmaWorkspaceCallUpstreamToolResult>;
+  codeConnectInspect(args: FigmaWorkspaceCodeConnectInspectArguments): Promise<FigmaWorkspaceCodeConnectInspectResult>;
+  codeConnectPlan(args: FigmaWorkspaceCodeConnectPlanArguments): Promise<FigmaWorkspaceCodeConnectPlanResult>;
+  codeConnectApply(args: FigmaWorkspaceCodeConnectApplyArguments): Promise<FigmaWorkspaceCodeConnectApplyResult>;
+  codeConnectVerify(args: FigmaWorkspaceCodeConnectVerifyArguments): Promise<FigmaWorkspaceCodeConnectVerifyResult>;
   lookup(args: FigmaWorkspaceLookupArguments): Promise<FigmaWorkspaceLookupResult>;
   docs(args?: FigmaWorkspaceDocsArguments): Promise<FigmaWorkspaceDocsResult>;
   doctor(args?: FigmaWorkspaceDoctorArguments): Promise<FigmaWorkspaceDoctorResult>;
@@ -1120,6 +1227,26 @@ export function createFigmaWorkspaceClient(
       const parsed = asCallUpstreamToolArgs(withDefaultTitle(args, "Call upstream Figma MCP tool"));
       return runWithStatelessInvocation(parsed, runtime, () =>
         executeCallUpstreamTool(parsed, runtime) as Promise<FigmaWorkspaceCallUpstreamToolResult>);
+    }),
+    codeConnectInspect: async (args) => runWithCommandResourceContext(async () => {
+      const parsed = asCodeConnectInspectArgs(withDefaultTitle(args, "Inspect Code Connect components"));
+      return runWithStatelessInvocation(parsed, runtime, () =>
+        executeCodeConnectInspect(parsed, runtime) as Promise<FigmaWorkspaceCodeConnectInspectResult>);
+    }),
+    codeConnectPlan: async (args) => runWithCommandResourceContext(async () => {
+      const parsed = asCodeConnectPlanArgs(withDefaultTitle(args, "Plan Code Connect mappings"));
+      return runWithStatelessInvocation(parsed, runtime, () =>
+        executeCodeConnectPlan(parsed, runtime) as Promise<FigmaWorkspaceCodeConnectPlanResult>);
+    }),
+    codeConnectApply: async (args) => runWithCommandResourceContext(async () => {
+      const parsed = asCodeConnectApplyArgs(withDefaultTitle(args, "Apply Code Connect mappings"));
+      return runWithStatelessInvocation(parsed, runtime, () =>
+        executeCodeConnectApply(parsed, runtime) as Promise<FigmaWorkspaceCodeConnectApplyResult>);
+    }),
+    codeConnectVerify: async (args) => runWithCommandResourceContext(async () => {
+      const parsed = asCodeConnectVerifyArgs(withDefaultTitle(args, "Verify Code Connect mappings"));
+      return runWithStatelessInvocation(parsed, runtime, () =>
+        executeCodeConnectVerify(parsed, runtime) as Promise<FigmaWorkspaceCodeConnectVerifyResult>);
     }),
     lookup: async (args) =>
       parseJsonToolResult<FigmaWorkspaceLookupResult>(
@@ -4188,6 +4315,753 @@ async function shapeDirectUpstreamCallResponse(options: {
   });
 }
 
+interface CodeConnectPlanArtifact {
+  schemaVersion: 1;
+  kind: "figma-code-connect-plan";
+  fileKey: string;
+  surface: "design";
+  scope: { nodeId: string };
+  client: { languages: string; frameworks: string };
+  mappings: FigmaWorkspaceCodeConnectMapping[];
+  manifestFingerprint: string;
+  currentMappingFingerprints: Record<string, string>;
+  actions: FigmaWorkspaceCodeConnectMappingStatus[];
+  planDigest: string;
+}
+
+interface CodeConnectMappingRead {
+  available: boolean;
+  mapping?: FigmaWorkspaceCodeConnectMapping;
+  fingerprint?: string;
+  message?: string;
+  parsed?: ParsedUpstreamToolResult;
+  postResponseError?: PostResponseResourceError;
+}
+
+interface CodeConnectWorkflowRuntime {
+  deadline: CodeConnectWorkflowDeadline;
+  tools: UpstreamToolInfo[];
+}
+
+async function executeCodeConnectInspect(
+  args: FigmaWorkspaceCodeConnectInspectArguments,
+  runtime: { client: FigmaUpstreamMcpProxyClient },
+): Promise<Record<string, unknown>> {
+  const session = currentInvocationContext();
+  const fileKey = resolveRequiredCodeConnectFileKey(args, session, "figma:code-connect:inspect");
+  let workflow: CodeConnectWorkflowRuntime | undefined;
+  try {
+    workflow = await beginCodeConnectWorkflow(runtime.client, [CODE_CONNECT_INSPECT_CONTRACT]);
+    const call = await callCodeConnectTool(workflow, runtime.client, CODE_CONNECT_INSPECT_TOOL_NAME, { fileKey });
+    if (call.postResponseError) {
+      const resultPayload = codeConnectReadResponseBudgetFailure(fileKey, "list_file_components_for_code_connect", call.postResponseError);
+      return attachCodeConnectSidecarIfNeeded({
+        session,
+        toolName: CODE_CONNECT_INSPECT_TOOL_NAME,
+        wrapperToolName: "figma:code-connect:inspect",
+        parsed: call.parsed,
+        resultPayload,
+        force: true,
+      });
+    }
+    const resultPayload = removeUndefined({
+      ok: !call.parsed.upstreamError,
+      fileKey,
+      components: call.parsed.upstreamError ? undefined : call.parsed.json,
+      upstream: call.parsed.upstreamError ? undefined : upstreamEnvelope(call.parsed),
+      upstreamError: call.parsed.upstreamError ? responseUpstreamError(call.parsed.upstreamError) : undefined,
+    }) as Record<string, unknown>;
+    return attachCodeConnectSidecarIfNeeded({
+      session,
+      toolName: CODE_CONNECT_INSPECT_TOOL_NAME,
+      wrapperToolName: "figma:code-connect:inspect",
+      parsed: call.parsed,
+      resultPayload,
+    });
+  } catch (error) {
+    return codeConnectPreflightFailure(fileKey, error);
+  } finally {
+    workflow?.deadline.dispose();
+  }
+}
+
+async function executeCodeConnectPlan(
+  args: FigmaWorkspaceCodeConnectPlanArguments,
+  runtime: { client: FigmaUpstreamMcpProxyClient },
+): Promise<Record<string, unknown>> {
+  const session = currentInvocationContext();
+  const fileKey = resolveRequiredCodeConnectFileKey(args, session, "figma:code-connect:plan");
+  const manifest = normalizeCodeConnectManifest(args.manifest);
+  let workflow: CodeConnectWorkflowRuntime | undefined;
+  try {
+    workflow = await beginCodeConnectWorkflow(runtime.client, [
+      CODE_CONNECT_PLAN_CONTEXT_CONTRACT,
+      CODE_CONNECT_PLAN_SUGGESTIONS_CONTRACT,
+      CODE_CONNECT_PLAN_MAPPING_READ_CONTRACT,
+      CODE_CONNECT_APPLY_CONTRACT,
+    ]);
+    assertCodeConnectLabels(manifest, codeConnectLabelEnum(workflow.tools));
+    const context = await callCodeConnectTool(workflow, runtime.client, CODE_CONNECT_CONTEXT_TOOL_NAME, {
+      fileKey,
+      nodeId: manifest.scope.nodeId,
+    });
+    if (context.postResponseError) {
+      const resultPayload = codeConnectReadResponseBudgetFailure(fileKey, "get_context_for_code_connect", context.postResponseError);
+      return attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_CONTEXT_TOOL_NAME, wrapperToolName: "figma:code-connect:plan", parsed: context.parsed, resultPayload, force: true });
+    }
+    if (context.parsed.upstreamError) {
+      return attachCodeConnectSidecarIfNeeded({
+        session,
+        toolName: CODE_CONNECT_CONTEXT_TOOL_NAME,
+        wrapperToolName: "figma:code-connect:plan",
+        parsed: context.parsed,
+        resultPayload: codeConnectReadFailure(fileKey, context.parsed, "get_context_for_code_connect"),
+      });
+    }
+    const suggestions = await callCodeConnectTool(workflow, runtime.client, CODE_CONNECT_SUGGESTIONS_TOOL_NAME, {
+      fileKey,
+      nodeId: manifest.scope.nodeId,
+      excludeMappingPrompt: true,
+    });
+    if (suggestions.postResponseError) {
+      const resultPayload = codeConnectReadResponseBudgetFailure(fileKey, "get_code_connect_suggestions", suggestions.postResponseError);
+      return attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_SUGGESTIONS_TOOL_NAME, wrapperToolName: "figma:code-connect:plan", parsed: suggestions.parsed, resultPayload, force: true });
+    }
+    if (suggestions.parsed.upstreamError) {
+      return attachCodeConnectSidecarIfNeeded({
+        session,
+        toolName: CODE_CONNECT_SUGGESTIONS_TOOL_NAME,
+        wrapperToolName: "figma:code-connect:plan",
+        parsed: suggestions.parsed,
+        resultPayload: codeConnectReadFailure(fileKey, suggestions.parsed, "get_code_connect_suggestions"),
+      });
+    }
+
+    const actions: FigmaWorkspaceCodeConnectMappingStatus[] = [];
+    const currentMappingFingerprints: Record<string, string> = {};
+    let sidecarParsed = requiresCodeConnectSidecar(context.parsed) ? context.parsed
+      : requiresCodeConnectSidecar(suggestions.parsed) ? suggestions.parsed : undefined;
+    for (const mapping of manifest.mappings) {
+      const current = await readCodeConnectMapping({ workflow, client: runtime.client, fileKey, mapping });
+      if (!sidecarParsed && current.parsed && requiresCodeConnectSidecar(current.parsed)) sidecarParsed = current.parsed;
+      if (!current.available) {
+        const resultPayload = {
+          ok: false,
+          fileKey,
+          mappings: [...actions, mappingStatus(mapping, "unavailable", { message: current.message })],
+          upstreamError: {
+            code: current.postResponseError ? "FIGMA_WORKSPACE_RESOURCE_LIMIT_EXCEEDED" : "FIGMA_WORKSPACE_CODE_CONNECT_READBACK_UNAVAILABLE",
+            message: current.postResponseError
+              ? errorMessage(current.postResponseError)
+              : "Figma get_code_connect_map did not return a mapping shape that can be safely normalized for full readback. No plan artifact was written.",
+          },
+          ...(current.parsed ? { upstream: upstreamEnvelope(current.parsed) } : {}),
+        };
+        return current.parsed
+          ? attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_MAP_TOOL_NAME, wrapperToolName: "figma:code-connect:plan", parsed: current.parsed, resultPayload, force: current.postResponseError !== undefined })
+          : resultPayload;
+      }
+      const identity = codeConnectMappingIdentity(mapping);
+      currentMappingFingerprints[identity] = current.fingerprint ?? "absent";
+      const status = !current.mapping
+        ? "create"
+        : sameCodeConnectMapping(current.mapping, mapping)
+          ? "noop"
+          : mapping.conflictPolicy === "replace" ? "replace" : "conflict";
+      actions.push(mappingStatus(mapping, status, {
+        currentMappingFingerprint: current.fingerprint,
+        message: status === "conflict" ? "An existing Code Connect mapping differs and conflictPolicy is fail." : undefined,
+      }));
+    }
+    const artifactBase = {
+      schemaVersion: 1 as const,
+      kind: "figma-code-connect-plan" as const,
+      fileKey,
+      surface: "design" as const,
+      scope: manifest.scope,
+      client: {
+        languages: manifest.client?.languages ?? "unknown",
+        frameworks: manifest.client?.frameworks ?? "unknown",
+      },
+      mappings: manifest.mappings,
+      manifestFingerprint: codeConnectManifestFingerprint(manifest),
+      currentMappingFingerprints,
+      actions,
+    };
+    const artifact: CodeConnectPlanArtifact = {
+      ...artifactBase,
+      planDigest: sha256Canonical(artifactBase),
+    };
+    const planPath = resolveCodeConnectPlanOutputPath(args, session);
+    const content = `${JSON.stringify(artifact, null, 2)}\n`;
+    const written = await atomicWriteManagedTextFile({ root: session.workspace?.root ?? session.outputRoot, path: planPath, overwrite: false }, content);
+    const resultPayload = {
+      ok: true,
+      fileKey,
+      planDigest: artifact.planDigest,
+      planFile: { path: written.path, bytes: written.bytes, lineCount: content.split("\n").length - 1 },
+      mappings: actions,
+      advisory: {
+        contextAvailable: context.parsed.json !== undefined,
+        suggestionsAvailable: suggestions.parsed.json !== undefined,
+      },
+    };
+    return sidecarParsed
+      ? attachCodeConnectSidecarIfNeeded({ session, toolName: "code-connect-plan", wrapperToolName: "figma:code-connect:plan", parsed: sidecarParsed, resultPayload })
+      : resultPayload;
+  } catch (error) {
+    return codeConnectPreflightFailure(fileKey, error);
+  } finally {
+    workflow?.deadline.dispose();
+  }
+}
+
+async function executeCodeConnectApply(
+  args: FigmaWorkspaceCodeConnectApplyArguments,
+  runtime: { client: FigmaUpstreamMcpProxyClient },
+): Promise<Record<string, unknown>> {
+  const session = currentInvocationContext();
+  const fileKey = resolveRequiredCodeConnectFileKey(args, session, "figma:code-connect:apply");
+  if (!args.confirmPlan || !/^[a-f0-9]{64}$/iu.test(args.confirmPlan)) {
+    return codeConnectApplyNotStarted(fileKey, [], "--confirm-plan must contain the exact 64-character planDigest. No Figma write was dispatched.");
+  }
+  let artifact: CodeConnectPlanArtifact;
+  try {
+    artifact = await readCodeConnectPlanArtifact(args.planPath, session);
+  } catch (error) {
+    return codeConnectApplyNotStarted(fileKey, [], `Could not read the Code Connect plan artifact: ${errorMessage(error)}`);
+  }
+  if (args.confirmPlan.toLowerCase() !== artifact.planDigest.toLowerCase()) {
+    return codeConnectApplyNotStarted(fileKey, artifact.actions, "--confirm-plan must exactly match the plan artifact planDigest. No Figma write was dispatched.");
+  }
+  if (artifact.fileKey !== fileKey || artifact.surface !== "design") {
+    return codeConnectApplyNotStarted(fileKey, artifact.actions, "The plan artifact target does not match --file. No Figma write was dispatched.");
+  }
+  if (artifact.actions.some((action) => action.status === "conflict")) {
+    return codeConnectApplyNotStarted(fileKey, artifact.actions, "The plan contains unapproved Code Connect conflicts. Change the manifest item conflictPolicy to replace, then generate and confirm a new plan.");
+  }
+
+  let workflow: CodeConnectWorkflowRuntime | undefined;
+  try {
+    workflow = await beginCodeConnectWorkflow(runtime.client, [
+      CODE_CONNECT_APPLY_MAPPING_READ_CONTRACT,
+      CODE_CONNECT_APPLY_CONTRACT,
+      CODE_CONNECT_VERIFY_MAPPING_READ_CONTRACT,
+    ]);
+    assertCodeConnectLabels(artifact, codeConnectLabelEnum(workflow.tools));
+    const staleStatuses: FigmaWorkspaceCodeConnectMappingStatus[] = [];
+    let staleSidecarParsed: ParsedUpstreamToolResult | undefined;
+    let stalePostResponseError = false;
+    for (const mapping of artifact.mappings) {
+      const current = await readCodeConnectMapping({ workflow, client: runtime.client, fileKey, mapping });
+      if (!staleSidecarParsed && current.parsed && requiresCodeConnectSidecar(current.parsed)) staleSidecarParsed = current.parsed;
+      if (current.postResponseError) {
+        staleSidecarParsed = current.parsed;
+        stalePostResponseError = true;
+      }
+      if (!current.available) {
+        staleStatuses.push(mappingStatus(mapping, "unavailable", { message: current.message }));
+        continue;
+      }
+      const expected = artifact.currentMappingFingerprints[codeConnectMappingIdentity(mapping)];
+      const actual = current.fingerprint ?? "absent";
+      staleStatuses.push(mappingStatus(mapping, actual === expected ? "matched" : "mismatch", {
+        currentMappingFingerprint: current.fingerprint,
+        message: actual === expected ? undefined : "Live Code Connect mapping snapshot differs from the confirmed plan.",
+      }));
+    }
+    if (staleStatuses.some((status) => status.status !== "matched")) {
+      const resultPayload = codeConnectApplyNotStarted(fileKey, staleStatuses, "The Code Connect plan is stale or cannot be safely read back. No Figma write was dispatched.", artifact.planDigest);
+      return staleSidecarParsed
+        ? attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_MAP_TOOL_NAME, wrapperToolName: "figma:code-connect:apply", parsed: staleSidecarParsed, resultPayload, force: stalePostResponseError })
+        : resultPayload;
+    }
+    const changes = artifact.actions.filter((action) => action.status === "create" || action.status === "replace");
+    if (changes.length === 0) {
+      return {
+        ok: true,
+        fileKey,
+        planDigest: artifact.planDigest,
+        executionOutcome: "succeeded",
+        mappings: artifact.actions,
+        verification: { ok: true, statuses: staleStatuses },
+      };
+    }
+    let sent: { parsed: ParsedUpstreamToolResult; postResponseError?: PostResponseResourceError };
+    try {
+      sent = await callCodeConnectTool(workflow, runtime.client, CODE_CONNECT_SEND_TOOL_NAME, {
+        fileKey,
+        nodeId: artifact.scope.nodeId,
+        clientLanguages: artifact.client.languages,
+        clientFrameworks: artifact.client.frameworks,
+        mappings: changes.map(codeConnectMappingForUpstream),
+      });
+    } catch (error) {
+      return codeConnectOutcomeUnknown(fileKey, artifact, changes, error);
+    }
+    if (sent.parsed.upstreamError) {
+      const resultPayload = codeConnectOutcomeUnknown(fileKey, artifact, changes, sent.parsed.upstreamError);
+      return attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_SEND_TOOL_NAME, wrapperToolName: "figma:code-connect:apply", parsed: sent.parsed, resultPayload });
+    }
+    if (sent.postResponseError) {
+      const resultPayload = localPostprocessingFailure({
+        ok: false,
+        fileKey,
+        planDigest: artifact.planDigest,
+        executionOutcome: "succeeded",
+        mappings: artifact.actions,
+        upstream: upstreamEnvelope(sent.parsed),
+      }, "codeConnectSendResponseBudget", sent.postResponseError);
+      return attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_SEND_TOOL_NAME, wrapperToolName: "figma:code-connect:apply", parsed: sent.parsed, resultPayload, force: true });
+    }
+    const verificationResult = await verifyCodeConnectArtifact({ workflow, client: runtime.client, fileKey, artifact });
+    const { sidecarParsed, forceSidecar, ...verification } = verificationResult;
+    const resultPayload = {
+      ok: verification.ok,
+      fileKey,
+      planDigest: artifact.planDigest,
+      executionOutcome: "succeeded",
+      mappings: artifact.actions,
+      verification,
+      ...(verification.ok ? {} : {
+        upstreamError: {
+          code: "FIGMA_WORKSPACE_CODE_CONNECT_VERIFICATION_FAILED",
+          message: "Figma confirmed the Code Connect write, but local readback could not verify every mapping. Do not replay the write; run figma:code-connect:verify after reconciling the result.",
+        },
+      }),
+    };
+    return sidecarParsed
+      ? attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_MAP_TOOL_NAME, wrapperToolName: "figma:code-connect:apply", parsed: sidecarParsed, resultPayload, force: forceSidecar })
+      : resultPayload;
+  } catch (error) {
+    return codeConnectApplyNotStarted(fileKey, artifact.actions, errorMessage(error), artifact.planDigest);
+  } finally {
+    workflow?.deadline.dispose();
+  }
+}
+
+async function executeCodeConnectVerify(
+  args: FigmaWorkspaceCodeConnectVerifyArguments,
+  runtime: { client: FigmaUpstreamMcpProxyClient },
+): Promise<Record<string, unknown>> {
+  const session = currentInvocationContext();
+  const fileKey = resolveRequiredCodeConnectFileKey(args, session, "figma:code-connect:verify");
+  let artifact: CodeConnectPlanArtifact;
+  try {
+    artifact = await readCodeConnectPlanArtifact(args.planPath, session);
+  } catch (error) {
+    return { ok: false, fileKey, planDigest: "", mappings: [], error: { code: "FIGMA_WORKSPACE_CODE_CONNECT_PLAN_INVALID", message: errorMessage(error) } };
+  }
+  if (artifact.fileKey !== fileKey || artifact.surface !== "design") {
+    return { ok: false, fileKey, planDigest: artifact.planDigest, mappings: artifact.actions, error: { code: "FIGMA_WORKSPACE_CODE_CONNECT_PLAN_TARGET_MISMATCH", message: "The plan artifact target does not match --file." } };
+  }
+  let workflow: CodeConnectWorkflowRuntime | undefined;
+  try {
+    workflow = await beginCodeConnectWorkflow(runtime.client, [CODE_CONNECT_VERIFY_MAPPING_READ_CONTRACT]);
+    const verificationResult = await verifyCodeConnectArtifact({ workflow, client: runtime.client, fileKey, artifact });
+    const { sidecarParsed, forceSidecar, ...verification } = verificationResult;
+    const resultPayload = { ok: verification.ok, fileKey, planDigest: artifact.planDigest, mappings: verification.statuses };
+    return sidecarParsed
+      ? attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_MAP_TOOL_NAME, wrapperToolName: "figma:code-connect:verify", parsed: sidecarParsed, resultPayload, force: forceSidecar })
+      : resultPayload;
+  } catch (error) {
+    return {
+      ok: false,
+      fileKey,
+      planDigest: artifact.planDigest,
+      mappings: artifact.mappings.map((mapping) => mappingStatus(mapping, "unavailable", { message: errorMessage(error) })),
+    };
+  } finally {
+    workflow?.deadline.dispose();
+  }
+}
+
+async function beginCodeConnectWorkflow(
+  client: FigmaUpstreamMcpProxyClient,
+  contracts: readonly FigmaWorkspaceWrapperContract[],
+): Promise<CodeConnectWorkflowRuntime> {
+  const deadline = new CodeConnectWorkflowDeadline();
+  try {
+    await deadline.run("connection", async () => { await client.connect(); return undefined; }, false);
+    const raw = asRecord(await deadline.run("tool discovery", (signal) => client.listTools(signal), true));
+    const tools = (Array.isArray(raw.tools) ? raw.tools : []).filter(isRecord).map((tool) => ({
+      name: asOptionalString(tool.name) ?? "",
+      title: asOptionalString(tool.title),
+      description: asOptionalString(tool.description),
+      inputSchema: tool.inputSchema,
+      outputSchema: tool.outputSchema,
+    })).filter((tool) => tool.name.length > 0);
+    for (const contract of contracts) {
+      const name = requireWrapperUpstreamToolName(contract);
+      const tool = selectRequiredUpstreamTool(tools, name, requireWrapperUpstreamKind(contract));
+      assertUpstreamToolHasProperties(tool, [...(contract.requiredUpstreamProperties ?? []), ...(contract.optionalUpstreamProperties ?? [])], requireWrapperUpstreamKind(contract));
+    }
+    return { deadline, tools };
+  } catch (error) {
+    deadline.dispose();
+    throw error;
+  }
+}
+
+async function callCodeConnectTool(
+  workflow: CodeConnectWorkflowRuntime,
+  client: FigmaUpstreamMcpProxyClient,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<{ parsed: ParsedUpstreamToolResult; postResponseError?: PostResponseResourceError }> {
+  try {
+    const upstream = await workflow.deadline.run(`tool ${toolName}`, (signal) => client.callTool(toolName, args, signal), true);
+    return { parsed: parseUpstreamToolResult(upstream) };
+  } catch (error) {
+    if (error instanceof PostResponseResourceError) {
+      return { parsed: parseUpstreamToolResult(error.response), postResponseError: error };
+    }
+    throw error;
+  }
+}
+
+function resolveRequiredCodeConnectFileKey(
+  args: { file?: string },
+  session: FigmaWorkspaceInvocationContext,
+  command: string,
+): string {
+  const file = parseFigmaFileReference(args.file);
+  const surface = file.surface ?? session.surface;
+  if (surface !== "design" || !file.fileKey) throw new Error(`${command} requires a Design file target.`);
+  return file.fileKey;
+}
+
+function codeConnectLabelEnum(tools: UpstreamToolInfo[]): string[] {
+  const tool = selectRequiredUpstreamTool(tools, CODE_CONNECT_SEND_TOOL_NAME, "Code Connect bulk mapping write");
+  const schema = asRecord(tool.inputSchema);
+  const mappings = asRecord(asRecord(schema.properties).mappings);
+  const label = asRecord(asRecord(asRecord(mappings.items).properties).label);
+  const labels = Array.isArray(label.enum) ? label.enum.filter((value): value is string => typeof value === "string" && value.length > 0) : [];
+  if (labels.length === 0) throw new Error("Live send_code_connect_mappings schema does not advertise a usable mapping label enum.");
+  return labels;
+}
+
+function assertCodeConnectLabels(manifest: Pick<FigmaWorkspaceCodeConnectManifest, "mappings">, labels: readonly string[]): void {
+  for (const mapping of manifest.mappings) {
+    if (!labels.includes(mapping.label)) throw new Error(`Code Connect mapping label "${mapping.label}" is not accepted by the live send_code_connect_mappings schema.`);
+  }
+}
+
+function normalizeCodeConnectManifest(manifest: FigmaWorkspaceCodeConnectManifest): FigmaWorkspaceCodeConnectManifest {
+  return {
+    schemaVersion: 1,
+    scope: { nodeId: manifest.scope.nodeId.trim().replace(/-/gu, ":") },
+    ...(manifest.client ? { client: removeUndefined({ languages: manifest.client.languages?.trim(), frameworks: manifest.client.frameworks?.trim() }) as { languages?: string; frameworks?: string } } : {}),
+    mappings: manifest.mappings.map((mapping) => removeUndefined({
+      nodeId: mapping.nodeId.trim().replace(/-/gu, ":"), componentName: mapping.componentName.trim(), source: mapping.source.trim(), label: mapping.label.trim(), conflictPolicy: mapping.conflictPolicy,
+    }) as FigmaWorkspaceCodeConnectMapping),
+  };
+}
+
+function codeConnectMappingIdentity(mapping: Pick<FigmaWorkspaceCodeConnectMapping, "nodeId" | "label">): string {
+  return `${mapping.nodeId}\u0000${mapping.label}`;
+}
+
+function codeConnectMappingForUpstream(mapping: FigmaWorkspaceCodeConnectMapping): Record<string, string> {
+  return { nodeId: mapping.nodeId, componentName: mapping.componentName, source: mapping.source, label: mapping.label };
+}
+
+function mappingStatus(
+  mapping: FigmaWorkspaceCodeConnectMapping,
+  status: FigmaWorkspaceCodeConnectMappingStatus["status"],
+  extra: Partial<FigmaWorkspaceCodeConnectMappingStatus> = {},
+): FigmaWorkspaceCodeConnectMappingStatus {
+  return removeUndefined({
+    nodeId: mapping.nodeId,
+    componentName: mapping.componentName,
+    source: mapping.source,
+    label: mapping.label,
+    conflictPolicy: mapping.conflictPolicy ?? "fail",
+    status,
+    ...extra,
+  }) as FigmaWorkspaceCodeConnectMappingStatus;
+}
+
+function sameCodeConnectMapping(left: FigmaWorkspaceCodeConnectMapping, right: FigmaWorkspaceCodeConnectMapping): boolean {
+  return left.nodeId === right.nodeId && left.componentName === right.componentName && left.source === right.source && left.label === right.label;
+}
+
+async function readCodeConnectMapping(options: {
+  workflow: CodeConnectWorkflowRuntime;
+  client: FigmaUpstreamMcpProxyClient;
+  fileKey: string;
+  mapping: FigmaWorkspaceCodeConnectMapping;
+}): Promise<CodeConnectMappingRead> {
+  let call: { parsed: ParsedUpstreamToolResult; postResponseError?: PostResponseResourceError };
+  try {
+    call = await callCodeConnectTool(options.workflow, options.client, CODE_CONNECT_MAP_TOOL_NAME, {
+      fileKey: options.fileKey,
+      nodeId: options.mapping.nodeId,
+      codeConnectLabel: options.mapping.label,
+    });
+  } catch (error) {
+    return { available: false, message: errorMessage(error) };
+  }
+  if (call.postResponseError) {
+    return {
+      available: false,
+      message: errorMessage(call.postResponseError),
+      parsed: call.parsed,
+      postResponseError: call.postResponseError,
+    };
+  }
+  if (call.parsed.upstreamError) return { available: false, message: call.parsed.upstreamError.message, parsed: call.parsed };
+  return { ...normalizeCodeConnectMapRead(call.parsed.json, options.mapping.nodeId, options.mapping.label), parsed: call.parsed };
+}
+
+function normalizeCodeConnectMapRead(value: unknown, nodeId: string, label: string): CodeConnectMappingRead {
+  const topLevel = asRecord(value);
+  const roots = [
+    isRecord(value) ? value : undefined,
+    isRecord(topLevel.result) ? topLevel.result : undefined,
+    isRecord(topLevel.mappings) ? topLevel.mappings : undefined,
+  ].filter((root): root is Record<string, unknown> => root !== undefined);
+  for (const root of roots) {
+    if (Object.keys(root).length === 0) return { available: true };
+    const candidate = asRecord(root[nodeId]);
+    if (Object.keys(candidate).length === 0) continue;
+    const source = asOptionalString(candidate.codeConnectSrc) ?? asOptionalString(candidate.source);
+    const componentName = asOptionalString(candidate.codeConnectName) ?? asOptionalString(candidate.componentName);
+    const returnedLabel = asOptionalString(candidate.codeConnectLabel) ?? asOptionalString(candidate.label) ?? label;
+    if (!source || !componentName) {
+      return { available: false, message: "get_code_connect_map omitted source or component name required for safe full readback." };
+    }
+    if (returnedLabel !== label) return { available: false, message: "get_code_connect_map returned a label different from the requested mapping label." };
+    const mapping: FigmaWorkspaceCodeConnectMapping = { nodeId, source, componentName, label: returnedLabel };
+    return { available: true, mapping, fingerprint: sha256Canonical(codeConnectMappingForUpstream(mapping)) };
+  }
+  return { available: false, message: "get_code_connect_map returned an unrecognized mapping shape." };
+}
+
+async function verifyCodeConnectArtifact(options: {
+  workflow: CodeConnectWorkflowRuntime;
+  client: FigmaUpstreamMcpProxyClient;
+  fileKey: string;
+  artifact: CodeConnectPlanArtifact;
+}): Promise<{ ok: boolean; statuses: FigmaWorkspaceCodeConnectMappingStatus[]; sidecarParsed?: ParsedUpstreamToolResult; forceSidecar?: boolean }> {
+  const statuses: FigmaWorkspaceCodeConnectMappingStatus[] = [];
+  let sidecarParsed: ParsedUpstreamToolResult | undefined;
+  let forceSidecar = false;
+  for (const mapping of options.artifact.mappings) {
+    const current = await readCodeConnectMapping({ workflow: options.workflow, client: options.client, fileKey: options.fileKey, mapping });
+    if (!sidecarParsed && current.parsed && requiresCodeConnectSidecar(current.parsed)) sidecarParsed = current.parsed;
+    if (current.postResponseError) {
+      sidecarParsed = current.parsed;
+      forceSidecar = true;
+    }
+    if (!current.available) {
+      statuses.push(mappingStatus(mapping, "unavailable", { message: current.message }));
+    } else if (!current.mapping) {
+      statuses.push(mappingStatus(mapping, "missing"));
+    } else if (sameCodeConnectMapping(current.mapping, mapping)) {
+      statuses.push(mappingStatus(mapping, "matched", { currentMappingFingerprint: current.fingerprint }));
+    } else {
+      statuses.push(mappingStatus(mapping, "mismatch", { currentMappingFingerprint: current.fingerprint }));
+    }
+  }
+  return { ok: statuses.every((status) => status.status === "matched"), statuses, sidecarParsed, forceSidecar };
+}
+
+function resolveCodeConnectPlanOutputPath(
+  args: FigmaWorkspaceCodeConnectPlanArguments,
+  session: FigmaWorkspaceInvocationContext,
+): string {
+  const requested = asOptionalString(args.outputPlanPath);
+  const root = session.workspace?.outputDir ?? session.outputRoot;
+  if (requested) {
+    const path = resolve(requested);
+    if (!isPathInside(root, path)) throw new Error("Code Connect outputPlanPath must stay inside the invocation output directory.");
+    return path;
+  }
+  return resolveWorkspaceFile(root, "figma-code-connect.plan.json", "outputPlanPath");
+}
+
+async function readCodeConnectPlanArtifact(pathValue: string, session: FigmaWorkspaceInvocationContext): Promise<CodeConnectPlanArtifact> {
+  const path = resolveInvocationAwareFile(pathValue, session, "planPath");
+  if (!path) throw new Error("Code Connect plan path is required.");
+  await assertInvocationManagedInputFile(path, session);
+  const info = await stat(path);
+  if (info.size > MAX_MANIFEST_FILE_BYTES) throw new Error(`Code Connect plan exceeds ${MAX_MANIFEST_FILE_BYTES} bytes.`);
+  const source = await readFile(path, "utf8");
+  await assertInvocationManagedInputFile(path, session);
+  let value: unknown;
+  try { value = JSON.parse(source); } catch (error) { throw new Error(`Code Connect plan must contain valid JSON: ${errorMessage(error)}`); }
+  return parseCodeConnectPlanArtifact(value);
+}
+
+function parseCodeConnectPlanArtifact(value: unknown): CodeConnectPlanArtifact {
+  const artifact = asRecord(value);
+  const required = ["schemaVersion", "kind", "fileKey", "surface", "scope", "client", "mappings", "manifestFingerprint", "currentMappingFingerprints", "actions", "planDigest"];
+  if (Object.keys(artifact).length !== required.length || required.some((key) => !(key in artifact))) throw new Error("Code Connect plan has an invalid or unsupported artifact shape.");
+  if (artifact.schemaVersion !== 1 || artifact.kind !== "figma-code-connect-plan" || artifact.surface !== "design" || !isFigmaFileKey(asOptionalString(artifact.fileKey) ?? "")) throw new Error("Code Connect plan has invalid identity fields.");
+  const scope = asRecord(artifact.scope);
+  const client = asRecord(artifact.client);
+  if (!isSimpleFigmaNodeId(asOptionalString(scope.nodeId) ?? "") || !asOptionalString(client.languages) || !asOptionalString(client.frameworks)) throw new Error("Code Connect plan has invalid scope or client fields.");
+  const mappings = parseCodeConnectArtifactMappings(artifact.mappings);
+  const actions = parseCodeConnectArtifactActions(artifact.actions, mappings);
+  const fingerprints = asRecord(artifact.currentMappingFingerprints);
+  if (Object.values(fingerprints).some((entry) => typeof entry !== "string" || (entry !== "absent" && !/^[a-f0-9]{64}$/iu.test(entry)))) throw new Error("Code Connect plan has invalid mapping fingerprints.");
+  if (mappings.some((mapping) => fingerprints[codeConnectMappingIdentity(mapping)] === undefined)) throw new Error("Code Connect plan is missing a mapping snapshot fingerprint.");
+  const manifestFingerprint = asOptionalString(artifact.manifestFingerprint);
+  const planDigest = asOptionalString(artifact.planDigest);
+  if (!manifestFingerprint || !/^[a-f0-9]{64}$/iu.test(manifestFingerprint) || !planDigest || !/^[a-f0-9]{64}$/iu.test(planDigest)) throw new Error("Code Connect plan has invalid digests.");
+  const base = {
+    schemaVersion: 1 as const,
+    kind: "figma-code-connect-plan" as const,
+    fileKey: artifact.fileKey as string,
+    surface: "design" as const,
+    scope: { nodeId: (scope.nodeId as string).replace(/-/gu, ":") },
+    client: { languages: client.languages as string, frameworks: client.frameworks as string },
+    mappings,
+    manifestFingerprint,
+    currentMappingFingerprints: fingerprints as Record<string, string>,
+    actions,
+  };
+  const manifest = {
+    schemaVersion: 1,
+    scope: base.scope,
+    client: {
+      languages: base.client.languages,
+      frameworks: base.client.frameworks,
+    },
+    mappings: base.mappings,
+  };
+  if (sha256Canonical(manifest) !== manifestFingerprint) throw new Error("Code Connect plan manifest fingerprint does not match its mapping content.");
+  if (sha256Canonical(base) !== planDigest) throw new Error("Code Connect plan digest does not match its immutable artifact content.");
+  return { ...base, planDigest };
+}
+
+function parseCodeConnectArtifactMappings(value: unknown): FigmaWorkspaceCodeConnectMapping[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_MANIFEST_ITEMS) throw new Error("Code Connect plan has invalid mappings.");
+  const mappings = value.map((entry) => {
+    const record = asRecord(entry);
+    const allowed = ["nodeId", "componentName", "source", "label", "conflictPolicy"];
+    if (Object.keys(record).some((key) => !allowed.includes(key))) throw new Error("Code Connect plan mapping has unknown fields.");
+    const nodeId = asOptionalString(record.nodeId)?.replace(/-/gu, ":");
+    const componentName = asOptionalString(record.componentName);
+    const source = asOptionalString(record.source);
+    const label = asOptionalString(record.label);
+    if (!nodeId || !isSimpleFigmaNodeId(nodeId) || !componentName || !source || !label || (record.conflictPolicy !== undefined && record.conflictPolicy !== "fail" && record.conflictPolicy !== "replace")) throw new Error("Code Connect plan mapping is invalid.");
+    return removeUndefined({ nodeId, componentName, source, label, conflictPolicy: record.conflictPolicy }) as FigmaWorkspaceCodeConnectMapping;
+  });
+  if (new Set(mappings.map(codeConnectMappingIdentity)).size !== mappings.length) throw new Error("Code Connect plan has duplicate mapping identities.");
+  return mappings;
+}
+
+function parseCodeConnectArtifactActions(value: unknown, mappings: FigmaWorkspaceCodeConnectMapping[]): FigmaWorkspaceCodeConnectMappingStatus[] {
+  if (!Array.isArray(value) || value.length !== mappings.length) throw new Error("Code Connect plan actions do not match mappings.");
+  const statuses = new Set(["create", "noop", "replace", "conflict"]);
+  return value.map((entry, index) => {
+    const record = asRecord(entry);
+    if (!statuses.has(asOptionalString(record.status) ?? "")) throw new Error("Code Connect plan action status is invalid.");
+    const expected = mappingStatus(mappings[index]!, record.status as FigmaWorkspaceCodeConnectMappingStatus["status"], {
+      currentMappingFingerprint: asOptionalString(record.currentMappingFingerprint),
+      message: asOptionalString(record.message),
+    });
+    if (sha256Canonical(record) !== sha256Canonical(expected)) throw new Error("Code Connect plan action does not match its mapping.");
+    return expected;
+  });
+}
+
+function sha256Canonical(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(sortJsonValue(value))).digest("hex");
+}
+
+function codeConnectManifestFingerprint(manifest: FigmaWorkspaceCodeConnectManifest): string {
+  return sha256Canonical({
+    schemaVersion: 1,
+    scope: manifest.scope,
+    client: {
+      languages: manifest.client?.languages ?? "unknown",
+      frameworks: manifest.client?.frameworks ?? "unknown",
+    },
+    mappings: manifest.mappings,
+  });
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortJsonValue(value[key])]));
+}
+
+function codeConnectPreflightFailure(fileKey: string, error: unknown): Record<string, unknown> {
+  return { ok: false, fileKey, mappings: [], upstreamError: { code: "FIGMA_WORKSPACE_CODE_CONNECT_PREFLIGHT_FAILED", message: errorMessage(error) } };
+}
+
+function codeConnectReadFailure(fileKey: string, parsed: ParsedUpstreamToolResult, toolName: string): Record<string, unknown> {
+  const error = parsed.upstreamError;
+  if (!error) throw new Error("Code Connect read failure requires an upstream error.");
+  return {
+    ok: false,
+    fileKey,
+    mappings: [],
+    upstream: upstreamEnvelope(parsed),
+    upstreamError: { ...responseUpstreamError(error), message: `${toolName}: ${error.message}` },
+  };
+}
+
+function codeConnectReadResponseBudgetFailure(fileKey: string, toolName: string, error: PostResponseResourceError): Record<string, unknown> {
+  return {
+    ok: false,
+    fileKey,
+    mappings: [],
+    upstreamError: {
+      code: "FIGMA_WORKSPACE_RESOURCE_LIMIT_EXCEEDED",
+      message: `${toolName}: ${errorMessage(error)}`,
+    },
+  };
+}
+
+function codeConnectApplyNotStarted(fileKey: string, mappings: FigmaWorkspaceCodeConnectMappingStatus[], message: string, planDigest?: string): Record<string, unknown> {
+  return { ok: false, fileKey, planDigest, executionOutcome: "not_started", mappings, upstreamError: { code: "FIGMA_WORKSPACE_CODE_CONNECT_APPLY_BLOCKED", message } };
+}
+
+function codeConnectOutcomeUnknown(fileKey: string, artifact: CodeConnectPlanArtifact, mappings: FigmaWorkspaceCodeConnectMappingStatus[], error: unknown): Record<string, unknown> {
+  return {
+    ok: false,
+    fileKey,
+    planDigest: artifact.planDigest,
+    executionOutcome: "outcome_unknown",
+    retryGuidance: "The Code Connect bulk write was dispatched but Figma completion could not be confirmed. Do not retry apply blindly; run figma:code-connect:verify and reconcile the observed mappings first.",
+    mappings,
+    upstreamError: { code: "FIGMA_WORKSPACE_CODE_CONNECT_OUTCOME_UNKNOWN", message: errorMessage(error) },
+  };
+}
+
+async function attachCodeConnectSidecarIfNeeded(options: {
+  session: FigmaWorkspaceInvocationContext;
+  toolName: string;
+  wrapperToolName: string;
+  parsed: ParsedUpstreamToolResult;
+  resultPayload: Record<string, unknown>;
+  force?: boolean;
+}): Promise<Record<string, unknown>> {
+  if (!options.force && !requiresCodeConnectSidecar(options.parsed)) return options.resultPayload;
+  try {
+    const outputFiles = await writeCallUpstreamResultFiles({
+      toolName: options.toolName,
+      wrapperToolName: options.wrapperToolName,
+      session: options.session,
+      resultPayload: options.resultPayload,
+      upstream: upstreamEnvelope(options.parsed),
+      upstreamCallResult: sanitizedCallToolResult(options.parsed),
+    });
+    return { ...options.resultPayload, outputFiles };
+  } catch (error) {
+    return localPostprocessingFailure(options.resultPayload, "codeConnectSidecar", error);
+  }
+}
+
+function requiresCodeConnectSidecar(parsed: ParsedUpstreamToolResult): boolean {
+  return parsed.upstreamError !== undefined || parsed.nonTextContent.length > 0 || isTruncatedUpstreamText(parsed.text);
+}
+
 async function handleLookup(
   args: FigmaWorkspaceLookupArguments,
 ): Promise<Record<string, unknown>> {
@@ -4621,12 +5495,13 @@ function upstreamToolCoverage(toolName: string): FigmaWorkspaceUpstreamToolCover
 }
 
 const PUBLIC_HISTORY_COMMAND_IDS: Readonly<Record<string, FigmaWorkspacePublicCommandId>> = {
+  figma_workspace_run: "figma:run",
+  figma_workspace_inspect: "figma:inspect",
   figma_workspace_eval: "figma:run",
   figma_workspace_run_script_file: "figma:run",
   figma_workspace_apply_asset_manifest: "figma:assets:apply",
   figma_workspace_download_assets: "figma:assets:download",
   figma_workspace_capture_node: "figma:capture",
-  figma_workspace_inspect: "figma:inspect",
   figma_workspace_get_metadata: "figma:metadata",
   figma_workspace_get_design_context: "figma:design-context",
   figma_workspace_get_motion_context: "figma:motion-context",
@@ -4634,6 +5509,13 @@ const PUBLIC_HISTORY_COMMAND_IDS: Readonly<Record<string, FigmaWorkspacePublicCo
   figma_workspace_get_libraries: "figma:libraries",
   figma_workspace_get_variable_defs: "figma:variables",
   figma_workspace_call_upstream_tool: "figma:upstream:call",
+  figma_workspace_code_connect_inspect: "figma:code-connect:inspect",
+  figma_workspace_code_connect_plan_context: "figma:code-connect:plan",
+  figma_workspace_code_connect_plan_suggestions: "figma:code-connect:plan",
+  figma_workspace_code_connect_plan_mapping_read: "figma:code-connect:plan",
+  figma_workspace_code_connect_apply_mapping_read: "figma:code-connect:apply",
+  figma_workspace_code_connect_apply: "figma:code-connect:apply",
+  figma_workspace_code_connect_verify_mapping_read: "figma:code-connect:verify",
 };
 
 const PUBLIC_HISTORY_KINDS: Readonly<Partial<Record<FigmaWorkspacePublicCommandId, string>>> = {
@@ -4648,6 +5530,10 @@ const PUBLIC_HISTORY_KINDS: Readonly<Partial<Record<FigmaWorkspacePublicCommandI
   "figma:design-system": "read",
   "figma:libraries": "read",
   "figma:variables": "read",
+  "figma:code-connect:inspect": "code-connect",
+  "figma:code-connect:plan": "code-connect",
+  "figma:code-connect:apply": "code-connect",
+  "figma:code-connect:verify": "code-connect",
   "figma:upstream:call": "upstream",
 };
 
@@ -5112,7 +5998,7 @@ function buildUploadAssetsArguments(asset: NormalizedAssetManifestAsset): Record
   return {
     fileKey: asset.fileKey,
     count: 1,
-    nodeId: asset.targetNodeId,
+    nodeIds: [asset.targetNodeId],
     scaleMode,
   };
 }

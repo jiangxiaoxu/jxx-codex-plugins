@@ -15,7 +15,7 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.5.4");
+  assert.equal(packageJson.version, "0.6.0");
 });
 
 test("distribution stages TypeScript declaration libs for strict preflight", () => {
@@ -29,7 +29,9 @@ test("internal CLI inventory is stateless and includes public doctor", () => {
   assert.deepEqual(FIGMA_WORKSPACE_CLI_COMMANDS, [
     "run", "apply-asset-manifest", "download-assets", "capture-node", "inspect",
     "get-metadata", "get-design-context", "get-motion-context", "search-design-system",
-    "get-libraries", "get-variable-defs", "call-upstream-tool", "lookup", "docs", "doctor", "upstream-tools",
+    "get-libraries", "get-variable-defs", "call-upstream-tool",
+    "code-connect-inspect", "code-connect-plan", "code-connect-apply", "code-connect-verify",
+    "lookup", "docs", "doctor", "upstream-tools",
   ]);
   assert.deepEqual(parseFigmaWorkspaceCliArguments(["doctor"]), { kind: "command", command: "doctor", inputFile: undefined, inlineResultLimit: undefined });
   for (const args of [

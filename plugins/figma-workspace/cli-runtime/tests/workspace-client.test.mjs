@@ -384,7 +384,7 @@ test("upstream tool directory classifies file component listing as code-connect"
   assert.deepEqual(result.tools, [{
     name: "list_file_components_for_code_connect",
     category: "code-connect",
-    coverage: { covered: false, publicCommands: [] },
+    coverage: { covered: true, publicCommands: ["figma:code-connect:inspect"] },
   }]);
   await client.close();
 });
@@ -412,6 +412,21 @@ test("upstream tool read exposes schemas and coverage without protocol metadata"
     assert.deepEqual(result.coverage, { covered: true, publicCommands: ["figma:metadata"] });
     assert.equal("annotations" in result, false);
     assert.equal("_meta" in result, false);
+  } finally {
+    await client.close();
+  }
+});
+
+test("use_figma upstream coverage includes the public run command", async () => {
+  const calls = [];
+  const upstream = fakeUpstream(calls);
+  const client = createFigmaWorkspaceClient({ client: upstream });
+  try {
+    const result = await client.upstreamTools({ name: "use_figma" });
+    assert.deepEqual(result.coverage, {
+      covered: true,
+      publicCommands: ["figma:inspect", "figma:run"],
+    });
   } finally {
     await client.close();
   }

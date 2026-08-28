@@ -6,11 +6,22 @@ Use this reference for an end-to-end Figma task. Command-specific help and runti
 
 1. Start with a full Figma file or node URL. Use `figma:docs:catalog`, `figma:docs:search`, and `figma:docs:read` only when the workflow is not already clear.
 2. Run `figma:metadata -- --file <URL|fileKey>` for broad discovery before targeted `figma:inspect -- --file <URL|fileKey> --node <nodeId>` when the structure is unfamiliar.
-3. Create a local `.figma.ts` file in the shell. Do not expect the CLI to scaffold or remember a task directory.
+3. Create a local `.figma.ts` file in the shell only for native Plugin API work. Do not use Code Connect mapping artifacts as `figma:run` input.
 4. Use native Figma Plugin API for editing, traversal, layout, assets, cloning, and advanced work. `$` is frozen and non-callable, with only `$.text` and `$.capture`. Use `figma:api:search` for uncertain symbols and `figma:api:read` when the returned snippet does not contain the complete declaration.
 5. Run `figma:run -- --file <URL|fileKey> --surface <design|figjam|slides> --script <path/to/change.figma.ts>` after repairing fatal TypeScript or Plugin API diagnostics. For stdin source, replace `--script` with `--source -`. Return compact changed-node IDs and validation notes.
 6. Prefer first-class design, motion, library, variable, asset, and capture commands for typed safeguards. Use `figma:upstream:list` to `figma:upstream:read` to `figma:upstream:call` when the live official schema is required; local `coverage` guidance does not block the direct path.
 7. Capture visible changes and inspect the saved PNG with `view_image` before reporting visual success.
+
+## Code Connect
+
+For a simple component-to-code mapping, run the stateless Design-only sequence with one explicit file target:
+
+1. `figma:code-connect:inspect --file <Design URL|fileKey>` lists mappable components.
+2. `figma:code-connect:plan --file <Design URL|fileKey> --input <manifest.json|->` validates a manifest and writes an immutable plan and `planDigest`.
+3. `figma:code-connect:apply --file <Design URL|fileKey> --plan <path> --confirm-plan <planDigest>` is the sole write. It checks the live snapshot, blocks `conflict` actions unless `conflictPolicy` is `replace`, writes once, and reads back.
+4. `figma:code-connect:verify --file <Design URL|fileKey> --plan <path>` is safe to repeat and reports `matched`, `missing`, `mismatch`, or `unavailable`.
+
+The manifest accepts 1 to 64 unique simple node mappings with `componentName`, `source`, and a live-contract `label`; template fields are unsupported. If apply returns `outcome_unknown`, verify the same plan before retrying. A stale plan or bad confirmation is `not_started` and dispatches no write.
 
 ## Script Helpers
 

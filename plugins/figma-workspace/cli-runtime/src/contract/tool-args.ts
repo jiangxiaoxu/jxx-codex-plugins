@@ -168,6 +168,37 @@ export interface FigmaWorkspaceUpstreamToolsArguments {
   refresh?: boolean;
 }
 
+export interface FigmaWorkspaceCodeConnectInspectArguments extends InvocationArguments {}
+
+export interface FigmaWorkspaceCodeConnectMapping {
+  nodeId: string;
+  componentName: string;
+  source: string;
+  label: string;
+  conflictPolicy?: "fail" | "replace";
+}
+
+export interface FigmaWorkspaceCodeConnectManifest {
+  schemaVersion: 1;
+  scope: { nodeId: string };
+  client?: { languages?: string; frameworks?: string };
+  mappings: FigmaWorkspaceCodeConnectMapping[];
+}
+
+export interface FigmaWorkspaceCodeConnectPlanArguments extends InvocationArguments {
+  manifest: FigmaWorkspaceCodeConnectManifest;
+  outputPlanPath?: string;
+}
+
+export interface FigmaWorkspaceCodeConnectApplyArguments extends InvocationArguments {
+  planPath: string;
+  confirmPlan?: string;
+}
+
+export interface FigmaWorkspaceCodeConnectVerifyArguments extends InvocationArguments {
+  planPath: string;
+}
+
 export interface FigmaWorkspaceDoctorArguments { [key: string]: unknown }
 
 const SURFACES = ["design", "figjam", "slides"] as const;
@@ -357,6 +388,43 @@ export function asUpstreamToolsArgs(value: unknown): FigmaWorkspaceUpstreamTools
   strings(args, ["name"]); booleans(args, ["refresh"]); allowed(args, ["name", "refresh"]); return args;
 }
 
+export function asCodeConnectInspectArgs(value: unknown): FigmaWorkspaceCodeConnectInspectArguments {
+  const args = parse<FigmaWorkspaceCodeConnectInspectArguments>(value);
+  codeConnectInvocation(args, "figma:code-connect:inspect");
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit"]);
+  return args;
+}
+
+export function asCodeConnectPlanArgs(value: unknown): FigmaWorkspaceCodeConnectPlanArguments {
+  const args = parse<FigmaWorkspaceCodeConnectPlanArguments>(value);
+  strings(args, ["title", "file", "outputDir", "outputPlanPath"]);
+  invocation(args);
+  validateCodeConnectManifest(args.manifest);
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "manifest", "outputPlanPath"]);
+  requireCodeConnectDesignFile(args, "figma:code-connect:plan");
+  return args;
+}
+
+export function asCodeConnectApplyArgs(value: unknown): FigmaWorkspaceCodeConnectApplyArguments {
+  const args = parse<FigmaWorkspaceCodeConnectApplyArguments>(value);
+  strings(args, ["title", "file", "outputDir", "planPath", "confirmPlan"]);
+  invocation(args);
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "planPath", "confirmPlan"]);
+  requireCodeConnectDesignFile(args, "figma:code-connect:apply");
+  if (!args.planPath?.trim()) throw new FigmaWorkspaceToolArgumentError('figma:code-connect:apply requires "planPath".');
+  return args;
+}
+
+export function asCodeConnectVerifyArgs(value: unknown): FigmaWorkspaceCodeConnectVerifyArguments {
+  const args = parse<FigmaWorkspaceCodeConnectVerifyArguments>(value);
+  strings(args, ["title", "file", "outputDir", "planPath"]);
+  invocation(args);
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "planPath"]);
+  requireCodeConnectDesignFile(args, "figma:code-connect:verify");
+  if (!args.planPath?.trim()) throw new FigmaWorkspaceToolArgumentError('figma:code-connect:verify requires "planPath".');
+  return args;
+}
+
 export function asDoctorArgs(value: unknown): FigmaWorkspaceDoctorArguments {
   const args = parse<FigmaWorkspaceDoctorArguments>(value); allowed(args, []); return args;
 }
@@ -379,6 +447,31 @@ function normalizeNodeAlias(args: { target?: FigmaWorkspaceNodeTarget; nodeId?: 
 
 function requiredFile(args: InvocationArguments, command: string): void {
   if (!args.file?.trim()) throw new FigmaWorkspaceToolArgumentError(`${command} requires "file".`);
+}
+
+function codeConnectInvocation(args: InvocationArguments, command: string): void {
+  strings(args, ["title", "file", "outputDir"]);
+  invocation(args);
+  requireCodeConnectDesignFile(args, command);
+}
+
+function requireCodeConnectDesignFile(args: InvocationArguments, command: string): void {
+  requiredFile(args, command);
+  if (args.surface !== undefined && args.surface !== "design") {
+    throw new FigmaWorkspaceToolArgumentError(`${command} supports only the Design surface.`);
+  }
+  if (typeof args.file === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(args.file)) {
+    try {
+      const kind = new URL(args.file).pathname.split("/").filter(Boolean)[0];
+      if (kind !== "design" && kind !== "file") {
+        throw new FigmaWorkspaceToolArgumentError(`${command} supports only Design file URLs.`);
+      }
+    } catch (error) {
+      if (error instanceof FigmaWorkspaceToolArgumentError) throw error;
+    }
+  } else if (args.surface !== "design") {
+    throw new FigmaWorkspaceToolArgumentError(`${command} with a raw file key requires "surface": "design".`);
+  }
 }
 
 function requiredFileOrNodeUrl(args: InvocationArguments & { target?: FigmaWorkspaceNodeTarget }, command: string, allowCompositeNodeId = false): void {
@@ -448,6 +541,53 @@ function validateDownloadTargets(value: unknown): void {
   if (value === undefined) return;
   if (!Array.isArray(value) || value.length > MAX_MANIFEST_ITEMS) throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets" must be an array of at most ${MAX_MANIFEST_ITEMS} items.`);
   value.forEach((item, index) => { const entry = parse<Record<string, unknown>>(item); strings(entry, ["name"]); target(entry.target, `targets[${index}].target`); enumeration(entry, "defaultFormat", ["png", "jpg", "svg", "pdf"]); const scale=entry.defaultScale; if (scale !== undefined && (typeof scale !== "number" || scale < 0.01 || scale > 4)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets[${index}].defaultScale" must be from 0.01 to 4.`); allowed(entry, ["target", "name", "defaultFormat", "defaultScale"], `targets[${index}]`); });
+}
+
+function validateCodeConnectManifest(value: unknown): asserts value is FigmaWorkspaceCodeConnectManifest {
+  const manifest = parse<Record<string, unknown>>(value);
+  integer(manifest, "schemaVersion", 1, 1);
+  if (manifest.schemaVersion !== 1) throw new FigmaWorkspaceToolArgumentError('Code Connect manifest "schemaVersion" must be 1.');
+  const scope = parse<Record<string, unknown>>(manifest.scope);
+  strings(scope, ["nodeId"]);
+  scope.nodeId = normalizeCodeConnectNodeId(scope.nodeId, "scope.nodeId");
+  allowed(scope, ["nodeId"], "scope");
+  if (manifest.client !== undefined) {
+    const client = parse<Record<string, unknown>>(manifest.client);
+    strings(client, ["languages", "frameworks"]);
+    allowed(client, ["languages", "frameworks"], "client");
+    if (client.languages !== undefined && (typeof client.languages !== "string" || !client.languages.trim())) throw new FigmaWorkspaceToolArgumentError('Tool argument "client.languages" must be non-empty when provided.');
+    if (client.frameworks !== undefined && (typeof client.frameworks !== "string" || !client.frameworks.trim())) throw new FigmaWorkspaceToolArgumentError('Tool argument "client.frameworks" must be non-empty when provided.');
+  }
+  if (!Array.isArray(manifest.mappings) || manifest.mappings.length === 0 || manifest.mappings.length > MAX_MANIFEST_ITEMS) {
+    throw new FigmaWorkspaceToolArgumentError(`Code Connect manifest "mappings" must contain 1 to ${MAX_MANIFEST_ITEMS} items.`);
+  }
+  const seen = new Set<string>();
+  manifest.mappings.forEach((value, index) => {
+    const mapping = parse<Record<string, unknown>>(value);
+    strings(mapping, ["nodeId", "componentName", "source", "label"]);
+    mapping.nodeId = normalizeCodeConnectNodeId(mapping.nodeId, `mappings[${index}].nodeId`);
+    enumeration(mapping, "conflictPolicy", ["fail", "replace"]);
+    allowed(mapping, ["nodeId", "componentName", "source", "label", "conflictPolicy"], `mappings[${index}]`);
+    for (const key of ["nodeId", "componentName", "source", "label"] as const) {
+      if (typeof mapping[key] !== "string" || !mapping[key].trim()) {
+        throw new FigmaWorkspaceToolArgumentError(`Tool argument "mappings[${index}].${key}" must be a non-empty string.`);
+      }
+    }
+    mapping.componentName = (mapping.componentName as string).trim();
+    mapping.source = (mapping.source as string).trim();
+    mapping.label = (mapping.label as string).trim();
+    const identity = `${mapping.nodeId}\u0000${mapping.label}`;
+    if (seen.has(identity)) throw new FigmaWorkspaceToolArgumentError(`Code Connect manifest contains duplicate mapping identity for nodeId ${mapping.nodeId} and label ${mapping.label}.`);
+    seen.add(identity);
+  });
+  allowed(manifest, ["schemaVersion", "scope", "client", "mappings"], "Code Connect manifest");
+}
+
+function normalizeCodeConnectNodeId(value: unknown, name: string): string {
+  if (typeof value !== "string") throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a simple Figma node id.`);
+  const normalized = value.trim().replace(/-/gu, ":");
+  if (!isSimpleFigmaNodeId(normalized)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "${name}" must be a simple Figma node id; Figma node URLs are not supported in Code Connect manifests.`);
+  return normalized;
 }
 
 function target(value: unknown, name: string, allowCompositeNodeId = false): void {

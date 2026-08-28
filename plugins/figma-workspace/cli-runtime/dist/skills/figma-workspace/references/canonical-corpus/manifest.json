@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-13T09:10:03.389Z",
+  "generatedAt": "2026-08-28T04:48:02.666Z",
   "corpus": {
-    "file": "corpus-7000170432914d4c5245dc7aca386b22ce84c0072e0faa0a9a6011e5ec379603.jsonl",
+    "file": "corpus-2502f522e60fb80d91e5f964a987bb880567b7c9c8447d7251cb3191ca1e4c25.jsonl",
     "recordCount": 87,
-    "sha256": "7000170432914d4c5245dc7aca386b22ce84c0072e0faa0a9a6011e5ec379603"
+    "sha256": "2502f522e60fb80d91e5f964a987bb880567b7c9c8447d7251cb3191ca1e4c25"
   },
   "routeCatalog": {
     "file": "routes.json",
@@ -43,12 +43,12 @@
   "integrity": {
     "algorithm": "sha256",
     "contentHashes": {
-      "figma-code-connect/SKILL.md": "aebc3ee203f27b9a352df8353d9193b8e074a7e60c8a94e3841f7ac0eb4a8acd",
-      "figma-code-connect/references/advanced-patterns.md": "5ac14f21e5b21ad5cb89032e737a05b7148157859549a0c20762f177a395b425",
-      "figma-code-connect/references/api.md": "20220139d3d3b2ba2bdf5d6644554d60417bb19e167f57d2bd86394ca047d319",
+      "figma-code-connect/SKILL.md": "5dbc4a46f6cc881c611319cef0301ade0610bf9253ed5e975b81650d6fe1b51b",
+      "figma-code-connect/references/advanced-patterns.md": "178d391e10d4f0012c4507d1a467bc1a4fb54bcc8ef6e3e72638d770228a9f5f",
+      "figma-code-connect/references/api.md": "5b75822e4addd0b13a290bed7f389b79f078200b34a4b1513164b7fdbfaa8f0f",
       "figma-create-new-file/SKILL.md": "587730372664d33167c733e567939f675de48dd5b480a8c3c0593eb23b941985",
       "figma-design-to-code/SKILL.md": "8f55bc9bc72b53e7870460c0d50aa125d27aa76a07b8eec189f72fe6467cff7b",
-      "figma-generate-design/SKILL.md": "b4ad793738dbc26ffeaaee600279993482ee1c6274c45a64bdfc1eb0787ff662",
+      "figma-generate-design/SKILL.md": "1cef1b61de2564e57d53abd3248d0204cfd32813c8e536157e49567e075d1efc",
       "figma-generate-design/references/componentization.md": "e34c3efd4a1b17b8b9e88324e4821b3d62819e94d2556442fe8c5e0fb758c036",
       "figma-generate-design/references/discover-product-font.md": "947e5ba165f24daceba4a10f3dbdb720927ebd3fee937491fea99772a4d86d9c",
       "figma-generate-diagram/SKILL.md": "651f586e909a072c38ee88fa9dcf7bf24d317e6b86edcafc519c36f6abefacb9",
@@ -59,7 +59,7 @@
       "figma-generate-diagram/references/sequence.md": "78a217b18ecc56f7d280f73c972e6c31d0eb06c7edee932937706efce59766ac",
       "figma-generate-diagram/references/state.md": "7b477b19d6deb304c4fdcd6eb3aa8ff87b5caee6f2f8117e23d0c6cf1378fcd0",
       "figma-generate-diagram/references/workflow.md": "ebbee0943fcaab2686554f2ba8ce258ed0a845c83b4292f9a03090be1a263e84",
-      "figma-generate-library/SKILL.md": "21ddcdd89d9cfd4e70e3aa747f23176f0de5ba78324aaa5f7acba2c0270cc1ab",
+      "figma-generate-library/SKILL.md": "5246525a52c61651f70768e94af74768a5a08686662f1df4636f1095e39fef9f",
       "figma-generate-library/examples/bind-variables-to-component.md": "75c7fc1ca80b1308498bf9e1e315c458cdfa3b246f4db60e8d49e4dd7699a469",
       "figma-generate-library/examples/cleanup-orphans.md": "c1cf85c2a0a7a2ce74b1ce2470beda7207f385789ecf1159fb73bd290a6caf9e",
       "figma-generate-library/examples/create-component-with-variants.md": "d38e573a8b3706603e67e87dab892c2eb7c572af55ef1785141f2833b5ec2221",
@@ -69,7 +69,7 @@
       "figma-generate-library/examples/inspect-file-structure.md": "2ca0e4472ec050476dfb1b53d8189f50969b1bb4b7d37d8e524be9b4fe2100f4",
       "figma-generate-library/examples/rehydrate-state.md": "90d7f4242da09871c98c0dda731b80456d3e35c92a0c9c967d2fec91b5779281",
       "figma-generate-library/examples/validate-creation.md": "b7001642b36011ea32e8fa7e11bcbf027ddf2ea767403954a6189f327bf70fd2",
-      "figma-generate-library/references/code-connect-setup.md": "b53c470a29aeb25daa7d08687f26e25c5fb7a3da6eca9241838c73f39628088f",
+      "figma-generate-library/references/code-connect-setup.md": "7d98947bd8a18df63be0f791c6318f2329cc64a6c8cdf6f8809c9ced88d3d9d7",
       "figma-generate-library/references/component-creation.md": "b66ac6f71d914b05445b9a7ff63ee1faa09242f0e5d1ba621e3ed00f5329c069",
       "figma-generate-library/references/discovery-phase.md": "70b6d442ed14a776b23840c7afbbcb031d7bb25be6dd80fa9bb4dfe58809da1e",
       "figma-generate-library/references/documentation-creation.md": "781594d55b10ae9fd82dcb2f8a882dd043fa84621731f223e1b00ee9ed09a130",
@@ -84,7 +84,7 @@
       "figma-implement-motion/references/svg-and-path-motion.md": "9a4f6f5be18fd6d9c19218cec757fa3076d2cb54280bd7fdb0adc8df8d424879",
       "figma-implement-motion/references/unsupported-and-fallbacks.md": "978ee0ee450456d535f900610c175d130c39310ef6107658434700b5ac5c9650",
       "figma-swiftui/SKILL.md": "c0797cb8da398960e0fb0430c2bcbfa548ff2504e71dbddac9c96951509bd227",
-      "figma-swiftui/references/code-to-design.md": "24445f7162946cbadd45faacb1a226b091f7cc1ea57f45afa084cbe4cb3584af",
+      "figma-swiftui/references/code-to-design.md": "f819f8382de48d488fdbbcef3ed0a95b4637abd889d3ec5caa453ccdf10eb31c",
       "figma-swiftui/references/design-to-code.md": "e289dd04c23df5a2e225cbcb4d3a4056ffcb4efbcfbe9b680e73bc2ec0a3358c",
       "figma-use-figjam/SKILL.md": "94272ce1214200b44365484e3c7b50c7ae0a25dbda503e1931d920842b416185",
       "figma-use-figjam/references/batch-modify.md": "0f957178165dd73a09af32c127e3300059b919d08a6592c5aa9778f2c61f9766",

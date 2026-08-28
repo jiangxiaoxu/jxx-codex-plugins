@@ -1,10 +1,24 @@
 import type { LocalWorkspaceToolName } from "./tool-registry.js";
 
+export type FigmaWorkspaceCodeConnectWorkflowStepContractName =
+  | "figma_workspace_code_connect_inspect"
+  | "figma_workspace_code_connect_plan_context"
+  | "figma_workspace_code_connect_plan_suggestions"
+  | "figma_workspace_code_connect_plan_mapping_read"
+  | "figma_workspace_code_connect_apply_mapping_read"
+  | "figma_workspace_code_connect_apply"
+  | "figma_workspace_code_connect_verify_mapping_read";
+
+export type FigmaWorkspaceWrapperContractName =
+  | LocalWorkspaceToolName
+  | FigmaWorkspaceCodeConnectWorkflowStepContractName;
+
 export type FigmaWorkspaceWrapperCategory =
   | "fixed-execution"
   | "enhanced-wrapper"
   | "thin-wrapper"
   | "asset-capture-workflow"
+  | "code-connect-workflow"
   | "upstream-escape-hatch";
 
 export type FigmaWorkspaceWrapperTargetSupport =
@@ -12,6 +26,7 @@ export type FigmaWorkspaceWrapperTargetSupport =
   | "string-only"
   | "node-scoped"
   | "node-scoped-list"
+  | "file-scoped"
   | "freeform-upstream";
 
 export interface FigmaWorkspaceWrapperOutputPolicy {
@@ -30,7 +45,7 @@ export interface FigmaWorkspaceWrapperParameterMatrix {
 }
 
 export interface FigmaWorkspaceWrapperContract {
-  toolName: LocalWorkspaceToolName;
+  toolName: FigmaWorkspaceWrapperContractName;
   category: FigmaWorkspaceWrapperCategory;
   upstreamToolName?: string;
   upstreamKind?: string;
@@ -81,6 +96,11 @@ export const FIGMA_WORKSPACE_COVERED_UPSTREAM_TOOL_NAMES = [
   "search_design_system",
   "get_libraries",
   "get_variable_defs",
+  "list_file_components_for_code_connect",
+  "get_context_for_code_connect",
+  "get_code_connect_suggestions",
+  "get_code_connect_map",
+  "send_code_connect_mappings",
 ] as const;
 
 export const FIGMA_WORKSPACE_UPSTREAM_ESCAPE_HATCH_GUIDANCE =
@@ -274,13 +294,13 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     category: "asset-capture-workflow",
     upstreamToolName: "upload_assets",
     upstreamKind: "asset upload/fill",
-    requiredUpstreamProperties: ["fileKey", "count", "nodeId", "scaleMode"],
-    optionalUpstreamProperties: ["batchCommit"],
+    requiredUpstreamProperties: ["fileKey", "count", "nodeIds", "scaleMode"],
+    optionalUpstreamProperties: ["batchCommit", "nodeId"],
     parameterMatrix: parameterMatrix({
-      requiredUpstream: ["fileKey"],
-      derivedUpstream: ["fileKey", "nodeId", "scaleMode"],
+      requiredUpstream: ["fileKey", "nodeIds"],
+      derivedUpstream: ["fileKey", "nodeIds", "scaleMode"],
       fixedUpstream: ["count"],
-      hiddenUpstreamOptional: ["batchCommit"],
+      hiddenUpstreamOptional: ["batchCommit", "nodeId"],
     }),
     targetSupport: "node-scoped-list",
     outputPolicy: {
@@ -331,6 +351,107 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     },
   },
   {
+    toolName: "figma_workspace_code_connect_inspect",
+    category: "code-connect-workflow",
+    upstreamToolName: "list_file_components_for_code_connect",
+    upstreamKind: "Code Connect component discovery",
+    requiredUpstreamProperties: ["fileKey"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey"],
+      derivedUpstream: ["fileKey"],
+    }),
+    targetSupport: "file-scoped",
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+  },
+  {
+    toolName: "figma_workspace_code_connect_plan_context",
+    category: "code-connect-workflow",
+    upstreamToolName: "get_context_for_code_connect",
+    upstreamKind: "Code Connect component context",
+    requiredUpstreamProperties: ["fileKey", "nodeId"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      derivedUpstream: ["fileKey", "nodeId"],
+    }),
+    targetSupport: "node-scoped",
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+  },
+  {
+    toolName: "figma_workspace_code_connect_plan_suggestions",
+    category: "code-connect-workflow",
+    upstreamToolName: "get_code_connect_suggestions",
+    upstreamKind: "Code Connect suggestions",
+    requiredUpstreamProperties: ["fileKey", "nodeId"],
+    optionalUpstreamProperties: ["excludeMappingPrompt"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      hiddenUpstreamOptional: ["excludeMappingPrompt"],
+    }),
+    targetSupport: "node-scoped",
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+  },
+  {
+    toolName: "figma_workspace_code_connect_plan_mapping_read",
+    category: "code-connect-workflow",
+    upstreamToolName: "get_code_connect_map",
+    upstreamKind: "Code Connect mapping read",
+    requiredUpstreamProperties: ["fileKey", "nodeId"],
+    optionalUpstreamProperties: ["codeConnectLabel"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      hiddenUpstreamOptional: ["codeConnectLabel"],
+    }),
+    targetSupport: "node-scoped",
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+  },
+  {
+    toolName: "figma_workspace_code_connect_apply_mapping_read",
+    category: "code-connect-workflow",
+    upstreamToolName: "get_code_connect_map",
+    upstreamKind: "Code Connect mapping stale-plan read",
+    requiredUpstreamProperties: ["fileKey", "nodeId"],
+    optionalUpstreamProperties: ["codeConnectLabel"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      hiddenUpstreamOptional: ["codeConnectLabel"],
+    }),
+    targetSupport: "node-scoped",
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+  },
+  {
+    toolName: "figma_workspace_code_connect_apply",
+    category: "code-connect-workflow",
+    upstreamToolName: "send_code_connect_mappings",
+    upstreamKind: "Code Connect bulk mapping write",
+    requiredUpstreamProperties: ["fileKey", "nodeId", "mappings"],
+    optionalUpstreamProperties: ["clientLanguages", "clientFrameworks"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId", "mappings"],
+      derivedUpstream: ["fileKey", "nodeId", "mappings"],
+      hiddenUpstreamOptional: ["clientLanguages", "clientFrameworks"],
+    }),
+    targetSupport: "node-scoped",
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+  },
+  {
+    toolName: "figma_workspace_code_connect_verify_mapping_read",
+    category: "code-connect-workflow",
+    upstreamToolName: "get_code_connect_map",
+    upstreamKind: "Code Connect mapping verification read",
+    requiredUpstreamProperties: ["fileKey", "nodeId"],
+    optionalUpstreamProperties: ["codeConnectLabel"],
+    parameterMatrix: parameterMatrix({
+      requiredUpstream: ["fileKey", "nodeId"],
+      derivedUpstream: ["fileKey", "nodeId"],
+      hiddenUpstreamOptional: ["codeConnectLabel"],
+    }),
+    targetSupport: "node-scoped",
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+  },
+  {
     toolName: "figma_workspace_call_upstream_tool",
     category: "upstream-escape-hatch",
     parameterMatrix: parameterMatrix({}),
@@ -343,18 +464,18 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
   },
 ] as const satisfies readonly FigmaWorkspaceWrapperContract[];
 
-const WRAPPER_CONTRACTS_BY_TOOL = new Map<LocalWorkspaceToolName, FigmaWorkspaceWrapperContract>(
+const WRAPPER_CONTRACTS_BY_TOOL = new Map<FigmaWorkspaceWrapperContractName, FigmaWorkspaceWrapperContract>(
   FIGMA_WORKSPACE_WRAPPER_CONTRACTS.map((contract) => [contract.toolName, contract]),
 );
 
 export function getFigmaWorkspaceWrapperContract(
-  toolName: LocalWorkspaceToolName,
+  toolName: FigmaWorkspaceWrapperContractName,
 ): FigmaWorkspaceWrapperContract | undefined {
   return WRAPPER_CONTRACTS_BY_TOOL.get(toolName);
 }
 
 export function requireFigmaWorkspaceWrapperContract(
-  toolName: LocalWorkspaceToolName,
+  toolName: FigmaWorkspaceWrapperContractName,
 ): FigmaWorkspaceWrapperContract {
   const contract = getFigmaWorkspaceWrapperContract(toolName);
   if (!contract) {

@@ -291,9 +291,11 @@ test("asset upload accepts the 16 MiB boundary and streams an exact Content-Leng
   });
   const baseUrl = await listen(server);
   const calls = [];
+  const callArguments = [];
   const client = createFigmaWorkspaceClient({
-    client: fakeUpstream(uploadTools(), ({ name }) => {
+    client: fakeUpstream(uploadTools(), ({ name, args }) => {
       calls.push(name);
+      callArguments.push(args);
       return textResult({ ok: true, result: { uploads: [{ uploadUrl: `${baseUrl}/upload` }] } });
     }),
   });
@@ -312,6 +314,61 @@ test("asset upload accepts the 16 MiB boundary and streams an exact Content-Leng
     assert.equal(receivedLength, String(payload.byteLength));
     assert.equal(receivedBytes, payload.byteLength);
     assert.deepEqual(calls, ["upload_assets"]);
+    assert.deepEqual(callArguments, [{
+      fileKey: "UploadStreamFileKey123",
+      count: 1,
+      nodeIds: ["1:1"],
+      scaleMode: "FILL",
+    }]);
+  } finally {
+    await client.close();
+    server.closeAllConnections?.();
+    await new Promise((done) => server.close(done));
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("asset upload accepts 64 manifest items as 64 sequential count-one nodeIds requests", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-upload-64-"));
+  const assetPath = resolve(tempDir, "asset.png");
+  await writeFile(assetPath, PNG);
+  let uploads = 0;
+  const server = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      uploads += 1;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, imageHash: `hash-${uploads}` }));
+    });
+  });
+  const baseUrl = await listen(server);
+  const argumentsByCall = [];
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(uploadTools(), ({ args }) => {
+      argumentsByCall.push(args);
+      return textResult({ ok: true, result: { uploads: [{ uploadUrl: `${baseUrl}/upload` }] } });
+    }),
+  });
+  try {
+    const result = await client.applyAssetManifest({
+      file: "UploadSixtyFourFileKey",
+      surface: "design",
+      outputDir: tempDir,
+      validateTargets: false,
+      assets: Array.from({ length: 64 }, (_, index) => ({
+        path: assetPath,
+        target: { fileKey: "UploadSixtyFourFileKey", nodeId: `7:${index + 1}` },
+      })),
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(uploads, 64);
+    assert.equal(argumentsByCall.length, 64);
+    assert.deepEqual(argumentsByCall, Array.from({ length: 64 }, (_, index) => ({
+      fileKey: "UploadSixtyFourFileKey",
+      count: 1,
+      nodeIds: [`7:${index + 1}`],
+      scaleMode: "FILL",
+    })));
   } finally {
     await client.close();
     server.closeAllConnections?.();
@@ -521,7 +578,7 @@ function uploadTools() {
       type: "object",
       properties: {
         fileKey: { type: "string" }, count: { type: "number" },
-        nodeId: { type: "string" }, scaleMode: { type: "string" },
+        nodeId: { type: "string" }, nodeIds: { type: "array", items: { type: "string" } }, scaleMode: { type: "string" },
       },
     },
   }];
