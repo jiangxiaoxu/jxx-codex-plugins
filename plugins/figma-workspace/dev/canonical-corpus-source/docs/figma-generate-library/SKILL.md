@@ -91,12 +91,12 @@ For EACH component (in dependency order: atoms before molecules), run the checkl
 - [ ] 3e. Link properties to child nodes
 - [ ] 3f. Add page documentation (title, description, usage notes)
 - [ ] 3g. Validate with `figma:metadata` (structure) and `figma:capture` followed by `view_image` (visual)
-- [ ] 3h. Optional: lightweight Code Connect mapping while context is fresh
+- [ ] 3h. Optional: inspect or plan a Code Connect mapping with `figma:code-connect:inspect` / `figma:code-connect:plan` while context is fresh; apply only after explicit confirmation
 - [ ] Exit criteria met: variant count correct, all bindings verified, screenshot looks right
 
 ### Phase 4: INTEGRATION + QA (final pass)
 
-- [ ] 4a. Finalize all Code Connect mappings
+- [ ] 4a. Verify planned Code Connect mappings with `figma:code-connect:verify`; apply confirmed changes with `figma:code-connect:apply --confirm-plan`
 - [ ] 4b. Accessibility audit (contrast, min touch targets, focus visibility)
 - [ ] 4c. Naming audit (no duplicates, no unnamed nodes, consistent casing)
 - [ ] 4d. Unresolved bindings audit (no hardcoded fills/strokes remaining)

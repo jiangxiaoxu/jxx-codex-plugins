@@ -27,6 +27,11 @@ const publicScripts = [
   "figma:variables",
   "figma:design-system",
   "figma:libraries",
+  "figma:code-connect:help",
+  "figma:code-connect:inspect",
+  "figma:code-connect:plan",
+  "figma:code-connect:apply",
+  "figma:code-connect:verify",
   "figma:run",
   "figma:capture",
   "figma:assets:apply",
@@ -41,6 +46,7 @@ const removedPublicScripts = [
   "figma:docs",
   "figma:api",
   "figma:upstream",
+  "figma:code-connect",
   "figma:guidance",
   "figma:open",
   "figma:sessions",
@@ -141,7 +147,7 @@ test("fixed public leaf wrappers are complete, unique, and separate from mainten
   }
 });
 
-test("release metadata keeps the 0.5.4 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
+test("release metadata keeps the 0.6.0 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
   const [manifest, packageJson, cliPackageJson, cliLockfile, authConstants] = await Promise.all([
     readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
@@ -151,7 +157,7 @@ test("release metadata keeps the 0.5.4 plugin, CLI package, lockfile, and OAuth 
   ]);
   const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
 
-  assert.equal(manifest.version, "0.5.4");
+  assert.equal(manifest.version, "0.6.0");
   assert.equal(packageJson.version, manifest.version);
   assert.equal(cliPackageJson.version, manifest.version);
   assert.equal(cliLockfile.version, manifest.version);
@@ -174,7 +180,7 @@ test("every public leaf emits banner-free help and family/root help rejects forw
     assert.equal(result.stderr, "", scriptName);
   }
 
-  for (const scriptName of ["figma:help", "figma:docs:help", "figma:api:help", "figma:upstream:help"]) {
+  for (const scriptName of ["figma:help", "figma:docs:help", "figma:api:help", "figma:upstream:help", "figma:code-connect:help"]) {
     const result = runNpm(["--silent", "run", scriptName, "--", "unexpected"], {
       cwd: pluginRoot,
       encoding: "utf8",

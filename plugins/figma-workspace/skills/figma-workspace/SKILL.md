@@ -75,6 +75,7 @@ Prefer these English keyword patterns as search seeds. Add the known surface and
 | Execute Plugin API | `figma:run` | Explicit file plus a local `.figma.ts` script or stdin source. |
 | Move assets | `figma:assets:apply`, `figma:assets:download` | Every manifest or operation target is explicit. |
 | Verify visually | `figma:capture` | Explicit node target; inspect the saved PNG with `view_image`. |
+| Connect code components | `figma:code-connect:inspect`, `figma:code-connect:plan`, `figma:code-connect:apply`, `figma:code-connect:verify` | Design file only; use the same explicit `--file` for all four steps. |
 | Use an official capability through its live schema | `figma:upstream:help`, `figma:upstream:list`, `figma:upstream:read`, `figma:upstream:call` | `list`/`read` are targetless. `coverage` can point to a first-class command but never blocks `call`. Read the selected live schema; provide only required target fields and obtain explicit confirmation for marked destructive, external, credit/cost, or asset-upload actions. |
 
 ## Implement And Verify
@@ -91,6 +92,17 @@ Prefer these English keyword patterns as search seeds. Add the known surface and
 4. Capture visible results through queued `$.capture` or standalone `figma:capture`, then inspect every generated or edited PNG with `view_image` before reporting visual success.
 5. Prefer first-class commands for their typed safeguards. `figma:upstream:list` and `figma:upstream:read` show live schema plus local `coverage`; `figma:upstream:call` remains available for every official tool when the live schema is the required contract. Before calling, follow the selected description and schema, including its confirmation requirements.
 
+### Code Connect
+
+Use the Design-only Code Connect workflow for simple mappings between published Figma components and existing code UI components:
+
+1. `figma:code-connect:inspect --file <Design URL|fileKey>` discovers components available for mapping.
+2. `figma:code-connect:plan --file <Design URL|fileKey> --input <manifest.json|->` validates an explicit manifest and writes an immutable plan with a `planDigest`.
+3. `figma:code-connect:apply --file <Design URL|fileKey> --plan <path> --confirm-plan <planDigest>` is the only write command. Missing or mismatched confirmation, an invalid target/artifact, stale snapshots, and unapproved conflicts return `not_started` before dispatch; otherwise it bulk-writes and verifies.
+4. `figma:code-connect:verify --file <Design URL|fileKey> --plan <path>` safely reports `matched`, `missing`, `mismatch`, or `unavailable`.
+
+Manifest mappings use simple node IDs plus `componentName`, `source`, and the live `label`; there are 1 to 64 unique `(nodeId, label)` entries. `conflictPolicy` defaults to `fail`; use `replace` only intentionally. `template` and `templateDataJson` are rejected, and the CLI does not scan or validate source files. Keep the plan and digest unchanged. After `outcome_unknown`, run `verify` before any retry. Use the generic `figma:upstream:*` path for uncovered capabilities; do not create Code Connect template files or pass them to `figma:run`.
+
 Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture, local artifacts, and mutation recovery details.
 
 ## Local Artifacts And Mutation Results
@@ -99,7 +111,7 @@ Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture
 - Treat `outputFiles.cliResultFile` as the machine-readable result. Discover its structure and extract only relevant content before expanding large values; do not treat the Restricted Markdown envelope as JSON.
 - Every `figma:upstream:call` writes a sanitized visible-protocol result sidecar. Typed commands write an upstream-response sidecar only for a remote error, inline truncation, or unrendered non-text content. These sidecars omit protocol `_meta` and tool annotations, while preserving an ordinary `_meta` field inside `structuredContent` business data.
 - Use explicit `--output-dir`, `--image-file`, or download output options when the caller needs a durable local location. Managed paths reject links and reparse points and publish atomically.
-- The temporary fileKey lock covers `figma:run`, `figma:assets:apply`, and `figma:upstream:call` only when that call resolves a fileKey. This is coordination only, not distributed durability.
+- The temporary fileKey lock covers `figma:run`, `figma:assets:apply`, `figma:code-connect:apply`, and `figma:upstream:call` only when that call resolves a fileKey. This is coordination only, not distributed durability.
 - `figma:run` and `figma:upstream:call` report `executionOutcome`: `not_started`, `failed_atomic`, `succeeded`, or `outcome_unknown` when they dispatch a mutation. A direct returned `use_figma` script error is `failed_atomic`: Figma confirmed no file changes, so repair and retry safely. A post-dispatch error from another direct official tool remains `outcome_unknown` unless completion is independently confirmed.
 - Repair and rerun `not_started` only because dispatch did not occur. Treat `succeeded` as confirmed remote execution even if later local output processing fails.
 - For `failed_atomic`, stdout directly provides a compact remote error code/message and `Status: failed atomically`; repair the script and retry safely. `outcome_unknown` means completion was not confirmed, including response loss or truncation: follow `retryGuidance`, inspect, read back, or tag-reconcile before deciding whether any retry is safe. Never blindly replay a mutation when its outcome is unknown.

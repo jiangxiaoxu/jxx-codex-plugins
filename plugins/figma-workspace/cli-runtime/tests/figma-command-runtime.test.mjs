@@ -72,7 +72,7 @@ test("root and family help expose only stateless fixed leaf commands", async () 
   assert.doesNotMatch(root.stdout.join(""), /Every remote leaf command receives a complete Figma URL\/file key and node target/u);
   assert.doesNotMatch(root.stdout.join(""), /state-file|session-file|figma:open|task:prepare|script:run|figma:eval|figma:guidance/u);
 
-  for (const family of ["docs", "api", "upstream"]) {
+  for (const family of ["docs", "api", "upstream", "code-connect"]) {
     const current = harness();
     assert.equal(await runFigmaCommand(family, [], current.dependencies), 0);
     assert.match(current.stdout.join(""), new RegExp(`^# figma:${family}:help`, "mu"));
@@ -236,6 +236,61 @@ test("upstream discovery rejects public inline sidecar options before dispatch",
     assert.equal(current.calls.length, 0, command);
     assert.match(current.stderr.join(""), /Unknown option/iu, command);
   }
+});
+
+test("Code Connect fixed leaves enforce Design targets and preserve explicit workflow artifacts", async () => {
+  const manifest = JSON.stringify({
+    schemaVersion: 1,
+    scope: { nodeId: "1:2" },
+    client: { languages: "typescript", frameworks: "react" },
+    mappings: [{ nodeId: "3:4", componentName: "Button", source: "src/Button.tsx", label: "React" }],
+  });
+  const plan = harness({ stdin: manifest });
+  assert.equal(await runFigmaCommand("code-connect:plan", [
+    "--file", FILE_KEY, "--surface", "design", "--input", "-", "--output-plan", "plan.json",
+  ], plan.dependencies), 0);
+  assert.deepEqual(plan.calls[0], {
+    argv: ["code-connect-plan", "--input", "-"],
+    input: {
+      file: FILE_KEY,
+      surface: "design",
+      manifest: JSON.parse(manifest),
+      outputPlanPath: resolve("plan.json"),
+      outputDir: resolve("."),
+    },
+  });
+
+  const apply = harness();
+  const digest = "a".repeat(64);
+  assert.equal(await runFigmaCommand("code-connect:apply", [
+    "--file", `https://www.figma.com/design/${FILE_KEY}/UI`, "--plan", "plan.json", "--confirm-plan", digest,
+  ], apply.dependencies), 0);
+  assert.deepEqual(apply.calls[0], {
+    argv: ["code-connect-apply", "--input", "-"],
+    input: { file: `https://www.figma.com/design/${FILE_KEY}/UI`, planPath: resolve("plan.json"), confirmPlan: digest },
+  });
+
+  const verify = harness();
+  assert.equal(await runFigmaCommand("code-connect:verify", [
+    "--file", FILE_KEY, "--surface", "design", "--plan", "plan.json",
+  ], verify.dependencies), 0);
+  assert.equal(verify.calls[0].argv[0], "code-connect-verify");
+
+  for (const [command, argv] of [
+    ["code-connect:inspect", ["--file", FILE_KEY]],
+    ["code-connect:plan", ["--file", FILE_KEY, "--surface", "figjam", "--input", "-"]],
+    ["code-connect:plan", ["--file", `https://www.figma.com/board/${FILE_KEY}/Board`, "--input", "-"]],
+    ["code-connect:verify", ["--file", FILE_KEY, "--surface", "design", "--plan", "plan.json", "--unknown", "x"]],
+  ]) {
+    const invalid = harness({ stdin: manifest });
+    assert.equal(await runFigmaCommand(command, argv, invalid.dependencies), 2, command);
+    assert.equal(invalid.calls.length, 0, command);
+  }
+  const deferredConfirmation = harness();
+  assert.equal(await runFigmaCommand("code-connect:apply", ["--file", FILE_KEY, "--surface", "design", "--plan", "plan.json"], deferredConfirmation.dependencies), 0);
+  assert.equal("confirmPlan" in deferredConfirmation.calls[0].input, false);
+  assert.match(formatRootHelp(), /figma:code-connect:plan/u);
+  assert.match(formatCommandHelp("code-connect:apply"), /only Code Connect write command/u);
 });
 
 test("removed umbrella and stateful commands fail as usage errors", async () => {

@@ -160,6 +160,10 @@ test("design-context wrapper coverage classifies upstream skillNames as hidden",
   );
 });
 
+test("candidate wrapper coverage remains complete after upload_assets nodeIds adaptation", () => {
+  assert.deepEqual(inspectFigmaUpstreamWrapperCoverage(wrapperCompatibleSnapshot()), []);
+});
+
 test("required and enum reorder are set-equivalent while type and unknown drift stay blocking", () => {
   const baseline = snapshot({
     tools: {
@@ -590,6 +594,7 @@ function wrapperCompatibleSnapshot() {
         ...properties("count", "scaleMode", "batchCommit"),
         fileKey: fileKey(),
         nodeId: simpleNodeId(),
+        nodeIds: { type: "array", items: simpleNodeId(), minItems: 1, maxItems: 60 },
       }),
       download_assets: tool("download_assets", ["fileKey", "nodeId"], {
         ...properties("defaultFormat", "defaultScale"),
@@ -629,6 +634,28 @@ function wrapperCompatibleSnapshot() {
         fileKey: fileKey(),
       }),
       get_variable_defs: tool("get_variable_defs", ["fileKey", "nodeId"], {
+        fileKey: fileKey(),
+        nodeId: simpleNodeId(),
+      }),
+      list_file_components_for_code_connect: tool("list_file_components_for_code_connect", ["fileKey"], {
+        fileKey: fileKey(),
+      }),
+      get_context_for_code_connect: tool("get_context_for_code_connect", ["fileKey", "nodeId"], {
+        fileKey: fileKey(),
+        nodeId: simpleNodeId(),
+      }),
+      get_code_connect_suggestions: tool("get_code_connect_suggestions", ["fileKey", "nodeId"], {
+        ...properties("excludeMappingPrompt"),
+        fileKey: fileKey(),
+        nodeId: simpleNodeId(),
+      }),
+      get_code_connect_map: tool("get_code_connect_map", ["fileKey", "nodeId"], {
+        ...properties("codeConnectLabel"),
+        fileKey: fileKey(),
+        nodeId: simpleNodeId(),
+      }),
+      send_code_connect_mappings: tool("send_code_connect_mappings", ["fileKey", "nodeId", "mappings"], {
+        ...properties("clientLanguages", "clientFrameworks", "mappings"),
         fileKey: fileKey(),
         nodeId: simpleNodeId(),
       }),

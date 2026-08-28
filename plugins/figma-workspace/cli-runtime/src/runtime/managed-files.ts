@@ -338,6 +338,7 @@ async function ensureManagedRoot(
   root: string,
   operations: ManagedFileSystemOperations,
 ): Promise<{ fingerprint: PathFingerprint }> {
+  await assertManagedRootAncestors(root, operations);
   try {
     return { fingerprint: await inspectDirectory(root, operations) };
   } catch (error) {
@@ -371,6 +372,26 @@ async function ensureManagedRoot(
       missing.push(existing);
       existing = parent;
     }
+  }
+}
+
+async function assertManagedRootAncestors(
+  root: string,
+  operations: ManagedFileSystemOperations,
+): Promise<void> {
+  let current = root;
+  while (true) {
+    try {
+      const metadata = await operations.lstat(current);
+      if (metadata.isSymbolicLink()) {
+        throw new Error(`Managed root traverses a symlink, junction, or reparse point: ${current}`);
+      }
+    } catch (error) {
+      if (!hasErrorCode(error, "ENOENT")) throw error;
+    }
+    const parent = dirname(current);
+    if (parent === current) return;
+    current = parent;
   }
 }
 

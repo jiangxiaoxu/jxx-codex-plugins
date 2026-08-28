@@ -53,21 +53,9 @@ You need three things from the design system: **components** (buttons, cards, et
 #### 2a: Discover components
 
 
-**2a-i — REQUIRED: Check Code Connect for needed components.** Starting from the component list you built in Step 1, check whether each component has a parserless Code Connect template in the codebase. This workflow supports only `*.figma.ts` files that use `figma.code`; do not create or use `.figma.tsx` / `figma.connect()` artifacts. For each component you need (e.g., Button, Card, Input), search by component name (for example, `**/Button.figma.ts`, `**/Card.figma.ts`). Only read files that match components you actually need.
+**2a-i — REQUIRED: Check Code Connect for needed components.** Use `figma:code-connect:inspect --file <Design URL|fileKey>` to discover published components available for mapping, then use `figma:code-connect:verify` with an existing plan when a mapping must be confirmed. Code Connect is a simple component-to-code registry; it does not provide component keys for `figma:run` imports and does not use template files. Do not search for or create `.figma.ts`/`.figma.js` Code Connect artifacts.
 
-From each matching Code Connect file, extract the Figma component URL. Parse `fileKey` and `nodeId` from the URL (convert hyphens to colons: `123-456` → `123:456`). Then resolve component keys via a local `.figma.ts` script executed with `figma:run`:
-
-**Example:** Code Connect file contains `// url=https://figma.com/design/ABC123/File?node-id=609-35535`. Parse `fileKey` = `ABC123`, `nodeId` = `609:35535`. Run a local `.figma.ts` script executed with `figma:run` against the **library file** (fileKey `ABC123`, not the target file) to resolve the key:
-
-```js
-const node = await figma.getNodeByIdAsync("609:35535");
-const set = node?.parent?.type === "COMPONENT_SET" ? node.parent : node;
-return { componentKey: set.key };
-```
-
-Batch multiple lookups in a single call. Use the returned keys with `importComponentSetByKeyAsync()` in Step 4.
-
-Mark resolved components. If all components are resolved, skip 2a-ii and 2a-iii. If none of the needed components have Code Connect files, proceed to 2a-ii.
+If a needed component is not already mapped, prepare an explicit manifest and run `figma:code-connect:plan --file <Design URL|fileKey> --input <manifest.json|->`. Review its actions and use `figma:code-connect:apply --plan <path> --confirm-plan <planDigest>` only after explicit confirmation. The mapping workflow is separate from importing component instances; continue with the design-system discovery steps below for unresolved visual components.
 
 **2a-ii — REQUIRED if unresolved components remain: Inspect existing screens.** Check if the target file already contains screens using the same design system. A single `figma:run` call that walks an existing frame's instances gives you an exact, authoritative component map:
 

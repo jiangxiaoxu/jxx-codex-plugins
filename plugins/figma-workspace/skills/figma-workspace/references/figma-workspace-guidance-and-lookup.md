@@ -13,7 +13,7 @@ Use this static reference to route task documentation and Plugin API questions. 
 
 | Task family | Surface | English query | Use for | Typical next commands |
 | --- | --- | --- | --- | --- |
-| `code-connect` | Design | `component code mapping` | Code Connect mapping, metadata, and component-to-code workflows | `figma:docs:search`, `figma:design-context`, then an explicitly discovered official capability if needed |
+| `code-connect` | Design | `component code mapping` | Simple Code Connect component-to-code mappings | `figma:code-connect:inspect`, `figma:code-connect:plan`, `figma:code-connect:apply`, `figma:code-connect:verify` |
 | `create-file` | Design, FigJam, Slides | `new Figma file` | New file creation and surface selection | `figma:docs:search`, then `figma:upstream:list`, `figma:upstream:read`, `figma:upstream:call` when required |
 | `design-editing` | Design | `text editing` | Text, layout, components, variables, and general edits | `figma:api:search`, shell-created `.figma.ts`, `figma:run` |
 | `design-generation` | Design | `create interface design` | Generate interfaces, screens, mockups, or structured design content | shell-created `.figma.ts`, `figma:run`, `figma:capture` |

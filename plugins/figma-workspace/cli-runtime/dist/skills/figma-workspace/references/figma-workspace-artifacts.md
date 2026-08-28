@@ -13,7 +13,7 @@ Use this reference when an invocation writes local outputs or needs same-machine
 
 ## Mutation Coordination And Recovery
 
-- The temporary same-machine fileKey lock covers `figma:run`, `figma:assets:apply`, and `figma:upstream:call` only when that call resolves a fileKey. It does not cover every mutation; read-only calls, captures, and asset downloads do not take it.
+- The temporary same-machine fileKey lock covers `figma:run`, `figma:assets:apply`, `figma:code-connect:apply`, and `figma:upstream:call` only when that call resolves a fileKey. It does not cover every mutation; read-only calls, captures, and asset downloads do not take it.
 - The lock coordinates local processes only. It does not provide distributed, network-share, shared-volume, or power-loss durability.
 - When Figma directly returns a `use_figma` script error, `executionOutcome: "failed_atomic"` and `Status: failed atomically` confirm no file changes. This applies to `figma:run` and direct `figma:upstream:call`; stdout has a compact error summary and the sidecar keeps visible-protocol diagnostics. Repair and retry safely. A post-dispatch error from another direct official tool is `outcome_unknown`, so read back and reconcile before retrying.
 - If local artifact or lock post-processing fails after a confirmed remote mutation, stdout reports `Status: failed after execution`. Preserve the result and repair the named local stage instead of rerunning the mutation.

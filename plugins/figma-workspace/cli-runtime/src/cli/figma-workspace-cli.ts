@@ -8,6 +8,10 @@ import {
   INLINE_RESULT_LIMIT_MIN,
   type FigmaWorkspaceApplyAssetManifestArguments,
   type FigmaWorkspaceCallUpstreamToolArguments,
+  type FigmaWorkspaceCodeConnectApplyArguments,
+  type FigmaWorkspaceCodeConnectInspectArguments,
+  type FigmaWorkspaceCodeConnectPlanArguments,
+  type FigmaWorkspaceCodeConnectVerifyArguments,
   type FigmaWorkspaceCaptureNodeArguments,
   type FigmaWorkspaceDocsArguments,
   type FigmaWorkspaceDoctorArguments,
@@ -56,6 +60,10 @@ export const FIGMA_WORKSPACE_CLI_COMMANDS = [
   "get-libraries",
   "get-variable-defs",
   "call-upstream-tool",
+  "code-connect-inspect",
+  "code-connect-plan",
+  "code-connect-apply",
+  "code-connect-verify",
   "lookup",
   "docs",
   "doctor",
@@ -226,6 +234,10 @@ export async function invokeFigmaWorkspaceCommand(
     case "get-libraries": return client.getLibraries(input as FigmaWorkspaceGetLibrariesArguments);
     case "get-variable-defs": return client.getVariableDefs(input as FigmaWorkspaceGetVariableDefsArguments);
     case "call-upstream-tool": return client.callUpstreamTool(input as FigmaWorkspaceCallUpstreamToolArguments);
+    case "code-connect-inspect": return client.codeConnectInspect(input as FigmaWorkspaceCodeConnectInspectArguments);
+    case "code-connect-plan": return client.codeConnectPlan(input as FigmaWorkspaceCodeConnectPlanArguments);
+    case "code-connect-apply": return client.codeConnectApply(input as FigmaWorkspaceCodeConnectApplyArguments);
+    case "code-connect-verify": return client.codeConnectVerify(input as FigmaWorkspaceCodeConnectVerifyArguments);
     case "lookup": return client.lookup(input as FigmaWorkspaceLookupArguments);
     case "docs": return client.docs(input as FigmaWorkspaceDocsArguments);
     case "doctor": return client.doctor(input as FigmaWorkspaceDoctorArguments);
@@ -530,12 +542,12 @@ function resolveInvocationOutputRoot(value: unknown, invocationId: string, cwd: 
 }
 
 function needsLocalOutput(command: FigmaWorkspaceCliCommand, input: Record<string, unknown>): boolean {
-  return ["run", "apply-asset-manifest", "download-assets", "capture-node"].includes(command)
+  return ["run", "apply-asset-manifest", "download-assets", "capture-node", "code-connect-plan"].includes(command)
     || typeof input.outputDir === "string";
 }
 
 function isMutationCommand(command: FigmaWorkspaceCliCommand, fileKey: string | undefined): boolean {
-  if (command === "run" || command === "apply-asset-manifest") return true;
+  if (command === "run" || command === "apply-asset-manifest" || command === "code-connect-apply") return true;
   return command === "call-upstream-tool" && fileKey !== undefined;
 }
 

@@ -11,6 +11,7 @@ Use this reference to choose a public command family. Generated help and typed r
 - Use `figma:run` for every native Plugin API script, whether it is a small inspection or a repairable mutation. The shell owns local `.figma.ts` creation.
 - Use `figma:assets:apply` for prepared local assets, `figma:assets:download` for official downloads, and `figma:capture` or queued `$.capture` for visual QA.
 - Prefer a first-class command when its typed safeguards apply. Use `figma:upstream:list` and `figma:upstream:read` before `figma:upstream:call` whenever the live official schema is required; local `coverage` indicates a first-class alternative but never blocks the direct call. Obtain explicit user confirmation for any action whose selected description marks destructive, external, credit/cost-bearing, or an asset upload.
+- For simple Code Connect mappings, use `figma:code-connect:inspect` -> `figma:code-connect:plan` -> `figma:code-connect:apply --confirm-plan` -> `figma:code-connect:verify`. This workflow is Design-only, manifest-driven, and rejects template artifacts; keep its immutable plan and digest for recovery.
 
 ## Shared Rules
 

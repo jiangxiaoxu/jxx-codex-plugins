@@ -1,6 +1,6 @@
 # Figma Workspace
 
-Figma Workspace 0.5.4 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
+Figma Workspace 0.6.0 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
 
 ## Quick Start
 
@@ -22,6 +22,8 @@ Use generated `--help` for each exact input schema, option, limit, and JSON stdi
 
 Every command that requires a Figma file or node target supplies it in that invocation. `figma:upstream:list` and `figma:upstream:read` are targetless; `figma:upstream:call` follows the selected live schema instead of inheriting a target. Use a full file or node URL whenever possible. A node URL's `node-id=230-2` converts to Plugin API ID `230:2`; a bare node ID is invalid without an explicit file. URLs infer Design, FigJam, or Slides; a raw fileKey needs `--surface` when the selected command needs a surface.
 
+For Code Connect, use the Design-only sequence `figma:code-connect:inspect` -> `figma:code-connect:plan` -> `figma:code-connect:apply --confirm-plan` -> `figma:code-connect:verify`. Supply an explicit mapping manifest with simple node IDs, `componentName`, `source`, and a live-contract `label` (1 to 64 unique entries). Plans are immutable and digest-bound; `apply` is the only write, rejects stale snapshots and unapproved conflicts, and must not be replayed after `outcome_unknown` until `verify` reconciles the remote state. Template fields and `.figma.ts`/`.figma.js` Code Connect artifacts are unsupported; use generic `figma:upstream:*` for uncovered capabilities and `figma:run` only for native Plugin API scripts.
+
 For a normal edit, use docs/API lookup to choose the flow, create a local `.figma.ts` script in the shell, run `figma:run`, then capture and inspect visible output with `view_image`. Use `figma:metadata` before targeted `figma:inspect` when broad structure discovery is needed. Prefer first-class context, asset, and capture commands for typed safeguards. `figma:upstream:list` and `figma:upstream:read` show the live schema and local `coverage`; that hint never blocks `figma:upstream:call` of a covered official tool. Before any direct call, read its selected description and schema; obtain explicit user confirmation when it marks an action as destructive, external, credit/cost-bearing, or an asset upload.
 
 ## Mutation Recovery
@@ -39,7 +41,7 @@ For `failed_atomic`, stdout directly shows a compact remote error code/message a
 
 The CLI does not create a persistent workspace record. Shells own `.figma.ts` creation and repeat a Figma target only for operations that require one. Pure inline reads do not create local files. Every `figma:upstream:call` writes a sanitized visible-protocol sidecar; typed commands write their upstream-response sidecar only for a remote error, inline truncation, or unrendered non-text content. Sidecars retain `content`, `structuredContent`, `isError`, and standard ContentBlock `annotations`; they strip protocol `_meta`, never expose tool-definition annotations, and leave business `_meta` inside `structuredContent` unchanged. When a command needs to write an oversized result, diagnostic, capture, or download and no explicit path is supplied, it returns an absolute path under an invocation-specific OS temp directory. Use `--output-dir`, `--image-file`, or a download output option when a later shell step needs a durable location.
 
-The OS-temp fileKey lock covers `figma:run`, `figma:assets:apply`, and `figma:upstream:call` only when that call resolves a fileKey; it does not serialize every mutation. Managed outputs reject links and reparse points and are written atomically. The lock is not distributed durability.
+The OS-temp fileKey lock covers `figma:run`, `figma:assets:apply`, `figma:code-connect:apply`, and `figma:upstream:call` only when that call resolves a fileKey; it does not serialize every mutation. Managed outputs reject links and reparse points and are written atomically. The lock is not distributed durability.
 
 When a result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or `FIGMA_UPSTREAM_OAUTH_*`, ask the user before browser authorization. After approval, run:
 
