@@ -1,6 +1,6 @@
 {
   "name": "@jxx-codex-plugins/figma-workspace",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Stateless fixed-leaf Node.js command entrypoints backed by one typed Figma workspace runtime.",
   "type": "module",
   "main": "./scripts/server.mjs",

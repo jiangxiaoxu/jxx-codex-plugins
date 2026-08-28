@@ -4,7 +4,7 @@
 
 ## `.figma.ts` 前置与执行
 
-先通过 `figma:metadata` 和 `figma:inspect` 获得 anchor node 与 parent/section 的准确 id、尺寸和现有内容。把间距、局部坐标和最小 section 边界写在本地 `.figma.ts`：
+先通过只读 `figma:run` 和 `figma:inspect` 获得 anchor node 与 parent/section 的准确 id、尺寸和现有内容。`figma:metadata` 是 Design-only。把间距、局部坐标和最小 section 边界写在本地 `.figma.ts`：
 
 ```text
 npm --silent run figma:run -- --file <figjam-file-url-or-key> --surface figjam --script <path/to/script.figma.ts>

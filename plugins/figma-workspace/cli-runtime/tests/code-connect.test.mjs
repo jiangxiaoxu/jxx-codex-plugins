@@ -45,6 +45,8 @@ test.after(async () => {
 const FILE_KEY = "A".repeat(22);
 const FILE_URL = `https://www.figma.com/design/${FILE_KEY}/Code-Connect`;
 const OTHER_FILE_URL = `https://www.figma.com/design/${"B".repeat(22)}/Other`;
+const BRANCH_KEY = "C".repeat(22);
+const BRANCH_FILE_URL = `https://www.figma.com/design/${FILE_KEY}/branch/${BRANCH_KEY}/Code-Connect`;
 const MAPPING = {
   nodeId: "3:4",
   componentName: "Button",
@@ -178,6 +180,41 @@ test("Code Connect plan reads context, suggestions, and mappings before writing 
   }
 });
 
+test("Code Connect uses the branch key for inspect, plan artifacts, and apply calls", async () => {
+  const outputDir = await mkdtemp(resolve(tmpdir(), "figma-code-connect-branch-"));
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls), invocationId: "code-connect-branch" });
+  try {
+    const inspected = await client.codeConnectInspect({ file: BRANCH_FILE_URL, outputDir });
+    assert.equal(inspected.fileKey, BRANCH_KEY);
+    assert.deepEqual(calls.find((entry) => entry.name === "list_file_components_for_code_connect").args, { fileKey: BRANCH_KEY });
+
+    calls.length = 0;
+    const plan = await client.codeConnectPlan({
+      file: BRANCH_FILE_URL,
+      outputDir,
+      outputPlanPath: resolve(outputDir, "branch-plan.json"),
+      manifest: manifest(),
+    });
+    assert.equal(plan.ok, true);
+    assert.equal(plan.fileKey, BRANCH_KEY);
+    const artifact = JSON.parse(await readFile(plan.planFile.path, "utf8"));
+    assert.equal(artifact.fileKey, BRANCH_KEY);
+    assert.equal(calls.find((entry) => entry.name === "get_context_for_code_connect").args.fileKey, BRANCH_KEY);
+    assert.equal(calls.find((entry) => entry.name === "get_code_connect_map").args.fileKey, BRANCH_KEY);
+
+    calls.length = 0;
+    const applied = await client.codeConnectApply({ file: BRANCH_FILE_URL, outputDir, planPath: plan.planFile.path, confirmPlan: plan.planDigest });
+    assert.equal(applied.executionOutcome, "succeeded");
+    const write = calls.find((entry) => entry.name === "send_code_connect_mappings");
+    assert.equal(write.args.fileKey, BRANCH_KEY);
+    assert.equal(calls.filter((entry) => entry.name === "get_code_connect_map").every((entry) => entry.args.fileKey === BRANCH_KEY), true);
+  } finally {
+    await client.close();
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
 test("Code Connect accepts a contract-shaped mapping read without a returned label and exposes workflow coverage", async () => {
   const outputDir = await mkdtemp(resolve(tmpdir(), "figma-code-connect-implicit-label-"));
   const calls = [];
@@ -255,6 +292,37 @@ test("Code Connect rejects output roots that traverse a symlink or junction", as
   }
 });
 
+test("Code Connect allows a simulated macOS /var alias and symlinked TMPDIR as a trusted temp root", async (t) => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-code-connect-temp-alias-"));
+  const actualTemp = resolve(tempDir, "private-var", "folders");
+  const alias = resolve(tempDir, "var");
+  await mkdir(actualTemp, { recursive: true });
+  try {
+    try { await symlink(resolve(tempDir, "private-var"), alias, process.platform === "win32" ? "junction" : "dir"); } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("symlinks unavailable");
+      throw error;
+    }
+    const original = Object.fromEntries(["TMPDIR", "TMP", "TEMP"].map((key) => [key, process.env[key]]));
+    Object.assign(process.env, { TMPDIR: resolve(alias, "folders"), TMP: resolve(alias, "folders"), TEMP: resolve(alias, "folders") });
+    try {
+      const outputDir = resolve(alias, "folders", "figma-output");
+      const client = createFigmaWorkspaceClient({ client: fakeUpstream([]), invocationId: "code-connect-temp-alias" });
+      try {
+        const result = await client.codeConnectPlan({ file: FILE_URL, outputDir, outputPlanPath: resolve(outputDir, "plan.json"), manifest: manifest() });
+        assert.equal(result.ok, true);
+      } finally {
+        await client.close();
+      }
+    } finally {
+      for (const [key, value] of Object.entries(original)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("Code Connect manifest canonicalizes node ids before duplicate detection and rejects URL, template, and unknown fields", async () => {
   const client = createFigmaWorkspaceClient({ client: fakeUpstream([]), invocationId: "code-connect-manifest-strict" });
   try {
@@ -300,6 +368,30 @@ test("Code Connect canonicalizes hyphenated manifest node ids before upstream ma
     const artifact = JSON.parse(await readFile(result.planFile.path, "utf8"));
     assert.equal(artifact.scope.nodeId, "1:2");
     assert.equal(artifact.mappings[0].nodeId, "3:4");
+  } finally {
+    await client.close();
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("Code Connect plan artifact has a bounded 1 MiB limit and remains readable above the manifest input limit", async () => {
+  const outputDir = await mkdtemp(resolve(tmpdir(), "figma-code-connect-plan-size-"));
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream([]), invocationId: "code-connect-plan-size" });
+  try {
+    const largeManifest = {
+      ...manifest(),
+      mappings: Array.from({ length: 64 }, (_, index) => ({
+        ...MAPPING,
+        nodeId: `${index + 3}:4`,
+        source: `src/${"x".repeat(3_000)}-${index}.tsx`,
+      })),
+    };
+    const plan = await client.codeConnectPlan({ file: FILE_URL, outputDir, outputPlanPath: resolve(outputDir, "large.json"), manifest: largeManifest });
+    assert.equal(plan.ok, true);
+    assert.ok(plan.planFile.bytes > 256 * 1024);
+    const verification = await client.codeConnectVerify({ file: FILE_URL, outputDir, planPath: plan.planFile.path });
+    assert.equal(verification.mappings.length, 64);
+    assert.equal(verification.mappings.every((mapping) => mapping.status === "missing"), true);
   } finally {
     await client.close();
     await rm(outputDir, { recursive: true, force: true });
@@ -371,6 +463,18 @@ test("Code Connect apply rejects missing confirmation, tampered or mismatched ta
     const tampered = await client.codeConnectApply({ file: FILE_URL, outputDir, planPath: plan.planFile.path, confirmPlan: plan.planDigest });
     assert.equal(tampered.executionOutcome, "not_started");
     assert.equal(calls.length, 0);
+
+    const nestedPlan = await client.codeConnectPlan({ file: FILE_URL, outputDir, outputPlanPath: resolve(outputDir, "nested.json"), manifest: manifest() });
+    const nestedSource = await readFile(nestedPlan.planFile.path, "utf8");
+    calls.length = 0;
+    for (const [field, injected] of [["scope", { nodeId: "1:2", injected: true }], ["client", { languages: "typescript", frameworks: "react", injected: true }]]) {
+      const nestedArtifact = JSON.parse(nestedSource);
+      nestedArtifact[field] = injected;
+      await writeFile(nestedPlan.planFile.path, JSON.stringify(nestedArtifact), "utf8");
+      const blocked = await client.codeConnectApply({ file: FILE_URL, outputDir, planPath: nestedPlan.planFile.path, confirmPlan: nestedPlan.planDigest });
+      assert.equal(blocked.executionOutcome, "not_started", field);
+      assert.equal(calls.length, 0, field);
+    }
 
     const conflictClient = createFigmaWorkspaceClient({ client: fakeUpstream([], { initialMapping: { ...MAPPING, source: "old.tsx" } }), invocationId: "code-connect-conflict" });
     try {

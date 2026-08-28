@@ -8,6 +8,7 @@ import {
   rename,
   unlink,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import type { Stats } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
@@ -379,11 +380,12 @@ async function assertManagedRootAncestors(
   root: string,
   operations: ManagedFileSystemOperations,
 ): Promise<void> {
+  const trustedTempRoot = resolve(tmpdir());
   let current = root;
   while (true) {
     try {
       const metadata = await operations.lstat(current);
-      if (metadata.isSymbolicLink()) {
+      if (metadata.isSymbolicLink() && !isAncestorPath(current, trustedTempRoot)) {
         throw new Error(`Managed root traverses a symlink, junction, or reparse point: ${current}`);
       }
     } catch (error) {
@@ -393,6 +395,11 @@ async function assertManagedRootAncestors(
     if (parent === current) return;
     current = parent;
   }
+}
+
+function isAncestorPath(ancestor: string, value: string): boolean {
+  const rel = relative(resolve(ancestor), resolve(value));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 async function inspectDirectory(

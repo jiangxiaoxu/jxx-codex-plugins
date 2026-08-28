@@ -69,7 +69,8 @@ Prefer these English keyword patterns as search seeds. Add the known surface and
 | Find workflow docs | `figma:docs:help`, `figma:docs:list`, `figma:docs:catalog`, `figma:docs:search`, `figma:docs:read` | No Figma target. |
 | Find Plugin API | `figma:api:help`, `figma:api:search`, `figma:api:read` | No Figma target. |
 | Diagnose installed runtime assets | `figma:doctor` | No Figma target. |
-| Understand a file | `figma:metadata`, `figma:inspect` | File for metadata; node URL or file-plus-node for inspect. |
+| Understand a Design file | `figma:metadata`, `figma:inspect` | Design URL or fileKey plus `--surface design` for metadata; node URL or file-plus-node for inspect. |
+| Understand a FigJam board or Slides deck | Read-only `figma:run`, `figma:capture` | `figma:metadata` is Design-only. |
 | Read implementation context | `figma:design-context`, `figma:motion-context` | Explicit node target. |
 | Read design systems | `figma:variables`, `figma:design-system`, `figma:libraries` | Explicit file or node target as required by help. |
 | Execute Plugin API | `figma:run` | Explicit file plus a local `.figma.ts` script or stdin source. |
@@ -80,7 +81,7 @@ Prefer these English keyword patterns as search seeds. Add the known surface and
 
 ## Implement And Verify
 
-1. Start with a full Figma URL whenever available. Use `figma:metadata` for broad discovery, then use targeted `figma:inspect` and the first-class context commands only as required.
+1. Start with a full Figma URL whenever available. Use `figma:metadata` only for broad Design-file discovery; use a read-only `figma:run` script for FigJam or Slides structure, then use targeted `figma:inspect` and applicable context commands.
 2. Create `.figma.ts` files in the shell or project working directory. For a file script, run:
 
    ```text

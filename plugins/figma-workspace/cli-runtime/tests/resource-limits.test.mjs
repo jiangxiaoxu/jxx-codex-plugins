@@ -274,10 +274,10 @@ test("asset manifest files accept exactly 256 KiB and reject 256 KiB plus one by
   }
 });
 
-test("asset upload accepts the 16 MiB boundary and streams an exact Content-Length", async () => {
+test("asset upload accepts the 10,000,000-byte upstream boundary and streams an exact Content-Length", async () => {
   const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-upload-stream-"));
   const assetPath = resolve(tempDir, "asset.png");
-  const payload = Buffer.alloc(16 * MIB, 0x5a);
+  const payload = Buffer.alloc(10_000_000, 0x5a);
   await writeFile(assetPath, payload);
   let receivedBytes = 0;
   let receivedLength;
@@ -324,6 +324,35 @@ test("asset upload accepts the 16 MiB boundary and streams an exact Content-Leng
     await client.close();
     server.closeAllConnections?.();
     await new Promise((done) => server.close(done));
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("asset upload rejects 10,000,001 bytes before upstream discovery or streaming", async () => {
+  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-upload-over-limit-"));
+  const assetPath = resolve(tempDir, "asset.png");
+  await writeFile(assetPath, Buffer.alloc(10_000_001, 0x5a));
+  let listed = 0;
+  let calls = 0;
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(uploadTools(), () => { calls += 1; throw new Error("unexpected upload"); }, {
+      beforeListTools() { listed += 1; },
+    }),
+  });
+  try {
+    await assert.rejects(
+      client.applyAssetManifest({
+        file: "UploadLimitFileKey12345",
+        surface: "design",
+        assets: [{ path: assetPath, target: { fileKey: "UploadLimitFileKey12345", nodeId: "1:1" } }],
+        validateTargets: false,
+      }),
+      /per-item limit/iu,
+    );
+    assert.equal(listed, 0);
+    assert.equal(calls, 0);
+  } finally {
+    await client.close();
     await rm(tempDir, { recursive: true, force: true });
   }
 });

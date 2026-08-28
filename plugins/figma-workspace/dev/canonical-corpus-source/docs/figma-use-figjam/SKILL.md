@@ -6,12 +6,12 @@ Use this reference with the Figma Workspace CLI. Put a native Plugin API async s
 
 ## Inspecting FigJam Files
 
-Use `figma:metadata` for broad file structure, then `figma:inspect` for targeted nodes. They provide the raw node IDs needed by later scripts.
+Use a read-only `figma:run` script for broad board structure, then `figma:inspect` for targeted nodes. `figma:metadata` is Design-only.
 
 - Inspect existing board structure before writing a script that targets current nodes.
 - Return raw node IDs and validation notes from each script; `console.log` is not an agent result channel.
 - For visual checks, use `figma:capture` with a valid node reference and inspect the resulting image.
-- If an earlier script did not return an ID, repeat `figma:metadata` and `figma:inspect` rather than guessing or scanning a broad tree in a mutation script.
+- If an earlier script did not return an ID, repeat a read-only `figma:run` inspection and `figma:inspect` rather than guessing or scanning a broad tree in a mutation script.
 
 ## Loading Reference Docs Efficiently
 
@@ -19,7 +19,7 @@ Load only the references your task needs — but when you do need to load multip
 
 ## Command Selection
 
-Run the selected `figma:<command>` with `--help` before first use. Pass an explicit FigJam URL or fileKey to `figma:metadata` and `figma:inspect` for reads, use `figma:run` for local `.figma.ts` work, and use `figma:capture` for visual QA. Every remote command receives its target in that invocation.
+Run the selected `figma:<command>` with `--help` before first use. Pass an explicit FigJam URL or fileKey to read-only `figma:run` and `figma:inspect`, use `figma:run` for local `.figma.ts` work, and use `figma:capture` for visual QA. `figma:metadata` is Design-only. Every remote command receives its target in that invocation.
 
 ## Text Mutations — Canonical Recipe
 

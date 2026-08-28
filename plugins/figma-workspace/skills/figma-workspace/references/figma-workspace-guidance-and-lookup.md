@@ -23,7 +23,7 @@ Use this static reference to route task documentation and Plugin API questions. 
 | `library-generation` | Design | `create component library` | Component libraries, tokens, variables, and styles | `figma:libraries`, `figma:design-system`, `figma:variables`, `figma:run` |
 | `motion` | Design | `motion easing` | Motion inventory, timing, easing, and animation patterns | `figma:motion-context`, `figma:capture`, `figma:docs:read` |
 | `motion-implementation` | Design | `implement animation` | Translate motion context into implementation behavior | `figma:motion-context`, `figma:design-context`, `figma:docs:read` |
-| `slides` | Slides | `slide deck` | Slide lifecycle, deck creation, presentation editing, and validation | `figma:metadata`, shell-created `.figma.ts`, `figma:run`, `figma:capture` |
+| `slides` | Slides | `slide deck` | Slide lifecycle, deck creation, presentation editing, and validation | shell-created read-only or mutation `.figma.ts`, `figma:run`, `figma:capture` |
 | `swiftui` | Design | `swiftui code to design` | SwiftUI design-to-code or code-to-design workflows | `figma:design-context`, `figma:docs:search`, `figma:docs:read` |
 
 ## Read Documentation

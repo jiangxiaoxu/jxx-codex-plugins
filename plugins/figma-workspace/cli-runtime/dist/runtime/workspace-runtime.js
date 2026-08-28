@@ -59,7 +59,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.6.0";
+    DEFAULT_CLIENT_VERSION = "0.6.1";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -20174,6 +20174,7 @@ function asGetMetadataArgs(value) {
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "refresh"]);
   normalizeNodeAlias(args);
   requiredFileOrNodeUrl(args, "figma:metadata", true);
+  requireMetadataDesignSurface(args);
   return args;
 }
 function asGetDesignContextArgs(value) {
@@ -20361,6 +20362,25 @@ function requireStableNodeTarget(args, command, allowCompositeNodeId = false) {
   }
   if (typeof args.target === "string" && !isFigmaNodeUrl(args.target, allowCompositeNodeId) && !args.file?.trim()) {
     throw new FigmaWorkspaceToolArgumentError(`${command} requires "file" when the node target is a raw id.`);
+  }
+}
+function requireMetadataDesignSurface(args) {
+  if (args.surface !== void 0 && args.surface !== "design") {
+    throw new FigmaWorkspaceToolArgumentError("figma:metadata supports only the Design surface.");
+  }
+  const urlValues = [args.file, typeof args.target === "string" ? args.target : void 0].filter((value) => typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(value));
+  for (const value of urlValues) {
+    try {
+      const kind = new URL(value).pathname.split("/").filter(Boolean)[0];
+      if (kind !== "design" && kind !== "file") {
+        throw new FigmaWorkspaceToolArgumentError("figma:metadata supports only Design file URLs.");
+      }
+    } catch (error2) {
+      if (error2 instanceof FigmaWorkspaceToolArgumentError) throw error2;
+    }
+  }
+  if (args.surface === void 0 && urlValues.length === 0) {
+    throw new FigmaWorkspaceToolArgumentError('figma:metadata with a raw file key or structured target requires "surface": "design".');
   }
 }
 function isFigmaNodeUrl(value, allowCompositeNodeId = false) {
@@ -22575,6 +22595,7 @@ import {
   rename as rename2,
   unlink
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname as dirname5, isAbsolute, join, relative, resolve as resolve6 } from "node:path";
 async function ensureManagedDirectory(options) {
   await prepareManagedDirectory(options.root, options.directory, mergeOperations(options.operations));
@@ -22799,11 +22820,12 @@ async function ensureManagedRoot(root, operations) {
   }
 }
 async function assertManagedRootAncestors(root, operations) {
+  const trustedTempRoot = resolve6(tmpdir());
   let current = root;
   while (true) {
     try {
       const metadata = await operations.lstat(current);
-      if (metadata.isSymbolicLink()) {
+      if (metadata.isSymbolicLink() && !isAncestorPath(current, trustedTempRoot)) {
         throw new Error(`Managed root traverses a symlink, junction, or reparse point: ${current}`);
       }
     } catch (error2) {
@@ -22813,6 +22835,10 @@ async function assertManagedRootAncestors(root, operations) {
     if (parent === current) return;
     current = parent;
   }
+}
+function isAncestorPath(ancestor, value) {
+  const rel = relative(resolve6(ancestor), resolve6(value));
+  return rel === "" || !rel.startsWith("..") && !isAbsolute(rel);
 }
 async function inspectDirectory(path, operations, expectedRealPath) {
   const stats = await operations.lstat(path);
@@ -23351,7 +23377,7 @@ __export(workspace_client_exports, {
 });
 import { createHash as createHash3, randomUUID as randomUUID2 } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { tmpdir } from "node:os";
+import { tmpdir as tmpdir2 } from "node:os";
 import { createReadStream } from "node:fs";
 import { lstat as lstat3, open as open3, readFile as readFile2, stat as stat2 } from "node:fs/promises";
 import { dirname as dirname7, extname as extname2, isAbsolute as isAbsolute3, relative as relative3, resolve as resolve8 } from "node:path";
@@ -23507,7 +23533,7 @@ async function prepareStatelessInvocation(args, runtime) {
     invocationId,
     slug: slugifyTaskName(invocationId),
     cwd: process.cwd(),
-    outputRoot: resolve8(tmpdir(), "figma-workspace", invocationId),
+    outputRoot: resolve8(tmpdir2(), "figma-workspace", invocationId),
     lastDiagnostics: []
   };
   applyInvocationFileReference(session, args.file);
@@ -24809,8 +24835,8 @@ async function openAssetInputs(assets, session, resourceBudget) {
   try {
     for (const asset of assets) {
       const input = await openManagedAssetInput(asset, session);
-      assertSingleItemLimit(input.stats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
       opened.push(input);
+      assertSingleItemLimit(input.stats.size, MAX_UPLOAD_ASSET_BYTES, `Asset upload ${asset.path}`);
       await assertRasterAssetContent(input);
     }
     const totalBytes = opened.reduce((sum, input) => sum + input.stats.size, 0);
@@ -25748,6 +25774,9 @@ function appendCappedRecords(target2, value, cap) {
 }
 async function executeGetMetadata(args, runtime) {
   const session = currentInvocationContext();
+  if (session.surface !== "design") {
+    throw new Error("figma:metadata supports only the Design surface. Pass a Design URL, or a raw file key with surface: design.");
+  }
   const requested = await resolveGetMetadataRequest(args, session, runtime);
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = selectRequiredUpstreamTool(tools, GET_METADATA_TOOL_NAME, requireWrapperUpstreamKind(GET_METADATA_CONTRACT));
@@ -26295,6 +26324,17 @@ async function executeCodeConnectPlan(args, runtime) {
     const planPath = resolveCodeConnectPlanOutputPath(args, session);
     const content = `${JSON.stringify(artifact, null, 2)}
 `;
+    if (Buffer.byteLength(content, "utf8") > MAX_CODE_CONNECT_PLAN_BYTES) {
+      return {
+        ok: false,
+        fileKey: fileKey2,
+        mappings: actions,
+        upstreamError: {
+          code: "FIGMA_WORKSPACE_CODE_CONNECT_PLAN_LIMIT_EXCEEDED",
+          message: `Code Connect plan artifact exceeds the ${MAX_CODE_CONNECT_PLAN_BYTES} byte managed-artifact limit. Reduce mapping field sizes before planning.`
+        }
+      };
+    }
     const written = await atomicWriteManagedTextFile({ root: session.workspace?.root ?? session.outputRoot, path: planPath, overwrite: false }, content);
     const resultPayload = {
       ok: true,
@@ -26633,7 +26673,7 @@ async function readCodeConnectPlanArtifact(pathValue, session) {
   if (!path) throw new Error("Code Connect plan path is required.");
   await assertInvocationManagedInputFile(path, session);
   const info = await stat2(path);
-  if (info.size > MAX_MANIFEST_FILE_BYTES) throw new Error(`Code Connect plan exceeds ${MAX_MANIFEST_FILE_BYTES} bytes.`);
+  if (info.size > MAX_CODE_CONNECT_PLAN_BYTES) throw new Error(`Code Connect plan exceeds ${MAX_CODE_CONNECT_PLAN_BYTES} bytes.`);
   const source = await readFile2(path, "utf8");
   await assertInvocationManagedInputFile(path, session);
   let value;
@@ -26651,6 +26691,7 @@ function parseCodeConnectPlanArtifact(value) {
   if (artifact.schemaVersion !== 1 || artifact.kind !== "figma-code-connect-plan" || artifact.surface !== "design" || !isFigmaFileKey(asOptionalString2(artifact.fileKey) ?? "")) throw new Error("Code Connect plan has invalid identity fields.");
   const scope = asRecord2(artifact.scope);
   const client = asRecord2(artifact.client);
+  if (!hasExactKeys(scope, ["nodeId"]) || !hasExactKeys(client, ["languages", "frameworks"])) throw new Error("Code Connect plan has unknown scope or client fields.");
   if (!isSimpleFigmaNodeId(asOptionalString2(scope.nodeId) ?? "") || !asOptionalString2(client.languages) || !asOptionalString2(client.frameworks)) throw new Error("Code Connect plan has invalid scope or client fields.");
   const mappings = parseCodeConnectArtifactMappings(artifact.mappings);
   const actions = parseCodeConnectArtifactActions(artifact.actions, mappings);
@@ -26700,6 +26741,10 @@ function parseCodeConnectArtifactMappings(value) {
   });
   if (new Set(mappings.map(codeConnectMappingIdentity)).size !== mappings.length) throw new Error("Code Connect plan has duplicate mapping identities.");
   return mappings;
+}
+function hasExactKeys(value, expected) {
+  const actual = Object.keys(value);
+  return actual.length === expected.length && actual.every((key) => expected.includes(key));
 }
 function parseCodeConnectArtifactActions(value, mappings) {
   if (!Array.isArray(value) || value.length !== mappings.length) throw new Error("Code Connect plan actions do not match mappings.");
@@ -27995,7 +28040,7 @@ async function submitLocalAssetUploadIfAvailable(input, parsed, resourceBudget) 
   if (!submitUrl) {
     return void 0;
   }
-  assertSingleItemLimit(fileStats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+  assertSingleItemLimit(fileStats.size, MAX_UPLOAD_ASSET_BYTES, `Asset upload ${asset.path}`);
   resourceBudget.assertCanConsume(fileStats.size, `Asset upload ${asset.path}`);
   const mimeType = asset.mimeType;
   const deadline = new NetworkRequestDeadline(`Asset upload ${asset.path}`);
@@ -28006,7 +28051,7 @@ async function submitLocalAssetUploadIfAvailable(input, parsed, resourceBudget) 
       try {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         uploadedBytes += bytes.byteLength;
-        assertSingleItemLimit(uploadedBytes, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+        assertSingleItemLimit(uploadedBytes, MAX_UPLOAD_ASSET_BYTES, `Asset upload ${asset.path}`);
         resourceBudget.consume(bytes.byteLength, `Asset upload ${asset.path}`);
         deadline.touch();
         callback(null, bytes);
@@ -29339,7 +29384,8 @@ function parseStrictFigmaFileUrl(value) {
   }
   const parts = url2.pathname.split("/").filter(Boolean);
   const kind = parts[0];
-  const fileKey2 = parts[1];
+  const isBranchPath = kind === "design" && parts[2] === "branch";
+  const fileKey2 = isBranchPath ? parts[3] : parts[1];
   if (!FIGMA_FILE_URL_KINDS.includes(kind) || !fileKey2 || !isSimpleFigmaFileKey(fileKey2)) {
     throw new Error("Figma file URLs must include a valid Design, FigJam, or Slides path and file key.");
   }
@@ -29348,7 +29394,7 @@ function parseStrictFigmaFileUrl(value) {
     throw new Error("Figma file URLs must include a valid official Figma node id when node-id is present.");
   }
   const surface2 = kind === "design" || kind === "file" ? "design" : kind === "figjam" || kind === "board" ? "figjam" : "slides";
-  const name = parts[2];
+  const name = isBranchPath ? parts[4] : parts[2];
   return {
     fileKey: fileKey2,
     fileSlug: name ? slugifyTaskName(decodeURIComponent(name)) : void 0,
@@ -29410,7 +29456,7 @@ function clampIntegerParameter(options) {
 function literal3(value) {
   return JSON.stringify(value);
 }
-var FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_INLINE_RESULT_LIMIT, MAX_QUEUED_CAPTURE_REQUESTS, MAX_MANIFEST_ITEMS2, MAX_MANIFEST_FILE_BYTES, MAX_SINGLE_ASSET_BYTES, MAX_COMMAND_DATA_PLANE_BYTES, NETWORK_REQUEST_TOTAL_TIMEOUT_MS, NETWORK_REQUEST_IDLE_TIMEOUT_MS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, UNKNOWN_EXECUTION_RETRY_GUIDANCE, ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, CODE_CONNECT_INSPECT_CONTRACT, CODE_CONNECT_PLAN_CONTEXT_CONTRACT, CODE_CONNECT_PLAN_SUGGESTIONS_CONTRACT, CODE_CONNECT_PLAN_MAPPING_READ_CONTRACT, CODE_CONNECT_APPLY_MAPPING_READ_CONTRACT, CODE_CONNECT_APPLY_CONTRACT, CODE_CONNECT_VERIFY_MAPPING_READ_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, CODE_CONNECT_INSPECT_TOOL_NAME, CODE_CONNECT_CONTEXT_TOOL_NAME, CODE_CONNECT_SUGGESTIONS_TOOL_NAME, CODE_CONNECT_MAP_TOOL_NAME, CODE_CONNECT_SEND_TOOL_NAME, DataPlaneResourceBudget, COMMAND_RESOURCE_CONTEXT, NetworkRequestDeadline, CodeConnectWorkflowDeadline, PostResponseResourceError, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, SVG_CONTENT_SNIFF_BYTES, INVOCATION_CONTEXT, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, PUBLIC_HISTORY_COMMAND_IDS, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
+var FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_INLINE_RESULT_LIMIT, MAX_QUEUED_CAPTURE_REQUESTS, MAX_MANIFEST_ITEMS2, MAX_MANIFEST_FILE_BYTES, MAX_CODE_CONNECT_PLAN_BYTES, MAX_SINGLE_ASSET_BYTES, MAX_UPLOAD_ASSET_BYTES, MAX_COMMAND_DATA_PLANE_BYTES, NETWORK_REQUEST_TOTAL_TIMEOUT_MS, NETWORK_REQUEST_IDLE_TIMEOUT_MS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, UNKNOWN_EXECUTION_RETRY_GUIDANCE, ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, CODE_CONNECT_INSPECT_CONTRACT, CODE_CONNECT_PLAN_CONTEXT_CONTRACT, CODE_CONNECT_PLAN_SUGGESTIONS_CONTRACT, CODE_CONNECT_PLAN_MAPPING_READ_CONTRACT, CODE_CONNECT_APPLY_MAPPING_READ_CONTRACT, CODE_CONNECT_APPLY_CONTRACT, CODE_CONNECT_VERIFY_MAPPING_READ_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, CODE_CONNECT_INSPECT_TOOL_NAME, CODE_CONNECT_CONTEXT_TOOL_NAME, CODE_CONNECT_SUGGESTIONS_TOOL_NAME, CODE_CONNECT_MAP_TOOL_NAME, CODE_CONNECT_SEND_TOOL_NAME, DataPlaneResourceBudget, COMMAND_RESOURCE_CONTEXT, NetworkRequestDeadline, CodeConnectWorkflowDeadline, PostResponseResourceError, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, SVG_CONTENT_SNIFF_BYTES, INVOCATION_CONTEXT, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, PUBLIC_HISTORY_COMMAND_IDS, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
 var init_workspace_client = __esm({
   "src/runtime/workspace-client.ts"() {
     "use strict";
@@ -29436,7 +29482,9 @@ var init_workspace_client = __esm({
     MAX_QUEUED_CAPTURE_REQUESTS = 8;
     MAX_MANIFEST_ITEMS2 = 64;
     MAX_MANIFEST_FILE_BYTES = 256 * 1024;
+    MAX_CODE_CONNECT_PLAN_BYTES = 1024 * 1024;
     MAX_SINGLE_ASSET_BYTES = 16 * 1024 * 1024;
+    MAX_UPLOAD_ASSET_BYTES = 1e7;
     MAX_COMMAND_DATA_PLANE_BYTES = 64 * 1024 * 1024;
     NETWORK_REQUEST_TOTAL_TIMEOUT_MS = 5 * 60 * 1e3;
     NETWORK_REQUEST_IDLE_TIMEOUT_MS = 60 * 1e3;
@@ -29698,7 +29746,7 @@ init_workspace_client();
 init_managed_files();
 import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
 import { mkdir as mkdir3, open as open4, readFile as readFile3, rm as rm2, stat as stat3 } from "node:fs/promises";
-import { tmpdir as tmpdir2 } from "node:os";
+import { tmpdir as tmpdir3 } from "node:os";
 import { isAbsolute as isAbsolute4, relative as relative4, resolve as resolve9 } from "node:path";
 var FIGMA_WORKSPACE_CLI_EXIT_SUCCESS = 0;
 var FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR = 1;
@@ -29961,7 +30009,7 @@ function getFigmaWorkspaceCommandInputSchema(_command) {
   return { type: "object", additionalProperties: true };
 }
 async function acquireFigmaWorkspaceFileLock(fileKey2, options = {}) {
-  const lockRoot = resolve9(tmpdir2(), "figma-workspace", "locks");
+  const lockRoot = resolve9(tmpdir3(), "figma-workspace", "locks");
   await mkdir3(lockRoot, { recursive: true });
   const lockPath = resolve9(lockRoot, `${createHash4("sha256").update(fileKey2).digest("hex")}.lock`);
   assertInside(lockRoot, lockPath);
@@ -30141,7 +30189,7 @@ function normalizeInvocationResult(result, invocationId, fileKey2, surface2, out
 }
 function resolveInvocationOutputRoot(value, invocationId, cwd) {
   if (typeof value === "string" && value.trim()) return resolve9(cwd, value);
-  return resolve9(tmpdir2(), "figma-workspace", invocationId);
+  return resolve9(tmpdir3(), "figma-workspace", invocationId);
 }
 function needsLocalOutput(command, input) {
   return ["run", "apply-asset-manifest", "download-assets", "capture-node", "code-connect-plan"].includes(command) || typeof input.outputDir === "string";
@@ -30204,10 +30252,12 @@ function extractFileKey(value) {
     const parts = url2.pathname.split("/").filter(Boolean);
     const validHost = url2.protocol === "https:" && (url2.hostname === "figma.com" || url2.hostname.endsWith(".figma.com"));
     const validSurface = parts.length >= 2 && ["design", "file", "figjam", "board", "slides"].includes(parts[0]);
-    if (!validHost || !validSurface || !parts[1]) {
+    const isBranchPath = parts[0] === "design" && parts[2] === "branch";
+    const fileKey2 = isBranchPath ? parts[3] : parts[1];
+    if (!validHost || !validSurface || !fileKey2) {
       throw new FigmaWorkspaceCliUsageError("Figma URLs must use https://*.figma.com/<design|file|figjam|board|slides>/<fileKey>.");
     }
-    return parts[1];
+    return fileKey2;
   } catch (error2) {
     if (error2 instanceof FigmaWorkspaceCliUsageError) throw error2;
     return value;
@@ -30314,6 +30364,7 @@ var clampedInteger = (description, minimum, maximum) => ({
   description: `${description} Safe integers are accepted. Supported range ${minimum}..${maximum}; out-of-range safe integers are clamped and reported in parameterAdjustments.`
 });
 var surface = () => ({ type: "string", enum: ["design", "figjam", "slides"], description: "Explicit surface. Required with a raw file key for Plugin API execution." });
+var designSurface = () => ({ type: "string", enum: ["design"], description: "Design surface only. Required with a raw file key or structured target for metadata." });
 var nodeTarget = (allowComposite = false) => ({
   description: "Stable node target: raw node id (with file), Figma node URL, or exact { fileKey, nodeId }.",
   oneOf: [
@@ -30328,6 +30379,21 @@ var invocation2 = () => ({
   surface: surface(),
   outputDir: string4("Optional absolute local output root; omitted outputs use one invocation temp directory."),
   inlineResultLimit: integer3(`Maximum inline result bytes from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`, INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX)
+});
+var designFileReference = (description) => ({
+  oneOf: [
+    fileKey("Raw Design file key."),
+    { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file)/", description: "Design file URL." }
+  ],
+  description
+});
+var designNodeTarget = () => ({
+  description: "Design-only stable node target: Design node URL, raw node id paired with a Design file, or exact { fileKey, nodeId } with surface design.",
+  oneOf: [
+    nodeId("Raw Figma node id.", true),
+    { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file)/" },
+    { type: "object", properties: { fileKey: fileKey("Design file key."), nodeId: nodeId("Figma node id.", true) }, required: ["fileKey", "nodeId"], additionalProperties: false }
+  ]
 });
 var objectSchema = (properties, required2 = [], anyOf) => ({ type: "object", properties, required: [...required2], ...anyOf ? { anyOf } : {}, additionalProperties: false });
 var resultSchema = (properties = {}) => ({ type: "object", properties: { ok: boolean4("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, ...properties }, required: ["ok"], additionalProperties: true });
@@ -30358,7 +30424,12 @@ function createReplToolDescriptions(_options) {
       outputSchema: resultSchema({ imageFile: string4("Absolute PNG path."), nodeId: string4("Captured node id."), bytes: integer3("PNG bytes.") })
     }],
     ["figma_workspace_inspect", nodeReadDescription("figma_workspace_inspect", "Run a compact Plugin API inspection.", { mode: { type: "string", enum: ["inspect", "style"] }, depth: integer3("Traversal depth.", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX) })],
-    ["figma_workspace_get_metadata", nodeReadDescription("figma_workspace_get_metadata", "Read broad official Figma metadata.", {}, false, true)],
+    ["figma_workspace_get_metadata", {
+      name: "figma_workspace_get_metadata",
+      description: "Read broad official metadata from a Design file. FigJam and Slides structure must be inspected with a read-only figma:run script.",
+      inputSchema: objectSchema({ ...invocation2(), file: designFileReference("Design file URL or raw key; raw keys require surface design."), surface: designSurface(), target: designNodeTarget(), nodeId: nodeId("Raw Figma node id.", true), refresh: boolean4("Refresh upstream discovery.") }, [], [{ required: ["target"] }, { required: ["file"] }]),
+      outputSchema: resultSchema({ upstream: { type: "object" }, outputFiles: { type: "object" } })
+    }],
     ["figma_workspace_get_design_context", nodeReadDescription("figma_workspace_get_design_context", "Read official design implementation context.", { forceCode: boolean4("Force code generation."), disableCodeConnect: boolean4("Disable Code Connect."), excludeScreenshot: boolean4("Exclude screenshot context.") }, true, true)],
     ["figma_workspace_get_motion_context", nodeReadDescription("figma_workspace_get_motion_context", "Read official motion context.", { recursive: boolean4("Read recursively.") })],
     ["figma_workspace_get_variable_defs", nodeReadDescription("figma_workspace_get_variable_defs", "Read official variable definitions.")],

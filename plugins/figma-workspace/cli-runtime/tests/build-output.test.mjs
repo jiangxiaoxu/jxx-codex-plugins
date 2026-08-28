@@ -15,7 +15,7 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.6.0");
+  assert.equal(packageJson.version, "0.6.1");
 });
 
 test("distribution stages TypeScript declaration libs for strict preflight", () => {
@@ -484,6 +484,33 @@ test("generic upstream calls serialize by nested arguments.fileKey", async () =>
   releaseFirst();
   assert.deepEqual(await Promise.all([first, second]), [0, 0]);
   assert.equal(callCount, 2);
+});
+
+test("Code Connect pre-lock extracts the branch file key instead of the base file key", async () => {
+  const baseKey = "D".repeat(22);
+  const branchKey = "E".repeat(22);
+  const branchUrl = `https://www.figma.com/design/${baseKey}/branch/${branchKey}/Code-Connect`;
+  const releaseBase = await acquireFigmaWorkspaceFileLock(baseKey, { timeoutMs: 500 });
+  const output = createIo(JSON.stringify({ file: branchUrl, planPath: "plan.json", confirmPlan: "a".repeat(64) }));
+  let called = false;
+  try {
+    const exit = await runFigmaWorkspaceCli(["code-connect-apply", "--input", "-"], {
+      io: output.io,
+      lockOptions: { timeoutMs: 50, retryMs: 2 },
+      createClient: () => ({
+        close: async () => {},
+        codeConnectApply: async (input) => {
+          called = true;
+          assert.equal(input.file, branchUrl);
+          return { ok: true, executionOutcome: "succeeded" };
+        },
+      }),
+    });
+    assert.equal(exit, 0);
+    assert.equal(called, true);
+  } finally {
+    await releaseBase();
+  }
 });
 
 function createIo(stdin = "{}", cwd = process.cwd()) {

@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn as spawnProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
   dirname,
@@ -410,6 +410,19 @@ export function extractCliResultSidecarPath(stdout) {
   return pathMatch[1];
 }
 
+export function extractCliInlineResult(stdout) {
+  const matches = [...String(stdout).matchAll(/```json[ \t]*\r?\n([\s\S]*?)\r?\n```/gu)];
+  const source = matches.at(-1)?.[1];
+  if (source === undefined) {
+    throw new LiveSmokeCommandError("Command did not publish an inline JSON result.");
+  }
+  try {
+    return JSON.parse(source);
+  } catch (error) {
+    throw new LiveSmokeCommandError("Command inline JSON result was not valid JSON.", { cause: error });
+  }
+}
+
 function assertSafeArtifactPath(path, outputDir, description) {
   if (!isFullyQualifiedAbsolutePath(path)) {
     throw new LiveSmokeCommandError(`${description} path must be a normalized fully qualified absolute path.`);
@@ -430,6 +443,43 @@ function assertSafeSidecarPath(sidecarPath, outputDir) {
   return assertSafeArtifactPath(sidecarPath, outputDir, "Command result sidecar");
 }
 
+async function readBoundedJsonArtifact(path, options, description = "CLI sidecar") {
+  const safePath = assertSafeArtifactPath(path, options.outputDir, description);
+  const permittedRoot = options.outputDir === undefined
+    ? resolve(tmpdir(), "figma-workspace")
+    : resolve(options.outputDir);
+  const resolveRealPath = options.realpath ?? realpath;
+  const [canonicalRoot, canonicalPath] = await Promise.all([
+    resolveRealPath(permittedRoot),
+    resolveRealPath(safePath),
+  ]);
+  if (!isPathInside(resolve(canonicalRoot), resolve(canonicalPath))) {
+    throw new LiveSmokeCommandError(`${description} must remain inside its canonical output root.`);
+  }
+  const details = await (options.lstat ?? lstat)(safePath);
+  if (
+    !details.isFile()
+    || details.isSymbolicLink?.()
+    || !Number.isSafeInteger(details.size)
+    || details.size < 0
+    || details.size > MAX_HYDRATED_UPSTREAM_SIDECAR_BYTES
+  ) {
+    throw new LiveSmokeCommandError(`${description} must be a regular JSON file no larger than 64 MiB.`);
+  }
+  const source = await options.readFile(safePath, "utf8");
+  const sourceBytes = Buffer.isBuffer(source)
+    ? source.byteLength
+    : Buffer.byteLength(String(source), "utf8");
+  if (sourceBytes > MAX_HYDRATED_UPSTREAM_SIDECAR_BYTES) {
+    throw new LiveSmokeCommandError(`${description} exceeded the 64 MiB limit while reading.`);
+  }
+  try {
+    return { path: safePath, value: JSON.parse(String(source)) };
+  } catch (error) {
+    throw new LiveSmokeCommandError(`${description} is not valid JSON.`, { cause: error });
+  }
+}
+
 async function hydrateOmittedUpstreamResult(result, options) {
   if (!isRecord(result) || !isRecord(result.upstream) || Object.hasOwn(result.upstream, "result")) {
     return result;
@@ -448,23 +498,7 @@ async function hydrateOmittedUpstreamResult(result, options) {
   ) {
     throw new LiveSmokeCommandError("CLI upstream sidecar path must be a normalized absolute .upstream.json file.");
   }
-  const details = await (options.stat ?? stat)(path);
-  if (!details.isFile() || !Number.isSafeInteger(details.size) || details.size < 0 || details.size > MAX_HYDRATED_UPSTREAM_SIDECAR_BYTES) {
-    throw new LiveSmokeCommandError("CLI upstream sidecar must be a regular JSON file no larger than 64 MiB.");
-  }
-  const source = await options.readFile(path, "utf8");
-  const sourceBytes = Buffer.isBuffer(source)
-    ? source.byteLength
-    : Buffer.byteLength(String(source), "utf8");
-  if (sourceBytes > MAX_HYDRATED_UPSTREAM_SIDECAR_BYTES) {
-    throw new LiveSmokeCommandError("CLI upstream sidecar exceeded the 64 MiB limit while reading.");
-  }
-  let hydrated;
-  try {
-    hydrated = JSON.parse(String(source));
-  } catch (error) {
-    throw new LiveSmokeCommandError("CLI upstream sidecar is not valid JSON.", { cause: error });
-  }
+  const hydrated = (await readBoundedJsonArtifact(path, options, "CLI upstream sidecar")).value;
   if (
     !isRecord(hydrated)
     || hydrated.kind !== result.upstream.kind
@@ -516,8 +550,48 @@ async function runFigmaSidecarCommand(options) {
   let sidecarPath;
   let result;
   try {
-    sidecarPath = assertSafeSidecarPath(extractCliResultSidecarPath(String(execution.stdout ?? "")), options.outputDir);
-    result = JSON.parse(String(await options.readFile(sidecarPath, "utf8")));
+    if (options.inlineResult === true) {
+      result = extractCliInlineResult(String(execution.stdout ?? ""));
+    } else {
+      const stdout = String(execution.stdout ?? "");
+      const hasMarker = /^#{2,6} Cli Result File\s*$/mu.test(stdout);
+      const markerPath = hasMarker
+        ? assertSafeSidecarPath(extractCliResultSidecarPath(stdout), options.outputDir)
+        : undefined;
+      const markerCandidate = markerPath === undefined
+        ? undefined
+        : await readBoundedJsonArtifact(markerPath, options, "Command result sidecar");
+      const inlineResult = (() => {
+        try {
+          return extractCliInlineResult(stdout);
+        } catch {
+          return undefined;
+        }
+      })();
+      const inlineCliResultPath = isRecord(inlineResult)
+        && isRecord(inlineResult.outputFiles)
+        && isRecord(inlineResult.outputFiles.cliResultFile)
+        ? inlineResult.outputFiles.cliResultFile.path
+        : undefined;
+      let inlineCliResult;
+      if (typeof inlineCliResultPath === "string" && inlineCliResultPath !== markerPath) {
+        const preferredPath = assertSafeSidecarPath(inlineCliResultPath, options.outputDir);
+        inlineCliResult = await readBoundedJsonArtifact(preferredPath, options, "CLI result sidecar");
+      }
+      const candidates = [
+        ...(markerCandidate === undefined ? [] : [markerCandidate]),
+        ...(inlineResult === undefined ? [] : [{ path: undefined, value: inlineResult }]),
+        ...(inlineCliResult === undefined ? [] : [inlineCliResult]),
+      ];
+      const wrapper = candidates.find(({ value }) => isHydratableUpstreamWrapper(value));
+      const completeCapture = options.script === "figma:capture"
+        ? candidates.find(({ value }) => isRecord(value) && typeof value.imageFile === "string")
+        : undefined;
+      const selected = wrapper ?? completeCapture ?? candidates.find(({ value }) => isRecord(value));
+      if (selected === undefined) throw new LiveSmokeCommandError("Command sidecar candidates did not contain a JSON object.");
+      sidecarPath = selected.path;
+      result = selected.value;
+    }
   } catch (error) {
     throw new LiveSmokeCommandError(describeExecutionFailure(options.step, execution), {
       cause: error,
@@ -546,15 +620,29 @@ async function runFigmaSidecarCommand(options) {
   return { execution, result, sidecarPath };
 }
 
+function isHydratableUpstreamWrapper(value) {
+  return isRecord(value)
+    && isRecord(value.upstream)
+    && isRecord(value.outputFiles)
+    && isRecord(value.outputFiles.upstreamFile)
+    && typeof value.outputFiles.upstreamFile.path === "string";
+}
+
 function commonCommandArgs() {
   return ["--max-inline-bytes", "0"];
 }
 
 async function runDirectCommand(options) {
+  const inlineResult = options.commandName === "upstream:list" || options.commandName === "upstream:read";
   return runFigmaSidecarCommand({
     ...options,
     script: `figma:${options.commandName}`,
-    args: [...(options.positionals ?? []), ...(options.options ?? []), ...commonCommandArgs()],
+    args: [
+      ...(options.positionals ?? []),
+      ...(options.options ?? []),
+      ...(inlineResult ? [] : commonCommandArgs()),
+    ],
+    inlineResult,
   });
 }
 
@@ -933,6 +1021,8 @@ export async function runLiveSmokeTest(options = {}) {
     designFileUrl: config.designFileUrl,
     outputDir: config.outputDir,
     evidence,
+    lstat: options.lstat ?? lstat,
+    realpath: options.realpath ?? realpath,
   };
   let creationIssued = false;
   let workflowError;

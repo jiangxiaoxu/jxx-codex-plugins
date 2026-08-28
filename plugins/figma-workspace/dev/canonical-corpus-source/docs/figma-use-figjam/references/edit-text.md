@@ -1,6 +1,6 @@
 # 编辑 FigJam 文本
 
-本页覆盖已有 `TEXT` 节点和文本子层的内容、范围样式、链接与列表修改。先用 `figma:metadata` 查找结构，再用 `figma:inspect` 确认精确节点 id；不要按名称猜测并对全页文本做未经确认的替换。
+本页覆盖已有 `TEXT` 节点和文本子层的内容、范围样式、链接与列表修改。先用只读 `figma:run` 查找结构，再用 `figma:inspect` 确认精确节点 id；`figma:metadata` 是 Design-only。不要按名称猜测并对全页文本做未经确认的替换。
 
 ## `.figma.ts` 前置与执行
 

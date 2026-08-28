@@ -40,6 +40,7 @@ const clampedInteger = (description: string, minimum: number, maximum: number): 
   description: `${description} Safe integers are accepted. Supported range ${minimum}..${maximum}; out-of-range safe integers are clamped and reported in parameterAdjustments.`,
 });
 const surface = (): JsonSchema => ({ type: "string", enum: ["design", "figjam", "slides"], description: "Explicit surface. Required with a raw file key for Plugin API execution." });
+const designSurface = (): JsonSchema => ({ type: "string", enum: ["design"], description: "Design surface only. Required with a raw file key or structured target for metadata." });
 const nodeTarget = (allowComposite = false): JsonSchema => ({
   description: "Stable node target: raw node id (with file), Figma node URL, or exact { fileKey, nodeId }.",
   oneOf: [
@@ -54,6 +55,21 @@ const invocation = (): Record<string, JsonSchema> => ({
   surface: surface(),
   outputDir: string("Optional absolute local output root; omitted outputs use one invocation temp directory."),
   inlineResultLimit: integer(`Maximum inline result bytes from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`, INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX),
+});
+const designFileReference = (description: string): JsonSchema => ({
+  oneOf: [
+    fileKey("Raw Design file key."),
+    { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file)/", description: "Design file URL." },
+  ],
+  description,
+});
+const designNodeTarget = (): JsonSchema => ({
+  description: "Design-only stable node target: Design node URL, raw node id paired with a Design file, or exact { fileKey, nodeId } with surface design.",
+  oneOf: [
+    nodeId("Raw Figma node id.", true),
+    { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file)/" },
+    { type: "object", properties: { fileKey: fileKey("Design file key."), nodeId: nodeId("Figma node id.", true) }, required: ["fileKey", "nodeId"], additionalProperties: false },
+  ],
 });
 const objectSchema = (properties: Record<string, JsonSchema>, required: readonly string[] = [], anyOf?: readonly JsonSchema[]): JsonSchema => ({ type: "object", properties, required: [...required], ...(anyOf ? { anyOf } : {}), additionalProperties: false });
 const resultSchema = (properties: Record<string, JsonSchema> = {}): JsonSchema => ({ type: "object", properties: { ok: boolean("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, ...properties }, required: ["ok"], additionalProperties: true });
@@ -79,7 +95,12 @@ export function createReplToolDescriptions(_options: ReplToolDescriptionOptions)
       inputSchema: objectSchema({ ...invocation(), target: nodeTarget(), nodeId: nodeId("Raw node id alias used with file."), imageFile: string("Optional PNG output path."), maxDimension: integer("Maximum screenshot dimension.", CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX), contentsOnly: boolean("Capture node contents only.") }, [], [{ required: ["target"] }, { required: ["file", "nodeId"] }]), outputSchema: resultSchema({ imageFile: string("Absolute PNG path."), nodeId: string("Captured node id."), bytes: integer("PNG bytes.") }),
     }],
     ["figma_workspace_inspect", nodeReadDescription("figma_workspace_inspect", "Run a compact Plugin API inspection.", { mode: { type: "string", enum: ["inspect", "style"] }, depth: integer("Traversal depth.", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX) })],
-    ["figma_workspace_get_metadata", nodeReadDescription("figma_workspace_get_metadata", "Read broad official Figma metadata.", {}, false, true)],
+    ["figma_workspace_get_metadata", {
+      name: "figma_workspace_get_metadata",
+      description: "Read broad official metadata from a Design file. FigJam and Slides structure must be inspected with a read-only figma:run script.",
+      inputSchema: objectSchema({ ...invocation(), file: designFileReference("Design file URL or raw key; raw keys require surface design."), surface: designSurface(), target: designNodeTarget(), nodeId: nodeId("Raw Figma node id.", true), refresh: boolean("Refresh upstream discovery.") }, [], [{ required: ["target"] }, { required: ["file"] }]),
+      outputSchema: resultSchema({ upstream: { type: "object" }, outputFiles: { type: "object" } }),
+    }],
     ["figma_workspace_get_design_context", nodeReadDescription("figma_workspace_get_design_context", "Read official design implementation context.", { forceCode: boolean("Force code generation."), disableCodeConnect: boolean("Disable Code Connect."), excludeScreenshot: boolean("Exclude screenshot context.") }, true, true)],
     ["figma_workspace_get_motion_context", nodeReadDescription("figma_workspace_get_motion_context", "Read official motion context.", { recursive: boolean("Read recursively.") })],
     ["figma_workspace_get_variable_defs", nodeReadDescription("figma_workspace_get_variable_defs", "Read official variable definitions.")],

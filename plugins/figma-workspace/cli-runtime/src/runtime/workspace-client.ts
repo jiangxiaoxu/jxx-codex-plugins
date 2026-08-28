@@ -191,7 +191,9 @@ const DEFAULT_INLINE_RESULT_LIMIT = 2_048;
 const MAX_QUEUED_CAPTURE_REQUESTS = 8;
 const MAX_MANIFEST_ITEMS = 64;
 const MAX_MANIFEST_FILE_BYTES = 256 * 1024;
+const MAX_CODE_CONNECT_PLAN_BYTES = 1024 * 1024;
 const MAX_SINGLE_ASSET_BYTES = 16 * 1024 * 1024;
+const MAX_UPLOAD_ASSET_BYTES = 10_000_000;
 const MAX_COMMAND_DATA_PLANE_BYTES = 64 * 1024 * 1024;
 const NETWORK_REQUEST_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
 const NETWORK_REQUEST_IDLE_TIMEOUT_MS = 60 * 1000;
@@ -2644,8 +2646,8 @@ async function openAssetInputs(
   try {
     for (const asset of assets) {
       const input = await openManagedAssetInput(asset, session);
-      assertSingleItemLimit(input.stats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
       opened.push(input);
+      assertSingleItemLimit(input.stats.size, MAX_UPLOAD_ASSET_BYTES, `Asset upload ${asset.path}`);
       await assertRasterAssetContent(input);
     }
     const totalBytes = opened.reduce((sum, input) => sum + input.stats.size, 0);
@@ -3769,6 +3771,9 @@ async function executeGetMetadata(
   },
 ): Promise<Record<string, unknown>> {
   const session = currentInvocationContext();
+  if (session.surface !== "design") {
+    throw new Error("figma:metadata supports only the Design surface. Pass a Design URL, or a raw file key with surface: design.");
+  }
   const requested = await resolveGetMetadataRequest(args, session, runtime);
   const tools = await runtime.upstreamToolCache.list(Boolean(args.refresh));
   const tool = selectRequiredUpstreamTool(tools, GET_METADATA_TOOL_NAME, requireWrapperUpstreamKind(GET_METADATA_CONTRACT));
@@ -4494,6 +4499,17 @@ async function executeCodeConnectPlan(
     };
     const planPath = resolveCodeConnectPlanOutputPath(args, session);
     const content = `${JSON.stringify(artifact, null, 2)}\n`;
+    if (Buffer.byteLength(content, "utf8") > MAX_CODE_CONNECT_PLAN_BYTES) {
+      return {
+        ok: false,
+        fileKey,
+        mappings: actions,
+        upstreamError: {
+          code: "FIGMA_WORKSPACE_CODE_CONNECT_PLAN_LIMIT_EXCEEDED",
+          message: `Code Connect plan artifact exceeds the ${MAX_CODE_CONNECT_PLAN_BYTES} byte managed-artifact limit. Reduce mapping field sizes before planning.`,
+        },
+      };
+    }
     const written = await atomicWriteManagedTextFile({ root: session.workspace?.root ?? session.outputRoot, path: planPath, overwrite: false }, content);
     const resultPayload = {
       ok: true,
@@ -4886,7 +4902,7 @@ async function readCodeConnectPlanArtifact(pathValue: string, session: FigmaWork
   if (!path) throw new Error("Code Connect plan path is required.");
   await assertInvocationManagedInputFile(path, session);
   const info = await stat(path);
-  if (info.size > MAX_MANIFEST_FILE_BYTES) throw new Error(`Code Connect plan exceeds ${MAX_MANIFEST_FILE_BYTES} bytes.`);
+  if (info.size > MAX_CODE_CONNECT_PLAN_BYTES) throw new Error(`Code Connect plan exceeds ${MAX_CODE_CONNECT_PLAN_BYTES} bytes.`);
   const source = await readFile(path, "utf8");
   await assertInvocationManagedInputFile(path, session);
   let value: unknown;
@@ -4901,6 +4917,7 @@ function parseCodeConnectPlanArtifact(value: unknown): CodeConnectPlanArtifact {
   if (artifact.schemaVersion !== 1 || artifact.kind !== "figma-code-connect-plan" || artifact.surface !== "design" || !isFigmaFileKey(asOptionalString(artifact.fileKey) ?? "")) throw new Error("Code Connect plan has invalid identity fields.");
   const scope = asRecord(artifact.scope);
   const client = asRecord(artifact.client);
+  if (!hasExactKeys(scope, ["nodeId"]) || !hasExactKeys(client, ["languages", "frameworks"])) throw new Error("Code Connect plan has unknown scope or client fields.");
   if (!isSimpleFigmaNodeId(asOptionalString(scope.nodeId) ?? "") || !asOptionalString(client.languages) || !asOptionalString(client.frameworks)) throw new Error("Code Connect plan has invalid scope or client fields.");
   const mappings = parseCodeConnectArtifactMappings(artifact.mappings);
   const actions = parseCodeConnectArtifactActions(artifact.actions, mappings);
@@ -4951,6 +4968,11 @@ function parseCodeConnectArtifactMappings(value: unknown): FigmaWorkspaceCodeCon
   });
   if (new Set(mappings.map(codeConnectMappingIdentity)).size !== mappings.length) throw new Error("Code Connect plan has duplicate mapping identities.");
   return mappings;
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === expected.length && actual.every((key) => expected.includes(key));
 }
 
 function parseCodeConnectArtifactActions(value: unknown, mappings: FigmaWorkspaceCodeConnectMapping[]): FigmaWorkspaceCodeConnectMappingStatus[] {
@@ -6644,7 +6666,7 @@ async function submitLocalAssetUploadIfAvailable(
   if (!submitUrl) {
     return undefined;
   }
-  assertSingleItemLimit(fileStats.size, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+  assertSingleItemLimit(fileStats.size, MAX_UPLOAD_ASSET_BYTES, `Asset upload ${asset.path}`);
   resourceBudget.assertCanConsume(fileStats.size, `Asset upload ${asset.path}`);
   const mimeType = asset.mimeType;
   const deadline = new NetworkRequestDeadline(`Asset upload ${asset.path}`);
@@ -6655,7 +6677,7 @@ async function submitLocalAssetUploadIfAvailable(
       try {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         uploadedBytes += bytes.byteLength;
-        assertSingleItemLimit(uploadedBytes, MAX_SINGLE_ASSET_BYTES, `Asset upload ${asset.path}`);
+        assertSingleItemLimit(uploadedBytes, MAX_UPLOAD_ASSET_BYTES, `Asset upload ${asset.path}`);
         resourceBudget.consume(bytes.byteLength, `Asset upload ${asset.path}`);
         deadline.touch();
         callback(null, bytes);
@@ -8302,7 +8324,10 @@ function parseStrictFigmaFileUrl(value: string): {
   }
   const parts = url.pathname.split("/").filter(Boolean);
   const kind = parts[0];
-  const fileKey = parts[1];
+  // Figma branch URLs retain the base file key in the first segment, but
+  // upstream MCP tools must target the branch key instead.
+  const isBranchPath = kind === "design" && parts[2] === "branch";
+  const fileKey = isBranchPath ? parts[3] : parts[1];
   if (!FIGMA_FILE_URL_KINDS.includes(kind as typeof FIGMA_FILE_URL_KINDS[number]) || !fileKey || !isSimpleFigmaFileKey(fileKey)) {
     throw new Error("Figma file URLs must include a valid Design, FigJam, or Slides path and file key.");
   }
@@ -8315,7 +8340,7 @@ function parseStrictFigmaFileUrl(value: string): {
     : kind === "figjam" || kind === "board"
       ? "figjam"
       : "slides";
-  const name = parts[2];
+  const name = isBranchPath ? parts[4] : parts[2];
   return {
     fileKey,
     fileSlug: name ? slugifyTaskName(decodeURIComponent(name)) : undefined,

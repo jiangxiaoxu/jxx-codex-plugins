@@ -285,6 +285,7 @@ export function asGetMetadataArgs(value: unknown): FigmaWorkspaceGetMetadataArgu
   allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "nodeId", "refresh"]);
   normalizeNodeAlias(args);
   requiredFileOrNodeUrl(args, "figma:metadata", true);
+  requireMetadataDesignSurface(args);
   return args;
 }
 
@@ -489,6 +490,27 @@ function requireStableNodeTarget(args: InvocationArguments & { target?: FigmaWor
   }
   if (typeof args.target === "string" && !isFigmaNodeUrl(args.target, allowCompositeNodeId) && !args.file?.trim()) {
     throw new FigmaWorkspaceToolArgumentError(`${command} requires "file" when the node target is a raw id.`);
+  }
+}
+
+function requireMetadataDesignSurface(args: InvocationArguments & { target?: FigmaWorkspaceNodeTarget }): void {
+  if (args.surface !== undefined && args.surface !== "design") {
+    throw new FigmaWorkspaceToolArgumentError("figma:metadata supports only the Design surface.");
+  }
+  const urlValues = [args.file, typeof args.target === "string" ? args.target : undefined]
+    .filter((value): value is string => typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//iu.test(value));
+  for (const value of urlValues) {
+    try {
+      const kind = new URL(value).pathname.split("/").filter(Boolean)[0];
+      if (kind !== "design" && kind !== "file") {
+        throw new FigmaWorkspaceToolArgumentError("figma:metadata supports only Design file URLs.");
+      }
+    } catch (error) {
+      if (error instanceof FigmaWorkspaceToolArgumentError) throw error;
+    }
+  }
+  if (args.surface === undefined && urlValues.length === 0) {
+    throw new FigmaWorkspaceToolArgumentError('figma:metadata with a raw file key or structured target requires "surface": "design".');
   }
 }
 

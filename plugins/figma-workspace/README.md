@@ -1,6 +1,6 @@
 # Figma Workspace
 
-Figma Workspace 0.6.0 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
+Figma Workspace 0.6.1 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
 
 ## Quick Start
 
@@ -24,7 +24,7 @@ Every command that requires a Figma file or node target supplies it in that invo
 
 For Code Connect, use the Design-only sequence `figma:code-connect:inspect` -> `figma:code-connect:plan` -> `figma:code-connect:apply --confirm-plan` -> `figma:code-connect:verify`. Supply an explicit mapping manifest with simple node IDs, `componentName`, `source`, and a live-contract `label` (1 to 64 unique entries). Plans are immutable and digest-bound; `apply` is the only write, rejects stale snapshots and unapproved conflicts, and must not be replayed after `outcome_unknown` until `verify` reconciles the remote state. Template fields and `.figma.ts`/`.figma.js` Code Connect artifacts are unsupported; use generic `figma:upstream:*` for uncovered capabilities and `figma:run` only for native Plugin API scripts.
 
-For a normal edit, use docs/API lookup to choose the flow, create a local `.figma.ts` script in the shell, run `figma:run`, then capture and inspect visible output with `view_image`. Use `figma:metadata` before targeted `figma:inspect` when broad structure discovery is needed. Prefer first-class context, asset, and capture commands for typed safeguards. `figma:upstream:list` and `figma:upstream:read` show the live schema and local `coverage`; that hint never blocks `figma:upstream:call` of a covered official tool. Before any direct call, read its selected description and schema; obtain explicit user confirmation when it marks an action as destructive, external, credit/cost-bearing, or an asset upload.
+For a normal edit, use docs/API lookup to choose the flow, create a local `.figma.ts` script in the shell, run `figma:run`, then capture and inspect visible output with `view_image`. Use `figma:metadata` before targeted `figma:inspect` for broad Design-file discovery only; for FigJam or Slides, use a read-only `.figma.ts` script with `figma:run` for broad discovery, then targeted `figma:inspect --surface figjam|slides`. Prefer first-class context, asset, and capture commands for typed safeguards. `figma:upstream:list` and `figma:upstream:read` show the live schema and local `coverage`; that hint never blocks `figma:upstream:call` of a covered official tool. Before any direct call, read its selected description and schema; obtain explicit user confirmation when it marks an action as destructive, external, credit/cost-bearing, or an asset upload.
 
 ## Mutation Recovery
 

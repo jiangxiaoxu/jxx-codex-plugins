@@ -2,7 +2,7 @@
 
 ## Active mirror execution contract
 
-Diagram generation has no typed CLI command. Before every diagram operation, use `figma:upstream:list` or `figma:upstream:read` to confirm the live upstream schema, then invoke the discovered capability with `figma:upstream:call`. Do not assume a tool name, parameter name, or return shape from this mirror. When the authenticated live schema requires `planKey`, read and call the live `whoami` capability, use its one returned plan candidate, or ask the user to choose when several candidates are available. For follow-up canvas work, write a local `.figma.ts` script and execute it with `figma:run` using the explicit FigJam target. Use `figma:metadata`, `figma:design-context`, or `figma:capture` where their typed operation fits the required read or visual check.
+Diagram generation has no typed CLI command. Before every diagram operation, use `figma:upstream:list` or `figma:upstream:read` to confirm the live upstream schema, then invoke the discovered capability with `figma:upstream:call`. Do not assume a tool name, parameter name, or return shape from this mirror. When the authenticated live schema requires `planKey`, read and call the live `whoami` capability, use its one returned plan candidate, or ask the user to choose when several candidates are available. For follow-up canvas work, use a read-only local `.figma.ts` script with `figma:run` for broad or anchor discovery, then `figma:inspect --file <FigJam URL|fileKey> --node <nodeId> --surface figjam` for targeted reads. Use `figma:capture` for visual checks.
 
 The upstream capability accepts Mermaid syntax and produces an editable FigJam diagram. This guide routes you to the right per-type guidance and sets universal constraints.
 
@@ -61,7 +61,7 @@ Depending on what's available, useful sources of context include:
 
 - **Source code** — grep/read the relevant files so the diagram reflects real service names, real edge labels, real data stores, real entry points. Walking actual routes/handlers/consumers beats recreating from memory.
 - **User-provided documents** — a PRD, spec, meeting notes, transcript, research synthesis, onboarding doc, process write-up. Ask the user to paste or attach it if the subject isn't code.
-- **Existing Figma or FigJam files** — if the new diagram should align with one the user already has, read it with `figma:metadata` or `figma:design-context`.
+- **Existing Figma or FigJam files** — if the new diagram should align with one the user already has, run a read-only `.figma.ts` script through `figma:run` for broad discovery, then use `figma:inspect` with the explicit FigJam target and node IDs for focused reads.
 - **Other remote Figma capabilitys or tools you have available** — issue trackers, docs sites, CRMs, analytics, internal wikis, design systems, database schemas, etc. If a connected tool holds the ground truth for what you're diagramming, pull from it rather than guessing.
 - **The user themselves** — when the description is thin or ambiguous (unclear direction of flow, unclear scope, unclear which entities matter), ask one or two focused questions before generating. Examples: "What are the 3–5 main steps?", "Who owns each step?", "What triggers the next step?". One good question beats one wasted diagram.
 

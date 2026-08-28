@@ -582,10 +582,12 @@ function extractFileKey(value: unknown): string | undefined {
     const parts = url.pathname.split("/").filter(Boolean);
     const validHost = url.protocol === "https:" && (url.hostname === "figma.com" || url.hostname.endsWith(".figma.com"));
     const validSurface = parts.length >= 2 && ["design", "file", "figjam", "board", "slides"].includes(parts[0]!);
-    if (!validHost || !validSurface || !parts[1]) {
+    const isBranchPath = parts[0] === "design" && parts[2] === "branch";
+    const fileKey = isBranchPath ? parts[3] : parts[1];
+    if (!validHost || !validSurface || !fileKey) {
       throw new FigmaWorkspaceCliUsageError("Figma URLs must use https://*.figma.com/<design|file|figjam|board|slides>/<fileKey>.");
     }
-    return parts[1];
+    return fileKey;
   } catch (error) {
     if (error instanceof FigmaWorkspaceCliUsageError) throw error;
     return value;

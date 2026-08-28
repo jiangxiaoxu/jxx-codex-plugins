@@ -71,6 +71,31 @@ test("metadata schema excludes retired client hints", () => {
   assert.equal("clientFrameworks" in metadataProperties, false);
 });
 
+test("metadata metadata advertises the Design-only surface", () => {
+  const descriptions = metadata.createReplToolDescriptions({});
+  const byName = new Map(descriptions.map((description) => [description.name, description]));
+  const schema = byName.get("figma_workspace_get_metadata");
+  assert.deepEqual(schema.inputSchema.properties.surface.enum, ["design"]);
+  assert.equal(schema.inputSchema.properties.surface.enum.includes("figjam"), false);
+  assert.equal(schema.inputSchema.properties.surface.enum.includes("slides"), false);
+  assert.deepEqual(schema.inputSchema.anyOf, [{ required: ["target"] }, { required: ["file"] }]);
+  const fileSchema = schema.inputSchema.properties.file;
+  const targetSchema = schema.inputSchema.properties.target;
+  const fileUrlPattern = new RegExp(fileSchema.oneOf[1].pattern, "u");
+  const targetUrlPattern = new RegExp(targetSchema.oneOf[1].pattern, "u");
+  for (const url of ["https://www.figma.com/design/AAAAAAAAAAAAAAAAAAAAAA/UI", "https://www.figma.com/file/AAAAAAAAAAAAAAAAAAAAAA/UI"]) {
+    assert.equal(fileUrlPattern.test(url), true, url);
+    assert.equal(targetUrlPattern.test(`${url}?node-id=1-2`), true, url);
+  }
+  for (const url of ["https://www.figma.com/board/AAAAAAAAAAAAAAAAAAAAAA/Board", "https://www.figma.com/slides/AAAAAAAAAAAAAAAAAAAAAA/Deck"]) {
+    assert.equal(fileUrlPattern.test(url), false, url);
+    assert.equal(targetUrlPattern.test(`${url}?node-id=1-2`), false, url);
+  }
+  assert.equal(fileSchema.oneOf[0].pattern, "^[0-9a-zA-Z]{22,128}$");
+  assert.equal(targetSchema.oneOf[2].properties.fileKey.pattern, "^[0-9a-zA-Z]{22,128}$");
+  assert.match(schema.description, /Design file.*FigJam and Slides/iu);
+});
+
 test("run schema distinguishes atomic script failure from unknown completion", () => {
   const descriptions = metadata.createReplToolDescriptions({});
   const byName = new Map(descriptions.map((description) => [description.name, description]));
