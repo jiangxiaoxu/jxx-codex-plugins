@@ -398,6 +398,53 @@ test("Code Connect plan artifact has a bounded 1 MiB limit and remains readable 
   }
 });
 
+test("Code Connect apply and verify read an exact 1 MiB plan but reject one additional byte before upstream calls", async () => {
+  const outputDir = await mkdtemp(resolve(tmpdir(), "figma-code-connect-plan-boundary-"));
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls), invocationId: "code-connect-plan-boundary" });
+  try {
+    const plan = await client.codeConnectPlan({ file: FILE_URL, outputDir, outputPlanPath: resolve(outputDir, "boundary.json"), manifest: manifest() });
+    const source = await readFile(plan.planFile.path, "utf8");
+    const padding = 1024 * 1024 - Buffer.byteLength(source, "utf8");
+    assert.ok(padding > 0);
+    const exactPlan = `${source}${" ".repeat(padding)}`;
+    assert.equal(Buffer.byteLength(exactPlan, "utf8"), 1024 * 1024);
+    await writeFile(plan.planFile.path, exactPlan, "utf8");
+
+    calls.length = 0;
+    const applied = await client.codeConnectApply({
+      file: FILE_URL,
+      outputDir,
+      planPath: plan.planFile.path,
+      confirmPlan: plan.planDigest,
+    });
+    assert.equal(applied.executionOutcome, "succeeded");
+    assert.equal(calls.some((entry) => entry.kind === "call"), true);
+
+    await writeFile(plan.planFile.path, `${exactPlan} `, "utf8");
+    calls.length = 0;
+    const blockedApply = await client.codeConnectApply({
+      file: FILE_URL,
+      outputDir,
+      planPath: plan.planFile.path,
+      confirmPlan: plan.planDigest,
+    });
+    assert.equal(blockedApply.executionOutcome, "not_started");
+    assert.equal(calls.some((entry) => entry.kind === "call"), false);
+
+    const blockedVerify = await client.codeConnectVerify({
+      file: FILE_URL,
+      outputDir,
+      planPath: plan.planFile.path,
+    });
+    assert.equal(blockedVerify.ok, false);
+    assert.equal(calls.some((entry) => entry.kind === "call"), false);
+  } finally {
+    await client.close();
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
 test("Code Connect apply rejects a mismatched confirmation without remote calls, then writes once and reads back", async () => {
   const outputDir = await mkdtemp(resolve(tmpdir(), "figma-code-connect-apply-"));
   const calls = [];

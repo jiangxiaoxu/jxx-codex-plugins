@@ -234,6 +234,7 @@ idle deadline 只适用于可以可靠观察 activity 的 transport, 例如 HTTP
 2. 明确 budget 作用于 rendered output 还是 serialized JSON.
 3. exact boundary 必须有测试.
 4. 超限后写 complete result sidecar; stdout 只返回 file path, size, omitted metadata 和恢复说明.
+   对于 direct upstream response budget 拒绝等无法安全保留完整 payload 的边界, 只返回 bounded resource diagnostic, 可写 diagnostic-only sidecar, 不得持久化响应 payload.
 5. sidecar 使用同目录 temporary file + atomic rename.
 6. `0` 可以定义为 always spill, 便于 machine consumer 获得完整 JSON.
 7. sidecar path 必须经过集中路径解析, 并有 retention, cleanup, permission 和 secret policy.
@@ -317,7 +318,7 @@ command registry, transport command list, wrappers 和 npm scripts 很容易形�
 
 - below, exact and above UTF-8 byte threshold.
 - override precedence, maximum and `0` always-spill.
-- sidecar is complete JSON and recoverable from stdout metadata.
+- emitted sidecar is complete JSON and recoverable from stdout metadata; a resource-budget rejection may emit only a diagnostic sidecar without the rejected payload.
 - default, environment and explicit state paths.
 - relative path resolution from documented cwd.
 - concurrent writers, live lock refusal, dead/malformed recovery and ownership-safe release.
@@ -394,7 +395,7 @@ For project-specific `figma-workspace` architecture, release, and validation rul
 - [ ] stdout, stderr and exit semantics are contract-tested.
 - [ ] Observation states are not confused with inspection failures.
 - [ ] Deadlines are total and interruptible when the command is long-running.
-- [ ] Large results remain completely recoverable through tested sidecars.
+- [ ] Large results remain completely recoverable through tested sidecars, except payloads rejected by an explicit resource budget, which return a bounded diagnostic without persistence.
 - [ ] State writes and locks are atomic and ownership-safe when state exists.
 - [ ] Remote-success/local-persistence failure retains the known operation outcome and blocks blind mutation replay.
 - [ ] Source, generated output, wrappers and package files are synchronized.

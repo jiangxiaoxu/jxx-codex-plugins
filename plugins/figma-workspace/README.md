@@ -1,6 +1,6 @@
 # Figma Workspace
 
-Figma Workspace 0.6.1 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
+Figma Workspace 0.6.2 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
 
 ## Quick Start
 
@@ -39,7 +39,7 @@ For `failed_atomic`, stdout directly shows a compact remote error code/message a
 
 ## Local Artifacts And Login
 
-The CLI does not create a persistent workspace record. Shells own `.figma.ts` creation and repeat a Figma target only for operations that require one. Pure inline reads do not create local files. Every `figma:upstream:call` writes a sanitized visible-protocol sidecar; typed commands write their upstream-response sidecar only for a remote error, inline truncation, or unrendered non-text content. Sidecars retain `content`, `structuredContent`, `isError`, and standard ContentBlock `annotations`; they strip protocol `_meta`, never expose tool-definition annotations, and leave business `_meta` inside `structuredContent` unchanged. When a command needs to write an oversized result, diagnostic, capture, or download and no explicit path is supplied, it returns an absolute path under an invocation-specific OS temp directory. Use `--output-dir`, `--image-file`, or a download output option when a later shell step needs a durable location.
+The CLI does not create a persistent workspace record. Shells own `.figma.ts` creation and repeat a Figma target only for operations that require one. Pure inline reads do not create local files. A `figma:upstream:call` within the response budget writes a sanitized visible-protocol sidecar; an over-budget response does not persist its payload and returns a bounded resource-limit diagnostic (with a diagnostic-only sidecar when emitted). Typed commands write their upstream-response sidecar only for a remote error, inline truncation, or unrendered non-text content. Sidecars retain `content`, `structuredContent`, `isError`, and standard ContentBlock `annotations`; they strip protocol `_meta`, never expose tool-definition annotations, and leave business `_meta` inside `structuredContent` unchanged. When a command needs to write an oversized result, diagnostic, capture, or download and no explicit path is supplied, it returns an absolute path under an invocation-specific OS temp directory. Use `--output-dir`, `--image-file`, or a download output option when a later shell step needs a durable location.
 
 The OS-temp fileKey lock covers `figma:run`, `figma:assets:apply`, `figma:code-connect:apply`, and `figma:upstream:call` only when that call resolves a fileKey; it does not serialize every mutation. Managed outputs reject links and reparse points and are written atomically. The lock is not distributed durability.
 

@@ -348,7 +348,8 @@ test("every public leaf help publishes its real argv contract", () => {
   assert.match(runHelp, /Status: failed after execution/u);
   const upstreamCallHelp = formatCommandHelp("upstream:call");
   assert.match(upstreamCallHelp, /Covered official tools remain callable here/u);
-  assert.match(upstreamCallHelp, /sanitized \.upstream\.json sidecar/u);
+  assert.match(upstreamCallHelp, /Calls within the response budget write a sanitized \.upstream\.json sidecar/u);
+  assert.match(upstreamCallHelp, /over-budget response returns a resource diagnostic without writing its payload/u);
 });
 
 test("metadata rejects retired client hints before dispatch", async () => {
