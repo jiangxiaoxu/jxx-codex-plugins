@@ -59,7 +59,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.6.1";
+    DEFAULT_CLIENT_VERSION = "0.6.2";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -24957,28 +24957,64 @@ function scanSvgDoctype(source, startOffset) {
   return { kind: "incomplete-svg" };
 }
 async function openManagedAssetInput(asset, session) {
-  const path = await assertInvocationManagedInputFile(asset.path, session);
+  const input = await openStableManagedInputFile(asset.path, session, "Asset input");
+  return { asset, ...input };
+}
+async function openStableManagedInputFile(pathValue, session, label) {
+  const path = await assertInvocationManagedInputFile(pathValue, session);
   const before = await lstat3(path);
-  assertRegularAssetInput(before, path);
+  assertRegularStableManagedInput(before, path, label);
   const handle = await open3(path, "r");
   try {
     const handleStats = await handle.stat();
-    assertRegularAssetInput(handleStats, path);
+    assertRegularStableManagedInput(handleStats, path, label);
     const current = await lstat3(path);
-    assertRegularAssetInput(current, path);
+    assertRegularStableManagedInput(current, path, label);
     await assertInvocationManagedInputFile(path, session);
-    if (!sameFileIdentity(before, handleStats) || !sameFileIdentity(handleStats, current)) {
-      throw new Error(`Asset input changed while it was being opened: ${path}`);
+    if (!sameFileSnapshot(before, handleStats) || !sameFileSnapshot(handleStats, current)) {
+      throw new Error(`${label} changed while it was being opened: ${path}`);
     }
-    return { asset, handle, stats: handleStats };
+    return { path, handle, stats: handleStats };
   } catch (error2) {
     await handle.close().catch(() => void 0);
     throw error2;
   }
 }
-function assertRegularAssetInput(stats, path) {
+async function assertStableManagedInputFile(input, session, label) {
+  const handleStats = await input.handle.stat();
+  assertRegularStableManagedInput(handleStats, input.path, label);
+  const current = await lstat3(input.path);
+  assertRegularStableManagedInput(current, input.path, label);
+  await assertInvocationManagedInputFile(input.path, session);
+  if (!sameFileSnapshot(input.stats, handleStats) || !sameFileSnapshot(handleStats, current)) {
+    throw new Error(`${label} changed while it was being read: ${input.path}`);
+  }
+}
+async function readStableManagedInputFile(options) {
+  const input = await openStableManagedInputFile(options.path, options.session, options.label);
+  try {
+    assertSingleItemLimit(input.stats.size, options.limitBytes, options.label);
+    const chunks = [];
+    const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, options.limitBytes));
+    let bytes = 0;
+    let position = 0;
+    while (true) {
+      const { bytesRead } = await input.handle.read(chunk, 0, chunk.byteLength, position);
+      if (bytesRead === 0) break;
+      bytes += bytesRead;
+      assertSingleItemLimit(bytes, options.limitBytes, options.label);
+      chunks.push(Buffer.from(chunk.subarray(0, bytesRead)));
+      position += bytesRead;
+    }
+    await assertStableManagedInputFile(input, options.session, options.label);
+    return Buffer.concat(chunks, bytes);
+  } finally {
+    await input.handle.close().catch(() => void 0);
+  }
+}
+function assertRegularStableManagedInput(stats, path, label) {
   if (stats.isSymbolicLink() || !stats.isFile()) {
-    throw new Error(`Asset input must be a real regular file, not a symlink, junction, reparse target, or directory: ${path}`);
+    throw new Error(`${label} must be a real regular file, not a symlink, junction, reparse target, or directory: ${path}`);
   }
 }
 function sameFileIdentity(left, right) {
@@ -24986,6 +25022,9 @@ function sameFileIdentity(left, right) {
     return left.dev === right.dev && left.ino === right.ino;
   }
   return left.mode === right.mode && left.size === right.size && left.birthtimeMs === right.birthtimeMs && left.ctimeMs === right.ctimeMs;
+}
+function sameFileSnapshot(left, right) {
+  return sameFileIdentity(left, right) && left.size === right.size && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs;
 }
 function parseContentLength(value) {
   if (value === null || !/^\d+$/u.test(value.trim())) return void 0;
@@ -25517,17 +25556,17 @@ function buildInspectStyleCode(options) {
     "  return typeof __font === 'symbol' ? String(__font) : __font;",
     "}",
     "const __nodes = [];",
-    "function __walk(__node) {",
+    "function __walk(__node, __remainingDepth) {",
     "  if (!__node) return;",
     "  __nodes.push(__node);",
-    "  if ('children' in __node) {",
-    "    for (const __child of __node.children) __walk(__child);",
+    "  if (__remainingDepth > 0 && 'children' in __node) {",
+    "    for (const __child of __node.children) __walk(__child, __remainingDepth - 1);",
     "  }",
     "}",
     "if (Array.isArray(__value)) {",
-    "  for (const __node of __value) __walk(__node);",
+    "  for (const __node of __value) __walk(__node, __depth);",
     "} else {",
-    "  __walk(__value);",
+    "  __walk(__value, __depth);",
     "}",
     "const __scanNodes = typeof __limit === 'number' ? __nodes.slice(__offset, __offset + __limit) : __nodes;",
     "const __colorCounts = {};",
@@ -26150,6 +26189,15 @@ async function executeCallUpstreamTool(args, runtime) {
   }
   const parsed = parseUpstreamToolResult(attempt.upstream);
   const executionOutcome = parsed.upstreamError ? isConfirmedAtomicDirectUseFigmaFailure(args.toolName, parsed) ? "failed_atomic" : "outcome_unknown" : "succeeded";
+  if (attempt.postResponseError) {
+    return directUpstreamResponseBudgetFailure({
+      args,
+      session,
+      parsed,
+      executionOutcome,
+      error: attempt.postResponseError
+    });
+  }
   const response = await shapeDirectUpstreamCallResponse({
     args,
     session,
@@ -26157,10 +26205,41 @@ async function executeCallUpstreamTool(args, runtime) {
     phase: "execute",
     executionOutcome
   });
-  if (!attempt.postResponseError) {
-    return response;
+  return response;
+}
+async function directUpstreamResponseBudgetFailure(options) {
+  const resultPayload = localPostprocessingFailure(removeUndefined3({
+    ok: false,
+    toolName: options.args.toolName,
+    phase: "execute",
+    executionOutcome: options.executionOutcome,
+    retryGuidance: options.executionOutcome === "failed_atomic" ? ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE : options.executionOutcome === "outcome_unknown" ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : void 0,
+    upstream: upstreamEnvelope(options.parsed, { includePayload: false }),
+    upstreamError: {
+      code: options.error.code,
+      message: errorMessage2(options.error)
+    }
+  }), "upstreamResponseBudget", options.error);
+  try {
+    const outputFile = resolveCallUpstreamOutputFile(options.args.toolName, options.session);
+    return {
+      ...resultPayload,
+      outputFiles: {
+        debugFile: responseFilePointer(await writeJsonFile(
+          outputFile,
+          createUpstreamBackedResultFilePayload({
+            tool: "figma:upstream:call",
+            session: options.session,
+            resultPayload,
+            upstream: upstreamEnvelope(options.parsed, { includePayload: false }),
+            fields: { upstreamToolName: options.args.toolName }
+          })
+        ))
+      }
+    };
+  } catch (error2) {
+    return localPostprocessingFailure(resultPayload, "upstreamResponseBudgetDiagnostic", error2);
   }
-  return localPostprocessingFailure(response, "upstreamResponseBudget", attempt.postResponseError);
 }
 async function shapeDirectUpstreamCallResponse(options) {
   const retryGuidance = options.executionOutcome === "failed_atomic" ? ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE : options.executionOutcome === "outcome_unknown" ? UNKNOWN_EXECUTION_RETRY_GUIDANCE : void 0;
@@ -26671,11 +26750,12 @@ function resolveCodeConnectPlanOutputPath(args, session) {
 async function readCodeConnectPlanArtifact(pathValue, session) {
   const path = resolveInvocationAwareFile(pathValue, session, "planPath");
   if (!path) throw new Error("Code Connect plan path is required.");
-  await assertInvocationManagedInputFile(path, session);
-  const info = await stat2(path);
-  if (info.size > MAX_CODE_CONNECT_PLAN_BYTES) throw new Error(`Code Connect plan exceeds ${MAX_CODE_CONNECT_PLAN_BYTES} bytes.`);
-  const source = await readFile2(path, "utf8");
-  await assertInvocationManagedInputFile(path, session);
+  const source = (await readStableManagedInputFile({
+    path,
+    session,
+    limitBytes: MAX_CODE_CONNECT_PLAN_BYTES,
+    label: "Code Connect plan"
+  })).toString("utf8");
   let value;
   try {
     value = JSON.parse(source);

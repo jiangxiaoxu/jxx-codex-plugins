@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -502,6 +502,64 @@ test("direct calls preserve recovery facts and write sanitized visible MCP resul
     await genericClient.close();
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("direct over-budget responses return a bounded diagnostic without an upstream payload sidecar", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-upstream-call-budget-"));
+  const sentinel = "DIRECT_UPSTREAM_PAYLOAD_MUST_NOT_BE_WRITTEN";
+  const oversizedText = `${"x".repeat(64 * 1024 * 1024)}${sentinel}`;
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream([], () => ({ content: [{ type: "text", text: oversizedText }] })),
+  });
+  try {
+    const result = await client.callUpstreamTool({
+      toolName: "get_metadata",
+      arguments: { fileKey: FILE_KEY },
+      outputDir: directory,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.phase, "execute");
+    assert.equal(result.executionOutcome, "succeeded");
+    assert.deepEqual(result.upstream, { kind: "text", ok: true });
+    assert.equal(result.upstreamError.code, "FIGMA_WORKSPACE_RESOURCE_LIMIT_EXCEEDED");
+    assert.equal(result.postProcessing.upstreamResponseBudget.status, "failed");
+    assert.ok(result.outputFiles.debugFile?.path);
+    assert.equal("upstreamFile" in result.outputFiles, false);
+    assert.doesNotMatch(JSON.stringify(result), new RegExp(sentinel, "u"));
+    assert.doesNotMatch(await readFile(result.outputFiles.debugFile.path, "utf8"), new RegExp(sentinel, "u"));
+    assert.deepEqual(await readdir(directory), [result.outputFiles.debugFile.path.split(/[\\/]/u).at(-1)]);
+  } finally {
+    await client.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("style inspect limits actual traversal to the requested depth", async () => {
+  const grandchild = { id: "1:3", type: "TEXT", name: "Grandchild", characters: "leaf" };
+  const child = { id: "1:2", type: "FRAME", name: "Child", children: [grandchild] };
+  const root = { id: "1:1", type: "FRAME", name: "Root", children: [child] };
+  const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream([], async (name, args) => {
+      assert.equal(name, "use_figma");
+      const result = await new AsyncFunction("figma", args.code)({
+        async getNodeByIdAsync(id) { return id === root.id ? root : undefined; },
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }),
+  });
+  try {
+    const depthOne = await client.inspect({ file: FILE_URL, target: root.id, mode: "style", depth: 1 });
+    const depthTwo = await client.inspect({ file: FILE_URL, target: root.id, mode: "style", depth: 2 });
+    assert.equal(depthOne.nodeCount, 2);
+    assert.equal(depthOne.scannedNodeCount, 2);
+    assert.equal(depthOne.style.textStyles.length, 0);
+    assert.equal(depthTwo.nodeCount, 3);
+    assert.equal(depthTwo.scannedNodeCount, 3);
+    assert.equal(depthTwo.style.textStyles.length, 1);
+  } finally {
+    await client.close();
   }
 });
 
