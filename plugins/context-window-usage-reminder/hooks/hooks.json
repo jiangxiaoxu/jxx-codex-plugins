@@ -5,9 +5,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -c \"import os,runpy; runpy.run_path(os.path.join(os.environ['PLUGIN_ROOT'],'scripts','context_window_usage_hook.py'),run_name='__main__')\"",
+            "command": "python \"$env:PLUGIN_ROOT/scripts/context_window_usage_hook.py\"",
             "timeout": 10,
-            "statusMessage": "Checking context window usage (Context-window-usage-reminder plugin)"
+            "statusMessage": "Context-window-usage-reminder plugin"
           }
         ]
       }

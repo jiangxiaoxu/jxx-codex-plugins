@@ -129,7 +129,7 @@ class ContextUsageHookTests(unittest.TestCase):
             )
             self.assertEqual(help_result.returncode, 0)
 
-    def test_discovered_command_runs_through_supported_windows_shells(self):
+    def test_discovered_command_runs_through_powershell(self):
         hooks = json.loads(HOOKS.read_text(encoding="utf-8"))
         command = hooks["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
         with tempfile.TemporaryDirectory(prefix="context hook shell ") as directory:
@@ -148,25 +148,19 @@ class ContextUsageHookTests(unittest.TestCase):
                     "hook_event_name": "PostToolUse",
                 }
             )
-            shell_commands = (
-                ("pwsh", ["pwsh", "-NoProfile", "-Command", command]),
-                ("cmd", f"cmd.exe /D /S /C {command}"),
+            environment = os.environ.copy()
+            environment["PLUGIN_ROOT"] = str(plugin_root)
+            environment["CODEX_HOME"] = str(root / "state with spaces")
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command],
+                input=request,
+                text=True,
+                capture_output=True,
+                env=environment,
+                check=False,
             )
-            for shell_name, shell_command in shell_commands:
-                with self.subTest(shell=shell_name):
-                    environment = os.environ.copy()
-                    environment["PLUGIN_ROOT"] = str(plugin_root)
-                    environment["CODEX_HOME"] = str(root / f"state {shell_name}")
-                    result = subprocess.run(
-                        shell_command,
-                        input=request,
-                        text=True,
-                        capture_output=True,
-                        env=environment,
-                        check=False,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assert_context(result, expected_used_k=250)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assert_context(result, expected_used_k=250)
 
     def test_unreadable_transcript_returns_four(self):
         with tempfile.TemporaryDirectory() as directory:
