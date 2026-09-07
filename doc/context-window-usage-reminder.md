@@ -11,8 +11,9 @@ whole thousands and has this form:
 [Context window usage reminder] Current context window usage is 200 K tokens.
 ```
 
-The plugin supports Windows and requires Python 3.10 or newer on `PATH`. Python's standard library
-is sufficient; no third-party package, probe script, or packaged database is required.
+The plugin supports Windows PowerShell and requires Python 3.10 or newer on `PATH`. Python's
+standard library is sufficient; no third-party package, probe script, or packaged database is
+required.
 
 ## Configuration
 
@@ -28,9 +29,9 @@ does not declare a `hooks` field. The discovered configuration registers one syn
         "hooks": [
           {
             "type": "command",
-            "command": "python -c \"import os,runpy; runpy.run_path(os.path.join(os.environ['PLUGIN_ROOT'],'scripts','context_window_usage_hook.py'),run_name='__main__')\"",
+            "command": "python \"$env:PLUGIN_ROOT/scripts/context_window_usage_hook.py\"",
             "timeout": 10,
-            "statusMessage": "Checking context window usage (Context-window-usage-reminder plugin)"
+            "statusMessage": "Context-window-usage-reminder plugin"
           }
         ]
       }
@@ -39,10 +40,10 @@ does not declare a `hooks` field. The discovered configuration registers one syn
 }
 ```
 
-The command uses Windows `python`. The hook runner provides `PLUGIN_ROOT` as an environment
-variable; the Python launcher reads it directly and resolves the script path with `os.path.join`,
-so the command does not depend on shell-specific `%...%` variable expansion and remains valid when
-the plugin path contains spaces.
+The command uses Windows PowerShell and `python`. The hook runner provides `PLUGIN_ROOT` as an
+environment variable; PowerShell reads it with `$env:PLUGIN_ROOT`, and the quoted path remains valid
+when the plugin path contains spaces. The command is intended for a PowerShell hook runner; CMD
+variable expansion is not supported by this configuration.
 The hook has a 10-second timeout. Its status message describes each invocation in the UI,
 independently of the 200K reminder threshold.
 
