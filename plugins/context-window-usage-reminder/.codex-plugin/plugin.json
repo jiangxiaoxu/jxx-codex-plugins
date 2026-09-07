@@ -1,6 +1,6 @@
 {
   "name": "context-window-usage-reminder",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reports current context window usage through a PostToolUse hook.",
   "author": {
     "name": "jiangxiaoxu"
@@ -11,6 +11,8 @@
     "longDescription": "Emits a reminder after 200K tokens and at each additional 50K boundary.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
+    "composerIcon": "./assets/context-window-usage-reminder-icon.png",
+    "logo": "./assets/context-window-usage-reminder-icon.png",
     "capabilities": [],
     "defaultPrompt": []
   }
