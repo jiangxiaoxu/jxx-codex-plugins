@@ -1,6 +1,6 @@
 {
   "name": "context-window-usage-reminder",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Reports current context window usage through a PostToolUse hook.",
   "author": {
     "name": "jiangxiaoxu"

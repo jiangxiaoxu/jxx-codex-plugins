@@ -28,7 +28,9 @@ does not declare a `hooks` field. The discovered configuration registers one syn
         "hooks": [
           {
             "type": "command",
-            "command": "python \"%PLUGIN_ROOT%/scripts/context_window_usage_hook.py\""
+            "command": "python \"%PLUGIN_ROOT%/scripts/context_window_usage_hook.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking context window usage (Context-window-usage-reminder plugin)"
           }
         ]
       }
@@ -39,6 +41,8 @@ does not declare a `hooks` field. The discovered configuration registers one syn
 
 The command uses Windows `python`. `%PLUGIN_ROOT%` is provided by the hook runner and is quoted so
 the command remains valid when the plugin path contains spaces.
+The hook has a 10-second timeout. Its status message describes each invocation in the UI,
+independently of the 200K reminder threshold.
 
 ## Runtime state and behavior
 
