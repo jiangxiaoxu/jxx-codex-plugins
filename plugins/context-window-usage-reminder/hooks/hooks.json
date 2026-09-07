@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"%PLUGIN_ROOT%/scripts/context_window_usage_hook.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

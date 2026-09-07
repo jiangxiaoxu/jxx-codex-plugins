@@ -8,6 +8,7 @@ Codex plugin marketplace repository. See [Repository Guide](doc/jxx-codex-plugin
 | --- | --- |
 | `task-memory` | Maintains resumable task state and task-local artifacts through a plugin-root npm CLI. |
 | `figma-workspace` | Provides a stateless fixed-leaf Node CLI for Figma work, CLI-readable project docs, Restricted Markdown results, and a transient OAuth login bridge. |
+| `context-window-usage-reminder` | Reports context usage on Windows through a PostToolUse hook starting at 200K tokens, then every 50K. |
 
 ## Repository Layout
 
