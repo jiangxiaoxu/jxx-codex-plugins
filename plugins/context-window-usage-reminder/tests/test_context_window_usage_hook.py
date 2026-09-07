@@ -1,6 +1,8 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sqlite3
 import sys
@@ -9,6 +11,7 @@ import unittest
 
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "context_window_usage_hook.py"
+HOOKS = Path(__file__).parents[1] / "hooks" / "hooks.json"
 
 
 def record(kind, ordinal, payload):
@@ -125,6 +128,45 @@ class ContextUsageHookTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(help_result.returncode, 0)
+
+    def test_discovered_command_runs_through_supported_windows_shells(self):
+        hooks = json.loads(HOOKS.read_text(encoding="utf-8"))
+        command = hooks["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+        with tempfile.TemporaryDirectory(prefix="context hook shell ") as directory:
+            root = Path(directory)
+            plugin_root = root / "plugin root with spaces"
+            script_dir = plugin_root / "scripts"
+            script_dir.mkdir(parents=True)
+            shutil.copy2(SCRIPT, script_dir / SCRIPT.name)
+            transcript = root / "transcript data" / "rollout.jsonl"
+            transcript.parent.mkdir()
+            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            request = json.dumps(
+                {
+                    "session_id": "session-1",
+                    "transcript_path": str(transcript),
+                    "hook_event_name": "PostToolUse",
+                }
+            )
+            shell_commands = (
+                ("pwsh", ["pwsh", "-NoProfile", "-Command", command]),
+                ("cmd", f"cmd.exe /D /S /C {command}"),
+            )
+            for shell_name, shell_command in shell_commands:
+                with self.subTest(shell=shell_name):
+                    environment = os.environ.copy()
+                    environment["PLUGIN_ROOT"] = str(plugin_root)
+                    environment["CODEX_HOME"] = str(root / f"state {shell_name}")
+                    result = subprocess.run(
+                        shell_command,
+                        input=request,
+                        text=True,
+                        capture_output=True,
+                        env=environment,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assert_context(result, expected_used_k=250)
 
     def test_unreadable_transcript_returns_four(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -758,4 +800,3 @@ class ContextUsageHookTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

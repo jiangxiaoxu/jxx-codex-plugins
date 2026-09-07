@@ -28,7 +28,7 @@ does not declare a `hooks` field. The discovered configuration registers one syn
         "hooks": [
           {
             "type": "command",
-            "command": "python \"%PLUGIN_ROOT%/scripts/context_window_usage_hook.py\"",
+            "command": "python -c \"import os,runpy; runpy.run_path(os.path.join(os.environ['PLUGIN_ROOT'],'scripts','context_window_usage_hook.py'),run_name='__main__')\"",
             "timeout": 10,
             "statusMessage": "Checking context window usage (Context-window-usage-reminder plugin)"
           }
@@ -39,8 +39,10 @@ does not declare a `hooks` field. The discovered configuration registers one syn
 }
 ```
 
-The command uses Windows `python`. `%PLUGIN_ROOT%` is provided by the hook runner and is quoted so
-the command remains valid when the plugin path contains spaces.
+The command uses Windows `python`. The hook runner provides `PLUGIN_ROOT` as an environment
+variable; the Python launcher reads it directly and resolves the script path with `os.path.join`,
+so the command does not depend on shell-specific `%...%` variable expansion and remains valid when
+the plugin path contains spaces.
 The hook has a 10-second timeout. Its status message describes each invocation in the UI,
 independently of the 200K reminder threshold.
 
