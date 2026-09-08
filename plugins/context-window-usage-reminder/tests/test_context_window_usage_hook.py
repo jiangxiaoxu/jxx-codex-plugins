@@ -380,12 +380,12 @@ class ContextUsageHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     5,
-                    {"turn_id": "turn-2", "usage": {"total_tokens": 200_000}},
+                    {"turn_id": "turn-2", "usage": {"total_tokens": 210_000}},
                 ),
             )
             fresh = self.invoke(transcript, state)
             self.assertEqual(fresh.returncode, 0, fresh.stderr)
-            self.assert_context(fresh, expected_used_k=200)
+            self.assert_context(fresh, expected_used_k=210)
 
     def test_new_window_reannounces_same_bucket(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -415,54 +415,48 @@ class ContextUsageHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=200_000)
+            rollout(transcript, "session-1", usage=210_000)
 
             result = self.invoke(transcript, state)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_context(result, expected_used_k=200)
+            self.assert_context(result, expected_used_k=210)
 
     def test_below_first_threshold_is_silent_and_each_step_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=199_999, capacity=500_000)
+            rollout(transcript, "session-1", usage=200_000, capacity=500_000)
 
-            below = self.invoke(transcript, state)
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    3,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 200_000}},
-                ),
-            )
-            first = self.invoke(transcript, state)
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    4,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 225_000}},
-                ),
-            )
-            between = self.invoke(transcript, state)
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    5,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 250_000}},
-                ),
-            )
-            second = self.invoke(transcript, state)
-
-            self.assertEqual(below.returncode, 0, below.stderr)
-            self.assertEqual(below.stdout, "")
-            self.assert_context(first, expected_used_k=200)
-            self.assertEqual(between.stdout, "")
-            self.assert_context(second, expected_used_k=250)
+            cases = [
+                (200_000, None),
+                (209_999, None),
+                (210_000, 210),
+                (210_000, None),
+                (250_000, None),
+                (259_999, None),
+                (260_000, 260),
+                (300_000, None),
+                (309_999, None),
+                (310_000, 310),
+            ]
+            for ordinal, (used, expected_used_k) in enumerate(cases, start=3):
+                with self.subTest(used=used, expected_used_k=expected_used_k):
+                    append_record(
+                        transcript,
+                        record(
+                            "token_usage_record",
+                            ordinal,
+                            {"turn_id": "turn-1", "usage": {"total_tokens": used}},
+                        ),
+                    )
+                    result = self.invoke(transcript, state)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    if expected_used_k is None:
+                        self.assertEqual(result.stdout, "")
+                    else:
+                        self.assert_context(result, expected_used_k=expected_used_k)
 
     def test_thread_keys_isolate_parent_and_sibling_agents(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -632,7 +626,7 @@ class ContextUsageHookTests(unittest.TestCase):
             rollout(
                 transcript,
                 "session-1",
-                usage=200_000,
+                usage=210_000,
                 capacity=500_000,
                 thread_id="session-1",
             )
@@ -642,7 +636,7 @@ class ContextUsageHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     8,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 200_000}},
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 210_000}},
                 ),
             )
             connection = sqlite3.connect(state)
@@ -665,7 +659,7 @@ class ContextUsageHookTests(unittest.TestCase):
             result = self.invoke(transcript, state)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_context(result, expected_used_k=200)
+            self.assert_context(result, expected_used_k=210)
             repeat = self.invoke(transcript, state)
             self.assertEqual(repeat.returncode, 0, repeat.stderr)
             self.assertEqual(repeat.stdout, "")
@@ -674,12 +668,12 @@ class ContextUsageHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     9,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 250_000}},
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 260_000}},
                 ),
             )
             next_bucket = self.invoke(transcript, state)
             self.assertEqual(next_bucket.returncode, 0, next_bucket.stderr)
-            self.assert_context(next_bucket, expected_used_k=250)
+            self.assert_context(next_bucket, expected_used_k=260)
             connection = sqlite3.connect(state)
             columns = {row[1] for row in connection.execute("PRAGMA table_info(session_state)")}
             row = connection.execute(
