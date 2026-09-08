@@ -80,14 +80,19 @@ class ContextUsageHookTests(unittest.TestCase):
             check=False,
         )
 
-    def assert_context(self, result, expected_used_k=None):
+    def assert_context(self, result, expected_used_k=None, expected_action=None):
+        self.assertTrue(result.stdout, result.stderr)
         context = context_text(result)
         self.assertTrue(context)
         if expected_used_k is not None:
-            self.assertEqual(
-                f"[Context window usage reminder] Current context window usage is {expected_used_k} K tokens.",
+            self.assertTrue(
+                context.startswith(
+                    f"[Context window rollover reminder] Context Window Usage: {expected_used_k}K tokens."
+                ),
                 context,
             )
+        if expected_action is not None:
+            self.assertIn(expected_action.casefold(), context.casefold())
 
     def invoke_raw(self, request, state, *extra_args):
         return subprocess.run(
@@ -380,12 +385,14 @@ class ContextUsageHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     5,
-                    {"turn_id": "turn-2", "usage": {"total_tokens": 210_000}},
+                    {"turn_id": "turn-2", "usage": {"total_tokens": 250_000}},
                 ),
             )
             fresh = self.invoke(transcript, state)
             self.assertEqual(fresh.returncode, 0, fresh.stderr)
-            self.assert_context(fresh, expected_used_k=210)
+            self.assert_context(
+                fresh, expected_used_k=250, expected_action="find a suitable boundary"
+            )
 
     def test_new_window_reannounces_same_bucket(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -415,14 +422,14 @@ class ContextUsageHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=210_000)
+            rollout(transcript, "session-1", usage=250_000)
 
             result = self.invoke(transcript, state)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_context(result, expected_used_k=210)
+            self.assert_context(result, expected_used_k=250)
 
-    def test_below_first_threshold_is_silent_and_each_step_is_reported(self):
+    def test_staged_thresholds_report_actions_and_stop_after_final_stage(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transcript = root / "rollout.jsonl"
@@ -430,18 +437,21 @@ class ContextUsageHookTests(unittest.TestCase):
             rollout(transcript, "session-1", usage=200_000, capacity=500_000)
 
             cases = [
-                (200_000, None),
-                (209_999, None),
-                (210_000, 210),
-                (210_000, None),
-                (250_000, None),
-                (259_999, None),
-                (260_000, 260),
-                (300_000, None),
-                (309_999, None),
-                (310_000, 310),
+                (200_000, None, None),
+                (249_999, None, None),
+                (250_000, 250, "find a suitable boundary"),
+                (250_000, None, None),
+                (349_999, None, None),
+                (350_000, 350, "actively wind down"),
+                (350_000, None, None),
+                (449_999, None, None),
+                (450_000, 450, "stop starting new work"),
+                (450_000, None, None),
+                (500_000, None, None),
             ]
-            for ordinal, (used, expected_used_k) in enumerate(cases, start=3):
+            for ordinal, (used, expected_used_k, expected_action) in enumerate(
+                cases, start=3
+            ):
                 with self.subTest(used=used, expected_used_k=expected_used_k):
                     append_record(
                         transcript,
@@ -456,7 +466,39 @@ class ContextUsageHookTests(unittest.TestCase):
                     if expected_used_k is None:
                         self.assertEqual(result.stdout, "")
                     else:
-                        self.assert_context(result, expected_used_k=expected_used_k)
+                        self.assert_context(
+                            result,
+                            expected_used_k=expected_used_k,
+                            expected_action=expected_action,
+                        )
+
+    def test_jump_reports_only_highest_reached_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            state = root / "state.sqlite3"
+            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+
+            first = self.invoke(transcript, state)
+            append_record(
+                transcript,
+                record(
+                    "token_usage_record",
+                    3,
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 500_000}},
+                ),
+            )
+            jumped = self.invoke(transcript, state)
+            repeated = self.invoke(transcript, state)
+
+            self.assert_context(
+                first, expected_used_k=250, expected_action="find a suitable boundary"
+            )
+            self.assert_context(
+                jumped, expected_used_k=500, expected_action="stop starting new work"
+            )
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual(repeated.stdout, "")
 
     def test_thread_keys_isolate_parent_and_sibling_agents(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -618,7 +660,7 @@ class ContextUsageHookTests(unittest.TestCase):
             self.assertIn("identity-error", result.stderr)
             self.assertIn("thread ID does not match hook agent_id", result.stderr)
 
-    def test_migrates_legacy_state_and_preserves_bucket(self):
+    def test_migrates_legacy_state_and_reannounces_current_stage_once(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transcript = root / "rollout.jsonl"
@@ -626,7 +668,7 @@ class ContextUsageHookTests(unittest.TestCase):
             rollout(
                 transcript,
                 "session-1",
-                usage=210_000,
+                usage=250_000,
                 capacity=500_000,
                 thread_id="session-1",
             )
@@ -636,7 +678,7 @@ class ContextUsageHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     8,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 210_000}},
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 250_000}},
                 ),
             )
             connection = sqlite3.connect(state)
@@ -651,7 +693,7 @@ class ContextUsageHookTests(unittest.TestCase):
             )
             connection.execute(
                 "INSERT INTO session_state VALUES (?, ?, ?)",
-                ("session-1", "ordinal:7", 1),
+                ("session-1", "ordinal:7", 999_999),
             )
             connection.commit()
             connection.close()
@@ -659,7 +701,9 @@ class ContextUsageHookTests(unittest.TestCase):
             result = self.invoke(transcript, state)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_context(result, expected_used_k=210)
+            self.assert_context(
+                result, expected_used_k=250, expected_action="find a suitable boundary"
+            )
             repeat = self.invoke(transcript, state)
             self.assertEqual(repeat.returncode, 0, repeat.stderr)
             self.assertEqual(repeat.stdout, "")
@@ -668,20 +712,26 @@ class ContextUsageHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     9,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 260_000}},
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
                 ),
             )
             next_bucket = self.invoke(transcript, state)
             self.assertEqual(next_bucket.returncode, 0, next_bucket.stderr)
-            self.assert_context(next_bucket, expected_used_k=260)
+            self.assert_context(
+                next_bucket,
+                expected_used_k=350,
+                expected_action="actively wind down",
+            )
             connection = sqlite3.connect(state)
             columns = {row[1] for row in connection.execute("PRAGMA table_info(session_state)")}
             row = connection.execute(
-                "SELECT compacted_marker, highest_bucket, last_seen_at FROM session_state"
+                "SELECT compacted_marker, highest_threshold, last_seen_at FROM session_state"
             ).fetchone()
             connection.close()
             self.assertIn("last_seen_at", columns)
-            self.assertEqual(row[:2], ("ordinal:7", 3))
+            self.assertIn("highest_threshold", columns)
+            self.assertNotIn("highest_bucket", columns)
+            self.assertEqual(row[:2], ("ordinal:7", 350_000))
             self.assertIsNotNone(row[2])
 
     def test_eviction_keeps_recent_threads_and_allows_reannouncement(self):
@@ -726,13 +776,19 @@ class ContextUsageHookTests(unittest.TestCase):
                 CREATE TABLE session_state (
                     session_id TEXT PRIMARY KEY,
                     compacted_marker TEXT NOT NULL,
-                    highest_bucket INTEGER NOT NULL CHECK (highest_bucket >= 0),
+                    highest_threshold INTEGER NOT NULL CHECK (highest_threshold >= 0),
                     last_seen_at REAL
                 )
                 """
             )
-            rows = [("old-thread", "", 3, None), ("recent-thread", "", 3, 1.0)]
-            rows.extend((f"filler-{index:05}", "", 3, 50.0) for index in range(9_998))
+            rows = [
+                ("old-thread", "", 250_000, None),
+                ("recent-thread", "", 250_000, 1.0),
+            ]
+            rows.extend(
+                (f"filler-{index:05}", "", 250_000, 50.0)
+                for index in range(9_998)
+            )
             connection.executemany("INSERT INTO session_state VALUES (?, ?, ?, ?)", rows)
             connection.commit()
             connection.close()

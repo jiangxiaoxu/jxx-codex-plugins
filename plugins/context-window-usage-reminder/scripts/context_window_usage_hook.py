@@ -1,4 +1,4 @@
-"""Emit one PostToolUse context estimate for each newly crossed usage bucket."""
+"""Emit one PostToolUse context reminder for each newly crossed usage threshold."""
 
 from __future__ import annotations
 
@@ -19,19 +19,41 @@ EXIT_TRANSCRIPT_ERROR = 5
 EXIT_IDENTITY_ERROR = 6
 EXIT_STATE_ERROR = 7
 
-FIRST_THRESHOLD = 210_000
-THRESHOLD_STEP = 50_000
-MESSAGE_PREFIX = "[Context window usage reminder] "
+REMINDER_THRESHOLDS = (250_000, 350_000, 450_000)
+MESSAGE_PREFIX = "[Context window rollover reminder] "
 SQLITE_TIMEOUT_SECONDS = 5.0
 MAX_THREADS = 10_000
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS session_state (
     session_id TEXT PRIMARY KEY,
     compacted_marker TEXT NOT NULL,
-    highest_bucket INTEGER NOT NULL CHECK (highest_bucket >= 0),
+    highest_threshold INTEGER NOT NULL CHECK (highest_threshold >= 0),
     last_seen_at REAL NOT NULL
 )
 """
+
+COMMON_INSTRUCTIONS = (
+    "This reminder supersedes earlier rollover reminders in the current context window."
+)
+
+STAGE_INSTRUCTIONS = {
+    250_000: (
+        "Find a suitable boundary, save a checkpoint, and then "
+        "call new_context. If you defer, identify the next concrete work boundary "
+        "where you will roll over."
+    ),
+    350_000: (
+        "Actively wind down the current work, save a checkpoint "
+        "promptly, and then call new_context."
+    ),
+    450_000: (
+        "Stop starting new work. Perform only minimal wrap-up "
+        "needed for data integrity or existing invariants, save a checkpoint, and "
+        "call new_context immediately. Do not continue investigating for a fuller "
+        "record or wait for all commands or agents. If saving the checkpoint or "
+        "calling new_context is unavailable or fails, stop and report the blocker."
+    ),
+}
 
 
 class HookError(RuntimeError):
@@ -190,14 +212,15 @@ def default_state_db() -> Path:
     return codex_home / "state" / "context-usage-hook.sqlite3"
 
 
-def output_for(used: int) -> str:
+def output_for(used: int, threshold: int) -> str:
+    action = STAGE_INSTRUCTIONS[threshold]
     return json.dumps(
         {
             "hookSpecificOutput": {
                 "hookEventName": "PostToolUse",
                 "additionalContext": (
-                    f"{MESSAGE_PREFIX}Current context window usage is "
-                    f"{used // 1_000} K tokens."
+                    f"{MESSAGE_PREFIX}Context Window Usage: {used // 1_000}K tokens. "
+                    f"{action} {COMMON_INSTRUCTIONS}"
                 ),
             }
         },
@@ -210,6 +233,11 @@ def migrate_state_schema(connection: sqlite3.Connection) -> None:
     columns = {
         row[1] for row in connection.execute("PRAGMA table_info(session_state)")
     }
+    if "highest_bucket" in columns and "highest_threshold" not in columns:
+        connection.execute(
+            "ALTER TABLE session_state RENAME COLUMN highest_bucket TO highest_threshold"
+        )
+        connection.execute("UPDATE session_state SET highest_threshold = 0")
     if "last_seen_at" not in columns:
         connection.execute("ALTER TABLE session_state ADD COLUMN last_seen_at REAL")
 
@@ -257,44 +285,50 @@ def run(state_db: Path) -> str:
                 transcript_path, session_id, agent_id
             )
             row = connection.execute(
-                "SELECT compacted_marker, highest_bucket FROM session_state WHERE session_id = ?",
+                "SELECT compacted_marker, highest_threshold FROM session_state WHERE session_id = ?",
                 (thread_id,),
             ).fetchone()
             if row is None:
-                stored_marker, highest_bucket = "", 0
+                stored_marker, highest_threshold = "", 0
             else:
-                stored_marker, highest_bucket = row
+                stored_marker, highest_threshold = row
                 if (
                     not isinstance(stored_marker, str)
-                    or type(highest_bucket) is not int
+                    or type(highest_threshold) is not int
+                    or highest_threshold not in (0, *REMINDER_THRESHOLDS)
                 ):
                     raise StateError("state database contains invalid session state")
 
             if compacted_marker != stored_marker:
                 stored_marker = compacted_marker
-                highest_bucket = 0
+                highest_threshold = 0
 
             message = ""
             if used is not None:
-                if used >= FIRST_THRESHOLD:
-                    # Keep the first reminder at persisted bucket 2.
-                    bucket = (used - FIRST_THRESHOLD) // THRESHOLD_STEP + 2
-                    if bucket > highest_bucket:
-                        message = output_for(used)
-                        highest_bucket = bucket
+                threshold = next(
+                    (
+                        candidate
+                        for candidate in reversed(REMINDER_THRESHOLDS)
+                        if used >= candidate
+                    ),
+                    0,
+                )
+                if threshold > highest_threshold:
+                    message = output_for(used, threshold)
+                    highest_threshold = threshold
 
             connection.execute(
                 """
                 INSERT INTO session_state(
-                    session_id, compacted_marker, highest_bucket, last_seen_at
+                    session_id, compacted_marker, highest_threshold, last_seen_at
                 )
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     compacted_marker = excluded.compacted_marker,
-                    highest_bucket = excluded.highest_bucket,
+                    highest_threshold = excluded.highest_threshold,
                     last_seen_at = excluded.last_seen_at
                 """,
-                (thread_id, stored_marker, highest_bucket, time.time()),
+                (thread_id, stored_marker, highest_threshold, time.time()),
             )
             evict_old_threads(connection, thread_id)
             connection.commit()
@@ -353,5 +387,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
