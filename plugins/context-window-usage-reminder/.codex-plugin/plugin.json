@@ -1,14 +1,14 @@
 {
   "name": "context-window-usage-reminder",
-  "version": "0.1.6",
-  "description": "Reports current context window usage through a PostToolUse hook.",
+  "version": "0.1.7",
+  "description": "Reports context usage and provides staged rollover instructions through a PostToolUse hook.",
   "author": {
     "name": "jiangxiaoxu"
   },
   "interface": {
     "displayName": "Context-window-usage-reminder",
-    "shortDescription": "Report context window usage in Codex.",
-    "longDescription": "Emits a reminder after 210K tokens and at each additional 50K boundary.",
+    "shortDescription": "Guide context rollover in Codex.",
+    "longDescription": "Emits staged context rollover instructions at 250K, 350K, and 450K tokens.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
     "composerIcon": "./assets/context-window-usage-reminder-icon.png",
