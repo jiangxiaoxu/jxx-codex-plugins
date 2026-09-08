@@ -1,18 +1,18 @@
 {
-  "name": "context-window-usage-reminder",
-  "version": "0.1.7",
+  "name": "context-window-rollover-reminder",
+  "version": "0.1.8",
   "description": "Reports context usage and provides staged rollover instructions through a PostToolUse hook.",
   "author": {
     "name": "jiangxiaoxu"
   },
   "interface": {
-    "displayName": "Context-window-usage-reminder",
+    "displayName": "Context-window-rollover-reminder",
     "shortDescription": "Guide context rollover in Codex.",
     "longDescription": "Emits staged context rollover instructions at 250K, 350K, and 450K tokens.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
-    "composerIcon": "./assets/context-window-usage-reminder-icon.png",
-    "logo": "./assets/context-window-usage-reminder-icon.png",
+    "composerIcon": "./assets/context-window-rollover-reminder-icon.png",
+    "logo": "./assets/context-window-rollover-reminder-icon.png",
     "capabilities": [],
     "defaultPrompt": []
   }

@@ -1,6 +1,6 @@
-# Context Window Usage Reminder
+# Context Window Rollover Reminder
 
-`context-window-usage-reminder` installs a synchronous `PostToolUse` command hook. It reads the
+`context-window-rollover-reminder` installs a synchronous `PostToolUse` command hook. It reads the
 Codex rollout transcript supplied on standard input and emits one `additionalContext` message when
 the current context usage crosses a new boundary.
 
@@ -44,9 +44,9 @@ does not declare a `hooks` field. The discovered configuration registers one syn
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$env:PLUGIN_ROOT/scripts/context_window_usage_hook.py\"",
+            "command": "python \"$env:PLUGIN_ROOT/scripts/context_window_rollover_hook.py\"",
             "timeout": 10,
-            "statusMessage": "Context-window-usage-reminder plugin"
+            "statusMessage": "Context-window-rollover-reminder plugin"
           }
         ]
       }
@@ -64,11 +64,12 @@ independently of the three reminder thresholds.
 
 ## Runtime state and behavior
 
-The script preserves the original hook's state location and deduplication keys. By default it
-stores state in `%CODEX_HOME%\state\context-usage-hook.sqlite3`; when `%CODEX_HOME%` is unset,
-the script falls back to `%USERPROFILE%\.codex\state\context-usage-hook.sqlite3`. `--state-db` can
+By default the script stores state in `%CODEX_HOME%\state\context-window-rollover-reminder.sqlite3`; when `%CODEX_HOME%` is unset,
+the script falls back to `%USERPROFILE%\.codex\state\context-window-rollover-reminder.sqlite3`. `--state-db` can
 override that path for tests or an explicitly managed installation. The database is created on first
-use and is runtime state, not a plugin artifact.
+use and is runtime state, not a plugin artifact. The renamed plugin uses a new default state file;
+it does not discover, read, migrate, or delete the previous default file. Its first invocation reports
+the current applicable stage once, even if the previous plugin already reported it.
 
 State is keyed by the transcript thread ID. A compacted transcript resets the highest reported
 threshold, so a fresh context window can report the same threshold again once fresh usage is available.
@@ -80,11 +81,8 @@ If usage skips thresholds, it emits only the highest applicable stage, without r
 stages. Once the 450K stage has been reported, no further reminders are emitted in that window.
 `PostToolUse` samples usage after tool calls, so delivery may occur above a threshold.
 
-On upgrade, the state migration replaces the legacy `highest_bucket` column with
-`highest_threshold` and resets its values to zero, preserving thread identities, compaction markers,
-and eviction timestamps. The next invocation emits the current applicable stage once, even if the
-old plugin already reported usage in that window. Migration and reminder deduplication occur in the
-same SQLite transaction.
+A database passed through `--state-db` must provide the required state columns. Schemas missing
+required columns fail with a state diagnostic; no schema migration or repair is performed.
 
 Malformed requests, transcripts, identity mismatches, and state failures produce categorized
 diagnostics on standard error and retain the existing exit codes.
@@ -94,16 +92,16 @@ diagnostics on standard error and retain the existing exit codes.
 Run the focused tests from the repository root:
 
 ```text
-python -m unittest discover -s plugins/context-window-usage-reminder/tests -p "test_*.py"
+python -m unittest discover -s plugins/context-window-rollover-reminder/tests -p "test_*.py"
 ```
 
 Validate the plugin manifest with the installed plugin-creator validator:
 
 ```text
-python <plugin-creator>/scripts/validate_plugin.py plugins/context-window-usage-reminder
+python <plugin-creator>/scripts/validate_plugin.py plugins/context-window-rollover-reminder
 ```
 
-When changing hook logic, keep the fixed thresholds, stage selection, state migration, transcript
+When changing hook logic, keep the fixed thresholds, stage selection, state schema, transcript
 parsing rules, and exit-code contract aligned with the tests. Keep
 `hooks/hooks.json` synchronous unless the hook's output and state semantics are redesigned
 together. Do not add the separate context-usage probe or commit generated SQLite state to the

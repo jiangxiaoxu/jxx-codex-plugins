@@ -8,7 +8,7 @@ This repository is a local Codex plugin marketplace. It has no root-level packag
 | --- | --- | --- |
 | `task-memory` | `plugins/task-memory/skills/`, `src/`, and `scripts/commands/` | Run the plugin test suite and packed-artifact check. |
 | `figma-workspace` | `plugins/figma-workspace/skills/`, `cli-runtime/src/`, `scripts/`, and focused tests | Run plugin-root and CLI-package validation. |
-| `context-window-usage-reminder` | `plugins/context-window-usage-reminder/hooks/`, `scripts/`, and `tests/` | Run Python unittest discovery and the plugin manifest validator. |
+| `context-window-rollover-reminder` | `plugins/context-window-rollover-reminder/hooks/`, `scripts/`, and `tests/` | Run Python unittest discovery and the plugin manifest validator. |
 
 For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, marketplace entry, and root README inventory aligned when plugin identity, placement, or availability changes.
 
@@ -42,7 +42,7 @@ The snapshot updater writes only the archive and drift report. It never overwrit
 
 ## Validation Routing
 
-For context usage hook behavior, configuration, and maintenance, see [Context Window Usage Reminder](context-window-usage-reminder.md).
+For context rollover hook behavior, configuration, and maintenance, see [Context Window Rollover Reminder](context-window-rollover-reminder.md).
 
 Always run `git diff --check` and the checks owned by the changed plugin. Resolve the installed validator paths instead of hard-coding a user-specific location.
 
@@ -53,13 +53,13 @@ python <skill-creator>/scripts/quick_validate.py <plugin-skill-directory>
 python <plugin-creator>/scripts/validate_plugin.py <plugin-directory>
 ```
 
-### `context-window-usage-reminder`
+### `context-window-rollover-reminder`
 
 From the repository root on Windows:
 
 ```text
-python -m unittest discover -s plugins/context-window-usage-reminder/tests -p "test_*.py"
-python <plugin-creator>/scripts/validate_plugin.py plugins/context-window-usage-reminder
+python -m unittest discover -s plugins/context-window-rollover-reminder/tests -p "test_*.py"
+python <plugin-creator>/scripts/validate_plugin.py plugins/context-window-rollover-reminder
 ```
 
 ### `task-memory`

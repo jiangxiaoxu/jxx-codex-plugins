@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "context_window_usage_hook.py"
+SCRIPT = Path(__file__).parents[1] / "scripts" / "context_window_rollover_hook.py"
 HOOKS = Path(__file__).parents[1] / "hooks" / "hooks.json"
 
 
@@ -63,7 +63,7 @@ def context_text(result):
     return json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
 
 
-class ContextUsageHookTests(unittest.TestCase):
+class ContextRolloverHookTests(unittest.TestCase):
     def invoke(self, transcript, state, session_id="session-1", agent_id=None):
         request = {
             "session_id": session_id,
@@ -660,80 +660,6 @@ class ContextUsageHookTests(unittest.TestCase):
             self.assertIn("identity-error", result.stderr)
             self.assertIn("thread ID does not match hook agent_id", result.stderr)
 
-    def test_migrates_legacy_state_and_reannounces_current_stage_once(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            transcript = root / "rollout.jsonl"
-            state = root / "state.sqlite3"
-            rollout(
-                transcript,
-                "session-1",
-                usage=250_000,
-                capacity=500_000,
-                thread_id="session-1",
-            )
-            append_record(transcript, record("compacted", 7, {}))
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    8,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 250_000}},
-                ),
-            )
-            connection = sqlite3.connect(state)
-            connection.execute(
-                """
-                CREATE TABLE session_state (
-                    session_id TEXT PRIMARY KEY,
-                    compacted_marker TEXT NOT NULL,
-                    highest_bucket INTEGER NOT NULL CHECK (highest_bucket >= 0)
-                )
-                """
-            )
-            connection.execute(
-                "INSERT INTO session_state VALUES (?, ?, ?)",
-                ("session-1", "ordinal:7", 999_999),
-            )
-            connection.commit()
-            connection.close()
-
-            result = self.invoke(transcript, state)
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_context(
-                result, expected_used_k=250, expected_action="find a suitable boundary"
-            )
-            repeat = self.invoke(transcript, state)
-            self.assertEqual(repeat.returncode, 0, repeat.stderr)
-            self.assertEqual(repeat.stdout, "")
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    9,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
-                ),
-            )
-            next_bucket = self.invoke(transcript, state)
-            self.assertEqual(next_bucket.returncode, 0, next_bucket.stderr)
-            self.assert_context(
-                next_bucket,
-                expected_used_k=350,
-                expected_action="actively wind down",
-            )
-            connection = sqlite3.connect(state)
-            columns = {row[1] for row in connection.execute("PRAGMA table_info(session_state)")}
-            row = connection.execute(
-                "SELECT compacted_marker, highest_threshold, last_seen_at FROM session_state"
-            ).fetchone()
-            connection.close()
-            self.assertIn("last_seen_at", columns)
-            self.assertIn("highest_threshold", columns)
-            self.assertNotIn("highest_bucket", columns)
-            self.assertEqual(row[:2], ("ordinal:7", 350_000))
-            self.assertIsNotNone(row[2])
-
     def test_eviction_keeps_recent_threads_and_allows_reannouncement(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -777,12 +703,12 @@ class ContextUsageHookTests(unittest.TestCase):
                     session_id TEXT PRIMARY KEY,
                     compacted_marker TEXT NOT NULL,
                     highest_threshold INTEGER NOT NULL CHECK (highest_threshold >= 0),
-                    last_seen_at REAL
+                    last_seen_at REAL NOT NULL
                 )
                 """
             )
             rows = [
-                ("old-thread", "", 250_000, None),
+                ("old-thread", "", 250_000, 0.0),
                 ("recent-thread", "", 250_000, 1.0),
             ]
             rows.extend(
