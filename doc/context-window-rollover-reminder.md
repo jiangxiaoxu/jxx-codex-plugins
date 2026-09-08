@@ -4,19 +4,19 @@
 Codex rollout transcript supplied on standard input and emits one `additionalContext` message when
 the current context usage crosses a new boundary.
 
-The hook has three reminder thresholds per context window: 250,000, 350,000, and 450,000 tokens.
+The hook has three reminder thresholds per context window: 350,000, 400,000, and 450,000 tokens.
 Each message reports actual usage in whole thousands and includes the applicable rollover action:
 
 | Usage | Action |
 | --- | --- |
-| 250K to below 350K | Continue the current unit of work to a meaningful milestone, then save a checkpoint and roll over. The reminder or a tool call finishing alone is not a stopping point. |
-| 350K to below 450K | Reach a resumable stopping point with minimal additional work, then save a checkpoint and roll over. Record unfinished work without waiting to complete a milestone. |
+| 350K to below 400K | Continue the current unit of work to a meaningful milestone, then save a checkpoint and roll over. The reminder or a tool call finishing alone is not a stopping point. |
+| 400K to below 450K | Reach a resumable stopping point with minimal additional work, then save a checkpoint and roll over. Record unfinished work without waiting to complete a milestone. |
 | 450K and above | Stop starting new work, finish only necessary cleanup, save the checkpoint, and roll over immediately. |
 
 The message starts with:
 
 ```text
-[Context window rollover reminder] Context Window Usage: 250K tokens.
+[Context window rollover reminder] Context Window Usage: 350K tokens.
 ```
 
 Rollover actions and window-local trigger rules are delivered by the hook. Checkpoint content and
@@ -73,6 +73,9 @@ the current applicable stage once, even if the previous plugin already reported 
 
 State is keyed by the transcript thread ID. A compacted transcript resets the highest reported
 threshold, so a fresh context window can report the same threshold again once fresh usage is available.
+The stored value is a nonnegative integer recording the highest threshold previously reported,
+independent of the current threshold configuration. Changing thresholds preserves that history;
+a reminder is emitted only when the current applicable threshold exceeds the stored value.
 Concurrent invocations use SQLite transaction locking so one threshold crossing produces only one message. Old thread entries are
 evicted after the existing 10,000-entry limit.
 
