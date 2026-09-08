@@ -145,7 +145,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             shutil.copy2(SCRIPT, script_dir / SCRIPT.name)
             transcript = root / "transcript data" / "rollout.jsonl"
             transcript.parent.mkdir()
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
             request = json.dumps(
                 {
                     "session_id": "session-1",
@@ -165,7 +165,7 @@ class ContextRolloverHookTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_context(result, expected_used_k=250)
+            self.assert_context(result, expected_used_k=350)
 
     def test_unreadable_transcript_returns_four(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -193,7 +193,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
             with transcript.open("ab") as stream:
                 stream.write(b'{"type":"event_msg","payload":{"text":"\xe4\xb8')
 
@@ -207,7 +207,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
             transcript.write_bytes(transcript.read_bytes().rstrip(b"\n"))
 
             result = self.invoke(transcript, state)
@@ -302,7 +302,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
             state.mkdir()
 
             result = self.invoke(transcript, state)
@@ -316,7 +316,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
 
             first = self.invoke(transcript, state)
             second = self.invoke(transcript, state)
@@ -331,7 +331,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
             request = json.dumps(
                 {"session_id": "session-1", "transcript_path": str(transcript)}
             )
@@ -360,7 +360,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
             self.assertTrue(self.invoke(transcript, state).stdout)
 
             append_record(transcript, record("compacted", 3, {"message": ""}))
@@ -385,13 +385,13 @@ class ContextRolloverHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     5,
-                    {"turn_id": "turn-2", "usage": {"total_tokens": 250_000}},
+                    {"turn_id": "turn-2", "usage": {"total_tokens": 350_000}},
                 ),
             )
             fresh = self.invoke(transcript, state)
             self.assertEqual(fresh.returncode, 0, fresh.stderr)
             self.assert_context(
-                fresh, expected_used_k=250, expected_action="continue the current unit of work"
+                fresh, expected_used_k=350, expected_action="continue the current unit of work"
             )
 
     def test_new_window_reannounces_same_bucket(self):
@@ -399,7 +399,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
             first = self.invoke(transcript, state)
             append_record(transcript, record("compacted", 3, {}))
             append_record(
@@ -407,7 +407,7 @@ class ContextRolloverHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     4,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 250_000}},
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
                 ),
             )
             second = self.invoke(transcript, state)
@@ -422,12 +422,12 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000)
+            rollout(transcript, "session-1", usage=350_000)
 
             result = self.invoke(transcript, state)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_context(result, expected_used_k=250)
+            self.assert_context(result, expected_used_k=350)
 
     def test_staged_thresholds_report_actions_and_stop_after_final_stage(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -438,12 +438,13 @@ class ContextRolloverHookTests(unittest.TestCase):
 
             cases = [
                 (200_000, None, None),
-                (249_999, None, None),
-                (250_000, 250, "continue the current unit of work"),
                 (250_000, None, None),
                 (349_999, None, None),
-                (350_000, 350, "resumable stopping point"),
+                (350_000, 350, "continue the current unit of work"),
                 (350_000, None, None),
+                (399_999, None, None),
+                (400_000, 400, "resumable stopping point"),
+                (400_000, None, None),
                 (449_999, None, None),
                 (450_000, 450, "stop starting new work"),
                 (450_000, None, None),
@@ -472,12 +473,61 @@ class ContextRolloverHookTests(unittest.TestCase):
                             expected_action=expected_action,
                         )
 
+    def test_historical_threshold_below_current_schedule_is_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            state = root / "state.sqlite3"
+            rollout(transcript, "session-1", usage=300_000, capacity=500_000)
+            connection = sqlite3.connect(state)
+            connection.execute(
+                """
+                CREATE TABLE session_state (
+                    session_id TEXT PRIMARY KEY,
+                    compacted_marker TEXT NOT NULL,
+                    highest_threshold INTEGER NOT NULL CHECK (highest_threshold >= 0),
+                    last_seen_at REAL NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "INSERT INTO session_state VALUES (?, ?, ?, ?)",
+                ("session-1", "", 250_000, 1.0),
+            )
+            connection.commit()
+            connection.close()
+
+            waiting = self.invoke(transcript, state)
+            self.assertEqual(waiting.returncode, 0, waiting.stderr)
+            self.assertEqual(waiting.stdout, "")
+            connection = sqlite3.connect(state)
+            highest_threshold = connection.execute(
+                "SELECT highest_threshold FROM session_state WHERE session_id = ?",
+                ("session-1",),
+            ).fetchone()[0]
+            connection.close()
+            self.assertEqual(highest_threshold, 250_000)
+
+            append_record(
+                transcript,
+                record(
+                    "token_usage_record",
+                    3,
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
+                ),
+            )
+            first = self.invoke(transcript, state)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assert_context(
+                first, expected_used_k=350, expected_action="continue the current unit of work"
+            )
+
     def test_jump_reports_only_highest_reached_stage(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
 
             first = self.invoke(transcript, state)
             append_record(
@@ -492,7 +542,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             repeated = self.invoke(transcript, state)
 
             self.assert_context(
-                first, expected_used_k=250, expected_action="continue the current unit of work"
+                first, expected_used_k=350, expected_action="continue the current unit of work"
             )
             self.assert_context(
                 jumped, expected_used_k=500, expected_action="stop starting new work"
@@ -507,9 +557,9 @@ class ContextRolloverHookTests(unittest.TestCase):
             parent = root / "parent.jsonl"
             child_a = root / "child-a.jsonl"
             child_b = root / "child-b.jsonl"
-            rollout(parent, "shared-session", usage=250_000, capacity=500_000, thread_id="parent-thread")
-            rollout(child_a, "shared-session", usage=250_000, capacity=500_000, thread_id="child-a")
-            rollout(child_b, "shared-session", usage=250_000, capacity=500_000, thread_id="child-b")
+            rollout(parent, "shared-session", usage=350_000, capacity=500_000, thread_id="parent-thread")
+            rollout(child_a, "shared-session", usage=350_000, capacity=500_000, thread_id="child-a")
+            rollout(child_b, "shared-session", usage=350_000, capacity=500_000, thread_id="child-b")
 
             parent_result = self.invoke(parent, state, session_id="shared-session")
             child_a_result = self.invoke(
@@ -536,7 +586,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             rollout(
                 transcript,
                 "shared-session",
-                usage=250_000,
+                usage=350_000,
                 capacity=500_000,
                 thread_id="child-thread",
             )
@@ -557,7 +607,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assert_context(result, expected_used_k=250)
+            self.assert_context(result, expected_used_k=350)
             connection = sqlite3.connect(state)
             keys = {
                 row[0] for row in connection.execute("SELECT session_id FROM session_state")
@@ -573,7 +623,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             rollout(
                 transcript,
                 "wrong-session",
-                usage=250_000,
+                usage=350_000,
                 capacity=500_000,
                 thread_id="wrong-thread",
             )
@@ -612,7 +662,7 @@ class ContextRolloverHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     2,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 250_000}},
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
                 ),
             ]
             transcript.write_text(
@@ -635,7 +685,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "rollout-session", usage=250_000, capacity=500_000, thread_id="thread")
+            rollout(transcript, "rollout-session", usage=350_000, capacity=500_000, thread_id="thread")
 
             result = self.invoke(transcript, state, session_id="hook-session")
 
@@ -649,7 +699,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "shared-session", usage=250_000, capacity=500_000, thread_id="child-a")
+            rollout(transcript, "shared-session", usage=350_000, capacity=500_000, thread_id="child-a")
 
             result = self.invoke(
                 transcript, state, session_id="shared-session", agent_id="child-b"
@@ -671,28 +721,28 @@ class ContextRolloverHookTests(unittest.TestCase):
             rollout(
                 new_transcript,
                 "session-1",
-                usage=250_000,
+                usage=350_000,
                 capacity=500_000,
                 thread_id="new-thread",
             )
             rollout(
                 second_new_transcript,
                 "session-1",
-                usage=250_000,
+                usage=350_000,
                 capacity=500_000,
                 thread_id="new-thread-2",
             )
             rollout(
                 recent_transcript,
                 "session-1",
-                usage=250_000,
+                usage=350_000,
                 capacity=500_000,
                 thread_id="recent-thread",
             )
             rollout(
                 evicted_transcript,
                 "session-1",
-                usage=250_000,
+                usage=350_000,
                 capacity=500_000,
                 thread_id="old-thread",
             )
@@ -708,11 +758,11 @@ class ContextRolloverHookTests(unittest.TestCase):
                 """
             )
             rows = [
-                ("old-thread", "", 250_000, 0.0),
-                ("recent-thread", "", 250_000, 1.0),
+                ("old-thread", "", 350_000, 0.0),
+                ("recent-thread", "", 350_000, 1.0),
             ]
             rows.extend(
-                (f"filler-{index:05}", "", 250_000, 50.0)
+                (f"filler-{index:05}", "", 350_000, 50.0)
                 for index in range(9_998)
             )
             connection.executemany("INSERT INTO session_state VALUES (?, ?, ?, ?)", rows)
@@ -753,7 +803,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=250_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
             first = self.invoke(transcript, state)
             append_record(
                 transcript,

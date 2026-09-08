@@ -19,7 +19,7 @@ EXIT_TRANSCRIPT_ERROR = 5
 EXIT_IDENTITY_ERROR = 6
 EXIT_STATE_ERROR = 7
 
-REMINDER_THRESHOLDS = (250_000, 350_000, 450_000)
+REMINDER_THRESHOLDS = (350_000, 400_000, 450_000)
 MESSAGE_PREFIX = "[Context window rollover reminder] "
 SQLITE_TIMEOUT_SECONDS = 5.0
 MAX_THREADS = 10_000
@@ -37,12 +37,12 @@ COMMON_INSTRUCTIONS = (
 )
 
 STAGE_INSTRUCTIONS = {
-    250_000: (
+    350_000: (
         "Continue the current unit of work to a meaningful milestone, then save a "
         "checkpoint and call new_context. Receiving this reminder or finishing a "
         "tool call alone is not a stopping point."
     ),
-    350_000: (
+    400_000: (
         "Bring the current work to a resumable stopping point with minimal additional "
         "work, then save a checkpoint and call new_context. Record unfinished work "
         "in the checkpoint; do not delay rollover to complete a milestone."
@@ -281,7 +281,7 @@ def run(state_db: Path) -> str:
                 if (
                     not isinstance(stored_marker, str)
                     or type(highest_threshold) is not int
-                    or highest_threshold not in (0, *REMINDER_THRESHOLDS)
+                    or highest_threshold < 0
                 ):
                     raise StateError("state database contains invalid session state")
 
