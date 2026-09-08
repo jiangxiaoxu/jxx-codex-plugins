@@ -1,4 +1,4 @@
-"""Emit one PostToolUse context reminder for each newly crossed usage threshold."""
+"""Emit staged PostToolUse context rollover reminders at fixed usage thresholds."""
 
 from __future__ import annotations
 
@@ -209,7 +209,7 @@ def read_rollout(
 
 def default_state_db() -> Path:
     codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
-    return codex_home / "state" / "context-usage-hook.sqlite3"
+    return codex_home / "state" / "context-window-rollover-reminder.sqlite3"
 
 
 def output_for(used: int, threshold: int) -> str:
@@ -229,19 +229,6 @@ def output_for(used: int, threshold: int) -> str:
     )
 
 
-def migrate_state_schema(connection: sqlite3.Connection) -> None:
-    columns = {
-        row[1] for row in connection.execute("PRAGMA table_info(session_state)")
-    }
-    if "highest_bucket" in columns and "highest_threshold" not in columns:
-        connection.execute(
-            "ALTER TABLE session_state RENAME COLUMN highest_bucket TO highest_threshold"
-        )
-        connection.execute("UPDATE session_state SET highest_threshold = 0")
-    if "last_seen_at" not in columns:
-        connection.execute("ALTER TABLE session_state ADD COLUMN last_seen_at REAL")
-
-
 def evict_old_threads(connection: sqlite3.Connection, current_thread_id: str) -> None:
     total = connection.execute("SELECT COUNT(*) FROM session_state").fetchone()[0]
     excess = total - MAX_THREADS
@@ -253,7 +240,6 @@ def evict_old_threads(connection: sqlite3.Connection, current_thread_id: str) ->
         FROM session_state
         WHERE session_id <> ?
         ORDER BY
-            CASE WHEN last_seen_at IS NULL THEN 0 ELSE 1 END,
             last_seen_at ASC,
             session_id ASC
         LIMIT ?
@@ -280,7 +266,6 @@ def run(state_db: Path) -> str:
             connection.execute(SCHEMA)
             connection.commit()
             connection.execute("BEGIN IMMEDIATE")
-            migrate_state_schema(connection)
             thread_id, compacted_marker, used, _capacity = read_rollout(
                 transcript_path, session_id, agent_id
             )
@@ -360,13 +345,13 @@ class HookArgumentParser(argparse.ArgumentParser):
         self.print_usage(sys.stderr)
         self.exit(
             EXIT_REQUEST_ERROR,
-            f"context-window-usage-hook: {RequestError.category} (exit {EXIT_REQUEST_ERROR}): {message}\n",
+            f"context-window-rollover-hook: {RequestError.category} (exit {EXIT_REQUEST_ERROR}): {message}\n",
         )
 
 
 def report_error(error: HookError) -> None:
     print(
-        f"context-window-usage-hook: {error.category} (exit {error.exit_code}): {error}",
+        f"context-window-rollover-hook: {error.category} (exit {error.exit_code}): {error}",
         file=sys.stderr,
     )
 

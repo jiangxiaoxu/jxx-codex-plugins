@@ -6,9 +6,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$env:PLUGIN_ROOT/scripts/context_window_usage_hook.py\"",
+            "command": "python \"$env:PLUGIN_ROOT/scripts/context_window_rollover_hook.py\"",
             "timeout": 10,
-            "statusMessage": "Context-window-usage-reminder plugin"
+            "statusMessage": "Context-window-rollover-reminder plugin"
           }
         ]
       }
