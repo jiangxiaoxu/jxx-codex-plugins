@@ -4,11 +4,11 @@
 Codex rollout transcript supplied on standard input and emits one `additionalContext` message when
 the current context usage crosses a new boundary.
 
-The hook starts at 200,000 tokens and then reports every additional 50,000 tokens. The message uses
+The hook starts at 210,000 tokens and then reports every additional 50,000 tokens. The message uses
 whole thousands and has this form:
 
 ```text
-[Context window usage reminder] Current context window usage is 200 K tokens.
+[Context window usage reminder] Current context window usage is 210 K tokens.
 ```
 
 The plugin supports Windows PowerShell and requires Python 3.10 or newer on `PATH`. Python's
@@ -45,7 +45,7 @@ environment variable; PowerShell reads it with `$env:PLUGIN_ROOT`, and the quote
 when the plugin path contains spaces. The command is intended for a PowerShell hook runner; CMD
 variable expansion is not supported by this configuration.
 The hook has a 10-second timeout. Its status message describes each invocation in the UI,
-independently of the 200K reminder threshold.
+independently of the 210K reminder threshold.
 
 ## Runtime state and behavior
 

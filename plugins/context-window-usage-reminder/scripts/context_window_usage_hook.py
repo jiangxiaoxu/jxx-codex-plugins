@@ -19,7 +19,7 @@ EXIT_TRANSCRIPT_ERROR = 5
 EXIT_IDENTITY_ERROR = 6
 EXIT_STATE_ERROR = 7
 
-FIRST_THRESHOLD = 200_000
+FIRST_THRESHOLD = 210_000
 THRESHOLD_STEP = 50_000
 MESSAGE_PREFIX = "[Context window usage reminder] "
 SQLITE_TIMEOUT_SECONDS = 5.0
@@ -277,8 +277,8 @@ def run(state_db: Path) -> str:
             message = ""
             if used is not None:
                 if used >= FIRST_THRESHOLD:
-                    # Keep persisted bucket IDs stable: 150K was bucket 1 and 200K is bucket 2.
-                    bucket = used // THRESHOLD_STEP - 2
+                    # Keep the first reminder at persisted bucket 2.
+                    bucket = (used - FIRST_THRESHOLD) // THRESHOLD_STEP + 2
                     if bucket > highest_bucket:
                         message = output_for(used)
                         highest_bucket = bucket
