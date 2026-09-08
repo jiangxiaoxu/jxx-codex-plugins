@@ -391,7 +391,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             fresh = self.invoke(transcript, state)
             self.assertEqual(fresh.returncode, 0, fresh.stderr)
             self.assert_context(
-                fresh, expected_used_k=250, expected_action="find a suitable boundary"
+                fresh, expected_used_k=250, expected_action="continue the current unit of work"
             )
 
     def test_new_window_reannounces_same_bucket(self):
@@ -439,10 +439,10 @@ class ContextRolloverHookTests(unittest.TestCase):
             cases = [
                 (200_000, None, None),
                 (249_999, None, None),
-                (250_000, 250, "find a suitable boundary"),
+                (250_000, 250, "continue the current unit of work"),
                 (250_000, None, None),
                 (349_999, None, None),
-                (350_000, 350, "actively wind down"),
+                (350_000, 350, "resumable stopping point"),
                 (350_000, None, None),
                 (449_999, None, None),
                 (450_000, 450, "stop starting new work"),
@@ -492,7 +492,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             repeated = self.invoke(transcript, state)
 
             self.assert_context(
-                first, expected_used_k=250, expected_action="find a suitable boundary"
+                first, expected_used_k=250, expected_action="continue the current unit of work"
             )
             self.assert_context(
                 jumped, expected_used_k=500, expected_action="stop starting new work"
