@@ -38,13 +38,14 @@ COMMON_INSTRUCTIONS = (
 
 STAGE_INSTRUCTIONS = {
     250_000: (
-        "Find a suitable boundary, save a checkpoint, and then "
-        "call new_context. If you defer, identify the next concrete work boundary "
-        "where you will roll over."
+        "Continue the current unit of work to a meaningful milestone, then save a "
+        "checkpoint and call new_context. Receiving this reminder or finishing a "
+        "tool call alone is not a stopping point."
     ),
     350_000: (
-        "Actively wind down the current work, save a checkpoint "
-        "promptly, and then call new_context."
+        "Bring the current work to a resumable stopping point with minimal additional "
+        "work, then save a checkpoint and call new_context. Record unfinished work "
+        "in the checkpoint; do not delay rollover to complete a milestone."
     ),
     450_000: (
         "Stop starting new work. Perform only minimal wrap-up "

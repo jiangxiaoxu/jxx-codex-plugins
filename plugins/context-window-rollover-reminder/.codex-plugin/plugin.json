@@ -1,6 +1,6 @@
 {
   "name": "context-window-rollover-reminder",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Reports context usage and provides staged rollover instructions through a PostToolUse hook.",
   "author": {
     "name": "jiangxiaoxu"

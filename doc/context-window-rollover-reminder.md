@@ -9,8 +9,8 @@ Each message reports actual usage in whole thousands and includes the applicable
 
 | Usage | Action |
 | --- | --- |
-| 250K to below 350K | Find a suitable work boundary, prepare a checkpoint, and roll over. |
-| 350K to below 450K | Wind down current work and roll over as soon as the checkpoint is ready. |
+| 250K to below 350K | Continue the current unit of work to a meaningful milestone, then save a checkpoint and roll over. The reminder or a tool call finishing alone is not a stopping point. |
+| 350K to below 450K | Reach a resumable stopping point with minimal additional work, then save a checkpoint and roll over. Record unfinished work without waiting to complete a milestone. |
 | 450K and above | Stop starting new work, finish only necessary cleanup, save the checkpoint, and roll over immediately. |
 
 The message starts with:
