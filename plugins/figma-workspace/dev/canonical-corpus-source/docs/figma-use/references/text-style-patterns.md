@@ -166,7 +166,7 @@ const headingStyle = await figma.importStyleByKeyAsync("TEXT_STYLE_KEY");
 await textNode.setTextStyleIdAsync(headingStyle.id);
 ```
 
-`figma:design-system` with `includeStyles: true` returns style keys you can import this way. Prefer importing library styles over creating new ones.
+Include the currently identified text-style query as `{ "entity": "style", "query": "..." }` in a `figma:design-system` batch. Use the exact style identifier returned by the command when importing, and prefer library styles over creating new ones.
 
 ## Applying Text Styles to Nodes
 

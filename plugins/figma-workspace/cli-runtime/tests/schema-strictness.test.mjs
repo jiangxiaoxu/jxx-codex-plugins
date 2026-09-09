@@ -58,7 +58,7 @@ test("boolean, numeric, and nested arrays do not coerce", async () => {
   try {
     await assert.rejects(current.captureNode({ file: FILE_KEY, surface: "design", target: "1:2", contentsOnly: "false" }), /contentsOnly.*boolean/iu);
     await assert.rejects(current.inspect({ file: FILE_KEY, surface: "design", target: "1:2", depth: "2" }), /depth.*integer/iu);
-    await assert.rejects(current.searchDesignSystem({ file: FILE_KEY, surface: "design", query: "button", includeLibraryKeys: [7] }), /includeLibraryKeys.*string array/iu);
+    await assert.rejects(current.searchDesignSystem({ file: FILE_KEY, surface: "design", queries: [{ entity: "component", query: "button" }], includeLibraryKeys: [7] }), /includeLibraryKeys.*string array/iu);
     await assert.rejects(current.applyAssetManifest({ file: FILE_KEY, surface: "design", assets: Array.from({length:65},()=>({path:"x",target:"1:2"})) }), /at most 64/iu);
   } finally { await current.close(); }
 });

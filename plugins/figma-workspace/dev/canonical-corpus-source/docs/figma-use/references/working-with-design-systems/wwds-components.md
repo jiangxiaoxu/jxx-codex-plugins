@@ -9,14 +9,14 @@
 | 需要回答的问题 | 使用的命令 |
 | --- | --- |
 | 文件中有哪些组件、实例和层级入口? | `figma:metadata` |
-| 哪个已发布或可用库组件最接近需求? | `figma:libraries` 后接 `figma:design-system --components` |
+| 哪个已发布或可用库组件最接近需求? | `figma:libraries` 后接带 `entity: "component"` query 的 `figma:design-system` batch |
 | 组件是否依赖 token, token 有哪些 mode? | `figma:variables` |
 | 某个 Plugin API 成员的准确名称或类型是什么? | `figma:api:search` |
 
 ```text
 npm --silent run figma:metadata -- --file <file-url-or-key> --node <target>
 npm --silent run figma:libraries -- --file <file-url-or-key>
-npm --silent run figma:design-system -- "input field" --components --library <library-key> --file <file-url-or-key>
+npm --silent run figma:design-system -- --input <queries.json> --library <library-key> --file <file-url-or-key>
 npm --silent run figma:variables -- --file <file-url-or-key> --node <target>
 npm --silent run figma:api:search -- componentPropertyReferences
 ```

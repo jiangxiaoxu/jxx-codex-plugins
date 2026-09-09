@@ -8,13 +8,13 @@ Text style 是可复用的排版契约: font family、style、size、line height
 
 ```text
 npm --silent run figma:libraries -- --file <file-url-or-key>
-npm --silent run figma:design-system -- "heading body typography" --styles --variables --library <library-key> --file <file-url-or-key>
+npm --silent run figma:design-system -- --input <queries.json> --library <library-key> --file <file-url-or-key>
 npm --silent run figma:metadata -- --file <file-url-or-key> --node <text-node-id>
 npm --silent run figma:variables -- --file <file-url-or-key> --node <text-node-id>
 npm --silent run figma:api:search -- loadFontAsync
 ```
 
-`figma:design-system --styles --variables` 帮助辨别可应用的 type style 和 token; `figma:libraries` 确认其来源; `figma:metadata` 不应被跳过, 因为文本节点可能继承复杂的局部上下文。还需要了解 `TextStyle`, `setBoundVariable`、`lineHeight` 或 `letterSpacing` 时, 分别用 `figma:api:search` 查询。
+在 JSON batch 中分别使用 `entity: "style"` 和 `entity: "variable"` 的单意图 query, 帮助辨别可应用的 type style 和 token; `figma:libraries` 确认其来源; `figma:metadata` 不应被跳过, 因为文本节点可能继承复杂的局部上下文。还需要了解 `TextStyle`, `setBoundVariable`、`lineHeight` 或 `letterSpacing` 时, 分别用 `figma:api:search` 查询。
 
 ## 精确的类型规则
 

@@ -44,7 +44,7 @@ Example read sequence:
 
 ```text
 npm --silent run figma:variables -- --file <figma-url-or-file-key> --node <node-id>
-npm --silent run figma:design-system -- "surface color" --file <figma-url-or-file-key>
+npm --silent run figma:design-system -- --input <queries.json> --file <figma-url-or-file-key>
 npm --silent run figma:api:search -- "VariableScope"
 ```
 

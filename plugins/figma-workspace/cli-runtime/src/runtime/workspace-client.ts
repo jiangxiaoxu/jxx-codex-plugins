@@ -688,7 +688,7 @@ export interface FigmaWorkspaceCallUpstreamToolResult extends FigmaWorkspaceUpst
 
 export interface FigmaWorkspaceSearchDesignSystemResult extends FigmaWorkspaceUpstreamBackedResult {
   fileKey: string;
-  query: string;
+  queries: FigmaWorkspaceSearchDesignSystemArguments["queries"];
   outputFiles?: FigmaWorkspaceOutputFiles;
   inlineResultLimit?: FigmaWorkspaceInlineResultLimit;
 }
@@ -3991,12 +3991,9 @@ async function executeSearchDesignSystem(
     upstreamToolCache: ReturnType<typeof createUpstreamToolCache>;
   },
 ): Promise<Record<string, unknown>> {
-  if (typeof args.query !== "string" || args.query.trim().length === 0) {
-    throw new Error('Tool argument "query" is required and must be a non-empty string.');
-  }
   const session = prepareFileScopedInvocation(args);
   const fileKey = resolveRequiredFileKey(args, session, "figma:design-system");
-  const query = args.query.trim();
+  const queries = args.queries.map(({ entity, query }) => ({ entity, query: query.trim() }));
   return executeDedicatedUpstreamTool({
     args,
     contract: SEARCH_DESIGN_SYSTEM_CONTRACT,
@@ -4004,10 +4001,10 @@ async function executeSearchDesignSystem(
     session,
     upstreamArguments: removeUndefined({
       fileKey,
-      query,
+      queries,
     }) as Record<string, unknown>,
-    responseFields: { fileKey, query },
-    historySummary: `Searched Figma design system for ${query}.`,
+    responseFields: { fileKey, queries },
+    historySummary: `Searched Figma design system with ${queries.length} queries.`,
     nodeIds: [],
   });
 }

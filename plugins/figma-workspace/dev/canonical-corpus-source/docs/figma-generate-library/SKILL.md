@@ -183,16 +183,16 @@ Maintain a state ledger tracking:
 
 Search FIRST in Phase 0, then again immediately before each component creation.
 
-**Start with `figma:libraries`** to understand what libraries are available before searching blindly. Then use `figma:design-system` to search components, variables, and styles with the selected file and optional repeated `--library` filters.
+**Start with `figma:libraries`** to understand what libraries are available before searching blindly. Then use `figma:design-system` with one JSON batch to search the currently identified components, variables, and styles in the selected file. One command invocation sends one batch to MCP. Use optional repeated `--library` filters when the source library is known.
 
 ```
 // Discover all libraries accessible to the file
 npm --silent run figma:libraries -- --file <figma-file-url-or-key>
 ```
 
-Use returned library identifiers as repeatable `--library` filters for `figma:design-system`. This avoids noisy results when many libraries are available.
+Use returned library identifiers as repeatable `--library` filters for `figma:design-system`. This avoids noisy results when many libraries are available. Keep each JSON query single-intent and do not add guessed synonyms or filler entries.
 
-Run the selected command with `--help` before first use; its typed arguments and result fields are the contract.
+Run the selected command with `--help` before first use; its typed arguments and result fields are the contract. Inspect the complete batch result before deciding whether a focused follow-up is needed.
 
 **Reuse if** all of these are true:
 - Component property API matches your needs (same variant axes, compatible types)

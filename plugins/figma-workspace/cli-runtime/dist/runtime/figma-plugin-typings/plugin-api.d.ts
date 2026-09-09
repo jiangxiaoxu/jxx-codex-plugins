@@ -1645,8 +1645,54 @@ interface PluginAPI {
    * A common question is whether a plugin needs to be careful about calling `loadFontAsync(font)` for the same font multiple times. The answer is somewhat nuanced. The result of loading a font is cached, so calling `loadFontAsync` won't re-fetch the same font from disk. Therefore, calling `loadFontAsync` on every frame would be perfectly ok.
    *
    * However, note that `loadFontAsync` returns a Promise. Even a Promise resolves immediately, it still needs to round-trip to the JavaScript event loop. So you probably shouldn't call `loadFontAsync` on the same font repeatedly inside a loop.
+   *
+   * **Variable fonts**
+   *
+   * You can pass a {@link FontNameInput} and omit `style` to load every style of the family in one call. This works for both variable and static families, and is convenient when you plan to drive the font with {@link FontName.variationSettings} rather than enumerating named instances. {@link FontName.variationSettings} on the argument is ignored — variation values affect what gets rendered, not what gets loaded — so you can pass the same object you later assign to `node.fontName`.
+   *
+   * ```ts title="Loading and applying a variable font"
+   * (async () => {
+   *   await figma.loadFontAsync({ family: 'Inter' })
+   *
+   *   const text = figma.createText()
+   *   text.fontName = {
+   *     family: 'Inter',
+   *     style: 'Regular',
+   *     variationSettings: { wght: 550 },
+   *   }
+   *   text.characters = 'Hello, world'
+   * })()
+   * ```
    */
-  loadFontAsync(fontName: FontName): Promise<void>
+  loadFontAsync(fontName: FontNameInput): Promise<void>
+  /**
+   * Returns the [OpenType variation axis](https://fonts.google.com/knowledge/glossary/axis_in_variable_fonts) tags a variable font family exposes, or `null` for a static family. These are the tags accepted by {@link FontName.variationSettings}.
+   *
+   * @remarks
+   *
+   * The family has to be available in the editor but does not have to be loaded, so this can be called before {@link PluginAPI.loadFontAsync} to decide what to load. Throws for an unknown family, so `null` always means the family is static.
+   *
+   * Each tag is a 4-character OpenType axis tag such as `"wght"` (weight), `"wdth"` (width), `"slnt"` (slant), `"opsz"` (optical size), or a custom tag defined by the font designer.
+   *
+   * ```ts title="Discovering variation axes, then applying one"
+   * (async () => {
+   *   const family = 'Inter'
+   *   const axes = figma.getFontFamilyVariationAxes(family)
+   *   if (axes === null) {
+   *     console.log(`${family} is a static font`)
+   *     return
+   *   }
+   *
+   *   await figma.loadFontAsync({ family })
+   *   const text = figma.createText()
+   *   if (axes.includes('wght')) {
+   *     text.fontName = { family, style: 'Regular', variationSettings: { wght: 550 } }
+   *   }
+   *   text.characters = 'Variable!'
+   * })()
+   * ```
+   */
+  getFontFamilyVariationAxes(family: string): string[] | null
   /**
    * Returns true if the document contains text with missing fonts.
    */
@@ -3704,6 +3750,7 @@ type NodeChangeProperty =
   | 'leadingTrim'
   | 'paragraphIndent'
   | 'paragraphSpacing'
+  | 'textWrapStyle'
   | 'listSpacing'
   | 'hangingPunctuation'
   | 'hangingList'
@@ -3828,6 +3875,7 @@ type StyleChangeProperty =
   | 'leadingTrim'
   | 'paragraphIndent'
   | 'paragraphSpacing'
+  | 'textWrapStyle'
   | 'listSpacing'
   | 'hangingPunctuation'
   | 'hangingList'
@@ -3876,10 +3924,75 @@ interface RGBA {
 }
 /**
  * @see https://developers.figma.com/docs/plugins/api/FontName
+ *
+ * Describes a font used by a text node. For example, the default font is `{ family: "Inter", style: "Regular" }`.
+ *
+ * @remarks
+ *
+ * Reads always include `family` and `style`. For [variable fonts](https://fonts.google.com/knowledge/glossary/variable_fonts), they also include {@link FontName.variationSettings} with every axis the family defines. Static fonts omit `variationSettings`.
+ *
+ * To apply a font without naming a style, pass a {@link FontNameInput} to {@link PluginAPI.loadFontAsync}, {@link BaseNonResizableTextMixin.setRangeFontName}, or `fontName`. Use {@link PluginAPI.getFontFamilyVariationAxes} to discover the axis tags a family accepts.
+ *
+ * ```ts title="Setting a font with custom variation settings"
+ * (async () => {
+ *   const text = figma.createText()
+ *   await figma.loadFontAsync({ family: 'Inter', style: 'Regular' })
+ *   text.fontName = {
+ *     family: 'Inter',
+ *     style: 'Regular',
+ *     variationSettings: { wght: 600, slnt: -5 },
+ *   }
+ *   text.characters = 'Hello, variable fonts!'
+ * })()
+ * ```
  */
 interface FontName {
   readonly family: string
   readonly style: string
+  /**
+   * The variable font axis values applied to the text, for example `{ wght: 600, slnt: -10 }`. Absent for a static font.
+   *
+   * Reading reports every axis the family defines. When setting, an omitted axis keeps the value of the named instance `style` refers to, so `{ wght: 900 }` on Inter Regular changes only the weight and leaves slant at Regular's default. Setting an axis the family does not define throws; use {@link PluginAPI.getFontFamilyVariationAxes} to discover the valid tags.
+   */
+  readonly variationSettings?: FontVariationSettings
+}
+/**
+ * @see https://developers.figma.com/docs/plugins/api/FontName
+ *
+ * Variable font axis values keyed by [OpenType variation axis](https://fonts.google.com/knowledge/glossary/axis_in_variable_fonts) tag, mirroring the CSS `font-variation-settings` property. A tag is always four ASCII characters.
+ */
+interface FontVariationSettings {
+  readonly [axis: string]: number
+}
+/**
+ * @see https://developers.figma.com/docs/plugins/api/FontName
+ *
+ * A font to apply where `style` can be inferred rather than named. Unlike {@link FontName}, `style` may be omitted, in which case Figma resolves the named instance that most closely matches {@link FontName.variationSettings}. Reads always return a fully populated {@link FontName}.
+ *
+ * @remarks
+ *
+ * Accepted by {@link PluginAPI.loadFontAsync}, {@link BaseNonResizableTextMixin.setRangeFontName}, and when assigning {@link BaseNonResizableTextMixin.fontName}.
+ *
+ * Omitting `style` in {@link PluginAPI.loadFontAsync} loads every style of the family. Omitting `style` when setting a font lets Figma pick the named instance closest to `variationSettings` (for example `{ family: 'Inter', variationSettings: { wght: 900 } }` resolves to Inter Black).
+ *
+ * ```ts title="Inferring a named instance from variation settings"
+ * (async () => {
+ *   await figma.loadFontAsync({ family: 'Inter' })
+ *   const text = figma.createText()
+ *   text.characters = 'Hello'
+ *   text.setRangeFontName(0, text.characters.length, {
+ *     family: 'Inter',
+ *     variationSettings: { wght: 900 },
+ *   })
+ *   // Read back: { family: 'Inter', style: 'Black', variationSettings: { wght: 900, slnt: 0 } }
+ *   console.log(text.fontName)
+ * })()
+ * ```
+ */
+interface FontNameInput {
+  readonly family: string
+  readonly style?: string
+  readonly variationSettings?: FontVariationSettings
 }
 type TextCase = 'ORIGINAL' | 'UPPER' | 'LOWER' | 'TITLE' | 'SMALL_CAPS' | 'SMALL_CAPS_FORCED'
 type TextDecoration = 'NONE' | 'UNDERLINE' | 'STRIKETHROUGH'
@@ -5305,6 +5418,10 @@ type LineHeight =
       readonly unit: 'AUTO'
     }
 type LeadingTrim = 'CAP_HEIGHT' | 'NONE'
+/**
+ * @see https://developers.figma.com/docs/plugins/api/TextWrapStyle
+ */
+type TextWrapStyle = 'AUTO' | 'BALANCE' | 'PRETTY'
 type HyperlinkTarget = {
   type: 'URL' | 'NODE'
   value: string
@@ -5366,7 +5483,7 @@ interface StyledTextSegment {
    */
   fontSize: number
   /**
-   * The font family (e.g. "Inter"), and font style (e.g. "Regular").
+   * The font family (e.g. `"Inter"`), font style (e.g. `"Regular"`). For [variable fonts](https://developers.figma.com/docs/plugins/api/FontName), also {@link FontName.variationSettings}.
    */
   fontName: FontName
   /**
@@ -5446,6 +5563,10 @@ interface StyledTextSegment {
    */
   paragraphSpacing: number
   /**
+   * The text wrap style applied to the paragraph.
+   */
+  textWrapStyle: TextWrapStyle
+  /**
    * A HyperlinkTarget if the text node has exactly one hyperlink, or null if the node has none.
    */
   hyperlink: HyperlinkTarget | null
@@ -5490,14 +5611,7 @@ type Reaction = {
   trigger: Trigger | null
 }
 type VariableDataType =
-  | 'BOOLEAN'
-  | 'COLOR'
-  | 'EASING'
-  | 'EXPRESSION'
-  | 'FLOAT'
-  | 'STRING'
-  | 'TIMING'
-  | 'VARIABLE_ALIAS'
+  'BOOLEAN' | 'COLOR' | 'EASING' | 'EXPRESSION' | 'FLOAT' | 'STRING' | 'TIMING' | 'VARIABLE_ALIAS'
 type ExpressionFunction =
   | 'ADDITION'
   | 'SUBTRACTION'
@@ -5551,12 +5665,7 @@ type Action =
       readonly type: 'UPDATE_MEDIA_RUNTIME'
       readonly destinationId: string | null
       readonly mediaAction:
-        | 'PLAY'
-        | 'PAUSE'
-        | 'TOGGLE_PLAY_PAUSE'
-        | 'MUTE'
-        | 'UNMUTE'
-        | 'TOGGLE_MUTE_UNMUTE'
+        'PLAY' | 'PAUSE' | 'TOGGLE_PLAY_PAUSE' | 'MUTE' | 'UNMUTE' | 'TOGGLE_MUTE_UNMUTE'
     }
   | {
       readonly type: 'UPDATE_MEDIA_RUNTIME'
@@ -7130,9 +7239,7 @@ interface DimensionAndPositionMixin {
  * @see https://developers.figma.com/docs/plugins/api/node-properties
  */
 interface LayoutMixin
-  extends DimensionAndPositionMixin,
-    AutoLayoutChildrenMixin,
-    GridChildrenMixin {
+  extends DimensionAndPositionMixin, AutoLayoutChildrenMixin, GridChildrenMixin {
   /**
    * The actual bounds of a node accounting for drop shadows, thick strokes, and anything else that may fall outside the node's regular bounding box defined in `x`, `y`, `width`, and `height`. The `x` and `y` inside this property represent the absolute position of the node on the page. This value will be `null` if the node is invisible.
    */
@@ -7625,7 +7732,9 @@ interface AutoLayoutMixin {
    *
    * - In horizontal auto-layout frames, `“MIN”` and `“MAX”` correspond to left and right respectively.
    * - In vertical auto-layout frames, `“MIN”` and `“MAX”` correspond to top and bottom respectively.
-   * - `“SPACE_BETWEEN”` will cause the children to space themselves evenly along the primary axis, only putting the extra space between the children.
+   * - `“SPACE_BETWEEN”` will space the children evenly along the primary axis, only putting the extra space between the children. The first and last child are flush with the edges of the frame.
+   * - `“SPACE_EVENLY”` will space the children evenly along the primary axis, dividing the extra space equally in the spaces before the first child, between each pair of items, and after the last child.
+   * - `“SPACE_AROUND”` will space the children evenly along the primary axis such that the spacing between each pair of items is equal, and the empty space before the first and after the last child is equal to half the space between items.
    *
    * The corresponding property for the counter axis direction is {@link AutoLayoutMixin.counterAxisAlignItems}.
    *
@@ -7640,47 +7749,68 @@ interface AutoLayoutMixin {
    * parentFrame.resize(300, 100)
    *
    * // Parent frame
-   * // +------------------------------------+
-   * // | +-----------++-----------+         |
-   * // | |           ||           |         |
-   * // | |  Child 1  ||  Child 2  |         |
-   * // | |           ||           |         |
-   * // | +-----------++-----------+         |
-   * // +------------------------------------+
+   * // +--------------------------------------+
+   * // |+-----------++-----------+            |
+   * // ||           ||           |            |
+   * // ||  Child 1  ||  Child 2  |            |
+   * // ||           ||           |            |
+   * // |+-----------++-----------+            |
+   * // +--------------------------------------+
    * parentFrame.primaryAxisAlignItems = 'MIN'
    *
    * // Parent frame
-   * // +------------------------------------+
-   * // |          +-----------++-----------+|
-   * // |          |           ||           ||
-   * // |          |  Child 1  ||  Child 2  ||
-   * // |          |           ||           ||
-   * // |          +-----------++-----------+|
-   * // +------------------------------------+
+   * // +--------------------------------------+
+   * // |            +-----------++-----------+|
+   * // |            |           ||           ||
+   * // |            |  Child 1  ||  Child 2  ||
+   * // |            |           ||           ||
+   * // |            +-----------++-----------+|
+   * // +--------------------------------------+
    * parentFrame.primaryAxisAlignItems = 'MAX'
    *
    * // Parent frame
-   * // +------------------------------------+
-   * // |     +-----------++-----------+     |
-   * // |     |           ||           |     |
-   * // |     |  Child 1  ||  Child 2  |     |
-   * // |     |           ||           |     |
-   * // |     +-----------++-----------+     |
-   * // +------------------------------------+
+   * // +--------------------------------------+
+   * // |      +-----------++-----------+      |
+   * // |      |           ||           |      |
+   * // |      |  Child 1  ||  Child 2  |      |
+   * // |      |           ||           |      |
+   * // |      +-----------++-----------+      |
+   * // +--------------------------------------+
    * parentFrame.primaryAxisAlignItems = 'CENTER'
    *
    * // Parent frame
-   * // +------------------------------------+
-   * // |+-----------+          +-----------+|
-   * // ||           |          |           ||
-   * // ||  Child 1  |          |  Child 2  ||
-   * // ||           |          |           ||
-   * // |+-----------+          +-----------+|
-   * // +------------------------------------+
+   * // +--------------------------------------+
+   * // |+-----------+            +-----------+|
+   * // ||           |            |           ||
+   * // ||  Child 1  |            |  Child 2  ||
+   * // ||           |            |           ||
+   * // |+-----------+            +-----------+|
+   * // +--------------------------------------+
    * parentFrame.primaryAxisAlignItems = 'SPACE_BETWEEN'
+   *
+   * // Parent frame
+   * // +--------------------------------------+
+   * // |    +-----------+    +-----------+    |
+   * // |    |           |    |           |    |
+   * // |----|  Child 1  |----|  Child 2  |----|
+   * // |    |           |    |           |    |
+   * // |    +-----------+    +-----------+    |
+   * // +--------------------------------------+
+   * parentFrame.primaryAxisAlignItems = 'SPACE_EVENLY'
+   *
+   * // Parent frame
+   * // +--------------------------------------+
+   * // |   +-----------+      +-----------+   |
+   * // |   |           |      |           |   |
+   * // |---|  Child 1  |------|  Child 2  |---|
+   * // |   |           |      |           |   |
+   * // |   +-----------+      +-----------+   |
+   * // +--------------------------------------+
+   * parentFrame.primaryAxisAlignItems = 'SPACE_AROUND'
    * ```
    */
-  primaryAxisAlignItems: 'MIN' | 'MAX' | 'CENTER' | 'SPACE_BETWEEN'
+  primaryAxisAlignItems:
+    'MIN' | 'MAX' | 'CENTER' | 'SPACE_BETWEEN' | 'SPACE_EVENLY' | 'SPACE_AROUND'
   /**
    * Applicable only on "HORIZONTAL" or "VERTICAL" auto-layout frames. Determines how the auto-layout frame’s children should be aligned in the counter axis direction.
    *
@@ -8564,8 +8694,7 @@ interface CustomVariableWidthStrokeProperties {
  * @see https://developers.figma.com/docs/plugins/api/VariableWidthStrokeProperties
  */
 declare type VariableWidthStrokeProperties =
-  | PresetVariableWidthStrokeProperties
-  | CustomVariableWidthStrokeProperties
+  PresetVariableWidthStrokeProperties | CustomVariableWidthStrokeProperties
 /**
  * @see https://developers.figma.com/docs/plugins/api/ComplexStrokeProperties
  */
@@ -9133,7 +9262,8 @@ interface PublishableMixin {
  * @see https://developers.figma.com/docs/plugins/api/node-properties
  */
 interface DefaultShapeMixin
-  extends BaseNodeMixin,
+  extends
+    BaseNodeMixin,
     SceneNodeMixin,
     ReactionMixin,
     BlendMixin,
@@ -9144,7 +9274,8 @@ interface DefaultShapeMixin
  * @see https://developers.figma.com/docs/plugins/api/node-properties
  */
 interface BaseFrameMixin
-  extends BaseNodeMixin,
+  extends
+    BaseNodeMixin,
     SceneNodeMixin,
     ChildrenMixin,
     ContainerMixin,
@@ -9204,10 +9335,7 @@ interface BaseFrameMixin
 interface DefaultFrameMixin extends BaseFrameMixin, FramePrototypingMixin, ReactionMixin {}
 
 interface OpaqueNodeMixin
-  extends BaseNodeMixin,
-    SceneNodeMixin,
-    ExportMixin,
-    DimensionAndPositionMixin {}
+  extends BaseNodeMixin, SceneNodeMixin, ExportMixin, DimensionAndPositionMixin {}
 
 interface MinimalBlendMixin {
   /**
@@ -9636,7 +9764,26 @@ interface BaseNonResizableTextMixin {
    */
   fontSize: number | PluginAPI['mixed']
   /**
-   * The font family (e.g. "Inter"), and font style (e.g. "Regular"). Setting this property to a different value requires the new font to be loaded.
+   * The font family (e.g. `"Inter"`), font style (e.g. `"Regular"`). For [variable fonts](https://developers.figma.com/docs/plugins/api/FontName), also {@link FontName.variationSettings}. Setting this property to a different value requires the new font to be loaded.
+   *
+   * @remarks
+   *
+   * When reading, `variationSettings` is populated only when the font is a variable font, and includes every axis the family defines (not just overrides). Returns `figma.mixed` when the text node has more than one font, or when variation settings differ across character ranges.
+   *
+   * When writing, pass a {@link FontName} or {@link FontNameInput}. Omit `style` to let Figma pick the named instance closest to `variationSettings`. Supply `variationSettings` to override specific axes; keys must match the family's axis tags (see {@link PluginAPI.getFontFamilyVariationAxes}). An omitted axis keeps the named instance's default.
+   *
+   * ```ts title="Set a variable font with custom weight"
+   * (async () => {
+   *   const text = figma.createText()
+   *   await figma.loadFontAsync({ family: 'Inter', style: 'Regular' })
+   *   text.fontName = {
+   *     family: 'Inter',
+   *     style: 'Regular',
+   *     variationSettings: { wght: 650 },
+   *   }
+   *   text.characters = 'Almost bold'
+   * })()
+   * ```
    */
   fontName: FontName | PluginAPI['mixed']
   /**
@@ -9726,19 +9873,36 @@ interface BaseNonResizableTextMixin {
    */
   setRangeFontSize(start: number, end: number, value: number): void
   /**
-   * Get the `fontName` from characters in range `start` (inclusive) to `end` (exclusive).
+   * Get the `fontName` from characters in range `start` (inclusive) to `end` (exclusive). For [variable fonts](https://developers.figma.com/docs/plugins/api/FontName), the returned {@link FontName} includes {@link FontName.variationSettings}. Returns `figma.mixed` when the range contains more than one font or when variation settings differ.
    */
   getRangeFontName(start: number, end: number): FontName | PluginAPI['mixed']
   /**
    * Set the `fontName` from characters in range `start` (inclusive) to `end` (exclusive). Requires the new font to be loaded.
+   *
+   * @remarks
+   *
+   * Accepts a {@link FontNameInput}. Pass `variationSettings` to override specific axes of a [variable font](https://developers.figma.com/docs/plugins/api/FontName). Omit `style` to let Figma pick the named instance closest to `variationSettings`.
+   *
+   * ```ts title="Override weight on a character range"
+   * (async () => {
+   *   const text = figma.createText()
+   *   await figma.loadFontAsync({ family: 'Inter' })
+   *   text.characters = 'Hello world'
+   *   text.setRangeFontName(0, 5, {
+   *     family: 'Inter',
+   *     style: 'Regular',
+   *     variationSettings: { wght: 700 },
+   *   })
+   * })()
+   * ```
    */
-  setRangeFontName(start: number, end: number, value: FontName): void
+  setRangeFontName(start: number, end: number, value: FontNameInput): void
   /**
    * Get the `fontWeight` from characters in range `start` (inclusive) to `end` (exclusive).
    */
   getRangeFontWeight(start: number, end: number): number | PluginAPI['mixed']
   /**
-   * Get the `fontName`s from characters in range `start` (inclusive) to `end` (exclusive).
+   * Get the `fontName`s from characters in range `start` (inclusive) to `end` (exclusive). For [variable fonts](https://developers.figma.com/docs/plugins/api/FontName), each entry includes {@link FontName.variationSettings}.
    */
   getRangeAllFontNames(start: number, end: number): FontName[]
   /**
@@ -10004,8 +10168,118 @@ interface NonResizableTextMixin extends BaseNonResizableTextMixin {
   paragraphIndent: number | PluginAPI['mixed']
   /**
    * The vertical distance between paragraphs. Setting this property requires the font to be loaded.
+   *
+   * @remarks
+   *
+   * **Working with Paragraph Level Fields**
+   *
+   * ```ts
+   * const text = figma.createText()
+   * await figma.loadFontAsync({ family: 'Inter', style: 'Regular' })
+   *
+   * // Create text with two paragraphs, separated by \n
+   * text.characters = "hello figma, welcome to my plugin!\nI love the Figma Plugin API!"
+   * text.resize(120, 30)
+   * text.textAutoResize = 'HEIGHT'
+   *
+   * // Apply 20px paragraph spacing - all paragraphs covered by the provided text range will be
+   * // modified, and remaining paragraphs will be untouched.
+   * text.setRangeParagraphSpacing(0, 1, 20)
+   * // text.paragraphSpacing = Symbol(figma.mixed)
+   * // text.getStyledTextSegments(['paragraphSpacing']) =
+   * //    [
+   * //      {
+   * //        "characters": "hello figma, welcome to my plugin!\n",
+   * //        "start": 0,
+   * //        "end": 35,
+   * //        "paragraphSpacing": 20
+   * //      },
+   * //      {
+   * //        "characters": "I love the Figma Plugin API!",
+   * //        "start": 35,
+   * //        "end": 63,
+   * //        "paragraphSpacing": 0
+   * //      }
+   * //    ]
+   *
+   * text.setRangeTextWrapStyle(38, 39, 'BALANCE')
+   * // text.textWrapStyle = Symbol(figma.mixed)
+   * // text.getStyledTextSegments(['textWrapStyle']) =
+   * //    [
+   * //      {
+   * //        "characters": "hello figma, welcome to my plugin!\n",
+   * //        "start": 0,
+   * //        "end": 35,
+   * //        "textWrapStyle": "AUTO"
+   * //      },
+   * //      {
+   * //        "characters": "I love the Figma Plugin API!",
+   * //        "start": 35,
+   * //        "end": 63,
+   * //        "textWrapStyle": "BALANCE"
+   * //      }
+   * //    ]
+   * ```
+   *
    */
   paragraphSpacing: number | PluginAPI['mixed']
+  /**
+   * Controls how text wraps within each paragraph. Setting this property requires the font to be loaded.
+   *
+   * @remarks
+   *
+   * **Working with Paragraph Level Fields**
+   *
+   * ```ts
+   * const text = figma.createText()
+   * await figma.loadFontAsync({ family: 'Inter', style: 'Regular' })
+   *
+   * // Create text with two paragraphs, separated by \n
+   * text.characters = "hello figma, welcome to my plugin!\nI love the Figma Plugin API!"
+   * text.resize(120, 30)
+   * text.textAutoResize = 'HEIGHT'
+   *
+   * // Apply 20px paragraph spacing - all paragraphs covered by the provided text range will be
+   * // modified, and remaining paragraphs will be untouched.
+   * text.setRangeParagraphSpacing(0, 1, 20)
+   * // text.paragraphSpacing = Symbol(figma.mixed)
+   * // text.getStyledTextSegments(['paragraphSpacing']) =
+   * //    [
+   * //      {
+   * //        "characters": "hello figma, welcome to my plugin!\n",
+   * //        "start": 0,
+   * //        "end": 35,
+   * //        "paragraphSpacing": 20
+   * //      },
+   * //      {
+   * //        "characters": "I love the Figma Plugin API!",
+   * //        "start": 35,
+   * //        "end": 63,
+   * //        "paragraphSpacing": 0
+   * //      }
+   * //    ]
+   *
+   * text.setRangeTextWrapStyle(38, 39, 'BALANCE')
+   * // text.textWrapStyle = Symbol(figma.mixed)
+   * // text.getStyledTextSegments(['textWrapStyle']) =
+   * //    [
+   * //      {
+   * //        "characters": "hello figma, welcome to my plugin!\n",
+   * //        "start": 0,
+   * //        "end": 35,
+   * //        "textWrapStyle": "AUTO"
+   * //      },
+   * //      {
+   * //        "characters": "I love the Figma Plugin API!",
+   * //        "start": 35,
+   * //        "end": 63,
+   * //        "textWrapStyle": "BALANCE"
+   * //      }
+   * //    ]
+   * ```
+   *
+   */
+  textWrapStyle: TextWrapStyle | PluginAPI['mixed']
   /**
    * The vertical distance between lines of a list.
    */
@@ -10158,6 +10432,14 @@ interface NonResizableTextMixin extends BaseNonResizableTextMixin {
    * Set the `paragraphSpacing` for a paragraph containing characters in range `start` (inclusive) to `end` (exclusive).
    */
   setRangeParagraphSpacing(start: number, end: number, value: number): void
+  /**
+   * Get the `textWrapStyle` for a paragraph containing characters in range `start` (inclusive) to `end` (exclusive).
+   */
+  getRangeTextWrapStyle(start: number, end: number): TextWrapStyle | PluginAPI['mixed']
+  /**
+   * Set the `textWrapStyle` for a paragraph containing characters in range `start` (inclusive) to `end` (exclusive). Requires the font to be loaded.
+   */
+  setRangeTextWrapStyle(start: number, end: number, value: TextWrapStyle): void
 }
 /**
  * @see https://developers.figma.com/docs/plugins/api/TextPathNode
@@ -10327,11 +10609,7 @@ interface ExplicitVariableModesMixin {
   setExplicitVariableModeForCollection(collection: VariableCollection, modeId: string): void
 }
 interface PageNode
-  extends BaseNodeMixin,
-    ChildrenMixin,
-    ExportMixin,
-    ExplicitVariableModesMixin,
-    MeasurementsMixin {
+  extends BaseNodeMixin, ChildrenMixin, ExportMixin, ExplicitVariableModesMixin, MeasurementsMixin {
   /**
    * The type of this node, represented by the string literal "PAGE"
    */
@@ -10536,7 +10814,8 @@ interface FrameNode extends DefaultFrameMixin {
   clone(): FrameNode
 }
 interface GroupNode
-  extends BaseNodeMixin,
+  extends
+    BaseNodeMixin,
     SceneNodeMixin,
     ReactionMixin,
     ChildrenMixin,
@@ -10559,7 +10838,8 @@ interface GroupNode
  * @see https://developers.figma.com/docs/plugins/api/TransformGroupNode
  */
 interface TransformGroupNode
-  extends BaseNodeMixin,
+  extends
+    BaseNodeMixin,
     SceneNodeMixin,
     ReactionMixin,
     ChildrenMixin,
@@ -10593,7 +10873,8 @@ interface SliceNode extends BaseNodeMixin, SceneNodeMixin, LayoutMixin, ExportMi
   clone(): SliceNode
 }
 interface RectangleNode
-  extends DefaultShapeMixin,
+  extends
+    DefaultShapeMixin,
     ConstraintMixin,
     CornerMixin,
     ComplexStrokesMixin,
@@ -10611,10 +10892,7 @@ interface RectangleNode
   clone(): RectangleNode
 }
 interface LineNode
-  extends DefaultShapeMixin,
-    ConstraintMixin,
-    AnnotationsMixin,
-    ComplexStrokesMixin {
+  extends DefaultShapeMixin, ConstraintMixin, AnnotationsMixin, ComplexStrokesMixin {
   /**
    * The type of this node, represented by the string literal "LINE"
    */
@@ -10625,7 +10903,8 @@ interface LineNode
   clone(): LineNode
 }
 interface EllipseNode
-  extends DefaultShapeMixin,
+  extends
+    DefaultShapeMixin,
     ConstraintMixin,
     CornerMixin,
     ComplexStrokesMixin,
@@ -10645,7 +10924,8 @@ interface EllipseNode
   arcData: ArcData
 }
 interface PolygonNode
-  extends DefaultShapeMixin,
+  extends
+    DefaultShapeMixin,
     ConstraintMixin,
     CornerMixin,
     ComplexStrokesMixin,
@@ -10665,7 +10945,8 @@ interface PolygonNode
   pointCount: number
 }
 interface StarNode
-  extends DefaultShapeMixin,
+  extends
+    DefaultShapeMixin,
     ConstraintMixin,
     CornerMixin,
     ComplexStrokesMixin,
@@ -10691,7 +10972,8 @@ interface StarNode
   innerRadius: number
 }
 interface VectorNode
-  extends DefaultShapeMixin,
+  extends
+    DefaultShapeMixin,
     ConstraintMixin,
     CornerMixin,
     ComplexStrokesMixin,
@@ -10708,7 +10990,8 @@ interface VectorNode
   clone(): VectorNode
 }
 interface TextNode
-  extends DefaultShapeMixin,
+  extends
+    DefaultShapeMixin,
     ConstraintMixin,
     NonResizableTextMixin,
     ComplexStrokesMixin,
@@ -10779,7 +11062,8 @@ interface TextNode
  * @see https://developers.figma.com/docs/plugins/api/TextPathNode
  */
 interface TextPathNode
-  extends DefaultShapeMixin,
+  extends
+    DefaultShapeMixin,
     ConstraintMixin,
     NonResizableTextPathMixin,
     ComplexStrokesMixin,
@@ -10904,10 +11188,7 @@ interface ComponentSetNode extends BaseFrameMixin, PublishableMixin, ComponentPr
  * @see https://developers.figma.com/docs/plugins/api/ComponentNode
  */
 interface ComponentNode
-  extends DefaultFrameMixin,
-    PublishableMixin,
-    VariantMixin,
-    ComponentPropertiesMixin {
+  extends DefaultFrameMixin, PublishableMixin, VariantMixin, ComponentPropertiesMixin {
   /**
    * The type of this node, represented by the string literal "COMPONENT"
    */
@@ -11047,7 +11328,8 @@ interface SlotNode extends DefaultFrameMixin {
   readonly limitViolations: Array<'BELOW_MIN' | 'ABOVE_MAX' | 'HAS_NON_PREFERRED'>
 }
 interface BooleanOperationNode
-  extends DefaultShapeMixin,
+  extends
+    DefaultShapeMixin,
     ChildrenMixin,
     CornerMixin,
     ComplexStrokesMixin,
@@ -11093,10 +11375,7 @@ interface StickyNode extends OpaqueNodeMixin, MinimalFillsMixin, MinimalBlendMix
   clone(): StickyNode
 }
 interface StampNode
-  extends DefaultShapeMixin,
-    ConstraintMixin,
-    StickableMixin,
-    AspectRatioLockMixin {
+  extends DefaultShapeMixin, ConstraintMixin, StickableMixin, AspectRatioLockMixin {
   /**
    * The type of this node, represented by the string literal "STAMP"
    */
@@ -11233,7 +11512,8 @@ interface TableCellNode extends MinimalFillsMixin {
   readonly width: number
 }
 interface HighlightNode
-  extends DefaultShapeMixin,
+  extends
+    DefaultShapeMixin,
     ConstraintMixin,
     CornerMixin,
     VectorLikeMixin,
@@ -11259,10 +11539,7 @@ interface WashiTapeNode extends DefaultShapeMixin, StickableMixin, AspectRatioLo
   clone(): WashiTapeNode
 }
 interface ShapeWithTextNode
-  extends OpaqueNodeMixin,
-    MinimalFillsMixin,
-    MinimalBlendMixin,
-    MinimalStrokesMixin {
+  extends OpaqueNodeMixin, MinimalFillsMixin, MinimalBlendMixin, MinimalStrokesMixin {
   /**
    * The type of this node, represented by the string literal "SHAPE_WITH_TEXT".
    */
@@ -11782,14 +12059,7 @@ interface ExtendedVariableCollection extends Omit<VariableCollection, 'addMode'>
   removeMode(modeId: string): void
 }
 type AnnotationCategoryColor =
-  | 'yellow'
-  | 'orange'
-  | 'red'
-  | 'pink'
-  | 'violet'
-  | 'blue'
-  | 'teal'
-  | 'green'
+  'yellow' | 'orange' | 'red' | 'pink' | 'violet' | 'blue' | 'teal' | 'green'
 interface AnnotationCategory {
   /**
    * The unique identifier of the annotation category.
@@ -12016,7 +12286,8 @@ interface MediaNode extends OpaqueNodeMixin {
  * @see https://developers.figma.com/docs/plugins/api/SectionNode
  */
 interface SectionNode
-  extends ChildrenMixin,
+  extends
+    ChildrenMixin,
     MinimalFillsMixin,
     OpaqueNodeMixin,
     DevStatusMixin,
@@ -12162,14 +12433,7 @@ interface SlideTransition {
    * The easing of the slide transition.
    */
   readonly curve:
-    | 'EASE_IN'
-    | 'EASE_OUT'
-    | 'EASE_IN_AND_OUT'
-    | 'LINEAR'
-    | 'GENTLE'
-    | 'QUICK'
-    | 'BOUNCY'
-    | 'SLOW'
+    'EASE_IN' | 'EASE_OUT' | 'EASE_IN_AND_OUT' | 'LINEAR' | 'GENTLE' | 'QUICK' | 'BOUNCY' | 'SLOW'
   /**
    * The timing of the slide transition.
    */
@@ -12308,7 +12572,7 @@ interface TextStyle extends BaseStyleMixin {
    */
   textDecoration: TextDecoration
   /**
-   * Value to replace the text {@link BaseNonResizableTextMixin.fontName} with.
+   * Value to replace the text {@link BaseNonResizableTextMixin.fontName} with. For [variable fonts](https://developers.figma.com/docs/plugins/api/FontName), this includes {@link FontName.variationSettings}.
    */
   fontName: FontName
   /**
@@ -12331,6 +12595,10 @@ interface TextStyle extends BaseStyleMixin {
    * Value to replace the text {@link NonResizableTextMixin.paragraphSpacing} with.
    */
   paragraphSpacing: number
+  /**
+   * Value to replace the text {@link NonResizableTextMixin.textWrapStyle} with.
+   */
+  textWrapStyle: TextWrapStyle
   /**
    * Value to replace the text {@link NonResizableTextMixin.listSpacing} with.
    */

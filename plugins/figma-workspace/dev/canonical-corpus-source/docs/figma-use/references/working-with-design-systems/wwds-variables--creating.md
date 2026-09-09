@@ -10,7 +10,7 @@ Use the Figma Workspace CLI with an explicit file target on every remote call:
 npm --silent run figma:variables -- --help
 npm --silent run figma:variables -- --file <figma-url-or-file-key> --node <node-id>
 npm --silent run figma:libraries -- --file <figma-url-or-file-key>
-npm --silent run figma:design-system -- "button background color" --file <figma-url-or-file-key>
+npm --silent run figma:design-system -- --input <queries.json> --file <figma-url-or-file-key>
 ```
 
 - Use `figma:variables` to inventory local collections, modes, names, values, aliases, and scopes before proposing a change.

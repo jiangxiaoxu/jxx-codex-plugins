@@ -24,7 +24,7 @@ function fakeUpstream(calls, responder) {
         { name: "get_design_context", inputSchema: { type: "object", required: ["fileKey", "nodeId"], properties: { fileKey: {}, nodeId: {} } } },
         { name: "get_motion_context", inputSchema: { type: "object", required: ["fileKey", "nodeId"], properties: { fileKey: {}, nodeId: {} } } },
         { name: "get_variable_defs", inputSchema: { type: "object", required: ["fileKey", "nodeId"], properties: { fileKey: {}, nodeId: {} } } },
-        { name: "search_design_system", inputSchema: { type: "object", required: ["fileKey", "query"], properties: { fileKey: {}, query: {} } } },
+        { name: "search_design_system", inputSchema: { type: "object", required: ["fileKey", "queries"], properties: { fileKey: {}, queries: {}, disableCodeConnect: {}, includeLibraryKeys: {} } } },
         { name: "get_libraries", inputSchema: { type: "object", required: ["fileKey"], properties: { fileKey: {} } } },
       ] };
     },
@@ -249,7 +249,7 @@ test("official read wrappers accept raw file keys without surface except Design-
   await client.getDesignContext({ file: FILE_KEY, target: "230:2" });
   await client.getMotionContext({ file: FILE_KEY, target: "230:2" });
   await client.getVariableDefs({ file: FILE_KEY, target: "230:2" });
-  await client.searchDesignSystem({ file: FILE_KEY, query: "button" });
+  await client.searchDesignSystem({ file: FILE_KEY, queries: [{ entity: "component", query: "button" }] });
   await client.getLibraries({ file: FILE_KEY });
   assert.ok(calls.some((entry) => entry.name === "get_metadata"));
   assert.ok(calls.some((entry) => entry.name === "get_design_context"));
@@ -258,6 +258,83 @@ test("official read wrappers accept raw file keys without surface except Design-
   assert.ok(calls.some((entry) => entry.name === "search_design_system"));
   assert.ok(calls.some((entry) => entry.name === "get_libraries"));
   await client.close();
+});
+
+test("design system search dispatches one ordered batch and echoes queries", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+  const queries = [
+    { entity: "component", query: "  button  " },
+    { entity: "variable", query: "color.primary" },
+    { entity: "style", query: "heading" },
+  ];
+  try {
+    const result = await client.searchDesignSystem({
+      file: FILE_KEY,
+      queries,
+      disableCodeConnect: true,
+      includeLibraryKeys: ["lib-a"],
+    });
+    const searchCalls = calls.filter((entry) => entry.kind === "call" && entry.name === "search_design_system");
+    assert.equal(searchCalls.length, 1);
+    assert.deepEqual(searchCalls[0].args, {
+      fileKey: FILE_KEY,
+      queries: [
+        { entity: "component", query: "button" },
+        { entity: "variable", query: "color.primary" },
+        { entity: "style", query: "heading" },
+      ],
+      disableCodeConnect: true,
+      includeLibraryKeys: ["lib-a"],
+    });
+    assert.deepEqual(result.queries, searchCalls[0].args.queries);
+    assert.equal("query" in result, false);
+  } finally {
+    await client.close();
+  }
+});
+
+test("design system search rejects legacy and malformed query inputs before dispatch", async () => {
+  for (const input of [
+    { file: FILE_KEY, query: "button" },
+    { file: FILE_KEY, queries: [] },
+    { file: FILE_KEY, queries: [{ entity: "component" }] },
+    { file: FILE_KEY, queries: [{ query: "button" }] },
+    { file: FILE_KEY, queries: [{ entity: "unknown", query: "button" }] },
+    { file: FILE_KEY, queries: [{ entity: "component", query: "   " }] },
+    { file: FILE_KEY, queries: [{ entity: "component", query: "button", extra: true }] },
+  ]) {
+    const calls = [];
+    const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+    try {
+      await assert.rejects(client.searchDesignSystem(input), /queries|entity|query|unknown fields/iu);
+      assert.equal(calls.some((entry) => entry.kind === "call" && entry.name === "search_design_system"), false);
+    } finally {
+      await client.close();
+    }
+  }
+});
+
+test("design system search fails before dispatch when live schema lacks batch queries", async () => {
+  const calls = [];
+  const upstream = fakeUpstream(calls);
+  const originalListTools = upstream.listTools;
+  upstream.listTools = async () => {
+    const listed = await originalListTools();
+    return {
+      ...listed,
+      tools: listed.tools.map((tool) => tool.name === "search_design_system"
+        ? { ...tool, inputSchema: { ...tool.inputSchema, required: ["fileKey", "query"], properties: { fileKey: {}, query: {} } } }
+        : tool),
+    };
+  };
+  const client = createFigmaWorkspaceClient({ client: upstream });
+  try {
+    await assert.rejects(client.searchDesignSystem({ file: FILE_KEY, queries: [{ entity: "component", query: "button" }] }));
+    assert.equal(calls.some((entry) => entry.kind === "call" && entry.name === "search_design_system"), false);
+  } finally {
+    await client.close();
+  }
 });
 
 test("metadata defaults to a 2048-byte field limit and honors an explicit override", async () => {
@@ -670,7 +747,7 @@ test("typed upstream wrappers create a sanitized sidecar for unconsumed non-text
       : { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] }),
   });
   try {
-    const result = await client.searchDesignSystem({ file: FILE_URL, query: "button", outputDir: directory });
+    const result = await client.searchDesignSystem({ file: FILE_URL, queries: [{ entity: "component", query: "button" }], outputDir: directory });
     assert.equal(result.ok, true);
     assert.equal(result.upstream.kind, "content");
     assert.equal(result.outputFiles.upstreamFile !== undefined, true);

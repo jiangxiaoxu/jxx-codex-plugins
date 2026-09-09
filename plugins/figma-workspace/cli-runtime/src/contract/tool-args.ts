@@ -109,12 +109,14 @@ export interface FigmaWorkspaceGetMotionContextArguments extends InvocationArgum
   refresh?: boolean;
 }
 
-export interface FigmaWorkspaceSearchDesignSystemArguments extends InvocationArguments {
+export interface FigmaWorkspaceDesignSystemQuery {
+  entity: "component" | "variable" | "style";
   query: string;
+}
+
+export interface FigmaWorkspaceSearchDesignSystemArguments extends InvocationArguments {
+  queries: FigmaWorkspaceDesignSystemQuery[];
   disableCodeConnect?: boolean;
-  includeComponents?: boolean;
-  includeVariables?: boolean;
-  includeStyles?: boolean;
   includeLibraryKeys?: string[];
   refresh?: boolean;
 }
@@ -320,13 +322,13 @@ export function asGetVariableDefsArgs(value: unknown): FigmaWorkspaceGetVariable
 
 export function asSearchDesignSystemArgs(value: unknown): FigmaWorkspaceSearchDesignSystemArguments {
   const args = parse<FigmaWorkspaceSearchDesignSystemArguments>(value);
-  strings(args, ["title", "file", "outputDir", "query"]);
+  strings(args, ["title", "file", "outputDir"]);
   invocation(args);
-  booleans(args, ["disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "refresh"]);
+  booleans(args, ["disableCodeConnect", "refresh"]);
   stringArray(args, "includeLibraryKeys");
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "query", "disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys", "refresh"]);
+  validateDesignSystemQueries(args.queries);
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "queries", "disableCodeConnect", "includeLibraryKeys", "refresh"]);
   requiredFile(args, "figma:design-system");
-  if (!args.query?.trim()) throw new FigmaWorkspaceToolArgumentError('Tool argument "query" is required.');
   return args;
 }
 
@@ -563,6 +565,28 @@ function validateDownloadTargets(value: unknown): void {
   if (value === undefined) return;
   if (!Array.isArray(value) || value.length > MAX_MANIFEST_ITEMS) throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets" must be an array of at most ${MAX_MANIFEST_ITEMS} items.`);
   value.forEach((item, index) => { const entry = parse<Record<string, unknown>>(item); strings(entry, ["name"]); target(entry.target, `targets[${index}].target`); enumeration(entry, "defaultFormat", ["png", "jpg", "svg", "pdf"]); const scale=entry.defaultScale; if (scale !== undefined && (typeof scale !== "number" || scale < 0.01 || scale > 4)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets[${index}].defaultScale" must be from 0.01 to 4.`); allowed(entry, ["target", "name", "defaultFormat", "defaultScale"], `targets[${index}]`); });
+}
+
+function validateDesignSystemQueries(value: unknown): asserts value is FigmaWorkspaceDesignSystemQuery[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "queries" must be a non-empty array.');
+  }
+  value.forEach((item, index) => {
+    const entry = parse<Record<string, unknown>>(item);
+    if (entry.entity === undefined) {
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "queries[${index}].entity" is required.`);
+    }
+    enumeration(entry, "entity", ["component", "variable", "style"]);
+    if (entry.query === undefined) {
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "queries[${index}].query" is required.`);
+    }
+    strings(entry, ["query"]);
+    allowed(entry, ["entity", "query"], `queries[${index}]`);
+    if (typeof entry.query !== "string" || entry.query.trim().length === 0) {
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "queries[${index}].query" must be a non-empty string.`);
+    }
+    entry.query = entry.query.trim();
+  });
 }
 
 function validateCodeConnectManifest(value: unknown): asserts value is FigmaWorkspaceCodeConnectManifest {

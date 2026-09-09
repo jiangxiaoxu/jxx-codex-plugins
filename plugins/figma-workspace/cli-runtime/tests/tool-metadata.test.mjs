@@ -106,13 +106,18 @@ test("run schema distinguishes atomic script failure from unknown completion", (
   assert.match(schema.outputSchema.properties.executionOutcome.description, /made no changes.*outcome_unknown requires read-back and reconciliation/isu);
 });
 
-test("design system search metadata keeps each query to one intent", () => {
+test("design system search metadata publishes ordered typed batch queries", () => {
   const descriptions = metadata.createReplToolDescriptions({});
   const byName = new Map(descriptions.map((description) => [description.name, description]));
   const schema = byName.get("figma_workspace_search_design_system");
-  assert.match(schema.description, /one search intent/u);
-  assert.match(schema.description, /alternatives or synonyms/u);
-  assert.match(schema.inputSchema.properties.query.description, /One search intent\. Do not combine alternatives or synonyms\./u);
+  assert.match(schema.description, /ordered batch/u);
+  assert.equal(schema.inputSchema.required.includes("queries"), true);
+  assert.equal("query" in schema.inputSchema.properties, false);
+  assert.equal("includeComponents" in schema.inputSchema.properties, false);
+  assert.equal(schema.inputSchema.properties.queries.minItems, 1);
+  assert.deepEqual(schema.inputSchema.properties.queries.items.required, ["entity", "query"]);
+  assert.deepEqual(schema.inputSchema.properties.queries.items.properties.entity.enum, ["component", "variable", "style"]);
+  assert.equal(schema.inputSchema.properties.queries.items.additionalProperties, false);
 });
 
 test("target schemas publish the official file-key and node-id patterns", () => {

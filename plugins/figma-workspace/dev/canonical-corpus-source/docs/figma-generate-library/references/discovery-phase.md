@@ -326,65 +326,37 @@ Use returned library identifiers to narrow a later design-system search. If a re
 2. **Variables** — design tokens (colors, spacing, etc.) across subscribed libraries
 3. **Styles** — paint styles, text styles, and effect styles
 
-Use repeated `--library` filters to narrow the search when many libraries are available.
+Use repeated `--library` filters to narrow the search when many libraries are available. Send one batch for the current task and keep each query entry single-intent. Include only assets already identified by the task; do not add guessed synonyms or filler queries.
+
+Each command invocation sends that batch once to MCP. Inspect its complete result before starting a separate, focused follow-up invocation.
 
 ### Input
 
 ```text
 npm --silent run figma:design-system -- --help
-npm --silent run figma:design-system -- "button" --file <figma-file-url-or-key>
-npm --silent run figma:design-system -- "button" --file <figma-file-url-or-key> --library <library-id>
+npm --silent run figma:design-system -- --input <json-file|-> --file <figma-file-url-or-key>
+npm --silent run figma:design-system -- --input <json-file|-> --file <figma-file-url-or-key> --library <library-id>
 ```
 
-### What It Returns
+The JSON input is an object with a `queries` array. Each entry has one `entity` (`component`, `variable`, or `style`) and one `query` string:
 
 ```json
 {
-  "components": [
-    {
-      "name": "Button",
-      "libraryName": "Design System",
-      "assetType": "component_set",
-      "componentKey": "abc123def",
-      "description": "Primary action button"
-    }
-  ],
-  "variables": [
-    {
-      "name": "colors/primary/500",
-      "variableType": "COLOR",
-      "variableSetKey": "set1key",
-      "key": "var1key",
-      "scopes": ["FRAME_FILL", "SHAPE_FILL"],
-      "variableCollectionName": "Colors"
-    }
-  ],
-  "styles": [
-    {
-      "name": "Heading/H1",
-      "styleType": "TEXT",
-      "key": "style1key"
-    }
+  "queries": [
+    { "entity": "component", "query": "<identified component>" },
+    { "entity": "variable", "query": "<identified variable>" },
+    { "entity": "style", "query": "<identified style>" }
   ]
 }
 ```
 
 ### How to Interpret Results
 
-**Components:** The `componentKey` can be used in a local `.figma.ts` script to import the component:
-```javascript
-const component = await figma.importComponentByKeyAsync("abc123def");
-// or for component sets:
-const componentSet = await figma.importComponentSetByKeyAsync("abc123def");
-```
-
-**Variables:** The `variableSetKey` is the collection key. The `key` is the variable key. Use these to understand what naming conventions are in use, and what tokens are available to alias from.
-
-**Styles:** The `key` is usable with `figma.importStyleByKeyAsync(key)` to import into the current file.
+Read the complete batch result before choosing an asset or preparing a follow-up. The command's `--help` output and live result define the exact returned fields and identifiers; use those identifiers for the next read or import step. If a batch is empty, inspect the result and task context before deciding whether a focused follow-up is justified. Do not immediately rewrite the query with guessed synonyms.
 
 ### When to Search
 
-- **Phase 0, step 0c**: Search broadly (`query: "button"`, `query: "color"`, `query: "spacing"`) before planning anything. This establishes the reuse baseline.
+- **Phase 0, step 0c**: Batch the concrete component, variable, and style assets already identified by the task before planning anything. This establishes the reuse baseline.
 - **Immediately before each component creation**: Search for the specific component name before writing `.figma.ts` creation code.
 
 **Reuse decision:**
