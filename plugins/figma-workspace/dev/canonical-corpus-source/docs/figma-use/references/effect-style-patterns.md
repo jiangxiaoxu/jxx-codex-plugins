@@ -92,7 +92,7 @@ const shadowStyle = await figma.importStyleByKeyAsync("EFFECT_STYLE_KEY");
 node.effectStyleId = shadowStyle.id;
 ```
 
-`figma:design-system` with `includeStyles: true` returns style keys you can import this way. Prefer importing library styles over creating new ones.
+Include the currently identified effect-style query as `{ "entity": "style", "query": "..." }` in a `figma:design-system` batch. Use the exact style identifier returned by the command when importing, and prefer library styles over creating new ones.
 
 ## Applying Effect Styles to Nodes
 

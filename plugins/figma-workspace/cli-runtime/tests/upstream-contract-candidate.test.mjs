@@ -618,8 +618,9 @@ function wrapperCompatibleSnapshot() {
         fileKey: fileKey(),
         nodeId: simpleNodeId(),
       }),
-      search_design_system: tool("search_design_system", ["fileKey", "query"], {
+      search_design_system: tool("search_design_system", ["fileKey", "queries"], {
         ...properties(
+          "queries",
           "query",
           "disableCodeConnect",
           "includeComponents",

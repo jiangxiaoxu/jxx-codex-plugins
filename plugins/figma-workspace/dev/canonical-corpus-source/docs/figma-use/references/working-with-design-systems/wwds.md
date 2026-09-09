@@ -21,14 +21,14 @@ Pass the explicit file target to every remote call. Run `--help` for a selected 
 ```text
 npm --silent run figma:metadata -- --file <figma-url-or-file-key>
 npm --silent run figma:libraries -- --file <figma-url-or-file-key>
-npm --silent run figma:design-system -- "button primary" --file <figma-url-or-file-key>
+npm --silent run figma:design-system -- --input <queries.json> --file <figma-url-or-file-key>
 npm --silent run figma:variables -- --file <figma-url-or-file-key> --node <node-id>
 ```
 
 Choose commands by question:
 
 - `figma:metadata` maps unfamiliar file structure before narrow inspection.
-- `figma:design-system` searches for existing component and token conventions; use repeatable `--library` filters when the owning library is known.
+- `figma:design-system` searches for existing component and token conventions from one JSON batch; use repeatable `--library` filters when the owning library is known.
 - `figma:libraries` identifies available local and published sources before duplicating assets.
 - `figma:variables` inventories collections, modes, aliases, scopes, and values for token work.
 - `figma:inspect` validates a known raw node ID after discovery.

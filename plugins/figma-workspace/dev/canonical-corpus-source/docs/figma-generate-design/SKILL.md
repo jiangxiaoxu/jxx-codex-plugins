@@ -85,14 +85,14 @@ Before searching, call `figma:libraries` to discover which libraries are availab
 npm --silent run figma:libraries -- --file <file-key>
 
 // Step 2: Search within a specific library using its libraryKey
-npm --silent run figma:design-system -- "button" --file <file-key> --components --library <library-key>
+npm --silent run figma:design-system -- --input <queries.json> --file <file-key> --library <library-key>
 ```
 
 When the libraries result reports a next offset, call `figma:libraries` again with `--offset <n>`. If the user names a specific library you don't see in the current page, page further before giving up.
 
 This is especially useful when the file has many libraries and you want targeted results (e.g. searching only within "iOS 26" or "Material 3" instead of getting matches from every library).
 
-**Search broadly through separate calls** — each `figma:design-system` query must express exactly one intent. Search synonyms or alternatives in separate calls (which may run in parallel), for example one call each for `button`, `input`, and `nav`; do not combine them into one query. Use `--components` to include components and `--no-variables --no-styles` when only component results are needed.
+**Use one batch for the current task.** Build the JSON input from assets already identified in the task. Each `queries` entry must have exactly one intent and an explicit `entity` (`component`, `variable`, or `style`); do not add guessed synonyms or filler queries. One command invocation sends one batch to MCP. Inspect the batch result before deciding whether a separate focused follow-up is needed.
 
 **Include component properties** in your map — you need to know which TEXT properties each component exposes for text overrides. Create a temporary instance, read its `componentProperties` (and those of nested instances), then remove the temp instance.
 
@@ -110,22 +110,16 @@ Component Map:
 
 #### 2b: Discover variables (colors, spacing, radii)
 
-**Inspect existing screens first** (same as components). Or use `figma:design-system` with `includeVariables: true`.
+**Inspect existing screens first** (same as components). Or include `variable` entries in the `figma:design-system` batch.
 
 > **WARNING: Two different variable discovery methods — do not confuse them.**
 >
 > - a local `.figma.ts` script run with `figma.variables.getLocalVariableCollectionsAsync()` — returns **only local variables defined in the current file**. If this returns empty, it does **not** mean no variables exist. Remote/published library variables are invisible to this API.
-> - `figma:design-system` with `includeVariables: true` — searches across **all linked libraries**, including remote and published ones. This is the correct tool for discovering design system variables.
+> - A `figma:design-system` batch entry with `entity: "variable"` — searches across **all linked libraries**, including remote and published ones. This is the correct tool for discovering design system variables.
 >
-> **Never conclude "no variables exist" based solely on `getLocalVariableCollectionsAsync()` returning empty.** Always also run `figma:design-system` with `includeVariables: true` to check for library variables before deciding to create your own.
+> **Never conclude "no variables exist" based solely on `getLocalVariableCollectionsAsync()` returning empty.** Always also run a `figma:design-system` batch with the currently identified variable query before deciding to create your own.
 
-**Query strategy:** `figma:design-system` matches against **variable names** (e.g., "Gray/gray-9", "core/gray/100", "space/400"), not categories. Run multiple short, single-intent queries in parallel rather than one compound query:
-
-- **Primitive colors:** "gray", "red", "blue", "green", "white", "brand"
-- **Semantic colors:** "background", "foreground", "border", "surface", "text"
-- **Spacing/sizing:** "space", "radius", "gap", "padding"
-
-If initial searches return empty, try shorter fragments or different naming conventions — libraries vary widely ("grey" vs "gray", "spacing" vs "space", "color/bg" vs "background").
+**Query strategy:** `figma:design-system` matches against **variable names**, not categories. Add only the short, single-intent variable queries already identified by the task to the current batch. Review the batch result before any follow-up; an empty result is not an instruction to change the query immediately.
 
 Inspect an existing screen's bound variables for the most authoritative results:
 
@@ -157,7 +151,7 @@ See [variable-patterns.md](canonical:figma-use/references/variable-patterns.md) 
 
 #### 2c: Discover styles (text styles, effect styles)
 
-Search for styles using `figma:design-system` with `includeStyles: true` and terms like "heading", "body", "shadow", "elevation". Or inspect what an existing screen uses:
+Search for styles by adding the currently identified style queries with `entity: "style"` to the `figma:design-system` batch. Or inspect what an existing screen uses:
 
 ```js
 const frame = figma.currentPage.findOne(n => n.name === "Existing Screen");
@@ -412,7 +406,7 @@ Because this skill works incrementally (one section per call), errors are natura
 ## Best Practices
 
 - **Always search before building.** The design system likely has the component, variable, or style you need. Manual construction and hardcoded values should be the exception, not the rule.
-- **Search broadly through separate calls.** Try synonyms and partial terms one query at a time. A "NavigationPill" might be found by separate `pill`, `nav`, `tab`, and `chip` searches. For variables, separately search `color`, `spacing`, and `radius`.
+- **Batch only identified assets.** Keep each `queries` entry to one intent, inspect the batch result, and add a follow-up only when the task identifies a concrete unresolved asset.
 - **Prefer design system tokens over hardcoded values.** Use variable bindings for colors, spacing, and radii. Use text styles for typography. Use effect styles for shadows. This keeps the screen linked to the design system.
 - **Prefer component instances over manual builds.** Instances stay linked to the source component and update automatically when the design system evolves.
 - **Componentize by default.** Build repeated or reusable elements as a component once, then place instances. Do not ship a flat tree of one-off frames that needs a second "make it componentized" pass.

@@ -71,6 +71,20 @@ const designNodeTarget = (): JsonSchema => ({
     { type: "object", properties: { fileKey: fileKey("Design file key."), nodeId: nodeId("Figma node id.", true) }, required: ["fileKey", "nodeId"], additionalProperties: false },
   ],
 });
+const designSystemQueries = (): JsonSchema => ({
+  type: "array",
+  minItems: 1,
+  items: {
+    type: "object",
+    properties: {
+      entity: { type: "string", enum: ["component", "variable", "style"], description: "Design-system asset entity." },
+      query: string("One search intent for this entity."),
+    },
+    required: ["entity", "query"],
+    additionalProperties: false,
+  },
+  description: "Ordered design-system search intents; each item is dispatched in one batch request.",
+});
 const objectSchema = (properties: Record<string, JsonSchema>, required: readonly string[] = [], anyOf?: readonly JsonSchema[]): JsonSchema => ({ type: "object", properties, required: [...required], ...(anyOf ? { anyOf } : {}), additionalProperties: false });
 const resultSchema = (properties: Record<string, JsonSchema> = {}): JsonSchema => ({ type: "object", properties: { ok: boolean("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, ...properties }, required: ["ok"], additionalProperties: true });
 
@@ -105,8 +119,8 @@ export function createReplToolDescriptions(_options: ReplToolDescriptionOptions)
     ["figma_workspace_get_motion_context", nodeReadDescription("figma_workspace_get_motion_context", "Read official motion context.", { recursive: boolean("Read recursively.") })],
     ["figma_workspace_get_variable_defs", nodeReadDescription("figma_workspace_get_variable_defs", "Read official variable definitions.")],
     ["figma_workspace_search_design_system", {
-      name: "figma_workspace_search_design_system", description: "Search components, variables, and styles in one explicit Figma file. Each query must express one search intent; do not combine alternatives or synonyms.",
-      inputSchema: objectSchema({ ...invocation(), query: string("One search intent. Do not combine alternatives or synonyms."), disableCodeConnect: boolean("Disable Code Connect."), includeComponents: boolean("Include components."), includeVariables: boolean("Include variables."), includeStyles: boolean("Include styles."), includeLibraryKeys: { type: "array", items: { type: "string" } }, refresh: boolean("Refresh upstream discovery.") }, ["file", "query"]), outputSchema: resultSchema({ upstream: { type: "object" } }),
+      name: "figma_workspace_search_design_system", description: "Search components, variables, and styles in one explicit Figma file with an ordered batch of entity-specific queries.",
+      inputSchema: objectSchema({ ...invocation(), queries: designSystemQueries(), disableCodeConnect: boolean("Disable Code Connect."), includeLibraryKeys: { type: "array", items: { type: "string" } }, refresh: boolean("Refresh upstream discovery.") }, ["file", "queries"]), outputSchema: resultSchema({ fileKey: string("Resolved Figma file key."), queries: designSystemQueries(), upstream: { type: "object" } }),
     }],
     ["figma_workspace_get_libraries", {
       name: "figma_workspace_get_libraries", description: "List libraries for one explicit Figma file.", inputSchema: objectSchema({ ...invocation(), offset: integer("Pagination offset.", LIBRARIES_OFFSET_MIN, LIBRARIES_OFFSET_MAX), refresh: boolean("Refresh upstream discovery.") }, ["file"]), outputSchema: resultSchema({ upstream: { type: "object" } }),

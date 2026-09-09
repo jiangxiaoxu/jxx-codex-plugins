@@ -59,7 +59,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.6.2";
+    DEFAULT_CLIENT_VERSION = "0.6.3";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -20205,13 +20205,13 @@ function asGetVariableDefsArgs(value) {
 }
 function asSearchDesignSystemArgs(value) {
   const args = parse3(value);
-  strings(args, ["title", "file", "outputDir", "query"]);
+  strings(args, ["title", "file", "outputDir"]);
   invocation(args);
-  booleans(args, ["disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "refresh"]);
+  booleans(args, ["disableCodeConnect", "refresh"]);
   stringArray(args, "includeLibraryKeys");
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "query", "disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys", "refresh"]);
+  validateDesignSystemQueries(args.queries);
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "queries", "disableCodeConnect", "includeLibraryKeys", "refresh"]);
   requiredFile(args, "figma:design-system");
-  if (!args.query?.trim()) throw new FigmaWorkspaceToolArgumentError('Tool argument "query" is required.');
   return args;
 }
 function asGetLibrariesArgs(value) {
@@ -20434,6 +20434,27 @@ function validateDownloadTargets(value) {
     const scale = entry.defaultScale;
     if (scale !== void 0 && (typeof scale !== "number" || scale < 0.01 || scale > 4)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets[${index}].defaultScale" must be from 0.01 to 4.`);
     allowed(entry, ["target", "name", "defaultFormat", "defaultScale"], `targets[${index}]`);
+  });
+}
+function validateDesignSystemQueries(value) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "queries" must be a non-empty array.');
+  }
+  value.forEach((item, index) => {
+    const entry = parse3(item);
+    if (entry.entity === void 0) {
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "queries[${index}].entity" is required.`);
+    }
+    enumeration(entry, "entity", ["component", "variable", "style"]);
+    if (entry.query === void 0) {
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "queries[${index}].query" is required.`);
+    }
+    strings(entry, ["query"]);
+    allowed(entry, ["entity", "query"], `queries[${index}]`);
+    if (typeof entry.query !== "string" || entry.query.trim().length === 0) {
+      throw new FigmaWorkspaceToolArgumentError(`Tool argument "queries[${index}].query" must be a non-empty string.`);
+    }
+    entry.query = entry.query.trim();
   });
 }
 function validateCodeConnectManifest(value) {
@@ -22337,19 +22358,23 @@ var init_wrapper_contracts = __esm({
         category: "thin-wrapper",
         upstreamToolName: "search_design_system",
         upstreamKind: "design system search",
-        requiredUpstreamProperties: ["fileKey", "query"],
+        requiredUpstreamProperties: ["fileKey", "queries"],
         optionalUpstreamProperties: [
           "disableCodeConnect",
+          "includeLibraryKeys",
+          // Retained only as upstream drift evidence. The local contract does not
+          // accept or forward the legacy single-query/typed-filter fields.
+          "query",
           "includeComponents",
           "includeVariables",
-          "includeStyles",
-          "includeLibraryKeys"
+          "includeStyles"
         ],
         parameterMatrix: parameterMatrix({
-          requiredUpstream: ["fileKey", "query"],
-          publicPassthrough: ["query", "disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"],
+          requiredUpstream: ["fileKey", "queries"],
+          publicPassthrough: ["queries", "disableCodeConnect", "includeLibraryKeys"],
           derivedUpstream: ["fileKey"],
-          passthroughOptional: ["disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"]
+          passthroughOptional: ["disableCodeConnect", "includeLibraryKeys"],
+          hiddenUpstreamOptional: ["query", "includeComponents", "includeVariables", "includeStyles"]
         }),
         targetSupport: "none",
         outputPolicy: {
@@ -25930,12 +25955,9 @@ async function executeGetMotionContext(args, runtime) {
   });
 }
 async function executeSearchDesignSystem(args, runtime) {
-  if (typeof args.query !== "string" || args.query.trim().length === 0) {
-    throw new Error('Tool argument "query" is required and must be a non-empty string.');
-  }
   const session = prepareFileScopedInvocation(args);
   const fileKey2 = resolveRequiredFileKey(args, session, "figma:design-system");
-  const query = args.query.trim();
+  const queries = args.queries.map(({ entity, query }) => ({ entity, query: query.trim() }));
   return executeDedicatedUpstreamTool({
     args,
     contract: SEARCH_DESIGN_SYSTEM_CONTRACT,
@@ -25943,10 +25965,10 @@ async function executeSearchDesignSystem(args, runtime) {
     session,
     upstreamArguments: removeUndefined3({
       fileKey: fileKey2,
-      query
+      queries
     }),
-    responseFields: { fileKey: fileKey2, query },
-    historySummary: `Searched Figma design system for ${query}.`,
+    responseFields: { fileKey: fileKey2, queries },
+    historySummary: `Searched Figma design system with ${queries.length} queries.`,
     nodeIds: []
   });
 }
@@ -30475,6 +30497,20 @@ var designNodeTarget = () => ({
     { type: "object", properties: { fileKey: fileKey("Design file key."), nodeId: nodeId("Figma node id.", true) }, required: ["fileKey", "nodeId"], additionalProperties: false }
   ]
 });
+var designSystemQueries = () => ({
+  type: "array",
+  minItems: 1,
+  items: {
+    type: "object",
+    properties: {
+      entity: { type: "string", enum: ["component", "variable", "style"], description: "Design-system asset entity." },
+      query: string4("One search intent for this entity.")
+    },
+    required: ["entity", "query"],
+    additionalProperties: false
+  },
+  description: "Ordered design-system search intents; each item is dispatched in one batch request."
+});
 var objectSchema = (properties, required2 = [], anyOf) => ({ type: "object", properties, required: [...required2], ...anyOf ? { anyOf } : {}, additionalProperties: false });
 var resultSchema = (properties = {}) => ({ type: "object", properties: { ok: boolean4("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, ...properties }, required: ["ok"], additionalProperties: true });
 function createReplToolDescriptions(_options) {
@@ -30515,9 +30551,9 @@ function createReplToolDescriptions(_options) {
     ["figma_workspace_get_variable_defs", nodeReadDescription("figma_workspace_get_variable_defs", "Read official variable definitions.")],
     ["figma_workspace_search_design_system", {
       name: "figma_workspace_search_design_system",
-      description: "Search components, variables, and styles in one explicit Figma file. Each query must express one search intent; do not combine alternatives or synonyms.",
-      inputSchema: objectSchema({ ...invocation2(), query: string4("One search intent. Do not combine alternatives or synonyms."), disableCodeConnect: boolean4("Disable Code Connect."), includeComponents: boolean4("Include components."), includeVariables: boolean4("Include variables."), includeStyles: boolean4("Include styles."), includeLibraryKeys: { type: "array", items: { type: "string" } }, refresh: boolean4("Refresh upstream discovery.") }, ["file", "query"]),
-      outputSchema: resultSchema({ upstream: { type: "object" } })
+      description: "Search components, variables, and styles in one explicit Figma file with an ordered batch of entity-specific queries.",
+      inputSchema: objectSchema({ ...invocation2(), queries: designSystemQueries(), disableCodeConnect: boolean4("Disable Code Connect."), includeLibraryKeys: { type: "array", items: { type: "string" } }, refresh: boolean4("Refresh upstream discovery.") }, ["file", "queries"]),
+      outputSchema: resultSchema({ fileKey: string4("Resolved Figma file key."), queries: designSystemQueries(), upstream: { type: "object" } })
     }],
     ["figma_workspace_get_libraries", {
       name: "figma_workspace_get_libraries",

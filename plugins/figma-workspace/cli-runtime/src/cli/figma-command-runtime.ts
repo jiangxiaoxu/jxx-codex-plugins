@@ -129,6 +129,7 @@ async function parsePublicArguments(
   }
   if (command === "run") return parseRun(argv, dependencies);
   if (command === "capture") return parseCapture(argv);
+  if (command === "design-system") return parseDesignSystem(argv, dependencies);
   if (command.startsWith("code-connect:")) return parseCodeConnect(command as Extract<FigmaConcreteCommandName, `code-connect:${string}`>, argv, dependencies);
   if (command === "assets:apply" || command === "assets:download" || command === "upstream:call") return parseJsonLeaf(command, argv, dependencies);
   if (command === "upstream:list") {
@@ -139,7 +140,7 @@ async function parsePublicArguments(
     const { positionals, flags } = parseTokens(argv, optionSet(), flagSet("refresh")); requirePositionals(positionals, 1, "name");
     return { internalCommand: "upstream-tools", input: clean({ name: positionals[0], refresh: flags.has("refresh") ? true : undefined }) };
   }
-  return parseReadLeaf(command as Exclude<FigmaConcreteCommandName, "docs:list" | "docs:catalog" | "docs:read" | "docs:search" | "api:read" | "api:search" | "doctor" | "run" | "capture" | "assets:apply" | "assets:download" | `code-connect:${string}` | "upstream:list" | "upstream:read" | "upstream:call">, argv);
+  return parseReadLeaf(command as Exclude<FigmaConcreteCommandName, "docs:list" | "docs:catalog" | "docs:read" | "docs:search" | "api:read" | "api:search" | "doctor" | "run" | "capture" | "design-system" | "assets:apply" | "assets:download" | `code-connect:${string}` | "upstream:list" | "upstream:read" | "upstream:call">, argv);
 }
 
 async function parseCodeConnect(
@@ -264,12 +265,26 @@ async function parseJsonLeaf(command: "assets:apply" | "assets:download" | "upst
   return direct(command === "assets:apply" ? "apply-asset-manifest" : command === "assets:download" ? "download-assets" : "call-upstream-tool", input, options);
 }
 
-function parseReadLeaf(command: Exclude<FigmaConcreteCommandName, "docs:list" | "docs:catalog" | "docs:read" | "docs:search" | "api:read" | "api:search" | "doctor" | "run" | "capture" | "assets:apply" | "assets:download" | `code-connect:${string}` | "upstream:list" | "upstream:read" | "upstream:call">, argv: readonly string[]): ParsedPublicCommand {
-  if (command === "design-system") {
-    const { positionals, options, flags, repeats } = parseTokens(argv, optionSet("file", "surface", "output-dir", "max-inline-bytes"), flagSet("components", "no-components", "variables", "no-variables", "styles", "no-styles", "no-code-connect", "refresh"), repeatSet("library"));
-    requirePositionals(positionals, 1, "query");
-    return direct("search-design-system", clean({ file: options.file, surface: options.surface, outputDir: options["output-dir"], query: positionals[0], includeComponents: chooseBool(flags, "components", "no-components"), includeVariables: chooseBool(flags, "variables", "no-variables"), includeStyles: chooseBool(flags, "styles", "no-styles"), disableCodeConnect: flags.has("no-code-connect") ? true : undefined, includeLibraryKeys: repeats.library, refresh: flags.has("refresh") ? true : undefined }), options);
-  }
+async function parseDesignSystem(argv: readonly string[], dependencies: FigmaCommandRuntimeDependencies): Promise<ParsedPublicCommand> {
+  const { positionals, options, flags, repeats } = parseTokens(
+    argv,
+    optionSet("input", "file", "surface", "output-dir", "max-inline-bytes"),
+    flagSet("no-code-connect", "refresh"),
+    repeatSet("library"),
+  );
+  assertNoPositionals(positionals);
+  if (!options.input) throw new Error("--input <json-file|-> is required.");
+  const input = await readJsonObjectInput(options.input, dependencies, "--input");
+  mergeCliInputField(input, "file", options.file);
+  mergeCliInputField(input, "surface", options.surface);
+  mergeCliInputField(input, "outputDir", options["output-dir"]);
+  if (flags.has("no-code-connect")) mergeCliInputField(input, "disableCodeConnect", true);
+  if (flags.has("refresh")) mergeCliInputField(input, "refresh", true);
+  if ((repeats.library?.length ?? 0) > 0) mergeCliInputField(input, "includeLibraryKeys", repeats.library);
+  return direct("search-design-system", input, options);
+}
+
+function parseReadLeaf(command: Exclude<FigmaConcreteCommandName, "docs:list" | "docs:catalog" | "docs:read" | "docs:search" | "api:read" | "api:search" | "doctor" | "run" | "capture" | "design-system" | "assets:apply" | "assets:download" | `code-connect:${string}` | "upstream:list" | "upstream:read" | "upstream:call">, argv: readonly string[]): ParsedPublicCommand {
   if (command === "libraries") {
     const { positionals, options, flags } = parseTokens(argv, optionSet("file", "surface", "output-dir", "offset", "max-inline-bytes"), flagSet("refresh")); assertNoPositionals(positionals);
     return direct("get-libraries", clean({ file: options.file, surface: options.surface, outputDir: options["output-dir"], offset: integer(options.offset, "--offset"), refresh: flags.has("refresh") ? true : undefined }), options);
@@ -322,6 +337,13 @@ function parseSafeIntegerToken(value:string,label:string,errorSuffix="must be a 
 function requirePositionals(values:string[],count:number,label:string):void{if(values.length!==count)throw new Error(`Expected exactly one ${label}.`);} function assertNoPositionals(values:string[]):void{if(values.length)throw new Error(`Unexpected positional argument: ${values[0]}`);}
 function chooseBool(flags:Set<string>,yes:string,no:string):boolean|undefined{if(flags.has(yes)&&flags.has(no))throw new Error(`--${yes} and --${no} are mutually exclusive.`);return flags.has(yes)?true:flags.has(no)?false:undefined;}
 function clean(value:CommandInput):CommandInput{return Object.fromEntries(Object.entries(value).filter(([,item])=>item!==undefined));}
+function mergeCliInputField(input: CommandInput, key: string, value: unknown): void {
+  if (value === undefined) return;
+  if (input[key] !== undefined && JSON.stringify(input[key]) !== JSON.stringify(value)) {
+    throw new Error(`Conflicting ${key} in --input and CLI option.`);
+  }
+  input[key] = value;
+}
 async function readRawStdin(dependencies:FigmaCommandRuntimeDependencies,maxBytes:number):Promise<string>{return readBoundedText((dependencies.readStdin??defaultReadStdin)(maxBytes),maxBytes);}
 async function readBoundedText(source:Promise<string>,maxBytes:number):Promise<string>{return assertTextWithinLimit(await source,maxBytes);}
 function assertTextWithinLimit(value:string,maxBytes:number):string{if(Buffer.byteLength(value,"utf8")>maxBytes)throw new Error(`Input exceeds ${maxBytes} bytes.`);return value;}
@@ -417,7 +439,7 @@ export function formatRootHelp(): string {
 export function formatFamilyHelp(family:FigmaCommandFamily):string{return[`# figma:${family}:help`,"",...FAMILY_COMMANDS[family].map((name)=>`  figma:${name}`),""].join("\n");}
 export function formatCommandHelp(command:string):string{
   if(!isPublicCommand(command))return `# figma:${command}\n\nUnknown public leaf. Use figma:help for the complete stateless command inventory.\n`;
-  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded.":command==="upstream:call"?"\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. Calls within the response budget write a sanitized .upstream.json sidecar. An over-budget response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry.":command==="code-connect:apply"?"\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write.":command==="code-connect:plan"?"\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback.":command==="code-connect:verify"?"\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":command==="docs:catalog"?"\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments.":command==="docs:search"||command==="api:search"?"\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="design-system"?"\nEach <query> must express one search intent; do not combine alternatives or synonyms.":command==="assets:apply"?"\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow.":command==="assets:download"?"\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg.":"";
+  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded.":command==="upstream:call"?"\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. Calls within the response budget write a sanitized .upstream.json sidecar. An over-budget response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry.":command==="code-connect:apply"?"\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write.":command==="code-connect:plan"?"\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback.":command==="code-connect:verify"?"\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":command==="docs:catalog"?"\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments.":command==="docs:search"||command==="api:search"?"\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="design-system"?"\nInput JSON must contain an ordered non-empty queries array. Each query item has an entity (component, variable, or style) and one search intent; one upstream batch call is made for the complete array.":command==="assets:apply"?"\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow.":command==="assets:download"?"\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg.":"";
   return `# figma:${command}\n\nUsage: ${PUBLIC_COMMAND_USAGE[command]}${details}\n`;
 }
 
@@ -434,7 +456,7 @@ const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
   "design-context":`figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "motion-context":`figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   variables:`figma:variables (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
-  "design-system":`figma:design-system <query> --file <url|key> [--surface design|figjam|slides] [--components|--no-components] [--variables|--no-variables] [--styles|--no-styles] [--no-code-connect] [--library <key>]... [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "design-system":`figma:design-system --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--no-code-connect] [--library <key>]... [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   libraries:`figma:libraries --file <url|key> [--surface design|figjam|slides] [--offset <${LIBRARIES_OFFSET_MIN}..${LIBRARIES_OFFSET_MAX}>] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   run:`figma:run --file <url|key> (--script <path.figma.ts> | --source -) [--surface design|figjam|slides] [--target-page <node-id>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   capture:`figma:capture (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--image-file <path>] [--output-dir <path>] [--max-dimension <${CAPTURE_MAX_DIMENSION_MIN}..${CAPTURE_MAX_DIMENSION_MAX}>] [--contents-only] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,

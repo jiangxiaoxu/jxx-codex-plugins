@@ -222,19 +222,23 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     category: "thin-wrapper",
     upstreamToolName: "search_design_system",
     upstreamKind: "design system search",
-    requiredUpstreamProperties: ["fileKey", "query"],
+    requiredUpstreamProperties: ["fileKey", "queries"],
     optionalUpstreamProperties: [
       "disableCodeConnect",
+      "includeLibraryKeys",
+      // Retained only as upstream drift evidence. The local contract does not
+      // accept or forward the legacy single-query/typed-filter fields.
+      "query",
       "includeComponents",
       "includeVariables",
       "includeStyles",
-      "includeLibraryKeys",
     ],
     parameterMatrix: parameterMatrix({
-      requiredUpstream: ["fileKey", "query"],
-      publicPassthrough: ["query", "disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"],
+      requiredUpstream: ["fileKey", "queries"],
+      publicPassthrough: ["queries", "disableCodeConnect", "includeLibraryKeys"],
       derivedUpstream: ["fileKey"],
-      passthroughOptional: ["disableCodeConnect", "includeComponents", "includeVariables", "includeStyles", "includeLibraryKeys"],
+      passthroughOptional: ["disableCodeConnect", "includeLibraryKeys"],
+      hiddenUpstreamOptional: ["query", "includeComponents", "includeVariables", "includeStyles"],
     }),
     targetSupport: "none",
     outputPolicy: {

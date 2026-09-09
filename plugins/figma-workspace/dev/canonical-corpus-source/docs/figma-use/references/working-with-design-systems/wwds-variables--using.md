@@ -8,7 +8,7 @@ Start with reads, passing the same explicit Figma file target to each file-scope
 
 ```text
 npm --silent run figma:variables -- --file <figma-url-or-file-key> --node <node-id>
-npm --silent run figma:design-system -- "primary button" --file <figma-url-or-file-key> --library <library-key>
+npm --silent run figma:design-system -- --input <queries.json> --file <figma-url-or-file-key> --library <library-key>
 npm --silent run figma:libraries -- --file <figma-url-or-file-key>
 ```
 

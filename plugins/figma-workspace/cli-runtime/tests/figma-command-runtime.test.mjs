@@ -318,7 +318,8 @@ test("every public leaf help publishes its real argv contract", () => {
   assert.match(formatCommandHelp("metadata"), /--file <Design-url\|key> \[--node <node-id>\].*--surface design/u);
   assert.match(formatCommandHelp("assets:apply"), /raster.*SVG input is rejected.*figma:run/isu);
   assert.match(formatCommandHelp("assets:download"), /vector-layer SVG assets.*downloadedFiles\.kind is exported, raw, or svg/isu);
-  assert.match(formatCommandHelp("design-system"), /Each <query> must express one search intent; do not combine alternatives or synonyms\./u);
+  assert.match(formatCommandHelp("design-system"), /ordered non-empty queries array.*one upstream batch call/u);
+  assert.match(formatCommandHelp("design-system"), /--input <json-file\|->/u);
   assert.doesNotMatch(formatCommandHelp("metadata"), /--client-(?:languages|frameworks)/u);
   assert.match(formatCommandHelp("design-context"), /--client-languages <list>.*--client-frameworks <list>/u);
   assert.match(formatCommandHelp("motion-context"), /--client-languages <list>.*--client-frameworks <list>/u);
@@ -381,10 +382,12 @@ test("official read leaves accept raw file keys without surface while Design-onl
     ["design-context", ["--file", FILE_KEY, "--node", "1:2"]],
     ["motion-context", ["--file", FILE_KEY, "--node", "1:2"]],
     ["variables", ["--file", FILE_KEY, "--node", "1:2"]],
-    ["design-system", ["button", "--file", FILE_KEY]],
+    ["design-system", ["--input", "-", "--file", FILE_KEY]],
     ["libraries", ["--file", FILE_KEY]],
   ]) {
-    const current = harness();
+    const current = command === "design-system"
+      ? harness({ stdin: JSON.stringify({ queries: [{ entity: "component", query: "button" }] }) })
+      : harness();
     assert.equal(await runFigmaCommand(command, argv, current.dependencies), 0, command);
   }
   const metadata = harness();
@@ -393,6 +396,54 @@ test("official read leaves accept raw file keys without surface while Design-onl
   const missingMetadataSurface = harness();
   assert.equal(await runFigmaCommand("metadata", ["--file", FILE_KEY], missingMetadataSurface.dependencies), 2);
   assert.equal(missingMetadataSurface.calls.length, 0);
+});
+
+test("design-system CLI accepts bounded batch JSON and merges explicit flags", async () => {
+  const stdin = JSON.stringify({
+    queries: [
+      { entity: "component", query: "button" },
+      { entity: "variable", query: "color.primary" },
+    ],
+    file: FILE_KEY,
+  });
+  const current = harness({ stdin });
+  assert.equal(await runFigmaCommand("design-system", [
+    "--input", "-", "--surface", "design", "--no-code-connect", "--library", "lib-a", "--library", "lib-b", "--refresh",
+  ], current.dependencies), 0);
+  assert.deepEqual(current.calls[0].input, {
+    queries: [
+      { entity: "component", query: "button" },
+      { entity: "variable", query: "color.primary" },
+    ],
+    file: FILE_KEY,
+    surface: "design",
+    disableCodeConnect: true,
+    includeLibraryKeys: ["lib-a", "lib-b"],
+    refresh: true,
+  });
+
+  const fileInput = harness({
+    readFile: async () => JSON.stringify({ file: FILE_KEY, queries: [{ entity: "style", query: "heading" }] }),
+  });
+  assert.equal(await runFigmaCommand("design-system", ["--input", "batch.json"], fileInput.dependencies), 0);
+  assert.deepEqual(fileInput.calls[0].input, {
+    file: FILE_KEY,
+    queries: [{ entity: "style", query: "heading" }],
+  });
+});
+
+test("design-system CLI rejects legacy positionals and conflicting JSON/flag fields", async () => {
+  for (const [argv, stdin] of [
+    [["button", "--file", FILE_KEY], JSON.stringify({ queries: [{ entity: "component", query: "button" }] })],
+    [["--input", "-", "--file", FILE_KEY], JSON.stringify({ file: "B".repeat(22), queries: [{ entity: "component", query: "button" }] })],
+    [["--input", "-", "--no-code-connect"], JSON.stringify({ disableCodeConnect: false, queries: [{ entity: "component", query: "button" }] })],
+    [["--input", "-", "--library", "lib-a"], JSON.stringify({ includeLibraryKeys: ["lib-b"], queries: [{ entity: "component", query: "button" }] })],
+  ]) {
+    const current = harness({ stdin });
+    assert.equal(await runFigmaCommand("design-system", argv, current.dependencies), 2, argv.join(" "));
+    assert.equal(current.calls.length, 0);
+    assert.match(current.stderr.join(""), /Unexpected positional|Expected exactly one|Conflicting/iu);
+  }
 });
 
 test("public target boundary enforces official file-key and node-id contracts", async () => {

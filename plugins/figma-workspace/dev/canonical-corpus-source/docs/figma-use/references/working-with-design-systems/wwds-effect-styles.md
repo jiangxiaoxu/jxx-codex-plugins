@@ -8,13 +8,13 @@ Effect style 是可命名复用的阴影、内阴影和模糊定义, 常对应 e
 
 ```text
 npm --silent run figma:libraries -- --file <file-url-or-key>
-npm --silent run figma:design-system -- "elevation shadow" --styles --variables --library <library-key> --file <file-url-or-key>
+npm --silent run figma:design-system -- --input <queries.json> --library <library-key> --file <file-url-or-key>
 npm --silent run figma:metadata -- --file <file-url-or-key> --node <target>
 npm --silent run figma:variables -- --file <file-url-or-key> --node <target>
 npm --silent run figma:api:search -- setBoundVariableForEffect
 ```
 
-使用 `figma:design-system` 搜索样式和变量, `figma:libraries` 确认来源, `figma:metadata` 定位目标, `figma:variables` 核对现存 token/mode。仅当需要确认 effect API 的字段、可绑定性或返回类型时才使用 `figma:api:search`。
+在 JSON batch 中分别使用 `entity: "style"` 和 `entity: "variable"` 的单意图 query 搜索样式和变量, `figma:libraries` 确认来源, `figma:metadata` 定位目标, `figma:variables` 核对现存 token/mode。仅当需要确认 effect API 的字段、可绑定性或返回类型时才使用 `figma:api:search`。
 
 ## 模型和写入规则
 
