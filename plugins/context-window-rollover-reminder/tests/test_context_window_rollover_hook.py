@@ -64,11 +64,19 @@ def context_text(result):
 
 
 class ContextRolloverHookTests(unittest.TestCase):
-    def invoke(self, transcript, state, session_id="session-1", agent_id=None):
+    def invoke(
+        self,
+        transcript,
+        state,
+        session_id="session-1",
+        agent_id=None,
+        model="gpt-5.6-luna",
+    ):
         request = {
             "session_id": session_id,
             "transcript_path": str(transcript),
             "hook_event_name": "PostToolUse",
+            "model": model,
         }
         if agent_id is not None:
             request["agent_id"] = agent_id
@@ -103,6 +111,24 @@ class ContextRolloverHookTests(unittest.TestCase):
             check=False,
         )
 
+    def invoke_default(self, transcript, codex_home, model="gpt-5.6-luna"):
+        request = {
+            "session_id": "session-1",
+            "transcript_path": str(transcript),
+            "hook_event_name": "PostToolUse",
+            "model": model,
+        }
+        environment = os.environ.copy()
+        environment["CODEX_HOME"] = str(codex_home)
+        return subprocess.run(
+            [sys.executable, str(SCRIPT)],
+            input=json.dumps(request),
+            text=True,
+            capture_output=True,
+            env=environment,
+            check=False,
+        )
+
     def test_request_and_cli_errors_return_three_and_help_succeeds(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "state.sqlite3"
@@ -115,6 +141,17 @@ class ContextRolloverHookTests(unittest.TestCase):
             missing_fields = self.invoke_raw("{}", state)
             self.assertEqual(missing_fields.returncode, 3)
             self.assertIn("request-error", missing_fields.stderr)
+
+            valid_request = {
+                "session_id": "session-1",
+                "transcript_path": "rollout.jsonl",
+            }
+            for invalid_model in (None, 123, "", "   "):
+                request = {**valid_request, "model": invalid_model}
+                result = self.invoke_raw(json.dumps(request), state)
+                self.assertEqual(result.returncode, 3)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("request-error", result.stderr)
 
             invalid_cli = subprocess.run(
                 [sys.executable, str(SCRIPT), "--unknown"],
@@ -151,6 +188,7 @@ class ContextRolloverHookTests(unittest.TestCase):
                     "session_id": "session-1",
                     "transcript_path": str(transcript),
                     "hook_event_name": "PostToolUse",
+                    "model": "gpt-5.6-luna",
                 }
             )
             environment = os.environ.copy()
@@ -333,7 +371,11 @@ class ContextRolloverHookTests(unittest.TestCase):
             state = root / "state.sqlite3"
             rollout(transcript, "session-1", usage=350_000, capacity=500_000)
             request = json.dumps(
-                {"session_id": "session-1", "transcript_path": str(transcript)}
+                {
+                    "session_id": "session-1",
+                    "transcript_path": str(transcript),
+                    "model": "gpt-5.6-luna",
+                }
             )
             processes = [
                 subprocess.Popen(
@@ -429,7 +471,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assert_context(result, expected_used_k=350)
 
-    def test_staged_thresholds_report_actions_and_stop_after_final_stage(self):
+    def test_default_model_thresholds_report_actions_and_stop_after_final_stage(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transcript = root / "rollout.jsonl"
@@ -462,7 +504,7 @@ class ContextRolloverHookTests(unittest.TestCase):
                             {"turn_id": "turn-1", "usage": {"total_tokens": used}},
                         ),
                     )
-                    result = self.invoke(transcript, state)
+                    result = self.invoke(transcript, state, model="gpt-5.6-sol-preview")
                     self.assertEqual(result.returncode, 0, result.stderr)
                     if expected_used_k is None:
                         self.assertEqual(result.stdout, "")
@@ -473,7 +515,150 @@ class ContextRolloverHookTests(unittest.TestCase):
                             expected_action=expected_action,
                         )
 
-    def test_historical_threshold_below_current_schedule_is_preserved(self):
+    def test_strict_model_thresholds_use_300k_350k_400k(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for model in ("gpt-5.6-sol", "gpt-6-astra"):
+                with self.subTest(model=model):
+                    model_root = root / model
+                    model_root.mkdir()
+                    transcript = model_root / "rollout.jsonl"
+                    state = model_root / "state.sqlite3"
+                    rollout(transcript, "session-1", usage=0, capacity=500_000)
+                    cases = [
+                        (299_999, None, None),
+                        (300_000, 300, "continue the current unit of work"),
+                        (300_000, None, None),
+                        (349_999, None, None),
+                        (350_000, 350, "resumable stopping point"),
+                        (350_000, None, None),
+                        (399_999, None, None),
+                        (400_000, 400, "stop starting new work"),
+                        (400_000, None, None),
+                        (500_000, None, None),
+                    ]
+                    for ordinal, (used, expected_used_k, expected_action) in enumerate(
+                        cases, start=3
+                    ):
+                        append_record(
+                            transcript,
+                            record(
+                                "token_usage_record",
+                                ordinal,
+                                {"turn_id": "turn-1", "usage": {"total_tokens": used}},
+                            ),
+                        )
+                        result = self.invoke(transcript, state, model=model)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        if expected_used_k is None:
+                            self.assertEqual(result.stdout, "")
+                        else:
+                            self.assert_context(
+                                result,
+                                expected_used_k=expected_used_k,
+                                expected_action=expected_action,
+                            )
+
+    def test_switching_models_upgrades_stage_without_resetting_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            state = root / "state.sqlite3"
+            rollout(transcript, "session-1", usage=300_000, capacity=500_000)
+
+            default_below = self.invoke(transcript, state, model="gpt-5.6-sol-preview")
+            self.assertEqual(default_below.returncode, 0, default_below.stderr)
+            self.assertEqual(default_below.stdout, "")
+
+            append_record(
+                transcript,
+                record(
+                    "token_usage_record",
+                    3,
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
+                ),
+            )
+            default_stage_one = self.invoke(
+                transcript, state, model="gpt-5.6-sol-preview"
+            )
+            self.assert_context(
+                default_stage_one,
+                expected_used_k=350,
+                expected_action="continue the current unit of work",
+            )
+
+            strict_stage_two = self.invoke(transcript, state, model="gpt-5.6-sol")
+            self.assert_context(
+                strict_stage_two,
+                expected_used_k=350,
+                expected_action="resumable stopping point",
+            )
+            same_stage = self.invoke(transcript, state, model="gpt-6-astra")
+            self.assertEqual(same_stage.returncode, 0, same_stage.stderr)
+            self.assertEqual(same_stage.stdout, "")
+            switch_back = self.invoke(
+                transcript, state, model="gpt-5.6-sol-preview"
+            )
+            self.assertEqual(switch_back.returncode, 0, switch_back.stderr)
+            self.assertEqual(switch_back.stdout, "")
+
+            append_record(
+                transcript,
+                record(
+                    "token_usage_record",
+                    4,
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 400_000}},
+                ),
+            )
+            strict_stage_three = self.invoke(transcript, state, model="gpt-6-astra")
+            self.assert_context(
+                strict_stage_three,
+                expected_used_k=400,
+                expected_action="stop starting new work",
+            )
+            default_after_final = self.invoke(
+                transcript, state, model="gpt-5.6-sol-preview"
+            )
+            self.assertEqual(default_after_final.returncode, 0, default_after_final.stderr)
+            self.assertEqual(default_after_final.stdout, "")
+
+    def test_default_state_path_uses_v2_and_leaves_previous_file_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            codex_home = root / "codex home"
+            state_dir = codex_home / "state"
+            state_dir.mkdir(parents=True)
+            previous_state = state_dir / "context-window-rollover-reminder.sqlite3"
+            connection = sqlite3.connect(previous_state)
+            connection.execute(
+                """
+                CREATE TABLE session_state (
+                    session_id TEXT PRIMARY KEY,
+                    compacted_marker TEXT NOT NULL,
+                    highest_threshold INTEGER NOT NULL CHECK (highest_threshold >= 0),
+                    last_seen_at REAL NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "INSERT INTO session_state VALUES (?, ?, ?, ?)",
+                ("session-1", "", 350_000, 1.0),
+            )
+            connection.commit()
+            connection.close()
+            before = previous_state.read_bytes()
+
+            transcript = root / "rollout.jsonl"
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
+            result = self.invoke_default(transcript, codex_home)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assert_context(result, expected_used_k=350)
+            current_state = state_dir / "context-window-rollover-reminder-v2.sqlite3"
+            self.assertTrue(current_state.exists())
+            self.assertEqual(previous_state.read_bytes(), before)
+
+    def test_old_threshold_schema_is_rejected_without_modification(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transcript = root / "rollout.jsonl"
@@ -496,31 +681,29 @@ class ContextRolloverHookTests(unittest.TestCase):
             )
             connection.commit()
             connection.close()
+            before = state.read_bytes()
 
-            waiting = self.invoke(transcript, state)
-            self.assertEqual(waiting.returncode, 0, waiting.stderr)
-            self.assertEqual(waiting.stdout, "")
+            result = self.invoke(transcript, state, model="gpt-5.6-sol")
+            self.assertEqual(result.returncode, 7)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("state-error", result.stderr)
+            self.assertIn("highest_stage", result.stderr)
+            self.assertEqual(state.read_bytes(), before)
+
             connection = sqlite3.connect(state)
-            highest_threshold = connection.execute(
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(session_state)")
+            }
+            row = connection.execute(
                 "SELECT highest_threshold FROM session_state WHERE session_id = ?",
                 ("session-1",),
-            ).fetchone()[0]
+            ).fetchone()
             connection.close()
-            self.assertEqual(highest_threshold, 250_000)
-
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    3,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
-                ),
+            self.assertEqual(
+                columns,
+                {"session_id", "compacted_marker", "highest_threshold", "last_seen_at"},
             )
-            first = self.invoke(transcript, state)
-            self.assertEqual(first.returncode, 0, first.stderr)
-            self.assert_context(
-                first, expected_used_k=350, expected_action="continue the current unit of work"
-            )
+            self.assertEqual(row, (250_000,))
 
     def test_jump_reports_only_highest_reached_stage(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -752,17 +935,17 @@ class ContextRolloverHookTests(unittest.TestCase):
                 CREATE TABLE session_state (
                     session_id TEXT PRIMARY KEY,
                     compacted_marker TEXT NOT NULL,
-                    highest_threshold INTEGER NOT NULL CHECK (highest_threshold >= 0),
+                    highest_stage INTEGER NOT NULL CHECK (highest_stage >= 0 AND highest_stage <= 3),
                     last_seen_at REAL NOT NULL
                 )
                 """
             )
             rows = [
-                ("old-thread", "", 350_000, 0.0),
-                ("recent-thread", "", 350_000, 1.0),
+                ("old-thread", "", 1, 0.0),
+                ("recent-thread", "", 1, 1.0),
             ]
             rows.extend(
-                (f"filler-{index:05}", "", 350_000, 50.0)
+                (f"filler-{index:05}", "", 1, 50.0)
                 for index in range(9_998)
             )
             connection.executemany("INSERT INTO session_state VALUES (?, ?, ?, ?)", rows)
