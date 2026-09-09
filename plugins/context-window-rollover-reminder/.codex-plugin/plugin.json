@@ -1,6 +1,6 @@
 {
   "name": "context-window-rollover-reminder",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Reports context usage and provides staged rollover instructions through a PostToolUse hook.",
   "author": {
     "name": "jiangxiaoxu"
@@ -8,7 +8,7 @@
   "interface": {
     "displayName": "Context-window-rollover-reminder",
     "shortDescription": "Guide context rollover in Codex.",
-    "longDescription": "Emits staged context rollover instructions at 350K, 400K, and 450K tokens.",
+    "longDescription": "Emits staged context rollover instructions at 300K/350K/400K tokens for gpt-5.6-sol and gpt-6-astra, and 350K/400K/450K for other models.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
     "composerIcon": "./assets/context-window-rollover-reminder-icon.png",

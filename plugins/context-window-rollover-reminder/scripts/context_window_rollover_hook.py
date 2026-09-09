@@ -1,4 +1,4 @@
-"""Emit staged PostToolUse context rollover reminders at fixed usage thresholds."""
+"""Emit staged PostToolUse context rollover reminders at model-specific thresholds."""
 
 from __future__ import annotations
 
@@ -19,7 +19,9 @@ EXIT_TRANSCRIPT_ERROR = 5
 EXIT_IDENTITY_ERROR = 6
 EXIT_STATE_ERROR = 7
 
-REMINDER_THRESHOLDS = (350_000, 400_000, 450_000)
+STRICT_MODELS = frozenset({"gpt-5.6-sol", "gpt-6-astra"})
+STRICT_THRESHOLDS = (300_000, 350_000, 400_000)
+DEFAULT_THRESHOLDS = (350_000, 400_000, 450_000)
 MESSAGE_PREFIX = "[Context window rollover reminder] "
 SQLITE_TIMEOUT_SECONDS = 5.0
 MAX_THREADS = 10_000
@@ -27,27 +29,30 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS session_state (
     session_id TEXT PRIMARY KEY,
     compacted_marker TEXT NOT NULL,
-    highest_threshold INTEGER NOT NULL CHECK (highest_threshold >= 0),
+    highest_stage INTEGER NOT NULL CHECK (highest_stage >= 0 AND highest_stage <= 3),
     last_seen_at REAL NOT NULL
 )
 """
+REQUIRED_STATE_COLUMNS = frozenset(
+    {"session_id", "compacted_marker", "highest_stage", "last_seen_at"}
+)
 
 COMMON_INSTRUCTIONS = (
     "This reminder supersedes earlier rollover reminders in the current context window."
 )
 
 STAGE_INSTRUCTIONS = {
-    350_000: (
+    1: (
         "Continue the current unit of work to a meaningful milestone, then save a "
         "checkpoint and call new_context. Receiving this reminder or finishing a "
         "tool call alone is not a stopping point."
     ),
-    400_000: (
+    2: (
         "Bring the current work to a resumable stopping point with minimal additional "
         "work, then save a checkpoint and call new_context. Record unfinished work "
         "in the checkpoint; do not delay rollover to complete a milestone."
     ),
-    450_000: (
+    3: (
         "Stop starting new work. Perform only minimal wrap-up "
         "needed for data integrity or existing invariants, save a checkpoint, and "
         "call new_context immediately. Do not continue investigating for a fuller "
@@ -99,7 +104,7 @@ class StateError(HookError):
     category = "state-error"
 
 
-def read_request() -> tuple[str, str | None, Path]:
+def read_request() -> tuple[str, str | None, str, Path]:
     try:
         request = json.load(sys.stdin)
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
@@ -113,9 +118,12 @@ def read_request() -> tuple[str, str | None, Path]:
     agent_id = request.get("agent_id")
     if agent_id is not None and (not isinstance(agent_id, str) or not agent_id):
         raise RequestError("hook input has an invalid agent_id")
+    model = request.get("model")
+    if not isinstance(model, str) or not model.strip():
+        raise RequestError("hook input has no valid model")
     if not isinstance(transcript_path, str) or not transcript_path:
         raise RequestError("hook input has no transcript_path")
-    return session_id, agent_id, Path(transcript_path)
+    return session_id, agent_id, model, Path(transcript_path)
 
 
 def record_marker(item: dict, line_number: int) -> str:
@@ -210,11 +218,22 @@ def read_rollout(
 
 def default_state_db() -> Path:
     codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
-    return codex_home / "state" / "context-window-rollover-reminder.sqlite3"
+    return codex_home / "state" / "context-window-rollover-reminder-v2.sqlite3"
 
 
-def output_for(used: int, threshold: int) -> str:
-    action = STAGE_INSTRUCTIONS[threshold]
+def stage_for_usage(used: int, thresholds: tuple[int, int, int]) -> int:
+    return next(
+        (
+            stage
+            for stage, threshold in reversed(tuple(enumerate(thresholds, start=1)))
+            if used >= threshold
+        ),
+        0,
+    )
+
+
+def output_for(used: int, stage: int) -> str:
+    action = STAGE_INSTRUCTIONS[stage]
     return json.dumps(
         {
             "hookSpecificOutput": {
@@ -252,8 +271,24 @@ def evict_old_threads(connection: sqlite3.Connection, current_thread_id: str) ->
     )
 
 
+def ensure_state_schema(connection: sqlite3.Connection) -> None:
+    columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(session_state)").fetchall()
+    }
+    if not columns:
+        connection.execute(SCHEMA)
+        return
+    missing = REQUIRED_STATE_COLUMNS - columns
+    if missing:
+        missing_names = ", ".join(sorted(missing))
+        raise StateError(
+            f"state database schema is missing required columns: {missing_names}"
+        )
+
+
 def run(state_db: Path) -> str:
-    session_id, agent_id, transcript_path = read_request()
+    session_id, agent_id, model, transcript_path = read_request()
     try:
         state_db.parent.mkdir(parents=True, exist_ok=True)
     except (OSError, ValueError) as error:
@@ -264,57 +299,54 @@ def run(state_db: Path) -> str:
         raise StateError(f"cannot open state database: {error}") from error
     try:
         try:
-            connection.execute(SCHEMA)
+            ensure_state_schema(connection)
             connection.commit()
             connection.execute("BEGIN IMMEDIATE")
             thread_id, compacted_marker, used, _capacity = read_rollout(
                 transcript_path, session_id, agent_id
             )
             row = connection.execute(
-                "SELECT compacted_marker, highest_threshold FROM session_state WHERE session_id = ?",
+                "SELECT compacted_marker, highest_stage FROM session_state WHERE session_id = ?",
                 (thread_id,),
             ).fetchone()
             if row is None:
-                stored_marker, highest_threshold = "", 0
+                stored_marker, highest_stage = "", 0
             else:
-                stored_marker, highest_threshold = row
+                stored_marker, highest_stage = row
                 if (
                     not isinstance(stored_marker, str)
-                    or type(highest_threshold) is not int
-                    or highest_threshold < 0
+                    or type(highest_stage) is not int
+                    or highest_stage < 0
+                    or highest_stage > 3
                 ):
                     raise StateError("state database contains invalid session state")
 
             if compacted_marker != stored_marker:
                 stored_marker = compacted_marker
-                highest_threshold = 0
+                highest_stage = 0
 
             message = ""
             if used is not None:
-                threshold = next(
-                    (
-                        candidate
-                        for candidate in reversed(REMINDER_THRESHOLDS)
-                        if used >= candidate
-                    ),
-                    0,
+                thresholds = (
+                    STRICT_THRESHOLDS if model in STRICT_MODELS else DEFAULT_THRESHOLDS
                 )
-                if threshold > highest_threshold:
-                    message = output_for(used, threshold)
-                    highest_threshold = threshold
+                stage = stage_for_usage(used, thresholds)
+                if stage > highest_stage:
+                    message = output_for(used, stage)
+                    highest_stage = stage
 
             connection.execute(
                 """
                 INSERT INTO session_state(
-                    session_id, compacted_marker, highest_threshold, last_seen_at
+                    session_id, compacted_marker, highest_stage, last_seen_at
                 )
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     compacted_marker = excluded.compacted_marker,
-                    highest_threshold = excluded.highest_threshold,
+                    highest_stage = excluded.highest_stage,
                     last_seen_at = excluded.last_seen_at
                 """,
-                (thread_id, stored_marker, highest_threshold, time.time()),
+                (thread_id, stored_marker, highest_stage, time.time()),
             )
             evict_old_threads(connection, thread_id)
             connection.commit()

@@ -1,17 +1,25 @@
 # Context Window Rollover Reminder
 
 `context-window-rollover-reminder` installs a synchronous `PostToolUse` command hook. It reads the
-Codex rollout transcript supplied on standard input and emits one `additionalContext` message when
-the current context usage crosses a new boundary.
+active model and transcript path from standard input, checks usage in the Codex rollout transcript,
+and emits one `additionalContext` message when a higher reminder stage applies.
 
-The hook has three reminder thresholds per context window: 350,000, 400,000, and 450,000 tokens.
+The hook selects three reminder thresholds from the active model slug supplied in hook input:
+
+| Model | Stage 1 | Stage 2 | Stage 3 |
+| --- | --- | --- | --- |
+| `gpt-5.6-sol`, `gpt-6-astra` | 300,000 tokens | 350,000 tokens | 400,000 tokens |
+| All other model slugs | 350,000 tokens | 400,000 tokens | 450,000 tokens |
+
+Model matching is exact and case-sensitive. The `model` input must be a nonempty string; missing
+or invalid values fail with a request diagnostic. No aliases or context-capacity scaling are used.
 Each message reports actual usage in whole thousands and includes the applicable rollover action:
 
-| Usage | Action |
+| Stage | Action |
 | --- | --- |
-| 350K to below 400K | Continue the current unit of work to a meaningful milestone, then save a checkpoint and roll over. The reminder or a tool call finishing alone is not a stopping point. |
-| 400K to below 450K | Reach a resumable stopping point with minimal additional work, then save a checkpoint and roll over. Record unfinished work without waiting to complete a milestone. |
-| 450K and above | Stop starting new work, finish only necessary cleanup, save the checkpoint, and roll over immediately. |
+| 1 | Continue the current unit of work to a meaningful milestone, then save a checkpoint and roll over. The reminder or a tool call finishing alone is not a stopping point. |
+| 2 | Reach a resumable stopping point with minimal additional work, then save a checkpoint and roll over. Record unfinished work without waiting to complete a milestone. |
+| 3 | Stop starting new work, finish only necessary cleanup, save the checkpoint, and roll over immediately. |
 
 The message starts with:
 
@@ -64,28 +72,33 @@ independently of the three reminder thresholds.
 
 ## Runtime state and behavior
 
-By default the script stores state in `%CODEX_HOME%\state\context-window-rollover-reminder.sqlite3`; when `%CODEX_HOME%` is unset,
-the script falls back to `%USERPROFILE%\.codex\state\context-window-rollover-reminder.sqlite3`. `--state-db` can
+By default the script stores state in `%CODEX_HOME%\state\context-window-rollover-reminder-v2.sqlite3`; when `%CODEX_HOME%` is unset,
+the script falls back to `%USERPROFILE%\.codex\state\context-window-rollover-reminder-v2.sqlite3`. `--state-db` can
 override that path for tests or an explicitly managed installation. The database is created on first
-use and is runtime state, not a plugin artifact. The renamed plugin uses a new default state file;
-it does not discover, read, migrate, or delete the previous default file. Its first invocation reports
-the current applicable stage once, even if the previous plugin already reported it.
+use and is runtime state, not a plugin artifact. Version 0.1.11 uses a new default state file because
+historical token thresholds do not reliably identify reminder stages. It does not discover, read,
+migrate, or delete previous default files. Its first applicable invocation reports the current stage
+once, even if an earlier version already reported it.
 
 State is keyed by the transcript thread ID. A compacted transcript resets the highest reported
-threshold, so a fresh context window can report the same threshold again once fresh usage is available.
-The stored value is a nonnegative integer recording the highest threshold previously reported,
-independent of the current threshold configuration. Changing thresholds preserves that history;
-a reminder is emitted only when the current applicable threshold exceeds the stored value.
-Concurrent invocations use SQLite transaction locking so one threshold crossing produces only one message. Old thread entries are
+stage, so a fresh context window can report the same stage again once fresh usage is available.
+The stored `highest_stage` is an integer from 0 through 3, where 0 means no reminder has been reported.
+Changing models preserves that history; a reminder is emitted only when the current applicable stage
+exceeds the stored stage. For example, after stage 1 at 350K on a default model, switching to
+`gpt-5.6-sol` at the same usage emits stage 2. Switching back does not repeat stage 1, and switching
+between the two stricter models does not repeat an already reported stage.
+Concurrent invocations use SQLite transaction locking so one stage crossing produces only one message. Old thread entries are
 evicted after the existing 10,000-entry limit.
 
-The hook writes a compact JSON hook result to standard output only when a new threshold is reached.
+The hook writes a compact JSON hook result to standard output only when a higher stage applies.
 If usage skips thresholds, it emits only the highest applicable stage, without replaying earlier
-stages. Once the 450K stage has been reported, no further reminders are emitted in that window.
+stages. Once stage 3 has been reported, no further reminders are emitted in that window, even after
+switching models.
 `PostToolUse` samples usage after tool calls, so delivery may occur above a threshold.
 
-A database passed through `--state-db` must provide the required state columns. Schemas missing
-required columns fail with a state diagnostic; no schema migration or repair is performed.
+A database passed through `--state-db` must provide the required state columns, including
+`highest_stage`. Older schemas containing only `highest_threshold`, schemas missing required
+columns, and invalid stage values fail with a state diagnostic; no schema migration or repair is performed.
 
 Malformed requests, transcripts, identity mismatches, and state failures produce categorized
 diagnostics on standard error and retain the existing exit codes.
@@ -104,7 +117,7 @@ Validate the plugin manifest with the installed plugin-creator validator:
 python <plugin-creator>/scripts/validate_plugin.py plugins/context-window-rollover-reminder
 ```
 
-When changing hook logic, keep the fixed thresholds, stage selection, state schema, transcript
+When changing hook logic, keep the model-specific thresholds, stage selection, state schema, transcript
 parsing rules, and exit-code contract aligned with the tests. Keep
 `hooks/hooks.json` synchronous unless the hook's output and state semantics are redesigned
 together. Do not add the separate context-usage probe or commit generated SQLite state to the
