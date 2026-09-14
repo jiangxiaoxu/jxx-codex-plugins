@@ -106,6 +106,15 @@ test("run schema distinguishes atomic script failure from unknown completion", (
   assert.match(schema.outputSchema.properties.executionOutcome.description, /made no changes.*outcome_unknown requires read-back and reconciliation/isu);
 });
 
+test("result schemas publish common local and upstream error fields", () => {
+  const descriptions = metadata.createReplToolDescriptions({});
+  for (const description of descriptions) {
+    assert.equal(description.outputSchema.properties.error.type, "object", description.name);
+    assert.equal(description.outputSchema.properties.upstreamError.type, "object", description.name);
+    assert.equal(description.outputSchema.properties.primaryFix.type, "string", description.name);
+  }
+});
+
 test("design system search metadata publishes ordered typed batch queries", () => {
   const descriptions = metadata.createReplToolDescriptions({});
   const byName = new Map(descriptions.map((description) => [description.name, description]));

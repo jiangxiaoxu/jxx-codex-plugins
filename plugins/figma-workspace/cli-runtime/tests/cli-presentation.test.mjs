@@ -62,4 +62,46 @@ test("only confirmed execution followed by local failure is failed after executi
   assert.equal(presentation.status, "failed-after-execution");
   assert.match(rendered, /^Status: failed after execution$/mu);
   assert.doesNotMatch(rendered, /^## Remote execution error$/mu);
+  assert.match(rendered, /^## Error$/mu);
+  assert.match(rendered, /FIGMA_WORKSPACE_RESULT_PERSISTENCE_FAILED: Could not write result\./u);
+});
+
+test("batch failures summarize their first nested error", () => {
+  const rendered = cli.formatFigmaWorkspaceCommandMarkdown("apply-asset-manifest", {
+    ok: false,
+    assets: [{
+      ok: false,
+      path: "asset.png",
+      targetNodeId: "1:2",
+      upstreamError: { code: "FIGMA_ASSET_UPLOAD_FAILED", message: "Asset upload failed." },
+    }],
+    failures: [{
+      path: "asset.png",
+      targetNodeId: "1:2",
+      upstreamError: { code: "FIGMA_ASSET_UPLOAD_FAILED", message: "Asset upload failed." },
+    }],
+  }, {});
+
+  assert.match(rendered, /^Status: failed$/mu);
+  assert.match(rendered, /^## Error$/mu);
+  assert.match(rendered, /FIGMA_ASSET_UPLOAD_FAILED: Asset upload failed\./u);
+});
+
+test("nested failures take precedence over unrelated warning diagnostics", () => {
+  const rendered = cli.formatFigmaWorkspaceCommandMarkdown("download-assets", {
+    ok: false,
+    diagnostics: [{
+      code: "FIGMA_WORKSPACE_UPSTREAM_OPTIONAL_SKIPPED",
+      severity: "warning",
+      message: "An optional upstream argument was skipped.",
+      suggestion: "No local repair is required.",
+    }],
+    failures: [{
+      targetNodeId: "1:2",
+      downloadError: { code: "HTTP_500", message: "Asset download failed." },
+    }],
+  }, {});
+
+  assert.match(rendered, /HTTP_500: Asset download failed\./u);
+  assert.doesNotMatch(rendered, /Next step: No local repair is required/u);
 });

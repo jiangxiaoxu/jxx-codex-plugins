@@ -249,6 +249,7 @@ export interface FigmaWorkspaceCliResultPresentation {
   status: "succeeded" | "observed-unhealthy" | "failed" | "failed-atomically" | "failed-during-execution" | "failed-after-execution";
   exitCode: 0 | 1;
   error?: { message: string; code?: string | number; details?: unknown };
+  recoveryHint?: string;
   warnings: readonly unknown[];
 }
 
@@ -260,17 +261,19 @@ export function classifyFigmaWorkspaceCliResult(
   const warnings = Array.isArray(result.warnings) ? result.warnings : [];
   const executionOutcome = result.executionOutcome;
   const ok = result.ok !== false;
-  if (command === "doctor" && !ok) return { status: "observed-unhealthy", exitCode: 0, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+  const { isUpstream: _isUpstream, ...presentationFailure } = presentationFailureForResult(result);
+  const failure = { warnings, ...presentationFailure };
+  if (command === "doctor" && !ok) return { status: "observed-unhealthy", exitCode: 0, ...failure };
   if (executionOutcome === "failed_atomic" && !ok) {
-    return { status: "failed-atomically", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+    return { status: "failed-atomically", exitCode: 1, ...failure };
   }
   if (executionOutcome === "outcome_unknown" && !ok) {
-    return { status: "failed-during-execution", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+    return { status: "failed-during-execution", exitCode: 1, ...failure };
   }
   if (executionOutcome === "succeeded" && !ok) {
-    return { status: "failed-after-execution", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+    return { status: "failed-after-execution", exitCode: 1, ...failure };
   }
-  if (!ok) return { status: "failed", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+  if (!ok) return { status: "failed", exitCode: 1, ...failure };
   return { status: warnings.length ? "observed-unhealthy" : "succeeded", exitCode: 0, warnings };
 }
 
@@ -296,20 +299,21 @@ function formatExecutionFailureSummary(
   result: unknown,
   presentation: FigmaWorkspaceCliResultPresentation,
 ): string[] {
-  if (!isRecord(result) || result.executionOutcome !== "failed_atomic") {
+  if (!isRecord(result) || !presentation.error) {
     return [];
   }
-  const error = presentation.error ?? compactPresentationError(result.upstreamError);
+  const atomicScriptFailure = result.executionOutcome === "failed_atomic";
+  const error = presentation.error;
   const message = compactExecutionErrorSummary(error?.message ?? "Figma host returned an explicit execution error.");
   const code = error?.code === undefined ? undefined : String(error.code);
   return [
-    "## Remote execution error",
+    atomicScriptFailure ? "## Remote execution error" : "## Error",
     "",
     "```text",
     code ? `${code}: ${message}` : message,
     "```",
-    "",
-    "Figma host confirmed this use_figma script failed atomically. No file changes were applied; repair the script and retry safely.",
+    ...(presentation.recoveryHint ? ["", `Next step: ${compactExecutionErrorSummary(presentation.recoveryHint)}`] : []),
+    ...(atomicScriptFailure ? ["", "Figma host confirmed this use_figma script failed atomically. No file changes were applied; repair the script and retry safely."] : []),
     "",
   ];
 }
@@ -471,8 +475,14 @@ async function persistOversizedResult(result: unknown, command: FigmaWorkspaceCl
   const resultPath = resolve(outputRoot, `${command.replace(/[^a-z0-9]+/giu, "-")}.result.json`);
   const written = await atomicWriteManagedTextFile({ root: outputRoot, path: resultPath, overwrite: true }, serialized);
   const existingOutputFiles = isRecord(result) && isRecord(result.outputFiles) ? result.outputFiles : {};
+  const failure = isRecord(result) && result.ok === false ? presentationFailureForResult(result) : {};
+  const upstreamError = (isRecord(result) ? compactPresentationError(result.upstreamError) : undefined)
+    ?? (failure.isUpstream ? compactPresentationError(failure.error) : undefined);
   return {
     ...selectRecoveryFacts(result),
+    error: upstreamError ? undefined : compactPresentationError(failure.error),
+    recoveryHint: failure.recoveryHint,
+    upstreamError,
     ok: isRecord(result) ? result.ok !== false : true,
     invocation: isRecord(result) ? result.invocation : undefined,
     outputFiles: {
@@ -483,9 +493,14 @@ async function persistOversizedResult(result: unknown, command: FigmaWorkspaceCl
 }
 
 function createResultPersistenceFailure(result: unknown, error: unknown): Record<string, unknown> {
+  const operationFailure = isRecord(result) && result.ok === false ? presentationFailureForResult(result) : {};
+  const upstreamError = (isRecord(result) ? compactPresentationError(result.upstreamError) : undefined)
+    ?? (operationFailure.isUpstream ? compactPresentationError(operationFailure.error) : undefined);
   return {
     ...selectRecoveryFacts(result),
-    upstreamError: isRecord(result) ? compactPresentationError(result.upstreamError) : undefined,
+    operationError: upstreamError ? undefined : compactPresentationError(operationFailure.error),
+    operationRecoveryHint: operationFailure.recoveryHint,
+    upstreamError,
     ok: false,
     invocation: isRecord(result) ? result.invocation : undefined,
     error: {
@@ -501,10 +516,83 @@ function selectRecoveryFacts(result: unknown): Record<string, unknown> {
     "phase",
     "executionOutcome",
     "retryGuidance",
+    "primaryFix",
     "postProcessing",
     "captureProcessingSucceeded",
+    "fileKey",
+    "nodeId",
+    "toolName",
+    "planDigest",
+    "outputDir",
+    "imageFile",
+    "planFile",
+    "script",
+    "inlineResultLimit",
     "outputFiles",
   ].flatMap((key) => result[key] === undefined ? [] : [[key, result[key]]]));
+}
+
+function presentationFailureForResult(result: Record<string, unknown>): {
+  error?: { message: string; code?: string | number; details?: unknown };
+  recoveryHint?: string;
+  isUpstream?: boolean;
+} {
+  const overallRecoveryHint = firstRecoveryHint(result);
+  const upstreamError = normalizeError(result.upstreamError);
+  if (upstreamError) return { error: upstreamError, recoveryHint: overallRecoveryHint, isUpstream: true };
+  const direct = normalizeError(result.error);
+  if (direct) return { error: direct, recoveryHint: overallRecoveryHint };
+  const diagnostics = Array.isArray(result.diagnostics) ? result.diagnostics : [];
+  for (const value of diagnostics) {
+    if (!isRecord(value) || value.severity !== "fatal") continue;
+    const diagnostic = normalizeFailureRecord(value);
+    if (diagnostic) return { ...diagnostic, recoveryHint: firstRecoveryHint(value) ?? overallRecoveryHint };
+  }
+  for (const key of ["failures", "assets", "targets", "captures", "mappings"] as const) {
+    for (const value of Array.isArray(result[key]) ? result[key] : []) {
+      if (isRecord(value) && value.ok !== false && key !== "failures" && key !== "mappings") continue;
+      const failure = normalizeFailureRecord(value);
+      if (failure) return { ...failure, recoveryHint: overallRecoveryHint ?? firstRecoveryHint(value) };
+    }
+  }
+  for (const key of ["application", "validation"] as const) {
+    const value = result[key];
+    if (isRecord(value) && value.ok === false) {
+      const failure = normalizeFailureRecord(value);
+      if (failure) return { ...failure, recoveryHint: overallRecoveryHint ?? firstRecoveryHint(value) };
+    }
+  }
+  for (const value of diagnostics) {
+    const diagnostic = normalizeFailureRecord(value);
+    if (diagnostic) return { ...diagnostic, recoveryHint: firstRecoveryHint(value) ?? overallRecoveryHint };
+  }
+  return { recoveryHint: overallRecoveryHint };
+}
+
+function normalizeFailureRecord(value: unknown): {
+  error: { message: string; code?: string | number; details?: unknown };
+  isUpstream?: boolean;
+} | undefined {
+  if (!isRecord(value)) return undefined;
+  for (const key of ["upstreamError", "downloadError", "error"] as const) {
+    const nested = normalizeError(value[key]);
+    if (nested) return { error: nested, ...(key === "upstreamError" ? { isUpstream: true } : {}) };
+  }
+  if (typeof value.message === "string" || typeof value.code === "string" || typeof value.code === "number") {
+    const error = normalizeError(value);
+    return error ? { error } : undefined;
+  }
+  if (typeof value.reason === "string" && value.reason.trim()) {
+    return { error: { message: value.reason } };
+  }
+  return undefined;
+}
+
+function firstRecoveryHint(result: Record<string, unknown>): string | undefined {
+  for (const value of [result.retryGuidance, result.primaryFix, result.suggestion]) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
 }
 
 function compactPresentationError(value: unknown): { message: string; code?: string | number } | undefined {

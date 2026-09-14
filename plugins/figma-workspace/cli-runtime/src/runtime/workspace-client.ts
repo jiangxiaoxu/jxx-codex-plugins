@@ -950,6 +950,7 @@ export interface FigmaWorkspaceCodeConnectVerifyResult extends FigmaWorkspaceToo
   fileKey: string;
   planDigest: string;
   mappings: FigmaWorkspaceCodeConnectMappingStatus[];
+  error?: { code?: string; message: string };
   outputFiles?: FigmaWorkspaceOutputFiles;
 }
 
@@ -4789,16 +4790,29 @@ async function executeCodeConnectVerify(
     workflow = await beginCodeConnectWorkflow(runtime.client, [CODE_CONNECT_VERIFY_MAPPING_READ_CONTRACT]);
     const verificationResult = await verifyCodeConnectArtifact({ workflow, client: runtime.client, fileKey, artifact });
     const { sidecarParsed, forceSidecar, ...verification } = verificationResult;
-    const resultPayload = { ok: verification.ok, fileKey, planDigest: artifact.planDigest, mappings: verification.statuses };
+    const resultPayload = {
+      ok: verification.ok,
+      fileKey,
+      planDigest: artifact.planDigest,
+      mappings: verification.statuses,
+      ...(verification.ok ? {} : {
+        error: {
+          code: "FIGMA_WORKSPACE_CODE_CONNECT_VERIFICATION_FAILED",
+          message: "Code Connect verification found one or more missing, mismatched, or unavailable mappings.",
+        },
+      }),
+    };
     return sidecarParsed
       ? attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_MAP_TOOL_NAME, wrapperToolName: "figma:code-connect:verify", parsed: sidecarParsed, resultPayload, force: forceSidecar })
       : resultPayload;
   } catch (error) {
+    const message = errorMessage(error);
     return {
       ok: false,
       fileKey,
       planDigest: artifact.planDigest,
-      mappings: artifact.mappings.map((mapping) => mappingStatus(mapping, "unavailable", { message: errorMessage(error) })),
+      mappings: artifact.mappings.map((mapping) => mappingStatus(mapping, "unavailable", { message })),
+      error: { code: "FIGMA_WORKSPACE_CODE_CONNECT_VERIFY_FAILED", message },
     };
   } finally {
     workflow?.deadline.dispose();
