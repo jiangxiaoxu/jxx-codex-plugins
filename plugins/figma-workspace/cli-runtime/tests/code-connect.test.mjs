@@ -107,7 +107,10 @@ function codeConnectTools() {
 function fakeUpstream(calls, options = {}) {
   let currentMapping = options.initialMapping ?? null;
   return {
-    async connect() { calls.push({ kind: "connect" }); },
+    async connect() {
+      calls.push({ kind: "connect" });
+      if (options.connectError) throw new Error("connection unavailable");
+    },
     async close() { calls.push({ kind: "close" }); },
     async listTools() {
       calls.push({ kind: "listTools" });
@@ -576,6 +579,11 @@ test("Code Connect verify returns matched, missing, mismatch, and sanitized remo
       const verifier = createFigmaWorkspaceClient({ client: fakeUpstream([], { initialMapping }), invocationId: `code-connect-verify-${name}` });
       const result = await verifier.codeConnectVerify({ file: FILE_URL, outputDir, planPath: plan.planFile.path });
       assert.equal(result.mappings[0].status, expected, name);
+      if (expected === "matched") {
+        assert.equal(result.error, undefined, name);
+      } else {
+        assert.equal(result.error.code, "FIGMA_WORKSPACE_CODE_CONNECT_VERIFICATION_FAILED", name);
+      }
       await verifier.close();
     }
 
@@ -636,6 +644,27 @@ test("unreadable get_code_connect_map blocks plan artifact creation and reports 
     }
   } finally {
     await validClient.close();
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("Code Connect verify reports workflow failures as a top-level error", async () => {
+  const outputDir = await mkdtemp(resolve(tmpdir(), "figma-code-connect-verify-error-"));
+  const planner = createFigmaWorkspaceClient({ client: fakeUpstream([]), invocationId: "code-connect-verify-error-plan" });
+  try {
+    const plan = await planner.codeConnectPlan({ file: FILE_URL, outputDir, outputPlanPath: resolve(outputDir, "plan.json"), manifest: manifest() });
+    const verifier = createFigmaWorkspaceClient({ client: fakeUpstream([], { connectError: true }), invocationId: "code-connect-verify-error" });
+    try {
+      const result = await verifier.codeConnectVerify({ file: FILE_URL, outputDir, planPath: plan.planFile.path });
+      assert.equal(result.ok, false);
+      assert.equal(result.error.code, "FIGMA_WORKSPACE_CODE_CONNECT_VERIFY_FAILED");
+      assert.equal(result.error.message, "connection unavailable");
+      assert.equal(result.mappings[0].status, "unavailable");
+    } finally {
+      await verifier.close();
+    }
+  } finally {
+    await planner.close();
     await rm(outputDir, { recursive: true, force: true });
   }
 });

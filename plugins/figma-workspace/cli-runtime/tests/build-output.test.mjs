@@ -15,7 +15,7 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.6.3");
+  assert.equal(packageJson.version, "0.6.4");
 });
 
 test("distribution stages TypeScript declaration libs for strict preflight", () => {
@@ -327,6 +327,208 @@ test("atomic script failure replacement preserves recovery facts and reports an 
   }
 });
 
+test("oversized unknown execution failures keep compact upstream errors inline", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-inline-upstream-error-"));
+  const input = JSON.stringify({ file: "https://www.figma.com/design/ExampleKey/UI", source: "return {};", outputDir: directory });
+  const output = createIo(input, directory);
+  try {
+    const exit = await runFigmaWorkspaceCli(["run", "--input", "-", "--inline-result-limit", "0"], {
+      io: output.io,
+      createClient: () => ({
+        close: async () => {},
+        run: async () => ({
+          ok: false,
+          executionOutcome: "outcome_unknown",
+          upstreamError: {
+            code: "FIGMA_UPSTREAM_RESPONSE_LOST",
+            message: "Figma execution response was lost.",
+            details: { diagnosticPayload: "x".repeat(2_048) },
+          },
+          retryGuidance: "Read back and reconcile before retrying.",
+          payload: "x".repeat(1_024),
+        }),
+      }),
+    });
+    const rendered = output.stdout.join("");
+    assert.equal(exit, 1);
+    assert.match(rendered, /^Status: failed during execution$/mu);
+    assert.match(rendered, /^## Error$/mu);
+    assert.match(rendered, /Next step: Read back and reconcile before retrying\./u);
+    assert.match(rendered, /"upstreamError":\s*\{/u);
+    assert.doesNotMatch(rendered, /"error":\s*\{/u);
+    assert.match(rendered, /"code": "FIGMA_UPSTREAM_RESPONSE_LOST"/u);
+    assert.match(rendered, /"message": "Figma execution response was lost\."/u);
+    assert.doesNotMatch(rendered, /diagnosticPayload/u);
+    assert.match(rendered, /cliResultFile/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("oversized local failures keep their error, recovery hint, and operation identity inline", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-inline-local-error-"));
+  const input = JSON.stringify({
+    file: "https://www.figma.com/design/ExampleKey/UI",
+    surface: "design",
+    planPath: resolve(directory, "plan.json"),
+    outputDir: directory,
+  });
+  const output = createIo(input, directory);
+  try {
+    const exit = await runFigmaWorkspaceCli(["code-connect-verify", "--input", "-", "--inline-result-limit", "0"], {
+      io: output.io,
+      createClient: () => ({
+        close: async () => {},
+        codeConnectVerify: async () => ({
+          ok: false,
+          fileKey: "ExampleKey",
+          nodeId: "1:2",
+          toolName: "get_code_connect_map",
+          planDigest: "a".repeat(64),
+          outputDir: directory,
+          primaryFix: "Regenerate the Code Connect plan.",
+          error: {
+            code: "FIGMA_WORKSPACE_CODE_CONNECT_PLAN_INVALID",
+            message: "The Code Connect plan is invalid.",
+            details: { diagnosticPayload: "x".repeat(2_048) },
+          },
+          mappings: [],
+          payload: "x".repeat(1_024),
+        }),
+      }),
+    });
+    const rendered = output.stdout.join("");
+    assert.equal(exit, 1);
+    assert.match(rendered, /^Status: failed$/mu);
+    assert.match(rendered, /^## Error$/mu);
+    assert.match(rendered, /FIGMA_WORKSPACE_CODE_CONNECT_PLAN_INVALID: The Code Connect plan is invalid\./u);
+    assert.match(rendered, /Next step: Regenerate the Code Connect plan\./u);
+    assert.match(rendered, /"error":\s*\{/u);
+    assert.match(rendered, /"primaryFix": "Regenerate the Code Connect plan\."/u);
+    assert.match(rendered, /"nodeId": "1:2"/u);
+    assert.match(rendered, /"toolName": "get_code_connect_map"/u);
+    assert.match(rendered, new RegExp(`"planDigest": "${"a".repeat(64)}"`, "u"));
+    assert.match(rendered, /"outputDir":/u);
+    assert.doesNotMatch(rendered, /diagnosticPayload/u);
+    assert.match(rendered, /cliResultFile/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("oversized preflight failures keep the first actionable diagnostic in the CLI summary", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-inline-preflight-diagnostic-"));
+  const input = JSON.stringify({ file: "https://www.figma.com/design/ExampleKey/UI", source: "return {};", outputDir: directory });
+  const output = createIo(input, directory);
+  try {
+    const exit = await runFigmaWorkspaceCli(["run", "--input", "-", "--inline-result-limit", "0"], {
+      io: output.io,
+      createClient: () => ({
+        close: async () => {},
+        run: async () => ({
+          ok: false,
+          phase: "preflight",
+          executionOutcome: "not_started",
+          diagnostics: [{
+            code: "FIGMA_WORKSPACE_PARSE_ERROR",
+            severity: "fatal",
+            message: "TypeScript source could not be parsed.",
+            suggestion: "Fix the syntax error before retrying.",
+            docsHint: "Figma Workspace CLI: figma:run --help",
+          }],
+          repairPlan: { status: "parse_error", summary: "Fix syntax errors.", steps: [{ payload: "x".repeat(2_048) }] },
+          payload: "x".repeat(1_024),
+        }),
+      }),
+    });
+    const rendered = output.stdout.join("");
+    assert.equal(exit, 1);
+    assert.match(rendered, /^Status: failed$/mu);
+    assert.match(rendered, /FIGMA_WORKSPACE_PARSE_ERROR: TypeScript source could not be parsed\./u);
+    assert.match(rendered, /Next step: Fix the syntax error before retrying\./u);
+    assert.match(rendered, /"error":\s*\{/u);
+    assert.match(rendered, /"code": "FIGMA_WORKSPACE_PARSE_ERROR"/u);
+    assert.match(rendered, /"recoveryHint": "Fix the syntax error before retrying\."/u);
+    assert.doesNotMatch(rendered, /"repairPlan"|"diagnostics"/u);
+    assert.match(rendered, /cliResultFile/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("oversized batch failures preserve nested upstream error provenance", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-inline-batch-upstream-error-"));
+  const input = JSON.stringify({ file: "https://www.figma.com/design/ExampleKey/UI", assets: [], outputDir: directory });
+  const output = createIo(input, directory);
+  try {
+    const exit = await runFigmaWorkspaceCli(["apply-asset-manifest", "--input", "-", "--inline-result-limit", "0"], {
+      io: output.io,
+      createClient: () => ({
+        close: async () => {},
+        applyAssetManifest: async () => ({
+          ok: false,
+          assets: [{
+            ok: false,
+            path: "asset.png",
+            targetNodeId: "1:2",
+            upstreamError: {
+              code: "FIGMA_ASSET_UPLOAD_FAILED",
+              message: "Asset upload failed.",
+              details: { diagnosticPayload: "x".repeat(2_048) },
+            },
+          }],
+          failures: [{
+            path: "asset.png",
+            targetNodeId: "1:2",
+            upstreamError: { code: "FIGMA_ASSET_UPLOAD_FAILED", message: "Asset upload failed." },
+          }],
+          payload: "x".repeat(1_024),
+        }),
+      }),
+    });
+    const rendered = output.stdout.join("");
+    assert.equal(exit, 1);
+    assert.match(rendered, /FIGMA_ASSET_UPLOAD_FAILED: Asset upload failed\./u);
+    assert.match(rendered, /"upstreamError":\s*\{/u);
+    assert.doesNotMatch(rendered, /"error":\s*\{|diagnosticPayload/u);
+    assert.match(rendered, /cliResultFile/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("oversized successful results do not promote advisory records to errors", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-inline-success-advisory-"));
+  const input = JSON.stringify({ file: "https://www.figma.com/design/ExampleKey/UI", surface: "design", outputDir: directory });
+  const output = createIo(input, directory);
+  try {
+    const exit = await runFigmaWorkspaceCli(["get-metadata", "--input", "-", "--inline-result-limit", "0"], {
+      io: output.io,
+      createClient: () => ({
+        close: async () => {},
+        getMetadata: async () => ({
+          ok: true,
+          fileKey: "ExampleKey",
+          diagnostics: [{
+            code: "FIGMA_METADATA_ENRICHMENT_FAILED",
+            severity: "warning",
+            message: "Optional metadata enrichment failed.",
+            suggestion: "Use the base metadata result.",
+          }],
+          metadata: { payload: "x".repeat(2_048) },
+        }),
+      }),
+    });
+    const rendered = output.stdout.join("");
+    assert.equal(exit, 0);
+    assert.match(rendered, /^Status: succeeded$/mu);
+    assert.doesNotMatch(rendered, /"error":\s*\{|"upstreamError":\s*\{|^## Error$/mu);
+    assert.match(rendered, /cliResultFile/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("sidecar failure after a dispatched mutation stays machine-readable and preserves the outcome", async () => {
   const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-sidecar-failure-"));
   const outputPath = resolve(directory, "not-a-directory");
@@ -347,6 +549,42 @@ test("sidecar failure after a dispatched mutation stays machine-readable and pre
     assert.match(rendered, /^Status: failed after execution$/mu);
     assert.match(rendered, /"executionOutcome": "succeeded"/u);
     assert.match(rendered, /"captureProcessingSucceeded": true/u);
+    assert.match(rendered, /FIGMA_WORKSPACE_RESULT_PERSISTENCE_FAILED/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("result persistence failure preserves the original operation diagnosis inline", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-operation-error-"));
+  const outputPath = resolve(directory, "not-a-directory");
+  await writeFile(outputPath, "occupied", "utf8");
+  const input = JSON.stringify({ file: "https://www.figma.com/design/ExampleKey/UI", source: "return {};", outputDir: outputPath });
+  const output = createIo(input, directory);
+  try {
+    const exit = await runFigmaWorkspaceCli(["run", "--input", "-", "--inline-result-limit", "0"], {
+      io: output.io,
+      createClient: () => ({
+        close: async () => {},
+        run: async () => ({
+          ok: false,
+          phase: "preflight",
+          executionOutcome: "not_started",
+          diagnostics: [{
+            code: "FIGMA_WORKSPACE_PARSE_ERROR",
+            severity: "fatal",
+            message: "TypeScript source could not be parsed.",
+            suggestion: "Fix the syntax error before retrying.",
+          }],
+          payload: "x".repeat(2_048),
+        }),
+      }),
+    });
+    const rendered = output.stdout.join("");
+    assert.equal(exit, 1);
+    assert.match(rendered, /"operationError":\s*\{/u);
+    assert.match(rendered, /"code": "FIGMA_WORKSPACE_PARSE_ERROR"/u);
+    assert.match(rendered, /"operationRecoveryHint": "Fix the syntax error before retrying\."/u);
     assert.match(rendered, /FIGMA_WORKSPACE_RESULT_PERSISTENCE_FAILED/u);
   } finally {
     await rm(directory, { recursive: true, force: true });

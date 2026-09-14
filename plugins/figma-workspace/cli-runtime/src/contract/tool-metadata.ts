@@ -86,7 +86,7 @@ const designSystemQueries = (): JsonSchema => ({
   description: "Ordered design-system search intents; each item is dispatched in one batch request.",
 });
 const objectSchema = (properties: Record<string, JsonSchema>, required: readonly string[] = [], anyOf?: readonly JsonSchema[]): JsonSchema => ({ type: "object", properties, required: [...required], ...(anyOf ? { anyOf } : {}), additionalProperties: false });
-const resultSchema = (properties: Record<string, JsonSchema> = {}): JsonSchema => ({ type: "object", properties: { ok: boolean("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, ...properties }, required: ["ok"], additionalProperties: true });
+const resultSchema = (properties: Record<string, JsonSchema> = {}): JsonSchema => ({ type: "object", properties: { ok: boolean("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, error: { type: "object", description: "Compact command-level error details for a local or nested batch failure." }, upstreamError: { type: "object", description: "Compact top-level upstream error details when Figma cannot complete the request." }, primaryFix: string("Primary recovery action for the reported error."), ...properties }, required: ["ok"], additionalProperties: true });
 
 export function createReplToolDescriptions(_options: ReplToolDescriptionOptions): Record<string, unknown>[] {
   const descriptions = new Map<LocalWorkspaceToolName, Record<string, unknown>>([

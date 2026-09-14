@@ -59,7 +59,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.6.3";
+    DEFAULT_CLIENT_VERSION = "0.6.4";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -26587,14 +26587,27 @@ async function executeCodeConnectVerify(args, runtime) {
     workflow = await beginCodeConnectWorkflow(runtime.client, [CODE_CONNECT_VERIFY_MAPPING_READ_CONTRACT]);
     const verificationResult = await verifyCodeConnectArtifact({ workflow, client: runtime.client, fileKey: fileKey2, artifact });
     const { sidecarParsed, forceSidecar, ...verification } = verificationResult;
-    const resultPayload = { ok: verification.ok, fileKey: fileKey2, planDigest: artifact.planDigest, mappings: verification.statuses };
+    const resultPayload = {
+      ok: verification.ok,
+      fileKey: fileKey2,
+      planDigest: artifact.planDigest,
+      mappings: verification.statuses,
+      ...verification.ok ? {} : {
+        error: {
+          code: "FIGMA_WORKSPACE_CODE_CONNECT_VERIFICATION_FAILED",
+          message: "Code Connect verification found one or more missing, mismatched, or unavailable mappings."
+        }
+      }
+    };
     return sidecarParsed ? attachCodeConnectSidecarIfNeeded({ session, toolName: CODE_CONNECT_MAP_TOOL_NAME, wrapperToolName: "figma:code-connect:verify", parsed: sidecarParsed, resultPayload, force: forceSidecar }) : resultPayload;
   } catch (error2) {
+    const message = errorMessage2(error2);
     return {
       ok: false,
       fileKey: fileKey2,
       planDigest: artifact.planDigest,
-      mappings: artifact.mappings.map((mapping) => mappingStatus(mapping, "unavailable", { message: errorMessage2(error2) }))
+      mappings: artifact.mappings.map((mapping) => mappingStatus(mapping, "unavailable", { message })),
+      error: { code: "FIGMA_WORKSPACE_CODE_CONNECT_VERIFY_FAILED", message }
     };
   } finally {
     workflow?.deadline.dispose();
@@ -30043,17 +30056,19 @@ function classifyFigmaWorkspaceCliResult(command, result) {
   const warnings = Array.isArray(result.warnings) ? result.warnings : [];
   const executionOutcome = result.executionOutcome;
   const ok = result.ok !== false;
-  if (command === "doctor" && !ok) return { status: "observed-unhealthy", exitCode: 0, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+  const { isUpstream: _isUpstream, ...presentationFailure } = presentationFailureForResult(result);
+  const failure = { warnings, ...presentationFailure };
+  if (command === "doctor" && !ok) return { status: "observed-unhealthy", exitCode: 0, ...failure };
   if (executionOutcome === "failed_atomic" && !ok) {
-    return { status: "failed-atomically", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+    return { status: "failed-atomically", exitCode: 1, ...failure };
   }
   if (executionOutcome === "outcome_unknown" && !ok) {
-    return { status: "failed-during-execution", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+    return { status: "failed-during-execution", exitCode: 1, ...failure };
   }
   if (executionOutcome === "succeeded" && !ok) {
-    return { status: "failed-after-execution", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+    return { status: "failed-after-execution", exitCode: 1, ...failure };
   }
-  if (!ok) return { status: "failed", exitCode: 1, warnings, error: normalizeError(result.upstreamError ?? result.error) };
+  if (!ok) return { status: "failed", exitCode: 1, ...failure };
   return { status: warnings.length ? "observed-unhealthy" : "succeeded", exitCode: 0, warnings };
 }
 function formatFigmaWorkspaceCommandMarkdown(command, result, _input, presentation = classifyFigmaWorkspaceCliResult(command, result)) {
@@ -30069,20 +30084,21 @@ function formatFigmaWorkspaceCommandMarkdown(command, result, _input, presentati
   ].join("\n");
 }
 function formatExecutionFailureSummary(result, presentation) {
-  if (!isRecord6(result) || result.executionOutcome !== "failed_atomic") {
+  if (!isRecord6(result) || !presentation.error) {
     return [];
   }
-  const error2 = presentation.error ?? compactPresentationError(result.upstreamError);
+  const atomicScriptFailure = result.executionOutcome === "failed_atomic";
+  const error2 = presentation.error;
   const message = compactExecutionErrorSummary(error2?.message ?? "Figma host returned an explicit execution error.");
   const code = error2?.code === void 0 ? void 0 : String(error2.code);
   return [
-    "## Remote execution error",
+    atomicScriptFailure ? "## Remote execution error" : "## Error",
     "",
     "```text",
     code ? `${code}: ${message}` : message,
     "```",
-    "",
-    "Figma host confirmed this use_figma script failed atomically. No file changes were applied; repair the script and retry safely.",
+    ...presentation.recoveryHint ? ["", `Next step: ${compactExecutionErrorSummary(presentation.recoveryHint)}`] : [],
+    ...atomicScriptFailure ? ["", "Figma host confirmed this use_figma script failed atomically. No file changes were applied; repair the script and retry safely."] : [],
     ""
   ];
 }
@@ -30230,8 +30246,13 @@ async function persistOversizedResult(result, command, outputRoot, limit) {
   const resultPath = resolve9(outputRoot, `${command.replace(/[^a-z0-9]+/giu, "-")}.result.json`);
   const written = await atomicWriteManagedTextFile({ root: outputRoot, path: resultPath, overwrite: true }, serialized);
   const existingOutputFiles = isRecord6(result) && isRecord6(result.outputFiles) ? result.outputFiles : {};
+  const failure = isRecord6(result) && result.ok === false ? presentationFailureForResult(result) : {};
+  const upstreamError = (isRecord6(result) ? compactPresentationError(result.upstreamError) : void 0) ?? (failure.isUpstream ? compactPresentationError(failure.error) : void 0);
   return {
     ...selectRecoveryFacts(result),
+    error: upstreamError ? void 0 : compactPresentationError(failure.error),
+    recoveryHint: failure.recoveryHint,
+    upstreamError,
     ok: isRecord6(result) ? result.ok !== false : true,
     invocation: isRecord6(result) ? result.invocation : void 0,
     outputFiles: {
@@ -30241,9 +30262,13 @@ async function persistOversizedResult(result, command, outputRoot, limit) {
   };
 }
 function createResultPersistenceFailure(result, error2) {
+  const operationFailure = isRecord6(result) && result.ok === false ? presentationFailureForResult(result) : {};
+  const upstreamError = (isRecord6(result) ? compactPresentationError(result.upstreamError) : void 0) ?? (operationFailure.isUpstream ? compactPresentationError(operationFailure.error) : void 0);
   return {
     ...selectRecoveryFacts(result),
-    upstreamError: isRecord6(result) ? compactPresentationError(result.upstreamError) : void 0,
+    operationError: upstreamError ? void 0 : compactPresentationError(operationFailure.error),
+    operationRecoveryHint: operationFailure.recoveryHint,
+    upstreamError,
     ok: false,
     invocation: isRecord6(result) ? result.invocation : void 0,
     error: {
@@ -30258,10 +30283,73 @@ function selectRecoveryFacts(result) {
     "phase",
     "executionOutcome",
     "retryGuidance",
+    "primaryFix",
     "postProcessing",
     "captureProcessingSucceeded",
+    "fileKey",
+    "nodeId",
+    "toolName",
+    "planDigest",
+    "outputDir",
+    "imageFile",
+    "planFile",
+    "script",
+    "inlineResultLimit",
     "outputFiles"
   ].flatMap((key) => result[key] === void 0 ? [] : [[key, result[key]]]));
+}
+function presentationFailureForResult(result) {
+  const overallRecoveryHint = firstRecoveryHint(result);
+  const upstreamError = normalizeError(result.upstreamError);
+  if (upstreamError) return { error: upstreamError, recoveryHint: overallRecoveryHint, isUpstream: true };
+  const direct = normalizeError(result.error);
+  if (direct) return { error: direct, recoveryHint: overallRecoveryHint };
+  const diagnostics = Array.isArray(result.diagnostics) ? result.diagnostics : [];
+  for (const value of diagnostics) {
+    if (!isRecord6(value) || value.severity !== "fatal") continue;
+    const diagnostic = normalizeFailureRecord(value);
+    if (diagnostic) return { ...diagnostic, recoveryHint: firstRecoveryHint(value) ?? overallRecoveryHint };
+  }
+  for (const key of ["failures", "assets", "targets", "captures", "mappings"]) {
+    for (const value of Array.isArray(result[key]) ? result[key] : []) {
+      if (isRecord6(value) && value.ok !== false && key !== "failures" && key !== "mappings") continue;
+      const failure = normalizeFailureRecord(value);
+      if (failure) return { ...failure, recoveryHint: overallRecoveryHint ?? firstRecoveryHint(value) };
+    }
+  }
+  for (const key of ["application", "validation"]) {
+    const value = result[key];
+    if (isRecord6(value) && value.ok === false) {
+      const failure = normalizeFailureRecord(value);
+      if (failure) return { ...failure, recoveryHint: overallRecoveryHint ?? firstRecoveryHint(value) };
+    }
+  }
+  for (const value of diagnostics) {
+    const diagnostic = normalizeFailureRecord(value);
+    if (diagnostic) return { ...diagnostic, recoveryHint: firstRecoveryHint(value) ?? overallRecoveryHint };
+  }
+  return { recoveryHint: overallRecoveryHint };
+}
+function normalizeFailureRecord(value) {
+  if (!isRecord6(value)) return void 0;
+  for (const key of ["upstreamError", "downloadError", "error"]) {
+    const nested = normalizeError(value[key]);
+    if (nested) return { error: nested, ...key === "upstreamError" ? { isUpstream: true } : {} };
+  }
+  if (typeof value.message === "string" || typeof value.code === "string" || typeof value.code === "number") {
+    const error2 = normalizeError(value);
+    return error2 ? { error: error2 } : void 0;
+  }
+  if (typeof value.reason === "string" && value.reason.trim()) {
+    return { error: { message: value.reason } };
+  }
+  return void 0;
+}
+function firstRecoveryHint(result) {
+  for (const value of [result.retryGuidance, result.primaryFix, result.suggestion]) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return void 0;
 }
 function compactPresentationError(value) {
   const error2 = normalizeError(value);
@@ -30512,7 +30600,7 @@ var designSystemQueries = () => ({
   description: "Ordered design-system search intents; each item is dispatched in one batch request."
 });
 var objectSchema = (properties, required2 = [], anyOf) => ({ type: "object", properties, required: [...required2], ...anyOf ? { anyOf } : {}, additionalProperties: false });
-var resultSchema = (properties = {}) => ({ type: "object", properties: { ok: boolean4("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, ...properties }, required: ["ok"], additionalProperties: true });
+var resultSchema = (properties = {}) => ({ type: "object", properties: { ok: boolean4("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, error: { type: "object", description: "Compact command-level error details for a local or nested batch failure." }, upstreamError: { type: "object", description: "Compact top-level upstream error details when Figma cannot complete the request." }, primaryFix: string4("Primary recovery action for the reported error."), ...properties }, required: ["ok"], additionalProperties: true });
 function createReplToolDescriptions(_options) {
   const descriptions = /* @__PURE__ */ new Map([
     ["figma_workspace_run", {
